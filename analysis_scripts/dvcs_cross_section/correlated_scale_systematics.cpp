@@ -1179,11 +1179,20 @@ bool correlated_scale_systematics(
         std::vector<double> corr10(c.rows.size(),std::numeric_limits<double>::quiet_NaN());
         std::vector<double> corrsp(c.rows.size(),std::numeric_limits<double>::quiet_NaN());
 
+        const int fb10=ensure_col(
+            c,"correlated scale fallback flag, 10.6 GeV");
+        const int fbsp=ensure_col(
+            c,"correlated scale fallback flag, Sp19 Inb");
+
         for(size_t i=0;i<c.rows.size();++i){
             const double th10=num(c.rows[i][ith10->second]);
             const double thsp=num(c.rows[i][ithsp->second]);
             const double cur10=num(c.rows[i][ic10->second]);
             const double cursp=num(c.rows[i][icsp->second]);
+
+            // Default: this row used the normal kinematic construction.
+            c.rows[i][fb10]="0";
+            c.rows[i][fbsp]="0";
 
             if(std::isfinite(th10)&&std::isfinite(cur10)&&cur10>=0.0){
                 const double res=interpolate_residual(reference,th10);
@@ -1223,6 +1232,83 @@ bool correlated_scale_systematics(
                 }
             }
         }
+
+        // A very small number of published bins can lack one of the inputs
+        // required by the kinematic current+run-period construction.  Rather
+        // than leave the final correlated-scale uncertainty undefined, assign
+        // those exceptional bins a deliberately conservative fallback equal
+        // to the 95th percentile of the *final correlated-scale fraction*
+        // among otherwise valid published points in the same energy sample.
+        //
+        // This fallback is used only when:
+        //   (1) the cross section itself is valid, and
+        //   (2) the normal correlated-scale result is unavailable.
+        //
+        // The component decomposition is intentionally not fabricated for
+        // these rows: the authoritative combined correlated-scale column is
+        // filled, and a dedicated flag records that the p95 fallback was used.
+        std::vector<double> valid_corr10;
+        std::vector<double> valid_corrsp;
+
+        for(size_t i=0;i<c.rows.size();++i){
+            if(ix10!=c.index.end()){
+                const TupleValue x=tuple_value(c.rows[i][ix10->second]);
+                if(x.ok && std::isfinite(corr10[i]) && corr10[i]>=0.0)
+                    valid_corr10.push_back(corr10[i]);
+            }
+            if(ixsp!=c.index.end()){
+                const TupleValue x=tuple_value(c.rows[i][ixsp->second]);
+                if(x.ok && std::isfinite(corrsp[i]) && corrsp[i]>=0.0)
+                    valid_corrsp.push_back(corrsp[i]);
+            }
+        }
+
+        const double fallback10=quantile(valid_corr10,0.95);
+        const double fallbacksp=quantile(valid_corrsp,0.95);
+
+        if(!std::isfinite(fallback10) || !std::isfinite(fallbacksp))
+            throw std::runtime_error(
+                "cannot determine p95 correlated-scale fallback from valid bins");
+
+        size_t n_fallback10=0;
+        size_t n_fallbacksp=0;
+
+        for(size_t i=0;i<c.rows.size();++i){
+            if(ix10!=c.index.end()){
+                const TupleValue x=tuple_value(c.rows[i][ix10->second]);
+                if(x.ok && !std::isfinite(corr10[i])){
+                    corr10[i]=fallback10;
+                    c.rows[i][cs10]=fmt(fallback10);
+                    c.rows[i][acs10]=fmt(std::fabs(x.value)*fallback10);
+                    c.rows[i][no10]=fmt(options.uncorrelated_normalization_fraction);
+                    c.rows[i][ano10]=fmt(
+                        std::fabs(x.value)*options.uncorrelated_normalization_fraction);
+                    c.rows[i][fb10]="1";
+                    ++n_fallback10;
+                }
+            }
+
+            if(ixsp!=c.index.end()){
+                const TupleValue x=tuple_value(c.rows[i][ixsp->second]);
+                if(x.ok && !std::isfinite(corrsp[i])){
+                    corrsp[i]=fallbacksp;
+                    c.rows[i][cssp]=fmt(fallbacksp);
+                    c.rows[i][acssp]=fmt(std::fabs(x.value)*fallbacksp);
+                    c.rows[i][nosp]=fmt(options.uncorrelated_normalization_fraction);
+                    c.rows[i][anosp]=fmt(
+                        std::fabs(x.value)*options.uncorrelated_normalization_fraction);
+                    c.rows[i][fbsp]="1";
+                    ++n_fallbacksp;
+                }
+            }
+        }
+
+        std::cout
+            << "[correlated-scale] Conservative p95 fallback: "
+            << "10.6 GeV = " << 100.0*fallback10 << "% for "
+            << n_fallback10 << " bin(s); Sp19 Inb = "
+            << 100.0*fallbacksp << "% for "
+            << n_fallbacksp << " bin(s).\n";
 
         write_csv(csv_path,c);
 

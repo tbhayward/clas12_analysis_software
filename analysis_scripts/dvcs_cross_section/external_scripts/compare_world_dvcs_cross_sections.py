@@ -114,8 +114,6 @@ TARGET_EBEAM_GEV = 10.6
 PASS2_OVERALL_NORM_FRAC = 0.021633307652784
 PASS2_XS_COL = "normed cross sections, ep->epg, exp, 10.6 GeV, unpol"
 PASS2_PTP_COL = "Syst. err (point-to-point total)"
-PASS2_CURRENT_FRAC_COL = "current dependence sys frac, 10.6 GeV"
-PASS2_PERIOD_FRAC_COL = "run period residual sys frac, 10.6 GeV"
 PASS2_CORR_FRAC_COL = "correlated scale sys frac, 10.6 GeV"
 PASS2_NORM_FRAC_COL = "uncorrelated normalization sys frac, 10.6 GeV"
 
@@ -409,16 +407,22 @@ def _parse_cross_section_tuple(raw) -> Tuple[float, float]:
 
 def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
     """
-    Load the final combined 10.6-GeV pass-2 cross section with the authoritative
-    three-class systematic decomposition:
+    Load the finalized combined 10.6-GeV pass-2 cross section using the
+    publication-level systematic decomposition:
 
-      * point-to-point uncertainty;
-      * 2.16% common overall normalization;
-      * correlated kinematic scale, decomposed into current-dependent and
-        residual run-period components.
+      1. point-to-point uncertainty;
+      2. one experiment-wide overall normalization nuisance;
+      3. one bin-dependent correlated-scale nuisance.
 
-    The correlated-scale components are retained separately because the final
-    pass-2 nuisance fit treats them as independent Gaussian nuisance directions.
+    The correlated-scale nuisance is read directly from the authoritative final
+    CSV column
+
+        correlated scale sys frac, 10.6 GeV
+
+    which the finalized C++ systematic chain constructs from the lower-level
+    current-dependence and residual run-period studies.  Those lower-level
+    components are intentionally NOT reopened as separate nuisance parameters
+    here, because the publication treatment uses the single combined category.
     """
     raw = pd.read_csv(path, low_memory=False)
 
@@ -430,8 +434,6 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
         "phiavg, 10.6 GeV",
         PASS2_XS_COL,
         PASS2_PTP_COL,
-        PASS2_CURRENT_FRAC_COL,
-        PASS2_PERIOD_FRAC_COL,
         PASS2_CORR_FRAC_COL,
         PASS2_NORM_FRAC_COL,
     ]
@@ -461,64 +463,112 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
         "xB": pd.to_numeric(raw["xBavg, 10.6 GeV"], errors="coerce"),
         "Q2": pd.to_numeric(raw["Q2avg, 10.6 GeV"], errors="coerce"),
         "t_abs": pd.to_numeric(raw["t_abs_avg, 10.6 GeV"], errors="coerce"),
-        "phi_deg": np.mod(pd.to_numeric(raw["phiavg, 10.6 GeV"], errors="coerce"), 360.0),
+        "phi_deg": np.mod(
+            pd.to_numeric(raw["phiavg, 10.6 GeV"], errors="coerce"),
+            360.0,
+        ),
         "ebeam": float(TARGET_EBEAM_GEV),
         "xs": np.asarray(xs_vals, dtype=float),
         "stat_abs": np.asarray(stat_vals, dtype=float),
         "ptp_sys_abs": pd.to_numeric(raw[PASS2_PTP_COL], errors="coerce"),
         "norm_frac": pd.to_numeric(raw[PASS2_NORM_FRAC_COL], errors="coerce"),
-        "current_scale_frac": pd.to_numeric(raw[PASS2_CURRENT_FRAC_COL], errors="coerce"),
-        "period_scale_frac": pd.to_numeric(raw[PASS2_PERIOD_FRAC_COL], errors="coerce"),
         "corr_scale_frac": pd.to_numeric(raw[PASS2_CORR_FRAC_COL], errors="coerce"),
     })
 
-    # Useful detector variable for diagnostics.
     if "p_theta, 10.6 GeV" in raw.columns:
-        out["p_theta"] = pd.to_numeric(raw["p_theta, 10.6 GeV"], errors="coerce")
+        out["p_theta"] = pd.to_numeric(
+            raw["p_theta, 10.6 GeV"],
+            errors="coerce",
+        )
     #endif
 
-    # Enforce the finalized point uncertainty definition.
-    out["point_unc_abs"] = np.hypot(out["stat_abs"], out["ptp_sys_abs"])
+    # Ordinary plotted/fitted point uncertainty contains ONLY independent
+    # statistical + point-to-point systematic terms.
+    out["point_unc_abs"] = np.hypot(
+        out["stat_abs"],
+        out["ptp_sys_abs"],
+    )
 
-    # A finalized CSV should contain the same 2.16% normalization in every
-    # populated row.  Keep the row value but verify consistency.
+    # The overall normalization is one experiment-wide publication quantity,
+    # not a per-bin measurement.  If an otherwise physical row has that CSV
+    # field blank, use the finalized global value rather than dropping the row.
+    n_missing_norm = int(out["norm_frac"].isna().sum())
+    if n_missing_norm:
+        print(
+            f"[PASS2] filling {n_missing_norm} blank per-row normalization field(s) "
+            f"with finalized global value {100.0*PASS2_OVERALL_NORM_FRAC:.3f}%",
+            flush=True,
+        )
+        out["norm_frac"] = out["norm_frac"].fillna(PASS2_OVERALL_NORM_FRAC)
+    #endif
+
+    # Do NOT fill missing correlated-scale responses.  Such rows remain valid
+    # for raw/norm-only comparisons but cannot enter a fit using beta_corr.
+    n_missing_corr_before_clean = int(out["corr_scale_frac"].isna().sum())
+    if n_missing_corr_before_clean:
+        bad_rows = out.loc[
+            out["corr_scale_frac"].isna()
+            & np.isfinite(out["xs"])
+            & (out["xs"] > 0.0),
+            ["published_bin", "xB", "Q2", "t_abs", "phi_deg", "xs"],
+        ]
+        print(
+            f"[PASS2] WARNING: {len(bad_rows)} physical point(s) have no finalized "
+            "correlated-scale response; retained for raw/norm-only comparisons "
+            "and excluded only from full correlated-scale nuisance fits.",
+            flush=True,
+        )
+        if not bad_rows.empty:
+            print(
+                bad_rows.to_string(
+                    index=False,
+                    float_format=lambda x: f"{x:.7g}",
+                ),
+                flush=True,
+            )
+        #endif
+    #endif
+
+    # Publication-level QA: the normalization column should reproduce the
+    # finalized 2.1633% common charge/target-thickness uncertainty.
     finite_norm = out["norm_frac"].to_numpy(float)
     finite_norm = finite_norm[np.isfinite(finite_norm)]
     if finite_norm.size == 0:
-        raise RuntimeError("Pass-2 normalization column contains no finite values")
+        raise RuntimeError(
+            "Pass-2 overall-normalization column contains no finite values"
+        )
     #endif
     med_norm = float(np.nanmedian(finite_norm))
     if abs(med_norm - PASS2_OVERALL_NORM_FRAC) > 5e-4:
         warnings.warn(
-            f"Pass-2 median overall normalization is {100*med_norm:.3f}% "
-            f"instead of expected {100*PASS2_OVERALL_NORM_FRAC:.3f}%"
+            f"Pass-2 median overall normalization is "
+            f"{100.0 * med_norm:.3f}% instead of expected "
+            f"{100.0 * PASS2_OVERALL_NORM_FRAC:.3f}%"
         )
     #endif
 
     out = clean_canonical(out)
 
-    # Keep a deterministic point ID tied to the pass-2 4D bin index.
     out["point_id"] = [
         f"pass2:{int(round(v))}"
         for v in out["published_bin"].to_numpy(float)
     ]
 
+    n_corr_valid = int(np.isfinite(out["corr_scale_frac"]).sum())
     print(
-        f"[PASS2] loaded {len(out):,} finalized 10.6-GeV points from {path}",
+        f"[PASS2] loaded {len(out):,} physical 10.6-GeV points from {path}; "
+        f"{n_corr_valid:,} have finalized correlated-scale responses",
         flush=True,
     )
     print(
         f"[PASS2] median stat={100*np.nanmedian(out['stat_frac']):.2f}%, "
         f"ptp syst={100*np.nanmedian(out['ptp_sys_frac']):.2f}%, "
         f"overall norm={100*np.nanmedian(out['norm_frac']):.2f}%, "
-        f"current scale={100*np.nanmedian(out['current_scale_frac']):.2f}%, "
-        f"period scale={100*np.nanmedian(out['period_scale_frac']):.2f}%, "
-        f"combined corr scale={100*np.nanmedian(out['corr_scale_frac']):.2f}%",
+        f"correlated scale={100*np.nanmedian(out['corr_scale_frac']):.2f}%",
         flush=True,
     )
     return out
 #enddef
-
 
 def clean_canonical(df: pd.DataFrame) -> pd.DataFrame:
     required = [
@@ -549,12 +599,19 @@ def clean_canonical(df: pd.DataFrame) -> pd.DataFrame:
     out["ptp_sys_frac"] = out["ptp_sys_abs"] / out["xs"]
     out["point_unc_frac"] = out["point_unc_abs"] / out["xs"]
 
-    for col in ["current_scale_frac", "period_scale_frac", "corr_scale_frac"]:
-        if col not in out.columns:
-            out[col] = 0.0
-        #endif
-        out[col] = pd.to_numeric(out[col], errors="coerce").fillna(0.0)
-    #endfor
+    if "corr_scale_frac" not in out.columns:
+        # Published external datasets have no pass-2-style kinematic correlated
+        # scale category, so their response is identically zero.
+        out["corr_scale_frac"] = 0.0
+    else:
+        # If a dataset explicitly supplies this category (pass-2), preserve
+        # missing values as missing.  They must never be silently interpreted
+        # as zero response.
+        out["corr_scale_frac"] = pd.to_numeric(
+            out["corr_scale_frac"],
+            errors="coerce",
+        )
+    #endif
 
     return out
 #enddef
@@ -1323,10 +1380,6 @@ def build_pairwise_comparisons(
                     "raw_pull": raw_pull,
                     "norm_frac_a": float(ra["norm_frac"]),
                     "norm_frac_b": float(rb["norm_frac"]),
-                    "current_scale_frac_a": float(ra.get("current_scale_frac", 0.0)),
-                    "current_scale_frac_b": float(rb.get("current_scale_frac", 0.0)),
-                    "period_scale_frac_a": float(ra.get("period_scale_frac", 0.0)),
-                    "period_scale_frac_b": float(rb.get("period_scale_frac", 0.0)),
                     "corr_scale_frac_a": float(ra.get("corr_scale_frac", 0.0)),
                     "corr_scale_frac_b": float(rb.get("corr_scale_frac", 0.0)),
                 })
@@ -2870,8 +2923,6 @@ def _build_pass2_anchor_observations(matches: pd.DataFrame) -> pd.DataFrame:
             "value": float(r.xs_b),
             "unc": float(r.point_unc_b),
             "norm_frac": float(r.norm_frac_b),
-            "current_scale_frac": float(r.current_scale_frac_b),
-            "period_scale_frac": float(r.period_scale_frac_b),
             "corr_scale_frac": float(r.corr_scale_frac_b),
         })
     #endfor
@@ -2887,8 +2938,6 @@ def _build_pass2_anchor_observations(matches: pd.DataFrame) -> pd.DataFrame:
             "value": float(r.xs_a_to_b_km15),
             "unc": float(r.point_unc_a_to_b_km15),
             "norm_frac": float(r.norm_frac_a),
-            "current_scale_frac": 0.0,
-            "period_scale_frac": 0.0,
             "corr_scale_frac": 0.0,
         })
     #endfor
@@ -2910,29 +2959,37 @@ def fit_pass2_anchor_nuisances(
         scenario: str,
         include_pass2_correlated_scale: bool,
         exclude_datasets: Sequence[str] = (),
-        saylor_tmin: Optional[float] = None) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[str, float]]:
+        saylor_tmin: Optional[float] = None
+        ) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, Dict[str, float]]:
     """
-    Global pass-2-centered consistency fit.
+    Global pass-2-centered consistency fit using the FINAL publication-level
+    systematic categories.
 
-    Every exact pass-2 anchor j has a free common cross section mu_j.  Each
-    experiment has one experiment-wide multiplicative normalization eta_d.
+    At each exact pass-2 anchor j there is a free common cross section mu_j.
+    Each experiment has one experiment-wide normalization offset eta_d.
 
-    For pass-2, the full fit adds TWO additional independent Gaussian nuisance
-    directions:
-      beta_current * f_current,i
-      beta_period  * f_period,i
+    Pass-2 therefore has exactly TWO systematic nuisance directions relevant
+    here:
 
-    where f_current,i and f_period,i are the finalized bin-dependent fractional
-    responses.  This is more faithful than a single nuisance multiplying
-    sqrt(f_current^2+f_period^2), because those two uncertainty sources were
-    constructed independently and combined in quadrature in the systematic
-    chapter.
+      1. eta_pass2:
+         one overall normalization nuisance with the finalized 2.16% Gaussian
+         prior;
 
-    The underlying current-efficiency scalar is itself the quadrature of many
-    calibration parameters, so this aggregate treatment is conservative and
-    practical for the external-data comparison.  The full signed per-parameter
-    response CSV could be substituted later if publication-level covariance
-    detail is desired.
+      2. beta_corr:
+         one Gaussian nuisance multiplying the finalized bin-dependent
+         correlated-scale response
+
+             beta_corr * f_corr,i ,
+
+         where f_corr,i is read directly from
+         'correlated scale sys frac, 10.6 GeV'.
+
+    No attempt is made to decompose f_corr,i back into current-dependent and
+    run-period pieces.  That lower-level decomposition was already combined in
+    the finalized analysis and is not the publication covariance model.
+
+    The fit is done in log cross section so multiplicative nuisance shifts are
+    handled naturally.
     """
     obs = _build_pass2_anchor_observations(matches)
     if obs.empty:
@@ -2952,20 +3009,47 @@ def fit_pass2_anchor_nuisances(
         obs = obs.loc[keep].copy()
     #endif
 
+    if include_pass2_correlated_scale:
+        is_pass2 = obs["dataset"].astype(str) == "pass2"
+        missing_corr = is_pass2 & ~np.isfinite(
+            obs["corr_scale_frac"].to_numpy(float)
+        )
+        n_missing_corr = int(np.sum(missing_corr))
+        if n_missing_corr:
+            print(
+                f"[PASS2 FIT] {scenario}: excluding {n_missing_corr} pass-2 "
+                "observation(s) lacking a finalized correlated-scale response",
+                flush=True,
+            )
+            obs = obs.loc[~missing_corr].copy()
+        #endif
+    #endif
+
     counts = obs.groupby("anchor_id")["dataset"].nunique()
-    anchors = sorted(counts.loc[counts >= 2].index.astype(str))
-    obs = obs.loc[obs["anchor_id"].astype(str).isin(anchors)].copy().reset_index(drop=True)
+    anchors = sorted(
+        counts.loc[counts >= 2].index.astype(str)
+    )
+    obs = obs.loc[
+        obs["anchor_id"].astype(str).isin(anchors)
+    ].copy().reset_index(drop=True)
+
     if obs.empty:
         return pd.DataFrame(), pd.DataFrame(), pd.DataFrame(), {}
     #endif
 
-    datasets = [k for k in DATASET_ORDER if k in set(obs["dataset"].astype(str))]
-    n_anchor = len(anchors)
+    datasets = [
+        key for key in DATASET_ORDER
+        if key in set(obs["dataset"].astype(str))
+    ]
 
-    param_names = [f"mu::{a}" for a in anchors] + [f"eta::{d}" for d in datasets]
+    param_names = (
+        [f"mu::{anchor}" for anchor in anchors]
+        + [f"eta::{dataset}" for dataset in datasets]
+    )
     if include_pass2_correlated_scale:
-        param_names += ["beta::pass2_current", "beta::pass2_period"]
+        param_names.append("beta::pass2_corr_scale")
     #endif
+
     pindex = {name: i for i, name in enumerate(param_names)}
 
     Arows = []
@@ -2973,226 +3057,339 @@ def fit_pass2_anchor_nuisances(
     meta = []
 
     for r in obs.itertuples(index=False):
-        frac = float(r.unc) / float(r.value)
-        if not np.isfinite(frac) or frac <= 0.0:
+        frac_unc = float(r.unc) / float(r.value)
+        if (
+            not np.isfinite(frac_unc)
+            or frac_unc <= 0.0
+        ):
             continue
         #endif
-        w = 1.0 / frac
-        row = np.zeros(len(param_names), dtype=float)
-        row[pindex[f"mu::{r.anchor_id}"]] = w
-        row[pindex[f"eta::{r.dataset}"]] = w
 
-        if include_pass2_correlated_scale and str(r.dataset) == "pass2":
-            row[pindex["beta::pass2_current"]] = w * float(r.current_scale_frac)
-            row[pindex["beta::pass2_period"]] = w * float(r.period_scale_frac)
+        weight = 1.0 / frac_unc
+        row = np.zeros(len(param_names), dtype=float)
+
+        row[pindex[f"mu::{r.anchor_id}"]] = weight
+        row[pindex[f"eta::{r.dataset}"]] = weight
+
+        if (
+            include_pass2_correlated_scale
+            and str(r.dataset) == "pass2"
+        ):
+            row[pindex["beta::pass2_corr_scale"]] = (
+                weight * float(r.corr_scale_frac)
+            )
         #endif
 
         Arows.append(row)
-        brows.append(math.log(float(r.value)) * w)
+        brows.append(math.log(float(r.value)) * weight)
         meta.append(r._asdict())
     #endfor
 
     n_data = len(Arows)
     n_prior = 0
-    prior_labels = []
 
-    # Dataset-wide normalization priors.
-    for d in datasets:
-        if d in GLOBAL_NORM_FREE_DATASETS:
+    # One normalization prior per constrained experiment.  Georges remains
+    # intentionally free, consistent with the external-world study.
+    for dataset in datasets:
+        if dataset in GLOBAL_NORM_FREE_DATASETS:
             continue
         #endif
-        vals = obs.loc[obs["dataset"] == d, "norm_frac"].to_numpy(float)
+
+        vals = obs.loc[
+            obs["dataset"] == dataset,
+            "norm_frac",
+        ].to_numpy(float)
         vals = vals[np.isfinite(vals)]
         if vals.size == 0:
             continue
         #endif
-        sigma = math.log1p(float(np.nanmedian(vals)))
-        if sigma <= 0.0:
+
+        sigma_log = math.log1p(float(np.nanmedian(vals)))
+        if sigma_log <= 0.0:
             continue
         #endif
+
         row = np.zeros(len(param_names), dtype=float)
-        row[pindex[f"eta::{d}"]] = 1.0 / sigma
+        row[pindex[f"eta::{dataset}"]] = 1.0 / sigma_log
         Arows.append(row)
         brows.append(0.0)
         n_prior += 1
-        prior_labels.append(f"norm::{d}")
     #endfor
 
+    # One publication-level pass-2 correlated-scale nuisance.
     if include_pass2_correlated_scale:
-        for pname in ["beta::pass2_current", "beta::pass2_period"]:
-            row = np.zeros(len(param_names), dtype=float)
-            row[pindex[pname]] = 1.0
-            Arows.append(row)
-            brows.append(0.0)
-            n_prior += 1
-            prior_labels.append(pname)
-        #endfor
+        row = np.zeros(len(param_names), dtype=float)
+        row[pindex["beta::pass2_corr_scale"]] = 1.0
+        Arows.append(row)
+        brows.append(0.0)
+        n_prior += 1
     #endif
 
     A = np.asarray(Arows, dtype=float)
     b = np.asarray(brows, dtype=float)
-    sol, _, rank, _ = np.linalg.lstsq(A, b, rcond=None)
-    residual = A @ sol - b
-    data_resid = residual[:n_data]
-    prior_resid = residual[n_data:]
 
-    chi2_data = float(np.sum(data_resid**2))
-    chi2_prior = float(np.sum(prior_resid**2))
+    solution, _, rank, _ = np.linalg.lstsq(A, b, rcond=None)
+    residual = A @ solution - b
+
+    data_residual = residual[:n_data]
+    prior_residual = residual[n_data:]
+
+    chi2_data = float(np.sum(data_residual**2))
+    chi2_prior = float(np.sum(prior_residual**2))
     chi2_total = chi2_data + chi2_prior
-    ndf = int(n_data + n_prior - len(param_names))
 
-    eta_by_dataset = {d: float(sol[pindex[f"eta::{d}"]]) for d in datasets}
-    beta_cur = (
-        float(sol[pindex["beta::pass2_current"]])
-        if include_pass2_correlated_scale else 0.0
+    ndf = int(
+        n_data
+        + n_prior
+        - len(param_names)
     )
-    beta_per = (
-        float(sol[pindex["beta::pass2_period"]])
-        if include_pass2_correlated_scale else 0.0
+
+    eta_by_dataset = {
+        dataset: float(solution[pindex[f"eta::{dataset}"]])
+        for dataset in datasets
+    }
+
+    beta_corr = (
+        float(solution[pindex["beta::pass2_corr_scale"]])
+        if include_pass2_correlated_scale
+        else 0.0
     )
 
     point_rows = []
-    for m, pull in zip(meta, data_resid):
-        d = str(m["dataset"])
-        eta = eta_by_dataset[d]
-        shape = 0.0
-        if d == "pass2" and include_pass2_correlated_scale:
-            shape = (
-                beta_cur * float(m["current_scale_frac"])
-                + beta_per * float(m["period_scale_frac"])
+    for metadata, pull in zip(meta, data_residual):
+        dataset = str(metadata["dataset"])
+        eta = eta_by_dataset[dataset]
+
+        corr_shift = 0.0
+        if (
+            dataset == "pass2"
+            and include_pass2_correlated_scale
+        ):
+            corr_shift = (
+                beta_corr
+                * float(metadata["corr_scale_frac"])
             )
         #endif
-        correction = math.exp(-(eta + shape))
+
+        # The fitted model is log(y) = log(mu) + eta + beta*f.
+        # To display measurements aligned to the common anchor convention,
+        # apply the inverse multiplicative nuisance shift.
+        correction = math.exp(-(eta + corr_shift))
+
         point_rows.append({
-            **m,
+            **metadata,
             "scenario": scenario,
             "normalization_eta": eta,
-            "pass2_shape_log_shift": shape,
+            "pass2_corr_log_shift": corr_shift,
             "data_correction_scale": correction,
             "data_correction_pct": 100.0 * (correction - 1.0),
-            "adjusted_value": correction * float(m["value"]),
-            "adjusted_unc": correction * float(m["unc"]),
+            "adjusted_value": correction * float(metadata["value"]),
+            "adjusted_unc": correction * float(metadata["unc"]),
             "fit_pull_log": float(pull),
         })
     #endfor
+
     point_table = pd.DataFrame(point_rows)
 
     dataset_rows = []
-    for d in datasets:
-        eta = eta_by_dataset[d]
-        vals = obs.loc[obs["dataset"] == d, "norm_frac"].to_numpy(float)
+    for dataset in datasets:
+        eta = eta_by_dataset[dataset]
+
+        vals = obs.loc[
+            obs["dataset"] == dataset,
+            "norm_frac",
+        ].to_numpy(float)
         vals = vals[np.isfinite(vals)]
-        nfrac = float(np.nanmedian(vals)) if vals.size else np.nan
-        sigma = math.log1p(nfrac) if np.isfinite(nfrac) and nfrac >= 0.0 else np.nan
-        beta_norm = (
-            eta / sigma
-            if d not in GLOBAL_NORM_FREE_DATASETS and np.isfinite(sigma) and sigma > 0.0
+
+        norm_frac = (
+            float(np.nanmedian(vals))
+            if vals.size
             else np.nan
         )
+
+        sigma_log = (
+            math.log1p(norm_frac)
+            if np.isfinite(norm_frac) and norm_frac >= 0.0
+            else np.nan
+        )
+
+        beta_norm = (
+            eta / sigma_log
+            if (
+                dataset not in GLOBAL_NORM_FREE_DATASETS
+                and np.isfinite(sigma_log)
+                and sigma_log > 0.0
+            )
+            else np.nan
+        )
+
         dataset_rows.append({
             "scenario": scenario,
-            "dataset": d,
-            "dataset_label": DATASET_LABELS[d],
-            "N_points": int(np.sum(point_table["dataset"] == d)),
-            "quoted_norm_pct": 100.0 * nfrac if np.isfinite(nfrac) else np.nan,
+            "dataset": dataset,
+            "dataset_label": DATASET_LABELS[dataset],
+            "N_points": int(
+                np.sum(point_table["dataset"] == dataset)
+            ),
+            "quoted_norm_pct": (
+                100.0 * norm_frac
+                if np.isfinite(norm_frac)
+                else np.nan
+            ),
             "normalization_constraint": (
-                "free" if d in GLOBAL_NORM_FREE_DATASETS else "Gaussian"
+                "free"
+                if dataset in GLOBAL_NORM_FREE_DATASETS
+                else "Gaussian"
             ),
             "normalization_eta": eta,
             "beta_norm": beta_norm,
             "global_normalization_correction": math.exp(-eta),
-            "global_normalization_correction_pct": 100.0 * (math.exp(-eta) - 1.0),
+            "global_normalization_correction_pct": (
+                100.0 * (math.exp(-eta) - 1.0)
+            ),
         })
     #endfor
+
     dataset_table = pd.DataFrame(dataset_rows)
 
-    nuisance_table = pd.DataFrame([
-        {
-            "scenario": scenario,
-            "nuisance": "pass2_current_scale",
-            "beta_sigma": beta_cur,
-            "enabled": bool(include_pass2_correlated_scale),
-        },
-        {
-            "scenario": scenario,
-            "nuisance": "pass2_run_period_scale",
-            "beta_sigma": beta_per,
-            "enabled": bool(include_pass2_correlated_scale),
-        },
-    ])
+    nuisance_table = pd.DataFrame([{
+        "scenario": scenario,
+        "nuisance": "pass2_correlated_scale",
+        "beta_sigma": beta_corr,
+        "enabled": bool(include_pass2_correlated_scale),
+    }])
 
     metrics = {
         "scenario": scenario,
-        "include_pass2_correlated_scale": bool(include_pass2_correlated_scale),
+        "include_pass2_correlated_scale": bool(
+            include_pass2_correlated_scale
+        ),
         "N_data": int(n_data),
-        "N_anchors": int(n_anchor),
+        "N_anchors": int(len(anchors)),
         "N_datasets": int(len(datasets)),
         "N_priors": int(n_prior),
         "matrix_rank": int(rank),
         "chi2_data": chi2_data,
         "chi2_prior": chi2_prior,
         "chi2_total": chi2_total,
-        "ndf": ndf,
-        "chi2_per_ndf": chi2_total / ndf if ndf > 0 else np.nan,
-        "beta_pass2_current": beta_cur,
-        "beta_pass2_period": beta_per,
+        "ndf": int(ndf),
+        "chi2_per_ndf": (
+            chi2_total / ndf
+            if ndf > 0
+            else np.nan
+        ),
+        "beta_pass2_corr_scale": beta_corr,
     }
-    return dataset_table, nuisance_table, point_table, metrics
+
+    return (
+        dataset_table,
+        nuisance_table,
+        point_table,
+        metrics,
+    )
 #enddef
 
-
 def run_pass2_anchor_nuisance_scenarios(matches: pd.DataFrame):
-    """Run the pass-2 comparison scenarios requested for the analysis note."""
+    """
+    Run pass-2 consistency scenarios.
+
+    The key comparison is:
+      * norm_only_nominal:
+          experiment-wide normalizations only;
+      * full_corr_nominal:
+          same normalization treatment plus ONE pass-2 correlated-scale
+          nuisance using the finalized bin-dependent response.
+
+    Saylor diagnostics mirror the established external-world study.
+    """
     specs = [
-        ("norm_only_nominal", False, (), None),
-        ("full_corr_nominal", True, (), None),
-        ("full_corr_saylor_tmin_0p343", True, (), SAYLOR_TMIN_DIAGNOSTIC_GEV2),
-        ("full_corr_without_saylor", True, ("saylor2018",), None),
+        (
+            "norm_only_nominal",
+            False,
+            (),
+            None,
+        ),
+        (
+            "full_corr_nominal",
+            True,
+            (),
+            None,
+        ),
+        (
+            "full_corr_saylor_tmin_0p343",
+            True,
+            (),
+            SAYLOR_TMIN_DIAGNOSTIC_GEV2,
+        ),
+        (
+            "full_corr_without_saylor",
+            True,
+            ("saylor2018",),
+            None,
+        ),
     ]
 
-    ds_all, nui_all, pt_all, met_all = [], [], [], []
-    for i, (scenario, full_corr, excluded, tmin) in enumerate(specs, start=1):
+    ds_all = []
+    nuisance_all = []
+    point_all = []
+    metrics_all = []
+
+    for i, (
+            scenario,
+            include_corr,
+            excluded,
+            tmin) in enumerate(specs, start=1):
+
         print(
             f"[PASS2 FIT] scenario {i}/{len(specs)}: {scenario}",
             flush=True,
         )
-        ds, nui, pt, met = fit_pass2_anchor_nuisances(
+
+        ds, nuisance, points, metrics = fit_pass2_anchor_nuisances(
             matches,
             scenario=scenario,
-            include_pass2_correlated_scale=full_corr,
+            include_pass2_correlated_scale=include_corr,
             exclude_datasets=excluded,
             saylor_tmin=tmin,
         )
+
         if not ds.empty:
             ds_all.append(ds)
         #endif
-        if not nui.empty:
-            nui_all.append(nui)
+        if not nuisance.empty:
+            nuisance_all.append(nuisance)
         #endif
-        if not pt.empty:
-            pt_all.append(pt)
+        if not points.empty:
+            point_all.append(points)
         #endif
-        if met:
-            met["excluded_datasets"] = ",".join(excluded)
-            met["saylor_tmin_GeV2"] = float(tmin) if tmin is not None else np.nan
-            met_all.append(met)
+
+        if metrics:
+            metrics["excluded_datasets"] = ",".join(excluded)
+            metrics["saylor_tmin_GeV2"] = (
+                float(tmin)
+                if tmin is not None
+                else np.nan
+            )
+            metrics_all.append(metrics)
+
             print(
-                f"[PASS2 FIT] {scenario}: chi2/ndf={met['chi2_per_ndf']:.4f}, "
-                f"beta_current={met['beta_pass2_current']:+.3f}, "
-                f"beta_period={met['beta_pass2_period']:+.3f}",
+                f"[PASS2 FIT] {scenario}: "
+                f"chi2/ndf={metrics['chi2_per_ndf']:.4f}, "
+                f"beta_corr={metrics['beta_pass2_corr_scale']:+.3f}",
                 flush=True,
             )
         #endif
     #endfor
 
     return (
-        pd.concat(ds_all, ignore_index=True) if ds_all else pd.DataFrame(),
-        pd.concat(nui_all, ignore_index=True) if nui_all else pd.DataFrame(),
-        pd.concat(pt_all, ignore_index=True) if pt_all else pd.DataFrame(),
-        pd.DataFrame(met_all),
+        pd.concat(ds_all, ignore_index=True)
+        if ds_all else pd.DataFrame(),
+        pd.concat(nuisance_all, ignore_index=True)
+        if nuisance_all else pd.DataFrame(),
+        pd.concat(point_all, ignore_index=True)
+        if point_all else pd.DataFrame(),
+        pd.DataFrame(metrics_all),
     )
 #enddef
-
 
 def build_complete_pass2_anchor_legend(
         matches: pd.DataFrame,
@@ -3480,14 +3677,13 @@ def plot_pass2_anchor_world_panels(
                 metric_text = (
                     rf"  Global $\chi^2/\mathrm{{ndf}}="
                     f"{metrics.get('chi2_per_ndf', np.nan):.2f}$; "
-                    rf"$\beta_{{current}}={metrics.get('beta_pass2_current',0):+.2f}$, "
-                    rf"$\beta_{{period}}={metrics.get('beta_pass2_period',0):+.2f}$."
+                    rf"$\beta_{{corr}}={metrics.get('beta_pass2_corr_scale',0):+.2f}$."
                 )
             #endif
             subtitle = (
                 "Experiment-wide normalization nuisances are fitted globally; "
-                "full-correlation scenarios also fit independent pass-2 current "
-                "and run-period kinematic scale nuisances."
+                "full-correlation scenarios also fit one publication-level "
+                "pass-2 kinematic correlated-scale nuisance."
                 + metric_text
             )
         #endif
