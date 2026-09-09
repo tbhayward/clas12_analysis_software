@@ -1,34 +1,31 @@
-#!/usr/bin/env python3
 """
 Compare published unpolarized proton DVCS/BH cross-section measurements.
 
 This is the standalone analysis driver for the external-data/model-comparison
 chapter of the CLAS12 RGA pass-2 DVCS analysis note.  It deliberately does NOT
-load the pass-2 result.  The first objective is to establish the mutual
+load the pass-2 result yet.  The first objective is to establish the mutual
 consistency of the published world datasets before the new pass-2 measurement
 is introduced.
 
 Published datasets included
 ---------------------------
-  * CLAS6  Jo et al.      2015
-  * Hall A Defurne et al. 2015
-  * Hall A Defurne et al. 2017
-  * CLAS6  Saylor et al.  2018
-  * Hall A Georges et al. 2022
-  * CLAS12 Lee et al.     2026 (pass-1)
+  * CLAS6  Jo et al.       2015
+  * Hall A Defurne et al.  2015
+  * Hall A Defurne et al.  2017
+  * CLAS6  Saylor et al.   2018
+  * Hall A Georges et al.  2022
+  * CLAS12 Lee et al.      2026 (pass-1)
 
-Models used
------------
+Models used in this stage
+-------------------------
   * KM15, evaluated with Gepard.
-  * GK16, evaluated with the existing PARTONS driver
-        evaluate_bh_model_selection.py
-    using GPDGK16 + DVCSCFFStandard(LO) + DVCSProcessGV08.
-  * Pure Bethe-Heitler (BH), evaluated through the same Gepard KM15 machinery;
-    only the elastic BH term is retained.
+  * Pure Bethe-Heitler (BH), evaluated through the same Gepard machinery while
+    retaining only the elastic BH term.
 
-VGG99 is intentionally not used in any scientific comparison produced by this
-script.  The shared PARTONS driver currently also evaluates VGG99 internally,
-but those columns are ignored here.
+KM15 is the sole model-assisted transport prescription in this world-data
+comparison stage.  PARTONS/GK16 and VGG are intentionally not run here.
+GK16 can still be evaluated later for the direct pass-2 model-comparison
+section, where no large world-data transport grid is required.
 
 Analysis philosophy
 -------------------
@@ -37,19 +34,21 @@ Analysis philosophy
 2. Treat published correlated normalization uncertainties as one nuisance per
    experiment rather than adding them independently to every point.
 3. Match different experiments only when their measured kinematics are nearby.
-4. For a matched A -> B comparison, transport A to B's exact kinematics with a
-   LOCAL model ratio:
+4. For a matched A -> B comparison, transport A to B's exact kinematics with
+   the local KM15 ratio
 
-       sigma_A_to_B^M = sigma_A * sigma_M(k_B) / sigma_M(k_A).
+       sigma_A_to_B = sigma_A * sigma_KM15(k_B) / sigma_KM15(k_A).
 
 5. For common-energy presentation, transport each point to Ebeam=10.6 GeV at
    fixed (xB,Q2,t,phi):
 
-       sigma_10p6^M = sigma_data * sigma_M(10.6) / sigma_M(E_native).
+       sigma_10p6 = sigma_data
+                    * sigma_KM15(10.6) / sigma_KM15(E_native).
 
-6. KM15 is nominal.  The absolute KM15-vs-GK16 difference in the transported
-   cross section is retained as an explicit transport-model uncertainty.
-   NO point is removed merely because this uncertainty is large.
+6. Quantitative summary tables are retained, but the primary presentation
+   products are multi-panel cross-section overlays.  In those panels measured
+   cross sections are shown directly; best-fit normalization shifts are NOT
+   applied to the displayed central values.
 
 Uncertainty conventions used here
 ---------------------------------
@@ -70,9 +69,8 @@ CLAS6 Saylor 2018:
     published total systematic by the validated loader.
 
 Hall A Georges 2022:
-    Published symmetricized pointwise systematic is retained, and for this
-    comparison study a pragmatic 5% correlated normalization prior is allowed,
-    as requested for the analysis-note world-data comparison.
+    Published symmetrized pointwise systematic is retained, and for this
+    comparison study a pragmatic 5% correlated normalization prior is allowed.
 
 CLAS12 Lee 2026:
     31% correlated normalization.  The validated authoritative E214M1 loader
@@ -85,10 +83,6 @@ From dvcs_cross_section/external_scripts:
 
   python compare_world_dvcs_cross_sections.py --workers 8
 
-This study uses KM15 as the sole model-assisted transport prescription for
-mapping nearby measurements to one another and for presentation at 10.6 GeV.
-No PARTONS/GK16 transport calculation is performed in this script.
-
 The script is intended to live beside extract_emff_from_dvcs_bh.py in
 external_scripts/.
 """
@@ -98,7 +92,6 @@ from __future__ import annotations
 import argparse
 import importlib.util
 import math
-import subprocess
 import sys
 import warnings
 from dataclasses import dataclass
@@ -524,124 +517,6 @@ def finalize_km15_columns(df: pd.DataFrame) -> pd.DataFrame:
 
 
 # =============================================================================
-# PARTONS/GK16 bridge
-# =============================================================================
-
-
-def write_partons_kinematics(world: pd.DataFrame, path: Path, target_ebeam: float) -> pd.DataFrame:
-    """
-    Export TWO rows per experimental point for the existing PARTONS driver:
-    native E and target E.  This is enough to calculate the exact GK16
-    transport factor without changing the PARTONS machinery.
-    """
-    rows = []
-    source_counter: Dict[str, int] = {k: 0 for k in DATASET_ORDER}
-
-    for row in world.itertuples(index=False):
-        key = str(row.dataset)
-        pkey = PARTONS_DATASET_KEYS[key]
-
-        for state, ebeam, km15_ep, km15_bh in [
-            ("native", float(row.ebeam), float(row.km15_native), float(row.bh_native)),
-            ("target", float(target_ebeam), float(row.km15_target), float(row.bh_target)),
-        ]:
-            source_row = source_counter[key]
-            source_counter[key] += 1
-            rows.append({
-                "point_id": f"{row.point_id}:{state}",
-                "dataset": pkey,
-                "source_row": source_row,
-                "xB": float(row.xB),
-                "Q2": float(row.Q2),
-                "t_abs": float(row.t_abs),
-                "phi_deg": float(row.phi_deg),
-                "ebeam": float(ebeam),
-                "km15_ep": float(km15_ep),
-                "km15_bh": float(km15_bh),
-                "km15_dvcs": np.nan,
-                "km15_int": np.nan,
-            })
-        #endfor
-    #endfor
-
-    table = pd.DataFrame(rows)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    table.to_csv(path, index=False)
-    print(f"[PARTONS] exported {len(table):,} native/target kinematic rows -> {path}")
-    return table
-#enddef
-
-
-def run_partons_driver(args, kinematics_path: Path, partons_outdir: Path) -> None:
-    evaluator = resolve_existing(
-        Path(args.partons_evaluator),
-        [args.script_dir / "evaluate_bh_model_selection.py"],
-    )
-
-    cmd = [
-        sys.executable,
-        str(evaluator),
-        "--kinematics-cache", str(kinematics_path),
-        "--outdir", str(partons_outdir),
-        "--run-partons",
-        "--workers", str(args.partons_workers),
-        "--chunk-size", str(args.partons_chunk_size),
-    ]
-    if args.force_partons:
-        cmd.append("--force-partons")
-    #endif
-
-    print("[PARTONS] invoking existing validated evaluator:")
-    print("  " + " ".join(cmd))
-    subprocess.run(cmd, check=True, cwd=str(args.script_dir))
-#enddef
-
-
-def merge_gk16_predictions(
-        world: pd.DataFrame,
-        partons_table_path: Path) -> Tuple[pd.DataFrame, bool]:
-    """Merge native and target GK16 predictions by deterministic point_id."""
-    if not partons_table_path.exists():
-        print("[GK16] completed PARTONS table not present; KM15/BH-only outputs will be written")
-        return world.copy(), False
-    #endif
-
-    p = pd.read_csv(partons_table_path)
-    required = {"point_id", "partons_ep_gk16"}
-    missing = sorted(required.difference(p.columns))
-    if missing:
-        raise KeyError(
-            f"GK16 table {partons_table_path} is missing columns: {missing}"
-        )
-    #endif
-
-    pred = dict(zip(p["point_id"].astype(str), pd.to_numeric(p["partons_ep_gk16"], errors="coerce")))
-    out = world.copy()
-    out["gk16_native"] = [pred.get(f"{pid}:native", np.nan) for pid in out["point_id"]]
-    out["gk16_target"] = [pred.get(f"{pid}:target", np.nan) for pid in out["point_id"]]
-
-    good = finite_positive(out["gk16_native"]) & finite_positive(out["gk16_target"])
-    if not np.all(good):
-        warnings.warn(
-            f"GK16 predictions missing/nonpositive for {int((~good).sum())} of {len(out)} points"
-        )
-    #endif
-
-    out["gk16_transport_factor"] = out["gk16_target"] / out["gk16_native"]
-    out["xs_10p6_gk16"] = out["xs"] * out["gk16_transport_factor"]
-
-    # Nominal common-energy value remains KM15.  The full model excursion from
-    # KM15 to GK16 is retained as an explicit transport uncertainty.
-    out["transport_model_unc_abs"] = np.abs(out["xs_10p6_gk16"] - out["xs_10p6_km15"])
-    out["transport_model_unc_frac"] = out["transport_model_unc_abs"] / np.abs(out["xs_10p6_km15"])
-    out["data_over_gk16"] = out["xs"] / out["gk16_native"]
-
-    print(f"[GK16] merged completed predictions from {partons_table_path}")
-    return out, True
-#enddef
-
-
-# =============================================================================
 # Dataset summaries and normalization-aware model scores
 # =============================================================================
 
@@ -954,9 +829,9 @@ def build_pairwise_comparisons(
     """
     Match every dataset pair and transport A to B using local model ratios.
 
-    KM15 is nominal.  If GK16 is available, |A_to_B(KM15)-A_to_B(GK16)| is
-    added as a separate transport-model uncertainty and included in the pull
-    denominator for the summary consistency score.
+    KM15 is the sole transport prescription in this stage.  The
+    transport-model uncertainty column is therefore zero by construction and
+    is retained only for backward-compatible table structure.
     """
     all_matches = []
     summaries = []
@@ -1028,8 +903,18 @@ def build_pairwise_comparisons(
                     "phi_a": float(ra["phi_deg"]), "phi_b": float(rb["phi_deg"]),
                     "ebeam_a": float(ra["ebeam"]), "ebeam_b": float(rb["ebeam"]),
                     "xs_a": float(ra["xs"]), "xs_b": float(rb["xs"]),
+                    "stat_b": float(rb["stat_abs"]),
+                    "ptp_sys_b": float(rb["ptp_sys_abs"]),
                     "point_unc_a": float(ra["point_unc_abs"]),
                     "point_unc_b": float(rb["point_unc_abs"]),
+                    "km15_a": float(ra["km15_native"]),
+                    "km15_b": float(rb["km15_native"]),
+                    "bh_b": float(rb["bh_native"]),
+                    "published_bin_b": (
+                        float(rb["published_bin"])
+                        if "published_bin" in rb.index and np.isfinite(rb["published_bin"])
+                        else np.nan
+                    ),
                     "km15_local_transport_factor": c_km15,
                     "xs_a_to_b_km15": a_to_b_km15,
                     "stat_a_to_b_km15": a_stat,
@@ -1116,6 +1001,29 @@ NATIVE_RATIO_YLIMS = {
 }
 PAIRWISE_PULL_YLIM = (-5.5, 5.5)
 
+# Cross-section presentation panels.  The 3x4 layout matches the standard
+# analysis-note figure style used elsewhere in this analysis.
+PANEL_NROWS = 3
+PANEL_NCOLS = 4
+PANEL_PER_PAGE = PANEL_NROWS * PANEL_NCOLS
+PANEL_MIN_MATCHES = 4
+PANEL_MAX_PAGES_PER_PAIR = 2
+PANEL_MAX_WORLD_ANCHOR_PAGES = 2
+
+# Nearby points in the reference (B) dataset are grouped into one phi panel
+# when their hadronic kinematics are within these tighter presentation-scale
+# windows.  These are deliberately much tighter than the cross-experiment
+# matching windows and do not affect the quantitative matching itself.
+PANEL_CELL_DXB = 0.012
+PANEL_CELL_DQ2 = 0.20   # GeV^2
+PANEL_CELL_DT = 0.040   # GeV^2
+
+# A handful of published points have enormous quoted uncertainties.  They are
+# retained in all quantitative calculations.  For presentation only, points
+# with point_unc/xs above this threshold are drawn as open markers without an
+# error bar so one pathological uncertainty cannot cover an entire panel.
+PLOT_MAX_REL_POINT_UNC = 1.0
+
 
 def _annotate_clipped_y(ax, values: pd.Series, ylow: float, yhigh: float) -> None:
     arr = pd.to_numeric(values, errors="coerce").to_numpy(float)
@@ -1161,11 +1069,38 @@ def plot_native_model_ratios(world: pd.DataFrame, outdir: Path, have_gk16: bool)
                         "gk16_native" if model_label == "GK16" else "bh_native"
                     )
                 ]
-                ax.errorbar(
-                    d[variable], d[ratio_col], yerr=relerr,
-                    fmt="o", ms=2.8, lw=0.7, capsize=0,
-                    alpha=0.60, label=DATASET_LABELS[key],
-                )
+                # Keep pathological published uncertainties in the analysis
+                # but suppress their gigantic bars in this summary plot.
+                ratio_values = d[ratio_col].to_numpy(float)
+                relerr_values = np.asarray(relerr, dtype=float)
+                rel_to_data = d["point_unc_abs"].to_numpy(float) / d["xs"].to_numpy(float)
+                normal = np.isfinite(rel_to_data) & (rel_to_data <= PLOT_MAX_REL_POINT_UNC)
+                extreme = ~normal
+
+                if np.any(normal):
+                    ax.errorbar(
+                        d.loc[normal, variable], ratio_values[normal],
+                        yerr=relerr_values[normal],
+                        fmt="o", ms=2.8, lw=0.7, capsize=0,
+                        alpha=0.60, label=DATASET_LABELS[key],
+                    )
+                elif np.any(extreme):
+                    ax.plot(
+                        d.loc[extreme, variable], ratio_values[extreme],
+                        linestyle="none", marker="o", ms=2.8,
+                        markerfacecolor="none", alpha=0.60,
+                        label=DATASET_LABELS[key],
+                    )
+                #endif
+
+                if np.any(extreme) and np.any(normal):
+                    ax.plot(
+                        d.loc[extreme, variable], ratio_values[extreme],
+                        linestyle="none", marker="o", ms=3.0,
+                        markerfacecolor="none", alpha=0.60,
+                        label="_nolegend_",
+                    )
+                #endif
             #endfor
             ax.axhline(1.0, lw=1.1, linestyle="--")
             ylow, yhigh = NATIVE_RATIO_YLIMS[model_label]
@@ -1301,6 +1236,720 @@ def plot_pairwise_pulls(matches: pd.DataFrame, outdir: Path) -> None:
 #enddef
 
 
+
+def _draw_measurement_series(
+        ax,
+        x: np.ndarray,
+        y: np.ndarray,
+        yerr: np.ndarray,
+        *,
+        label: str,
+        marker: str = "o",
+        xoffset: float = 0.0,
+        markersize: float = 4.2,
+        alpha: float = 0.90):
+    """
+    Draw one measured cross-section series without allowing pathological
+    published uncertainties to dominate the panel visually.
+
+    Points with point_unc/xs <= PLOT_MAX_REL_POINT_UNC are drawn with their full
+    pointwise (stat ⊕ point-to-point systematic) error bar.  Larger-uncertainty
+    points remain visible as open markers but their error bar is suppressed for
+    presentation only.  No point is removed from any fit or CSV.
+    """
+    x = np.asarray(x, dtype=float) + float(xoffset)
+    y = np.asarray(y, dtype=float)
+    yerr = np.asarray(yerr, dtype=float)
+
+    good = np.isfinite(x) & np.isfinite(y) & np.isfinite(yerr) & (y > 0.0) & (yerr >= 0.0)
+    if not np.any(good):
+        return None
+    #endif
+
+    x = x[good]
+    y = y[good]
+    yerr = yerr[good]
+    rel = yerr / y
+    normal = np.isfinite(rel) & (rel <= PLOT_MAX_REL_POINT_UNC)
+    extreme = ~normal
+
+    handle = None
+    if np.any(normal):
+        handle = ax.errorbar(
+            x[normal], y[normal], yerr=yerr[normal],
+            fmt=marker, ms=markersize, lw=0.85, capsize=2.0,
+            alpha=alpha, label=label,
+        )
+    #endif
+
+    if np.any(extreme):
+        open_handle = ax.plot(
+            x[extreme], y[extreme],
+            linestyle="none", marker=marker, ms=markersize + 0.4,
+            markerfacecolor="none", markeredgewidth=1.0,
+            alpha=alpha,
+            label=(label if handle is None else "_nolegend_"),
+        )[0]
+        if handle is None:
+            handle = open_handle
+        #endif
+    #endif
+
+    return handle
+#enddef
+
+
+def _robust_positive_log_limits(values: Sequence[np.ndarray]) -> Tuple[float, float]:
+    """
+    Choose stable log-scale limits from central values/model curves only.
+
+    Error bars intentionally do not enter this calculation.  This prevents a
+    single gigantic published uncertainty from setting the y-axis range.
+    """
+    arrays = []
+    for value in values:
+        arr = np.asarray(value, dtype=float).ravel()
+        arr = arr[np.isfinite(arr) & (arr > 0.0)]
+        if arr.size:
+            arrays.append(arr)
+        #endif
+    #endfor
+
+    if not arrays:
+        return 1.0e-6, 1.0
+    #endif
+
+    v = np.concatenate(arrays)
+    if len(v) >= 10:
+        vlo = float(np.nanpercentile(v, 2.0))
+        vhi = float(np.nanpercentile(v, 98.0))
+        # Do not crop ordinary central values unless a truly wild outlier is
+        # present; percentile limits are expanded generously below.
+        positive_min = float(np.nanmin(v))
+        positive_max = float(np.nanmax(v))
+        if positive_min > 0.25 * vlo:
+            vlo = positive_min
+        #endif
+        if positive_max < 4.0 * vhi:
+            vhi = positive_max
+        #endif
+    else:
+        vlo = float(np.nanmin(v))
+        vhi = float(np.nanmax(v))
+    #endif
+
+    vlo = max(vlo * 0.45, 1.0e-12)
+    vhi = max(vhi * 2.2, vlo * 10.0)
+    return vlo, vhi
+#enddef
+
+
+def _cluster_reference_kinematic_cells(pair: pd.DataFrame) -> pd.DataFrame:
+    """
+    Assign matched rows to reference-dataset (B) hadronic-kinematic cells.
+
+    If B is Lee 2026 and an authoritative published bin index is available, that
+    index is used directly.  Otherwise rows are greedily clustered in
+    (xB,Q2,|t|) using presentation-scale windows that are much tighter than the
+    cross-experiment matching cuts.
+    """
+    if pair.empty:
+        out = pair.copy()
+        out["panel_group"] = pd.Series(dtype=str)
+        return out
+    #endif
+
+    out = pair.copy().reset_index(drop=True)
+
+    if "published_bin_b" in out.columns:
+        finite_bin = np.isfinite(pd.to_numeric(out["published_bin_b"], errors="coerce"))
+        if int(finite_bin.sum()) == len(out):
+            out["panel_group"] = [
+                f"bin_{int(round(v))}"
+                for v in out["published_bin_b"].to_numpy(float)
+            ]
+            return out
+        #endif
+    #endif
+
+    centers: List[Dict[str, object]] = []
+    group_ids: List[int] = []
+
+    order = np.lexsort((
+        out["t_abs_b"].to_numpy(float),
+        out["Q2_b"].to_numpy(float),
+        out["xB_b"].to_numpy(float),
+    ))
+
+    assigned = np.full(len(out), -1, dtype=int)
+
+    for idx in order:
+        xb = float(out.at[idx, "xB_b"])
+        q2 = float(out.at[idx, "Q2_b"])
+        tt = float(out.at[idx, "t_abs_b"])
+
+        best_group = None
+        best_score = np.inf
+        for ig, center in enumerate(centers):
+            dx = abs(xb - float(center["xB"]))
+            dq = abs(q2 - float(center["Q2"]))
+            dt = abs(tt - float(center["t_abs"]))
+            if dx <= PANEL_CELL_DXB and dq <= PANEL_CELL_DQ2 and dt <= PANEL_CELL_DT:
+                score = math.sqrt(
+                    (dx / PANEL_CELL_DXB)**2
+                    + (dq / PANEL_CELL_DQ2)**2
+                    + (dt / PANEL_CELL_DT)**2
+                )
+                if score < best_score:
+                    best_group = ig
+                    best_score = score
+                #endif
+            #endif
+        #endfor
+
+        if best_group is None:
+            centers.append({
+                "xB": xb,
+                "Q2": q2,
+                "t_abs": tt,
+                "members": [int(idx)],
+            })
+            assigned[idx] = len(centers) - 1
+        else:
+            members = list(centers[best_group]["members"])
+            members.append(int(idx))
+            centers[best_group]["members"] = members
+            centers[best_group]["xB"] = float(np.median(out.loc[members, "xB_b"]))
+            centers[best_group]["Q2"] = float(np.median(out.loc[members, "Q2_b"]))
+            centers[best_group]["t_abs"] = float(np.median(out.loc[members, "t_abs_b"]))
+            assigned[idx] = best_group
+        #endif
+    #endfor
+
+    out["panel_group"] = [f"cell_{g:04d}" for g in assigned]
+    return out
+#enddef
+
+
+def make_pairwise_panel_summary(matches: pd.DataFrame) -> pd.DataFrame:
+    """Summarize the candidate phi-dependent presentation panels."""
+    if matches.empty:
+        return pd.DataFrame()
+    #endif
+
+    rows = []
+    for (ka, kb), pair0 in matches.groupby(["dataset_a", "dataset_b"], sort=False):
+        pair = _cluster_reference_kinematic_cells(pair0)
+        for group, d in pair.groupby("panel_group", sort=False):
+            if len(d) < PANEL_MIN_MATCHES:
+                continue
+            #endif
+
+            phi = np.sort(np.mod(d["phi_b"].to_numpy(float), 360.0))
+            if len(phi) >= 2:
+                gaps = np.diff(np.r_[phi, phi[0] + 360.0])
+                phi_coverage = 360.0 - float(np.max(gaps))
+            else:
+                phi_coverage = 0.0
+            #endif
+
+            rows.append({
+                "dataset_a": ka,
+                "dataset_b": kb,
+                "panel_group": group,
+                "N_matches": int(len(d)),
+                "xB_ref": float(np.median(d["xB_b"])),
+                "Q2_ref": float(np.median(d["Q2_b"])),
+                "t_abs_ref": float(np.median(d["t_abs_b"])),
+                "ebeam_ref": float(np.median(d["ebeam_b"])),
+                "phi_coverage_deg": phi_coverage,
+                "raw_pull_rms": float(np.sqrt(np.nanmean(d["raw_pull"]**2))),
+                "median_match_score": float(np.nanmedian(d["match_score"])),
+                "panel_rank_score": float(len(d) + phi_coverage / 360.0),
+            })
+        #endfor
+    #endfor
+
+    return pd.DataFrame(rows)
+#enddef
+
+
+def _plot_one_pair_cross_section_panel(
+        ax,
+        d: pd.DataFrame,
+        dataset_a: str,
+        dataset_b: str,
+        *,
+        show_legend_labels: bool = True) -> None:
+    """Draw one phi-dependent A->B matched cross-section panel."""
+    d = d.sort_values("phi_b").copy()
+
+    phi = d["phi_b"].to_numpy(float)
+    # Offset the two measured series slightly only for visual separation.  Both
+    # measurements have already been transported/evaluated at phi_B.
+    offset = 1.4
+
+    norm_a = 100.0 * float(d["norm_frac_a"].iloc[0])
+    norm_b = 100.0 * float(d["norm_frac_b"].iloc[0])
+
+    label_a = (
+        f"{DATASET_LABELS[dataset_a]} → reference "
+        f"({norm_a:.1f}% norm)"
+        if show_legend_labels else "_nolegend_"
+    )
+    label_b = (
+        f"{DATASET_LABELS[dataset_b]} "
+        f"({norm_b:.1f}% norm)"
+        if show_legend_labels else "_nolegend_"
+    )
+
+    _draw_measurement_series(
+        ax,
+        phi,
+        d["xs_a_to_b_km15"].to_numpy(float),
+        d["point_unc_a_to_b_km15"].to_numpy(float),
+        label=label_a,
+        marker="o",
+        xoffset=-offset,
+        markersize=4.2,
+    )
+    _draw_measurement_series(
+        ax,
+        phi,
+        d["xs_b"].to_numpy(float),
+        d["point_unc_b"].to_numpy(float),
+        label=label_b,
+        marker="s",
+        xoffset=+offset,
+        markersize=4.0,
+    )
+
+    model = d.sort_values("phi_b")
+    ax.plot(
+        model["phi_b"], model["bh_b"],
+        lw=1.25, label=("BH" if show_legend_labels else "_nolegend_"),
+    )
+    ax.plot(
+        model["phi_b"], model["km15_b"],
+        lw=1.35, linestyle="--",
+        label=("KM15" if show_legend_labels else "_nolegend_"),
+    )
+
+    ylo, yhi = _robust_positive_log_limits([
+        d["xs_a_to_b_km15"].to_numpy(float),
+        d["xs_b"].to_numpy(float),
+        d["km15_b"].to_numpy(float),
+        d["bh_b"].to_numpy(float),
+    ])
+    ax.set_yscale("log")
+    ax.set_ylim(ylo, yhi)
+    ax.set_xlim(0.0, 360.0)
+    ax.set_xticks([0, 90, 180, 270, 360])
+    ax.grid(alpha=0.18)
+
+    xb = float(np.median(d["xB_b"]))
+    q2 = float(np.median(d["Q2_b"]))
+    tt = float(np.median(d["t_abs_b"]))
+    ax.set_title(
+        rf"$x_B={xb:.3f}$, $Q^2={q2:.2f}$, $|t|={tt:.3f}$",
+        fontsize=9.0,
+    )
+#enddef
+
+
+def plot_pairwise_cross_section_panels(
+        matches: pd.DataFrame,
+        panel_summary: pd.DataFrame,
+        outdir: Path,
+        max_pages_per_pair: int = PANEL_MAX_PAGES_PER_PAIR) -> None:
+    """
+    Produce note-style 3x4 phi-dependent cross-section canvases for every
+    dataset pair with sufficient matched coverage.
+
+    Dataset A is shown after point-by-point KM15 transport to the exact
+    kinematics of dataset B.  Dataset B is shown at its measured kinematics.
+    BH and KM15 are evaluated at B.  No fitted normalization shifts are applied
+    to the displayed data.
+    """
+    if matches.empty or panel_summary.empty:
+        return
+    #endif
+
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    for (ka, kb), summary_pair in panel_summary.groupby(["dataset_a", "dataset_b"], sort=False):
+        pair = matches.loc[
+            (matches["dataset_a"] == ka) & (matches["dataset_b"] == kb)
+        ].copy()
+        pair = _cluster_reference_kinematic_cells(pair)
+
+        ranked = summary_pair.sort_values(
+            ["panel_rank_score", "N_matches", "phi_coverage_deg"],
+            ascending=False,
+        ).reset_index(drop=True)
+
+        max_panels = min(len(ranked), int(max_pages_per_pair) * PANEL_PER_PAGE)
+        ranked = ranked.iloc[:max_panels].copy()
+        if ranked.empty:
+            continue
+        #endif
+
+        npages = int(math.ceil(len(ranked) / PANEL_PER_PAGE))
+        for ipage in range(npages):
+            page = ranked.iloc[
+                ipage * PANEL_PER_PAGE:(ipage + 1) * PANEL_PER_PAGE
+            ]
+            fig, axes = plt.subplots(
+                PANEL_NROWS, PANEL_NCOLS,
+                figsize=(15.8, 10.8),
+                squeeze=False,
+            )
+
+            for iax, ax in enumerate(axes.ravel()):
+                if iax >= len(page):
+                    ax.axis("off")
+                    continue
+                #endif
+
+                group = str(page.iloc[iax]["panel_group"])
+                d = pair.loc[pair["panel_group"] == group].copy()
+                _plot_one_pair_cross_section_panel(
+                    ax, d, ka, kb,
+                    show_legend_labels=(iax == 0),
+                )
+
+                row = iax // PANEL_NCOLS
+                col = iax % PANEL_NCOLS
+                if row == PANEL_NROWS - 1:
+                    ax.set_xlabel(r"$\phi$ (deg)")
+                #endif
+                if col == 0:
+                    ax.set_ylabel(
+                        r"$d^4\sigma/(dQ^2\,dx_B\,d|t|\,d\phi)$ (pb/GeV$^4$)",
+                        fontsize=8.5,
+                    )
+                #endif
+            #endfor
+
+            handles, labels = axes.ravel()[0].get_legend_handles_labels()
+            fig.suptitle(
+                f"{DATASET_LABELS[ka]} vs {DATASET_LABELS[kb]}: "
+                "matched unpolarized cross sections",
+                y=0.988, fontsize=14,
+            )
+            if handles:
+                fig.legend(
+                    handles, labels,
+                    loc="upper center",
+                    bbox_to_anchor=(0.5, 0.955),
+                    ncol=2,
+                    frameon=False,
+                    fontsize=8.5,
+                )
+            #endif
+            fig.text(
+                0.5, 0.925,
+                (
+                    f"{DATASET_LABELS[ka]} transported point-by-point to "
+                    f"{DATASET_LABELS[kb]} kinematics with KM15; "
+                    r"error bars = stat $\oplus$ point-to-point syst.  "
+                    "Open markers have >100% point uncertainty."
+                ),
+                ha="center", va="top", fontsize=8.2,
+            )
+            fig.tight_layout(rect=[0.035, 0.035, 0.995, 0.905])
+
+            fname = (
+                f"pair_{ka}_vs_{kb}_cross_sections_page{ipage + 1:02d}.png"
+            )
+            fig.savefig(outdir / fname, dpi=220)
+            plt.close(fig)
+        #endfor
+    #endfor
+#enddef
+
+
+def make_lee_anchor_panel_summary(matches: pd.DataFrame) -> pd.DataFrame:
+    """
+    Summarize Lee-centered panels containing one or more external measurements
+    transported to the exact CLAS12 pass-1 point kinematics.
+    """
+    lee = matches.loc[matches["dataset_b"] == "lee2026"].copy()
+    if lee.empty:
+        return pd.DataFrame()
+    #endif
+
+    # Lee has an authoritative published bin index.  Fall back to the generic
+    # reference clustering only if that index is unexpectedly unavailable.
+    if "published_bin_b" in lee.columns and np.isfinite(lee["published_bin_b"]).any():
+        lee["anchor_group"] = [
+            (
+                f"bin_{int(round(v))}"
+                if np.isfinite(v) else f"point_{pid}"
+            )
+            for v, pid in zip(
+                lee["published_bin_b"].to_numpy(float),
+                lee["point_id_b"].astype(str),
+            )
+        ]
+    else:
+        pieces = []
+        for (ka, kb), d in lee.groupby(["dataset_a", "dataset_b"], sort=False):
+            dd = _cluster_reference_kinematic_cells(d)
+            dd["anchor_group"] = dd["panel_group"]
+            pieces.append(dd)
+        #endfor
+        lee = pd.concat(pieces, ignore_index=True)
+    #endif
+
+    rows = []
+    for group, d in lee.groupby("anchor_group", sort=False):
+        unique_lee_points = d.drop_duplicates("point_id_b")
+        n_external = int(d["dataset_a"].nunique())
+        n_external_points = int(len(d))
+        n_lee_points = int(len(unique_lee_points))
+
+        # Require enough phi information to make a meaningful cross-section
+        # shape panel.
+        phi = np.sort(np.mod(unique_lee_points["phi_b"].to_numpy(float), 360.0))
+        if len(phi) < PANEL_MIN_MATCHES:
+            continue
+        #endif
+        gaps = np.diff(np.r_[phi, phi[0] + 360.0])
+        coverage = 360.0 - float(np.max(gaps)) if len(phi) >= 2 else 0.0
+
+        rows.append({
+            "anchor_group": group,
+            "published_bin": (
+                float(np.nanmedian(d["published_bin_b"]))
+                if np.isfinite(d["published_bin_b"]).any() else np.nan
+            ),
+            "N_external_datasets": n_external,
+            "N_external_matches": n_external_points,
+            "N_lee_points": n_lee_points,
+            "xB_ref": float(np.median(d["xB_b"])),
+            "Q2_ref": float(np.median(d["Q2_b"])),
+            "t_abs_ref": float(np.median(d["t_abs_b"])),
+            "phi_coverage_deg": coverage,
+            "datasets": ",".join(sorted(d["dataset_a"].unique())),
+            "panel_rank_score": float(
+                3.0 * n_external + n_lee_points + coverage / 360.0
+            ),
+        })
+    #endfor
+
+    return pd.DataFrame(rows)
+#enddef
+
+
+def plot_lee_anchor_world_panels(
+        matches: pd.DataFrame,
+        panel_summary: pd.DataFrame,
+        outdir: Path,
+        max_pages: int = PANEL_MAX_WORLD_ANCHOR_PAGES) -> None:
+    """
+    Produce multi-dataset world-data overlays centered on CLAS12 Lee 2026 bins.
+
+    This is the closest analogue of the pass-1/pass-2 style figure: Lee is shown
+    once, each older experiment is transported independently to the exact Lee
+    kinematics, and BH/KM15 are overlaid at those Lee kinematics.
+    """
+    if matches.empty or panel_summary.empty:
+        return
+    #endif
+
+    lee = matches.loc[matches["dataset_b"] == "lee2026"].copy()
+    if lee.empty:
+        return
+    #endif
+
+    if "published_bin_b" in lee.columns and np.isfinite(lee["published_bin_b"]).any():
+        lee["anchor_group"] = [
+            (
+                f"bin_{int(round(v))}"
+                if np.isfinite(v) else f"point_{pid}"
+            )
+            for v, pid in zip(
+                lee["published_bin_b"].to_numpy(float),
+                lee["point_id_b"].astype(str),
+            )
+        ]
+    else:
+        return
+    #endif
+
+    ranked = panel_summary.sort_values(
+        ["panel_rank_score", "N_external_datasets", "N_lee_points"],
+        ascending=False,
+    ).head(int(max_pages) * PANEL_PER_PAGE).reset_index(drop=True)
+    if ranked.empty:
+        return
+    #endif
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    npages = int(math.ceil(len(ranked) / PANEL_PER_PAGE))
+
+    # Stable visual offsets for up to five external datasets plus Lee.
+    external_offsets = {
+        "jo2015": -4.0,
+        "defurne2015": -2.5,
+        "defurne2017": -1.0,
+        "saylor2018": +1.0,
+        "georges2022": +2.5,
+    }
+    markers = {
+        "jo2015": "o",
+        "defurne2015": "^",
+        "defurne2017": "v",
+        "saylor2018": "D",
+        "georges2022": "P",
+        "lee2026": "s",
+    }
+
+    for ipage in range(npages):
+        page = ranked.iloc[ipage * PANEL_PER_PAGE:(ipage + 1) * PANEL_PER_PAGE]
+        fig, axes = plt.subplots(
+            PANEL_NROWS, PANEL_NCOLS,
+            figsize=(15.8, 10.8),
+            squeeze=False,
+        )
+
+        for iax, ax in enumerate(axes.ravel()):
+            if iax >= len(page):
+                ax.axis("off")
+                continue
+            #endif
+
+            group = str(page.iloc[iax]["anchor_group"])
+            d = lee.loc[lee["anchor_group"] == group].copy()
+            # Lee appears once for every external pair; deduplicate it.
+            lee_points = d.sort_values("phi_b").drop_duplicates("point_id_b")
+
+            first_panel = (iax == 0)
+            norm_lee = 100.0 * float(lee_points["norm_frac_b"].iloc[0])
+            _draw_measurement_series(
+                ax,
+                lee_points["phi_b"].to_numpy(float),
+                lee_points["xs_b"].to_numpy(float),
+                lee_points["point_unc_b"].to_numpy(float),
+                label=(
+                    f"{DATASET_LABELS['lee2026']} ({norm_lee:.1f}% norm)"
+                    if first_panel else "_nolegend_"
+                ),
+                marker=markers["lee2026"],
+                xoffset=+4.0,
+                markersize=4.2,
+            )
+
+            for ka in DATASET_ORDER:
+                if ka == "lee2026":
+                    continue
+                #endif
+                da = d.loc[d["dataset_a"] == ka].sort_values("phi_b")
+                if da.empty:
+                    continue
+                #endif
+                norm_a = 100.0 * float(da["norm_frac_a"].iloc[0])
+                _draw_measurement_series(
+                    ax,
+                    da["phi_b"].to_numpy(float),
+                    da["xs_a_to_b_km15"].to_numpy(float),
+                    da["point_unc_a_to_b_km15"].to_numpy(float),
+                    label=(
+                        f"{DATASET_LABELS[ka]} ({norm_a:.1f}% norm)"
+                        if first_panel else "_nolegend_"
+                    ),
+                    marker=markers.get(ka, "o"),
+                    xoffset=external_offsets.get(ka, 0.0),
+                    markersize=3.7,
+                    alpha=0.82,
+                )
+            #endfor
+
+            model = lee_points.sort_values("phi_b")
+            ax.plot(
+                model["phi_b"], model["bh_b"], lw=1.20,
+                label=("BH" if first_panel else "_nolegend_"),
+            )
+            ax.plot(
+                model["phi_b"], model["km15_b"], lw=1.30, linestyle="--",
+                label=("KM15" if first_panel else "_nolegend_"),
+            )
+
+            yarrays = [
+                lee_points["xs_b"].to_numpy(float),
+                model["bh_b"].to_numpy(float),
+                model["km15_b"].to_numpy(float),
+            ]
+            for ka, da in d.groupby("dataset_a", sort=False):
+                yarrays.append(da["xs_a_to_b_km15"].to_numpy(float))
+            #endfor
+            ylo, yhi = _robust_positive_log_limits(yarrays)
+            ax.set_yscale("log")
+            ax.set_ylim(ylo, yhi)
+            ax.set_xlim(0.0, 360.0)
+            ax.set_xticks([0, 90, 180, 270, 360])
+            ax.grid(alpha=0.18)
+
+            xb = float(np.median(lee_points["xB_b"]))
+            q2 = float(np.median(lee_points["Q2_b"]))
+            tt = float(np.median(lee_points["t_abs_b"]))
+            bin_text = ""
+            if np.isfinite(page.iloc[iax]["published_bin"]):
+                bin_text = f"bin {int(round(page.iloc[iax]['published_bin']))}: "
+            #endif
+            ax.set_title(
+                bin_text + rf"$x_B={xb:.3f}$, $Q^2={q2:.2f}$, $|t|={tt:.3f}$",
+                fontsize=8.8,
+            )
+
+            row = iax // PANEL_NCOLS
+            col = iax % PANEL_NCOLS
+            if row == PANEL_NROWS - 1:
+                ax.set_xlabel(r"$\phi$ (deg)")
+            #endif
+            if col == 0:
+                ax.set_ylabel(
+                    r"$d^4\sigma/(dQ^2\,dx_B\,d|t|\,d\phi)$ (pb/GeV$^4$)",
+                    fontsize=8.5,
+                )
+            #endif
+        #endfor
+
+        handles, labels = axes.ravel()[0].get_legend_handles_labels()
+        fig.suptitle(
+            "Published world data mapped to CLAS12 pass-1 kinematics",
+            y=0.992, fontsize=14,
+        )
+        if handles:
+            fig.legend(
+                handles, labels,
+                loc="upper center",
+                bbox_to_anchor=(0.5, 0.958),
+                ncol=4,
+                frameon=False,
+                fontsize=7.8,
+            )
+        #endif
+        fig.text(
+            0.5, 0.918,
+            (
+                "External measurements are transported point-by-point to the exact "
+                "Lee 2026 kinematics with KM15; displayed data are not normalization-rescaled. "
+                r"Error bars = stat $\oplus$ point-to-point syst."
+            ),
+            ha="center", va="top", fontsize=8.0,
+        )
+        fig.tight_layout(rect=[0.035, 0.035, 0.995, 0.900])
+        fig.savefig(
+            outdir / f"world_data_at_lee_kinematics_page{ipage + 1:02d}.png",
+            dpi=220,
+        )
+        plt.close(fig)
+    #endfor
+#enddef
+
+
 # =============================================================================
 # Output bookkeeping
 # =============================================================================
@@ -1327,6 +1976,11 @@ def save_outputs(
         matches.to_csv(tables / "pairwise_matched_points.csv", index=False)
     #endif
 
+    pair_panel_summary = make_pairwise_panel_summary(matches)
+    lee_anchor_summary = make_lee_anchor_panel_summary(matches)
+    pair_panel_summary.to_csv(tables / "pairwise_cross_section_panel_summary.csv", index=False)
+    lee_anchor_summary.to_csv(tables / "lee_anchor_panel_summary.csv", index=False)
+
     transport_cols = [
         "point_id", "dataset", "dataset_label",
         "ebeam", "xB", "Q2", "t_abs", "phi_deg",
@@ -1346,6 +2000,16 @@ def save_outputs(
     plot_transport_uncertainty(world, figures / "transport", have_gk16)
     plot_pairwise_matrix(pair_summary, figures / "pairwise")
     plot_pairwise_pulls(matches, figures / "pairwise")
+    plot_pairwise_cross_section_panels(
+        matches,
+        pair_panel_summary,
+        figures / "cross_section_overlays" / "pairwise",
+    )
+    plot_lee_anchor_world_panels(
+        matches,
+        lee_anchor_summary,
+        figures / "cross_section_overlays" / "lee_anchor",
+    )
 #enddef
 
 
@@ -1468,7 +2132,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     matches, pair_summary = build_pairwise_comparisons(world, match_cfg, have_gk16)
 
     # ---------------------------------------------------------------------
-    # 6. Tables and note-quality first-pass figures.
+    # 6. Tables plus note-style multi-panel cross-section presentation.
     # ---------------------------------------------------------------------
     save_outputs(
         world,
