@@ -5030,8 +5030,8 @@ static void arw_write_closure_canvas(
         gd.SetLineColor(kBlack); gd.SetLineWidth(2);
         gb.SetMarkerStyle(24); gb.SetMarkerColor(kRed+1);
         gb.SetLineColor(kRed+1); gb.SetLineWidth(2);
-        ga.SetMarkerStyle(25); ga.SetMarkerColor(kBlue+1);
-        ga.SetLineColor(kBlue+1); ga.SetLineWidth(2);
+        ga.SetMarkerStyle(25); ga.SetMarkerColor(kMagenta+2);
+        ga.SetLineColor(kMagenta+2); ga.SetLineWidth(3);
         gd.DrawClone("LP SAME");
         gb.DrawClone("LP SAME");
         ga.DrawClone("LP SAME");
@@ -5041,10 +5041,10 @@ static void arw_write_closure_canvas(
         ss<<"D: "<<std::fixed<<std::setprecision(3)
           <<fit.before_distance[(size_t)iv]<<" #rightarrow "
           <<fit.after_distance[(size_t)iv];
-        t.DrawLatex(.18,.84,ss.str().c_str());
+        t.DrawLatex(.18,.78,ss.str().c_str());
 
         if(iv==0){
-            TLegend l(.43,.65,.93,.82);
+            TLegend l(.43,.62,.93,.80);
             l.SetBorderSize(0);l.SetFillStyle(0);
             l.SetTextFont(42);l.SetTextSize(.026);
             l.AddEntry(&gd,"DATA signal estimate","lp");
@@ -5066,6 +5066,313 @@ static void arw_write_closure_canvas(
     title.DrawLatex(.50,.952,ss.str().c_str());
     c.SaveAs(path.c_str());
 }
+
+// -----------------------------------------------------------------------------
+// Synthetic-MC closure validation for reconstructed -> generated weight transfer
+// -----------------------------------------------------------------------------
+
+static double arw_test_weight(const ARWEvent& e,int test_id) {
+    const double zx=std::max(-1.5,std::min(1.5,(e.x-0.30)/0.22));
+    const double zq=std::max(-1.5,std::min(1.5,(e.q2-3.0)/2.0));
+    const double zt=std::max(-1.5,std::min(1.5,(e.tabs-0.45)/0.38));
+    const double ph=e.phi*3.14159265358979323846/180.0;
+
+    double logw=0.0;
+    switch(test_id){
+        case 0: logw=+0.45*zx; break;
+        case 1: logw=-0.40*zq; break;
+        case 2: logw=+0.45*zt; break;
+        case 3: logw=+0.35*std::cos(ph)+0.12*std::cos(2.0*ph); break;
+        default:
+            logw=+0.28*zx-0.22*zq+0.26*zt
+                +0.24*std::cos(ph)+0.08*std::cos(2.0*ph);
+            break;
+    }
+    return std::max(0.45,std::min(2.20,std::exp(logw)));
+}
+
+static const std::array<std::string,5>& arw_test_names() {
+    static const std::array<std::string,5> names={{
+        "xB tilt","Q2 tilt","|t| tilt","phi modulation","combined"
+    }};
+    return names;
+}
+
+static std::vector<ARWEvent> arw_make_pseudodata(
+    const std::vector<ARWEvent>& rec,int test_id) {
+    std::vector<ARWEvent> out=rec;
+    for(auto& e:out) e.base_weight*=arw_test_weight(e,test_id);
+    return out;
+}
+
+static std::vector<double> arw_acceptance_known_weight(
+    const std::vector<ARWEvent>& gen,
+    const std::vector<ARWEvent>& rec,
+    int test_id,
+    size_t nrows) {
+
+    std::vector<double> ng(nrows,0.0),nr(nrows,0.0);
+    for(const auto& e:gen){
+        if(e.row<0||(size_t)e.row>=nrows) continue;
+        ng[(size_t)e.row]+=e.base_weight*arw_test_weight(e,test_id);
+    }
+    for(const auto& e:rec){
+        if(e.row<0||(size_t)e.row>=nrows) continue;
+        nr[(size_t)e.row]+=e.base_weight*arw_test_weight(e,test_id);
+    }
+    std::vector<double> a(nrows,std::numeric_limits<double>::quiet_NaN());
+    for(size_t r=0;r<nrows;++r)
+        if(ng[r]>0.0) a[r]=nr[r]/ng[r];
+    return a;
+}
+
+struct ARWSyntheticPoint {
+    std::string period;
+    std::string test;
+    int row=-1;
+    double nominal=std::numeric_limits<double>::quiet_NaN();
+    double exact=std::numeric_limits<double>::quiet_NaN();
+    double recovered=std::numeric_limits<double>::quiet_NaN();
+    double exact_shift=std::numeric_limits<double>::quiet_NaN();
+    double recovered_shift=std::numeric_limits<double>::quiet_NaN();
+    double closure_bias=std::numeric_limits<double>::quiet_NaN();
+};
+
+static std::vector<ARWSyntheticPoint> arw_run_synthetic_closure(
+    const std::string& period,
+    const std::vector<ARWEvent>& gen,
+    const std::vector<ARWEvent>& rec,
+    const std::array<ARWFineAxis,4>& axes,
+    const AcceptanceReweightingOptions& options,
+    size_t nrows) {
+
+    std::vector<ARWSyntheticPoint> out;
+    const auto nominal=arw_acceptance(gen,rec,nullptr,nrows);
+
+    for(int itest=0;itest<5;++itest){
+        const auto pseudo=arw_make_pseudodata(rec,itest);
+        const ARWFitResult fit=arw_fit(pseudo,rec,axes,options);
+        const auto exact=arw_acceptance_known_weight(gen,rec,itest,nrows);
+        const auto recovered=arw_acceptance(gen,rec,&fit.model,nrows);
+
+        for(size_t r=0;r<nrows;++r){
+            const double a0=nominal[r],ae=exact[r],ar=recovered[r];
+            if(!(std::isfinite(a0)&&a0>0.0&&std::isfinite(ae)&&ae>0.0&&
+                 std::isfinite(ar)&&ar>0.0)) continue;
+            ARWSyntheticPoint p;
+            p.period=period;
+            p.test=arw_test_names()[(size_t)itest];
+            p.row=(int)r;
+            p.nominal=a0;
+            p.exact=ae;
+            p.recovered=ar;
+            p.exact_shift=std::fabs(ae-a0)/a0;
+            p.recovered_shift=std::fabs(ar-a0)/a0;
+            p.closure_bias=std::fabs(ar-ae)/a0;
+            out.push_back(std::move(p));
+        }
+    }
+    return out;
+}
+
+static void arw_write_synthetic_csv(
+    const std::string& path,
+    const std::vector<ARWSyntheticPoint>& points) {
+    std::ofstream out(path);
+    out<<"period,test,row,acceptance_nominal,acceptance_exact,"
+          "acceptance_recovered,exact_shift_frac,recovered_shift_frac,"
+          "closure_bias_frac\\n";
+    for(const auto& p:points)
+        out<<p.period<<','<<p.test<<','<<p.row<<','
+           <<p.nominal<<','<<p.exact<<','<<p.recovered<<','
+           <<p.exact_shift<<','<<p.recovered_shift<<','
+           <<p.closure_bias<<'\\n';
+}
+
+static double arw_quantile(std::vector<double> v,double q) {
+    v.erase(std::remove_if(v.begin(),v.end(),
+                           [](double x){return !std::isfinite(x);}),v.end());
+    if(v.empty()) return std::numeric_limits<double>::quiet_NaN();
+    std::sort(v.begin(),v.end());
+    const double x=q*(v.size()-1);
+    const size_t i=(size_t)std::floor(x),j=std::min(v.size()-1,i+1);
+    return v[i]+(x-i)*(v[j]-v[i]);
+}
+
+static void arw_write_synthetic_canvas(
+    const std::string& path,
+    const std::vector<ARWSyntheticPoint>& points) {
+
+    if(points.empty()) return;
+    TCanvas c("c_arw_synthetic","",1250,900);
+    c.Divide(2,2,.002,.002);
+
+    std::vector<double> exact,recovered,bias,ratio;
+    for(const auto& p:points){
+        exact.push_back(100.0*p.exact_shift);
+        recovered.push_back(100.0*p.recovered_shift);
+        bias.push_back(100.0*p.closure_bias);
+        if(p.exact_shift>0.002)
+            ratio.push_back(p.closure_bias/p.exact_shift);
+    }
+
+    // (a) recovered vs exact acceptance shift.
+    c.cd(1);gPad->SetLeftMargin(.14);gPad->SetBottomMargin(.14);
+    gPad->SetTopMargin(.14);gPad->SetRightMargin(.04);gPad->SetTicks(1,1);
+    double mx=0.0;for(double x:exact)mx=std::max(mx,x);
+    for(double y:recovered)mx=std::max(mx,y);mx=std::max(1.0,1.10*mx);
+    TH1D f1("h_arw_syn_frame1","",100,0,mx);f1.SetStats(0);
+    f1.SetMinimum(0);f1.SetMaximum(mx);
+    f1.GetXaxis()->SetTitle("Exact acceptance shift (%)");
+    f1.GetYaxis()->SetTitle("Recovered acceptance shift (%)");
+    f1.GetYaxis()->SetTitleOffset(1.35);f1.DrawCopy();
+    TGraph g;for(int i=0;i<(int)exact.size();++i)g.SetPoint(i,exact[i],recovered[i]);
+    g.SetMarkerStyle(20);g.SetMarkerSize(.45);g.SetMarkerColor(kBlue+1);g.DrawClone("P SAME");
+    TLine one(0,0,mx,mx);one.SetLineStyle(2);one.SetLineWidth(2);one.DrawClone();
+    TLatex lab;lab.SetNDC();lab.SetTextFont(42);lab.SetTextSize(.032);lab.DrawLatex(.18,.84,"(a)");
+
+    // (b) closure bias distribution.
+    c.cd(2);gPad->SetLeftMargin(.14);gPad->SetBottomMargin(.14);
+    gPad->SetTopMargin(.14);gPad->SetRightMargin(.04);gPad->SetTicks(1,1);
+    const double b95=arw_quantile(bias,.95);const double bmax=std::max(0.5,1.35*b95);
+    TH1D hb("h_arw_syn_bias","",60,0,bmax);hb.SetStats(0);
+    for(double x:bias) if(x<=bmax) hb.Fill(x);
+    if(hb.Integral()>0)hb.Scale(1.0/hb.Integral());
+    hb.GetXaxis()->SetTitle("|A_{recovered}-A_{exact}|/A_{0} (%)");
+    hb.GetYaxis()->SetTitle("Fraction of closure bins");hb.GetYaxis()->SetTitleOffset(1.35);
+    hb.SetLineWidth(3);hb.SetLineColor(kMagenta+2);hb.DrawCopy("HIST");
+    lab.DrawLatex(.18,.84,"(b)");
+
+    // (c) bias relative to imposed exact shift.
+    c.cd(3);gPad->SetLeftMargin(.14);gPad->SetBottomMargin(.14);
+    gPad->SetTopMargin(.14);gPad->SetRightMargin(.04);gPad->SetTicks(1,1);
+    const double r95=arw_quantile(ratio,.95);const double rmax=std::max(.25,1.30*r95);
+    TH1D hr("h_arw_syn_ratio","",60,0,rmax);hr.SetStats(0);
+    for(double x:ratio) if(x<=rmax)hr.Fill(x);
+    if(hr.Integral()>0)hr.Scale(1.0/hr.Integral());
+    hr.GetXaxis()->SetTitle("Closure bias / imposed acceptance shift");
+    hr.GetYaxis()->SetTitle("Fraction of closure bins");hr.GetYaxis()->SetTitleOffset(1.35);
+    hr.SetLineWidth(3);hr.SetLineColor(kGreen+2);hr.DrawCopy("HIST");
+    lab.DrawLatex(.18,.84,"(c)");
+
+    // (d) median closure bias by test shape.
+    c.cd(4);gPad->SetLeftMargin(.17);gPad->SetBottomMargin(.20);
+    gPad->SetTopMargin(.14);gPad->SetRightMargin(.04);gPad->SetTicks(1,1);
+    TH1D ht("h_arw_syn_tests","",5,0.5,5.5);ht.SetStats(0);
+    for(int it=0;it<5;++it){
+        std::vector<double> vb;
+        for(const auto& p:points)if(p.test==arw_test_names()[(size_t)it])vb.push_back(100.0*p.closure_bias);
+        ht.SetBinContent(it+1,arw_quantile(vb,.50));
+        ht.GetXaxis()->SetBinLabel(it+1,arw_test_names()[(size_t)it].c_str());
+    }
+    ht.GetXaxis()->SetTitle("Synthetic distortion");
+    ht.GetYaxis()->SetTitle("Median closure bias (%)");ht.GetYaxis()->SetTitleOffset(1.50);
+    ht.SetMinimum(0.0);ht.SetMaximum(std::max(0.5,1.35*ht.GetMaximum()));
+    ht.SetMarkerStyle(20);ht.SetMarkerSize(1.2);ht.SetLineWidth(2);ht.DrawCopy("P");
+    ht.GetXaxis()->LabelsOption("v");lab.DrawLatex(.20,.84,"(d)");
+
+    c.cd(0);TLatex title;title.SetNDC();title.SetTextAlign(22);title.SetTextFont(42);
+    title.SetTextSize(.022);title.DrawLatex(.50,.978,
+        "Synthetic closure of reconstructed-to-generated acceptance reweighting");
+    title.SetTextSize(.0155);title.DrawLatex(.50,.952,
+        "Known smooth MC distortions; analytic-weight acceptance compared with iterative recovery");
+    c.SaveAs(path.c_str());
+}
+
+static void arw_write_candidate_distribution(
+    const std::string& path,
+    const std::vector<double>& f106,
+    const std::vector<double>& f102) {
+    TCanvas c("c_arw_candidate_dist","",1050,720);
+    c.SetLeftMargin(.13);c.SetRightMargin(.04);c.SetBottomMargin(.13);c.SetTopMargin(.18);c.SetTicks(1,1);
+    std::vector<double> all=f106;all.insert(all.end(),f102.begin(),f102.end());
+    const double p95=arw_quantile(all,.95);const double xmax=std::max(2.0,1.35*100.0*p95);
+    TH1D h1("h_arw_cand106","",60,0,xmax),h2("h_arw_cand102","",60,0,xmax);
+    h1.SetStats(0);h2.SetStats(0);
+    for(double x:f106)if(std::isfinite(x)&&100*x<=xmax)h1.Fill(100*x);
+    for(double x:f102)if(std::isfinite(x)&&100*x<=xmax)h2.Fill(100*x);
+    if(h1.Integral()>0)h1.Scale(1.0/h1.Integral());if(h2.Integral()>0)h2.Scale(1.0/h2.Integral());
+    double ymax=1.2*std::max(h1.GetMaximum(),h2.GetMaximum());
+    TH1D fr("h_arw_cand_frame","",60,0,xmax);fr.SetStats(0);fr.SetMinimum(0);fr.SetMaximum(ymax);
+    fr.GetXaxis()->SetTitle("DATA-reweighting acceptance systematic (%)");
+    fr.GetYaxis()->SetTitle("Fraction of populated bins");fr.GetYaxis()->SetTitleOffset(1.25);fr.DrawCopy();
+    h1.SetLineColor(kBlue+1);h1.SetLineWidth(3);h2.SetLineColor(kRed+1);h2.SetLineWidth(3);h2.SetLineStyle(2);
+    h1.DrawClone("HIST SAME");h2.DrawClone("HIST SAME");
+    TLegend l(.58,.66,.92,.80);l.SetBorderSize(0);l.SetFillStyle(0);l.SetTextFont(42);l.SetTextSize(.029);
+    l.AddEntry(&h1,"10.6 GeV combined","l");l.AddEntry(&h2,"10.2 GeV Sp19 Inb","l");l.DrawClone();
+    TLatex t;t.SetNDC();t.SetTextFont(42);t.SetTextSize(.030);
+    std::ostringstream ss;ss<<"median: "<<std::fixed<<std::setprecision(2)<<100*arw_quantile(f106,.50)
+                            <<"% (10.6), "<<100*arw_quantile(f102,.50)<<"% (10.2)";
+    t.DrawLatex(.16,.86,ss.str().c_str());
+    t.SetTextAlign(22);t.SetTextSize(.022);t.DrawLatex(.50,.965,"Pass-2 DATA-driven acceptance model uncertainty");
+    c.SaveAs(path.c_str());
+}
+
+static void arw_write_candidate_kinematic_summary(
+    const std::string& path,
+    const std::vector<RowBin>& rows,
+    const CSV& csv,
+    int c106,
+    int c102) {
+
+    struct VSpec { const char* title; int which; };
+    const std::array<VSpec,4> vs={{
+        {"x_{B}",0},{"Q^{2} (GeV^{2})",1},
+        {"|t| (GeV^{2})",2},{"#phi (deg)",3}
+    }};
+
+    TCanvas c("c_arw_candidate_kin","",1250,900);
+    c.Divide(2,2,.002,.002);
+
+    for(int iv=0;iv<4;++iv){
+        std::map<std::pair<double,double>,std::vector<double>> a,b;
+        for(size_t r=0;r<rows.size()&&r<csv.rows.size();++r){
+            if(!rows[r].valid) continue;
+            std::pair<double,double> key;
+            if(iv==0) key={rows[r].xBmin,rows[r].xBmax};
+            else if(iv==1) key={rows[r].Q2min,rows[r].Q2max};
+            else if(iv==2) key={rows[r].tmin,rows[r].tmax};
+            else key={rows[r].pmin,rows[r].pmax};
+            const double f1=arw_tuple_first(csv.rows[r][(size_t)c106]);
+            const double f2=arw_tuple_first(csv.rows[r][(size_t)c102]);
+            if(std::isfinite(f1)) a[key].push_back(100.0*f1);
+            if(std::isfinite(f2)) b[key].push_back(100.0*f2);
+        }
+
+        std::vector<double> xa,ya,xb,yb;
+        double ymax=0.0;
+        for(const auto& kv:a){
+            const double y=arw_quantile(kv.second,.50);
+            xa.push_back(.5*(kv.first.first+kv.first.second));ya.push_back(y);ymax=std::max(ymax,y);
+        }
+        for(const auto& kv:b){
+            const double y=arw_quantile(kv.second,.50);
+            xb.push_back(.5*(kv.first.first+kv.first.second));yb.push_back(y);ymax=std::max(ymax,y);
+        }
+        if(xa.empty()&&xb.empty()) continue;
+        double xmin=1e9,xmax=-1e9;
+        for(double x:xa){xmin=std::min(xmin,x);xmax=std::max(xmax,x);}for(double x:xb){xmin=std::min(xmin,x);xmax=std::max(xmax,x);}
+        const double dx=(xmax>xmin)?.04*(xmax-xmin):.5;xmin-=dx;xmax+=dx;
+
+        c.cd(iv+1);gPad->SetLeftMargin(.14);gPad->SetRightMargin(.04);
+        gPad->SetBottomMargin(.14);gPad->SetTopMargin(.16);gPad->SetTicks(1,1);
+        TH1D fr(("h_arw_cand_kin_"+std::to_string(iv)).c_str(),"",100,xmin,xmax);
+        fr.SetStats(0);fr.SetMinimum(0);fr.SetMaximum(std::max(1.0,1.25*ymax));
+        fr.GetXaxis()->SetTitle(vs[(size_t)iv].title);
+        fr.GetYaxis()->SetTitle("Median acceptance systematic (%)");fr.GetYaxis()->SetTitleOffset(1.35);fr.DrawCopy();
+        TGraph g1((int)xa.size(),xa.data(),ya.data()),g2((int)xb.size(),xb.data(),yb.data());
+        g1.SetMarkerStyle(20);g1.SetMarkerColor(kBlue+1);g1.SetLineColor(kBlue+1);g1.SetLineWidth(3);
+        g2.SetMarkerStyle(24);g2.SetMarkerColor(kRed+1);g2.SetLineColor(kRed+1);g2.SetLineWidth(3);
+        if(!xa.empty())g1.DrawClone("LP SAME");if(!xb.empty())g2.DrawClone("LP SAME");
+        TLatex lab;lab.SetNDC();lab.SetTextFont(42);lab.SetTextSize(.032);std::string pn="("+std::string(1,char('a'+iv))+")";lab.DrawLatex(.18,.84,pn.c_str());
+        if(iv==0){TLegend l(.53,.65,.92,.80);l.SetBorderSize(0);l.SetFillStyle(0);l.SetTextFont(42);l.SetTextSize(.027);l.AddEntry(&g1,"10.6 GeV combined","lp");l.AddEntry(&g2,"10.2 GeV Sp19 Inb","lp");l.DrawClone();}
+    }
+    c.cd(0);TLatex t;t.SetNDC();t.SetTextAlign(22);t.SetTextFont(42);t.SetTextSize(.022);
+    t.DrawLatex(.50,.978,"Kinematic dependence of DATA-reweighted acceptance systematic");
+    t.SetTextSize(.0155);t.DrawLatex(.50,.952,"Full nominal-to-reweighted acceptance excursion; medians in each kinematic interval");
+    c.SaveAs(path.c_str());
+}
+
 
 } // namespace
 
@@ -5133,16 +5440,11 @@ bool run_acceptance_reweighting_study(
             csv,"acceptance reweighting candidate sys frac, Sp19 Inb");
         const int c_data_106=arw_ensure_column(
             csv,"acceptance reweighting data-driven sys frac, 10.6 GeV");
-        const int c_bh_106=arw_ensure_column(
-            csv,"acceptance reweighting BH sys frac, 10.6 GeV");
         const int c_data_102=arw_ensure_column(
             csv,"acceptance reweighting data-driven sys frac, Sp19 Inb");
-        const int c_bh_102=arw_ensure_column(
-            csv,"acceptance reweighting BH sys frac, Sp19 Inb");
 
         struct PeriodResult {
-            std::vector<double> nominal,data_rw,bh,candidate;
-            bool bh_valid=false;
+            std::vector<double> nominal,data_rw,candidate;
         };
         std::map<std::string,PeriodResult> results;
 
@@ -5150,8 +5452,9 @@ bool run_acceptance_reweighting_study(
             std::filesystem::path(options.output_dir)/
             "acceptance_reweighting_per_period_summary.csv");
         summary<<"period,row,acceptance_nominal,acceptance_data_reweighted,"
-               <<"acceptance_bh_reweighted,data_relative_shift,"
-               <<"bh_relative_shift,candidate_fraction\n";
+               <<"relative_acceptance_shift,candidate_cross_section_fraction\n";
+
+        std::vector<ARWSyntheticPoint> synthetic_points;
 
         for(const auto& period:periods){
             TTree* dt=arw_tree_for_period(dvcsDataTrees,period);
@@ -5211,43 +5514,32 @@ bool run_acceptance_reweighting_study(
             pr.data_rw=arw_acceptance(
                 gen,rec,&fit.model,csv.rows.size());
 
-            const std::string energy_tag=
-                period=="Sp19 Inb" ? "10.2" : "10.6";
-            const auto bhgrid=arw_load_bh_grid(
-                options.bh_grid_csv,energy_tag);
-            pr.bh_valid=!bhgrid.empty();
-            if(pr.bh_valid)
-                pr.bh=arw_acceptance_bh(
-                    gen,rec,bhgrid,csv.rows.size());
-            else
-                pr.bh.assign(csv.rows.size(),
-                    std::numeric_limits<double>::quiet_NaN());
-
             pr.candidate.assign(csv.rows.size(),
                 std::numeric_limits<double>::quiet_NaN());
 
             for(size_t r=0;r<csv.rows.size();++r){
                 const double a0=pr.nominal[r];
                 const double ad=pr.data_rw[r];
-                const double ab=pr.bh[r];
-                if(!(std::isfinite(a0)&&a0>0.0)) continue;
+                if(!(std::isfinite(a0)&&a0>0.0&&std::isfinite(ad)&&ad>0.0))
+                    continue;
 
-                const double rd=std::isfinite(ad)
-                    ? std::fabs(ad-a0)/a0
-                    : std::numeric_limits<double>::quiet_NaN();
-                const double rb=std::isfinite(ab)
-                    ? std::fabs(ab-a0)/a0
-                    : std::numeric_limits<double>::quiet_NaN();
-
-                const double sd=arw_population_stddev({a0,ad,ab});
-                const double cand=std::isfinite(sd)
-                    ? sd/a0
-                    : rd;
-                pr.candidate[r]=cand;
+                // Final candidate definition under study: full DATA-reweighting
+                // excursion relative to the nominal acceptance.  Pure BH is not
+                // included because it is a stress-test shape, not our estimate
+                // of the physical DVCS+BH event distribution.
+                const double rd_acceptance=std::fabs(ad-a0)/a0;
+                const double rd_cross_section=std::fabs(a0/ad-1.0);
+                pr.candidate[r]=rd_cross_section;
 
                 summary<<period<<','<<r<<','<<a0<<','<<ad<<','
-                       <<ab<<','<<rd<<','<<rb<<','<<cand<<'\n';
+                       <<rd_acceptance<<','<<rd_cross_section<<'\n';
             }
+
+            std::cout<<"[acceptance-reweighting] Running synthetic transfer "
+                     <<"closure for "<<period<<"...\n";
+            const auto syn=arw_run_synthetic_closure(
+                period,gen,rec,axes,options,csv.rows.size());
+            synthetic_points.insert(synthetic_points.end(),syn.begin(),syn.end());
 
             results[period]=std::move(pr);
         }
@@ -5256,8 +5548,7 @@ bool run_acceptance_reweighting_study(
         // the nominal acceptance-corrected unpolarized yield contribution.
         for(size_t r=0;r<csv.rows.size();++r){
             double ytot=0.0;
-            double delta_data=0.0,delta_bh=0.0;
-            std::vector<double> alt_combined;
+            double delta_data=0.0;
             double nominal_combined=0.0;
             bool have_any=false;
 
@@ -5277,49 +5568,69 @@ bool run_acceptance_reweighting_study(
 
                 const double a0=ir->second.nominal[r];
                 const double ad=ir->second.data_rw[r];
-                const double ab=ir->second.bh[r];
                 if(!(std::isfinite(a0)&&a0>0.0&&std::isfinite(ad)&&ad>0.0))
                     continue;
 
                 ytot+=y;
                 nominal_combined+=y;
                 delta_data+=y*(a0/ad);
-                if(std::isfinite(ab)&&ab>0.0)
-                    delta_bh+=y*(a0/ab);
-                else
-                    delta_bh+=y;
                 have_any=true;
             }
 
             if(have_any && ytot>0.0){
                 const double rd=std::fabs(delta_data-nominal_combined)/ytot;
-                const double rb=std::fabs(delta_bh-nominal_combined)/ytot;
-                const double cand=arw_population_stddev(
-                    {1.0,delta_data/ytot,delta_bh/ytot});
                 csv.rows[r][(size_t)c_data_106]=std::to_string(rd);
-                csv.rows[r][(size_t)c_bh_106]=std::to_string(rb);
-                csv.rows[r][(size_t)c_candidate_106]=
-                    std::to_string(std::isfinite(cand)?cand:rd);
+                csv.rows[r][(size_t)c_candidate_106]=std::to_string(rd);
             }
 
             auto sp=results.find("Sp19 Inb");
             if(sp!=results.end()){
                 const double a0=sp->second.nominal[r];
                 const double ad=sp->second.data_rw[r];
-                const double ab=sp->second.bh[r];
                 if(std::isfinite(a0)&&a0>0.0&&std::isfinite(ad)&&ad>0.0){
-                    const double rd=std::fabs(ad-a0)/a0;
-                    const double rb=(std::isfinite(ab)&&ab>0.0)
-                        ?std::fabs(ab-a0)/a0
-                        :std::numeric_limits<double>::quiet_NaN();
-                    const double cand=arw_population_stddev({a0,ad,ab});
+                    const double rd=std::fabs(a0/ad-1.0);
                     csv.rows[r][(size_t)c_data_102]=std::to_string(rd);
-                    if(std::isfinite(rb))
-                        csv.rows[r][(size_t)c_bh_102]=std::to_string(rb);
-                    csv.rows[r][(size_t)c_candidate_102]=
-                        std::to_string(std::isfinite(cand)?cand/a0:rd);
+                    csv.rows[r][(size_t)c_candidate_102]=std::to_string(rd);
                 }
             }
+        }
+
+        // Synthetic closure and candidate-distribution diagnostics.
+        arw_write_synthetic_csv(
+            (std::filesystem::path(options.output_dir)/
+             "synthetic_reweighting_closure.csv").string(),
+            synthetic_points);
+        arw_write_synthetic_canvas(
+            (std::filesystem::path(options.output_dir)/
+             "synthetic_reweighting_closure_summary.png").string(),
+            synthetic_points);
+
+        std::vector<double> candidate106,candidate102;
+        for(const auto& row:csv.rows){
+            const double a=arw_tuple_first(row[(size_t)c_candidate_106]);
+            const double b=arw_tuple_first(row[(size_t)c_candidate_102]);
+            if(std::isfinite(a)) candidate106.push_back(a);
+            if(std::isfinite(b)) candidate102.push_back(b);
+        }
+        arw_write_candidate_distribution(
+            (std::filesystem::path(options.output_dir)/
+             "acceptance_data_reweighting_systematic_distribution.png").string(),
+            candidate106,candidate102);
+        arw_write_candidate_kinematic_summary(
+            (std::filesystem::path(options.output_dir)/
+             "acceptance_data_reweighting_kinematic_summary.png").string(),
+            rows,csv,c_candidate_106,c_candidate_102);
+
+        if(!synthetic_points.empty()){
+            std::vector<double> vbias,vratio;
+            for(const auto& p:synthetic_points){
+                vbias.push_back(p.closure_bias);
+                if(p.exact_shift>0.002) vratio.push_back(p.closure_bias/p.exact_shift);
+            }
+            std::cout<<"[acceptance-reweighting] Synthetic closure: median bias="
+                     <<100.0*arw_quantile(vbias,.50)<<"%, 95th percentile="
+                     <<100.0*arw_quantile(vbias,.95)<<"%, median bias/imposed-shift="
+                     <<arw_quantile(vratio,.50)<<".\n";
         }
 
         if(options.install_candidate_as_production_systematic){

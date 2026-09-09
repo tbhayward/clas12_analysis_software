@@ -138,11 +138,11 @@ struct AcceptanceReweightingOptions {
     // reconstructed MC before fitting the shape weights.
     bool apply_current_correction = true;
 
-    // Optional pure-BH comparison.  The Python helper evaluates only the fast
-    // Gepard/KM15 BH term on a 2x2x2x2 sub-grid inside each production bin.
-    // No VGG evaluation is performed.
-    bool enable_bh_reweighting = true;
-    bool build_bh_grid_if_missing = true;
+    // Optional pure-BH stress test.  It is disabled by default and is NOT used
+    // in the candidate acceptance systematic.  The production candidate is
+    // determined solely from the nominal -> DATA-reweighted acceptance change.
+    bool enable_bh_reweighting = false;
+    bool build_bh_grid_if_missing = false;
     std::string bh_grid_script =
         "external_scripts/build_acceptance_bh_reweight_grid.py";
     std::string bh_grid_csv =
@@ -159,15 +159,15 @@ struct AcceptanceReweightingOptions {
 // dvcsgen generated/reconstructed MC and nominal DATA trees.
 //
 // The study constructs:
-//   (1) nominal acceptance,
-//   (2) acceptance after iterative DATA-driven shape reweighting,
-//   (3) acceptance after a pure-BH reweighting, when the BH grid is available.
+//   (1) nominal acceptance A0,
+//   (2) acceptance Adata after iterative DATA-driven shape reweighting.
 //
-// The candidate model uncertainty is the population standard deviation of the
-// available acceptance values, mirroring the pass-1 use of the standard
-// deviation across alternative model acceptances.  The candidate is written to
-// dedicated CSV columns and is NOT installed into Syst. err (Acceptance) unless
-// explicitly requested in AcceptanceReweightingOptions.
+// The candidate model uncertainty is |Adata-A0|/A0.  A pure-BH stress test may
+// still be enabled explicitly, but it is not used in the candidate systematic.
+// The study also performs synthetic-MC closure tests with known smooth weights
+// to validate transferring a weight learned at reconstructed level to the
+// generated denominator.  The candidate is NOT installed into
+// Syst. err (Acceptance) unless explicitly requested.
 bool run_acceptance_reweighting_study(
     const std::string& csv_path,
     const std::map<std::string, TTree*>& dvcsDataTrees,

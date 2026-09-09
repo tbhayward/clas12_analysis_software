@@ -301,8 +301,8 @@ int main(int argc, char* argv[]) {
         arw.current_response_model_json =
             "output/dvcs_current_dependence/calibration/current_response_model.json";
         arw.output_dir = "output/systematics/acceptance_reweighting";
-        arw.enable_bh_reweighting = true;
-        arw.build_bh_grid_if_missing = true;
+        arw.enable_bh_reweighting = false;
+        arw.build_bh_grid_if_missing = false;
         arw.install_candidate_as_production_systematic = false;
 
         if (!run_acceptance_reweighting_study(
