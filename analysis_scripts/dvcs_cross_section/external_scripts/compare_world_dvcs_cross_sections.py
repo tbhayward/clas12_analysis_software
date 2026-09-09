@@ -102,6 +102,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
 
 
 # =============================================================================
@@ -173,19 +174,21 @@ MODEL_CURVE_PHI_STEP_DEG = 15.0
 GLOBAL_NORM_FREE_DATASETS = {"georges2022"}
 
 GLOBAL_NORM_SCENARIO_LABELS = {
-    "all_datasets": "all datasets",
-    "without_saylor": "without Saylor 2018",
-    "all_except_two_saylor_bin87_points": "all datasets; two Saylor bin-87 points omitted",
+    "nominal": "nominal",
+    "saylor_tmin_0p343": r"diagnostic; Saylor $|t|\geq0.343$ GeV$^2$",
+    "without_saylor": "diagnostic; without Saylor 2018",
 }
 
-# Two conspicuous Saylor points in the current matched Lee-bin-87 overlay.
-# They are NEVER removed from the nominal analysis.  A third diagnostic fit
-# repeats the global normalization study after excluding exactly these two
-# published points, allowing their impact to be quantified explicitly.
-SAYLOR_BIN87_DIAGNOSTIC_POINT_IDS = {
+# These two Saylor points are treated as invalid and removed from the NOMINAL
+# analysis everywhere downstream of the complete source/cache stage.
+SAYLOR_NOMINAL_EXCLUDED_POINT_IDS = {
     "saylor2018:2025",  # phi ~52 deg in the current parser
     "saylor2018:2041",  # phi ~308 deg in the current parser
 }
+
+# Broader low-|t| diagnostic used in the EMFF world-data study:
+# "All six; Saylor |t|>=0.343".
+SAYLOR_TMIN_DIAGNOSTIC_GEV2 = 0.343
 
 # Source convention needed for KM15 evaluation and for the existing PARTONS
 # phi-mapping logic.
@@ -443,6 +446,46 @@ def load_world_data(args, emff) -> pd.DataFrame:
 
     print(f"[WORLD] canonicalized {len(world):,} points across 6 measurements")
     return world
+#enddef
+
+
+
+def apply_nominal_data_quality_exclusions(world: pd.DataFrame) -> pd.DataFrame:
+    """Remove the two known-invalid Saylor bin-87 points from the nominal sample."""
+    mask = world["point_id"].astype(str).isin(SAYLOR_NOMINAL_EXCLUDED_POINT_IDS)
+    removed = world.loc[mask].copy()
+
+    print(
+        f"[NOMINAL QUALITY] excluding {len(removed)} invalid Saylor bin-87 point(s)",
+        flush=True,
+    )
+    if not removed.empty:
+        cols = [
+            c for c in [
+                "point_id", "xB", "Q2", "t_abs", "phi_deg",
+                "xs", "stat_abs", "ptp_sys_abs",
+            ]
+            if c in removed.columns
+        ]
+        print(
+            removed[cols].to_string(
+                index=False,
+                float_format=lambda x: f"{x:.7g}",
+            ),
+            flush=True,
+        )
+    #endif
+
+    found = set(removed["point_id"].astype(str))
+    missing = set(SAYLOR_NOMINAL_EXCLUDED_POINT_IDS) - found
+    if missing:
+        warnings.warn(
+            "Expected nominal Saylor exclusion point(s) not found: "
+            + ", ".join(sorted(missing))
+        )
+    #endif
+
+    return world.loc[~mask].reset_index(drop=True)
 #enddef
 
 
@@ -1767,6 +1810,216 @@ def _plot_one_pair_cross_section_panel(
     )
 #enddef
 
+
+def _model_curve_cache_key(
+        dataset_key: str,
+        ebeam: float,
+        xB: float,
+        Q2: float,
+        t_abs: float) -> Tuple:
+    """Return the same rounded in-memory key used by get_dense_model_curve()."""
+    return (
+        str(dataset_key),
+        round(float(ebeam), 6),
+        round(float(xB), 6),
+        round(float(Q2), 6),
+        round(float(t_abs), 6),
+        round(float(MODEL_CURVE_PHI_STEP_DEG), 6),
+    )
+#enddef
+
+
+def collect_presentation_model_curve_specs(
+        matches: pd.DataFrame,
+        pair_panel_summary: pd.DataFrame,
+        lee_anchor_summary: pd.DataFrame,
+        max_pages_per_pair: int = PANEL_MAX_PAGES_PER_PAIR,
+        max_lee_pages: int = PANEL_MAX_WORLD_ANCHOR_PAGES) -> List[Dict[str, float]]:
+    """
+    Collect and de-duplicate every fixed-kinematics BH/KM15 phi curve that will
+    be needed by the pairwise and Lee-anchor presentation figures.
+
+    Doing this before drawing any figure lets the terminal report a genuine
+    overall percent-complete value for model prediction generation.
+    """
+    specs_by_key: Dict[Tuple, Dict[str, float]] = {}
+
+    # Pairwise panels.
+    if not matches.empty and not pair_panel_summary.empty:
+        for (ka, kb), summary_pair in pair_panel_summary.groupby(
+                ["dataset_a", "dataset_b"], sort=False):
+            pair = matches.loc[
+                (matches["dataset_a"] == ka)
+                & (matches["dataset_b"] == kb)
+            ].copy()
+            pair = _cluster_reference_kinematic_cells(pair)
+
+            ranked = summary_pair.sort_values(
+                ["panel_rank_score", "N_matches", "phi_coverage_deg"],
+                ascending=False,
+            ).reset_index(drop=True)
+
+            max_panels = min(
+                len(ranked),
+                int(max_pages_per_pair) * PANEL_PER_PAGE,
+            )
+            ranked = ranked.iloc[:max_panels].copy()
+
+            for r in ranked.itertuples(index=False):
+                group = str(r.panel_group)
+                d = pair.loc[pair["panel_group"] == group]
+                if d.empty:
+                    continue
+                #endif
+
+                spec = {
+                    "dataset_key": str(kb),
+                    "ebeam": float(np.median(d["ebeam_b"])),
+                    "xB": float(np.median(d["xB_b"])),
+                    "Q2": float(np.median(d["Q2_b"])),
+                    "t_abs": float(np.median(d["t_abs_b"])),
+                    "source": f"pair:{ka}->{kb}:{group}",
+                }
+                key = _model_curve_cache_key(
+                    spec["dataset_key"],
+                    spec["ebeam"],
+                    spec["xB"],
+                    spec["Q2"],
+                    spec["t_abs"],
+                )
+                specs_by_key.setdefault(key, spec)
+            #endfor
+        #endfor
+    #endif
+
+    # Lee-anchor panels.  The fitted-normalization variants reuse exactly the
+    # same model curves, so each Lee bin is needed only once.
+    if not matches.empty and not lee_anchor_summary.empty:
+        lee = matches.loc[matches["dataset_b"] == "lee2026"].copy()
+        if (
+            not lee.empty
+            and "published_bin_b" in lee.columns
+            and np.isfinite(lee["published_bin_b"]).any()
+        ):
+            lee["anchor_group"] = [
+                (
+                    f"bin_{int(round(v))}"
+                    if np.isfinite(v) else f"point_{pid}"
+                )
+                for v, pid in zip(
+                    lee["published_bin_b"].to_numpy(float),
+                    lee["point_id_b"].astype(str),
+                )
+            ]
+
+            selected = lee_anchor_summary.copy()
+            selected = selected.sort_values(
+                ["published_bin", "xB_ref", "Q2_ref", "t_abs_ref"],
+                ascending=True,
+            ).reset_index(drop=True)
+            if int(max_lee_pages) > 0:
+                selected = selected.head(
+                    int(max_lee_pages) * PANEL_PER_PAGE
+                ).copy()
+            #endif
+
+            for r in selected.itertuples(index=False):
+                group = str(r.anchor_group)
+                d = lee.loc[lee["anchor_group"] == group].copy()
+                if d.empty:
+                    continue
+                #endif
+                lee_points = (
+                    d.sort_values("phi_b")
+                    .drop_duplicates("point_id_b")
+                )
+                spec = {
+                    "dataset_key": "lee2026",
+                    "ebeam": float(np.median(lee_points["ebeam_b"])),
+                    "xB": float(np.median(lee_points["xB_b"])),
+                    "Q2": float(np.median(lee_points["Q2_b"])),
+                    "t_abs": float(np.median(lee_points["t_abs_b"])),
+                    "source": f"lee:{group}",
+                }
+                key = _model_curve_cache_key(
+                    spec["dataset_key"],
+                    spec["ebeam"],
+                    spec["xB"],
+                    spec["Q2"],
+                    spec["t_abs"],
+                )
+                specs_by_key.setdefault(key, spec)
+            #endfor
+        #endif
+    #endif
+
+    return list(specs_by_key.values())
+#enddef
+
+
+def precompute_presentation_model_curves(
+        emff,
+        cache: Dict[Tuple, pd.DataFrame],
+        specs: Sequence[Dict[str, float]]) -> None:
+    """
+    Precompute all unique dense BH/KM15 presentation curves with a true global
+    percentage-complete terminal diagnostic.
+
+    The progress percentage counts completed fixed-kinematics phi scans.  Each
+    scan itself contains the command-line-selected number of phi points and
+    always spans 0--360 degrees inclusive.
+    """
+    total = int(len(specs))
+    if total <= 0:
+        print("[MODEL PREDICTIONS] no presentation curves requested", flush=True)
+        return
+    #endif
+
+    nphi = int(math.ceil(360.0 / float(MODEL_CURVE_PHI_STEP_DEG))) + 1
+    print(
+        f"[MODEL PREDICTIONS] precomputing {total} unique BH/KM15 curves; "
+        f"{nphi} phi points/curve at {MODEL_CURVE_PHI_STEP_DEG:g} deg spacing",
+        flush=True,
+    )
+
+    for i, spec in enumerate(specs, start=1):
+        pct_before = 100.0 * float(i - 1) / float(total)
+        print(
+            f"[MODEL PREDICTIONS] {i}/{total} "
+            f"({pct_before:5.1f}% complete): "
+            f"{DATASET_LABELS.get(str(spec['dataset_key']), str(spec['dataset_key']))}, "
+            f"E={float(spec['ebeam']):.3f}, "
+            f"xB={float(spec['xB']):.3f}, "
+            f"Q2={float(spec['Q2']):.3f}, "
+            f"|t|={float(spec['t_abs']):.3f}",
+            flush=True,
+        )
+
+        get_dense_model_curve(
+            emff,
+            cache,
+            dataset_key=str(spec["dataset_key"]),
+            ebeam=float(spec["ebeam"]),
+            xB=float(spec["xB"]),
+            Q2=float(spec["Q2"]),
+            t_abs=float(spec["t_abs"]),
+        )
+
+        pct_after = 100.0 * float(i) / float(total)
+        print(
+            f"[MODEL PREDICTIONS] completed {i}/{total} "
+            f"({pct_after:5.1f}%)",
+            flush=True,
+        )
+    #endfor
+
+    print(
+        f"[MODEL PREDICTIONS] complete: {total}/{total} curves (100.0%)",
+        flush=True,
+    )
+#enddef
+
+
 def plot_pairwise_cross_section_panels(
         matches: pd.DataFrame,
         panel_summary: pd.DataFrame,
@@ -1987,6 +2240,7 @@ def _build_lee_anchor_observations(matches: pd.DataFrame) -> pd.DataFrame:
             "point_id": str(r.point_id_b),
             "published_bin": float(r.published_bin_b),
             "phi_deg": float(r.phi_b),
+            "t_abs": float(r.t_abs_b),
             "value": float(r.xs_b),
             "unc": float(r.point_unc_b),
             "norm_frac": float(r.norm_frac_b),
@@ -2000,6 +2254,7 @@ def _build_lee_anchor_observations(matches: pd.DataFrame) -> pd.DataFrame:
             "point_id": str(r.point_id_a),
             "published_bin": float(r.published_bin_b),
             "phi_deg": float(r.phi_b),
+            "t_abs": float(r.t_abs_a),
             "value": float(r.xs_a_to_b_km15),
             "unc": float(r.point_unc_a_to_b_km15),
             "norm_frac": float(r.norm_frac_a),
@@ -2022,7 +2277,8 @@ def fit_global_lee_anchor_normalizations(
         *,
         exclude_datasets: Sequence[str] = (),
         exclude_point_ids: Sequence[str] = (),
-        scenario: str = "all") -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float]]:
+        saylor_tmin: Optional[float] = None,
+        scenario: str = "nominal") -> Tuple[pd.DataFrame, pd.DataFrame, Dict[str, float]]:
     """
     Fit experiment-wide multiplicative normalization offsets using all matched
     measurements at the Lee anchors.
@@ -2068,6 +2324,20 @@ def fit_global_lee_anchor_normalizations(
         obs = obs.loc[~obs["point_id"].isin(exclude_point_set)].copy()
     #endif
 
+    if saylor_tmin is not None:
+        threshold = float(saylor_tmin)
+        is_saylor = obs["dataset"].astype(str) == "saylor2018"
+        before = int(np.sum(is_saylor))
+        keep = (~is_saylor) | (obs["t_abs"].to_numpy(float) >= threshold)
+        obs = obs.loc[keep].copy()
+        after = int(np.sum(obs["dataset"].astype(str) == "saylor2018"))
+        print(
+            f"[NORM FIT] {scenario}: Saylor |t| >= {threshold:.3f} GeV^2 "
+            f"retains {after}/{before} matched Saylor observations",
+            flush=True,
+        )
+    #endif
+
     # A common anchor cross section is only identifiable/useful if at least two
     # different experiments remain at that point.
     counts = obs.groupby("anchor_id")["dataset"].nunique()
@@ -2108,6 +2378,7 @@ def fit_global_lee_anchor_normalizations(
             "point_id": str(r.point_id),
             "published_bin": float(r.published_bin),
             "phi_deg": float(r.phi_deg),
+            "t_abs": float(r.t_abs),
             "value": float(r.value),
             "unc": float(r.unc),
             "frac_unc": frac_unc,
@@ -2232,34 +2503,37 @@ def fit_global_lee_anchor_normalizations(
 def run_global_lee_anchor_normalization_scenarios(
         matches: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     """
-    Run the three requested global-normalization diagnostics:
-      1. all published datasets;
-      2. all except Saylor;
-      3. all datasets after removing only the two conspicuous Saylor/bin-87
-         diagnostic points.
+    Nominal:
+      the two invalid Saylor bin-87 points are already removed upstream.
 
-    The third scenario is explicitly diagnostic and is never substituted for
-    the nominal all-data result.
+    Diagnostics:
+      * additionally require Saylor |t| >= 0.343 GeV^2;
+      * remove Saylor entirely.
     """
     specs = [
-        ("all_datasets", (), ()),
-        ("without_saylor", ("saylor2018",), ()),
-        (
-            "all_except_two_saylor_bin87_points",
-            (),
-            tuple(sorted(SAYLOR_BIN87_DIAGNOSTIC_POINT_IDS)),
-        ),
+        ("nominal", (), (), None),
+        ("saylor_tmin_0p343", (), (), SAYLOR_TMIN_DIAGNOSTIC_GEV2),
+        ("without_saylor", ("saylor2018",), (), None),
     ]
 
     dataset_tables = []
     point_tables = []
     metric_rows = []
 
-    for scenario, excluded_datasets, excluded_points in specs:
+    print(f"[NORM FIT] running {len(specs)} global scenarios", flush=True)
+
+    for ispec, (scenario, excluded_datasets, excluded_points, saylor_tmin) in enumerate(specs, start=1):
+        print(
+            f"[NORM FIT] scenario {ispec}/{len(specs)}: "
+            f"{GLOBAL_NORM_SCENARIO_LABELS.get(scenario, scenario)}",
+            flush=True,
+        )
+
         dtab, ptab, metrics = fit_global_lee_anchor_normalizations(
             matches,
             exclude_datasets=excluded_datasets,
             exclude_point_ids=excluded_points,
+            saylor_tmin=saylor_tmin,
             scenario=scenario,
         )
         if not dtab.empty:
@@ -2272,7 +2546,16 @@ def run_global_lee_anchor_normalization_scenarios(
             metrics = dict(metrics)
             metrics["excluded_datasets"] = ",".join(excluded_datasets)
             metrics["excluded_point_ids"] = ",".join(excluded_points)
+            metrics["saylor_tmin_GeV2"] = (
+                float(saylor_tmin) if saylor_tmin is not None else np.nan
+            )
             metric_rows.append(metrics)
+            print(
+                f"[NORM FIT] {scenario}: Ndata={metrics['N_data']}, "
+                f"Nanchors={metrics['N_anchors']}, "
+                f"chi2/ndf={metrics['chi2_per_ndf']:.4f}",
+                flush=True,
+            )
         #endif
     #endfor
 
@@ -2281,6 +2564,111 @@ def run_global_lee_anchor_normalization_scenarios(
         pd.concat(point_tables, ignore_index=True) if point_tables else pd.DataFrame(),
         pd.DataFrame(metric_rows),
     )
+#enddef
+
+
+def build_complete_lee_anchor_legend(
+        matches: pd.DataFrame,
+        *,
+        normalization_dataset_table: Optional[pd.DataFrame] = None,
+        normalization_scenario: Optional[str] = None,
+        omit_datasets: Sequence[str] = ()) -> Tuple[List[Line2D], List[str]]:
+    """
+    Build a canvas-independent legend containing ALL six published datasets
+    plus BH and KM15.
+
+    This intentionally does not inspect which datasets happen to occur on the
+    first panel/page.  Therefore the visual key is identical from canvas to
+    canvas.
+
+    In normalization-adjusted variants the label gives the fitted global data
+    correction.  A dataset deliberately excluded from that scenario is still
+    shown in the legend and is marked '(excluded)'.
+    """
+    omit_set = {str(x) for x in omit_datasets}
+
+    # Recover the normalization fraction from the full matched table rather
+    # than from whichever particular canvas is being drawn.
+    norm_frac: Dict[str, float] = {}
+    for key in DATASET_ORDER:
+        if key == "lee2026":
+            vals = matches.loc[
+                matches["dataset_b"] == "lee2026",
+                "norm_frac_b",
+            ].to_numpy(float)
+        else:
+            vals = matches.loc[
+                matches["dataset_a"] == key,
+                "norm_frac_a",
+            ].to_numpy(float)
+        #endif
+        vals = vals[np.isfinite(vals)]
+        norm_frac[key] = float(np.nanmedian(vals)) if vals.size else np.nan
+    #endfor
+
+    correction = {key: 1.0 for key in DATASET_ORDER}
+    if (
+        normalization_dataset_table is not None
+        and not normalization_dataset_table.empty
+    ):
+        for r in normalization_dataset_table.itertuples(index=False):
+            correction[str(r.dataset)] = float(r.data_correction_scale)
+        #endfor
+    #endif
+
+    handles: List[Line2D] = []
+    labels: List[str] = []
+
+    for key in DATASET_ORDER:
+        style = DATASET_STYLES[key]
+        handles.append(
+            Line2D(
+                [0], [0],
+                linestyle="none",
+                marker=style["marker"],
+                markersize=5.5,
+                markerfacecolor=style["color"],
+                markeredgecolor=style["color"],
+                color=style["color"],
+            )
+        )
+
+        if key in omit_set:
+            label = f"{DATASET_LABELS[key]} (excluded)"
+        elif normalization_scenario is None:
+            n = norm_frac.get(key, np.nan)
+            label = (
+                f"{DATASET_LABELS[key]} ({100.0*n:.1f}% norm)"
+                if np.isfinite(n)
+                else DATASET_LABELS[key]
+            )
+        else:
+            shift = 100.0 * (float(correction.get(key, 1.0)) - 1.0)
+            constraint = "free" if key in GLOBAL_NORM_FREE_DATASETS else ""
+            suffix = f"{shift:+.1f}%"
+            if constraint:
+                suffix += ", free"
+            #endif
+            label = f"{DATASET_LABELS[key]} ({suffix})"
+        #endif
+
+        labels.append(label)
+    #endfor
+
+    for model_key, model_label in [("bh", "BH"), ("km15", "KM15")]:
+        style = MODEL_STYLES[model_key]
+        handles.append(
+            Line2D(
+                [0], [0],
+                color=style["color"],
+                linestyle=style["linestyle"],
+                linewidth=style["linewidth"],
+            )
+        )
+        labels.append(model_label)
+    #endfor
+
+    return handles, labels
 #enddef
 
 
@@ -2296,7 +2684,8 @@ def plot_lee_anchor_world_panels(
         normalization_metrics: Optional[Dict[str, float]] = None,
         normalization_scenario: Optional[str] = None,
         omit_datasets: Sequence[str] = (),
-        omit_point_ids: Sequence[str] = ()) -> None:
+        omit_point_ids: Sequence[str] = (),
+        saylor_tmin: Optional[float] = None) -> None:
     """
     Produce multi-dataset world-data overlays centered on CLAS12 Lee 2026 bins.
 
@@ -2324,6 +2713,15 @@ def plot_lee_anchor_world_panels(
     #endif
     if omit_point_set:
         lee = lee.loc[~lee["point_id_a"].astype(str).isin(omit_point_set)].copy()
+    #endif
+
+    if saylor_tmin is not None:
+        threshold = float(saylor_tmin)
+        keep = (
+            (lee["dataset_a"].astype(str) != "saylor2018")
+            | (lee["t_abs_a"].to_numpy(float) >= threshold)
+        )
+        lee = lee.loc[keep].copy()
     #endif
 
     if "published_bin_b" in lee.columns and np.isfinite(lee["published_bin_b"]).any():
@@ -2537,7 +2935,12 @@ def plot_lee_anchor_world_panels(
             #endif
         #endfor
 
-        handles, labels = axes.ravel()[0].get_legend_handles_labels()
+        handles, labels = build_complete_lee_anchor_legend(
+            matches,
+            normalization_dataset_table=normalization_dataset_table,
+            normalization_scenario=normalization_scenario,
+            omit_datasets=omit_datasets,
+        )
 
         if normalization_scenario is None:
             title = "Published world data mapped to CLAS12 pass-1 kinematics"
@@ -2578,7 +2981,7 @@ def plot_lee_anchor_world_panels(
                 bbox_to_anchor=(0.5, 0.958),
                 ncol=4,
                 frameon=False,
-                fontsize=7.6,
+                fontsize=7.4,
             )
         #endif
         fig.text(
@@ -2673,6 +3076,19 @@ def save_outputs(
     # curves at repeated Lee anchors are evaluated only once during this run.
     model_curve_cache: Dict[Tuple, pd.DataFrame] = {}
 
+    print("[PLOTS] collecting fixed-kinematics model curves needed by all canvases", flush=True)
+    model_curve_specs = collect_presentation_model_curve_specs(
+        matches,
+        pair_panel_summary,
+        lee_anchor_summary,
+    )
+    precompute_presentation_model_curves(
+        emff,
+        model_curve_cache,
+        model_curve_specs,
+    )
+    print("[PLOTS] model prediction precomputation finished; drawing figures", flush=True)
+
     plot_native_model_ratios(world, figures / "native_model_ratios", have_gk16)
     plot_transport_uncertainty(world, figures / "transport", have_gk16)
     plot_pairwise_matrix(pair_summary, figures / "pairwise")
@@ -2686,7 +3102,7 @@ def save_outputs(
         model_curve_cache,
     )
 
-    # Raw, un-rescaled Lee-anchor figures.
+    # Raw, un-rescaled NOMINAL Lee-anchor figures.
     plot_lee_anchor_world_panels(
         matches,
         lee_anchor_summary,
@@ -2698,26 +3114,29 @@ def save_outputs(
     # Requested normalization-adjusted variants.
     scenario_specs = [
         (
-            "all_datasets",
+            "nominal",
             (),
             (),
-            figures / "cross_section_overlays" / "lee_anchor" / "normfit_all",
+            None,
+            figures / "cross_section_overlays" / "lee_anchor" / "normfit_nominal",
+        ),
+        (
+            "saylor_tmin_0p343",
+            (),
+            (),
+            SAYLOR_TMIN_DIAGNOSTIC_GEV2,
+            figures / "cross_section_overlays" / "lee_anchor" / "normfit_saylor_tmin_0p343",
         ),
         (
             "without_saylor",
             ("saylor2018",),
             (),
+            None,
             figures / "cross_section_overlays" / "lee_anchor" / "normfit_without_saylor",
-        ),
-        (
-            "all_except_two_saylor_bin87_points",
-            (),
-            tuple(sorted(SAYLOR_BIN87_DIAGNOSTIC_POINT_IDS)),
-            figures / "cross_section_overlays" / "lee_anchor" / "normfit_saylor_bin87_two_removed",
         ),
     ]
 
-    for scenario, omit_datasets, omit_points, scenario_outdir in scenario_specs:
+    for scenario, omit_datasets, omit_points, saylor_tmin, scenario_outdir in scenario_specs:
         dtab = norm_dataset.loc[norm_dataset["scenario"] == scenario].copy()
         mrow = norm_metrics.loc[norm_metrics["scenario"] == scenario]
         metrics = (
@@ -2735,6 +3154,7 @@ def save_outputs(
             normalization_scenario=scenario,
             omit_datasets=omit_datasets,
             omit_point_ids=omit_points,
+            saylor_tmin=saylor_tmin,
         )
     #endfor
 
@@ -2887,6 +3307,14 @@ def main(argv: Optional[List[str]] = None) -> int:
         force=args.force_km15,
     )
 
+    # Keep the complete source/cache intact, but use the quality-filtered
+    # sample for every nominal score, match, fit, table and figure below.
+    world = apply_nominal_data_quality_exclusions(world)
+    print(
+        f"[WORLD] nominal sample after quality exclusions: {len(world):,} points",
+        flush=True,
+    )
+
     # ---------------------------------------------------------------------
     # 3. KM15-only transport prescription.
     #
@@ -2913,11 +3341,17 @@ def main(argv: Optional[List[str]] = None) -> int:
         dt=float(args.match_dt),
         dphi=float(args.match_dphi),
     )
+    print("[STAGE] building pairwise matched-data comparisons", flush=True)
     matches, pair_summary = build_pairwise_comparisons(world, match_cfg, have_gk16)
+    print(
+        f"[STAGE] pairwise matching complete: {len(matches):,} matched points",
+        flush=True,
+    )
 
     # ---------------------------------------------------------------------
     # 6. Tables plus note-style multi-panel cross-section presentation.
     # ---------------------------------------------------------------------
+    print("[STAGE] running normalization study and producing output products", flush=True)
     norm_dataset, norm_metrics = save_outputs(
         world,
         dataset_summary,
