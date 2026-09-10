@@ -111,6 +111,12 @@ from matplotlib.lines import Line2D
 
 TARGET_EBEAM_GEV = 10.6
 
+class Pass2UnavailableError(RuntimeError):
+    """Pass-2 input is absent or not yet finalized enough for comparison."""
+    pass
+#endclass
+
+
 PASS2_OVERALL_NORM_FRAC = 0.021633307652784
 PASS2_XS_COL = "normed cross sections, ep->epg, exp, 10.6 GeV, unpol"
 PASS2_PTP_COL = "Syst. err (point-to-point total)"
@@ -598,11 +604,12 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
     ]
     missing = [c for c in required if c not in raw.columns]
     if missing:
-        raise RuntimeError(
-            "Pass-2 CSV is missing authoritative final-systematics column(s): "
+        raise Pass2UnavailableError(
+            "Pass-2 CSV exists but is not yet finalized for the world-data "
+            "comparison. Missing authoritative final-systematics column(s): "
             + "; ".join(missing)
-            + ". Re-run main_systematics on the finalized pass-2 CSV before "
-              "running the world-data comparison."
+            + ". The published-world-data analysis will continue without "
+              "CLAS12 pass-2 Hayward."
         )
     #endif
 
@@ -808,7 +815,7 @@ def clean_canonical(df: pd.DataFrame) -> pd.DataFrame:
 def load_world_data(args, emff) -> pd.DataFrame:
     """Load the six published datasets plus the finalized pass-2 measurement."""
     print("\n" + "=" * 80)
-    print("LOADING PUBLISHED WORLD DATA + PASS-2")
+    print("LOADING PUBLISHED WORLD DATA + OPTIONAL PASS-2")
     print("=" * 80)
 
     jo = canonicalize_jo(emff.load_clas6_gepard_dataset(), emff)
@@ -845,13 +852,33 @@ def load_world_data(args, emff) -> pd.DataFrame:
     lee = enrich_lee_with_legacy_binning(lee, legacy_path)
     args.resolved_pass1_legacy_file = legacy_path
 
-    pass2_path = resolve_existing(
-        Path(args.pass2_file),
-        [
-            args.script_dir.parent / "output" / "csvs" / "dvcs_pass2_analysis.csv",
-        ],
-    )
-    pass2 = canonicalize_pass2_csv(pass2_path)
+    pass2_path = args.pass2_csv
+    pass2 = pd.DataFrame()
+    if pass2_path is not None:
+        pass2_path = Path(pass2_path)
+        if not pass2_path.exists():
+            print(
+                f"[PASS2 HAYWARD] input not found: {pass2_path}",
+                flush=True,
+            )
+            print(
+                "[PASS2 HAYWARD] skipping pass-2; continuing with "
+                "published world data only",
+                flush=True,
+            )
+        else:
+            try:
+                pass2 = canonicalize_pass2_csv(pass2_path)
+            except Pass2UnavailableError as exc:
+                print(f"[PASS2 HAYWARD] {exc}", flush=True)
+                print(
+                    "[PASS2 HAYWARD] skipping pass-2; continuing with "
+                    "published world data only",
+                    flush=True,
+                )
+            #endtry
+        #endif
+    #endif
     args.resolved_pass2_file = pass2_path
 
     world = pd.concat(
@@ -2475,9 +2502,7 @@ def _draw_measurement_series(
         color: Optional[str] = None,
         xoffset: float = 0.0,
         markersize: float = 4.2,
-        alpha: float = 0.90,
-        open_marker: bool = False,
-        extreme_open: bool = True):
+        alpha: float = 0.90):
     """
     Draw one measured cross-section series without allowing pathological
     published uncertainties to dominate the panel visually.
@@ -2529,7 +2554,6 @@ def _draw_measurement_series(
             alpha=alpha, label=label,
             color=color,
             markeredgecolor=color,
-            markerfacecolor=("none" if open_marker else color),
         )
     #endif
 
@@ -2537,7 +2561,7 @@ def _draw_measurement_series(
         open_handle = ax.plot(
             x[extreme], y[extreme],
             linestyle="none", marker=marker, ms=markersize + 0.4,
-            markerfacecolor=("none" if (open_marker or extreme_open) else color), markeredgewidth=1.0,
+            markerfacecolor="none", markeredgewidth=1.0,
             markeredgecolor=color,
             color=color,
             alpha=alpha,
@@ -4337,11 +4361,6 @@ def build_complete_pass2_anchor_legend(
 
     handles, labels = [], []
     for key in DATASET_ORDER:
-        # Lee-anchor canvases contain no pass-2 Hayward points by construction.
-        # Do not advertise a dataset that is absent from these figures.
-        if key == "pass2":
-            continue
-        #endif
         style = DATASET_STYLES[key]
         handles.append(Line2D(
             [0], [0],
@@ -4658,7 +4677,6 @@ def plot_pass2_anchor_world_panels(
                 yarrays.append(sc * da["xs_a_to_b_km15"].to_numpy(float))
             #endfor
 
-            yarrays.extend(extra_display_yarrays)
             ylo, yhi = _robust_positive_log_limits(yarrays)
             ax.set_yscale("log")
             ax.set_ylim(ylo, yhi)
@@ -4694,9 +4712,7 @@ def plot_pass2_anchor_world_panels(
             subtitle = (
                 "External measurements are transported point-by-point to pass-2 Hayward "
                 "kinematics with KM15; pass-2 is shown raw. "
-                r"Error bars = stat $\oplus$ point-to-point syst.  "
-                "Filled markers entered the matched comparison/normalization fit; "
-                "open markers are additional published points in the same Lee analysis bin."
+                r"Error bars = stat $\oplus$ point-to-point syst."
             )
         else:
             title = f"Systematic-nuisance-adjusted world data at pass-2 Hayward kinematics — {scenario}"
@@ -4713,8 +4729,6 @@ def plot_pass2_anchor_world_panels(
                 "full-correlation scenarios also fit one publication-level "
                 "pass-2 kinematic correlated-scale nuisance."
                 + metric_text
-                + "  Filled markers entered the matched comparison/normalization fit; "
-                + "open markers are additional published points in the same Lee analysis bin."
             )
         #endif
 
@@ -4746,9 +4760,8 @@ def build_complete_lee_anchor_legend(
         normalization_scenario: Optional[str] = None,
         omit_datasets: Sequence[str] = ()) -> Tuple[List[Line2D], List[str]]:
     """
-    Build a canvas-independent legend for datasets that can appear on the
-    Lee-anchor canvases, plus BH and KM15.  Pass-2 Hayward is intentionally
-    omitted because these are pass-1/Lee-anchor figures.
+    Build a canvas-independent legend containing ALL six published datasets
+    plus BH and KM15.
 
     This intentionally does not inspect which datasets happen to occur on the
     first panel/page.  Therefore the visual key is identical from canvas to
@@ -4845,7 +4858,6 @@ def build_complete_lee_anchor_legend(
 
 def plot_lee_anchor_world_panels(
         matches: pd.DataFrame,
-        world: pd.DataFrame,
         panel_summary: pd.DataFrame,
         outdir: Path,
         emff,
@@ -4983,192 +4995,67 @@ def plot_lee_anchor_world_panels(
                 continue
             #endif
 
-            matched_lee_points = d.sort_values("phi_b").drop_duplicates("point_id_b")
+            lee_points = d.sort_values("phi_b").drop_duplicates("point_id_b")
             first_panel = (iax == 0)
 
-            # -----------------------------------------------------------------
-            # Presentation population:
-            #   filled marker = point actually used in this Lee-anchor matching /
-            #                   normalization comparison;
-            #   open marker   = additional published point that falls inside the
-            #                   same original Lee (xB,Q2,t) bin but had no accepted
-            #                   pair and therefore did NOT enter the fit.
-            #
-            # This deliberately decouples *what is shown* from *what is fitted*.
-            # The quantitative normalization machinery above remains unchanged.
-            # -----------------------------------------------------------------
-            pubbin = int(round(float(panel_row["published_bin"])))
-            full_lee = world.loc[
-                (world["dataset"].astype(str) == "lee2026")
-                & (pd.to_numeric(world["published_bin"], errors="coerce") == pubbin)
-            ].copy().sort_values("phi_deg")
-            if full_lee.empty:
-                # Defensive fallback: the matched table always contains the anchor.
-                full_lee = pd.DataFrame({
-                    "point_id": matched_lee_points["point_id_b"].astype(str),
-                    "phi_deg": matched_lee_points["phi_b"].to_numpy(float),
-                    "xs": matched_lee_points["xs_b"].to_numpy(float),
-                    "point_unc": matched_lee_points["point_unc_b"].to_numpy(float),
-                    "norm_frac": matched_lee_points["norm_frac_b"].to_numpy(float),
-                })
-            #endif
-
-            used_lee_ids = set(d["point_id_b"].astype(str))
-            lee_used = full_lee.loc[full_lee["point_id"].astype(str).isin(used_lee_ids)].copy()
-            lee_extra = full_lee.loc[~full_lee["point_id"].astype(str).isin(used_lee_ids)].copy()
-
+            # Lee itself is displayed once per anchor point.
             lee_scale = correction.get("lee2026", 1.0)
-            norm_lee_vals = pd.to_numeric(full_lee.get("norm_frac", np.nan), errors="coerce")
-            norm_lee = 100.0 * float(np.nanmedian(norm_lee_vals)) if np.isfinite(norm_lee_vals).any() else np.nan
+            norm_lee = 100.0 * float(lee_points["norm_frac_b"].iloc[0])
             lee_label = f"{DATASET_LABELS['lee2026']}"
             if normalization_scenario is None:
-                if np.isfinite(norm_lee):
-                    lee_label += f" ({norm_lee:.1f}% norm)"
-                #endif
+                lee_label += f" ({norm_lee:.1f}% norm)"
             else:
                 lee_label += f" ({100.0 * (lee_scale - 1.0):+.1f}%)"
             #endif
 
-            if not lee_used.empty:
-                _draw_measurement_series(
-                    ax,
-                    lee_used["phi_deg"].to_numpy(float),
-                    lee_scale * lee_used["xs"].to_numpy(float),
-                    abs(lee_scale) * lee_used["point_unc"].to_numpy(float),
-                    label=(lee_label if first_panel else "_nolegend_"),
-                    dataset_key="lee2026",
-                    xoffset=+4.0,
-                    markersize=4.2,
-                    extreme_open=False,
-                )
-            #endif
-            if not lee_extra.empty:
-                _draw_measurement_series(
-                    ax,
-                    lee_extra["phi_deg"].to_numpy(float),
-                    lee_scale * lee_extra["xs"].to_numpy(float),
-                    abs(lee_scale) * lee_extra["point_unc"].to_numpy(float),
-                    label="_nolegend_",
-                    dataset_key="lee2026",
-                    xoffset=+4.0,
-                    markersize=4.2,
-                    alpha=0.70,
-                    open_marker=True,
-                )
-            #endif
-
-            # Representative Lee-bin kinematics used only to transport the
-            # additional, non-paired points for presentation.  Matched points
-            # continue to use their original exact point-to-point transport.
-            xb_anchor = float(np.median(matched_lee_points["xB_b"]))
-            q2_anchor = float(np.median(matched_lee_points["Q2_b"]))
-            tt_anchor = float(np.median(matched_lee_points["t_abs_b"]))
-            ebeam_anchor = float(np.median(matched_lee_points["ebeam_b"]))
-            lee_target_curve = get_dense_model_curve(
-                emff, model_curve_cache, dataset_key="lee2026",
-                ebeam=ebeam_anchor, xB=xb_anchor, Q2=q2_anchor, t_abs=tt_anchor,
+            _draw_measurement_series(
+                ax,
+                lee_points["phi_b"].to_numpy(float),
+                lee_scale * lee_points["xs_b"].to_numpy(float),
+                abs(lee_scale) * lee_points["point_unc_b"].to_numpy(float),
+                label=(lee_label if first_panel else "_nolegend_"),
+                dataset_key="lee2026",
+                xoffset=+4.0,
+                markersize=4.2,
             )
 
-            def _inside(v, lo, hi):
-                return np.isfinite(v) and np.isfinite(lo) and np.isfinite(hi) and (v >= lo) and (v <= hi)
-            #enddef
-
-            xblo, xbhi = float(panel_row.get("xBmin_ref", np.nan)), float(panel_row.get("xBmax_ref", np.nan))
-            qlo, qhi = float(panel_row.get("Q2min_ref", np.nan)), float(panel_row.get("Q2max_ref", np.nan))
-            tlo, thi = float(panel_row.get("t_abs_min_ref", np.nan)), float(panel_row.get("t_abs_max_ref", np.nan))
-
-            extra_display_yarrays = []
             for ka in DATASET_ORDER:
-                if ka in ("lee2026", "pass2") or ka in omit_dataset_set:
+                if ka == "lee2026" or ka in omit_dataset_set:
                     continue
                 #endif
 
-                # Closed symbols: exact accepted matches, unchanged from the fit.
                 da = d.loc[d["dataset_a"] == ka].sort_values("phi_b")
-                used_ids = set(da["point_id_a"].astype(str))
-
-                # Open symbols: every other canonical point whose native hadronic
-                # kinematics lie inside this Lee analysis bin.
-                wa = world.loc[world["dataset"].astype(str) == ka].copy()
-                if not wa.empty:
-                    mask_bin = (
-                        wa["xB"].between(xblo, xbhi, inclusive="both")
-                        & wa["Q2"].between(qlo, qhi, inclusive="both")
-                        & wa["t_abs"].between(tlo, thi, inclusive="both")
-                    ) if all(np.isfinite([xblo, xbhi, qlo, qhi, tlo, thi])) else np.zeros(len(wa), dtype=bool)
-                    wa = wa.loc[mask_bin].copy()
-                    wa = wa.loc[~wa["point_id"].astype(str).isin(used_ids)].copy()
-                    if omit_point_set:
-                        wa = wa.loc[~wa["point_id"].astype(str).isin(omit_point_set)].copy()
-                    #endif
-                    if saylor_tmin is not None and ka == "saylor2018":
-                        wa = wa.loc[wa["t_abs"].to_numpy(float) >= float(saylor_tmin)].copy()
-                    #endif
+                if da.empty:
+                    continue
                 #endif
 
                 scale = correction.get(ka, 1.0)
-                norm_source = da["norm_frac_a"].to_numpy(float) if not da.empty else pd.to_numeric(wa.get("norm_frac", np.nan), errors="coerce").to_numpy(float)
-                norm_source = norm_source[np.isfinite(norm_source)]
-                norm_a = 100.0 * float(np.nanmedian(norm_source)) if norm_source.size else np.nan
+                norm_a = 100.0 * float(da["norm_frac_a"].iloc[0])
                 label = DATASET_LABELS[ka]
                 if normalization_scenario is None:
-                    if np.isfinite(norm_a):
-                        label += f" ({norm_a:.1f}% norm)"
-                    #endif
+                    label += f" ({norm_a:.1f}% norm)"
                 else:
                     label += f" ({100.0 * (scale - 1.0):+.1f}%)"
                 #endif
 
-                if not da.empty:
-                    _draw_measurement_series(
-                        ax,
-                        da["phi_b"].to_numpy(float),
-                        scale * da["xs_a_to_b_km15"].to_numpy(float),
-                        abs(scale) * da["point_unc_a_to_b_km15"].to_numpy(float),
-                        label=(label if first_panel else "_nolegend_"),
-                        dataset_key=ka,
-                        xoffset=external_offsets.get(ka, 0.0),
-                        markersize=3.7,
-                        alpha=0.84,
-                        extreme_open=False,
-                    )
-                #endif
-
-                if not wa.empty:
-                    target_phi = np.mod(wa["phi_deg"].to_numpy(float), 360.0)
-                    target_km15 = np.interp(
-                        target_phi,
-                        lee_target_curve["phi_deg"].to_numpy(float),
-                        lee_target_curve["km15"].to_numpy(float),
-                    )
-                    native_km15 = wa["km15_native"].to_numpy(float)
-                    tf = np.divide(
-                        target_km15, native_km15,
-                        out=np.full_like(target_km15, np.nan),
-                        where=np.isfinite(native_km15) & (native_km15 > 0.0),
-                    )
-                    extra_y = scale * wa["xs"].to_numpy(float) * tf
-                    extra_display_yarrays.append(extra_y)
-                    _draw_measurement_series(
-                        ax,
-                        target_phi,
-                        extra_y,
-                        abs(scale) * wa["point_unc"].to_numpy(float) * np.abs(tf),
-                        label="_nolegend_",
-                        dataset_key=ka,
-                        xoffset=external_offsets.get(ka, 0.0),
-                        markersize=3.7,
-                        alpha=0.66,
-                        open_marker=True,
-                    )
-                #endif
+                _draw_measurement_series(
+                    ax,
+                    da["phi_b"].to_numpy(float),
+                    scale * da["xs_a_to_b_km15"].to_numpy(float),
+                    abs(scale) * da["point_unc_a_to_b_km15"].to_numpy(float),
+                    label=(label if first_panel else "_nolegend_"),
+                    dataset_key=ka,
+                    xoffset=external_offsets.get(ka, 0.0),
+                    markersize=3.7,
+                    alpha=0.84,
+                )
             #endfor
 
             # Dense model scan at the fixed Lee-bin representative kinematics.
-            xb = float(np.median(matched_lee_points["xB_b"]))
-            q2 = float(np.median(matched_lee_points["Q2_b"]))
-            tt = float(np.median(matched_lee_points["t_abs_b"]))
-            ebeam = float(np.median(matched_lee_points["ebeam_b"]))
+            xb = float(np.median(lee_points["xB_b"]))
+            q2 = float(np.median(lee_points["Q2_b"]))
+            tt = float(np.median(lee_points["t_abs_b"]))
+            ebeam = float(np.median(lee_points["ebeam_b"]))
             model = get_dense_model_curve(
                 emff,
                 model_curve_cache,
@@ -5197,7 +5084,7 @@ def plot_lee_anchor_world_panels(
             )
 
             yarrays = [
-                lee_scale * full_lee["xs"].to_numpy(float),
+                lee_scale * lee_points["xs_b"].to_numpy(float),
                 model["bh"].to_numpy(float),
                 model["km15"].to_numpy(float),
             ]
@@ -5997,6 +5884,17 @@ def clas_vs_halla_pairwise_summary(pair_summary: pd.DataFrame) -> pd.DataFrame:
 #enddef
 
 
+
+def world_has_pass2(world: pd.DataFrame) -> bool:
+    """Return True only when a valid CLAS12 pass-2 Hayward sample is loaded."""
+    return (
+        not world.empty
+        and "dataset" in world.columns
+        and bool(np.any(world["dataset"].astype(str).to_numpy() == "pass2"))
+    )
+#enddef
+
+
 def save_outputs(
         world: pd.DataFrame,
         dataset_summary: pd.DataFrame,
@@ -6007,6 +5905,15 @@ def save_outputs(
         have_gk16: bool,
         emff,
         args) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    have_pass2 = world_has_pass2(world)
+    if not have_pass2:
+        print(
+            "[PASS2 HAYWARD] no finalized pass-2 sample loaded; "
+            "all Hayward-specific fits/tables/plots will be skipped",
+            flush=True,
+        )
+    #endif
+
     tables = outdir / "tables"
     figures = outdir / "figures"
     tables.mkdir(parents=True, exist_ok=True)
@@ -6016,14 +5923,18 @@ def save_outputs(
     dataset_summary.to_csv(tables / "dataset_summary.csv", index=False)
     model_scores.to_csv(tables / "native_model_scores.csv", index=False)
 
-    print(
-        "[PASS2 MODEL] evaluating Hayward vs KM15/BH with publication-level "
-        "normalization + correlated-scale nuisances",
-        flush=True,
-    )
-    pass2_model_scores, pass2_model_points = (
-        make_pass2_model_publication_scores(world)
-    )
+    pass2_model_scores = pd.DataFrame()
+    pass2_model_points = pd.DataFrame()
+    if have_pass2:
+        print(
+            "[PASS2 MODEL] evaluating Hayward vs KM15/BH with publication-level "
+            "normalization + correlated-scale nuisances",
+            flush=True,
+        )
+        pass2_model_scores, pass2_model_points = (
+            make_pass2_model_publication_scores(world)
+        )
+    #endif
     pass2_model_scores.to_csv(
         tables / "pass2_model_publication_scores.csv",
         index=False,
@@ -6033,7 +5944,10 @@ def save_outputs(
         index=False,
     )
 
-    pass2_pair_scores = make_pass2_pair_publication_scores(matches)
+    pass2_pair_scores = (
+        make_pass2_pair_publication_scores(matches)
+        if have_pass2 else pd.DataFrame()
+    )
     pass2_pair_scores.to_csv(
         tables / "pass2_pairwise_publication_scores.csv",
         index=False,
@@ -6156,7 +6070,10 @@ def save_outputs(
 
     pair_panel_summary = make_pairwise_panel_summary(matches)
     lee_anchor_summary = make_lee_anchor_panel_summary(matches)
-    pass2_anchor_summary = make_pass2_anchor_panel_summary(matches)
+    pass2_anchor_summary = (
+        make_pass2_anchor_panel_summary(matches)
+        if have_pass2 else pd.DataFrame()
+    )
 
     n_pass2_matches = int(np.sum(matches["dataset_b"].astype(str) == "pass2")) if not matches.empty else 0
     print(
@@ -6202,7 +6119,13 @@ def save_outputs(
     )
 
     # Pass-2-specific nuisance treatment.
-    p2_ds, p2_nui, p2_pts, p2_metrics = run_pass2_anchor_nuisance_scenarios(matches)
+    p2_ds = pd.DataFrame()
+    p2_nui = pd.DataFrame()
+    p2_pts = pd.DataFrame()
+    p2_metrics = pd.DataFrame()
+    if have_pass2:
+        p2_ds, p2_nui, p2_pts, p2_metrics = run_pass2_anchor_nuisance_scenarios(matches)
+    #endif
     p2_ds.to_csv(tables / "pass2_global_normalization_offsets.csv", index=False)
     p2_nui.to_csv(tables / "pass2_correlated_scale_nuisances.csv", index=False)
     p2_pts.to_csv(tables / "pass2_global_nuisance_point_residuals.csv", index=False)
@@ -6249,7 +6172,6 @@ def save_outputs(
     # Raw, un-rescaled NOMINAL Lee-anchor figures.
     plot_lee_anchor_world_panels(
         matches,
-        world,
         lee_anchor_summary,
         figures / "cross_section_overlays" / "lee_anchor" / "raw",
         emff,
@@ -6290,7 +6212,6 @@ def save_outputs(
         )
         plot_lee_anchor_world_panels(
             matches,
-            world,
             lee_anchor_summary,
             scenario_outdir,
             emff,
@@ -6304,14 +6225,16 @@ def save_outputs(
         )
     #endfor
 
-    print(
-        "[PLOTS PASS2 MODEL] residual diagnostics for KM15/BH",
-        flush=True,
-    )
-    plot_pass2_model_residual_diagnostics(
-        pass2_model_points,
-        figures / "pass2_model_diagnostics",
-    )
+    if have_pass2:
+        print(
+            "[PLOTS PASS2 MODEL] residual diagnostics for KM15/BH",
+            flush=True,
+        )
+        plot_pass2_model_residual_diagnostics(
+            pass2_model_points,
+            figures / "pass2_model_diagnostics",
+        )
+    #endif
 
     # ------------------------------------------------------------------
     # Dedicated CLAS12 pass-2 Hayward anchor canvases.
@@ -6319,103 +6242,111 @@ def save_outputs(
     # Earlier versions built the pass-2 panel summary and precomputed the
     # corresponding BH/KM15 curves, but omitted these final drawing calls.
     # ------------------------------------------------------------------
-    pass2_root = (
-        figures
-        / "cross_section_overlays"
-        / "pass2_anchor"
-    )
-
-    print(
-        f"[PLOTS PASS2] generating dedicated CLAS12 pass-2 Hayward canvases "
-        f"from {len(pass2_anchor_summary):,} qualifying 3D bins",
-        flush=True,
-    )
-
-    # Raw comparison.
-    plot_pass2_anchor_world_panels(
-        matches,
-        pass2_anchor_summary,
-        pass2_root / "raw",
-        emff,
-        model_curve_cache,
-    )
-
-    # Nuisance-adjusted comparison variants.
-    pass2_plot_specs = [
-        (
-            "norm_only_nominal",
-            (),
-            None,
-            "norm_only_nominal",
-        ),
-        (
-            "full_corr_nominal",
-            (),
-            None,
-            "full_corr_nominal",
-        ),
-        (
-            "full_corr_saylor_tmin_0p343",
-            (),
-            SAYLOR_TMIN_DIAGNOSTIC_GEV2,
-            "full_corr_saylor_tmin_0p343",
-        ),
-        (
-            "full_corr_without_saylor",
-            ("saylor2018",),
-            None,
-            "full_corr_without_saylor",
-        ),
-    ]
-
-    for iscenario, (
-            scenario,
-            omitted_datasets,
-            saylor_tmin,
-            dirname) in enumerate(pass2_plot_specs, start=1):
+    if have_pass2:
+        pass2_root = (
+            figures
+            / "cross_section_overlays"
+            / "pass2_anchor"
+        )
 
         print(
-            f"[PLOTS PASS2] scenario {iscenario}/{len(pass2_plot_specs)}: "
-            f"{scenario}",
+            f"[PLOTS PASS2] generating dedicated CLAS12 pass-2 Hayward canvases "
+            f"from {len(pass2_anchor_summary):,} qualifying 3D bins",
             flush=True,
         )
 
-        dataset_fit = p2_ds.loc[
-            p2_ds["scenario"] == scenario
-        ].copy()
-
-        point_fit = p2_pts.loc[
-            p2_pts["scenario"] == scenario
-        ].copy()
-
-        metric_rows = p2_metrics.loc[
-            p2_metrics["scenario"] == scenario
-        ]
-        metrics = (
-            metric_rows.iloc[0].to_dict()
-            if not metric_rows.empty
-            else {}
-        )
-
+        # Raw comparison.
         plot_pass2_anchor_world_panels(
             matches,
             pass2_anchor_summary,
-            pass2_root / dirname,
+            pass2_root / "raw",
             emff,
             model_curve_cache,
-            dataset_fit_table=dataset_fit,
-            point_fit_table=point_fit,
-            metrics=metrics,
-            scenario=scenario,
-            omit_datasets=omitted_datasets,
-            saylor_tmin=saylor_tmin,
         )
-    #endfor
 
-    print(
-        f"[PLOTS PASS2] complete -> {pass2_root}",
-        flush=True,
-    )
+        # Nuisance-adjusted comparison variants.
+        pass2_plot_specs = [
+            (
+                "norm_only_nominal",
+                (),
+                None,
+                "norm_only_nominal",
+            ),
+            (
+                "full_corr_nominal",
+                (),
+                None,
+                "full_corr_nominal",
+            ),
+            (
+                "full_corr_saylor_tmin_0p343",
+                (),
+                SAYLOR_TMIN_DIAGNOSTIC_GEV2,
+                "full_corr_saylor_tmin_0p343",
+            ),
+            (
+                "full_corr_without_saylor",
+                ("saylor2018",),
+                None,
+                "full_corr_without_saylor",
+            ),
+        ]
+
+        for iscenario, (
+                scenario,
+                omitted_datasets,
+                saylor_tmin,
+                dirname) in enumerate(pass2_plot_specs, start=1):
+
+            print(
+                f"[PLOTS PASS2] scenario {iscenario}/{len(pass2_plot_specs)}: "
+                f"{scenario}",
+                flush=True,
+            )
+
+            dataset_fit = p2_ds.loc[
+                p2_ds["scenario"] == scenario
+            ].copy()
+
+            point_fit = p2_pts.loc[
+                p2_pts["scenario"] == scenario
+            ].copy()
+
+            metric_rows = p2_metrics.loc[
+                p2_metrics["scenario"] == scenario
+            ]
+            metrics = (
+                metric_rows.iloc[0].to_dict()
+                if not metric_rows.empty
+                else {}
+            )
+
+            plot_pass2_anchor_world_panels(
+                matches,
+                pass2_anchor_summary,
+                pass2_root / dirname,
+                emff,
+                model_curve_cache,
+                dataset_fit_table=dataset_fit,
+                point_fit_table=point_fit,
+                metrics=metrics,
+                scenario=scenario,
+                omit_datasets=omitted_datasets,
+                saylor_tmin=saylor_tmin,
+            )
+        #endfor
+
+        print(
+            f"[PLOTS PASS2] complete -> {pass2_root}",
+            flush=True,
+        )
+
+    else:
+        print(
+            "[PLOTS PASS2] skipped: no finalized pass-2 sample loaded",
+            flush=True,
+        )
+    #endif
 
     return norm_dataset, norm_metrics
 #enddef
@@ -6423,6 +6354,7 @@ def save_outputs(
 def print_summary(dataset_summary: pd.DataFrame, model_scores: pd.DataFrame, pair_summary: pd.DataFrame, have_gk16: bool, norm_dataset: Optional[pd.DataFrame] = None, norm_metrics: Optional[pd.DataFrame] = None) -> None:
     print("\n" + "=" * 80)
     print("DATASET SUMMARY")
+    have_pass2 = world_has_pass2(world)
     print("=" * 80)
     cols = ["dataset_label", "N", "ebeam_min_GeV", "ebeam_max_GeV", "median_point_unc_pct", "correlated_norm_pct"]
     print(dataset_summary[cols].to_string(index=False, float_format=lambda x: f"{x:.3f}"))
