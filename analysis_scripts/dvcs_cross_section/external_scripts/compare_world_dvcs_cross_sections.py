@@ -5664,21 +5664,66 @@ def halla_covered_region_summary(
         if d.empty:
             continue
         #endif
-        for model, col in [("KM15","km15_native"),("BH","bh_native")]:
-            fit = fit_single_dataset_model(
-                d["xs"].to_numpy(float), d[col].to_numpy(float),
-                d["point_unc_abs"].to_numpy(float), float(np.nanmedian(d["norm_frac"])),
-            )
-            rows.append({
-                "dataset": ckey,
-                "dataset_label": DATASET_LABELS[ckey],
-                "model": model,
-                "N_halla_covered_points": int(len(d)),
-                "chi2_per_point": float(fit["chi2_per_point"]),
-                "normalization_beta": float(fit["beta"]),
-                "normalization_scale": float(fit["scale"]),
-                "median_abs_fractional_residual": float(np.nanmedian(np.abs(d["xs"]-d[col])/np.abs(d["xs"]))),
-            })
+        for model, col in [("KM15", "km15_native"), ("BH", "bh_native")]:
+            if ckey == "pass2":
+                # Hayward keeps its publication-level uncertainty model even
+                # inside the Hall-A-covered phase-space restriction: one
+                # overall normalization nuisance plus one finalized
+                # bin-dependent correlated-scale nuisance.
+                fit = fit_pass2_model_publication_nuisances(
+                    d["xs"].to_numpy(float),
+                    d[col].to_numpy(float),
+                    d["point_unc_abs"].to_numpy(float),
+                    d["norm_frac"].to_numpy(float),
+                    d["corr_scale_frac"].to_numpy(float),
+                    include_norm=True,
+                    include_corr=True,
+                )
+                rows.append({
+                    "dataset": ckey,
+                    "dataset_label": DATASET_LABELS[ckey],
+                    "model": model,
+                    "N_halla_covered_points": int(fit["N"]),
+                    "systematic_treatment": "overall norm + correlated scale",
+                    "chi2_per_point": float(fit["chi2_per_point"]),
+                    "normalization_beta": float(fit["beta_norm"]),
+                    "normalization_scale": float(
+                        1.0 + np.nanmedian(d["norm_frac"].to_numpy(float))
+                        * float(fit["beta_norm"])
+                    ),
+                    "correlated_scale_beta": float(fit["beta_corr"]),
+                    "combined_nuisance_excursion_sigma": float(fit["combined_nuisance_excursion_sigma"]),
+                    "corr_shift_median_pct": float(fit["corr_shift_median_pct"]),
+                    "corr_shift_min_pct": float(fit["corr_shift_min_pct"]),
+                    "corr_shift_max_pct": float(fit["corr_shift_max_pct"]),
+                    "median_abs_fractional_residual": float(fit["median_abs_fractional_residual_fitted"]),
+                    "median_abs_fractional_residual_raw": float(fit["median_abs_fractional_residual_raw"]),
+                })
+            else:
+                fit = fit_one_normalization_nuisance(
+                    d["xs"].to_numpy(float),
+                    d[col].to_numpy(float),
+                    d["point_unc_abs"].to_numpy(float),
+                    float(np.nanmedian(d["norm_frac"])),
+                )
+                rows.append({
+                    "dataset": ckey,
+                    "dataset_label": DATASET_LABELS[ckey],
+                    "model": model,
+                    "N_halla_covered_points": int(fit["N"]),
+                    "systematic_treatment": "overall normalization",
+                    "chi2_per_point": float(fit["chi2_per_point"]),
+                    "normalization_beta": float(fit["beta"]),
+                    "normalization_scale": float(fit["scale"]),
+                    "correlated_scale_beta": np.nan,
+                    "combined_nuisance_excursion_sigma": abs(float(fit["beta"])),
+                    "corr_shift_median_pct": np.nan,
+                    "corr_shift_min_pct": np.nan,
+                    "corr_shift_max_pct": np.nan,
+                    "median_abs_fractional_residual": float(fit["median_abs_fractional_residual"]),
+                    "median_abs_fractional_residual_raw": float(np.nanmedian(np.abs(d["xs"].to_numpy(float)-d[col].to_numpy(float))/np.abs(d[col].to_numpy(float)))),
+                })
+            #endif
         #endfor
     #endfor
     return pd.DataFrame(rows)
