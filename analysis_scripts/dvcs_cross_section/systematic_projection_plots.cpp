@@ -257,7 +257,16 @@ static std::vector<double> row_component_fractions(
         f[3] = frac_from_abs_10p6("Syst.err (Fbin)");
         f[4] = frac_from_abs_10p6("Syst. err (exclusivity cuts)");
         f[5] = frac_from_abs_10p6("Syst. err (fiducial cuts)");
-        f[6] = number(cell(table,row,"proton efficiency sys frac, 10.6 GeV"));
+        // Proton-efficiency uncertainty: use the authoritative production
+        // fractional column written by main_systematics.  Retain the older
+        // column name as a backward-compatible fallback.
+        f[6] = number(cell(
+            table,row,"proton efficiency combined systematic fraction, 10.6 GeV"));
+        if (!finite_fraction(f[6])) {
+            f[6] = number(cell(
+                table,row,"proton efficiency sys frac, 10.6 GeV"));
+        }
+
         f[7] = frac_from_abs_10p6("Syst. err (point-to-point total)");
 
         // The displayed total is mathematically just the quadrature sum of
@@ -312,8 +321,18 @@ static std::vector<double> row_component_fractions(
     };
     f[4] = transferred_or_zero("Syst. err (exclusivity cuts)");
     f[5] = transferred_or_zero("Syst. err (fiducial cuts)");
-    f[6] = number(cell(
-        table,row,"proton efficiency sys frac, Sp19 Inb (10.2 GeV)"));
+    // Sp19 proton-efficiency uncertainty is stored authoritatively as an
+    // absolute cross-section uncertainty by main_systematics.  Convert it
+    // back to a fraction for this projection.  Retain the older fractional
+    // column name as a backward-compatible fallback.
+    const double peff_sp_abs = number(cell(
+        table,row,"Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)"));
+    if (std::isfinite(peff_sp_abs))
+        f[6] = std::fabs(peff_sp_abs/xs19);
+    if (!finite_fraction(f[6])) {
+        f[6] = number(cell(
+            table,row,"proton efficiency sys frac, Sp19 Inb (10.2 GeV)"));
+    }
 
     // Prefer the dedicated production Sp19 total written by main_systematics.
     // Reconstruct it from the six displayed fractions only as a backward-safe
@@ -358,7 +377,10 @@ static std::vector<ProjectionPoint> build_projection(
         const auto fractions = row_component_fractions(table,row,sp19);
 
         // Require a valid total for this energy before using the row.
-        if (!finite_fraction(fractions[6])) {
+        // fractions[7] is the point-to-point total; fractions[6] is the
+        // proton-efficiency component.  The old index-6 check accidentally
+        // rejected every row when the legacy proton-fraction column was absent.
+        if (!finite_fraction(fractions[7])) {
             ++n_bad_total;
             continue;
         }
