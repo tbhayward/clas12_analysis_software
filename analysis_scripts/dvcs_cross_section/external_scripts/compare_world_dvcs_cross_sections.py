@@ -5905,6 +5905,8 @@ def save_outputs(
         have_gk16: bool,
         emff,
         args) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    have_pass2 = world_has_pass2(world)
+
     if not have_pass2:
         print(
             "[PASS2 HAYWARD] no finalized pass-2 sample loaded; "
