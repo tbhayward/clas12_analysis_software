@@ -569,6 +569,115 @@ def _parse_cross_section_tuple(raw) -> Tuple[float, float]:
 #enddef
 
 
+def _pass2_required_columns() -> List[str]:
+    return [
+        "bin index",
+        "Bin Name",
+        "xBavg, 10.6 GeV",
+        "Q2avg, 10.6 GeV",
+        "t_abs_avg, 10.6 GeV",
+        "phiavg, 10.6 GeV",
+        PASS2_XS_COL,
+        PASS2_PTP_COL,
+        PASS2_CORR_FRAC_COL,
+        PASS2_NORM_FRAC_COL,
+    ]
+#enddef
+
+
+def _pass2_missing_columns(path: Path) -> List[str]:
+    try:
+        cols = pd.read_csv(path, nrows=0).columns
+    except Exception:
+        return _pass2_required_columns()
+    #endtry
+    return [c for c in _pass2_required_columns() if c not in cols]
+#enddef
+
+
+def resolve_finalized_pass2_csv(requested: Optional[Path], script_dir: Path) -> Optional[Path]:
+    """Resolve a finalized pass-2 CSV independently of where this script lives.
+
+    This script is often copied between ``external_scripts`` and the parent
+    analysis directory.  The old default used ``__file__`` alone, so moving the
+    script could silently point it at a stale/different CSV.  Prefer a candidate
+    that actually has the finalized publication-systematics schema.
+    """
+    candidates: List[Path] = []
+
+    def add_candidate(x: Optional[Path]) -> None:
+        if x is None:
+            return
+        #endif
+        p = Path(x).expanduser()
+        try:
+            p = p.resolve()
+        except Exception:
+            p = Path(x).expanduser().absolute()
+        #endtry
+        if p not in candidates:
+            candidates.append(p)
+        #endif
+    #enddef
+
+    add_candidate(requested)
+    cwd = Path.cwd()
+    add_candidate(cwd / "output" / "csvs" / "dvcs_pass2_analysis.csv")
+    add_candidate(script_dir / "output" / "csvs" / "dvcs_pass2_analysis.csv")
+    add_candidate(script_dir.parent / "output" / "csvs" / "dvcs_pass2_analysis.csv")
+    add_candidate(script_dir.parent.parent / "output" / "csvs" / "dvcs_pass2_analysis.csv")
+
+    existing = [p for p in candidates if p.exists()]
+    finalized = []
+    for p in existing:
+        missing = _pass2_missing_columns(p)
+        if not missing:
+            finalized.append(p)
+        else:
+            print(
+                f"[PASS2 HAYWARD] candidate is not finalized: {p}\n"
+                f"                 missing: {'; '.join(missing)}",
+                flush=True,
+            )
+        #endif
+    #endfor
+
+    if finalized:
+        chosen = finalized[0]
+        if requested is not None:
+            try:
+                req = Path(requested).expanduser().resolve()
+            except Exception:
+                req = Path(requested).expanduser().absolute()
+            #endtry
+            if chosen != req:
+                print(
+                    f"[PASS2 HAYWARD] requested/default pass-2 path was not usable; "
+                    f"using finalized CSV: {chosen}",
+                    flush=True,
+                )
+            #endif
+        #endif
+        print(f"[PASS2 HAYWARD] resolved finalized pass-2 CSV: {chosen}", flush=True)
+        return chosen
+    #endif
+
+    if existing:
+        # Return the first existing candidate so canonicalize_pass2_csv can emit
+        # its detailed missing-column error in the usual code path.
+        return existing[0]
+    #endif
+
+    if candidates:
+        print("[PASS2 HAYWARD] searched pass-2 CSV candidates:", flush=True)
+        for p in candidates:
+            print(f"  - {p}", flush=True)
+        #endfor
+    #endif
+    return None
+#enddef
+
+
 def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
     """
     Load the finalized combined 10.6-GeV pass-2 cross section using the
@@ -590,18 +699,7 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
     """
     raw = pd.read_csv(path, low_memory=False)
 
-    required = [
-        "bin index",
-        "Bin Name",
-        "xBavg, 10.6 GeV",
-        "Q2avg, 10.6 GeV",
-        "t_abs_avg, 10.6 GeV",
-        "phiavg, 10.6 GeV",
-        PASS2_XS_COL,
-        PASS2_PTP_COL,
-        PASS2_CORR_FRAC_COL,
-        PASS2_NORM_FRAC_COL,
-    ]
+    required = _pass2_required_columns()
     missing = [c for c in required if c not in raw.columns]
     if missing:
         raise Pass2UnavailableError(
@@ -852,32 +950,26 @@ def load_world_data(args, emff) -> pd.DataFrame:
     lee = enrich_lee_with_legacy_binning(lee, legacy_path)
     args.resolved_pass1_legacy_file = legacy_path
 
-    pass2_path = args.pass2_file
+    requested_pass2_path = Path(args.pass2_file) if args.pass2_file else None
+    pass2_path = resolve_finalized_pass2_csv(requested_pass2_path, args.script_dir)
     pass2 = pd.DataFrame()
-    if pass2_path is not None:
-        pass2_path = Path(pass2_path)
-        if not pass2_path.exists():
-            print(
-                f"[PASS2 HAYWARD] input not found: {pass2_path}",
-                flush=True,
-            )
+    if pass2_path is None:
+        print(
+            "[PASS2 HAYWARD] no pass-2 CSV candidate found; continuing with "
+            "published world data only",
+            flush=True,
+        )
+    else:
+        try:
+            pass2 = canonicalize_pass2_csv(pass2_path)
+        except Pass2UnavailableError as exc:
+            print(f"[PASS2 HAYWARD] {exc}", flush=True)
             print(
                 "[PASS2 HAYWARD] skipping pass-2; continuing with "
                 "published world data only",
                 flush=True,
             )
-        else:
-            try:
-                pass2 = canonicalize_pass2_csv(pass2_path)
-            except Pass2UnavailableError as exc:
-                print(f"[PASS2 HAYWARD] {exc}", flush=True)
-                print(
-                    "[PASS2 HAYWARD] skipping pass-2; continuing with "
-                    "published world data only",
-                    flush=True,
-                )
-            #endtry
-        #endif
+        #endtry
     #endif
     args.resolved_pass2_file = pass2_path
 

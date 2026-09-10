@@ -1010,6 +1010,26 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
 
+            // --finalize-only must leave a CSV that is genuinely ready for the
+            // publication/world-data comparison.  Rebuild the inexpensive
+            // publication-level correlated-scale and overall-normalization
+            // columns rather than assuming that an earlier full run happened
+            // to materialize them before any later-stage failure.
+            CorrelatedScaleSystematicsOptions correlated_opts;
+            correlated_opts.theta_bin_width_deg = 4.0;
+            correlated_opts.min_ratio_points_per_period = 25;
+            correlated_opts.uncorrelated_normalization_fraction =
+                0.021633307652784; // sqrt(0.012^2 + 0.018^2) = 2.16%
+            correlated_opts.output_dir =
+                "output/systematics/correlated_scale";
+
+            if (!correlated_scale_systematics(csv_main, correlated_opts)) {
+                std::cerr
+                    << "[systematics] FATAL: correlated_scale_systematics failed "
+                    << "in --finalize-only mode.\n";
+                return 1;
+            }
+
             if (!make_systematic_projection_plots(
                     csv_main,
                     "output/systematics/point_to_point_projections")) {
