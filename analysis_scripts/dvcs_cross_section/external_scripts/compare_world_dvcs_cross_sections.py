@@ -4867,7 +4867,350 @@ def build_complete_lee_anchor_legend(
 #enddef
 
 
-def plot_lee_anchor_world_panels(
+def plot_lee_anchor_world_panels_matched_only(
+        matches: pd.DataFrame,
+        panel_summary: pd.DataFrame,
+        outdir: Path,
+        emff,
+        model_curve_cache: Dict[Tuple, pd.DataFrame],
+        *,
+        max_pages: int = PANEL_MAX_WORLD_ANCHOR_PAGES,
+        normalization_dataset_table: Optional[pd.DataFrame] = None,
+        normalization_metrics: Optional[Dict[str, float]] = None,
+        normalization_scenario: Optional[str] = None,
+        omit_datasets: Sequence[str] = (),
+        omit_point_ids: Sequence[str] = (),
+        saylor_tmin: Optional[float] = None) -> None:
+    """
+    Produce multi-dataset world-data overlays centered on CLAS12 Lee 2026 bins.
+
+    With normalization_scenario=None the measured cross sections are displayed
+    exactly as published/transported.
+
+    With a normalization scenario, one globally fitted correction factor per
+    experiment is applied to both its central values and pointwise error bars.
+    Those factors are obtained from the model-independent common-anchor fit
+    defined above; KM15 is used only to transport external measurements to Lee.
+    """
+    if matches.empty or panel_summary.empty:
+        return
+    #endif
+
+    lee = matches.loc[matches["dataset_b"] == "lee2026"].copy()
+    if lee.empty:
+        return
+    #endif
+
+    omit_dataset_set = {str(x) for x in omit_datasets}
+    omit_point_set = {str(x) for x in omit_point_ids}
+    if omit_dataset_set:
+        lee = lee.loc[~lee["dataset_a"].isin(omit_dataset_set)].copy()
+    #endif
+    if omit_point_set:
+        lee = lee.loc[~lee["point_id_a"].astype(str).isin(omit_point_set)].copy()
+    #endif
+
+    if saylor_tmin is not None:
+        threshold = float(saylor_tmin)
+        keep = (
+            (lee["dataset_a"].astype(str) != "saylor2018")
+            | (lee["t_abs_a"].to_numpy(float) >= threshold)
+        )
+        lee = lee.loc[keep].copy()
+    #endif
+
+    if "published_bin_b" in lee.columns and np.isfinite(lee["published_bin_b"]).any():
+        lee["anchor_group"] = [
+            (
+                f"bin_{int(round(v))}"
+                if np.isfinite(v) else f"point_{pid}"
+            )
+            for v, pid in zip(
+                lee["published_bin_b"].to_numpy(float),
+                lee["point_id_b"].astype(str),
+            )
+        ]
+    else:
+        return
+    #endif
+
+    # Keep only panels that still contain enough information after any
+    # scenario-specific omissions.
+    available_groups = set(lee["anchor_group"].astype(str))
+    selected = panel_summary.loc[
+        panel_summary["anchor_group"].astype(str).isin(available_groups)
+    ].copy()
+
+    # For the Lee anchors, organization takes precedence over ranking:
+    # every qualifying bin is shown (unless max_pages > 0 is explicitly set)
+    # and panels are monotonically ordered by the published CLAS12 bin number.
+    selected = selected.sort_values(
+        ["published_bin", "xB_ref", "Q2_ref", "t_abs_ref"],
+        ascending=True,
+    ).reset_index(drop=True)
+
+    # max_pages now limits xB-organized canvases, not an arbitrary number of
+    # sequential panels; never truncate the middle of a physical xB bin.
+    if selected.empty:
+        return
+    #endif
+
+    # Global correction factors for the normalization-adjusted variants.
+    correction = {key: 1.0 for key in DATASET_ORDER}
+    if normalization_dataset_table is not None and not normalization_dataset_table.empty:
+        for r in normalization_dataset_table.itertuples(index=False):
+            correction[str(r.dataset)] = float(r.data_correction_scale)
+        #endfor
+    #endif
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    canvas_specs = _world_canvas_specs_by_xb(selected)
+    if int(max_pages) > 0:
+        canvas_specs = canvas_specs[:int(max_pages)]
+    #endif
+    npages = len(canvas_specs)
+
+    # Stable visual offsets are dataset-specific and therefore never change
+    # when a canvas contains a different subset of measurements.
+    external_offsets = {
+        "jo2015": -4.0,
+        "defurne2015": -2.5,
+        "defurne2017": -1.0,
+        "saylor2018": +1.0,
+        "georges2022": +2.5,
+    }
+
+    for ipage, spec in enumerate(canvas_specs):
+        nrows = int(spec["nrows"])
+        ncols = int(spec["ncols"])
+        fig, axes = plt.subplots(
+            nrows, ncols,
+            figsize=(max(8.0, 3.65*ncols), max(5.8, 3.15*nrows + 1.8)),
+            squeeze=False,
+        )
+        placements = spec["placements"]
+
+        for iax, ax in enumerate(axes.ravel()):
+            row = iax // ncols
+            col = iax % ncols
+            panel_row = placements.get((row, col))
+            if panel_row is None:
+                ax.axis("off")
+                continue
+            #endif
+
+            group = str(panel_row["anchor_group"])
+            d = lee.loc[lee["anchor_group"] == group].copy()
+            if d.empty:
+                ax.axis("off")
+                continue
+            #endif
+
+            lee_points = d.sort_values("phi_b").drop_duplicates("point_id_b")
+            first_panel = (iax == 0)
+
+            # Lee itself is displayed once per anchor point.
+            lee_scale = correction.get("lee2026", 1.0)
+            norm_lee = 100.0 * float(lee_points["norm_frac_b"].iloc[0])
+            lee_label = f"{DATASET_LABELS['lee2026']}"
+            if normalization_scenario is None:
+                lee_label += f" ({norm_lee:.1f}% norm)"
+            else:
+                lee_label += f" ({100.0 * (lee_scale - 1.0):+.1f}%)"
+            #endif
+
+            _draw_measurement_series(
+                ax,
+                lee_points["phi_b"].to_numpy(float),
+                lee_scale * lee_points["xs_b"].to_numpy(float),
+                abs(lee_scale) * lee_points["point_unc_b"].to_numpy(float),
+                label=(lee_label if first_panel else "_nolegend_"),
+                dataset_key="lee2026",
+                xoffset=+4.0,
+                markersize=4.2,
+            )
+
+            for ka in DATASET_ORDER:
+                if ka == "lee2026" or ka in omit_dataset_set:
+                    continue
+                #endif
+
+                da = d.loc[d["dataset_a"] == ka].sort_values("phi_b")
+                if da.empty:
+                    continue
+                #endif
+
+                scale = correction.get(ka, 1.0)
+                norm_a = 100.0 * float(da["norm_frac_a"].iloc[0])
+                label = DATASET_LABELS[ka]
+                if normalization_scenario is None:
+                    label += f" ({norm_a:.1f}% norm)"
+                else:
+                    label += f" ({100.0 * (scale - 1.0):+.1f}%)"
+                #endif
+
+                _draw_measurement_series(
+                    ax,
+                    da["phi_b"].to_numpy(float),
+                    scale * da["xs_a_to_b_km15"].to_numpy(float),
+                    abs(scale) * da["point_unc_a_to_b_km15"].to_numpy(float),
+                    label=(label if first_panel else "_nolegend_"),
+                    dataset_key=ka,
+                    xoffset=external_offsets.get(ka, 0.0),
+                    markersize=3.7,
+                    alpha=0.84,
+                )
+            #endfor
+
+            # Dense model scan at the fixed Lee-bin representative kinematics.
+            xb = float(np.median(lee_points["xB_b"]))
+            q2 = float(np.median(lee_points["Q2_b"]))
+            tt = float(np.median(lee_points["t_abs_b"]))
+            ebeam = float(np.median(lee_points["ebeam_b"]))
+            model = get_dense_model_curve(
+                emff,
+                model_curve_cache,
+                dataset_key="lee2026",
+                ebeam=ebeam,
+                xB=xb,
+                Q2=q2,
+                t_abs=tt,
+            )
+
+            bh_style = MODEL_STYLES["bh"]
+            km_style = MODEL_STYLES["km15"]
+            ax.plot(
+                model["phi_deg"], model["bh"],
+                color=bh_style["color"],
+                linestyle=bh_style["linestyle"],
+                lw=bh_style["linewidth"],
+                label=("BH" if first_panel else "_nolegend_"),
+            )
+            ax.plot(
+                model["phi_deg"], model["km15"],
+                color=km_style["color"],
+                linestyle=km_style["linestyle"],
+                lw=km_style["linewidth"],
+                label=("KM15" if first_panel else "_nolegend_"),
+            )
+
+            yarrays = [
+                lee_scale * lee_points["xs_b"].to_numpy(float),
+                model["bh"].to_numpy(float),
+                model["km15"].to_numpy(float),
+            ]
+            for ka, da in d.groupby("dataset_a", sort=False):
+                if ka in omit_dataset_set:
+                    continue
+                #endif
+                yarrays.append(
+                    correction.get(str(ka), 1.0)
+                    * da["xs_a_to_b_km15"].to_numpy(float)
+                )
+            #endfor
+
+            ylo, yhi = _robust_positive_log_limits(yarrays)
+            ax.set_yscale("log")
+            ax.set_ylim(ylo, yhi)
+            ax.set_xlim(0.0, 360.0)
+            ax.set_xticks([0, 90, 180, 270, 360])
+            ax.grid(alpha=0.18)
+
+            bin_text = ""
+            if np.isfinite(panel_row["published_bin"]):
+                bin_text = f"bin {int(round(panel_row['published_bin']))}: "
+            #endif
+            ax.set_title(
+                bin_text + rf"$x_B={xb:.3f}$, $Q^2={q2:.2f}$, $|t|={tt:.3f}$",
+                fontsize=8.8,
+            )
+
+            if row == nrows - 1:
+                ax.set_xlabel(r"$\phi$ (deg)")
+            #endif
+            if col == 0:
+                ax.set_ylabel(
+                    r"$d^4\sigma/(dQ^2\,dx_B\,d|t|\,d\phi)$ (nb/GeV$^4$)",
+                    fontsize=8.5,
+                )
+            #endif
+        #endfor
+
+        handles, labels = build_complete_lee_anchor_legend(
+            matches,
+            normalization_dataset_table=normalization_dataset_table,
+            normalization_scenario=normalization_scenario,
+            omit_datasets=omit_datasets,
+        )
+
+        if normalization_scenario is None:
+            title = "Published world data mapped to CLAS12 pass-1 kinematics"
+            subtitle = (
+                "External measurements are transported point-by-point to the exact "
+                "Lee 2026 kinematics with KM15; displayed data are not normalization-rescaled. "
+                r"Error bars = stat $\oplus$ point-to-point syst."
+            )
+        else:
+            scenario_label = GLOBAL_NORM_SCENARIO_LABELS.get(
+                str(normalization_scenario),
+                str(normalization_scenario),
+            )
+            title = (
+                "Normalization-adjusted world data at CLAS12 pass-1 kinematics"
+                f" — {scenario_label}"
+            )
+            metric_text = ""
+            if normalization_metrics:
+                metric_text = (
+                    rf"  Global $\chi^2/\mathrm{{ndf}}="
+                    f"{normalization_metrics.get('chi2_per_ndf', np.nan):.2f}$ "
+                    f"({int(normalization_metrics.get('ndf', 0))} dof)."
+                )
+            #endif
+            subtitle = (
+                "One global multiplicative normalization per experiment; "
+                "Gaussian priors use quoted correlated normalizations and Georges is free."
+                + metric_text
+            )
+        #endif
+
+        xb_lo, xb_hi = spec["xb_key"]
+        title += rf"; $x_B\in[{xb_lo:.3f},{xb_hi:.3f}]$"
+        fig.suptitle(title, y=0.994, fontsize=13.5)
+        if handles:
+            fig.legend(
+                handles, labels,
+                loc="upper center",
+                bbox_to_anchor=(0.5, 0.958),
+                ncol=4,
+                frameon=False,
+                fontsize=7.4,
+            )
+        #endif
+        fig.text(
+            0.5, 0.900,
+            subtitle,
+            ha="center", va="top", fontsize=7.8,
+        )
+        _synchronize_canvas_y_limits(axes, mode=PANEL_Y_SCALE_MODE)
+        fig.tight_layout(rect=[0.035, 0.035, 0.995, 0.865])
+
+        if normalization_scenario is None:
+            prefix = "world_data_at_lee_kinematics"
+        else:
+            prefix = f"world_data_at_lee_kinematics_normfit_{normalization_scenario}"
+        #endif
+
+        fig.savefig(
+            outdir / f"{prefix}_page{ipage + 1:02d}.png",
+            dpi=220,
+        )
+        plt.close(fig)
+    #endfor
+#enddef
+
+
+def plot_lee_anchor_world_panels_with_unmatched(
         world: pd.DataFrame,
         matches: pd.DataFrame,
         panel_summary: pd.DataFrame,
@@ -6372,11 +6715,22 @@ def save_outputs(
     )
 
     # Raw, un-rescaled NOMINAL Lee-anchor figures.
-    plot_lee_anchor_world_panels(
+    # Produce both useful presentation sets in one execution:
+    #   1) matched-only: clean quantitative-comparison canvases;
+    #   2) matched + open unmatched: broader published-data coverage.
+    plot_lee_anchor_world_panels_matched_only(
+        matches,
+        lee_anchor_summary,
+        figures / "cross_section_overlays" / "lee_anchor" / "matched_only" / "raw",
+        emff,
+        model_curve_cache,
+    )
+
+    plot_lee_anchor_world_panels_with_unmatched(
         world,
         matches,
         lee_anchor_summary,
-        figures / "cross_section_overlays" / "lee_anchor" / "raw",
+        figures / "cross_section_overlays" / "lee_anchor" / "matched_and_unmatched" / "raw",
         emff,
         model_curve_cache,
     )
@@ -6388,36 +6742,50 @@ def save_outputs(
             (),
             (),
             None,
-            figures / "cross_section_overlays" / "lee_anchor" / "normfit_nominal",
+            "normfit_nominal",
         ),
         (
             "saylor_tmin_0p343",
             (),
             (),
             SAYLOR_TMIN_DIAGNOSTIC_GEV2,
-            figures / "cross_section_overlays" / "lee_anchor" / "normfit_saylor_tmin_0p343",
+            "normfit_saylor_tmin_0p343",
         ),
         (
             "without_saylor",
             ("saylor2018",),
             (),
             None,
-            figures / "cross_section_overlays" / "lee_anchor" / "normfit_without_saylor",
+            "normfit_without_saylor",
         ),
     ]
 
-    for scenario, omit_datasets, omit_points, saylor_tmin, scenario_outdir in scenario_specs:
+    for scenario, omit_datasets, omit_points, saylor_tmin, scenario_dirname in scenario_specs:
         dtab = norm_dataset.loc[norm_dataset["scenario"] == scenario].copy()
         mrow = norm_metrics.loc[norm_metrics["scenario"] == scenario]
         metrics = (
             mrow.iloc[0].to_dict()
             if not mrow.empty else {}
         )
-        plot_lee_anchor_world_panels(
+        plot_lee_anchor_world_panels_matched_only(
+            matches,
+            lee_anchor_summary,
+            figures / "cross_section_overlays" / "lee_anchor" / "matched_only" / scenario_dirname,
+            emff,
+            model_curve_cache,
+            normalization_dataset_table=dtab,
+            normalization_metrics=metrics,
+            normalization_scenario=scenario,
+            omit_datasets=omit_datasets,
+            omit_point_ids=omit_points,
+            saylor_tmin=saylor_tmin,
+        )
+
+        plot_lee_anchor_world_panels_with_unmatched(
             world,
             matches,
             lee_anchor_summary,
-            scenario_outdir,
+            figures / "cross_section_overlays" / "lee_anchor" / "matched_and_unmatched" / scenario_dirname,
             emff,
             model_curve_cache,
             normalization_dataset_table=dtab,
