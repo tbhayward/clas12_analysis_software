@@ -186,7 +186,7 @@ MODEL_STYLES = {
 # fits remain evaluated at the exact measured points; this grid is only for
 # drawing smooth BH/KM15 curves.  It explicitly includes both 0 and 360 deg.
 MODEL_CURVE_PHI_STEP_DEG = 15.0
-PANEL_Y_SCALE_MODE = "row"
+PANEL_Y_SCALE_MODE = "panel"
 
 # In the global Lee-anchor normalization study Georges is intentionally left
 # unconstrained, as requested.  All other experiments receive Gaussian
@@ -2123,6 +2123,12 @@ def build_pairwise_comparisons(
                         if "published_bin" in rb.index and np.isfinite(rb["published_bin"])
                         else np.nan
                     ),
+                    "xBmin_b": float(rb.get("xBmin", np.nan)),
+                    "xBmax_b": float(rb.get("xBmax", np.nan)),
+                    "Q2min_b": float(rb.get("Q2min", np.nan)),
+                    "Q2max_b": float(rb.get("Q2max", np.nan)),
+                    "t_abs_min_b": float(rb.get("t_abs_min", np.nan)),
+                    "t_abs_max_b": float(rb.get("t_abs_max", np.nan)),
                     "km15_local_transport_factor": c_km15,
                     "xs_a_to_b_km15": a_to_b_km15,
                     "stat_a_to_b_km15": a_stat,
@@ -3256,7 +3262,6 @@ def plot_pairwise_cross_section_panels(
             )
             # Reserve a deliberately larger top margin than the previous
             # version; this prevents the title/legend/subtitle collision.
-            _synchronize_canvas_y_limits(axes, mode=PANEL_Y_SCALE_MODE)
             fig.tight_layout(rect=[0.035, 0.035, 0.995, 0.885])
 
             fname = (
@@ -3329,6 +3334,12 @@ def make_lee_anchor_panel_summary(matches: pd.DataFrame) -> pd.DataFrame:
             "xB_ref": float(np.median(d["xB_b"])),
             "Q2_ref": float(np.median(d["Q2_b"])),
             "t_abs_ref": float(np.median(d["t_abs_b"])),
+            "xBmin_ref": float(np.nanmedian(d["xBmin_b"])) if "xBmin_b" in d and np.isfinite(d["xBmin_b"]).any() else np.nan,
+            "xBmax_ref": float(np.nanmedian(d["xBmax_b"])) if "xBmax_b" in d and np.isfinite(d["xBmax_b"]).any() else np.nan,
+            "Q2min_ref": float(np.nanmedian(d["Q2min_b"])) if "Q2min_b" in d and np.isfinite(d["Q2min_b"]).any() else np.nan,
+            "Q2max_ref": float(np.nanmedian(d["Q2max_b"])) if "Q2max_b" in d and np.isfinite(d["Q2max_b"]).any() else np.nan,
+            "t_abs_min_ref": float(np.nanmedian(d["t_abs_min_b"])) if "t_abs_min_b" in d and np.isfinite(d["t_abs_min_b"]).any() else np.nan,
+            "t_abs_max_ref": float(np.nanmedian(d["t_abs_max_b"])) if "t_abs_max_b" in d and np.isfinite(d["t_abs_max_b"]).any() else np.nan,
             "phi_coverage_deg": coverage,
             "datasets": ",".join(sorted(d["dataset_a"].unique())),
             "panel_rank_score": float(
@@ -3730,6 +3741,12 @@ def make_pass2_anchor_panel_summary(matches: pd.DataFrame) -> pd.DataFrame:
             "xB_ref": float(np.median(d["xB_b"])),
             "Q2_ref": float(np.median(d["Q2_b"])),
             "t_abs_ref": float(np.median(d["t_abs_b"])),
+            "xBmin_ref": float(np.nanmedian(d["xBmin_b"])) if "xBmin_b" in d and np.isfinite(d["xBmin_b"]).any() else np.nan,
+            "xBmax_ref": float(np.nanmedian(d["xBmax_b"])) if "xBmax_b" in d and np.isfinite(d["xBmax_b"]).any() else np.nan,
+            "Q2min_ref": float(np.nanmedian(d["Q2min_b"])) if "Q2min_b" in d and np.isfinite(d["Q2min_b"]).any() else np.nan,
+            "Q2max_ref": float(np.nanmedian(d["Q2max_b"])) if "Q2max_b" in d and np.isfinite(d["Q2max_b"]).any() else np.nan,
+            "t_abs_min_ref": float(np.nanmedian(d["t_abs_min_b"])) if "t_abs_min_b" in d and np.isfinite(d["t_abs_min_b"]).any() else np.nan,
+            "t_abs_max_ref": float(np.nanmedian(d["t_abs_max_b"])) if "t_abs_max_b" in d and np.isfinite(d["t_abs_max_b"]).any() else np.nan,
             "phi_coverage_deg": coverage,
             "datasets": ",".join(sorted(d["dataset_a"].unique())),
             "panel_rank_score": float(
@@ -4375,6 +4392,66 @@ def build_complete_pass2_anchor_legend(
 #enddef
 
 
+
+def _world_canvas_specs_by_xb(selected: pd.DataFrame) -> List[Dict[str, object]]:
+    """Arrange one world-data canvas per physical xB bin.
+
+    Rows are fixed (xB,Q2) bins and columns are fixed |t| bins.  Physical bin
+    boundaries are used whenever available; representative means are only a
+    fallback for legacy inputs lacking boundaries.  Each panel retains its own
+    y range.
+    """
+    if selected.empty:
+        return []
+    #endif
+
+    work = selected.copy()
+
+    def finite_key(row, lo_name, hi_name, mean_name, digits=6):
+        lo = float(row.get(lo_name, np.nan))
+        hi = float(row.get(hi_name, np.nan))
+        if np.isfinite(lo) and np.isfinite(hi):
+            return (round(lo, digits), round(hi, digits))
+        #endif
+        v = float(row.get(mean_name, np.nan))
+        return (round(v, 3), round(v, 3))
+    #enddef
+
+    work["_xb_key"] = [
+        finite_key(r, "xBmin_ref", "xBmax_ref", "xB_ref")
+        for _, r in work.iterrows()
+    ]
+    work["_q_key"] = [
+        finite_key(r, "Q2min_ref", "Q2max_ref", "Q2_ref")
+        for _, r in work.iterrows()
+    ]
+    work["_t_key"] = [
+        finite_key(r, "t_abs_min_ref", "t_abs_max_ref", "t_abs_ref")
+        for _, r in work.iterrows()
+    ]
+
+    specs = []
+    for xb_key, xb_group in work.groupby("_xb_key", sort=True):
+        q_keys = sorted(set(xb_group["_q_key"]), key=lambda z: (z[0], z[1]))
+        t_keys = sorted(set(xb_group["_t_key"]), key=lambda z: (z[0], z[1]))
+        q_index = {k: i for i, k in enumerate(q_keys)}
+        t_index = {k: i for i, k in enumerate(t_keys)}
+        placements = {}
+        for _, row in xb_group.sort_values(["Q2_ref", "t_abs_ref", "published_bin"]).iterrows():
+            placements[(q_index[row["_q_key"]], t_index[row["_t_key"]])] = row
+        #endfor
+        specs.append({
+            "xb_key": xb_key,
+            "q_keys": q_keys,
+            "t_keys": t_keys,
+            "nrows": max(1, len(q_keys)),
+            "ncols": max(1, len(t_keys)),
+            "placements": placements,
+        })
+    #endfor
+    return specs
+#enddef
+
 def plot_pass2_anchor_world_panels(
         matches: pd.DataFrame,
         panel_summary: pd.DataFrame,
@@ -4452,30 +4529,40 @@ def plot_pass2_anchor_world_panels(
     }
 
     outdir.mkdir(parents=True, exist_ok=True)
-    npages = int(math.ceil(len(selected) / PANEL_PER_PAGE))
+    canvas_specs = _world_canvas_specs_by_xb(selected)
+    npages = len(canvas_specs)
 
     scenario_label = "raw" if scenario is None else str(scenario)
     print(
         f"[PLOTS PASS2] {scenario_label}: {len(selected)} panels "
-        f"across {npages} page(s)",
+        f"across {npages} xB-organized canvas(es)",
         flush=True,
     )
 
-    for ipage in range(npages):
+    for ipage, spec in enumerate(canvas_specs):
         print(
-            f"[PLOTS PASS2] {scenario_label}: page {ipage + 1}/{npages}",
+            f"[PLOTS PASS2] {scenario_label}: canvas {ipage + 1}/{npages}",
             flush=True,
         )
-        page = selected.iloc[ipage*PANEL_PER_PAGE:(ipage+1)*PANEL_PER_PAGE]
-        fig, axes = plt.subplots(PANEL_NROWS, PANEL_NCOLS, figsize=(15.8, 10.8), squeeze=False)
+        nrows = int(spec["nrows"])
+        ncols = int(spec["ncols"])
+        fig, axes = plt.subplots(
+            nrows, ncols,
+            figsize=(max(8.0, 3.65*ncols), max(5.8, 3.15*nrows + 1.8)),
+            squeeze=False,
+        )
+        placements = spec["placements"]
 
         for iax, ax in enumerate(axes.ravel()):
-            if iax >= len(page):
+            row = iax // ncols
+            col = iax % ncols
+            panel_row = placements.get((row, col))
+            if panel_row is None:
                 ax.axis("off")
                 continue
             #endif
 
-            group = str(page.iloc[iax]["anchor_group"])
+            group = str(panel_row["anchor_group"])
             d = p2.loc[p2["anchor_group"] == group].copy()
             if d.empty:
                 ax.axis("off")
@@ -4570,14 +4657,12 @@ def plot_pass2_anchor_world_panels(
             ax.set_xticks([0, 90, 180, 270, 360])
             ax.grid(alpha=0.18)
             ax.set_title(
-                f"bin {int(round(page.iloc[iax]['published_bin']))}: "
+                f"bin {int(round(panel_row['published_bin']))}: "
                 + rf"$x_B={xb:.3f}$, $Q^2={q2:.2f}$, $|t|={tt:.3f}$",
                 fontsize=8.7,
             )
 
-            row = iax // PANEL_NCOLS
-            col = iax % PANEL_NCOLS
-            if row == PANEL_NROWS - 1:
+            if row == nrows - 1:
                 ax.set_xlabel(r"$\phi$ (deg)")
             #endif
             if col == 0:
@@ -4620,6 +4705,8 @@ def plot_pass2_anchor_world_panels(
             )
         #endif
 
+        xb_lo, xb_hi = spec["xb_key"]
+        title += rf"; $x_B\in[{xb_lo:.3f},{xb_hi:.3f}]$"
         fig.suptitle(title, y=0.994, fontsize=13.5)
         fig.legend(
             handles, labels,
@@ -4630,7 +4717,6 @@ def plot_pass2_anchor_world_panels(
             fontsize=7.1,
         )
         fig.text(0.5, 0.900, subtitle, ha="center", va="top", fontsize=7.7)
-        _synchronize_canvas_y_limits(axes, mode=PANEL_Y_SCALE_MODE)
         fig.tight_layout(rect=[0.035, 0.035, 0.995, 0.865])
 
         prefix = "pass2_world_raw" if scenario is None else f"pass2_world_{scenario}"
@@ -4825,9 +4911,8 @@ def plot_lee_anchor_world_panels(
         ascending=True,
     ).reset_index(drop=True)
 
-    if int(max_pages) > 0:
-        selected = selected.head(int(max_pages) * PANEL_PER_PAGE).copy()
-    #endif
+    # max_pages now limits xB-organized canvases, not an arbitrary number of
+    # sequential panels; never truncate the middle of a physical xB bin.
     if selected.empty:
         return
     #endif
@@ -4841,7 +4926,11 @@ def plot_lee_anchor_world_panels(
     #endif
 
     outdir.mkdir(parents=True, exist_ok=True)
-    npages = int(math.ceil(len(selected) / PANEL_PER_PAGE))
+    canvas_specs = _world_canvas_specs_by_xb(selected)
+    if int(max_pages) > 0:
+        canvas_specs = canvas_specs[:int(max_pages)]
+    #endif
+    npages = len(canvas_specs)
 
     # Stable visual offsets are dataset-specific and therefore never change
     # when a canvas contains a different subset of measurements.
@@ -4853,21 +4942,26 @@ def plot_lee_anchor_world_panels(
         "georges2022": +2.5,
     }
 
-    for ipage in range(npages):
-        page = selected.iloc[ipage * PANEL_PER_PAGE:(ipage + 1) * PANEL_PER_PAGE]
+    for ipage, spec in enumerate(canvas_specs):
+        nrows = int(spec["nrows"])
+        ncols = int(spec["ncols"])
         fig, axes = plt.subplots(
-            PANEL_NROWS, PANEL_NCOLS,
-            figsize=(15.8, 10.8),
+            nrows, ncols,
+            figsize=(max(8.0, 3.65*ncols), max(5.8, 3.15*nrows + 1.8)),
             squeeze=False,
         )
+        placements = spec["placements"]
 
         for iax, ax in enumerate(axes.ravel()):
-            if iax >= len(page):
+            row = iax // ncols
+            col = iax % ncols
+            panel_row = placements.get((row, col))
+            if panel_row is None:
                 ax.axis("off")
                 continue
             #endif
 
-            group = str(page.iloc[iax]["anchor_group"])
+            group = str(panel_row["anchor_group"])
             d = lee.loc[lee["anchor_group"] == group].copy()
             if d.empty:
                 ax.axis("off")
@@ -4985,17 +5079,15 @@ def plot_lee_anchor_world_panels(
             ax.grid(alpha=0.18)
 
             bin_text = ""
-            if np.isfinite(page.iloc[iax]["published_bin"]):
-                bin_text = f"bin {int(round(page.iloc[iax]['published_bin']))}: "
+            if np.isfinite(panel_row["published_bin"]):
+                bin_text = f"bin {int(round(panel_row['published_bin']))}: "
             #endif
             ax.set_title(
                 bin_text + rf"$x_B={xb:.3f}$, $Q^2={q2:.2f}$, $|t|={tt:.3f}$",
                 fontsize=8.8,
             )
 
-            row = iax // PANEL_NCOLS
-            col = iax % PANEL_NCOLS
-            if row == PANEL_NROWS - 1:
+            if row == nrows - 1:
                 ax.set_xlabel(r"$\phi$ (deg)")
             #endif
             if col == 0:
@@ -5044,6 +5136,8 @@ def plot_lee_anchor_world_panels(
             )
         #endif
 
+        xb_lo, xb_hi = spec["xb_key"]
+        title += rf"; $x_B\in[{xb_lo:.3f},{xb_hi:.3f}]$"
         fig.suptitle(title, y=0.994, fontsize=13.5)
         if handles:
             fig.legend(

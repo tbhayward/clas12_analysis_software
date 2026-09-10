@@ -92,11 +92,10 @@ using Range = std::pair<double, double>;
 // Configuration
 // -----------------------------------------------------------------------------
 
-// Frad/Fbin are read directly from Lee's imports/all_bin_v3.csv. The same
-// Lee Frad/Fbin values are written into both the 10.6 GeV and 10.2 GeV
-// pass-2 CSV columns before the cross sections are computed. The bin volume
-// used in the denominator is the phase-space-allowed value already computed
-// by bin_volume.cpp and stored in the pass-2 CSV.
+// Frad is still imported by bin index from Lee's imports/all_bin_v3.csv.
+// Fbin is recomputed upstream with KM15 at the pass-2 mean kinematics and is
+// read from the energy-specific pass-2 CSV columns.  The bin volume used in
+// the denominator is the phase-space-allowed value from bin_volume.cpp.
 
 static std::string canonical_period_dir(const std::string &label) {
     if (label == "Fa18 Inb")      return "Fa18_Inb";
@@ -1552,7 +1551,7 @@ bool compute_cross_sections(const std::string &csv_main,
     std::cout << "[cross_sections] NOTE: combined-label acceptance-corrected yields are recomputed "
               << "inside cross_sections.cpp from valid member periods only.\n";
 
-    std::cout << "[cross_sections] NOTE: Frad/Fbin are imported from Lee's CSV for both energies; "
+    std::cout << "[cross_sections] NOTE: Frad is imported from Lee's CSV; Fbin is the pass-2 KM15 value already stored in the CSV; "
               << "bin_volume is read from the pass-2 CSV phase-space columns filled by bin_volume.cpp.\n";
 
     int next_pct = 10;
@@ -1596,13 +1595,15 @@ bool compute_cross_sections(const std::string &csv_main,
         }
 
         const Triple frad = lee_row->frad;
-        const Triple fbin = lee_row->fbin;
 
-        // Lee provides the Frad/Fbin values; write those into both energy columns.
+        // Frad is still inherited from the pass-1 model study.  Fbin is NOT:
+        // it has already been recomputed immediately upstream using KM15 at
+        // the pass-2 mean kinematics, separately for 10.6 and 10.2 GeV.
         fields[c_frad_106] = tuple3_to_cell(frad.value, frad.stat, frad.sys);
         fields[c_frad_102] = tuple3_to_cell(frad.value, frad.stat, frad.sys);
-        fields[c_fbin_106] = tuple3_to_cell(fbin.value, fbin.stat, fbin.sys);
-        fields[c_fbin_102] = tuple3_to_cell(fbin.value, fbin.stat, fbin.sys);
+
+        const Triple fbin_106 = parse_tuple3(fields[c_fbin_106]);
+        const Triple fbin_102 = parse_tuple3(fields[c_fbin_102]);
 
         // [FIX] Recompute combined yields before luminosity columns and cross
         // sections are written, so numerator and denominator share the same mask.
@@ -1661,7 +1662,7 @@ bool compute_cross_sections(const std::string &csv_main,
             const bool use_10p2 = (L == "Sp19 Inb" || L == "10.2 GeV");
 
             const Triple &Frad = frad;
-            const Triple &Fbin = fbin;
+            const Triple &Fbin = use_10p2 ? fbin_102 : fbin_106;
 
             if (Frad.value <= 0.0 || Fbin.value <= 0.0) continue;
 
@@ -1861,7 +1862,7 @@ bool write_cross_section_analysis_note_outputs(
         o << "F_rad,radiative correction factor,"
              "Frad imported by bin index from imports/all_bin_v3.csv\n";
         o << "F_bin,bin-centering correction factor,"
-             "Fbin imported by bin index from imports/all_bin_v3.csv\n";
+             "KM15 center/finite-bin average evaluated at pass-2 mean kinematics\n";
         o << "sigma,final four-fold cross section,"
              "N_corr * F_rad * F_bin / (L_int * V_bin)\n";
     }

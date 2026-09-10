@@ -517,253 +517,86 @@ bool update_bin_centering_corrections_csv(
     bool vgg_globalfit,
     ModelChoice model_choice)
 {
-    std::cout << "============================================================\n";
-    std::cout << "[bincenter] Starting bin-centering corrections.\n";
-    std::cout << "[bincenter] Input CSV: " << csv_path << "\n";
-    std::cout << "[bincenter] n_steps (per dimension) = " << n_steps
-              << " (total model calls per row per model ~ n_steps^4)\n";
-    std::cout << "[bincenter] Model choice = "
-              << (model_choice == ModelChoice::Both ? "Both"
-                  : (model_choice == ModelChoice::VGGOnly ? "VGGOnly" : "KM15Only"))
-              << ", vgg_globalfit = " << (vgg_globalfit ? "true" : "false") << "\n";
+    (void)vgg_globalfit;
 
-    const std::string csv_abs = fs::absolute(csv_path).string();
-    std::error_code ec;
-    const uintmax_t size_before =
-        fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
+    // Production pass-2 prescription: KM15 central value only.  The dedicated
+    // model-dependence systematic remains handled separately by
+    // main_systematics, exactly as requested for this update.
+    if (model_choice != ModelChoice::KM15Only) {
+        std::cerr
+            << "[bincenter] WARNING: the fast production implementation uses KM15 "
+            << "only; overriding the requested model choice.\n";
+    }
 
-    std::cout << "[bincenter] CSV absolute path: " << csv_abs
-              << " (size = " << size_before << " bytes)\n";
-
-    if (n_steps < 2) {
-        std::cerr << "[bincenter] FATAL: n_steps must be >= 2 (got "
-                  << n_steps << ")\n";
+    if (n_steps < 2 || n_steps > 6) {
+        std::cerr << "[bincenter] FATAL: quadrature order must be 2--6 (got "
+                  << n_steps << ").\n";
         return false;
     }
 
-    CsvDoc csv;
-    if (!csv.load(csv_path)) {
-        std::cerr << "[bincenter] ERROR: failed to load CSV.\n";
+    namespace fs = std::filesystem;
+    const char* env_script = std::getenv("KM15_BIN_CENTER_BATCH");
+    std::string script;
+    if (env_script && *env_script) {
+        script = env_script;
+    } else if (!paths.km15_cli.empty()) {
+        fs::path p(paths.km15_cli);
+        script = (p.parent_path() / "km15_bin_center_batch.py").string();
+    } else {
+        script = "km15_bin_center_batch.py";
+    }
+
+    if (!fs::exists(script)) {
+        // Common case when the executable is launched from another directory.
+        fs::path local = fs::current_path() / "km15_bin_center_batch.py";
+        if (fs::exists(local)) script = local.string();
+    }
+    if (!fs::exists(script)) {
+        std::cerr << "[bincenter] FATAL: cannot find fast KM15 batch script: "
+                  << script << "\n";
         return false;
     }
 
-    const int NR = csv.nrows();
-    if (NR <= 0) {
-        std::cerr << "[bincenter] FATAL: CSV has no data rows.\n";
-        return false;
-    }
-    std::cout << "[bincenter] Total rows to inspect: " << NR << "\n";
-
-    // Bin-edge columns (must exist).
-    const int c_xb_min  = csv.col_index("xBmin");
-    const int c_xb_max  = csv.col_index("xBmax");
-    const int c_q2_min  = csv.col_index("Q2min");
-    const int c_q2_max  = csv.col_index("Q2max");
-    const int c_tab_min = csv.col_index("t_abs_min");
-    const int c_tab_max = csv.col_index("t_abs_max");
-    const int c_phi_min = csv.col_index("phimin");
-    const int c_phi_max = csv.col_index("phimax");
-
-    if (c_xb_min < 0 || c_xb_max < 0 ||
-        c_q2_min < 0 || c_q2_max < 0 ||
-        c_tab_min < 0 || c_tab_max < 0 ||
-        c_phi_min < 0 || c_phi_max < 0) {
-        std::cerr << "[bincenter] FATAL: missing one or more bin-edge columns "
-                  << "(xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,phimin,phimax)\n";
-        return false;
+    int workers = 8;
+    if (const char* ew = std::getenv("KM15_BIN_CENTER_WORKERS")) {
+        try { workers = std::max(1, std::stoi(ew)); } catch (...) {}
     }
 
-    // Group-specific average columns and Fbin columns.
+    auto shell_quote = [](const std::string& x) {
+        std::string q = "'";
+        for (char c : x) q += (c == '\'' ? "'\\''" : std::string(1, c));
+        q += "'";
+        return q;
+    };
 
-    // 10.6 GeV group (combined periods).
-    const std::string col_xbavg_10p6  = "xBavg, 10.6 GeV";
-    const std::string col_q2avg_10p6  = "Q2avg, 10.6 GeV";
-    const std::string col_tabavg_10p6 = "t_abs_avg, 10.6 GeV";
-    const std::string col_phiavg_10p6 = "phiavg, 10.6 GeV";
-    const std::string col_fbin_10p6   = "Fbin, 10.6 GeV";
+    std::ostringstream cmd;
+    cmd << "python3 " << shell_quote(fs::absolute(script).string())
+        << " " << shell_quote(fs::absolute(csv_path).string())
+        << " --order " << n_steps
+        << " --workers " << workers;
 
-    const int c_xbavg_10p6  = csv.col_index(col_xbavg_10p6);
-    const int c_q2avg_10p6  = csv.col_index(col_q2avg_10p6);
-    const int c_tabavg_10p6 = csv.col_index(col_tabavg_10p6);
-    const int c_phiavg_10p6 = csv.col_index(col_phiavg_10p6);
-    const int c_fbin_10p6   = csv.col_index(col_fbin_10p6);
+    std::cout << "============================================================\n"
+              << "[bincenter] Recomputing pass-2 bin-centering factors from the "
+              << "pass-2 mean kinematics.\n"
+              << "[bincenter] Model: KM15\n"
+              << "[bincenter] Integration: " << n_steps
+              << "-point Gauss-Legendre quadrature in each of xB,Q2,|t|,phi\n"
+              << "[bincenter] KM15 is initialized only once per worker; no per-point "
+              << "Python subprocesses are used.\n"
+              << "[bincenter] workers=" << workers << "\n";
 
-    if (c_xbavg_10p6 < 0 || c_q2avg_10p6 < 0 ||
-        c_tabavg_10p6 < 0 || c_phiavg_10p6 < 0 ||
-        c_fbin_10p6   < 0) {
-        std::cerr << "[bincenter] FATAL: missing one or more columns for 10.6 GeV group:\n"
-                  << "  required: \"" << col_xbavg_10p6  << "\", "
-                  << "\"" << col_q2avg_10p6  << "\", "
-                  << "\"" << col_tabavg_10p6 << "\", "
-                  << "\"" << col_phiavg_10p6 << "\", "
-                  << "\"" << col_fbin_10p6   << "\"\n";
+    const int rc = std::system(cmd.str().c_str());
+    if (rc != 0) {
+        std::cerr << "[bincenter] FATAL: fast KM15 batch evaluator returned "
+                  << rc << ".\n";
         return false;
     }
 
-    // 10.2 GeV group (Sp19 Inb only).
-    const std::string col_xbavg_10p2  = "xBavg, Sp19 Inb";
-    const std::string col_q2avg_10p2  = "Q2avg, Sp19 Inb";
-    const std::string col_tabavg_10p2 = "t_abs_avg, Sp19 Inb";
-    const std::string col_phiavg_10p2 = "phiavg, Sp19 Inb";
-    const std::string col_fbin_10p2   = "Fbin, 10.2 GeV";
-
-    const int c_xbavg_10p2  = csv.col_index(col_xbavg_10p2);
-    const int c_q2avg_10p2  = csv.col_index(col_q2avg_10p2);
-    const int c_tabavg_10p2 = csv.col_index(col_tabavg_10p2);
-    const int c_phiavg_10p2 = csv.col_index(col_phiavg_10p2);
-    const int c_fbin_10p2   = csv.col_index(col_fbin_10p2);
-
-    if (c_xbavg_10p2 < 0 || c_q2avg_10p2 < 0 ||
-        c_tabavg_10p2 < 0 || c_phiavg_10p2 < 0 ||
-        c_fbin_10p2   < 0) {
-        std::cerr << "[bincenter] FATAL: missing one or more columns for 10.2 GeV group:\n"
-                  << "  required: \"" << col_xbavg_10p2  << "\", "
-                  << "\"" << col_q2avg_10p2  << "\", "
-                  << "\"" << col_tabavg_10p2 << "\", "
-                  << "\"" << col_phiavg_10p2 << "\", "
-                  << "\"" << col_fbin_10p2   << "\"\n";
-        return false;
-    }
-
-    std::cout << "[bincenter] All required columns found. Building row masks...\n";
-
-    // Determine which rows actually carry data for each group,
-    // based on whether xBavg column is populated.
-    std::vector<bool> row_has_data_10p6 = build_row_has_data(csv, col_xbavg_10p6);
-    std::vector<bool> row_has_data_10p2 = build_row_has_data(csv, col_xbavg_10p2);
-
-    // Storage for results.
-    std::vector<FbinResult> res_10p6(NR);
-    std::vector<FbinResult> res_10p2(NR);
-
-#ifdef _OPENMP
-    int hard_cap = 5;
-    int want     = omp_get_max_threads();
-    int use      = std::min(hard_cap, std::max(1, want));
-    omp_set_num_threads(use);
-    std::cout << "[bincenter] OpenMP enabled with " << use
-              << " worker(s) (hard-capped at 5)\n";
-#else
-    std::cout << "[bincenter] OpenMP not available; running single-threaded\n";
-#endif
-
-    const double Ebeam_10p6 = 10.6;
-    const double Ebeam_10p2 = 10.2;
-
-    std::cout << "[bincenter] Beam energies: 10.6 GeV and 10.2 GeV.\n";
-    std::cout << "[bincenter] Beginning Fbin computation over all rows...\n";
-
-    std::atomic<int> processed_rows(0);
-
-    // Parallel loop over rows. For each row, we may compute 10.6, 10.2, both, or neither.
-#pragma omp parallel for schedule(dynamic)
-    for (int r = 0; r < NR; ++r) {
-        // Bin edges (shared across groups).
-        const double xbmin  = csv.as_double(r, c_xb_min);
-        const double xbmax  = csv.as_double(r, c_xb_max);
-        const double q2min  = csv.as_double(r, c_q2_min);
-        const double q2max  = csv.as_double(r, c_q2_max);
-        const double tmin   = csv.as_double(r, c_tab_min);
-        const double tmax   = csv.as_double(r, c_tab_max);
-        const double phimin = csv.as_double(r, c_phi_min);
-        const double phimax = csv.as_double(r, c_phi_max);
-
-        // 10.6 GeV group.
-        if (row_has_data_10p6[r]) {
-            const double xb_c   = csv.as_double(r, c_xbavg_10p6);
-            const double q2_c   = csv.as_double(r, c_q2avg_10p6);
-            const double tpos_c = csv.as_double(r, c_tabavg_10p6);
-            const double phi_c  = csv.as_double(r, c_phiavg_10p6);
-
-            FbinResult fr = compute_fbin_for_row(
-                xb_c, q2_c, tpos_c, phi_c,
-                xbmin, xbmax,
-                q2min, q2max,
-                tmin, tmax,
-                phimin, phimax,
-                Ebeam_10p6,
-                n_steps,
-                paths,
-                vgg_globalfit,
-                model_choice);
-
-            res_10p6[r] = fr;
-        }
-
-        // 10.2 GeV group (Sp19 Inb).
-        if (row_has_data_10p2[r]) {
-            const double xb_c   = csv.as_double(r, c_xbavg_10p2);
-            const double q2_c   = csv.as_double(r, c_q2avg_10p2);
-            const double tpos_c = csv.as_double(r, c_tabavg_10p2);
-            const double phi_c  = csv.as_double(r, c_phiavg_10p2);
-
-            FbinResult fr = compute_fbin_for_row(
-                xb_c, q2_c, tpos_c, phi_c,
-                xbmin, xbmax,
-                q2min, q2max,
-                tmin, tmax,
-                phimin, phimax,
-                Ebeam_10p2,
-                n_steps,
-                paths,
-                vgg_globalfit,
-                model_choice);
-
-            res_10p2[r] = fr;
-        }
-
-        int done = processed_rows.fetch_add(1, std::memory_order_relaxed) + 1;
-        if (done % 1 == 0 || done == NR) {
-#pragma omp critical
-            {
-                std::cout << "[bincenter] Progress: " << done << " / " << NR
-                          << " rows processed.\n";
-            }
-        }
-    } // end parallel for
-
-    std::cout << "[bincenter] Finished Fbin model evaluations for all rows.\n";
-    std::cout << "[bincenter] Writing results back into CSV columns...\n";
-
-    // Fill CSV with Fbin triples.
-    std::size_t write_10p6 = 0;
-    std::size_t write_10p2 = 0;
-
-    for (int r = 0; r < NR; ++r) {
-        if (row_has_data_10p6[r] && res_10p6[r].valid) {
-            csv.rows[r][c_fbin_10p6] =
-                format_triple(res_10p6[r].value, res_10p6[r].stat, res_10p6[r].sys);
-            ++write_10p6;
-        }
-        if (row_has_data_10p2[r] && res_10p2[r].valid) {
-            csv.rows[r][c_fbin_10p2] =
-                format_triple(res_10p2[r].value, res_10p2[r].stat, res_10p2[r].sys);
-            ++write_10p2;
-        }
-    }
-
-    std::cout << "[bincenter] Rows with valid Fbin, 10.6 GeV: " << write_10p6 << "\n";
-    std::cout << "[bincenter] Rows with valid Fbin, 10.2 GeV: " << write_10p2 << "\n";
-
-    if (!csv.save_atomic(csv_path)) {
-        std::cerr << "[bincenter] ERROR: failed to save updated CSV.\n";
-        return false;
-    }
-
-    const uintmax_t size_after =
-        fs::exists(csv_path, ec) ? fs::file_size(csv_path, ec) : 0;
-
-    std::cout << "[bincenter] Updated CSV: " << csv_abs
-              << " (size " << size_before << " -> " << size_after << " bytes)\n";
-    std::cout << "[bincenter] Bin-centering corrections complete.\n";
-    std::cout << "============================================================\n";
-
+    std::cout << "[bincenter] Fast KM15 bin-centering update complete.\n"
+              << "============================================================\n";
     return true;
 }
 
-// -------------------------------------------------------------
-// Debug plots: Fbin vs phi
-// -------------------------------------------------------------
 void plot_bin_centering_fbin_vs_phi(
     const std::string& csv_path,
     const std::string& out_root_dir)

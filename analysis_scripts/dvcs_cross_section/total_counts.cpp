@@ -912,6 +912,12 @@ static inline std::string col_data_normalized_counts(const ChannelConfig& channe
            topo_label + ", exp, " + period_display + ", " + helicity;
 }
 
+static inline std::string col_proton_efficiency_correction(const ChannelConfig& channel_cfg,
+                                                            const std::string& period_display) {
+    return std::string("proton efficiency correction, ") + channel_cfg.csv_channel +
+           ", " + period_display;
+}
+
 static inline std::string col_mc_current_corrected_total(const ChannelConfig& channel_cfg,
                                                          const std::string& period_display) {
     return std::string("reconstructed current corrected yield, ") + channel_cfg.csv_channel +
@@ -1298,6 +1304,7 @@ struct BranchBinder {
     double e_theta = 0.0;   bool has_e_theta = false;
     double e_phi = 0.0;     bool has_e_phi = false;
 
+    double p1_p = 0.0;      bool has_p1_p = false;
     double p1_theta = 0.0;  bool has_p1_theta = false;
     double p1_phi = 0.0;    bool has_p1_phi = false;
 
@@ -1375,6 +1382,8 @@ struct BranchBinder {
 
             // Delta_phi falls back to p1_phi/p2_phi if the direct branch is
             // absent. These phi branches are also required by sector cuts.
+            ena("p1_p");
+            ena("p1_theta");
             ena("p1_phi");
             ena("p2_phi");
 
@@ -1438,8 +1447,9 @@ struct BranchBinder {
         bD("e_p",     &e_p,     has_e_p);
         bD("e_theta", &e_theta, has_e_theta);
         bD("e_phi",   &e_phi,   has_e_phi);
+        bD("p1_p",     &p1_p,     has_p1_p);
         bD("p1_theta", &p1_theta, has_p1_theta);
-        bD("p1_phi",  &p1_phi,  has_p1_phi);
+        bD("p1_phi",   &p1_phi,   has_p1_phi);
 
         bD("p2_p",     &p2_p,     has_p2_p);
         bD("p2_theta", &p2_theta, has_p2_theta);
@@ -1491,6 +1501,11 @@ struct HelCounts {
 using RowCounts = std::unordered_map<int, HelCounts>;
 
 struct WeightedHelCounts {
+    // sumw_current_only stores the yield after the beam-current correction but
+    // before the Krishna Neupane proton-efficiency correction.  It is retained
+    // only so the net proton-efficiency correction can be written to the CSV
+    // as a transparent diagnostic.
+    HelCounts sumw_current_only;
     HelCounts sumw;
     HelCounts sumw2;
     std::array<HelCounts, kCurrentRegionCount> derivative_by_region{};
@@ -1837,34 +1852,104 @@ static inline void add_count(HelCounts& h, bool split_helicity, int helicity) {
 }
 
 
+
+// Krishna Neupane RGA Fall-2018-inbending proton reconstruction-efficiency
+// correction, Eq. (7.1) and Tables 7.2--7.3 of the charged-double-pion note.
+// The tabulated factor is epsilon_data/epsilon_MC.  Since the acceptance already
+// contains epsilon_MC, the experimental yield must be multiplied by its inverse.
+//
+// The fit is tabulated versus proton momentum in six FD phi regions for
+// theta<37 deg and three CD phi regions for theta>=37 deg.  The published CD
+// calibration extends to theta=50 deg; for the present deadline-driven transfer
+// we use the same CD parameterization at larger theta and explicitly carry an
+// enlarged transfer systematic downstream.  Momentum is edge-clamped to the
+// fitted ranges so the quadratic is never extrapolated in p.
+static double neupane_proton_efficiency_ratio(double p_gev,
+                                               double theta_rad,
+                                               double phi_rad) {
+    if (!(std::isfinite(p_gev) && std::isfinite(theta_rad) && std::isfinite(phi_rad))) {
+        return 1.0;
+    }
+
+    const double theta_deg = theta_rad * RAD2DEG;
+    double phi_deg = wrap_phi_deg(phi_rad * RAD2DEG);
+
+    struct C { double a2, a1, a0; };
+    C c{0.0, 0.0, 1.0};
+    double p_eval = p_gev;
+
+    if (theta_deg < 37.0) {
+        static const std::array<C,6> coeff{{
+            {0.04437, -0.14271, 1.03439},
+            {0.00490,  0.00554, 0.91770},
+            {0.03671, -0.11680, 1.03002},
+            {0.01863, -0.07756, 1.02308},
+            {0.04915, -0.17173, 1.11768},
+            {0.01077, -0.01328, 0.96242}
+        }};
+        int ib = static_cast<int>(std::floor(phi_deg / 60.0));
+        ib = std::max(0, std::min(5, ib));
+        c = coeff[static_cast<std::size_t>(ib)];
+        p_eval = std::max(0.4, std::min(4.0, p_eval));
+    } else {
+        static const std::array<C,3> coeff{{
+            {0.20052, -0.79964, 1.38699},
+            {0.16842, -0.64970, 1.31246},
+            {0.18845, -0.75824, 1.41677}
+        }};
+        int ib = static_cast<int>(std::floor(phi_deg / 120.0));
+        ib = std::max(0, std::min(2, ib));
+        c = coeff[static_cast<std::size_t>(ib)];
+        p_eval = std::max(0.5, std::min(2.2, p_eval));
+    }
+
+    const double ratio = c.a2 * p_eval * p_eval + c.a1 * p_eval + c.a0;
+    if (!(std::isfinite(ratio) && ratio > 0.20 && ratio < 1.80)) {
+        return 1.0;
+    }
+    return ratio;
+}
+
+static double neupane_proton_data_weight(const BranchBinder& b) {
+    if (!(b.has_p1_p && b.has_p1_theta && b.has_p1_phi)) {
+        fatal("[total_counts] FATAL: Neupane proton-efficiency correction requires p1_p, p1_theta and p1_phi branches.");
+    }
+    const double ratio = neupane_proton_efficiency_ratio(b.p1_p, b.p1_theta, b.p1_phi);
+    return 1.0 / ratio;
+}
+
 static inline void add_weighted_count(WeightedHelCounts& h,
                                       bool split_helicity,
                                       int helicity,
-                                      const EventCurrentWeight& cw) {
+                                      const EventCurrentWeight& cw,
+                                      double proton_weight) {
     if (cw.region < 0 || cw.region >= kCurrentRegionCount) return;
-    auto add_one = [&](double& sw, double& sw2, double& deriv, double& aderiv) {
-        sw += cw.weight;
-        sw2 += cw.weight * cw.weight;
-        deriv += cw.derivative;
-        aderiv += cw.angular_derivative;
+    if (!(std::isfinite(proton_weight) && proton_weight > 0.0)) return;
+    auto add_one = [&](double& sw_before, double& sw, double& sw2, double& deriv, double& aderiv) {
+        sw_before += cw.weight;
+        const double w = cw.weight * proton_weight;
+        sw += w;
+        sw2 += w * w;
+        deriv += cw.derivative * proton_weight;
+        aderiv += cw.angular_derivative * proton_weight;
     };
     h.parameter_stat[cw.region] = cw.parameter_stat;
     h.angular_parameter_stat =
         std::max(h.angular_parameter_stat, cw.angular_parameter_stat);
     if (!split_helicity) {
-        add_one(h.sumw.unpol, h.sumw2.unpol,
+        add_one(h.sumw_current_only.unpol, h.sumw.unpol, h.sumw2.unpol,
                 h.derivative_by_region[cw.region].unpol,
                 h.angular_derivative.unpol);
     } else if (helicity > 0) {
-        add_one(h.sumw.pos, h.sumw2.pos,
+        add_one(h.sumw_current_only.pos, h.sumw.pos, h.sumw2.pos,
                 h.derivative_by_region[cw.region].pos,
                 h.angular_derivative.pos);
     } else if (helicity < 0) {
-        add_one(h.sumw.neg, h.sumw2.neg,
+        add_one(h.sumw_current_only.neg, h.sumw.neg, h.sumw2.neg,
                 h.derivative_by_region[cw.region].neg,
                 h.angular_derivative.neg);
     } else {
-        add_one(h.sumw.unpol, h.sumw2.unpol,
+        add_one(h.sumw_current_only.unpol, h.sumw.unpol, h.sumw2.unpol,
                 h.derivative_by_region[cw.region].unpol,
                 h.angular_derivative.unpol);
     }
@@ -2135,8 +2220,9 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                 add_count(topo_dense[topo_idx][r], split_helicity, b.helicity);
             }
             if (apply_current_weights && !current_weight.skip_corrected) {
-                add_weighted_count(corrected_total_dense[r], split_helicity, b.helicity, current_weight);
-                add_weighted_count(corrected_topo_dense[topo_idx][r], split_helicity, b.helicity, current_weight);
+                const double proton_weight = is_data ? neupane_proton_data_weight(b) : 1.0;
+                add_weighted_count(corrected_total_dense[r], split_helicity, b.helicity, current_weight, proton_weight);
+                add_weighted_count(corrected_topo_dense[topo_idx][r], split_helicity, b.helicity, current_weight, proton_weight);
             }
 
             matched_any = true;
@@ -2315,6 +2401,7 @@ static WeightedRowCounts sum_weighted_row_counts(const WeightedRowCounts& a,
     for (const auto& kv : b) {
         WeightedHelCounts& o = out[kv.first];
         const WeightedHelCounts& h = kv.second;
+        add_hel(o.sumw_current_only, h.sumw_current_only);
         add_hel(o.sumw, h.sumw);
         add_hel(o.sumw2, h.sumw2);
         for (int ir = 0; ir < kCurrentRegionCount; ++ir) {
@@ -3322,6 +3409,28 @@ static void write_collection_to_csv(CSV& csv,
         }
     }
 
+
+    // Net Neupane proton-efficiency multiplier in each four-dimensional bin.
+    // This is a diagnostic ratio of (current + proton corrected) to
+    // current-only data yield; the correction itself is already included in
+    // the normalized raw yield columns written below.
+    if (cfg.write_data_raw_columns) {
+        for (const auto& kvp : C.corrected_total_by_period) {
+            const std::string& period_display = kvp.first;
+            if (should_skip_csv_for_label(period_display)) continue;
+            const int c = col_strict(csv, col_proton_efficiency_correction(cfg.channel_cfg, period_display));
+            for (const auto& row_kv : kvp.second) {
+                const int r = row_kv.first;
+                const WeightedHelCounts& h = row_kv.second;
+                const double before = h.sumw_current_only.unpol + h.sumw_current_only.pos + h.sumw_current_only.neg;
+                const double after = weighted_total_value(h);
+                if (r < 0 || r >= (int)csv.rows.size()) fatal("[total_counts] FATAL: proton-efficiency diagnostic row index out of range.");
+                if (std::isfinite(before) && before > 0.0 && std::isfinite(after) && after > 0.0) {
+                    csv.rows[r][c] = fmt_count_triple(after / before);
+                }
+            }
+        }
+    }
 
     // Event-level current-corrected outputs. Raw/unit-weight columns above are
     // intentionally left unchanged so existing yield-total note material is

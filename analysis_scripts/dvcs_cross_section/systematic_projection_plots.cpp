@@ -185,6 +185,7 @@ static std::vector<Component> components() {
         {"F_{bin}",             23, kMagenta + 1, 1},
         {"Exclusivity",         24, kOrange + 7, 1},
         {"Fiducial",            25, kCyan + 2, 1},
+        {"Proton efficiency",   26, kViolet + 1, 1},
         {"Point-to-point total",29, kBlack, 1}
     };
 }
@@ -218,7 +219,7 @@ static bool finite_fraction(double x) {
     return std::isfinite(x) && x >= 0.0;
 }
 
-// Return the seven point-to-point fractional uncertainties for one CSV row.
+// Return the eight point-to-point fractional uncertainties for one CSV row.
 // Values are returned as fractions, not percentages.
 static std::vector<double> row_component_fractions(
     const CsvTable& table,
@@ -237,7 +238,7 @@ static std::vector<double> row_component_fractions(
 
     const double xs = sp19 ? xs19 : xs10;
     if (!std::isfinite(xs) || xs == 0.0)
-        return std::vector<double>(7,std::numeric_limits<double>::quiet_NaN());
+        return std::vector<double>(8,std::numeric_limits<double>::quiet_NaN());
 
     auto frac_from_abs_10p6 = [&](const std::string& col)->double {
         if (!std::isfinite(xs10) || xs10 == 0.0)
@@ -247,7 +248,7 @@ static std::vector<double> row_component_fractions(
                                 : std::numeric_limits<double>::quiet_NaN();
     };
 
-    std::vector<double> f(7,std::numeric_limits<double>::quiet_NaN());
+    std::vector<double> f(8,std::numeric_limits<double>::quiet_NaN());
 
     if (!sp19) {
         f[0] = number(cell(table,row,"pi0 subtraction sys frac, 10.6 GeV"));
@@ -256,23 +257,24 @@ static std::vector<double> row_component_fractions(
         f[3] = frac_from_abs_10p6("Syst.err (Fbin)");
         f[4] = frac_from_abs_10p6("Syst. err (exclusivity cuts)");
         f[5] = frac_from_abs_10p6("Syst. err (fiducial cuts)");
-        f[6] = frac_from_abs_10p6("Syst. err (point-to-point total)");
+        f[6] = number(cell(table,row,"proton efficiency sys frac, 10.6 GeV"));
+        f[7] = frac_from_abs_10p6("Syst. err (point-to-point total)");
 
         // The displayed total is mathematically just the quadrature sum of
-        // these six components.  Reconstruct it if a downstream CSV rewrite
+        // these seven components.  Reconstruct it if a downstream CSV rewrite
         // left the stored total temporarily unreadable; this keeps plotting
         // independent of CSV serialization details without changing physics.
-        if (!finite_fraction(f[6])) {
+        if (!finite_fraction(f[7])) {
             double sum2 = 0.0;
             bool complete = true;
-            for (int j = 0; j < 6; ++j) {
+            for (int j = 0; j < 7; ++j) {
                 if (!finite_fraction(f[(size_t)j])) {
                     complete = false;
                     break;
                 }
                 sum2 += f[(size_t)j] * f[(size_t)j];
             }
-            if (complete) f[6] = std::sqrt(sum2);
+            if (complete) f[7] = std::sqrt(sum2);
         }
         return f;
     }
@@ -310,6 +312,8 @@ static std::vector<double> row_component_fractions(
     };
     f[4] = transferred_or_zero("Syst. err (exclusivity cuts)");
     f[5] = transferred_or_zero("Syst. err (fiducial cuts)");
+    f[6] = number(cell(
+        table,row,"proton efficiency sys frac, Sp19 Inb (10.2 GeV)"));
 
     // Prefer the dedicated production Sp19 total written by main_systematics.
     // Reconstruct it from the six displayed fractions only as a backward-safe
@@ -317,18 +321,18 @@ static std::vector<double> row_component_fractions(
     const double ptp_sp_abs = number(cell(
         table,row,"Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)"));
     if (std::isfinite(ptp_sp_abs)) {
-        f[6] = std::fabs(ptp_sp_abs/xs19);
+        f[7] = std::fabs(ptp_sp_abs/xs19);
     } else {
         double sum2 = 0.0;
         bool complete = true;
-        for (int j=0;j<6;++j) {
+        for (int j=0;j<7;++j) {
             if (!finite_fraction(f[(size_t)j])) {
                 complete = false;
                 break;
             }
             sum2 += f[(size_t)j]*f[(size_t)j];
         }
-        if (complete) f[6] = std::sqrt(sum2);
+        if (complete) f[7] = std::sqrt(sum2);
     }
 
     return f;

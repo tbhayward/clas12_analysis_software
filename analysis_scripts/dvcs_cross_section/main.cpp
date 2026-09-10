@@ -695,51 +695,34 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // --------- Bin-centering analysis-note outputs ----------
-    // Fbin is likewise model-only and unchanged from pass-1.  Produce the
-    // note diagnostics from the same published factors used in production.
+    // --------- Pass-2 bin-centering correction ----------
+    // Recompute the central KM15 factor using the actual pass-2 mean
+    // kinematics.  The fast backend batches the entire CSV through a small
+    // fixed number of persistent Gepard/KM15 worker processes.
     {
-        if (!write_bin_centering_analysis_note_outputs(
-                "imports/all_bin_v3.csv",
-                "output/bin_centering_plots")) {
-            std::cerr << "[main] ERROR: bin-centering analysis-note outputs failed.\n";
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+
+        try {
+            std::filesystem::copy_file(
+                csv_main,
+                "output/csvs/dvcs_pass2_analysis_backup_bin_centering.csv",
+                std::filesystem::copy_options::overwrite_existing);
+        } catch (const std::exception& ex) {
+            std::cerr << "[main] WARNING: failed to create bin-centering backup: "
+                      << ex.what() << "\n";
+        }
+
+        ModelPaths model_paths;
+        const int quadrature_order = 3;  // 3^4 = 81 KM15 points per populated bin.
+        if (!update_bin_centering_corrections_csv(
+                csv_main, quadrature_order, model_paths, false, ModelChoice::KM15Only)) {
+            std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
             return 1;
         }
+
+        plot_bin_centering_fbin_vs_phi(csv_main, "output/bin_centering_plots");
     }
 
-    // // {
-    // //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-    //
-    // //     try {
-    // //         std::filesystem::copy_file(
-    // //             csv_main,
-    // //             "output/csvs/dvcs_pass2_analysis_backup_bin_centering.csv",
-    // //             std::filesystem::copy_options::overwrite_existing
-    // //         );
-    // //         std::cout << "[main] Backed up CSV to dvcs_pass2_analysis_backup_bin_centering.csv\n";
-    // //     } catch (const std::exception& ex) {
-    // //         std::cerr << "[main] WARNING: failed to create bin-centering backup: "
-    // //                   << ex.what() << "\n";
-    // //     }
-    //
-    // //     ModelPaths model_paths;
-    // //     const bool vgg_globalfit = false;
-    // //     const int n_steps = 3;
-    //
-    // //     if (!update_bin_centering_corrections_csv(
-    // //             csv_main,
-    // //             n_steps,
-    // //             model_paths,
-    // //             vgg_globalfit,
-    // //             ModelChoice::Both)) {
-    // //         std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
-    // //         return 1;
-    // //     }
-    //
-    // //     plot_bin_centering_fbin_vs_phi(
-    // //         csv_main,
-    // //         "output/bin_centering_plots");
-    // // }
 
     // // {
     // //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";

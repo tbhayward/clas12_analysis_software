@@ -285,6 +285,7 @@ static std::vector<std::string> pass1_fixed_systematic_columns() {
     return {
         "Syst. err (pi0 subtraction)",
         "Syst. err (Acceptance)",
+        "Syst. err (proton efficiency)",
         "Syst.err (Frad)",
         "Syst.err (Fbin)",
         "Syst. err (point-to-point total)"
@@ -596,6 +597,10 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
                     "acceptance-reweighting production assignment");
 
     ensure_column(t, "Syst. err (Acceptance), Sp19 Inb (10.2 GeV)");
+    ensure_column(t, "Syst. err (proton efficiency)");
+    ensure_column(t, "proton efficiency sys frac, 10.6 GeV");
+    ensure_column(t, "Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)");
+    ensure_column(t, "proton efficiency sys frac, Sp19 Inb (10.2 GeV)");
     ensure_column(t, "Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)");
 
     const int i_frac10 = t.index.at(c_frac10);
@@ -604,12 +609,17 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
     const int i_xssp = t.index.at(c_xssp);
     const int i_acc10 = t.index.at("Syst. err (Acceptance)");
     const int i_accsp = t.index.at("Syst. err (Acceptance), Sp19 Inb (10.2 GeV)");
+    const int i_pe10 = t.index.at("Syst. err (proton efficiency)");
+    const int i_pef10 = t.index.at("proton efficiency sys frac, 10.6 GeV");
+    const int i_pesp = t.index.at("Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)");
+    const int i_pefsp = t.index.at("proton efficiency sys frac, Sp19 Inb (10.2 GeV)");
     const int i_ptp10 = t.index.at("Syst. err (point-to-point total)");
     const int i_ptpsp = t.index.at("Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)");
 
     const std::vector<std::string> components10 = {
         "Syst. err (pi0 subtraction)",
         "Syst. err (Acceptance)",
+        "Syst. err (proton efficiency)",
         "Syst.err (Frad)",
         "Syst.err (Fbin)",
         "Syst. err (exclusivity cuts)",
@@ -641,7 +651,51 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
             row[(size_t)i_accsp].clear();
         }
 
-        // Final 10.6-GeV point-to-point total from the six production terms.
+        // Krishna Neupane's fully reviewed Fall-2018-inbending double-pion
+        // analysis quotes 2.83% for the complete particle-efficiency-correction
+        // systematic.  We conservatively assign that entire number to the
+        // proton correction here.  For Sp18 and Sp19 the requested temporary
+        // transfer prescription is four times larger (11.32%).
+        //
+        // For the combined 10.6-GeV result, treat 2.83% as the common
+        // calibration component and add only the *extra* Sp18 transfer
+        // uncertainty according to the Sp18 share of the corrected numerator.
+        // This avoids artificially quadrupling the Fa18-dominated result.
+        constexpr double pe_base = 0.0283;
+        constexpr double pe_sp_total = 4.0 * pe_base;
+        const double pe_sp_extra = std::sqrt(pe_sp_total*pe_sp_total - pe_base*pe_base);
+
+        auto yval = [&](const char* per) -> double {
+            const std::string col = std::string("acceptance corrected yield, ep->epg, exp, ") + per + ", unpol";
+            auto it = t.index.find(col);
+            if (it == t.index.end()) return 0.0;
+            const double v = tuple_first_value(row[(size_t)it->second]);
+            return (std::isfinite(v) && v > 0.0) ? v : 0.0;
+        };
+
+        const double y_fa = yval("Fa18 Inb") + yval("Fa18 Out");
+        const double y_sp = yval("Sp18 Inb") + yval("Sp18 Out");
+        const double y_all = y_fa + y_sp;
+        if (std::isfinite(xs10) && y_all > 0.0) {
+            const double sp_fraction = y_sp / y_all;
+            const double pe_frac10 = std::sqrt(pe_base*pe_base +
+                                               (pe_sp_extra*sp_fraction)*(pe_sp_extra*sp_fraction));
+            row[(size_t)i_pef10] = format_scalar(pe_frac10);
+            row[(size_t)i_pe10] = format_scalar(std::fabs(xs10) * pe_frac10);
+        } else {
+            row[(size_t)i_pef10].clear();
+            row[(size_t)i_pe10].clear();
+        }
+
+        if (std::isfinite(xssp) && std::fabs(xssp) > 0.0) {
+            row[(size_t)i_pefsp] = format_scalar(pe_sp_total);
+            row[(size_t)i_pesp] = format_scalar(std::fabs(xssp) * pe_sp_total);
+        } else {
+            row[(size_t)i_pefsp].clear();
+            row[(size_t)i_pesp].clear();
+        }
+
+        // Final 10.6-GeV point-to-point total from the seven production terms.
         double sum10 = 0.0;
         bool ok10 = true;
         for (const auto& col : components10) {
@@ -664,6 +718,7 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
             for (const auto& col : std::vector<std::string>{
                     "Syst. err (pi0 subtraction), Sp19 Inb (10.2 GeV)",
                     "Syst. err (Acceptance), Sp19 Inb (10.2 GeV)",
+                    "Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)",
                     "Syst.err (Frad), Sp19 Inb (10.2 GeV)",
                     "Syst.err (Fbin), Sp19 Inb (10.2 GeV)"}) {
                 const double e = scalar_value(row[(size_t)t.index.at(col)]);

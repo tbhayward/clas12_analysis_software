@@ -498,6 +498,13 @@ static void add_eppi0_background_mc_yield_columns(std::vector<std::string>& H) {
     }
 }
 
+static void add_proton_efficiency_diagnostic_columns(std::vector<std::string>& H) {
+    for (const auto& per : base_periods()) {
+        H.push_back("proton efficiency correction, ep->epg, " + per);
+        H.push_back("proton efficiency correction, ep->eppi0, " + per);
+    }
+}
+
 static void add_mc_yield_columns(std::vector<std::string>& H) {
     add_mc_yield_columns_for_channel(H, "ep->epg");
     add_mc_yield_columns_for_channel(H, "ep->eppi0");
@@ -598,6 +605,10 @@ static void add_pass1_fixed_systematic_columns(std::vector<std::string>& H) {
     H.push_back("pi0 subtraction sys frac, Sp19 Inb (10.2 GeV)");
     H.push_back("pi0 effective contamination, Sp19 Inb (10.2 GeV)");
     H.push_back("Syst. err (Acceptance)");
+    H.push_back("Syst. err (proton efficiency)");
+    H.push_back("proton efficiency sys frac, 10.6 GeV");
+    H.push_back("Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)");
+    H.push_back("proton efficiency sys frac, Sp19 Inb (10.2 GeV)");
     H.push_back("Syst.err (Frad)");
     H.push_back("Syst.err (Fbin)");
     H.push_back("Syst. err (exclusivity cuts, raw)");
@@ -726,6 +737,7 @@ static std::vector<std::string> build_new_header() {
     add_current_efficiency_columns(H);
     add_eppi0_normalization_columns(H);
     add_normalized_raw_yield_columns(H);
+    add_proton_efficiency_diagnostic_columns(H);
 
     add_mc_yield_columns(H);
 
