@@ -309,6 +309,14 @@ static void add_theta_group_columns_after_phiavg_10p6(std::vector<std::string>& 
         H.push_back(name.str());
     }
 
+    // Proton laboratory azimuth is retained because the reviewed RGA
+    // proton data/MC efficiency correction is parameterized in (p,theta,phi).
+    for (const auto& g : avg_groups()) {
+        std::ostringstream name;
+        name << "p_phi, " << g;
+        H.push_back(name.str());
+    }
+
     for (const auto& g : avg_groups()) {
         std::ostringstream name;
         name << "g_theta, " << g;
@@ -498,13 +506,6 @@ static void add_eppi0_background_mc_yield_columns(std::vector<std::string>& H) {
     }
 }
 
-static void add_proton_efficiency_diagnostic_columns(std::vector<std::string>& H) {
-    for (const auto& per : base_periods()) {
-        H.push_back("proton efficiency correction, ep->epg, " + per);
-        H.push_back("proton efficiency correction, ep->eppi0, " + per);
-    }
-}
-
 static void add_mc_yield_columns(std::vector<std::string>& H) {
     add_mc_yield_columns_for_channel(H, "ep->epg");
     add_mc_yield_columns_for_channel(H, "ep->eppi0");
@@ -534,6 +535,15 @@ static void add_acceptance_columns(std::vector<std::string>& H) {
         std::ostringstream name;
         name << "acceptance, " << per;
         H.push_back(name.str());
+    }
+
+    // Reviewed RGA proton reconstruction-efficiency correction (Neupane).
+    // E_C = epsilon_data/epsilon_MC; acceptance.cpp multiplies the nominal
+    // reconstructed-MC acceptance by E_C.  The factor and provisional
+    // run-period systematic assignment are kept explicitly for auditability.
+    for (const auto& per : base_periods()) {
+        H.push_back("proton efficiency correction factor, " + per);
+        H.push_back("proton efficiency systematic fraction, " + per);
     }
 }
 
@@ -597,7 +607,10 @@ static void add_norm_columns(std::vector<std::string>& H) {
 static void add_pass1_fixed_systematic_columns(std::vector<std::string>& H) {
     // The pi0 term is recalculated from the pass-2 contamination using the
     // pass-1 7.2% relative uncertainty on the acceptance-corrected background.
-    // Acceptance, Frad, and Fbin retain the dedicated pass-1 studies.
+    // Acceptance retains the pass-2 reweighting study; Frad keeps the dedicated
+    // radiative prescription, while the central Fbin value is now recomputed
+    // from KM15 at the pass-2 bin means (its existing model-spread systematic
+    // is retained provisionally).
     H.push_back("Syst. err (pi0 subtraction)");
     H.push_back("pi0 subtraction sys frac, 10.6 GeV");
     H.push_back("pi0 effective contamination, 10.6 GeV");
@@ -606,9 +619,8 @@ static void add_pass1_fixed_systematic_columns(std::vector<std::string>& H) {
     H.push_back("pi0 effective contamination, Sp19 Inb (10.2 GeV)");
     H.push_back("Syst. err (Acceptance)");
     H.push_back("Syst. err (proton efficiency)");
-    H.push_back("proton efficiency sys frac, 10.6 GeV");
+    H.push_back("proton efficiency combined systematic fraction, 10.6 GeV");
     H.push_back("Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)");
-    H.push_back("proton efficiency sys frac, Sp19 Inb (10.2 GeV)");
     H.push_back("Syst.err (Frad)");
     H.push_back("Syst.err (Fbin)");
     H.push_back("Syst. err (exclusivity cuts, raw)");
@@ -737,7 +749,6 @@ static std::vector<std::string> build_new_header() {
     add_current_efficiency_columns(H);
     add_eppi0_normalization_columns(H);
     add_normalized_raw_yield_columns(H);
-    add_proton_efficiency_diagnostic_columns(H);
 
     add_mc_yield_columns(H);
 

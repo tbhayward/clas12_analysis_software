@@ -5905,7 +5905,6 @@ def save_outputs(
         have_gk16: bool,
         emff,
         args) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    have_pass2 = world_has_pass2(world)
     if not have_pass2:
         print(
             "[PASS2 HAYWARD] no finalized pass-2 sample loaded; "
@@ -6354,7 +6353,6 @@ def save_outputs(
 def print_summary(dataset_summary: pd.DataFrame, model_scores: pd.DataFrame, pair_summary: pd.DataFrame, have_gk16: bool, norm_dataset: Optional[pd.DataFrame] = None, norm_metrics: Optional[pd.DataFrame] = None) -> None:
     print("\n" + "=" * 80)
     print("DATASET SUMMARY")
-    have_pass2 = world_has_pass2(world)
     print("=" * 80)
     cols = ["dataset_label", "N", "ebeam_min_GeV", "ebeam_max_GeV", "median_point_unc_pct", "correlated_norm_pct"]
     print(dataset_summary[cols].to_string(index=False, float_format=lambda x: f"{x:.3f}"))

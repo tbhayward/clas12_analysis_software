@@ -144,6 +144,12 @@ static inline const std::vector<std::string>& p_theta_labels() {
     };
     return v;
 }
+static inline const std::vector<std::string>& p_phi_labels() {
+    static const std::vector<std::string> v = {
+        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out", "Fa18", "Sp18", "10.6 GeV"
+    };
+    return v;
+}
 static inline const std::vector<std::string>& g_theta_labels() {
     static const std::vector<std::string> v = {
         "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out", "Fa18", "Sp18", "10.6 GeV"
@@ -248,22 +254,30 @@ static inline std::string col_phiavg(const std::string& lab) { return "phiavg, "
 
 static inline std::string col_e_theta(const std::string& lab) { return "e_theta, " + lab; }
 static inline std::string col_p_theta(const std::string& lab) { return "p_theta, " + lab; }
+static inline std::string col_p_phi(const std::string& lab)   { return "p_phi, " + lab; }
 static inline std::string col_g_theta(const std::string& lab) { return "g_theta, " + lab; }
 
 // ---------------- accumulators ----------------
 struct Accum {
     double sx  = 0.0, sQ  = 0.0, st  = 0.0, sp  = 0.0;
     double seT = 0.0, spT = 0.0, sgT = 0.0; // theta sums in degrees
+    // Circular proton-azimuth mean; ordinary averaging fails across 0/360 deg.
+    double spPhiSin = 0.0, spPhiCos = 0.0;
     long long n = 0;
 
     void add(double x, double Q2, double tabs, double phi_deg,
-             double e_theta_deg, double p_theta_deg, double g_theta_deg) {
+             double e_theta_deg, double p_theta_deg, double p_phi_deg, double g_theta_deg) {
         sx  += x;
         sQ  += Q2;
         st  += tabs;
         sp  += phi_deg;
         seT += e_theta_deg;
         spT += p_theta_deg;
+        if (std::isfinite(p_phi_deg)) {
+            const double pr = p_phi_deg / RAD2DEG;
+            spPhiSin += std::sin(pr);
+            spPhiCos += std::cos(pr);
+        }
         sgT += g_theta_deg;
         ++n;
     }
@@ -274,6 +288,13 @@ struct Accum {
     double mp()  const { return n ? sp  / n : std::numeric_limits<double>::quiet_NaN(); }
     double meT() const { return n ? seT / n : std::numeric_limits<double>::quiet_NaN(); }
     double mpT() const { return n ? spT / n : std::numeric_limits<double>::quiet_NaN(); }
+    double mpPhi() const {
+        if (!n || (spPhiSin == 0.0 && spPhiCos == 0.0))
+            return std::numeric_limits<double>::quiet_NaN();
+        double d = std::atan2(spPhiSin, spPhiCos) * RAD2DEG;
+        if (d < 0.0) d += 360.0;
+        return d;
+    }
     double mgT() const { return n ? sgT / n : std::numeric_limits<double>::quiet_NaN(); }
 };
 
@@ -464,6 +485,12 @@ struct BranchBinder {
     double p_theta_deg() const {
         if (!has_p1_theta) return std::numeric_limits<double>::quiet_NaN();
         return p1_theta * RAD2DEG;
+    }
+    double p_phi_deg() const {
+        if (!has_p1_phi) return std::numeric_limits<double>::quiet_NaN();
+        double d = std::fmod(p1_phi * RAD2DEG, 360.0);
+        if (d < 0.0) d += 360.0;
+        return d;
     }
     double g_theta_deg() const {
         if (!has_p2_theta) return std::numeric_limits<double>::quiet_NaN();
@@ -810,10 +837,10 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
     }
 
     // Required for theta means (in degrees) written to CSV
-    if (!b.readyForThetaMeans()) {
+    if (!b.readyForThetaMeans() || !b.has_p1_phi) {
         std::cerr << "[bin_means] FATAL: Tree for '" << period_key
-                  << "' missing theta branches required for theta means. Required: "
-                  << "e_theta (electron), p1_theta (proton), p2_theta (photon)."
+                  << "' missing branches required for detector means. Required: "
+                  << "e_theta, p1_theta, p1_phi, p2_theta."
                   << std::endl;
         std::exit(EXIT_FAILURE);
     }
@@ -865,6 +892,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
         const double e_theta_deg = b.e_theta_deg();
         const double p_theta_deg = b.p_theta_deg();
+        const double p_phi_deg = b.p_phi_deg();
         const double g_theta_deg = b.g_theta_deg();
 
         const double tabs = std::fabs(b.t1);
@@ -878,7 +906,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
                                      w.tmin, w.tmax)) continue;
                 if (!row_accepts_phi(phi_deg, w.pmin, w.pmax)) continue;
                 R.per_row[r].add(b.x, b.Q2, tabs, phi_deg,
-                                 e_theta_deg, p_theta_deg, g_theta_deg);
+                                 e_theta_deg, p_theta_deg, p_phi_deg, g_theta_deg);
                 used_any_row = true;
             }
         };
@@ -945,14 +973,17 @@ static void fill_combined_groups(CSV& csv,
     // theta group columns (all must exist per schema; fail fast if missing)
     const int c_e_Fa18   = col(csv, col_e_theta("Fa18"));
     const int c_p_Fa18   = col(csv, col_p_theta("Fa18"));
+    const int c_pphi_Fa18 = col(csv, col_p_phi("Fa18"));
     const int c_g_Fa18   = col(csv, col_g_theta("Fa18"));
 
     const int c_e_Sp18   = col(csv, col_e_theta("Sp18"));
     const int c_p_Sp18   = col(csv, col_p_theta("Sp18"));
+    const int c_pphi_Sp18 = col(csv, col_p_phi("Sp18"));
     const int c_g_Sp18   = col(csv, col_g_theta("Sp18"));
 
     const int c_e_106    = col(csv, col_e_theta("10.6 GeV"));
     const int c_p_106    = col(csv, col_p_theta("10.6 GeV"));
+    const int c_pphi_106 = col(csv, col_p_phi("10.6 GeV"));
     const int c_g_106    = col(csv, col_g_theta("10.6 GeV"));
 
     auto combine = [&](const std::vector<const std::unordered_map<int, Accum>*>& parts, int row)->Accum {
@@ -968,6 +999,8 @@ static void fill_combined_groups(CSV& csv,
             a.sp  += r.sp;
             a.seT += r.seT;
             a.spT += r.spT;
+            a.spPhiSin += r.spPhiSin;
+            a.spPhiCos += r.spPhiCos;
             a.sgT += r.sgT;
             a.n   += r.n;
         }
@@ -989,6 +1022,7 @@ static void fill_combined_groups(CSV& csv,
 
                 csv.rows[r][c_e_Fa18]   = fmt8(a.meT());
                 csv.rows[r][c_p_Fa18]   = fmt8(a.mpT());
+                csv.rows[r][c_pphi_Fa18] = fmt8(a.mpPhi());
                 csv.rows[r][c_g_Fa18]   = fmt8(a.mgT());
 
                 ++wrote_Fa18;
@@ -1000,6 +1034,7 @@ static void fill_combined_groups(CSV& csv,
 
                 csv.rows[r][c_e_Fa18].clear();
                 csv.rows[r][c_p_Fa18].clear();
+                csv.rows[r][c_pphi_Fa18].clear();
                 csv.rows[r][c_g_Fa18].clear();
 
                 ++skip_Fa18;
@@ -1015,6 +1050,7 @@ static void fill_combined_groups(CSV& csv,
 
                 csv.rows[r][c_e_Sp18]   = fmt8(a.meT());
                 csv.rows[r][c_p_Sp18]   = fmt8(a.mpT());
+                csv.rows[r][c_pphi_Sp18] = fmt8(a.mpPhi());
                 csv.rows[r][c_g_Sp18]   = fmt8(a.mgT());
 
                 ++wrote_Sp18;
@@ -1026,6 +1062,7 @@ static void fill_combined_groups(CSV& csv,
 
                 csv.rows[r][c_e_Sp18].clear();
                 csv.rows[r][c_p_Sp18].clear();
+                csv.rows[r][c_pphi_Sp18].clear();
                 csv.rows[r][c_g_Sp18].clear();
 
                 ++skip_Sp18;
@@ -1041,6 +1078,7 @@ static void fill_combined_groups(CSV& csv,
 
                 csv.rows[r][c_e_106]   = fmt8(a.meT());
                 csv.rows[r][c_p_106]   = fmt8(a.mpT());
+                csv.rows[r][c_pphi_106] = fmt8(a.mpPhi());
                 csv.rows[r][c_g_106]   = fmt8(a.mgT());
 
                 ++wrote_106;
@@ -1052,6 +1090,7 @@ static void fill_combined_groups(CSV& csv,
 
                 csv.rows[r][c_e_106].clear();
                 csv.rows[r][c_p_106].clear();
+                csv.rows[r][c_pphi_106].clear();
                 csv.rows[r][c_g_106].clear();
 
                 ++skip_106;
@@ -1252,6 +1291,10 @@ bool update_bin_means_csv(const std::string& csv_path,
     for (const auto& lab : p_theta_labels()) {
         cpT[lab] = col(csv, col_p_theta(lab));
     }
+    std::unordered_map<std::string,int> cpPhi;
+    for (const auto& lab : p_phi_labels()) {
+        cpPhi[lab] = col(csv, col_p_phi(lab));
+    }
     for (const auto& lab : g_theta_labels()) {
         cgT[lab] = col(csv, col_g_theta(lab));
     }
@@ -1316,6 +1359,12 @@ bool update_bin_means_csv(const std::string& csv_path,
                               << tags.csv_label << std::endl;
                     std::exit(EXIT_FAILURE);
                 }
+                auto itPhiP = cpPhi.find(tags.csv_label);
+                if (itPhiP == cpPhi.end()) {
+                    std::cerr << "[bin_means] FATAL: expected column missing for p_phi label: "
+                              << tags.csv_label << std::endl;
+                    std::exit(EXIT_FAILURE);
+                }
                 auto itG = cgT.find(tags.csv_label);
                 if (itG == cgT.end()) {
                     std::cerr << "[bin_means] FATAL: expected column missing for g_theta label: "
@@ -1325,6 +1374,7 @@ bool update_bin_means_csv(const std::string& csv_path,
 
                 csv.rows[r][itE->second] = fmt8(a.meT());
                 csv.rows[r][itP->second] = fmt8(a.mpT());
+                csv.rows[r][itPhiP->second] = fmt8(a.mpPhi());
                 csv.rows[r][itG->second] = fmt8(a.mgT());
 
                 ++wrote;
@@ -1348,6 +1398,12 @@ bool update_bin_means_csv(const std::string& csv_path,
                               << tags.csv_label << std::endl;
                     std::exit(EXIT_FAILURE);
                 }
+                auto itPhiP = cpPhi.find(tags.csv_label);
+                if (itPhiP == cpPhi.end()) {
+                    std::cerr << "[bin_means] FATAL: expected column missing for p_phi label: "
+                              << tags.csv_label << std::endl;
+                    std::exit(EXIT_FAILURE);
+                }
                 auto itG = cgT.find(tags.csv_label);
                 if (itG == cgT.end()) {
                     std::cerr << "[bin_means] FATAL: expected column missing for g_theta label: "
@@ -1357,6 +1413,7 @@ bool update_bin_means_csv(const std::string& csv_path,
 
                 csv.rows[r][itE->second].clear();
                 csv.rows[r][itP->second].clear();
+                csv.rows[r][itPhiP->second].clear();
                 csv.rows[r][itG->second].clear();
 
                 ++skipped;

@@ -598,9 +598,8 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
 
     ensure_column(t, "Syst. err (Acceptance), Sp19 Inb (10.2 GeV)");
     ensure_column(t, "Syst. err (proton efficiency)");
-    ensure_column(t, "proton efficiency sys frac, 10.6 GeV");
+    ensure_column(t, "proton efficiency combined systematic fraction, 10.6 GeV");
     ensure_column(t, "Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)");
-    ensure_column(t, "proton efficiency sys frac, Sp19 Inb (10.2 GeV)");
     ensure_column(t, "Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)");
 
     const int i_frac10 = t.index.at(c_frac10);
@@ -609,10 +608,9 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
     const int i_xssp = t.index.at(c_xssp);
     const int i_acc10 = t.index.at("Syst. err (Acceptance)");
     const int i_accsp = t.index.at("Syst. err (Acceptance), Sp19 Inb (10.2 GeV)");
-    const int i_pe10 = t.index.at("Syst. err (proton efficiency)");
-    const int i_pef10 = t.index.at("proton efficiency sys frac, 10.6 GeV");
-    const int i_pesp = t.index.at("Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)");
-    const int i_pefsp = t.index.at("proton efficiency sys frac, Sp19 Inb (10.2 GeV)");
+    const int i_peff10 = t.index.at("Syst. err (proton efficiency)");
+    const int i_pefffrac10 = t.index.at("proton efficiency combined systematic fraction, 10.6 GeV");
+    const int i_peffsp = t.index.at("Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)");
     const int i_ptp10 = t.index.at("Syst. err (point-to-point total)");
     const int i_ptpsp = t.index.at("Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)");
 
@@ -626,8 +624,26 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
         "Syst. err (fiducial cuts)"
     };
 
+    // Krishna Neupane's reviewed Fall-2018-inbending proton-efficiency study
+    // quotes an approximately 2.83% systematic on the corrected integrated
+    // cross section.  We use that as the provisional Fa18 fractional source.
+    // Per the pass-2 prescription, Sp18 and Sp19 receive four times that
+    // uncertainty until dedicated period studies are available.  For the
+    // combined 10.6-GeV cross section the transferred uncertainty is NOT
+    // averaged down as independent statistics; instead it is linearly weighted
+    // by each run period's acceptance-corrected yield in the bin.
+    const double peff_sys_fa18 = 0.0283;
+    const double peff_sys_sp18 = 4.0 * peff_sys_fa18;
+    const double peff_sys_sp19 = 4.0 * peff_sys_fa18;
+    const std::vector<std::pair<std::string,double>> peff_periods10 = {
+        {"Fa18 Inb", peff_sys_fa18},
+        {"Fa18 Out", peff_sys_fa18},
+        {"Sp18 Inb", peff_sys_sp18},
+        {"Sp18 Out", peff_sys_sp18}
+    };
+
     size_t n10 = 0, nsp = 0;
-    std::vector<double> frac10_values, fracsp_values;
+    std::vector<double> frac10_values, fracsp_values, peff10_values;
 
     for (auto& row : t.rows) {
         const double xs10 = tuple_first_value(row[(size_t)i_xs10]);
@@ -651,48 +667,37 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
             row[(size_t)i_accsp].clear();
         }
 
-        // Krishna Neupane's fully reviewed Fall-2018-inbending double-pion
-        // analysis quotes 2.83% for the complete particle-efficiency-correction
-        // systematic.  We conservatively assign that entire number to the
-        // proton correction here.  For Sp18 and Sp19 the requested temporary
-        // transfer prescription is four times larger (11.32%).
-        //
-        // For the combined 10.6-GeV result, treat 2.83% as the common
-        // calibration component and add only the *extra* Sp18 transfer
-        // uncertainty according to the Sp18 share of the corrected numerator.
-        // This avoids artificially quadrupling the Fa18-dominated result.
-        constexpr double pe_base = 0.0283;
-        constexpr double pe_sp_total = 4.0 * pe_base;
-        const double pe_sp_extra = std::sqrt(pe_sp_total*pe_sp_total - pe_base*pe_base);
-
-        auto yval = [&](const char* per) -> double {
-            const std::string col = std::string("acceptance corrected yield, ep->epg, exp, ") + per + ", unpol";
-            auto it = t.index.find(col);
-            if (it == t.index.end()) return 0.0;
-            const double v = tuple_first_value(row[(size_t)it->second]);
-            return (std::isfinite(v) && v > 0.0) ? v : 0.0;
-        };
-
-        const double y_fa = yval("Fa18 Inb") + yval("Fa18 Out");
-        const double y_sp = yval("Sp18 Inb") + yval("Sp18 Out");
-        const double y_all = y_fa + y_sp;
-        if (std::isfinite(xs10) && y_all > 0.0) {
-            const double sp_fraction = y_sp / y_all;
-            const double pe_frac10 = std::sqrt(pe_base*pe_base +
-                                               (pe_sp_extra*sp_fraction)*(pe_sp_extra*sp_fraction));
-            row[(size_t)i_pef10] = format_scalar(pe_frac10);
-            row[(size_t)i_pe10] = format_scalar(std::fabs(xs10) * pe_frac10);
-        } else {
-            row[(size_t)i_pef10].clear();
-            row[(size_t)i_pe10].clear();
+        double peff_weight_sum = 0.0;
+        double peff_weighted_frac = 0.0;
+        for (const auto& item : peff_periods10) {
+            const std::string ycol =
+                "acceptance corrected yield, ep->epg, exp, " + item.first + ", unpol";
+            const auto iy = t.index.find(ycol);
+            if (iy == t.index.end()) {
+                continue;
+            }
+            const double y = tuple_first_value(row[(size_t)iy->second]);
+            if (!std::isfinite(y) || y <= 0.0) {
+                continue;
+            }
+            peff_weight_sum += y;
+            peff_weighted_frac += y * item.second;
         }
 
-        if (std::isfinite(xssp) && std::fabs(xssp) > 0.0) {
-            row[(size_t)i_pefsp] = format_scalar(pe_sp_total);
-            row[(size_t)i_pesp] = format_scalar(std::fabs(xssp) * pe_sp_total);
+        if (std::isfinite(xs10) && peff_weight_sum > 0.0) {
+            const double fpeff = peff_weighted_frac / peff_weight_sum;
+            row[(size_t)i_pefffrac10] = format_scalar(fpeff);
+            row[(size_t)i_peff10] = format_scalar(std::fabs(xs10) * fpeff);
+            peff10_values.push_back(fpeff);
         } else {
-            row[(size_t)i_pefsp].clear();
-            row[(size_t)i_pesp].clear();
+            row[(size_t)i_pefffrac10].clear();
+            row[(size_t)i_peff10].clear();
+        }
+
+        if (std::isfinite(xssp)) {
+            row[(size_t)i_peffsp] = format_scalar(std::fabs(xssp) * peff_sys_sp19);
+        } else {
+            row[(size_t)i_peffsp].clear();
         }
 
         // Final 10.6-GeV point-to-point total from the seven production terms.
@@ -776,6 +781,10 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
               << " Sp19 bins. Median fractions: "
               << 100.0*median_fraction(frac10_values) << "% (10.6), "
               << 100.0*median_fraction(fracsp_values) << "% (Sp19).\n";
+    std::cout << "[proton-efficiency-systematics] Neupane transfer: median combined "
+              << "10.6-GeV fractional uncertainty = "
+              << 100.0*median_fraction(peff10_values)
+              << "%; Sp19 provisional fraction = " << 100.0*peff_sys_sp19 << "%.\n";
     std::cout << "[acceptance-systematics] Recomputed dedicated 10.6-GeV and Sp19 "
               << "point-to-point totals.\n";
     return true;
@@ -794,6 +803,8 @@ static bool validate_final_point_to_point_systematics(const std::string& csv_pat
             "pi0 subtraction sys frac, Sp19 Inb (10.2 GeV)",
             "Syst. err (Acceptance)",
             "Syst. err (Acceptance), Sp19 Inb (10.2 GeV)",
+            "Syst. err (proton efficiency)",
+            "Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)",
             "Syst. err (point-to-point total)",
             "Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)"
         },
@@ -810,6 +821,9 @@ static bool validate_final_point_to_point_systematics(const std::string& csv_pat
     const int i_acc10 = t.index.at("Syst. err (Acceptance)");
     const int i_accsp = t.index.at(
         "Syst. err (Acceptance), Sp19 Inb (10.2 GeV)");
+    const int i_peff10 = t.index.at("Syst. err (proton efficiency)");
+    const int i_peffsp = t.index.at(
+        "Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)");
     const int i_ptp10 = t.index.at("Syst. err (point-to-point total)");
     const int i_ptpsp = t.index.at(
         "Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)");
@@ -817,6 +831,7 @@ static bool validate_final_point_to_point_systematics(const std::string& csv_pat
     size_t n_xs10 = 0, n_xssp = 0;
     size_t n_pi010 = 0, n_pi0sp = 0;
     size_t n_acc10 = 0, n_accsp = 0;
+    size_t n_peff10 = 0, n_peffsp = 0;
     size_t n_ptp10 = 0, n_ptpsp = 0;
 
     for (const auto& row : t.rows) {
@@ -829,6 +844,7 @@ static bool validate_final_point_to_point_systematics(const std::string& csv_pat
             ++n_xs10;
             if (std::isfinite(scalar_value(row[(size_t)i_pi010]))) ++n_pi010;
             if (std::isfinite(scalar_value(row[(size_t)i_acc10]))) ++n_acc10;
+            if (std::isfinite(scalar_value(row[(size_t)i_peff10]))) ++n_peff10;
             if (std::isfinite(scalar_value(row[(size_t)i_ptp10]))) ++n_ptp10;
         }
 
@@ -836,6 +852,7 @@ static bool validate_final_point_to_point_systematics(const std::string& csv_pat
             ++n_xssp;
             if (std::isfinite(scalar_value(row[(size_t)i_pi0sp]))) ++n_pi0sp;
             if (std::isfinite(scalar_value(row[(size_t)i_accsp]))) ++n_accsp;
+            if (std::isfinite(scalar_value(row[(size_t)i_peffsp]))) ++n_peffsp;
             if (std::isfinite(scalar_value(row[(size_t)i_ptpsp]))) ++n_ptpsp;
         }
     }
@@ -844,23 +861,27 @@ static bool validate_final_point_to_point_systematics(const std::string& csv_pat
         << "[final-ptp] 10.6 GeV coverage: xs=" << n_xs10
         << ", pi0=" << n_pi010
         << ", acceptance=" << n_acc10
+        << ", proton-eff=" << n_peff10
         << ", total=" << n_ptp10 << "\n";
     std::cout
         << "[final-ptp] Sp19 coverage: xs=" << n_xssp
         << ", pi0=" << n_pi0sp
         << ", acceptance=" << n_accsp
+        << ", proton-eff=" << n_peffsp
         << ", total=" << n_ptpsp << "\n";
 
     const bool ok10 =
         n_xs10 > 0 &&
         n_pi010 == n_xs10 &&
         n_acc10 == n_xs10 &&
+        n_peff10 == n_xs10 &&
         n_ptp10 == n_xs10;
 
     const bool oksp =
         n_xssp > 0 &&
         n_pi0sp == n_xssp &&
         n_accsp == n_xssp &&
+        n_peffsp == n_xssp &&
         n_ptpsp == n_xssp;
 
     if (!ok10 || !oksp) {

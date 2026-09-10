@@ -82,6 +82,100 @@ static inline bool is_finite_nonnegative(double x) {
     return std::isfinite(x) && x >= 0.0;
 }
 
+// -----------------------------------------------------------------------------
+// Reviewed RGA proton reconstruction-efficiency correction (Neupane, 2026).
+//
+// The analysis-note convention is
+//     E_C = epsilon_exp / epsilon_sim .
+// Therefore the detector acceptance appropriate to data is
+//     A_data = A_MC * E_C,
+// and the extracted cross section is raised by 1/E_C where MC overestimates
+// proton reconstruction.  The published parameterization is quadratic in
+// proton momentum, separately in broad theta/phi regions.
+//
+// This pass-2 implementation evaluates the parameterization at the measured
+// proton mean kinematics of each four-dimensional DVCS bin.  Proton momentum
+// is obtained exactly from |t| for an on-shell recoil proton:
+//     E_p = M_p + |t|/(2 M_p),  p = sqrt(E_p^2-M_p^2).
+// The Neupane efficiency bins were defined with missing-proton coordinates and
+// mapped to measured coordinates in that analysis.  Because the supplied fit
+// table itself is in broad detector-region bins and the mapping is close to
+// unity, the present implementation uses the measured p_theta/p_phi means.
+// This is intentionally explicit in the CSV so a later event-level/mapped
+// refinement can replace it without changing the rest of the extraction.
+// -----------------------------------------------------------------------------
+static double wrap_deg_360_local(double d) {
+    if (!std::isfinite(d)) return std::numeric_limits<double>::quiet_NaN();
+    d = std::fmod(d, 360.0);
+    if (d < 0.0) d += 360.0;
+    return d;
+}
+
+struct ProtonEffParams { double a, b, c; };
+
+static ProtonEffParams proton_eff_params(double theta_deg, double phi_deg) {
+    const double phi = wrap_deg_360_local(phi_deg);
+    if (theta_deg < 37.0) {
+        // Table 7.2, theta < 37 deg; phi bins [0,60),...,[300,360).
+        static const ProtonEffParams p[6] = {
+            {0.04437, -0.14271, 1.03439},
+            {0.00490,  0.00554, 0.91770},
+            {0.03671, -0.11680, 1.03002},
+            {0.01863, -0.07756, 1.02308},
+            {0.04915, -0.17173, 1.11768},
+            {0.01077, -0.01328, 0.96242}
+        };
+        int i = static_cast<int>(std::floor(phi / 60.0));
+        if (i < 0) i = 0;
+        if (i > 5) i = 5;
+        return p[i];
+    }
+
+    // Table 7.3, theta >= 37 deg; phi bins [0,120),[120,240),[240,360).
+    static const ProtonEffParams p[3] = {
+        {0.20052, -0.79964, 1.38699},
+        {0.16842, -0.64970, 1.31246},
+        {0.18845, -0.75924, 1.41677}
+    };
+    int i = static_cast<int>(std::floor(phi / 120.0));
+    if (i < 0) i = 0;
+    if (i > 2) i = 2;
+    return p[i];
+}
+
+static double proton_momentum_from_t(double tabs) {
+    static constexpr double mp = 0.9382720813;
+    if (!(std::isfinite(tabs) && tabs >= 0.0))
+        return std::numeric_limits<double>::quiet_NaN();
+    const double ep = mp + tabs / (2.0 * mp);
+    const double p2 = ep * ep - mp * mp;
+    return p2 > 0.0 ? std::sqrt(p2) : 0.0;
+}
+
+static double proton_efficiency_factor(double tabs, double theta_deg, double phi_deg) {
+    const double p = proton_momentum_from_t(tabs);
+    if (!(std::isfinite(p) && std::isfinite(theta_deg) && std::isfinite(phi_deg)))
+        return std::numeric_limits<double>::quiet_NaN();
+    const ProtonEffParams q = proton_eff_params(theta_deg, phi_deg);
+    const double f = q.a * p * p + q.b * p + q.c;
+    // Physical/defensive range.  Nominal DVCS kinematics are far from these
+    // bounds; hitting one means the extrapolation should be inspected.
+    if (!(std::isfinite(f) && f > 0.20 && f < 1.80))
+        return std::numeric_limits<double>::quiet_NaN();
+    return f;
+}
+
+static double proton_eff_sys_fraction_for_period(const std::string& period) {
+    // Neupane's three-way efficiency-correction variation gives 2.83% on the
+    // integrated cross section for Fall-2018 inbending.  Per the current
+    // pass-2 interim prescription, Fa18 uses that value while Sp18 and Sp19
+    // receive 4x the uncertainty until dedicated period studies are complete.
+    static constexpr double base = 0.0283;
+    if (period == "Sp18 Inb" || period == "Sp18 Out" || period == "Sp19 Inb")
+        return 4.0 * base;
+    return base;
+}
+
 static std::string canonical_period_dir(const std::string& label) {
     if (label == "Fa18 Inb") return "Fa18_Inb";
     if (label == "Fa18 Out") return "Fa18_Out";
@@ -625,11 +719,16 @@ static double ratio_stat(double numerator,
     return (var > 0.0) ? std::sqrt(var) : 0.0;
 }
 
-static std::vector<AcceptancePoint> compute_acceptance_for_period(const CSV& csv,
+static std::vector<AcceptancePoint> compute_acceptance_for_period(CSV& csv,
                                                                   const std::string& period) {
     const std::string generated_name = col_generated(period);
     const int c_gen = col_strict(csv, generated_name);
     const int c_acc = col_strict(csv, col_acceptance(period));
+    const int c_tavg = col_strict(csv, "t_abs_avg, " + period);
+    const int c_ptheta = col_strict(csv, "p_theta, " + period);
+    const int c_pphi = col_strict(csv, "p_phi, " + period);
+    const int c_peff = col_strict(csv, "proton efficiency correction factor, " + period);
+    const int c_peff_sys = col_strict(csv, "proton efficiency systematic fraction, " + period);
     (void)c_acc;
 
     std::vector<int> rec_cols;
@@ -665,10 +764,30 @@ static std::vector<AcceptancePoint> compute_acceptance_for_period(const CSV& csv
         p.n_gen = gen.value;
         p.n_rec = rec.value;
 
-        if (is_finite_positive(gen.value) && is_finite_nonnegative(rec.value)) {
-            p.value = rec.value / gen.value;
-            p.stat = ratio_stat(rec.value, rec.stat, gen.value, gen.stat);
-            p.sys = 0.0;
+        double tabs = std::numeric_limits<double>::quiet_NaN();
+        double ptheta = std::numeric_limits<double>::quiet_NaN();
+        double pphi = std::numeric_limits<double>::quiet_NaN();
+        (void)parse_first_number(csv.rows[(size_t)r][(size_t)c_tavg], tabs);
+        (void)parse_first_number(csv.rows[(size_t)r][(size_t)c_ptheta], ptheta);
+        (void)parse_first_number(csv.rows[(size_t)r][(size_t)c_pphi], pphi);
+        const double peff = proton_efficiency_factor(tabs, ptheta, pphi);
+        const double peff_sys = proton_eff_sys_fraction_for_period(period);
+
+        if (std::isfinite(peff)) {
+            csv.rows[(size_t)r][(size_t)c_peff] = triple_string(peff, 0.0, 0.0);
+            csv.rows[(size_t)r][(size_t)c_peff_sys] = triple_string(peff_sys, 0.0, 0.0);
+        } else {
+            csv.rows[(size_t)r][(size_t)c_peff].clear();
+            csv.rows[(size_t)r][(size_t)c_peff_sys].clear();
+        }
+
+        if (is_finite_positive(gen.value) && is_finite_nonnegative(rec.value) && std::isfinite(peff)) {
+            const double nominal = rec.value / gen.value;
+            const double nominal_stat = ratio_stat(rec.value, rec.stat, gen.value, gen.stat);
+            // E_C = eps_data/eps_MC: scale MC acceptance down where MC is too efficient.
+            p.value = nominal * peff;
+            p.stat = nominal_stat * peff;
+            p.sys = 0.0; // assigned separately as a point-to-point source
         } else {
             p.value = 0.0;
             p.stat = 0.0;
@@ -1241,6 +1360,47 @@ bool update_acceptance_csv(const std::string& csv_path,
 
             std::vector<AcceptancePoint> acc =
                 compute_acceptance_for_period(csv, period);
+
+            // Production QA for the Neupane proton-efficiency correction.
+            // The correction is evaluated inside compute_acceptance_for_period(),
+            // so verify here -- before the CSV is written -- that the diagnostic
+            // columns were actually populated.  This prevents a schema/order
+            // regression from silently producing an apparently valid acceptance.
+            const int c_peff = col_strict(csv, "proton efficiency correction factor, " + period);
+            const int c_peff_sys = col_strict(csv, "proton efficiency systematic fraction, " + period);
+            std::vector<double> peff_values;
+            int n_peff_sys = 0;
+            for (size_t ir = 0; ir < csv.rows.size(); ++ir) {
+                double f = std::numeric_limits<double>::quiet_NaN();
+                double sf = std::numeric_limits<double>::quiet_NaN();
+                if (parse_first_number(csv.rows[ir][(size_t)c_peff], f) && std::isfinite(f))
+                    peff_values.push_back(f);
+                if (parse_first_number(csv.rows[ir][(size_t)c_peff_sys], sf) && std::isfinite(sf))
+                    ++n_peff_sys;
+            }
+
+            if (peff_values.empty()) {
+                fatal("[acceptance] FATAL: Neupane proton-efficiency correction produced zero "
+                      "finite factors for " + period +
+                      ". Check t_abs_avg/p_theta/p_phi bin-mean columns and CSV schema.");
+            }
+            if (n_peff_sys != static_cast<int>(peff_values.size())) {
+                fatal("[acceptance] FATAL: proton-efficiency factor/systematic population mismatch for " +
+                      period + ": factors=" + std::to_string(peff_values.size()) +
+                      ", systematics=" + std::to_string(n_peff_sys));
+            }
+
+            std::sort(peff_values.begin(), peff_values.end());
+            const double peff_min = peff_values.front();
+            const double peff_max = peff_values.back();
+            const double peff_med = peff_values[peff_values.size() / 2];
+            std::cout << "[proton-efficiency] " << period
+                      << ": populated " << peff_values.size() << "/" << csv.rows.size()
+                      << " rows; median E_C=" << peff_med
+                      << ", range=" << peff_min << "--" << peff_max
+                      << ", assigned systematic="
+                      << (100.0 * proton_eff_sys_fraction_for_period(period)) << "%"
+                      << std::endl;
 
             write_acceptance_to_csv(csv, period, acc);
             acc_by_period[period] = std::move(acc);
