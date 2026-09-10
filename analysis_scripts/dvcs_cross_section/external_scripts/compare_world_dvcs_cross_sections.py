@@ -1066,7 +1066,544 @@ def fit_one_normalization_nuisance(
 #enddef
 
 
+
+def fit_pass2_model_publication_nuisances(
+        data: np.ndarray,
+        model: np.ndarray,
+        point_unc: np.ndarray,
+        norm_frac: np.ndarray,
+        corr_scale_frac: np.ndarray,
+        *,
+        include_norm: bool,
+        include_corr: bool) -> Dict[str, object]:
+    """
+    Compare CLAS12 pass-2 Hayward directly to one fixed model using the
+    publication-level systematic decomposition.
+
+    The nominal point residual is
+
+        r_i = data_i - model_i
+
+    and the two correlated response vectors are
+
+        u_norm,i = n * data_i
+        u_corr,i = f_corr,i * data_i .
+
+    We minimize
+
+        chi2 =
+          sum_i [
+            (data_i + beta_norm*u_norm,i + beta_corr*u_corr,i - model_i)
+            / sigma_point,i
+          ]^2
+          + beta_norm^2
+          + beta_corr^2,
+
+    including only the nuisance terms enabled for the requested scenario.
+
+    This is the standard linear correlated-systematic nuisance formulation:
+    the response vectors are fixed at the nominal measured cross section, the
+    point-to-point uncertainty remains in the diagonal denominator, and each
+    correlated nuisance has a unit Gaussian prior.
+
+    beta_norm and beta_corr are therefore directly in units of the assigned
+    one-sigma systematic uncertainties.
+    """
+    y = np.asarray(data, dtype=float)
+    m = np.asarray(model, dtype=float)
+    s = np.asarray(point_unc, dtype=float)
+    n = np.asarray(norm_frac, dtype=float)
+    c = np.asarray(corr_scale_frac, dtype=float)
+
+    good = (
+        np.isfinite(y)
+        & np.isfinite(m)
+        & np.isfinite(s)
+        & np.isfinite(n)
+        & (y > 0.0)
+        & (m > 0.0)
+        & (s > 0.0)
+    )
+    if include_corr:
+        good &= np.isfinite(c)
+    #endif
+
+    y = y[good]
+    m = m[good]
+    s = s[good]
+    n = n[good]
+    c = c[good]
+
+    if len(y) == 0:
+        return {
+            "N": 0,
+            "beta_norm": np.nan,
+            "beta_corr": np.nan,
+            "chi2_data": np.nan,
+            "chi2_prior": np.nan,
+            "chi2_total": np.nan,
+            "chi2_per_point": np.nan,
+            "raw_rms_pull": np.nan,
+            "fitted_rms_pull": np.nan,
+            "point_table": pd.DataFrame(),
+        }
+    #endif
+
+    residual0 = y - m
+    raw_pull = residual0 / s
+
+    response_columns = []
+    response_names = []
+
+    if include_norm:
+        response_columns.append(n * y)
+        response_names.append("norm")
+    #endif
+
+    if include_corr:
+        response_columns.append(c * y)
+        response_names.append("corr")
+    #endif
+
+    beta_norm = 0.0
+    beta_corr = 0.0
+
+    if response_columns:
+        X = np.column_stack(response_columns)
+        w = 1.0 / (s * s)
+
+        # (X^T W X + I) beta = -X^T W r0
+        lhs = X.T @ (w[:, None] * X) + np.eye(X.shape[1])
+        rhs = -(X.T @ (w * residual0))
+        beta = np.linalg.solve(lhs, rhs)
+
+        for name, value in zip(response_names, beta):
+            if name == "norm":
+                beta_norm = float(value)
+            elif name == "corr":
+                beta_corr = float(value)
+            #endif
+        #endfor
+    #endif
+
+    norm_shift_frac = beta_norm * n if include_norm else np.zeros_like(y)
+    corr_shift_frac = beta_corr * c if include_corr else np.zeros_like(y)
+
+    shifted = y * (1.0 + norm_shift_frac + corr_shift_frac)
+    fitted_residual = shifted - m
+    fitted_pull = fitted_residual / s
+
+    chi2_data = float(np.sum(fitted_pull**2))
+    chi2_prior = (
+        (beta_norm**2 if include_norm else 0.0)
+        + (beta_corr**2 if include_corr else 0.0)
+    )
+    chi2_total = chi2_data + chi2_prior
+
+    # Correlation between the two response directions in the weighted data
+    # space.  Values near +/-1 mean the model cannot cleanly distinguish an
+    # overall normalization movement from the assigned kinematic scale shape.
+    response_correlation = np.nan
+    if include_norm and include_corr:
+        un = n * y / s
+        uc = c * y / s
+        denom = math.sqrt(float(np.sum(un**2) * np.sum(uc**2)))
+        if denom > 0.0:
+            response_correlation = float(np.sum(un * uc) / denom)
+        #endif
+    #endif
+
+    point_table = pd.DataFrame({
+        "data": y,
+        "model": m,
+        "point_unc": s,
+        "norm_frac": n,
+        "corr_scale_frac": c,
+        "raw_residual": residual0,
+        "raw_pull": raw_pull,
+        "norm_shift_frac": norm_shift_frac,
+        "corr_shift_frac": corr_shift_frac,
+        "total_correlated_shift_frac": norm_shift_frac + corr_shift_frac,
+        "shifted_data": shifted,
+        "fitted_residual": fitted_residual,
+        "fitted_pull": fitted_pull,
+    })
+
+    corr_pct = 100.0 * corr_shift_frac
+    total_pct = 100.0 * (norm_shift_frac + corr_shift_frac)
+
+    return {
+        "N": int(len(y)),
+        "beta_norm": float(beta_norm),
+        "beta_corr": float(beta_corr),
+        "normalization_shift_pct": (
+            100.0 * float(np.nanmedian(norm_shift_frac))
+            if include_norm else 0.0
+        ),
+        "corr_shift_median_pct": (
+            float(np.nanmedian(corr_pct))
+            if include_corr else 0.0
+        ),
+        "corr_shift_min_pct": (
+            float(np.nanmin(corr_pct))
+            if include_corr else 0.0
+        ),
+        "corr_shift_max_pct": (
+            float(np.nanmax(corr_pct))
+            if include_corr else 0.0
+        ),
+        "total_shift_median_pct": float(np.nanmedian(total_pct)),
+        "total_shift_min_pct": float(np.nanmin(total_pct)),
+        "total_shift_max_pct": float(np.nanmax(total_pct)),
+        "response_correlation_norm_corr": response_correlation,
+        "chi2_data": chi2_data,
+        "chi2_prior": float(chi2_prior),
+        "chi2_total": float(chi2_total),
+        "chi2_per_point": float(chi2_total / len(y)),
+        "raw_rms_pull": float(np.sqrt(np.mean(raw_pull**2))),
+        "fitted_rms_pull": float(np.sqrt(np.mean(fitted_pull**2))),
+        "median_abs_fractional_residual_raw": float(
+            np.nanmedian(np.abs(residual0 / m))
+        ),
+        "median_abs_fractional_residual_fitted": float(
+            np.nanmedian(np.abs(fitted_residual / m))
+        ),
+        "point_table": point_table,
+    }
+#enddef
+
+
+def make_pass2_model_publication_scores(
+        world: pd.DataFrame) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Produce direct Hayward-vs-KM15/BH diagnostics for three nested uncertainty
+    treatments:
+
+      raw:
+        stat + point-to-point only;
+
+      norm_only:
+        raw + one 2.16% overall normalization nuisance;
+
+      norm_plus_corr:
+        raw + one 2.16% normalization nuisance + one finalized bin-dependent
+        correlated-scale nuisance.
+
+    This is the model-comparison table that should be used for pass-2 rather
+    than the older one-normalization-only native-model score.
+    """
+    d = world.loc[world["dataset"] == "pass2"].copy()
+    if d.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    #endif
+
+    model_specs = [
+        ("KM15", "km15_native"),
+        ("BH", "bh_native"),
+    ]
+    scenarios = [
+        ("raw", False, False),
+        ("norm_only", True, False),
+        ("norm_plus_corr", True, True),
+    ]
+
+    summary_rows = []
+    point_rows = []
+
+    for model_name, model_col in model_specs:
+        for scenario, include_norm, include_corr in scenarios:
+            result = fit_pass2_model_publication_nuisances(
+                d["xs"].to_numpy(float),
+                d[model_col].to_numpy(float),
+                d["point_unc_abs"].to_numpy(float),
+                d["norm_frac"].to_numpy(float),
+                d["corr_scale_frac"].to_numpy(float),
+                include_norm=include_norm,
+                include_corr=include_corr,
+            )
+
+            row = {
+                k: v
+                for k, v in result.items()
+                if k != "point_table"
+            }
+            row.update({
+                "dataset": "pass2",
+                "dataset_label": DATASET_LABELS["pass2"],
+                "model": model_name,
+                "scenario": scenario,
+                "include_norm": bool(include_norm),
+                "include_corr": bool(include_corr),
+            })
+            summary_rows.append(row)
+
+            pt = result["point_table"].copy()
+            if not pt.empty:
+                # Reproduce the exact subset selected by the fitter.
+                good = (
+                    np.isfinite(d["xs"].to_numpy(float))
+                    & np.isfinite(d[model_col].to_numpy(float))
+                    & np.isfinite(d["point_unc_abs"].to_numpy(float))
+                    & np.isfinite(d["norm_frac"].to_numpy(float))
+                    & (d["xs"].to_numpy(float) > 0.0)
+                    & (d[model_col].to_numpy(float) > 0.0)
+                    & (d["point_unc_abs"].to_numpy(float) > 0.0)
+                )
+                if include_corr:
+                    good &= np.isfinite(d["corr_scale_frac"].to_numpy(float))
+                #endif
+                dd = d.loc[good].reset_index(drop=True)
+
+                for col in [
+                    "point_id", "published_bin", "xB", "Q2", "t_abs",
+                    "phi_deg", "ebeam", "xs", "stat_abs", "ptp_sys_abs",
+                    "point_unc_abs", "norm_frac", "corr_scale_frac",
+                ]:
+                    if col in dd.columns:
+                        pt[col] = dd[col].to_numpy()
+                    #endif
+                #endfor
+                pt["model_name"] = model_name
+                pt["scenario"] = scenario
+                pt["beta_norm"] = float(result["beta_norm"])
+                pt["beta_corr"] = float(result["beta_corr"])
+                point_rows.append(pt)
+            #endif
+        #endfor
+    #endfor
+
+    return (
+        pd.DataFrame(summary_rows),
+        pd.concat(point_rows, ignore_index=True)
+        if point_rows else pd.DataFrame(),
+    )
+#enddef
+
+
+def fit_pass2_pair_publication_nuisances(
+        pair: pd.DataFrame) -> Dict[str, float]:
+    """
+    Publication-style matched comparison of one external dataset A to Hayward B.
+
+    Work in log-ratio space:
+
+        z_i = ln(A_i / B_i).
+
+    One relative overall-normalization nuisance eta_rel has prior width equal to
+    the quadrature combination of the two experiments' quoted normalization
+    uncertainties in log space.  One independent beta_corr nuisance multiplies
+    Hayward's finalized bin-dependent correlated-scale response.
+
+    The fitted residual is
+
+        z_i + eta_rel - beta_corr*f_corr,i.
+
+    This preserves the fact that only the *relative* experiment-wide
+    normalization is identifiable from a two-dataset comparison, while still
+    allowing the publication-level Hayward correlated-scale mode to act.
+    """
+    A = pair["xs_a_to_b_km15"].to_numpy(float)
+    B = pair["xs_b"].to_numpy(float)
+    SA = pair["point_unc_a_to_b_km15"].to_numpy(float)
+    SB = pair["point_unc_b"].to_numpy(float)
+    C = pair["corr_scale_frac_b"].to_numpy(float)
+
+    good = (
+        np.isfinite(A) & np.isfinite(B)
+        & np.isfinite(SA) & np.isfinite(SB)
+        & np.isfinite(C)
+        & (A > 0.0) & (B > 0.0)
+        & (SA > 0.0) & (SB > 0.0)
+    )
+
+    A, B, SA, SB, C = A[good], B[good], SA[good], SB[good], C[good]
+    if len(A) == 0:
+        return {}
+    #endif
+
+    z = np.log(A / B)
+    s = np.sqrt((SA/A)**2 + (SB/B)**2)
+    w = 1.0 / (s*s)
+
+    norm_a = float(pair["norm_frac_a"].iloc[0])
+    norm_b = float(pair["norm_frac_b"].iloc[0])
+    sigma_eta = math.sqrt(
+        math.log1p(max(norm_a, 0.0))**2
+        + math.log1p(max(norm_b, 0.0))**2
+    )
+
+    # Design columns for [eta_relative, beta_corr].
+    # residual = z + eta_relative - beta_corr*C
+    X = np.column_stack([
+        np.ones_like(z),
+        -C,
+    ])
+
+    lhs = X.T @ (w[:, None] * X)
+    rhs = -(X.T @ (w*z))
+
+    # Gaussian priors: eta/sigma_eta and beta_corr/1.
+    if sigma_eta > 0.0:
+        lhs[0, 0] += 1.0 / (sigma_eta*sigma_eta)
+    #endif
+    lhs[1, 1] += 1.0
+
+    pars = np.linalg.solve(lhs, rhs)
+    eta_rel = float(pars[0])
+    beta_corr = float(pars[1])
+
+    residual = z + eta_rel - beta_corr*C
+    pulls = residual / s
+
+    prior = (
+        (eta_rel/sigma_eta)**2 if sigma_eta > 0.0 else 0.0
+    ) + beta_corr**2
+    chi2_data = float(np.sum(pulls**2))
+    chi2_total = chi2_data + float(prior)
+
+    corr_shift_pct = 100.0 * (
+        np.exp(-beta_corr*C) - 1.0
+    )
+
+    return {
+        "N": int(len(z)),
+        "relative_norm_beta": (
+            eta_rel/sigma_eta if sigma_eta > 0.0 else 0.0
+        ),
+        "relative_scale_a_to_b": float(math.exp(eta_rel)),
+        "beta_pass2_corr_scale": beta_corr,
+        "chi2_data": chi2_data,
+        "chi2_prior": float(prior),
+        "chi2_total": chi2_total,
+        "chi2_per_match": float(chi2_total / len(z)),
+        "fitted_pull_rms": float(np.sqrt(np.mean(pulls**2))),
+        "corr_shift_median_pct": float(np.nanmedian(corr_shift_pct)),
+        "corr_shift_min_pct": float(np.nanmin(corr_shift_pct)),
+        "corr_shift_max_pct": float(np.nanmax(corr_shift_pct)),
+    }
+#enddef
+
+
+def make_pass2_pair_publication_scores(
+        matches: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compare every external dataset directly to Hayward with the publication
+    correlated-scale nuisance included.
+
+    These results complement the generic pairwise table, whose chi2 includes
+    relative overall normalization but NOT the Hayward correlated-scale mode.
+    """
+    rows = []
+    for key in DATASET_ORDER:
+        if key == "pass2":
+            continue
+        #endif
+
+        pair = matches.loc[
+            (matches["dataset_a"] == key)
+            & (matches["dataset_b"] == "pass2")
+        ].copy()
+
+        if pair.empty:
+            continue
+        #endif
+
+        result = fit_pass2_pair_publication_nuisances(pair)
+        if not result:
+            continue
+        #endif
+
+        result.update({
+            "dataset_a": key,
+            "dataset_a_label": DATASET_LABELS[key],
+            "dataset_b": "pass2",
+            "dataset_b_label": DATASET_LABELS["pass2"],
+        })
+        rows.append(result)
+    #endfor
+
+    return pd.DataFrame(rows)
+#enddef
+
+
+def plot_pass2_model_residual_diagnostics(
+        point_table: pd.DataFrame,
+        outdir: Path) -> None:
+    """
+    Plot raw and publication-nuisance-adjusted Hayward residuals versus the four
+    primary kinematic coordinates for KM15 and BH.
+
+    These are diagnostic figures; the phi-dependent cross-section canvases
+    remain the primary presentation plots.
+    """
+    if point_table.empty:
+        return
+    #endif
+
+    outdir.mkdir(parents=True, exist_ok=True)
+    variables = [
+        ("xB", r"$x_B$"),
+        ("Q2", r"$Q^2$ (GeV$^2$)"),
+        ("t_abs", r"$|t|$ (GeV$^2$)"),
+        ("phi_deg", r"$\phi$ (deg)"),
+    ]
+
+    for model_name in ["KM15", "BH"]:
+        d = point_table.loc[
+            (point_table["model_name"] == model_name)
+            & (point_table["scenario"] == "norm_plus_corr")
+        ].copy()
+        if d.empty:
+            continue
+        #endif
+
+        for variable, xlabel in variables:
+            fig, ax = plt.subplots(figsize=(8.6, 5.6))
+            ax.scatter(
+                d[variable],
+                d["raw_pull"],
+                s=12,
+                alpha=0.45,
+                label="raw: stat ⊕ point-to-point",
+            )
+            ax.scatter(
+                d[variable],
+                d["fitted_pull"],
+                s=12,
+                alpha=0.45,
+                label="norm + correlated-scale nuisances",
+            )
+            ax.axhline(0.0, lw=1.0)
+            ax.axhline(+1.0, lw=0.8, ls="--")
+            ax.axhline(-1.0, lw=0.8, ls="--")
+            ax.set_xlabel(xlabel)
+            ax.set_ylabel("pull")
+            ax.set_ylim(-6.0, 6.0)
+            ax.grid(alpha=0.18)
+            ax.legend(frameon=False)
+            ax.set_title(
+                f"CLAS12 pass-2 Hayward vs {model_name}: "
+                "publication-systematic residuals"
+            )
+            fig.tight_layout()
+            fig.savefig(
+                outdir / f"hayward_vs_{model_name.lower()}_pull_vs_{variable}.png",
+                dpi=220,
+            )
+            plt.close(fig)
+        #endfor
+    #endfor
+#enddef
+
+
 def make_native_model_scores(world: pd.DataFrame, have_gk16: bool) -> pd.DataFrame:
+    """
+    Legacy/simple native-model diagnostics.
+
+    IMPORTANT: for pass-2 this table uses only the overall-normalization
+    nuisance.  The authoritative publication-style pass-2 model comparison is
+    written separately by make_pass2_model_publication_scores().
+    """
     models = [("km15", "km15_native"), ("bh", "bh_native")]
     if have_gk16:
         models.insert(1, ("gk16", "gk16_native"))
@@ -1091,6 +1628,11 @@ def make_native_model_scores(world: pd.DataFrame, have_gk16: bool) -> pd.DataFra
                 "dataset_label": DATASET_LABELS[key],
                 "model": model_name,
                 "normalization_fraction": norm,
+                "systematic_treatment": (
+                    "overall normalization only; NOT publication-complete"
+                    if key == "pass2"
+                    else "overall normalization"
+                ),
             })
             rows.append(result)
         #endfor
@@ -3495,7 +4037,7 @@ def plot_pass2_anchor_world_panels(
 
     Raw version: no systematic rescaling.
     Fitted version: external/global normalization shifts plus the pass-2
-    bin-dependent correction implied by its current and run-period nuisances.
+    bin-dependent correction implied by its single publication-level correlated-scale nuisance.
     """
     p2 = matches.loc[matches["dataset_b"] == "pass2"].copy()
     if p2.empty or panel_summary.empty:
@@ -4200,6 +4742,77 @@ def save_outputs(
     world.to_csv(tables / "canonical_world_data_with_models.csv", index=False)
     dataset_summary.to_csv(tables / "dataset_summary.csv", index=False)
     model_scores.to_csv(tables / "native_model_scores.csv", index=False)
+
+    print(
+        "[PASS2 MODEL] evaluating Hayward vs KM15/BH with publication-level "
+        "normalization + correlated-scale nuisances",
+        flush=True,
+    )
+    pass2_model_scores, pass2_model_points = (
+        make_pass2_model_publication_scores(world)
+    )
+    pass2_model_scores.to_csv(
+        tables / "pass2_model_publication_scores.csv",
+        index=False,
+    )
+    pass2_model_points.to_csv(
+        tables / "pass2_model_publication_point_residuals.csv",
+        index=False,
+    )
+
+    pass2_pair_scores = make_pass2_pair_publication_scores(matches)
+    pass2_pair_scores.to_csv(
+        tables / "pass2_pairwise_publication_scores.csv",
+        index=False,
+    )
+
+    if not pass2_model_scores.empty:
+        print(
+            "\n[PASS2 MODEL] publication-level direct model comparison:",
+            flush=True,
+        )
+        cols = [
+            "model", "scenario", "N",
+            "chi2_per_point",
+            "beta_norm", "beta_corr",
+            "normalization_shift_pct",
+            "corr_shift_median_pct",
+            "corr_shift_min_pct",
+            "corr_shift_max_pct",
+            "response_correlation_norm_corr",
+        ]
+        print(
+            pass2_model_scores[cols].to_string(
+                index=False,
+                float_format=lambda x: f"{x:.4f}",
+            ),
+            flush=True,
+        )
+    #endif
+
+    if not pass2_pair_scores.empty:
+        print(
+            "\n[PASS2 PAIRS] publication-level matched comparisons "
+            "(relative norm + Hayward correlated scale):",
+            flush=True,
+        )
+        cols = [
+            "dataset_a_label", "N",
+            "chi2_per_match",
+            "relative_norm_beta",
+            "relative_scale_a_to_b",
+            "beta_pass2_corr_scale",
+            "corr_shift_median_pct",
+            "fitted_pull_rms",
+        ]
+        print(
+            pass2_pair_scores[cols].to_string(
+                index=False,
+                float_format=lambda x: f"{x:.4f}",
+            ),
+            flush=True,
+        )
+    #endif
     pair_summary.to_csv(tables / "pairwise_overlap_summary.csv", index=False)
     if not matches.empty:
         matches.to_csv(tables / "pairwise_matched_points.csv", index=False)
@@ -4353,6 +4966,15 @@ def save_outputs(
         )
     #endfor
 
+    print(
+        "[PLOTS PASS2 MODEL] residual diagnostics for KM15/BH",
+        flush=True,
+    )
+    plot_pass2_model_residual_diagnostics(
+        pass2_model_points,
+        figures / "pass2_model_diagnostics",
+    )
+
     # ------------------------------------------------------------------
     # Dedicated CLAS12 pass-2 Hayward anchor canvases.
     #
@@ -4476,6 +5098,12 @@ def print_summary(dataset_summary: pd.DataFrame, model_scores: pd.DataFrame, pai
 
     print("\n" + "=" * 80)
     print("PAIRWISE MATCHED-DATA SUMMARY")
+    print(
+        "[NOTE] chi2_per_match here includes the pair's relative overall "
+        "normalization nuisance, but NOT the pass-2 kinematic correlated-scale "
+        "nuisance.  See pass2_pairwise_publication_scores.csv for the "
+        "publication-style Hayward comparisons."
+    )
     print("=" * 80)
     if pair_summary.empty:
         print("No pairwise matches were found with the configured windows.")
