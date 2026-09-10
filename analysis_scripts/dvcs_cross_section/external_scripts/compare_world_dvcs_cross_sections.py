@@ -852,7 +852,7 @@ def load_world_data(args, emff) -> pd.DataFrame:
     lee = enrich_lee_with_legacy_binning(lee, legacy_path)
     args.resolved_pass1_legacy_file = legacy_path
 
-    pass2_path = args.pass2_csv
+    pass2_path = args.pass2_file
     pass2 = pd.DataFrame()
     if pass2_path is not None:
         pass2_path = Path(pass2_path)
