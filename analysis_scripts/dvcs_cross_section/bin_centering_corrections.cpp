@@ -535,27 +535,80 @@ bool update_bin_centering_corrections_csv(
     }
 
     namespace fs = std::filesystem;
-    const char* env_script = std::getenv("KM15_BIN_CENTER_BATCH");
-    std::string script;
-    if (env_script && *env_script) {
-        script = env_script;
-    } else if (!paths.km15_cli.empty()) {
-        fs::path p(paths.km15_cli);
-        script = (p.parent_path() / "km15_bin_center_batch.py").string();
-    } else {
-        script = "km15_bin_center_batch.py";
-    }
 
-    if (!fs::exists(script)) {
-        // Common case when the executable is launched from another directory.
-        fs::path local = fs::current_path() / "km15_bin_center_batch.py";
-        if (fs::exists(local)) script = local.string();
+    // Resolve the fast KM15 batch evaluator robustly.  Production normally
+    // launches ./main from the dvcs_cross_section directory, while the Python
+    // helper lives under external_scripts/.  Older code only checked the
+    // current directory, which caused a false "script not found" failure.
+    const char* env_script = std::getenv("KM15_BIN_CENTER_BATCH");
+
+    std::vector<fs::path> script_candidates;
+
+    if (env_script && *env_script) {
+        script_candidates.emplace_back(env_script);
     }
-    if (!fs::exists(script)) {
-        std::cerr << "[bincenter] FATAL: cannot find fast KM15 batch script: "
-                  << script << "\n";
+    //endif
+
+    if (!paths.km15_cli.empty()) {
+        const fs::path km15_cli_path(paths.km15_cli);
+        if (!km15_cli_path.parent_path().empty()) {
+            script_candidates.push_back(
+                km15_cli_path.parent_path() / "km15_bin_center_batch.py");
+        }
+        //endif
+    }
+    //endif
+
+    // Standard launch locations.
+    script_candidates.push_back(
+        fs::current_path() / "external_scripts" / "km15_bin_center_batch.py");
+    script_candidates.push_back(
+        fs::current_path() / "km15_bin_center_batch.py");
+
+    // Also allow execution from analysis_scripts/ or one directory below the
+    // normal dvcs_cross_section directory.
+    script_candidates.push_back(
+        fs::current_path() / "dvcs_cross_section"
+                           / "external_scripts"
+                           / "km15_bin_center_batch.py");
+    script_candidates.push_back(
+        fs::current_path().parent_path()
+                           / "external_scripts"
+                           / "km15_bin_center_batch.py");
+
+    std::string script;
+
+    for (const auto& candidate : script_candidates) {
+        std::error_code ec;
+        if (fs::exists(candidate, ec) && !ec) {
+            script = candidate.lexically_normal().string();
+            break;
+        }
+        //endif
+    }
+    //endfor
+
+    if (script.empty()) {
+        std::cerr
+            << "[bincenter] FATAL: cannot find fast KM15 batch script.\n"
+            << "[bincenter] Searched:\n";
+
+        for (const auto& candidate : script_candidates) {
+            std::cerr << "  - " << candidate.string() << "\n";
+        }
+        //endfor
+
+        std::cerr
+            << "[bincenter] You may override the location with "
+            << "KM15_BIN_CENTER_BATCH=/full/path/km15_bin_center_batch.py\n";
+
         return false;
     }
+    //endif
+
+    std::cout
+        << "[bincenter] Using fast KM15 batch script: "
+        << script << "\n";
 
     int workers = 8;
     if (const char* ew = std::getenv("KM15_BIN_CENTER_WORKERS")) {
