@@ -419,12 +419,25 @@ static void add_tuple_in_quadrature(double v,
     sum_sys_var += sys * sys;
 }
 
-// S = (1 - c) * N_norm
-// Var_stat(S) = (1 - c)^2 Var_stat(N_norm) + N_norm^2 Var_stat(c)
+// Statistical propagation for the pi0-subtracted signal.
+//
+// The contamination fraction is c = K / N_unpol, where
+//   K = N_mis^MC * N_pi0^data / N_pi0,rec^MC.
+// Therefore, for the unpolarized yield,
+//   S = N_unpol * (1-c) = N_unpol - K.
+//
+// The old implementation propagated N_unpol and c as independent even though
+// N_unpol appears explicitly in the denominator of c.  That double-counted the
+// same counting fluctuation without its covariance.  c_stat_total contains the
+// N_unpol denominator contribution, so we remove that contribution first and
+// propagate the independent K uncertainty explicitly.
 static void compute_signal_and_stat(double norm_yield,
                                     double norm_yield_stat,
+                                    double unpol_yield,
+                                    double unpol_yield_stat,
                                     double c_val,
-                                    double c_stat,
+                                    double c_stat_total,
+                                    bool is_unpolarized,
                                     double& S,
                                     double& S_stat) {
     if (!std::isfinite(norm_yield) || norm_yield <= 0.0) {
@@ -441,17 +454,55 @@ static void compute_signal_and_stat(double norm_yield,
         c_val = 0.0;
     }
 
-    if (!std::isfinite(c_stat) || c_stat < 0.0) {
-        c_stat = 0.0;
+    if (!std::isfinite(c_stat_total) || c_stat_total < 0.0) {
+        c_stat_total = 0.0;
+    }
+    if (!std::isfinite(unpol_yield) || unpol_yield <= 0.0) {
+        unpol_yield = norm_yield;
+    }
+    if (!std::isfinite(unpol_yield_stat) || unpol_yield_stat < 0.0) {
+        unpol_yield_stat = norm_yield_stat;
     }
 
     const double one_minus_c = 1.0 - c_val;
-
-    const double var =
-        one_minus_c * one_minus_c * norm_yield_stat * norm_yield_stat +
-        norm_yield * norm_yield * c_stat * c_stat;
-
     S = one_minus_c * norm_yield;
+
+    // Remove the statistical contribution from the shared N_unpol denominator
+    // in c.  The remainder is the uncertainty in K/N_unpol from the independent
+    // pi0-data and MC counting terms.
+    const double c_den_stat =
+        (unpol_yield > 0.0)
+            ? std::fabs(c_val) * unpol_yield_stat / unpol_yield
+            : 0.0;
+    const double c_indep_var = std::max(
+        0.0,
+        c_stat_total * c_stat_total - c_den_stat * c_den_stat);
+
+    // Var(K) = N_unpol^2 * Var(c)_independent.
+    const double var_K = unpol_yield * unpol_yield * c_indep_var;
+
+    double var = 0.0;
+    if (is_unpolarized) {
+        // Exact covariance-aware result for S = N_unpol - K.
+        var = norm_yield_stat * norm_yield_stat + var_K;
+    } else {
+        // For helicity-resolved yields Nh, c still uses the unpolarized
+        // denominator Ntot = N+ + N-.  Assuming the two helicity samples are
+        // statistically independent gives
+        //   S_h = N_h - (N_h/Ntot) K.
+        // Propagate Nh, the complementary helicity yield, and K explicitly.
+        const double f = (unpol_yield > 0.0) ? norm_yield / unpol_yield : 0.0;
+        const double var_h = norm_yield_stat * norm_yield_stat;
+        const double var_tot = unpol_yield_stat * unpol_yield_stat;
+        const double var_other = std::max(0.0, var_tot - var_h);
+        const double d_h = 1.0 - c_val + f * c_val;
+        const double d_other = f * c_val;
+        const double d_K = f;
+        var = d_h * d_h * var_h
+            + d_other * d_other * var_other
+            + d_K * d_K * var_K;
+    }
+
     S_stat = std::sqrt(std::max(0.0, var));
 }
 
@@ -663,10 +714,17 @@ static bool fill_signal_yields(CsvDoc& csv, SignalCache& signal_cache) {
                 double S = 0.0;
                 double S_stat = 0.0;
 
+                const double unpol_norm = raw_sum["unpol"];
+                const double unpol_norm_stat =
+                    std::sqrt(std::max(0.0, raw_stat_var["unpol"]));
+
                 compute_signal_and_stat(norm,
                                         norm_stat,
+                                        unpol_norm,
+                                        unpol_norm_stat,
                                         c_val,
                                         c_stat,
+                                        hel == "unpol",
                                         S,
                                         S_stat);
 
