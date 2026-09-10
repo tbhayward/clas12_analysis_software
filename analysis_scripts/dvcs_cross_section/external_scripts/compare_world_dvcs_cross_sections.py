@@ -1256,6 +1256,12 @@ def fit_pass2_model_publication_nuisances(
         "total_shift_min_pct": float(np.nanmin(total_pct)),
         "total_shift_max_pct": float(np.nanmax(total_pct)),
         "response_correlation_norm_corr": response_correlation,
+        "combined_nuisance_excursion_sigma": float(
+            math.sqrt(
+                (beta_norm**2 if include_norm else 0.0)
+                + (beta_corr**2 if include_corr else 0.0)
+            )
+        ),
         "chi2_data": chi2_data,
         "chi2_prior": float(chi2_prior),
         "chi2_total": float(chi2_total),
@@ -1472,6 +1478,15 @@ def fit_pass2_pair_publication_nuisances(
         ),
         "relative_scale_a_to_b": float(math.exp(eta_rel)),
         "beta_pass2_corr_scale": beta_corr,
+        "combined_nuisance_excursion_sigma": float(
+            math.sqrt(
+                (
+                    (eta_rel / sigma_eta)**2
+                    if sigma_eta > 0.0 else 0.0
+                )
+                + beta_corr**2
+            )
+        ),
         "chi2_data": chi2_data,
         "chi2_prior": float(prior),
         "chi2_total": chi2_total,
@@ -2386,6 +2401,54 @@ def _robust_positive_log_limits(values: Sequence[np.ndarray]) -> Tuple[float, fl
 #enddef
 
 
+
+def _synchronize_canvas_y_limits(axes) -> None:
+    """
+    Force every active subplot on one canvas to share one common y-axis range.
+
+    Each panel first computes its own robust log-scale limits using central
+    values/model curves only.  This function then takes the union of those
+    per-panel robust ranges and applies that same range to every active axis on
+    the current page.
+
+    Different pages/canvases remain independent, so a low-cross-section page
+    does not force the same range onto a high-cross-section page.
+    """
+    active_axes = [
+        ax for ax in np.asarray(axes, dtype=object).ravel()
+        if ax.get_visible() and ax.has_data()
+    ]
+    if not active_axes:
+        return
+    #endif
+
+    lows = []
+    highs = []
+    for ax in active_axes:
+        lo, hi = ax.get_ylim()
+        if (
+            np.isfinite(lo)
+            and np.isfinite(hi)
+            and lo > 0.0
+            and hi > lo
+        ):
+            lows.append(float(lo))
+            highs.append(float(hi))
+        #endif
+    #endfor
+
+    if not lows or not highs:
+        return
+    #endif
+
+    common_lo = min(lows)
+    common_hi = max(highs)
+
+    for ax in active_axes:
+        ax.set_ylim(common_lo, common_hi)
+    #endfor
+#enddef
+
 def _cluster_reference_kinematic_cells(pair: pd.DataFrame) -> pd.DataFrame:
     """
     Assign matched rows to reference-dataset (B) hadronic-kinematic cells.
@@ -2967,6 +3030,7 @@ def plot_pairwise_cross_section_panels(
             )
             # Reserve a deliberately larger top margin than the previous
             # version; this prevents the title/legend/subtitle collision.
+            _synchronize_canvas_y_limits(axes)
             fig.tight_layout(rect=[0.035, 0.035, 0.995, 0.885])
 
             fname = (
@@ -3812,6 +3876,57 @@ def fit_pass2_anchor_nuisances(
         "enabled": bool(include_pass2_correlated_scale),
     }])
 
+    # Publication-level Hayward nuisance summary.  Keep the two nuisance
+    # amplitudes separate, and also report their radial excursion in the
+    # two-dimensional independent-Gaussian nuisance space.
+    pass2_eta = float(eta_by_dataset.get("pass2", 0.0))
+    pass2_norm_vals = obs.loc[
+        obs["dataset"] == "pass2",
+        "norm_frac",
+    ].to_numpy(float)
+    pass2_norm_vals = pass2_norm_vals[np.isfinite(pass2_norm_vals)]
+    pass2_norm_frac = (
+        float(np.nanmedian(pass2_norm_vals))
+        if pass2_norm_vals.size else np.nan
+    )
+    pass2_norm_sigma_log = (
+        math.log1p(pass2_norm_frac)
+        if np.isfinite(pass2_norm_frac) and pass2_norm_frac > 0.0
+        else np.nan
+    )
+    beta_pass2_norm = (
+        pass2_eta / pass2_norm_sigma_log
+        if np.isfinite(pass2_norm_sigma_log) and pass2_norm_sigma_log > 0.0
+        else np.nan
+    )
+
+    pass2_points = point_table.loc[
+        point_table["dataset"] == "pass2"
+    ].copy()
+    if not pass2_points.empty:
+        total_shift_pct = 100.0 * (
+            pass2_points["data_correction_scale"].to_numpy(float) - 1.0
+        )
+        corr_only_shift_pct = 100.0 * (
+            np.exp(
+                -pass2_points["pass2_corr_log_shift"].to_numpy(float)
+            ) - 1.0
+        )
+        pass2_total_shift_median_pct = float(np.nanmedian(total_shift_pct))
+        pass2_total_shift_min_pct = float(np.nanmin(total_shift_pct))
+        pass2_total_shift_max_pct = float(np.nanmax(total_shift_pct))
+        pass2_corr_shift_median_pct = float(np.nanmedian(corr_only_shift_pct))
+        pass2_corr_shift_min_pct = float(np.nanmin(corr_only_shift_pct))
+        pass2_corr_shift_max_pct = float(np.nanmax(corr_only_shift_pct))
+    else:
+        pass2_total_shift_median_pct = np.nan
+        pass2_total_shift_min_pct = np.nan
+        pass2_total_shift_max_pct = np.nan
+        pass2_corr_shift_median_pct = np.nan
+        pass2_corr_shift_min_pct = np.nan
+        pass2_corr_shift_max_pct = np.nan
+    #endif
+
     metrics = {
         "scenario": scenario,
         "include_pass2_correlated_scale": bool(
@@ -3831,7 +3946,20 @@ def fit_pass2_anchor_nuisances(
             if ndf > 0
             else np.nan
         ),
+        "beta_pass2_norm": beta_pass2_norm,
         "beta_pass2_corr_scale": beta_corr,
+        "combined_pass2_nuisance_excursion_sigma": float(
+            math.sqrt(
+                (beta_pass2_norm**2 if np.isfinite(beta_pass2_norm) else 0.0)
+                + (beta_corr**2 if include_pass2_correlated_scale else 0.0)
+            )
+        ),
+        "pass2_corr_shift_median_pct": pass2_corr_shift_median_pct,
+        "pass2_corr_shift_min_pct": pass2_corr_shift_min_pct,
+        "pass2_corr_shift_max_pct": pass2_corr_shift_max_pct,
+        "pass2_total_shift_median_pct": pass2_total_shift_median_pct,
+        "pass2_total_shift_min_pct": pass2_total_shift_min_pct,
+        "pass2_total_shift_max_pct": pass2_total_shift_max_pct,
     }
 
     return (
@@ -3928,7 +4056,9 @@ def run_pass2_anchor_nuisance_scenarios(matches: pd.DataFrame):
             print(
                 f"[PASS2 FIT] {scenario}: "
                 f"chi2/ndf={metrics['chi2_per_ndf']:.4f}, "
-                f"beta_corr={metrics['beta_pass2_corr_scale']:+.3f}",
+                f"beta_norm={metrics['beta_pass2_norm']:+.3f}, "
+                f"beta_corr={metrics['beta_pass2_corr_scale']:+.3f}, "
+                f"r_beta={metrics['combined_pass2_nuisance_excursion_sigma']:.3f}",
                 flush=True,
             )
         #endif
@@ -4274,6 +4404,7 @@ def plot_pass2_anchor_world_panels(
             fontsize=7.1,
         )
         fig.text(0.5, 0.900, subtitle, ha="center", va="top", fontsize=7.7)
+        _synchronize_canvas_y_limits(axes)
         fig.tight_layout(rect=[0.035, 0.035, 0.995, 0.865])
 
         prefix = "pass2_world_raw" if scenario is None else f"pass2_world_{scenario}"
@@ -4703,6 +4834,7 @@ def plot_lee_anchor_world_panels(
             subtitle,
             ha="center", va="top", fontsize=7.8,
         )
+        _synchronize_canvas_y_limits(axes)
         fig.tight_layout(rect=[0.035, 0.035, 0.995, 0.865])
 
         if normalization_scenario is None:
@@ -4779,6 +4911,10 @@ def save_outputs(
             "corr_shift_median_pct",
             "corr_shift_min_pct",
             "corr_shift_max_pct",
+            "total_shift_median_pct",
+            "total_shift_min_pct",
+            "total_shift_max_pct",
+            "combined_nuisance_excursion_sigma",
             "response_correlation_norm_corr",
         ]
         print(
@@ -4802,6 +4938,7 @@ def save_outputs(
             "relative_norm_beta",
             "relative_scale_a_to_b",
             "beta_pass2_corr_scale",
+            "combined_nuisance_excursion_sigma",
             "corr_shift_median_pct",
             "fitted_pull_rms",
         ]
