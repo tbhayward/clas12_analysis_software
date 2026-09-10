@@ -117,6 +117,16 @@ PASS2_PTP_COL = "Syst. err (point-to-point total)"
 PASS2_CORR_FRAC_COL = "correlated scale sys frac, 10.6 GeV"
 PASS2_NORM_FRAC_COL = "uncorrelated normalization sys frac, 10.6 GeV"
 
+PROTON_MASS_GEV = 0.9382720813
+PASS2_PERIOD_SPECS = {
+    "Sp18 Inb": 10.604,
+    "Sp18 Out": 10.604,
+    "Fa18 Inb": 10.604,
+    "Fa18 Out": 10.604,
+    "Sp19 Inb": 10.200,
+}
+
+
 # Georges is intentionally different from the production EMFF extraction:
 # for this external-data comparison we allow the ~5% normalization freedom
 # indicated by the recent world-data EMFF fits.
@@ -383,6 +393,153 @@ def canonicalize_lee(df: pd.DataFrame, emff) -> pd.DataFrame:
 
 
 
+def enrich_lee_with_legacy_binning(
+        lee: pd.DataFrame,
+        legacy_path: Path) -> pd.DataFrame:
+    """
+    Attach the original all_bin_v3 three-dimensional bin identity and phi-bin
+    bookkeeping to the authoritative E214M1 Lee points.
+
+    The E214M1 publication renumbered some bins, so published integer bin labels
+    cannot be equated directly with the legacy/pass-2 `Bin Name`.  We reproduce
+    the validated pass1_published_loader mapping: first map each published
+    (xB,Q2,|t|) group to the nearest legacy 3D bin, then identify the nearest
+    legacy phi row inside that bin.
+
+    These fields are used ONLY to establish exact same-analysis-bin Lee/Hayward
+    comparisons.  Lee central values and uncertainties remain authoritative
+    E214M1 values.
+    """
+    legacy = pd.read_csv(legacy_path, low_memory=False)
+    if "valid bin" in legacy.columns:
+        valid = pd.to_numeric(legacy["valid bin"], errors="coerce") == 1
+        legacy = legacy.loc[valid].copy()
+    #endif
+
+    required = [
+        "Bin Name", "xBavg", "Q2avg", "t_abs_avg", "phiavg",
+        "xBmin", "xBmax", "Q2min", "Q2max",
+        "t_abs_min", "t_abs_max", "phimin", "phimax",
+    ]
+    missing = [c for c in required if c not in legacy.columns]
+    if missing:
+        raise RuntimeError(
+            "Legacy pass-1 binning file is missing: " + ", ".join(missing)
+        )
+    #endif
+
+    work = lee.copy()
+    if "published_bin" not in work.columns:
+        raise RuntimeError("Lee canonical table has no published_bin column")
+    #endif
+
+    lg = (
+        legacy.groupby("Bin Name", sort=False)
+        .agg(
+            gx=("xBavg", "mean"),
+            gq=("Q2avg", "mean"),
+            gt=("t_abs_avg", "mean"),
+        )
+        .reset_index()
+    )
+    pg = (
+        work.groupby("published_bin", sort=False)
+        .agg(
+            px=("xB", "mean"),
+            pq=("Q2", "mean"),
+            pt=("t_abs", "mean"),
+        )
+        .reset_index()
+    )
+
+    bin_map = {}
+    for r in pg.itertuples(index=False):
+        dist = np.sqrt(
+            ((lg["gx"] - float(r.px)) / 0.03)**2
+            + ((lg["gq"] - float(r.pq)) / 0.30)**2
+            + ((lg["gt"] - float(r.pt)) / 0.10)**2
+        )
+        ii = int(np.nanargmin(dist.to_numpy(float)))
+        bin_map[int(round(float(r.published_bin)))] = lg.iloc[ii]["Bin Name"]
+    #endfor
+
+    attach_rows = []
+    unmatched = 0
+    for r in work.itertuples(index=False):
+        legacy_bin = bin_map.get(int(round(float(r.published_bin))))
+        cand = legacy.loc[legacy["Bin Name"] == legacy_bin].copy()
+        if cand.empty:
+            unmatched += 1
+            attach_rows.append({})
+            continue
+        #endif
+        dphi = np.abs(
+            pd.to_numeric(cand["phiavg"], errors="coerce").to_numpy(float)
+            - float(r.phi_deg)
+        )
+        if not np.any(np.isfinite(dphi)):
+            unmatched += 1
+            attach_rows.append({})
+            continue
+        #endif
+        row = cand.iloc[int(np.nanargmin(dphi))]
+        attach_rows.append({
+            "analysis_bin_name": float(row["Bin Name"]),
+            "legacy_phiavg": float(row["phiavg"]),
+            "legacy_xBavg": float(row["xBavg"]),
+            "legacy_Q2avg": float(row["Q2avg"]),
+            "legacy_t_abs_avg": float(row["t_abs_avg"]),
+            "xBmin": float(row["xBmin"]),
+            "xBmax": float(row["xBmax"]),
+            "Q2min": float(row["Q2min"]),
+            "Q2max": float(row["Q2max"]),
+            "t_abs_min": float(row["t_abs_min"]),
+            "t_abs_max": float(row["t_abs_max"]),
+            "phimin": float(row["phimin"]),
+            "phimax": float(row["phimax"]),
+        })
+    #endfor
+
+    attached = pd.DataFrame(attach_rows, index=work.index)
+    for c in attached.columns:
+        work[c] = attached[c]
+    #endfor
+
+    print(
+        f"[LEE EXACT BINNING] mapped {len(work)-unmatched:,}/{len(work):,} "
+        f"E214M1 points to original all_bin_v3 analysis bins using {legacy_path}",
+        flush=True,
+    )
+    if unmatched:
+        warnings.warn(f"{unmatched} Lee points could not be mapped to legacy binning")
+    #endif
+    return work
+#enddef
+
+
+def _parse_tuple3_loose(raw) -> Tuple[float, float, float]:
+    """Parse a CSV tuple '(value, stat, sys)' with NaN fallback."""
+    if raw is None or (isinstance(raw, float) and not np.isfinite(raw)):
+        return np.nan, np.nan, np.nan
+    #endif
+    txt = str(raw).strip()
+    if not txt:
+        return np.nan, np.nan, np.nan
+    #endif
+    txt = txt.strip("()")
+    parts = [x.strip() for x in txt.split(",")]
+    try:
+        vals = [float(x) for x in parts[:3]]
+    except Exception:
+        return np.nan, np.nan, np.nan
+    #endtry
+    while len(vals) < 3:
+        vals.append(0.0)
+    #endwhile
+    return vals[0], vals[1], vals[2]
+#enddef
+
+
 def _parse_cross_section_tuple(raw) -> Tuple[float, float]:
     """
     Parse the pass-2 CSV tuple '(value, stat, ...)' and return (value, stat).
@@ -486,12 +643,30 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
         "corr_scale_frac": pd.to_numeric(raw[PASS2_CORR_FRAC_COL], errors="coerce"),
     })
 
-    if "p_theta, 10.6 GeV" in raw.columns:
-        out["p_theta"] = pd.to_numeric(
-            raw["p_theta, 10.6 GeV"],
-            errors="coerce",
-        )
-    #endif
+    for out_col, csv_col in [
+        ("e_theta", "e_theta, 10.6 GeV"),
+        ("p_theta", "p_theta, 10.6 GeV"),
+        ("g_theta", "g_theta, 10.6 GeV"),
+    ]:
+        if csv_col in raw.columns:
+            out[out_col] = pd.to_numeric(raw[csv_col], errors="coerce")
+        #endif
+    #endfor
+
+    for edge_col in [
+        "xBmin", "xBmax", "Q2min", "Q2max",
+        "t_abs_min", "t_abs_max", "phimin", "phimax",
+    ]:
+        if edge_col in raw.columns:
+            out[edge_col] = pd.to_numeric(raw[edge_col], errors="coerce")
+        #endif
+    #endfor
+
+    # For an exclusive recoil proton on a target at rest, |t| fixes the recoil
+    # proton energy and momentum.  This is useful for detector-correlation
+    # diagnostics even when the CSV does not store an explicit mean p_p.
+    ep = PROTON_MASS_GEV + out["t_abs"].to_numpy(float) / (2.0 * PROTON_MASS_GEV)
+    out["p_p"] = np.sqrt(np.maximum(ep*ep - PROTON_MASS_GEV**2, 0.0))
 
     # Ordinary plotted/fitted point uncertainty contains ONLY independent
     # statistical + point-to-point systematic terms.
@@ -660,6 +835,15 @@ def load_world_data(args, emff) -> pd.DataFrame:
         ],
     )
     lee = canonicalize_lee(emff.load_clas12_pass1_csv(lee_path), emff)
+    legacy_path = resolve_existing(
+        Path(args.pass1_legacy_file),
+        [
+            args.script_dir / "import" / "all_bin_v3.csv",
+            args.script_dir.parent / "imports" / "all_bin_v3.csv",
+        ],
+    )
+    lee = enrich_lee_with_legacy_binning(lee, legacy_path)
+    args.resolved_pass1_legacy_file = legacy_path
 
     pass2_path = resolve_existing(
         Path(args.pass2_file),
@@ -668,6 +852,7 @@ def load_world_data(args, emff) -> pd.DataFrame:
         ],
     )
     pass2 = canonicalize_pass2_csv(pass2_path)
+    args.resolved_pass2_file = pass2_path
 
     world = pd.concat(
         [jo, d15, d17, saylor, georges, lee, pass2],
@@ -4898,6 +5083,641 @@ def plot_lee_anchor_world_panels(
 # =============================================================================
 
 
+
+def build_exact_lee_hayward_comparison(world: pd.DataFrame) -> pd.DataFrame:
+    """
+    Match Lee E214M1 to Hayward by the SAME original analysis bin, with NO
+    model transport applied to the cross sections.
+
+    The shared identity is (analysis Bin Name, phi bin).  The pass-1 central
+    means may differ slightly from the pass-2 means because the event samples
+    and reconstruction differ; those differences are recorded as diagnostics.
+
+    A KM15 mean-kinematics transport factor is also reported, but it is NOT
+    applied to the primary direct ratio.  It quantifies how much of the direct
+    ratio could plausibly come from shifted bin means alone.
+    """
+    lee = world.loc[world["dataset"] == "lee2026"].copy()
+    hay = world.loc[world["dataset"] == "pass2"].copy()
+    if lee.empty or hay.empty:
+        return pd.DataFrame()
+    #endif
+    if "analysis_bin_name" not in lee.columns:
+        raise RuntimeError("Lee table lacks analysis_bin_name legacy mapping")
+    #endif
+
+    rows = []
+    used_h = set()
+    for lr in lee.itertuples(index=False):
+        if not np.isfinite(float(lr.analysis_bin_name)):
+            continue
+        #endif
+        cand = hay.loc[
+            pd.to_numeric(hay["published_bin"], errors="coerce")
+            == float(lr.analysis_bin_name)
+        ].copy()
+        if cand.empty:
+            continue
+        #endif
+
+        # Same 3D analysis bin; choose the pass-2 phi point whose phi-bin center
+        # is nearest the legacy phi row attached to the published Lee point.
+        phi_ref = (
+            float(lr.legacy_phiavg)
+            if hasattr(lr, "legacy_phiavg") and np.isfinite(float(lr.legacy_phiavg))
+            else float(lr.phi_deg)
+        )
+        dphi = np.abs(
+            ((cand["phi_deg"].to_numpy(float) - phi_ref + 180.0) % 360.0) - 180.0
+        )
+        ih = int(np.nanargmin(dphi))
+        hr = cand.iloc[ih]
+        if float(dphi[ih]) > 12.0:
+            continue
+        #endif
+        hid = str(hr["point_id"])
+        if hid in used_h:
+            continue
+        #endif
+        used_h.add(hid)
+
+        ratio_direct = float(hr["xs"] / lr.xs)
+        ratio_lee_over_h = float(lr.xs / hr["xs"])
+        km_factor = float(hr["km15_native"] / lr.km15_native)
+        lee_transported = float(lr.xs * km_factor)
+        ratio_transport = float(hr["xs"] / lee_transported)
+
+        sigma_direct = math.sqrt(
+            float(hr["point_unc_abs"])**2 + float(lr.point_unc_abs)**2
+        )
+        pull_direct = (
+            (float(hr["xs"]) - float(lr.xs)) / sigma_direct
+            if sigma_direct > 0.0 else np.nan
+        )
+
+        row = {
+            "analysis_bin_name": float(lr.analysis_bin_name),
+            "lee_point_id": str(lr.point_id),
+            "hayward_point_id": hid,
+            "lee_published_bin": float(lr.published_bin),
+            "lee_phi": float(lr.phi_deg),
+            "hayward_phi": float(hr["phi_deg"]),
+            "legacy_phi_center": phi_ref,
+            "dphi_means_deg": float(
+                ((float(hr["phi_deg"]) - float(lr.phi_deg) + 180.0) % 360.0) - 180.0
+            ),
+            "lee_xB": float(lr.xB),
+            "hayward_xB": float(hr["xB"]),
+            "dxB_means": float(hr["xB"] - lr.xB),
+            "lee_Q2": float(lr.Q2),
+            "hayward_Q2": float(hr["Q2"]),
+            "dQ2_means": float(hr["Q2"] - lr.Q2),
+            "lee_t_abs": float(lr.t_abs),
+            "hayward_t_abs": float(hr["t_abs"]),
+            "dt_abs_means": float(hr["t_abs"] - lr.t_abs),
+            "lee_xs": float(lr.xs),
+            "hayward_xs": float(hr["xs"]),
+            "lee_stat": float(lr.stat_abs),
+            "hayward_stat": float(hr["stat_abs"]),
+            "lee_ptp_sys": float(lr.ptp_sys_abs),
+            "hayward_ptp_sys": float(hr["ptp_sys_abs"]),
+            "lee_point_unc": float(lr.point_unc_abs),
+            "hayward_point_unc": float(hr["point_unc_abs"]),
+            "hayward_over_lee_direct": ratio_direct,
+            "lee_over_hayward_direct": ratio_lee_over_h,
+            "direct_pull_pointwise": pull_direct,
+            "km15_lee_to_hayward_mean_transport_factor": km_factor,
+            "km15_transport_effect_pct": 100.0 * (km_factor - 1.0),
+            "hayward_over_lee_after_km15_mean_transport": ratio_transport,
+            "p_theta": float(hr.get("p_theta", np.nan)),
+            "g_theta": float(hr.get("g_theta", np.nan)),
+            "e_theta": float(hr.get("e_theta", np.nan)),
+            "p_p": float(hr.get("p_p", np.nan)),
+            "corr_scale_frac": float(hr.get("corr_scale_frac", np.nan)),
+        }
+        rows.append(row)
+    #endfor
+
+    out = pd.DataFrame(rows)
+    if out.empty:
+        return out
+    #endif
+
+    # Detector-region proxies only.  These are deliberately NOT labeled as
+    # event topologies because a 4D cross-section bin can contain multiple
+    # topology classes.  They are useful for testing coupled p/g-angle trends.
+    out["proton_angle_region"] = np.where(
+        out["p_theta"] < 35.0,
+        "low-p-theta (<35 deg)",
+        np.where(out["p_theta"] >= 40.0, "high-p-theta (>=40 deg)", "transition (35-40 deg)"),
+    )
+    out["photon_angle_region"] = np.where(
+        out["g_theta"] <= 5.5,
+        "FT-like gamma angle",
+        "FD-like gamma angle",
+    )
+    out["angle_region_2d"] = (
+        out["proton_angle_region"].astype(str)
+        + " / "
+        + out["photon_angle_region"].astype(str)
+    )
+    return out
+#enddef
+
+
+def summarize_exact_lee_hayward(exact: pd.DataFrame) -> pd.DataFrame:
+    if exact.empty:
+        return pd.DataFrame()
+    #endif
+    rows = []
+    groups = [("all", exact)]
+    for col in ["proton_angle_region", "photon_angle_region", "angle_region_2d"]:
+        for label, d in exact.groupby(col, dropna=False):
+            groups.append((f"{col}: {label}", d))
+        #endfor
+    #endfor
+
+    for label, d in groups:
+        r = d["hayward_over_lee_direct"].to_numpy(float)
+        tf = d["km15_lee_to_hayward_mean_transport_factor"].to_numpy(float)
+        rows.append({
+            "selection": label,
+            "N": int(len(d)),
+            "median_hayward_over_lee": float(np.nanmedian(r)),
+            "mean_hayward_over_lee": float(np.nanmean(r)),
+            "central68_low": float(np.nanpercentile(r, 16.0)),
+            "central68_high": float(np.nanpercentile(r, 84.0)),
+            "rms_direct_pointwise_pull": float(np.sqrt(np.nanmean(d["direct_pull_pointwise"]**2))),
+            "median_abs_km15_mean_transport_pct": float(np.nanmedian(np.abs(100.0*(tf-1.0)))),
+            "p95_abs_km15_mean_transport_pct": float(np.nanpercentile(np.abs(100.0*(tf-1.0)), 95.0)),
+            "median_dxB": float(np.nanmedian(d["dxB_means"])),
+            "median_dQ2_GeV2": float(np.nanmedian(d["dQ2_means"])),
+            "median_dt_GeV2": float(np.nanmedian(d["dt_abs_means"])),
+            "median_dphi_deg": float(np.nanmedian(d["dphi_means_deg"])),
+        })
+    #endfor
+    return pd.DataFrame(rows)
+#enddef
+
+
+def plot_exact_lee_hayward_diagnostics(exact: pd.DataFrame, outdir: Path) -> None:
+    if exact.empty:
+        return
+    #endif
+    outdir.mkdir(parents=True, exist_ok=True)
+
+    variables = [
+        ("hayward_t_abs", r"$|t|$ (GeV$^2$)"),
+        ("hayward_xB", r"$x_B$"),
+        ("hayward_Q2", r"$Q^2$ (GeV$^2$)"),
+        ("hayward_phi", r"$\phi$ (deg)"),
+        ("p_theta", r"$\theta_p$ (deg)"),
+        ("g_theta", r"$\theta_\gamma$ (deg)"),
+        ("e_theta", r"$\theta_e$ (deg)"),
+        ("p_p", r"$p_p$ (GeV)"),
+    ]
+    for col, xlabel in variables:
+        if col not in exact.columns or not np.isfinite(exact[col]).any():
+            continue
+        #endif
+        fig, ax = plt.subplots(figsize=(8.4, 5.4))
+        ax.scatter(
+            exact[col], exact["hayward_over_lee_direct"],
+            s=15, alpha=0.45,
+        )
+        ax.axhline(1.0, color="black", lw=1.0)
+        if col == "p_theta":
+            ax.axvline(35.0, color="black", lw=0.8, ls="--")
+            ax.axvline(40.0, color="black", lw=0.8, ls=":")
+        #endif
+        if col == "g_theta":
+            ax.axvline(5.5, color="black", lw=0.8, ls="--")
+        #endif
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(r"$\sigma_{\rm Hayward}/\sigma_{\rm Lee}$ (same analysis bin)")
+        ax.set_ylim(0.0, min(3.0, max(2.0, float(np.nanpercentile(exact["hayward_over_lee_direct"], 99.0))*1.1)))
+        ax.grid(alpha=0.18)
+        ax.set_title("CLAS12 pass-2 Hayward / Lee pass-1: exact-bin central-value ratio")
+        fig.tight_layout()
+        fig.savefig(outdir / f"exact_bin_hayward_over_lee_vs_{col}.png", dpi=220)
+        plt.close(fig)
+    #endfor
+
+    # Mean-kinematic differences versus the direct ratio: this explicitly tests
+    # whether changed event-weighted means could be driving the observed shape.
+    deltas = [
+        ("dxB_means", r"$\Delta\langle x_B\rangle$"),
+        ("dQ2_means", r"$\Delta\langle Q^2\rangle$ (GeV$^2$)"),
+        ("dt_abs_means", r"$\Delta\langle |t|\rangle$ (GeV$^2$)"),
+        ("dphi_means_deg", r"$\Delta\langle\phi\rangle$ (deg)"),
+        ("km15_transport_effect_pct", "KM15 mean-kinematics transport effect (%)"),
+    ]
+    for col, xlabel in deltas:
+        fig, ax = plt.subplots(figsize=(8.4, 5.4))
+        ax.scatter(exact[col], exact["hayward_over_lee_direct"], s=15, alpha=0.45)
+        ax.axhline(1.0, color="black", lw=1.0)
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel(r"$\sigma_{\rm Hayward}/\sigma_{\rm Lee}$")
+        ax.grid(alpha=0.18)
+        ax.set_title("Same-bin pass-2/pass-1 ratio versus change in reported mean kinematics")
+        fig.tight_layout()
+        fig.savefig(outdir / f"exact_bin_ratio_vs_{col}.png", dpi=220)
+        plt.close(fig)
+    #endfor
+
+    # 2D proton/photon-angle region summary: useful because p_theta and g_theta
+    # are strongly correlated with topology and with one another.
+    summary = (
+        exact.groupby(["proton_angle_region", "photon_angle_region"])
+        .agg(
+            N=("hayward_over_lee_direct", "size"),
+            median_ratio=("hayward_over_lee_direct", "median"),
+            mean_ratio=("hayward_over_lee_direct", "mean"),
+        )
+        .reset_index()
+    )
+    summary.to_csv(outdir / "exact_bin_ratio_by_proton_photon_angle_region.csv", index=False)
+#enddef
+
+
+def load_pass2_period_views(pass2_path: Path) -> pd.DataFrame:
+    """
+    Load each individual pass-2 run-period cross section from the finalized CSV.
+
+    These are diagnostic views, not new independent published datasets.  Their
+    tuple statistical uncertainties are retained exactly as stored in the CSV.
+    The tuple third component is also retained for inspection but is not assumed
+    to be the final publication point-to-point systematic for the individual
+    period unless the CSV explicitly supplies one.
+    """
+    raw = pd.read_csv(pass2_path, low_memory=False)
+    rows = []
+    for period, ebeam in PASS2_PERIOD_SPECS.items():
+        xs_col = f"normed cross sections, ep->epg, exp, {period}, unpol"
+        if xs_col not in raw.columns:
+            warnings.warn(f"Pass-2 period column not found: {xs_col}")
+            continue
+        #endif
+        for i, rr in raw.iterrows():
+            value, stat, tup_sys = _parse_tuple3_loose(rr.get(xs_col, np.nan))
+            if not np.isfinite(value) or value <= 0.0:
+                continue
+            #endif
+            def get_mean(name):
+                cands = [
+                    f"{name}, {period}",
+                    f"{name}, {'10.6 GeV' if period != 'Sp19 Inb' else 'Sp19 Inb'}",
+                ]
+                for c in cands:
+                    if c in raw.columns:
+                        v = pd.to_numeric(pd.Series([rr.get(c)]), errors="coerce").iloc[0]
+                        if np.isfinite(v):
+                            return float(v)
+                        #endif
+                    #endif
+                #endfor
+                base = {"xBavg":"xBmin", "Q2avg":"Q2min", "t_abs_avg":"t_abs_min", "phiavg":"phimin"}
+                if name in base and base[name] in raw.columns:
+                    lo = float(rr.get(base[name], np.nan))
+                    hi = float(rr.get(base[name].replace("min","max"), np.nan))
+                    if np.isfinite(lo) and np.isfinite(hi):
+                        return 0.5*(lo+hi)
+                    #endif
+                #endif
+                return np.nan
+            #enddef
+
+            ptheta = np.nan
+            gtheta = np.nan
+            etheta = np.nan
+            for outname, short in [("p_theta","p_theta"),("g_theta","g_theta"),("e_theta","e_theta")]:
+                for c in [f"{short}, {period}", f"{short}, {'10.6 GeV' if period != 'Sp19 Inb' else 'Sp19 Inb'}"]:
+                    if c in raw.columns:
+                        v = pd.to_numeric(pd.Series([rr.get(c)]), errors="coerce").iloc[0]
+                        if np.isfinite(v):
+                            if outname == "p_theta": ptheta = float(v)
+                            if outname == "g_theta": gtheta = float(v)
+                            if outname == "e_theta": etheta = float(v)
+                            break
+                        #endif
+                    #endif
+                #endfor
+            #endfor
+
+            rows.append({
+                "period": period,
+                "ebeam": float(ebeam),
+                "analysis_bin_name": float(rr.get("Bin Name", np.nan)),
+                "four_d_bin_index": float(rr.get("bin index", np.nan)),
+                "xB": get_mean("xBavg"),
+                "Q2": get_mean("Q2avg"),
+                "t_abs": get_mean("t_abs_avg"),
+                "phi_deg": np.mod(get_mean("phiavg"), 360.0),
+                "xs": float(value),
+                "stat_abs": float(stat),
+                "tuple_sys_abs": float(tup_sys),
+                "p_theta": ptheta,
+                "g_theta": gtheta,
+                "e_theta": etheta,
+            })
+        #endfor
+    #endfor
+    return pd.DataFrame(rows)
+#enddef
+
+
+def compare_periods_to_lee_exact(
+        periods: pd.DataFrame,
+        world: pd.DataFrame,
+        emff) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Compare all five run periods to Lee.
+
+    For the four 10.6-GeV periods the primary ratio is direct same-bin with NO
+    energy/kinematic transport.  For Sp19, Lee is transported from 10.604 GeV
+    to 10.2 GeV using KM15 evaluated at the period's mean kinematics.
+    """
+    lee = world.loc[world["dataset"] == "lee2026"].copy()
+    if periods.empty or lee.empty:
+        return pd.DataFrame(), pd.DataFrame()
+    #endif
+    rows = []
+    for pr in periods.itertuples(index=False):
+        cand = lee.loc[
+            pd.to_numeric(lee["analysis_bin_name"], errors="coerce")
+            == float(pr.analysis_bin_name)
+        ].copy()
+        if cand.empty:
+            continue
+        #endif
+        dphi = np.abs(((cand["phi_deg"].to_numpy(float) - float(pr.phi_deg) + 180.0) % 360.0) - 180.0)
+        il = int(np.nanargmin(dphi))
+        if float(dphi[il]) > 12.0:
+            continue
+        #endif
+        lr = cand.iloc[il]
+
+        lee_ref = float(lr["xs"])
+
+        # The four 10.6-GeV periods use direct same-bin comparison with NO
+        # transport.  Sp19 alone requires transport to 10.2 GeV.  Use the
+        # already-cached Lee KM15 prediction as the denominator and evaluate
+        # only the 10.2-GeV target point.
+        transport = 1.0
+        if str(pr.period) == "Sp19 Inb":
+            from types import SimpleNamespace
+            period_model_row = SimpleNamespace(
+                dataset="pass2",
+                xB=float(pr.xB),
+                Q2=float(pr.Q2),
+                t_abs=float(pr.t_abs),
+                phi_deg=float(pr.phi_deg),
+            )
+            km_lee = float(lr["km15_native"])
+            km_period = evaluate_one_km15(
+                emff, period_model_row, float(pr.ebeam)
+            )["km15_ep"]
+            transport = (
+                float(km_period / km_lee)
+                if np.isfinite(km_lee) and km_lee != 0.0
+                else np.nan
+            )
+        #endif
+        lee_transported = lee_ref * transport
+
+        rows.append({
+            "period": str(pr.period),
+            "analysis_bin_name": float(pr.analysis_bin_name),
+            "four_d_bin_index": float(pr.four_d_bin_index),
+            "period_xB": float(pr.xB), "period_Q2": float(pr.Q2),
+            "period_t_abs": float(pr.t_abs), "period_phi": float(pr.phi_deg),
+            "period_xs": float(pr.xs), "period_stat": float(pr.stat_abs),
+            "period_tuple_sys": float(pr.tuple_sys_abs),
+            "lee_xB": float(lr["xB"]), "lee_Q2": float(lr["Q2"]),
+            "lee_t_abs": float(lr["t_abs"]), "lee_phi": float(lr["phi_deg"]),
+            "lee_xs": lee_ref, "lee_stat": float(lr["stat_abs"]),
+            "lee_ptp_sys": float(lr["ptp_sys_abs"]),
+            "lee_point_unc": float(lr["point_unc_abs"]),
+            "direct_period_over_lee": float(pr.xs / lee_ref),
+            "km15_lee_to_period_transport_factor": float(transport),
+            "km15_transport_effect_pct": 100.0 * (float(transport) - 1.0),
+            "period_over_lee_after_km15_transport": (
+                float(pr.xs / lee_transported)
+                if np.isfinite(lee_transported) and lee_transported > 0.0
+                else np.nan
+            ),
+            "p_theta": float(pr.p_theta), "g_theta": float(pr.g_theta), "e_theta": float(pr.e_theta),
+            "needs_energy_transport": str(pr.period) == "Sp19 Inb",
+        })
+    #endfor
+
+    points = pd.DataFrame(rows)
+    summary_rows = []
+    if not points.empty:
+        for period, d in points.groupby("period"):
+            summary_rows.append({
+                "period": period,
+                "N": int(len(d)),
+                "median_direct_period_over_lee": float(np.nanmedian(d["direct_period_over_lee"])),
+                "mean_direct_period_over_lee": float(np.nanmean(d["direct_period_over_lee"])),
+                "median_period_over_lee_after_km15_transport": float(np.nanmedian(d["period_over_lee_after_km15_transport"])),
+                "median_abs_km15_transport_effect_pct": float(np.nanmedian(np.abs(d["km15_transport_effect_pct"]))),
+                "p95_abs_km15_transport_effect_pct": float(np.nanpercentile(np.abs(d["km15_transport_effect_pct"]),95)),
+                "central68_low": float(np.nanpercentile(d["direct_period_over_lee"], 16)),
+                "central68_high": float(np.nanpercentile(d["direct_period_over_lee"], 84)),
+                "median_stat_frac_period_pct": float(100*np.nanmedian(d["period_stat"]/d["period_xs"])),
+                "energy_transport_required": bool(d["needs_energy_transport"].any()),
+            })
+        #endfor
+    #endif
+    return points, pd.DataFrame(summary_rows)
+#enddef
+
+
+def plot_period_lee_diagnostics(points: pd.DataFrame, outdir: Path) -> None:
+    if points.empty:
+        return
+    #endif
+    outdir.mkdir(parents=True, exist_ok=True)
+    period_styles = {
+        "Sp18 Inb": dict(marker="D"),
+        "Sp18 Out": dict(marker="P"),
+        "Fa18 Inb": dict(marker="^"),
+        "Fa18 Out": dict(marker="v"),
+        "Sp19 Inb": dict(marker="s"),
+    }
+    variables = [
+        ("period_phi", r"$\phi$ (deg)"),
+        ("period_t_abs", r"$|t|$ (GeV$^2$)"),
+        ("period_xB", r"$x_B$"),
+        ("period_Q2", r"$Q^2$ (GeV$^2$)"),
+        ("p_theta", r"$\theta_p$ (deg)"),
+        ("g_theta", r"$\theta_\gamma$ (deg)"),
+    ]
+    for col, xlabel in variables:
+        if col not in points.columns or not np.isfinite(points[col]).any():
+            continue
+        #endif
+        fig, ax = plt.subplots(figsize=(9.0, 5.8))
+        for period, d in points.groupby("period", sort=False):
+            ycol = (
+                "period_over_lee_after_km15_transport"
+                if period == "Sp19 Inb"
+                else "direct_period_over_lee"
+            )
+            ax.scatter(
+                d[col], d[ycol], s=17, alpha=0.45,
+                marker=period_styles.get(period, {}).get("marker", "o"),
+                label=period,
+            )
+        #endfor
+        ax.axhline(1.0, color="black", lw=1.0)
+        if col == "p_theta":
+            ax.axvline(35.0, color="black", ls="--", lw=0.8)
+            ax.axvline(40.0, color="black", ls=":", lw=0.8)
+        #endif
+        if col == "g_theta":
+            ax.axvline(5.5, color="black", ls="--", lw=0.8)
+        #endif
+        ax.set_xlabel(xlabel)
+        ax.set_ylabel("pass-2 period / Lee pass-1")
+        ax.set_ylim(0.0, 2.5)
+        ax.grid(alpha=0.18)
+        ax.legend(frameon=False, ncol=3)
+        ax.set_title(
+            "Individual pass-2 run periods vs Lee: exact bins at 10.6 GeV; "
+            "Sp19 uses KM15 energy/mean transport"
+        )
+        fig.tight_layout()
+        fig.savefig(outdir / f"run_period_over_lee_vs_{col}.png", dpi=220)
+        plt.close(fig)
+    #endfor
+
+    # A direct run-period summary plot makes coherent period offsets obvious.
+    order = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
+    rows = []
+    for period in order:
+        d = points.loc[points["period"] == period]
+        if d.empty:
+            continue
+        #endif
+        ycol = (
+            "period_over_lee_after_km15_transport"
+            if period == "Sp19 Inb"
+            else "direct_period_over_lee"
+        )
+        vals = d[ycol].to_numpy(float)
+        rows.append((period, np.nanmedian(vals), np.nanpercentile(vals,16), np.nanpercentile(vals,84), len(d)))
+    #endfor
+    if rows:
+        fig, ax = plt.subplots(figsize=(8.8, 5.4))
+        x = np.arange(len(rows))
+        med = np.array([r[1] for r in rows])
+        lo = med - np.array([r[2] for r in rows])
+        hi = np.array([r[3] for r in rows]) - med
+        ax.errorbar(x, med, yerr=np.vstack([lo,hi]), fmt="o", capsize=4)
+        ax.axhline(1.0, color="black", lw=1.0)
+        ax.set_xticks(x, [f"{r[0]}\nN={r[4]}" for r in rows])
+        ax.set_ylabel("median pass-2 period / Lee")
+        ax.grid(axis="y", alpha=0.18)
+        ax.set_title("Run-period dependence of the pass-2/pass-1 cross-section ratio")
+        fig.tight_layout()
+        fig.savefig(outdir / "run_period_over_lee_summary.png", dpi=220)
+        plt.close(fig)
+    #endif
+#enddef
+
+
+def halla_covered_region_summary(
+        world: pd.DataFrame,
+        matches: pd.DataFrame) -> pd.DataFrame:
+    """
+    Quantify CLAS behavior specifically in kinematics where Hall A has matched
+    coverage.  A CLAS point is tagged Hall-A-covered if it participates in a
+    selected pairwise match with either Defurne 2015 or Defurne 2017.
+
+    This avoids inventing a rectangular Hall-A acceptance box and uses the same
+    matching definition as the rest of the world-data study.
+    """
+    if matches.empty:
+        return pd.DataFrame()
+    #endif
+    halla = {"defurne2015", "defurne2017"}
+    clas = {"jo2015", "saylor2018", "lee2026", "pass2"}
+    rows = []
+    for ckey in sorted(clas):
+        point_ids = set()
+        partner_rows = []
+        for hkey in halla:
+            d1 = matches.loc[(matches["dataset_a"] == ckey) & (matches["dataset_b"] == hkey)]
+            if not d1.empty:
+                point_ids.update(d1["point_id_a"].astype(str))
+                partner_rows.append(d1)
+            #endif
+            d2 = matches.loc[(matches["dataset_a"] == hkey) & (matches["dataset_b"] == ckey)]
+            if not d2.empty:
+                point_ids.update(d2["point_id_b"].astype(str))
+                partner_rows.append(d2)
+            #endif
+        #endfor
+        d = world.loc[(world["dataset"] == ckey) & world["point_id"].astype(str).isin(point_ids)].copy()
+        if d.empty:
+            continue
+        #endif
+        for model, col in [("KM15","km15_native"),("BH","bh_native")]:
+            fit = fit_single_dataset_model(
+                d["xs"].to_numpy(float), d[col].to_numpy(float),
+                d["point_unc_abs"].to_numpy(float), float(np.nanmedian(d["norm_frac"])),
+            )
+            rows.append({
+                "dataset": ckey,
+                "dataset_label": DATASET_LABELS[ckey],
+                "model": model,
+                "N_halla_covered_points": int(len(d)),
+                "chi2_per_point": float(fit["chi2_per_point"]),
+                "normalization_beta": float(fit["beta"]),
+                "normalization_scale": float(fit["scale"]),
+                "median_abs_fractional_residual": float(np.nanmedian(np.abs(d["xs"]-d[col])/np.abs(d["xs"]))),
+            })
+        #endfor
+    #endfor
+    return pd.DataFrame(rows)
+#enddef
+
+
+def clas_vs_halla_pairwise_summary(pair_summary: pd.DataFrame) -> pd.DataFrame:
+    """Extract the direct CLAS-versus-Hall-A overlap metrics in one compact table."""
+    if pair_summary.empty:
+        return pd.DataFrame()
+    #endif
+    clas = {"jo2015", "saylor2018", "lee2026", "pass2"}
+    halla = {"defurne2015", "defurne2017"}
+    rows = []
+    for r in pair_summary.itertuples(index=False):
+        a = str(r.dataset_a)
+        b = str(r.dataset_b)
+        if not ((a in clas and b in halla) or (a in halla and b in clas)):
+            continue
+        #endif
+        clas_key = a if a in clas else b
+        hall_key = b if b in halla else a
+        rows.append({
+            "clas_dataset": clas_key,
+            "clas_dataset_label": DATASET_LABELS[clas_key],
+            "halla_dataset": hall_key,
+            "halla_dataset_label": DATASET_LABELS[hall_key],
+            "N_matches": int(r.N_matches),
+            "chi2_per_match_with_relative_norm": float(r.chi2_per_match),
+            "raw_pull_rms": float(r.raw_pull_rms),
+            "profiled_pull_rms": float(r.profiled_pull_rms),
+            "relative_norm_beta": float(r.relative_norm_beta),
+            "relative_scale_a_to_b": float(r.relative_scale_a_to_b),
+        })
+    #endfor
+    return pd.DataFrame(rows)
+#enddef
+
+
 def save_outputs(
         world: pd.DataFrame,
         dataset_summary: pd.DataFrame,
@@ -4906,7 +5726,8 @@ def save_outputs(
         pair_summary: pd.DataFrame,
         outdir: Path,
         have_gk16: bool,
-        emff) -> Tuple[pd.DataFrame, pd.DataFrame]:
+        emff,
+        args) -> Tuple[pd.DataFrame, pd.DataFrame]:
     tables = outdir / "tables"
     figures = outdir / "figures"
     tables.mkdir(parents=True, exist_ok=True)
@@ -4994,6 +5815,64 @@ def save_outputs(
     pair_summary.to_csv(tables / "pairwise_overlap_summary.csv", index=False)
     if not matches.empty:
         matches.to_csv(tables / "pairwise_matched_points.csv", index=False)
+    #endif
+
+    # ------------------------------------------------------------------
+    # High-priority CLAS12 pass-1/pass-2 diagnostics.
+    # ------------------------------------------------------------------
+    exact_lh = build_exact_lee_hayward_comparison(world)
+    exact_lh.to_csv(tables / "lee_hayward_exact_same_bin_points.csv", index=False)
+    exact_summary = summarize_exact_lee_hayward(exact_lh)
+    exact_summary.to_csv(tables / "lee_hayward_exact_same_bin_summary.csv", index=False)
+    plot_exact_lee_hayward_diagnostics(
+        exact_lh, figures / "lee_hayward_exact_bin_diagnostics"
+    )
+    if not exact_summary.empty:
+        print("\n[LEE/HAYWARD EXACT BIN] no-transport comparison:", flush=True)
+        print(
+            exact_summary.head(12).to_string(
+                index=False, float_format=lambda x: f"{x:.4f}"
+            ),
+            flush=True,
+        )
+    #endif
+
+    period_views = load_pass2_period_views(Path(args.resolved_pass2_file))
+    period_points, period_summary = compare_periods_to_lee_exact(
+        period_views, world, emff
+    )
+    period_points.to_csv(tables / "pass2_run_periods_vs_lee_points.csv", index=False)
+    period_summary.to_csv(tables / "pass2_run_periods_vs_lee_summary.csv", index=False)
+    plot_period_lee_diagnostics(
+        period_points, figures / "pass2_run_periods_vs_lee"
+    )
+    if not period_summary.empty:
+        print("\n[RUN PERIODS vs LEE]", flush=True)
+        print(
+            period_summary.to_string(
+                index=False, float_format=lambda x: f"{x:.4f}"
+            ),
+            flush=True,
+        )
+    #endif
+
+    hall_region = halla_covered_region_summary(world, matches)
+    hall_region.to_csv(tables / "clas_in_halla_covered_region_model_scores.csv", index=False)
+    clas_halla = clas_vs_halla_pairwise_summary(pair_summary)
+    clas_halla.to_csv(tables / "clas_vs_halla_pairwise_summary.csv", index=False)
+    if not clas_halla.empty:
+        print("\n[CLAS vs HALL A DIRECT OVERLAP]", flush=True)
+        print(
+            clas_halla.to_string(index=False, float_format=lambda x: f"{x:.4f}"),
+            flush=True,
+        )
+    #endif
+    if not hall_region.empty:
+        print("\n[HALL A COVERED REGION] CLAS model diagnostics restricted to matched Hall A phase space:", flush=True)
+        print(
+            hall_region.to_string(index=False, float_format=lambda x: f"{x:.4f}"),
+            flush=True,
+        )
     #endif
 
     pair_panel_summary = make_pairwise_panel_summary(matches)
@@ -5343,6 +6222,15 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--georges-file", default=str(here / "import" / "E12-06-114.xlsx"))
     p.add_argument("--lee-file", default=str(here / "import" / "clasdb_E214M1.txt"))
     p.add_argument(
+        "--pass1-legacy-file",
+        default=str(here / "import" / "all_bin_v3.csv"),
+        help=(
+            "Legacy/preliminary pass-1 all_bin_v3.csv used ONLY for original "
+            "bin identities, boundaries, and kinematic bookkeeping. Published "
+            "cross sections remain from E214M1."
+        ),
+    )
+    p.add_argument(
         "--pass2-file",
         default=str(here.parent / "output" / "csvs" / "dvcs_pass2_analysis.csv"),
         help="Final pass-2 analysis CSV after main_systematics has materialized authoritative systematics.",
@@ -5490,6 +6378,7 @@ def main(argv: Optional[List[str]] = None) -> int:
         outdir,
         have_gk16,
         emff,
+        args,
     )
 
     print_summary(
