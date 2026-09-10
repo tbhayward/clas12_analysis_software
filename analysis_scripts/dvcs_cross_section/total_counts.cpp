@@ -3418,17 +3418,57 @@ static void write_collection_to_csv(CSV& csv,
         for (const auto& kvp : C.corrected_total_by_period) {
             const std::string& period_display = kvp.first;
             if (should_skip_csv_for_label(period_display)) continue;
-            const int c = col_strict(csv, col_proton_efficiency_correction(cfg.channel_cfg, period_display));
+
+            const int c = col_strict(
+                csv,
+                col_proton_efficiency_correction(cfg.channel_cfg, period_display));
+
+            std::vector<double> correction_values;
+
             for (const auto& row_kv : kvp.second) {
                 const int r = row_kv.first;
                 const WeightedHelCounts& h = row_kv.second;
-                const double before = h.sumw_current_only.unpol + h.sumw_current_only.pos + h.sumw_current_only.neg;
+                const double before =
+                    h.sumw_current_only.unpol +
+                    h.sumw_current_only.pos +
+                    h.sumw_current_only.neg;
                 const double after = weighted_total_value(h);
-                if (r < 0 || r >= (int)csv.rows.size()) fatal("[total_counts] FATAL: proton-efficiency diagnostic row index out of range.");
-                if (std::isfinite(before) && before > 0.0 && std::isfinite(after) && after > 0.0) {
-                    csv.rows[r][c] = fmt_count_triple(after / before);
+
+                if (r < 0 || r >= (int)csv.rows.size()) {
+                    fatal("[total_counts] FATAL: proton-efficiency diagnostic row index out of range.");
+                }
+
+                if (std::isfinite(before) && before > 0.0 &&
+                    std::isfinite(after) && after > 0.0) {
+                    const double correction = after / before;
+                    csv.rows[r][c] = fmt_count_triple(correction);
+                    correction_values.push_back(correction);
                 }
             }
+
+            if (correction_values.empty()) {
+                fatal("[total_counts] FATAL: Krishna proton-efficiency correction "
+                      "produced zero finite diagnostic factors for channel=" +
+                      cfg.channel_cfg.csv_channel + ", period=" + period_display);
+            }
+
+            std::sort(correction_values.begin(), correction_values.end());
+            const std::size_t n = correction_values.size();
+            const double median =
+                (n % 2 == 1)
+                    ? correction_values[n / 2]
+                    : 0.5 * (correction_values[n / 2 - 1] +
+                             correction_values[n / 2]);
+
+            std::cout
+                << "[total_counts][PROTON-EFFICIENCY] channel="
+                << cfg.channel_cfg.csv_channel
+                << " period=" << period_display
+                << " populated_bins=" << n << "/" << csv.rows.size()
+                << " median_yield_multiplier=" << median
+                << " range=" << correction_values.front()
+                << "--" << correction_values.back()
+                << std::endl;
         }
     }
 

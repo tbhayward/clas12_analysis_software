@@ -724,11 +724,6 @@ static std::vector<AcceptancePoint> compute_acceptance_for_period(CSV& csv,
     const std::string generated_name = col_generated(period);
     const int c_gen = col_strict(csv, generated_name);
     const int c_acc = col_strict(csv, col_acceptance(period));
-    const int c_tavg = col_strict(csv, "t_abs_avg, " + period);
-    const int c_ptheta = col_strict(csv, "p_theta, " + period);
-    const int c_pphi = col_strict(csv, "p_phi, " + period);
-    const int c_peff = col_strict(csv, "proton efficiency correction factor, " + period);
-    const int c_peff_sys = col_strict(csv, "proton efficiency systematic fraction, " + period);
     (void)c_acc;
 
     std::vector<int> rec_cols;
@@ -764,30 +759,14 @@ static std::vector<AcceptancePoint> compute_acceptance_for_period(CSV& csv,
         p.n_gen = gen.value;
         p.n_rec = rec.value;
 
-        double tabs = std::numeric_limits<double>::quiet_NaN();
-        double ptheta = std::numeric_limits<double>::quiet_NaN();
-        double pphi = std::numeric_limits<double>::quiet_NaN();
-        (void)parse_first_number(csv.rows[(size_t)r][(size_t)c_tavg], tabs);
-        (void)parse_first_number(csv.rows[(size_t)r][(size_t)c_ptheta], ptheta);
-        (void)parse_first_number(csv.rows[(size_t)r][(size_t)c_pphi], pphi);
-        const double peff = proton_efficiency_factor(tabs, ptheta, pphi);
-        const double peff_sys = proton_eff_sys_fraction_for_period(period);
-
-        if (std::isfinite(peff)) {
-            csv.rows[(size_t)r][(size_t)c_peff] = triple_string(peff, 0.0, 0.0);
-            csv.rows[(size_t)r][(size_t)c_peff_sys] = triple_string(peff_sys, 0.0, 0.0);
-        } else {
-            csv.rows[(size_t)r][(size_t)c_peff].clear();
-            csv.rows[(size_t)r][(size_t)c_peff_sys].clear();
-        }
-
-        if (is_finite_positive(gen.value) && is_finite_nonnegative(rec.value) && std::isfinite(peff)) {
-            const double nominal = rec.value / gen.value;
-            const double nominal_stat = ratio_stat(rec.value, rec.stat, gen.value, gen.stat);
-            // E_C = eps_data/eps_MC: scale MC acceptance down where MC is too efficient.
-            p.value = nominal * peff;
-            p.stat = nominal_stat * peff;
-            p.sys = 0.0; // assigned separately as a point-to-point source
+        // The Krishna Neupane proton-efficiency correction is deliberately
+        // NOT folded into the MC acceptance.  total_counts.cpp already applies
+        // 1/E_C event by event to DATA.  Applying E_C here as well would
+        // double-correct the extracted cross section.
+        if (is_finite_positive(gen.value) && is_finite_nonnegative(rec.value)) {
+            p.value = rec.value / gen.value;
+            p.stat = ratio_stat(rec.value, rec.stat, gen.value, gen.stat);
+            p.sys = 0.0; // acceptance systematic is assigned separately
         } else {
             p.value = 0.0;
             p.stat = 0.0;
@@ -1361,46 +1340,8 @@ bool update_acceptance_csv(const std::string& csv_path,
             std::vector<AcceptancePoint> acc =
                 compute_acceptance_for_period(csv, period);
 
-            // Production QA for the Neupane proton-efficiency correction.
-            // The correction is evaluated inside compute_acceptance_for_period(),
-            // so verify here -- before the CSV is written -- that the diagnostic
-            // columns were actually populated.  This prevents a schema/order
-            // regression from silently producing an apparently valid acceptance.
-            const int c_peff = col_strict(csv, "proton efficiency correction factor, " + period);
-            const int c_peff_sys = col_strict(csv, "proton efficiency systematic fraction, " + period);
-            std::vector<double> peff_values;
-            int n_peff_sys = 0;
-            for (size_t ir = 0; ir < csv.rows.size(); ++ir) {
-                double f = std::numeric_limits<double>::quiet_NaN();
-                double sf = std::numeric_limits<double>::quiet_NaN();
-                if (parse_first_number(csv.rows[ir][(size_t)c_peff], f) && std::isfinite(f))
-                    peff_values.push_back(f);
-                if (parse_first_number(csv.rows[ir][(size_t)c_peff_sys], sf) && std::isfinite(sf))
-                    ++n_peff_sys;
-            }
-
-            if (peff_values.empty()) {
-                fatal("[acceptance] FATAL: Neupane proton-efficiency correction produced zero "
-                      "finite factors for " + period +
-                      ". Check t_abs_avg/p_theta/p_phi bin-mean columns and CSV schema.");
-            }
-            if (n_peff_sys != static_cast<int>(peff_values.size())) {
-                fatal("[acceptance] FATAL: proton-efficiency factor/systematic population mismatch for " +
-                      period + ": factors=" + std::to_string(peff_values.size()) +
-                      ", systematics=" + std::to_string(n_peff_sys));
-            }
-
-            std::sort(peff_values.begin(), peff_values.end());
-            const double peff_min = peff_values.front();
-            const double peff_max = peff_values.back();
-            const double peff_med = peff_values[peff_values.size() / 2];
-            std::cout << "[proton-efficiency] " << period
-                      << ": populated " << peff_values.size() << "/" << csv.rows.size()
-                      << " rows; median E_C=" << peff_med
-                      << ", range=" << peff_min << "--" << peff_max
-                      << ", assigned systematic="
-                      << (100.0 * proton_eff_sys_fraction_for_period(period)) << "%"
-                      << std::endl;
+            // Proton-efficiency QA is performed in total_counts.cpp, where
+            // the correction is actually evaluated event by event.
 
             write_acceptance_to_csv(csv, period, acc);
             acc_by_period[period] = std::move(acc);

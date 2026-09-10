@@ -431,6 +431,16 @@ static void add_normalized_raw_yield_columns_for_channel(std::vector<std::string
 static void add_normalized_raw_yield_columns(std::vector<std::string>& H) {
     add_normalized_raw_yield_columns_for_channel(H, "ep->epg");
     add_normalized_raw_yield_columns_for_channel(H, "ep->eppi0");
+
+    // Event-level Krishna Neupane proton-efficiency correction diagnostics.
+    // total_counts.cpp applies 1/E_C directly to DATA events after the
+    // current-response weight.  These columns store the net four-dimensional
+    // bin multiplier (proton-corrected/current-only yield) for auditability.
+    for (const auto& channel : std::vector<std::string>{"ep->epg", "ep->eppi0"}) {
+        for (const auto& per : base_periods()) {
+            H.push_back("proton efficiency correction, " + channel + ", " + per);
+        }
+    }
 }
 
 static void add_mc_yield_columns_for_channel(std::vector<std::string>& H,
@@ -537,14 +547,10 @@ static void add_acceptance_columns(std::vector<std::string>& H) {
         H.push_back(name.str());
     }
 
-    // Reviewed RGA proton reconstruction-efficiency correction (Neupane).
-    // E_C = epsilon_data/epsilon_MC; acceptance.cpp multiplies the nominal
-    // reconstructed-MC acceptance by E_C.  The factor and provisional
-    // run-period systematic assignment are kept explicitly for auditability.
-    for (const auto& per : base_periods()) {
-        H.push_back("proton efficiency correction factor, " + per);
-        H.push_back("proton efficiency systematic fraction, " + per);
-    }
+    // Proton reconstruction efficiency is corrected event by event in
+    // total_counts.cpp, not by modifying the reconstructed-MC acceptance.
+    // The corresponding diagnostic columns are created with the normalized
+    // raw-yield columns above.
 }
 
 static void add_acc_corrected_yield_columns(std::vector<std::string>& H) {
