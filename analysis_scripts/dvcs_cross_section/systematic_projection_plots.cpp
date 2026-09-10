@@ -185,7 +185,6 @@ static std::vector<Component> components() {
         {"F_{bin}",             23, kMagenta + 1, 1},
         {"Exclusivity",         24, kOrange + 7, 1},
         {"Fiducial",            25, kCyan + 2, 1},
-        {"Proton efficiency",   26, kViolet + 1, 1},
         {"Point-to-point total",29, kBlack, 1}
     };
 }
@@ -238,7 +237,7 @@ static std::vector<double> row_component_fractions(
 
     const double xs = sp19 ? xs19 : xs10;
     if (!std::isfinite(xs) || xs == 0.0)
-        return std::vector<double>(8,std::numeric_limits<double>::quiet_NaN());
+        return std::vector<double>(7,std::numeric_limits<double>::quiet_NaN());
 
     auto frac_from_abs_10p6 = [&](const std::string& col)->double {
         if (!std::isfinite(xs10) || xs10 == 0.0)
@@ -248,7 +247,7 @@ static std::vector<double> row_component_fractions(
                                 : std::numeric_limits<double>::quiet_NaN();
     };
 
-    std::vector<double> f(8,std::numeric_limits<double>::quiet_NaN());
+    std::vector<double> f(7,std::numeric_limits<double>::quiet_NaN());
 
     if (!sp19) {
         f[0] = number(cell(table,row,"pi0 subtraction sys frac, 10.6 GeV"));
@@ -257,33 +256,24 @@ static std::vector<double> row_component_fractions(
         f[3] = frac_from_abs_10p6("Syst.err (Fbin)");
         f[4] = frac_from_abs_10p6("Syst. err (exclusivity cuts)");
         f[5] = frac_from_abs_10p6("Syst. err (fiducial cuts)");
-        // Proton-efficiency uncertainty: use the authoritative production
-        // fractional column written by main_systematics.  Retain the older
-        // column name as a backward-compatible fallback.
-        f[6] = number(cell(
-            table,row,"proton efficiency combined systematic fraction, 10.6 GeV"));
-        if (!finite_fraction(f[6])) {
-            f[6] = number(cell(
-                table,row,"proton efficiency sys frac, 10.6 GeV"));
-        }
-
-        f[7] = frac_from_abs_10p6("Syst. err (point-to-point total)");
+        // Proton-efficiency uncertainty is an overall normalization source,
+        // so it is intentionally absent from the point-to-point projection.
+        f[6] = frac_from_abs_10p6("Syst. err (point-to-point total)");
 
         // The displayed total is mathematically just the quadrature sum of
-        // these seven components.  Reconstruct it if a downstream CSV rewrite
-        // left the stored total temporarily unreadable; this keeps plotting
-        // independent of CSV serialization details without changing physics.
-        if (!finite_fraction(f[7])) {
+        // these six point-to-point components.  Reconstruct it if a downstream
+        // CSV rewrite left the stored total temporarily unreadable.
+        if (!finite_fraction(f[6])) {
             double sum2 = 0.0;
             bool complete = true;
-            for (int j = 0; j < 7; ++j) {
+            for (int j = 0; j < 6; ++j) {
                 if (!finite_fraction(f[(size_t)j])) {
                     complete = false;
                     break;
                 }
                 sum2 += f[(size_t)j] * f[(size_t)j];
             }
-            if (complete) f[7] = std::sqrt(sum2);
+            if (complete) f[6] = std::sqrt(sum2);
         }
         return f;
     }
@@ -321,18 +311,8 @@ static std::vector<double> row_component_fractions(
     };
     f[4] = transferred_or_zero("Syst. err (exclusivity cuts)");
     f[5] = transferred_or_zero("Syst. err (fiducial cuts)");
-    // Sp19 proton-efficiency uncertainty is stored authoritatively as an
-    // absolute cross-section uncertainty by main_systematics.  Convert it
-    // back to a fraction for this projection.  Retain the older fractional
-    // column name as a backward-compatible fallback.
-    const double peff_sp_abs = number(cell(
-        table,row,"Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)"));
-    if (std::isfinite(peff_sp_abs))
-        f[6] = std::fabs(peff_sp_abs/xs19);
-    if (!finite_fraction(f[6])) {
-        f[6] = number(cell(
-            table,row,"proton efficiency sys frac, Sp19 Inb (10.2 GeV)"));
-    }
+    // Proton-efficiency uncertainty is an overall normalization source,
+    // so it is intentionally absent from the point-to-point projection.
 
     // Prefer the dedicated production Sp19 total written by main_systematics.
     // Reconstruct it from the six displayed fractions only as a backward-safe
@@ -340,18 +320,18 @@ static std::vector<double> row_component_fractions(
     const double ptp_sp_abs = number(cell(
         table,row,"Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)"));
     if (std::isfinite(ptp_sp_abs)) {
-        f[7] = std::fabs(ptp_sp_abs/xs19);
+        f[6] = std::fabs(ptp_sp_abs/xs19);
     } else {
         double sum2 = 0.0;
         bool complete = true;
-        for (int j=0;j<7;++j) {
+        for (int j=0;j<6;++j) {
             if (!finite_fraction(f[(size_t)j])) {
                 complete = false;
                 break;
             }
             sum2 += f[(size_t)j]*f[(size_t)j];
         }
-        if (complete) f[7] = std::sqrt(sum2);
+        if (complete) f[6] = std::sqrt(sum2);
     }
 
     return f;
@@ -377,10 +357,10 @@ static std::vector<ProjectionPoint> build_projection(
         const auto fractions = row_component_fractions(table,row,sp19);
 
         // Require a valid total for this energy before using the row.
-        // fractions[7] is the point-to-point total; fractions[6] is the
+        // fractions[6] is the point-to-point total; fractions[6] is the
         // proton-efficiency component.  The old index-6 check accidentally
         // rejected every row when the legacy proton-fraction column was absent.
-        if (!finite_fraction(fractions[7])) {
+        if (!finite_fraction(fractions[6])) {
             ++n_bad_total;
             continue;
         }

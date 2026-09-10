@@ -614,10 +614,11 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
     const int i_ptp10 = t.index.at("Syst. err (point-to-point total)");
     const int i_ptpsp = t.index.at("Syst. err (point-to-point total), Sp19 Inb (10.2 GeV)");
 
+    // Point-to-point components only.  Proton-efficiency uncertainty is an
+    // overall normalization source and is materialized separately below.
     const std::vector<std::string> components10 = {
         "Syst. err (pi0 subtraction)",
         "Syst. err (Acceptance)",
-        "Syst. err (proton efficiency)",
         "Syst.err (Frad)",
         "Syst.err (Fbin)",
         "Syst. err (exclusivity cuts)",
@@ -625,22 +626,41 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
     };
 
     // Krishna Neupane's reviewed Fall-2018-inbending proton-efficiency study
-    // quotes an approximately 2.83% systematic on the corrected integrated
-    // cross section.  We use that as the provisional Fa18 fractional source.
-    // Per the pass-2 prescription, Sp18 and Sp19 receive four times that
-    // uncertainty until dedicated period studies are available.  For the
-    // combined 10.6-GeV cross section the transferred uncertainty is NOT
-    // averaged down as independent statistics; instead it is linearly weighted
-    // by each run period's acceptance-corrected yield in the bin.
+    // quotes a 2.83% systematic on the corrected integrated cross section.
+    // Treat this as a genuine overall-normalization uncertainty, not as
+    // independent bin-to-bin noise.
+    //
+    // Fa18 and Sp19 use the same reconstruction version as the calibration and
+    // therefore receive 2.83%.  Sp18 uses a slightly different reconstruction
+    // version, so until the efficiency study is repeated for Sp18 we assign the
+    // deliberately conservative 4 x 2.83% = 11.32%.
+    //
+    // The combined 10.6-GeV proton-efficiency normalization is the charge-
+    // weighted average of the four contributing run periods, using the exact
+    // final Pass-2 selected charges reported by cross_sections.cpp:
+    //
+    //   Sp18 Inb  51.248191 mC
+    //   Sp18 Out  11.435592 mC
+    //   Fa18 Inb  29.407050 mC
+    //   Fa18 Out  31.900540 mC
+    //
+    // This is an overall normalization category, so the four contributions are
+    // not averaged down with 1/sqrt(N) or weighted bin-by-bin by event yield.
     const double peff_sys_fa18 = 0.0283;
     const double peff_sys_sp18 = 4.0 * peff_sys_fa18;
-    const double peff_sys_sp19 = 4.0 * peff_sys_fa18;
-    const std::vector<std::pair<std::string,double>> peff_periods10 = {
-        {"Fa18 Inb", peff_sys_fa18},
-        {"Fa18 Out", peff_sys_fa18},
-        {"Sp18 Inb", peff_sys_sp18},
-        {"Sp18 Out", peff_sys_sp18}
-    };
+    const double peff_sys_sp19 = peff_sys_fa18;
+
+    const double q_sp18_inb_mC = 51.248191;
+    const double q_sp18_out_mC = 11.435592;
+    const double q_fa18_inb_mC = 29.407050;
+    const double q_fa18_out_mC = 31.900540;
+    const double q_10p6_mC =
+        q_sp18_inb_mC + q_sp18_out_mC + q_fa18_inb_mC + q_fa18_out_mC;
+    const double peff_sys_10p6 =
+        (q_sp18_inb_mC * peff_sys_sp18
+       + q_sp18_out_mC * peff_sys_sp18
+       + q_fa18_inb_mC * peff_sys_fa18
+       + q_fa18_out_mC * peff_sys_fa18) / q_10p6_mC;
 
     size_t n10 = 0, nsp = 0;
     std::vector<double> frac10_values, fracsp_values, peff10_values;
@@ -667,28 +687,11 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
             row[(size_t)i_accsp].clear();
         }
 
-        double peff_weight_sum = 0.0;
-        double peff_weighted_frac = 0.0;
-        for (const auto& item : peff_periods10) {
-            const std::string ycol =
-                "acceptance corrected yield, ep->epg, exp, " + item.first + ", unpol";
-            const auto iy = t.index.find(ycol);
-            if (iy == t.index.end()) {
-                continue;
-            }
-            const double y = tuple_first_value(row[(size_t)iy->second]);
-            if (!std::isfinite(y) || y <= 0.0) {
-                continue;
-            }
-            peff_weight_sum += y;
-            peff_weighted_frac += y * item.second;
-        }
-
-        if (std::isfinite(xs10) && peff_weight_sum > 0.0) {
-            const double fpeff = peff_weighted_frac / peff_weight_sum;
-            row[(size_t)i_pefffrac10] = format_scalar(fpeff);
-            row[(size_t)i_peff10] = format_scalar(std::fabs(xs10) * fpeff);
-            peff10_values.push_back(fpeff);
+        if (std::isfinite(xs10)) {
+            row[(size_t)i_pefffrac10] = format_scalar(peff_sys_10p6);
+            row[(size_t)i_peff10] =
+                format_scalar(std::fabs(xs10) * peff_sys_10p6);
+            peff10_values.push_back(peff_sys_10p6);
         } else {
             row[(size_t)i_pefffrac10].clear();
             row[(size_t)i_peff10].clear();
@@ -700,7 +703,7 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
             row[(size_t)i_peffsp].clear();
         }
 
-        // Final 10.6-GeV point-to-point total from the seven production terms.
+        // Final 10.6-GeV point-to-point total from the six production terms.
         double sum10 = 0.0;
         bool ok10 = true;
         for (const auto& col : components10) {
@@ -723,7 +726,6 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
             for (const auto& col : std::vector<std::string>{
                     "Syst. err (pi0 subtraction), Sp19 Inb (10.2 GeV)",
                     "Syst. err (Acceptance), Sp19 Inb (10.2 GeV)",
-                    "Syst. err (proton efficiency), Sp19 Inb (10.2 GeV)",
                     "Syst.err (Frad), Sp19 Inb (10.2 GeV)",
                     "Syst.err (Fbin), Sp19 Inb (10.2 GeV)"}) {
                 const double e = scalar_value(row[(size_t)t.index.at(col)]);
@@ -781,10 +783,12 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
               << " Sp19 bins. Median fractions: "
               << 100.0*median_fraction(frac10_values) << "% (10.6), "
               << 100.0*median_fraction(fracsp_values) << "% (Sp19).\n";
-    std::cout << "[proton-efficiency-systematics] Neupane transfer: median combined "
-              << "10.6-GeV fractional uncertainty = "
-              << 100.0*median_fraction(peff10_values)
-              << "%; Sp19 provisional fraction = " << 100.0*peff_sys_sp19 << "%.\n";
+    std::cout << "[proton-efficiency-normalization] Neupane transfer: "
+              << "charge-weighted 10.6-GeV normalization = "
+              << 100.0*peff_sys_10p6
+              << "%; Fa18 = " << 100.0*peff_sys_fa18
+              << "%; Sp18 = " << 100.0*peff_sys_sp18
+              << "%; Sp19 = " << 100.0*peff_sys_sp19 << "%\n";
     std::cout << "[acceptance-systematics] Recomputed dedicated 10.6-GeV and Sp19 "
               << "point-to-point totals.\n";
     return true;
@@ -861,13 +865,13 @@ static bool validate_final_point_to_point_systematics(const std::string& csv_pat
         << "[final-ptp] 10.6 GeV coverage: xs=" << n_xs10
         << ", pi0=" << n_pi010
         << ", acceptance=" << n_acc10
-        << ", proton-eff=" << n_peff10
+        << ", proton-eff-norm=" << n_peff10
         << ", total=" << n_ptp10 << "\n";
     std::cout
         << "[final-ptp] Sp19 coverage: xs=" << n_xssp
         << ", pi0=" << n_pi0sp
         << ", acceptance=" << n_accsp
-        << ", proton-eff=" << n_peffsp
+        << ", proton-eff-norm=" << n_peffsp
         << ", total=" << n_ptpsp << "\n";
 
     const bool ok10 =

@@ -13,16 +13,24 @@
 // versus the average proton polar angle.  The same residual detector-performance
 // envelope is applied to Sp19 at its own average proton angle.
 //
-// IMPORTANT: the 2.16% charge/target-thickness normalization is written as a
-// separate, uncorrelated normalization category.  It is NOT folded into the
-// correlated-scale nuisance.
+// IMPORTANT: normalization and correlated shape/scale uncertainties remain
+// distinct categories.
 //
-// The old combination-systematic columns are retained as diagnostics only.
-// The authoritative final columns created here are:
+// The pre-existing 2.16% charge/target-thickness source is retained explicitly.
+// The Neupane proton-efficiency uncertainty is treated as an OVERALL
+// normalization uncertainty: 2.83% for Fa18 and Sp19, and 11.32% for Sp18
+// pending a dedicated Sp18 reconstruction-version study.  For the combined
+// 10.6-GeV result the proton-efficiency normalization is the accumulated-charge
+// weighted average of the four contributing periods.  It is then combined in
+// quadrature with the existing 2.16% normalization.
+//
+// The authoritative final columns include:
 //
 //   run period residual sys frac, <sample>
 //   correlated scale sys frac, <sample>
-//   uncorrelated normalization sys frac, <sample>
+//   uncorrelated normalization sys frac, <sample>   [legacy/base 2.16%]
+//   proton efficiency normalization sys frac, <sample>
+//   overall normalization sys frac, <sample>
 //
 // together with corresponding absolute cross-section errors.
 // -----------------------------------------------------------------------------
@@ -899,7 +907,8 @@ static void draw_systematic_category_summary(
     const Csv& c,
     const std::vector<double>& corr10,
     const std::vector<double>& corrsp,
-    double norm_frac) {
+    double norm10_frac,
+    double normsp_frac) {
 
     struct Summary {
         double ptp=0.0;
@@ -975,10 +984,10 @@ static void draw_systematic_category_summary(
     }};
 
     const std::array<double,5> va={{
-        a.ptp,100.0*norm_frac,a.current,a.residual,a.correlated
+        a.ptp,100.0*norm10_frac,a.current,a.residual,a.correlated
     }};
     const std::array<double,5> vb={{
-        b.ptp,100.0*norm_frac,b.current,b.residual,b.correlated
+        b.ptp,100.0*normsp_frac,b.current,b.residual,b.correlated
     }};
 
     TCanvas cv("c_systematic_category_summary","",1100,760);
@@ -1048,12 +1057,14 @@ static void write_high_level_summary(
     const Csv& c,
     const std::vector<double>& corr10,
     const std::vector<double>& corrsp,
-    double norm_frac) {
+    double norm10_frac,
+    double normsp_frac) {
 
     auto summarize=[&](const std::string& sample,
                        const std::vector<double>& corr,
                        const std::string& xscol,
-                       const std::string& currentcol) {
+                       const std::string& currentcol,
+                       double overall_norm_frac) {
         std::vector<double> cvals,ptp,current,resid;
         const auto ix=c.index.find(xscol);
         const std::string ptp_col = (sample == "Sp19 Inb")
@@ -1085,7 +1096,7 @@ static void write_high_level_summary(
 
         std::array<double,5> ans={{
             quantile(ptp,.5),
-            100*norm_frac,
+            100*overall_norm_frac,
             quantile(current,.5),
             quantile(resid,.5),
             quantile(cvals,.5)
@@ -1096,14 +1107,16 @@ static void write_high_level_summary(
     const auto a=summarize(
         "10.6 GeV",corr10,
         "normed cross sections, ep->epg, exp, 10.6 GeV, unpol",
-        "current dependence sys frac, 10.6 GeV");
+        "current dependence sys frac, 10.6 GeV",
+        norm10_frac);
     const auto b=summarize(
         "Sp19 Inb",corrsp,
         "normed cross sections, ep->epg, exp, Sp19 Inb, unpol",
-        "current dependence sys frac, Sp19 Inb");
+        "current dependence sys frac, Sp19 Inb",
+        normsp_frac);
 
     std::ofstream out(path);
-    out<<"sample,median_point_to_point_percent,uncorrelated_normalization_percent,"
+    out<<"sample,median_point_to_point_percent,overall_normalization_percent,"
           "median_current_percent,median_run_period_residual_percent,"
           "median_correlated_scale_percent\n";
     out<<"10.6 GeV";
@@ -1157,6 +1170,10 @@ bool correlated_scale_systematics(
         const int acs10=ensure_col(c,"Syst.err (correlated scale), 10.6 GeV");
         const int no10=ensure_col(c,"uncorrelated normalization sys frac, 10.6 GeV");
         const int ano10=ensure_col(c,"Syst.err (uncorrelated normalization), 10.6 GeV");
+        const int pn10=ensure_col(c,"proton efficiency normalization sys frac, 10.6 GeV");
+        const int apn10=ensure_col(c,"Syst.err (proton efficiency normalization), 10.6 GeV");
+        const int on10=ensure_col(c,"overall normalization sys frac, 10.6 GeV");
+        const int aon10=ensure_col(c,"Syst.err (overall normalization), 10.6 GeV");
 
         const int rsp=ensure_col(c,"run period residual sys frac, Sp19 Inb");
         const int arsp=ensure_col(c,"Syst.err (run period residual), Sp19 Inb");
@@ -1164,6 +1181,10 @@ bool correlated_scale_systematics(
         const int acssp=ensure_col(c,"Syst.err (correlated scale), Sp19 Inb");
         const int nosp=ensure_col(c,"uncorrelated normalization sys frac, Sp19 Inb");
         const int anosp=ensure_col(c,"Syst.err (uncorrelated normalization), Sp19 Inb");
+        const int pnsp=ensure_col(c,"proton efficiency normalization sys frac, Sp19 Inb");
+        const int apnsp=ensure_col(c,"Syst.err (proton efficiency normalization), Sp19 Inb");
+        const int onsp=ensure_col(c,"overall normalization sys frac, Sp19 Inb");
+        const int aonsp=ensure_col(c,"Syst.err (overall normalization), Sp19 Inb");
 
         const auto ith10=c.index.find("p_theta, 10.6 GeV");
         const auto ithsp=c.index.find("p_theta, Sp19 Inb");
@@ -1184,6 +1205,23 @@ bool correlated_scale_systematics(
         const int fbsp=ensure_col(
             c,"correlated scale fallback flag, Sp19 Inb");
 
+        const double q10 =
+            options.charge_sp18_inb_mC + options.charge_sp18_out_mC
+          + options.charge_fa18_inb_mC + options.charge_fa18_out_mC;
+        if (!(q10 > 0.0))
+            throw std::runtime_error("non-positive total 10.6-GeV charge for proton-efficiency normalization");
+
+        const double peff_norm10 =
+            (options.charge_sp18_inb_mC * options.proton_efficiency_sp18_fraction
+           + options.charge_sp18_out_mC * options.proton_efficiency_sp18_fraction
+           + options.charge_fa18_inb_mC * options.proton_efficiency_fa18_fraction
+           + options.charge_fa18_out_mC * options.proton_efficiency_fa18_fraction) / q10;
+        const double peff_normsp = options.proton_efficiency_sp19_fraction;
+        const double overall_norm10 =
+            std::hypot(options.uncorrelated_normalization_fraction, peff_norm10);
+        const double overall_normsp =
+            std::hypot(options.uncorrelated_normalization_fraction, peff_normsp);
+
         for(size_t i=0;i<c.rows.size();++i){
             const double th10=num(c.rows[i][ith10->second]);
             const double thsp=num(c.rows[i][ithsp->second]);
@@ -1194,13 +1232,40 @@ bool correlated_scale_systematics(
             c.rows[i][fb10]="0";
             c.rows[i][fbsp]="0";
 
+            // Overall-normalization bookkeeping is independent of the
+            // kinematic correlated-scale construction.
+            if(ix10!=c.index.end()){
+                const TupleValue x=tuple_value(c.rows[i][ix10->second]);
+                if(x.ok){
+                    c.rows[i][no10]=fmt(options.uncorrelated_normalization_fraction);
+                    c.rows[i][ano10]=fmt(
+                        std::fabs(x.value)*options.uncorrelated_normalization_fraction);
+                    c.rows[i][pn10]=fmt(peff_norm10);
+                    c.rows[i][apn10]=fmt(std::fabs(x.value)*peff_norm10);
+                    c.rows[i][on10]=fmt(overall_norm10);
+                    c.rows[i][aon10]=fmt(std::fabs(x.value)*overall_norm10);
+                }
+            }
+
+            if(ixsp!=c.index.end()){
+                const TupleValue x=tuple_value(c.rows[i][ixsp->second]);
+                if(x.ok){
+                    c.rows[i][nosp]=fmt(options.uncorrelated_normalization_fraction);
+                    c.rows[i][anosp]=fmt(
+                        std::fabs(x.value)*options.uncorrelated_normalization_fraction);
+                    c.rows[i][pnsp]=fmt(peff_normsp);
+                    c.rows[i][apnsp]=fmt(std::fabs(x.value)*peff_normsp);
+                    c.rows[i][onsp]=fmt(overall_normsp);
+                    c.rows[i][aonsp]=fmt(std::fabs(x.value)*overall_normsp);
+                }
+            }
+
             if(std::isfinite(th10)&&std::isfinite(cur10)&&cur10>=0.0){
                 const double res=interpolate_residual(reference,th10);
                 const double corr=std::hypot(cur10,res);
                 corr10[i]=corr;
                 c.rows[i][r10]=fmt(res);
                 c.rows[i][cs10]=fmt(corr);
-                c.rows[i][no10]=fmt(options.uncorrelated_normalization_fraction);
 
                 if(ix10!=c.index.end()){
                     const TupleValue x=tuple_value(c.rows[i][ix10->second]);
@@ -1219,7 +1284,6 @@ bool correlated_scale_systematics(
                 corrsp[i]=corr;
                 c.rows[i][rsp]=fmt(res);
                 c.rows[i][cssp]=fmt(corr);
-                c.rows[i][nosp]=fmt(options.uncorrelated_normalization_fraction);
 
                 if(ixsp!=c.index.end()){
                     const TupleValue x=tuple_value(c.rows[i][ixsp->second]);
@@ -1310,6 +1374,16 @@ bool correlated_scale_systematics(
             << 100.0*fallbacksp << "% for "
             << n_fallbacksp << " bin(s).\n";
 
+        std::cout << std::fixed << std::setprecision(5)
+                  << "[normalization-systematics] base target/charge = "
+                  << 100.0*options.uncorrelated_normalization_fraction << "%"
+                  << "; proton efficiency: 10.6 GeV charge-weighted = "
+                  << 100.0*peff_norm10 << "%, Sp19 = "
+                  << 100.0*peff_normsp << "%"
+                  << "; final overall normalization: 10.6 GeV = "
+                  << 100.0*overall_norm10 << "%, Sp19 = "
+                  << 100.0*overall_normsp << "%\n";
+
         write_csv(csv_path,c);
 
         // Re-read after writing so the new columns are visible to the summary helper.
@@ -1328,12 +1402,12 @@ bool correlated_scale_systematics(
         draw_systematic_category_summary(
             fs::path(options.output_dir)/"systematic_category_summary.png",
             cfinal,corr10,corrsp,
-            options.uncorrelated_normalization_fraction);
+            overall_norm10,overall_normsp);
 
         write_high_level_summary(
             fs::path(options.output_dir)/"systematic_category_summary.csv",
             cfinal,corr10,corrsp,
-            options.uncorrelated_normalization_fraction);
+            overall_norm10,overall_normsp);
 
         std::cout
             << "[correlated-scale] Wrote residual period reference and final "
