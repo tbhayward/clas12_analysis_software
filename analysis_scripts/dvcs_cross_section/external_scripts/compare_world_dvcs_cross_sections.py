@@ -176,6 +176,7 @@ MODEL_STYLES = {
 # fits remain evaluated at the exact measured points; this grid is only for
 # drawing smooth BH/KM15 curves.  It explicitly includes both 0 and 360 deg.
 MODEL_CURVE_PHI_STEP_DEG = 15.0
+PANEL_Y_SCALE_MODE = "row"
 
 # In the global Lee-anchor normalization study Georges is intentionally left
 # unconstrained, as requested.  All other experiments receive Gaussian
@@ -2402,52 +2403,92 @@ def _robust_positive_log_limits(values: Sequence[np.ndarray]) -> Tuple[float, fl
 
 
 
-def _synchronize_canvas_y_limits(axes) -> None:
+def _synchronize_canvas_y_limits(
+        axes,
+        mode: str = "row") -> None:
     """
-    Force every active subplot on one canvas to share one common y-axis range.
+    Synchronize log-scale y limits within a multipanel canvas.
 
-    Each panel first computes its own robust log-scale limits using central
-    values/model curves only.  This function then takes the union of those
-    per-panel robust ranges and applies that same range to every active axis on
-    the current page.
+    mode = "panel":
+        leave every subplot at its independently determined robust range.
 
-    Different pages/canvases remain independent, so a low-cross-section page
-    does not force the same range onto a high-cross-section page.
+    mode = "row":
+        each horizontal row shares one common y range.  This is the default
+        because adjacent panels remain directly comparable without allowing
+        one extreme BH/KM15 endpoint to compress an entire 3x4 page.
+
+    mode = "page":
+        all active subplots on the page share one y range.
+
+    Every panel has already computed a robust range that ignores pathological
+    uncertainty bars.  This function combines those already-robust ranges; it
+    does not inspect the raw error bars again.
     """
-    active_axes = [
-        ax for ax in np.asarray(axes, dtype=object).ravel()
-        if ax.get_visible() and ax.has_data()
-    ]
-    if not active_axes:
+    mode = str(mode).strip().lower()
+    if mode not in {"panel", "row", "page"}:
+        raise ValueError(
+            f"Unknown y-scale synchronization mode '{mode}'. "
+            "Choose panel, row, or page."
+        )
+    #endif
+
+    if mode == "panel":
         return
     #endif
 
-    lows = []
-    highs = []
-    for ax in active_axes:
-        lo, hi = ax.get_ylim()
-        if (
-            np.isfinite(lo)
-            and np.isfinite(hi)
-            and lo > 0.0
-            and hi > lo
-        ):
-            lows.append(float(lo))
-            highs.append(float(hi))
+    arr = np.asarray(axes, dtype=object)
+    if arr.ndim == 1:
+        arr = arr.reshape(1, -1)
+    #endif
+
+    def apply_group(group_axes) -> None:
+        active = [
+            ax for ax in group_axes
+            if ax.get_visible() and ax.has_data()
+        ]
+        if not active:
+            return
         #endif
-    #endfor
 
-    if not lows or not highs:
+        lows = []
+        highs = []
+        for ax in active:
+            lo, hi = ax.get_ylim()
+            if (
+                np.isfinite(lo)
+                and np.isfinite(hi)
+                and lo > 0.0
+                and hi > lo
+            ):
+                lows.append(float(lo))
+                highs.append(float(hi))
+            #endif
+        #endfor
+
+        if not lows or not highs:
+            return
+        #endif
+
+        common_lo = min(lows)
+        common_hi = max(highs)
+
+        for ax in active:
+            ax.set_ylim(common_lo, common_hi)
+        #endfor
+    #enddef
+
+    if mode == "page":
+        apply_group(list(arr.ravel()))
         return
     #endif
 
-    common_lo = min(lows)
-    common_hi = max(highs)
-
-    for ax in active_axes:
-        ax.set_ylim(common_lo, common_hi)
+    # Row-wise mode.
+    for irow in range(arr.shape[0]):
+        apply_group(list(arr[irow, :]))
     #endfor
 #enddef
+
+
 
 def _cluster_reference_kinematic_cells(pair: pd.DataFrame) -> pd.DataFrame:
     """
@@ -3030,7 +3071,7 @@ def plot_pairwise_cross_section_panels(
             )
             # Reserve a deliberately larger top margin than the previous
             # version; this prevents the title/legend/subtitle collision.
-            _synchronize_canvas_y_limits(axes)
+            _synchronize_canvas_y_limits(axes, mode=PANEL_Y_SCALE_MODE)
             fig.tight_layout(rect=[0.035, 0.035, 0.995, 0.885])
 
             fname = (
@@ -4404,7 +4445,7 @@ def plot_pass2_anchor_world_panels(
             fontsize=7.1,
         )
         fig.text(0.5, 0.900, subtitle, ha="center", va="top", fontsize=7.7)
-        _synchronize_canvas_y_limits(axes)
+        _synchronize_canvas_y_limits(axes, mode=PANEL_Y_SCALE_MODE)
         fig.tight_layout(rect=[0.035, 0.035, 0.995, 0.865])
 
         prefix = "pass2_world_raw" if scenario is None else f"pass2_world_{scenario}"
@@ -4834,7 +4875,7 @@ def plot_lee_anchor_world_panels(
             subtitle,
             ha="center", va="top", fontsize=7.8,
         )
-        _synchronize_canvas_y_limits(axes)
+        _synchronize_canvas_y_limits(axes, mode=PANEL_Y_SCALE_MODE)
         fig.tight_layout(rect=[0.035, 0.035, 0.995, 0.865])
 
         if normalization_scenario is None:
@@ -5323,6 +5364,18 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument("--match-dq2", type=float, default=DEFAULT_MATCH_DQ2)
     p.add_argument("--match-dt", type=float, default=DEFAULT_MATCH_DT)
     p.add_argument("--match-dphi", type=float, default=DEFAULT_MATCH_DPHI)
+    p.add_argument(
+        "--panel-y-scale",
+        choices=["panel", "row", "page"],
+        default="row",
+        help=(
+            "Y-axis synchronization for multipanel cross-section canvases: "
+            "'panel' gives each subplot its own range, 'row' gives each 4-panel "
+            "row one common range (default), and 'page' forces all 12 panels "
+            "to share one range."
+        ),
+    )
+
     return p
 #enddef
 
@@ -5331,7 +5384,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     args = build_parser().parse_args(argv)
 
     global MODEL_CURVE_PHI_STEP_DEG
+    global PANEL_Y_SCALE_MODE
+
     MODEL_CURVE_PHI_STEP_DEG = float(args.model_phi_step_deg)
+    PANEL_Y_SCALE_MODE = str(args.panel_y_scale)
     if (
         not np.isfinite(MODEL_CURVE_PHI_STEP_DEG)
         or MODEL_CURVE_PHI_STEP_DEG <= 0.0
@@ -5344,6 +5400,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(
         f"[PLOTS] BH/KM15 model-curve phi step = "
         f"{MODEL_CURVE_PHI_STEP_DEG:g} deg (0--360 deg inclusive)"
+    )
+    print(
+        f"[PLOTS] multipanel y-scale synchronization = {PANEL_Y_SCALE_MODE}",
+        flush=True,
     )
     args.script_dir = Path(__file__).resolve().parent
 
