@@ -1645,10 +1645,11 @@ std::vector<std::unique_ptr<SampleResult>> analyze_samples_parallel(const std::s
 //   * FD/PCAL tag requirement and FD probe acceptance;
 //   * data and weighted-total-MC Delta-p fits independently in every bin;
 //   * nominal weighted MC = AAO + no-exclusivity CLASDIS + DVCS;
-//   * saved base/generator event weight multiplied by Valerii normalization;
+//   * unit-count MC component templates with normalization derived from this run;
 //   * 1-, 2-, and 3-sigma matching using the fit belonging to data or MC;
 //   * epsilon_data, epsilon_MC, and epsilon_data/epsilon_MC correction maps;
-//   * two published alternative normalization sets as a normalization variation.
+//   * data-driven normalization variations from observable-to-observable spread;
+  * normalization-only template shift/smearing nuisances (event-level MC is untouched).
 //
 // The existing stage-1 nominal Mx(ep) enrichment window is NOT imposed here.
 // Valerii's ep-gamma-X denominator is intentionally treated as a mixed sample;
@@ -1698,9 +1699,17 @@ struct ValComponent {
 
     // Histograms used by the data-driven template-normalization stage.
     // Index order is defined by NormObs below.
+    // Normalization QA stages.  "pre" is after the common ep-gamma-X/FD
+    // baseline but before the June-2026 exclusivity cuts.  "nminus1" applies
+    // all normalization cuts except the cut on the plotted quantity itself.
+    // "full" applies all normalization cuts.  The low/high-E histograms use
+    // the N-1 selection plus E_gamma<2 or >3 GeV and feed the template fits.
+    std::vector<std::unique_ptr<TH1D>> norm_pre;
+    std::vector<std::unique_ptr<TH1D>> norm_nminus1;
     std::vector<std::unique_ptr<TH1D>> norm_full;
     std::vector<std::unique_ptr<TH1D>> norm_lowE;
     std::vector<std::unique_ptr<TH1D>> norm_highE;
+    std::array<long long,6> norm_cutflow{{0,0,0,0,0,0}};
     bool normalization_branches_complete=false;
 };
 
@@ -1731,6 +1740,25 @@ static const NormObsDef NORM_OBS[NORM_NOBS] = {
     {"dphi_pg",    "#Delta#phi(p,#gamma);#Delta#phi(p,#gamma) [deg];Candidates",100,-30.0,30.0,false,true}
 };
 
+// June-2026 Valerii normalization/exclusivity selection.  The presentation
+// labels the angular quantity as the gamma-X opening angle in the normalization
+// plots; here X is the inferred missing probe already stored in the skim.
+static const double NORM_MX2_EP_MIN=-0.231;
+static const double NORM_MX2_EP_MAX= 0.309;
+static const double NORM_MX2_EG_MIN= 1.4;
+static const double NORM_DPHI_MAX=5.7;
+static const double NORM_ANGLE_GX_MAX=9.2;
+
+// Template morphing deliberately follows the philosophy used in the DVCS
+// exclusivity-selection suite: allow the reconstructed-MC template to shift and
+// acquire extra Gaussian resolution when comparing it with data.  Here one
+// COMMON morph is applied to all MC components for a given observable.  This
+// avoids giving AAO/CLASDIS/DVCS independent shape freedom that could absorb
+// the very component fractions the normalization fit is supposed to measure.
+static const double NORM_MAX_SHIFT_BINS=6.0;
+static const double NORM_MAX_SMEAR_BINS=10.0;
+static const double NORM_MORPH_STEP_BINS=0.5;
+
 struct NormFitPoint {
     std::string observable;
     bool valid=false;
@@ -1738,6 +1766,13 @@ struct NormFitPoint {
     double clasdis=0,clasdis_err=0;
     double dvcs=0,dvcs_err=0;
     double chi2=0; int ndf=0;
+    // Common MC-template morph used only by the normalization fit.  The shift
+    // and extra Gaussian width are in physical units of the plotted observable.
+    // They are never applied to the event-level efficiency numerator/denominator.
+    double morph_shift=0;
+    double morph_sigma=0;
+    double raw_chi2=0;
+    int raw_ndf=0;
 };
 
 struct NormDerivation {
@@ -1907,10 +1942,84 @@ double norm_observable_value(const Branches& b,int io) {
     return std::numeric_limits<double>::quiet_NaN();
 }
 
-// Weighted least-squares two-template normalization.  Data statistical errors
-// set the bin weights; MC is intentionally treated as a fixed template here,
-// matching the practical template-fit procedure shown in Valerii's presentation.
-NormFitPoint fit_two_templates(const TH1D* data,const TH1D* aao,const TH1D* cls,const std::string& key) {
+
+struct NormCutFlags {
+    bool finite=false;
+    bool mx2_ep=false;
+    bool mx2_eg=false;
+    bool dphi_pg=false;
+    bool angle_gX=false;
+    bool all=false;
+};
+
+NormCutFlags norm_cut_flags(const Branches& b) {
+    NormCutFlags f;
+    const double mx2ep=norm_observable_value(b,NORM_MX2_EP);
+    const double mx2eg=norm_observable_value(b,NORM_MX2_EG);
+    const double dphi =norm_observable_value(b,NORM_DPHI_PG);
+    const double ang  =norm_observable_value(b,NORM_ANGLE_GX);
+    f.finite=std::isfinite(mx2ep) && std::isfinite(mx2eg) && std::isfinite(dphi) && std::isfinite(ang);
+    if (!f.finite) return f;
+    f.mx2_ep=(mx2ep>NORM_MX2_EP_MIN && mx2ep<NORM_MX2_EP_MAX);
+    f.mx2_eg=(mx2eg>NORM_MX2_EG_MIN);
+    f.dphi_pg=(std::fabs(dphi)<NORM_DPHI_MAX);
+    f.angle_gX=(ang<NORM_ANGLE_GX_MAX);
+    f.all=f.mx2_ep && f.mx2_eg && f.dphi_pg && f.angle_gX;
+    return f;
+}
+
+bool norm_pass_nminus1(const NormCutFlags& f,int io) {
+    if (!f.finite) return false;
+    if (io!=NORM_MX2_EP && !f.mx2_ep) return false;
+    if (io!=NORM_MX2_EG && !f.mx2_eg) return false;
+    if (io!=NORM_DPHI_PG && !f.dphi_pg) return false;
+    if (io!=NORM_ANGLE_GX && !f.angle_gX) return false;
+    return true;
+}
+
+std::unique_ptr<TH1D> morph_norm_hist(const TH1D* src,double shift,double sigma,const char* name) {
+    if (!src) return nullptr;
+    std::unique_ptr<TH1D> out((TH1D*)src->Clone(name));
+    out->Reset("ICES"); out->SetDirectory(nullptr); out->Sumw2();
+    const int nb=src->GetNbinsX();
+    if (sigma<=1e-12) {
+        for (int j=1;j<=nb;j++) {
+            const double w=src->GetBinContent(j);
+            const double e=src->GetBinError(j);
+            if (w==0 && e==0) continue;
+            const double x=src->GetBinCenter(j)+shift;
+            const int i=out->FindBin(x);
+            if (i<1 || i>nb) continue;
+            out->SetBinContent(i,out->GetBinContent(i)+w);
+            const double oe=out->GetBinError(i);
+            out->SetBinError(i,std::sqrt(oe*oe+e*e));
+        }
+        const double sinteg=src->Integral(), ointeg=out->Integral();
+        if (sinteg>0 && ointeg>0) out->Scale(sinteg/ointeg);
+        return out;
+    }
+    const double inv=1.0/(std::sqrt(2.0)*sigma);
+    for (int j=1;j<=nb;j++) {
+        const double w=src->GetBinContent(j);
+        const double e=src->GetBinError(j);
+        if (w==0 && e==0) continue;
+        const double mu=src->GetBinCenter(j)+shift;
+        for (int i=1;i<=nb;i++) {
+            const double lo=out->GetXaxis()->GetBinLowEdge(i);
+            const double hi=out->GetXaxis()->GetBinUpEdge(i);
+            const double prob=0.5*(std::erf((hi-mu)*inv)-std::erf((lo-mu)*inv));
+            if (!(prob>0)) continue;
+            out->SetBinContent(i,out->GetBinContent(i)+w*prob);
+            const double oe=out->GetBinError(i);
+            out->SetBinError(i,std::sqrt(oe*oe+e*e*prob*prob));
+        }
+    }
+    const double sinteg=src->Integral(), ointeg=out->Integral();
+    if (sinteg>0 && ointeg>0) out->Scale(sinteg/ointeg);
+    return out;
+}
+
+NormFitPoint fit_two_templates_fixed_shapes(const TH1D* data,const TH1D* aao,const TH1D* cls,const std::string& key) {
     NormFitPoint r; r.observable=key;
     if (!data || !aao || !cls) return r;
     double saa=0,sbb=0,sab=0,sad=0,sbd=0; int used=0;
@@ -1931,16 +2040,15 @@ NormFitPoint fit_two_templates(const TH1D* data,const TH1D* aao,const TH1D* cls,
     for (int i=1;i<=data->GetNbinsX();i++) {
         const double d=data->GetBinContent(i), a=aao->GetBinContent(i), b=cls->GetBinContent(i);
         if (d<=0 && a<=0 && b<=0) continue;
-        const double var=std::max(1.0,d);
-        const double q=d-A*a-B*b; chi2+=q*q/var; n++;
+        const double q=d-A*a-B*b; chi2+=q*q/std::max(1.0,d); n++;
     }
     r.aao=A; r.clasdis=B; r.aao_err=(det>0?std::sqrt(sbb/det):0); r.clasdis_err=(det>0?std::sqrt(saa/det):0);
     r.chi2=chi2; r.ndf=std::max(0,n-2); r.valid=(r.ndf>0);
     return r;
 }
 
-NormFitPoint fit_dvcs_template(const TH1D* data,const TH1D* aao,const TH1D* cls,const TH1D* dvc,
-                               double A,double B,const std::string& key) {
+NormFitPoint fit_dvcs_fixed_shapes(const TH1D* data,const TH1D* aao,const TH1D* cls,const TH1D* dvc,
+                                   double A,double B,const std::string& key) {
     NormFitPoint r; r.observable=key; r.aao=A; r.clasdis=B;
     if (!data || !aao || !cls || !dvc) return r;
     double sxx=0,sxy=0; int used=0;
@@ -1964,6 +2072,54 @@ NormFitPoint fit_dvcs_template(const TH1D* data,const TH1D* aao,const TH1D* cls,
     return r;
 }
 
+NormFitPoint fit_two_templates_morphed(const TH1D* data,const TH1D* aao,const TH1D* cls,const std::string& key) {
+    NormFitPoint raw=fit_two_templates_fixed_shapes(data,aao,cls,key);
+    NormFitPoint best; best.observable=key; best.raw_chi2=raw.chi2; best.raw_ndf=raw.ndf;
+    double bestchi=std::numeric_limits<double>::infinity();
+    if (!data || !aao || !cls) return best;
+    const double bw=data->GetXaxis()->GetBinWidth(1);
+    for (double sb=-NORM_MAX_SHIFT_BINS; sb<=NORM_MAX_SHIFT_BINS+1e-9; sb+=NORM_MORPH_STEP_BINS) {
+        const double shift=sb*bw;
+        for (double wb=0; wb<=NORM_MAX_SMEAR_BINS+1e-9; wb+=NORM_MORPH_STEP_BINS) {
+            const double sigma=wb*bw;
+            auto ma=morph_norm_hist(aao,shift,sigma,"tmp_morph_aao");
+            auto mc=morph_norm_hist(cls,shift,sigma,"tmp_morph_cls");
+            auto q=fit_two_templates_fixed_shapes(data,ma.get(),mc.get(),key);
+            if (!q.valid || !(q.chi2<bestchi)) continue;
+            bestchi=q.chi2; best=q; best.morph_shift=shift; best.morph_sigma=sigma;
+            best.raw_chi2=raw.chi2; best.raw_ndf=raw.ndf;
+        }
+    }
+    return best;
+}
+
+NormFitPoint fit_dvcs_template_morphed(const TH1D* data,const TH1D* aao,const TH1D* cls,const TH1D* dvc,
+                                       double A,double B,const std::string& key) {
+    NormFitPoint raw=fit_dvcs_fixed_shapes(data,aao,cls,dvc,A,B,key);
+    NormFitPoint best; best.observable=key; best.aao=A; best.clasdis=B; best.raw_chi2=raw.chi2; best.raw_ndf=raw.ndf;
+    double bestchi=std::numeric_limits<double>::infinity();
+    if (!data || !aao || !cls || !dvc) return best;
+    const double bw=data->GetXaxis()->GetBinWidth(1);
+    for (double sb=-NORM_MAX_SHIFT_BINS; sb<=NORM_MAX_SHIFT_BINS+1e-9; sb+=NORM_MORPH_STEP_BINS) {
+        const double shift=sb*bw;
+        for (double wb=0; wb<=NORM_MAX_SMEAR_BINS+1e-9; wb+=NORM_MORPH_STEP_BINS) {
+            const double sigma=wb*bw;
+            auto ma=morph_norm_hist(aao,shift,sigma,"tmp_high_aao");
+            auto mc=morph_norm_hist(cls,shift,sigma,"tmp_high_cls");
+            auto mv=morph_norm_hist(dvc,shift,sigma,"tmp_high_dvc");
+            auto q=fit_dvcs_fixed_shapes(data,ma.get(),mc.get(),mv.get(),A,B,key);
+            if (!q.valid || !(q.chi2<bestchi)) continue;
+            bestchi=q.chi2; best=q; best.morph_shift=shift; best.morph_sigma=sigma;
+            best.raw_chi2=raw.chi2; best.raw_ndf=raw.ndf;
+        }
+    }
+    return best;
+}
+
+// Normalization fits are defined above.  The active versions include a common
+// shift + extra Gaussian smearing scan of the MC templates; the fixed-shape
+// versions are retained internally for raw-versus-morphed diagnostics.
+
 double mean_valid(const std::vector<NormFitPoint>& v,int which) {
     double s=0; int n=0;
     for (const auto& x:v) if (x.valid) { double q=(which==0?x.aao:(which==1?x.clasdis:x.dvcs)); if (q>=0 && std::isfinite(q)) {s+=q;n++;} }
@@ -1982,12 +2138,12 @@ void style_norm_component(TH1D* h,int color,int width=2) {
 
 void draw_norm_fit(const TH1D* hd,const TH1D* ha,const TH1D* hc,const TH1D* hv,
                    double A,double B,double C,const std::string& title,const std::string& file,
-                   double chi2=-1,int ndf=0) {
+                   double chi2=-1,int ndf=0,double morph_shift=0.0,double morph_sigma=0.0) {
     if (!hd || !ha || !hc || !hv) return;
     std::unique_ptr<TH1D> d((TH1D*)hd->Clone("norm_draw_data")); d->SetDirectory(nullptr);
-    std::unique_ptr<TH1D> a((TH1D*)ha->Clone("norm_draw_aao")); a->Scale(A); a->SetDirectory(nullptr);
-    std::unique_ptr<TH1D> c((TH1D*)hc->Clone("norm_draw_cls")); c->Scale(B); c->SetDirectory(nullptr);
-    std::unique_ptr<TH1D> v((TH1D*)hv->Clone("norm_draw_dvc")); v->Scale(C); v->SetDirectory(nullptr);
+    auto a=morph_norm_hist(ha,morph_shift,morph_sigma,"norm_draw_aao"); a->Scale(A);
+    auto c=morph_norm_hist(hc,morph_shift,morph_sigma,"norm_draw_cls"); c->Scale(B);
+    auto v=morph_norm_hist(hv,morph_shift,morph_sigma,"norm_draw_dvc"); v->Scale(C);
     std::unique_ptr<TH1D> tot((TH1D*)a->Clone("norm_draw_total")); tot->Add(c.get()); tot->Add(v.get()); tot->SetDirectory(nullptr);
     std::unique_ptr<TH1D> pull((TH1D*)d->Clone("norm_draw_pull")); pull->Reset(); pull->SetDirectory(nullptr);
     for (int i=1;i<=pull->GetNbinsX();i++) {
@@ -2005,11 +2161,56 @@ void draw_norm_fit(const TH1D* hd,const TH1D* ha,const TH1D* hc,const TH1D* hv,
     TLegend leg(0.58,0.63,0.88,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0);
     leg.AddEntry(d.get(),"Data","lep"); leg.AddEntry(a.get(),Form("AAO #times %.4g",A),"l");
     leg.AddEntry(c.get(),Form("CLASDIS #times %.4g",B),"l"); leg.AddEntry(v.get(),Form("DVCSgen #times %.4g",C),"l"); leg.AddEntry(tot.get(),"Total MC","l"); leg.Draw();
-    TLatex tx; tx.SetNDC(); tx.SetTextSize(0.035); if (ndf>0) tx.DrawLatex(0.15,0.86,Form("#chi^{2}/ndf = %.1f/%d = %.2f",chi2,ndf,chi2/ndf));
+    TLatex tx; tx.SetNDC(); tx.SetTextSize(0.035);
+    if (ndf>0) tx.DrawLatex(0.15,0.86,Form("#chi^{2}/ndf = %.1f/%d = %.2f",chi2,ndf,chi2/ndf));
+    if (std::fabs(morph_shift)>1e-12 || morph_sigma>1e-12)
+        tx.DrawLatex(0.15,0.81,Form("common MC morph: shift=%.4g, #sigma_{add}=%.4g",morph_shift,morph_sigma));
     bot.cd(); pull->SetTitle(""); pull->GetYaxis()->SetTitle("Pull"); pull->GetYaxis()->SetNdivisions(505); pull->GetYaxis()->SetTitleSize(0.10); pull->GetYaxis()->SetLabelSize(0.08); pull->GetYaxis()->SetTitleOffset(0.45);
     pull->GetXaxis()->SetTitle(hd->GetXaxis()->GetTitle()); pull->GetXaxis()->SetTitleSize(0.12); pull->GetXaxis()->SetLabelSize(0.09); pull->SetMinimum(-5); pull->SetMaximum(5); pull->Draw("HIST");
     TLine z(pull->GetXaxis()->GetXmin(),0,pull->GetXaxis()->GetXmax(),0); z.SetLineStyle(2); z.Draw();
     can.SaveAs(file.c_str());
+}
+
+void draw_norm_shape_overlay(const TH1D* hd,const TH1D* ha,const TH1D* hc,const TH1D* hv,
+                             const std::string& title,const std::string& file) {
+    if (!hd || !ha || !hc || !hv) return;
+    std::unique_ptr<TH1D> d((TH1D*)hd->Clone("shape_data")); d->SetDirectory(nullptr);
+    std::unique_ptr<TH1D> a((TH1D*)ha->Clone("shape_aao")); a->SetDirectory(nullptr);
+    std::unique_ptr<TH1D> c((TH1D*)hc->Clone("shape_cls")); c->SetDirectory(nullptr);
+    std::unique_ptr<TH1D> v((TH1D*)hv->Clone("shape_dvc")); v->SetDirectory(nullptr);
+    auto unit=[](TH1D* h){ const double q=h?h->Integral():0; if (h && q>0) h->Scale(1.0/q); };
+    unit(d.get()); unit(a.get()); unit(c.get()); unit(v.get());
+    d->SetMarkerStyle(20); d->SetMarkerSize(0.65); d->SetLineColor(kBlack); d->SetStats(0);
+    style_norm_component(a.get(),kRed+1); style_norm_component(c.get(),kOrange+7); style_norm_component(v.get(),kGreen+2);
+    TCanvas can("c_norm_shape","",1050,760);
+    d->SetTitle(title.c_str()); d->GetYaxis()->SetTitle("Unit-area candidates");
+    d->SetMaximum(1.25*std::max({d->GetMaximum(),a->GetMaximum(),c->GetMaximum(),v->GetMaximum()}));
+    d->Draw("E1"); a->Draw("HIST SAME"); c->Draw("HIST SAME"); v->Draw("HIST SAME"); d->Draw("E1 SAME");
+    TLegend leg(0.62,0.68,0.88,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0);
+    leg.AddEntry(d.get(),"Data","lep"); leg.AddEntry(a.get(),"AAO (unit area)","l");
+    leg.AddEntry(c.get(),"CLASDIS (unit area)","l"); leg.AddEntry(v.get(),"DVCSgen (unit area)","l"); leg.Draw();
+    can.SaveAs(file.c_str());
+}
+
+void draw_norm_cutflow(const std::vector<std::unique_ptr<ValComponent>>& vv,const std::string& file) {
+    const char* labs[6]={"baseline","Mx2(ep)","Mx2(e#gamma)","#Delta#phi","angle(#gamma,X)","all cuts"};
+    TCanvas c("c_norm_cutflow","",1150,760);
+    TLegend leg(0.68,0.68,0.90,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0);
+    std::vector<std::unique_ptr<TH1D>> keep;
+    bool first=true; int idx=0;
+    const int colors[4]={kBlack,kRed+1,kOrange+7,kGreen+2};
+    for (const auto& vp:vv) {
+        if (!vp) continue;
+        std::unique_ptr<TH1D> h(new TH1D(Form("cf_%d",idx),"Normalization/exclusivity cut flow;Selection stage;Survival fraction",6,0,6));
+        h->SetDirectory(nullptr); h->SetStats(0); h->SetLineWidth(3); h->SetLineColor(colors[std::min(idx,3)]);
+        h->SetMarkerColor(colors[std::min(idx,3)]); h->SetMarkerStyle(20+idx);
+        const double n0=std::max(1LL,vp->norm_cutflow[0]);
+        for (int i=0;i<6;i++) { h->GetXaxis()->SetBinLabel(i+1,labs[i]); h->SetBinContent(i+1,vp->norm_cutflow[i]/n0); }
+        h->SetMinimum(0); h->SetMaximum(1.08); h->GetXaxis()->LabelsOption("v");
+        h->Draw(first?"HIST P":"HIST P SAME"); first=false; leg.AddEntry(h.get(),vp->name.c_str(),"lp");
+        keep.push_back(std::move(h)); idx++;
+    }
+    leg.Draw(); c.SetBottomMargin(0.22); c.SaveAs(file.c_str());
 }
 
 bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path) {
@@ -2034,12 +2235,15 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     // distributions and their weighted sums, so persist fixed-size histograms.
     std::array<std::unique_ptr<TH1D>,VAL_NBIN> hfit;
     std::array<std::unique_ptr<TH1D>,VAL_NBIN> hcount;
-    std::vector<std::unique_ptr<TH1D>> norm_full, norm_low, norm_high;
+    std::vector<std::unique_ptr<TH1D>> norm_pre, norm_nminus1, norm_full, norm_low, norm_high;
     for (int io=0;io<NORM_NOBS;io++) {
+        norm_pre.push_back(make_norm_hist(io,"pre",spec.name));
+        norm_nminus1.push_back(make_norm_hist(io,"nminus1",spec.name));
         norm_full.push_back(make_norm_hist(io,"full",spec.name));
         norm_low.push_back(make_norm_hist(io,"lowE",spec.name));
         norm_high.push_back(make_norm_hist(io,"highE",spec.name));
     } // endfor
+    std::array<long long,6> norm_cutflow{{0,0,0,0,0,0}};
     for (int ib=0;ib<VAL_NBIN;ib++) {
         hfit[ib].reset(new TH1D(Form("fit_b%03d",ib),";#Delta p_{#gamma2} [GeV];weighted candidates",
                                 VAL_DP_NBIN,VAL_DP_MIN,VAL_DP_MAX));
@@ -2067,17 +2271,44 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         const int ib=val_flat_bin(b.probe_corr_p,b.probe_corr_theta,b.probe_corr_phi);
         if (ib<0) continue;
 
-        // Data-driven normalization diagnostics.  Valerii's June presentation
-        // determines AAO+SIDIS below E_gamma=2 GeV and DVCS above 3 GeV.
-        // Fill the same observables with unit event counts for every sample.
+        // Data-driven normalization diagnostics.  First retain the baseline
+        // candidate shapes, then apply the June-2026 exclusivity cuts.  For
+        // each fit observable, the low/high-E template uses an N-1 selection:
+        // every exclusivity cut is active except a cut directly on that plotted
+        // observable.  This prevents a hard cut from manufacturing agreement in
+        // the very distribution used to determine a normalization factor.
         const double Eg=b.have_tag_corr_kin?b.tag_corr_p:std::numeric_limits<double>::quiet_NaN();
+        const NormCutFlags ncf=norm_cut_flags(b);
+        norm_cutflow[0]++;
+        if (ncf.mx2_ep) {
+            norm_cutflow[1]++;
+            if (ncf.mx2_eg) {
+                norm_cutflow[2]++;
+                if (ncf.dphi_pg) {
+                    norm_cutflow[3]++;
+                    if (ncf.angle_gX) norm_cutflow[4]++;
+                }
+            }
+        }
+        if (ncf.all) norm_cutflow[5]++;
+
         for (int io=0;io<NORM_NOBS;io++) {
-            double x=norm_observable_value(b,io);
+            const double x=norm_observable_value(b,io);
             if (!std::isfinite(x)) continue;
-            norm_full[io]->Fill(x);
-            if (std::isfinite(Eg) && Eg<2.0) norm_low[io]->Fill(x);
-            if (std::isfinite(Eg) && Eg>3.0) norm_high[io]->Fill(x);
+            norm_pre[io]->Fill(x);
+            if (norm_pass_nminus1(ncf,io)) {
+                norm_nminus1[io]->Fill(x);
+                if (std::isfinite(Eg) && Eg<2.0) norm_low[io]->Fill(x);
+                if (std::isfinite(Eg) && Eg>3.0) norm_high[io]->Fill(x);
+            }
+            if (ncf.all) norm_full[io]->Fill(x);
         } // endfor
+
+        // The efficiency denominator itself uses the same exclusivity selection
+        // as the normalization stage.  This is the ep-gamma-X sample intended
+        // to be enriched in ep-pi0-like events before asking whether the probe
+        // photon was reconstructed.
+        if (!ncf.all) continue;
 
         // Valerii FD reproduction: use UNIT event weights inside each MC sample.
         // The AAO/CLASDIS/DVCS relative normalizations are applied only when the
@@ -2137,12 +2368,15 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     if (nd) {
         nd->cd();
         for (int io=0;io<NORM_NOBS;io++) {
+            norm_pre[io]->Write(Form("pre_%s",NORM_OBS[io].key));
+            norm_nminus1[io]->Write(Form("nminus1_%s",NORM_OBS[io].key));
             norm_full[io]->Write(Form("full_%s",NORM_OBS[io].key));
             norm_low[io]->Write(Form("lowE_%s",NORM_OBS[io].key));
             norm_high[io]->Write(Form("highE_%s",NORM_OBS[io].key));
         } // endfor
         f.cd();
     }
+    for (int ic=0;ic<6;ic++) put_param<Long64_t>(&f,Form("norm_cutflow_%d",ic),norm_cutflow[ic]);
     put_param<int>(&f,"normalization_branches_complete",
         (b.have_tag_corr_kin && b.have_Mx2_epg_corr && b.have_beam_energy && b.have_e_kin && b.have_p_corr_kin)?1:0);
     const Int_t nwrite=f.Write();
@@ -2203,11 +2437,16 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
                 std::unique_ptr<TH1D> q(dynamic_cast<TH1D*>(h->Clone(Form("%s_%s_%s",v->name.c_str(),region,NORM_OBS[io].key))));
                 if (q) q->SetDirectory(nullptr); return q;
             };
+            v->norm_pre.push_back(clone_one("pre"));
+            v->norm_nminus1.push_back(clone_one("nminus1"));
             v->norm_full.push_back(clone_one("full"));
             v->norm_lowE.push_back(clone_one("lowE"));
             v->norm_highE.push_back(clone_one("highE"));
         } // endfor
     }
+    for (int ic=0;ic<6;ic++) {
+        Long64_t q=0; get_param<Long64_t>(&f,Form("norm_cutflow_%d",ic),q); v->norm_cutflow[ic]=q;
+    } // endfor
     f.Close();
     return v;
 }
@@ -2432,29 +2671,66 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     const ValComponent* cls=find_val_component(vv,"clasdis");
     const ValComponent* dvc=find_val_component(vv,"dvcsgen");
     const std::string od=out+"/normalization"; gSystem->mkdir(od.c_str(),true);
-    if (!data || !aao || !cls || !dvc || data->norm_lowE.size()!=NORM_NOBS || aao->norm_lowE.size()!=NORM_NOBS || cls->norm_lowE.size()!=NORM_NOBS || dvc->norm_lowE.size()!=NORM_NOBS) {
+    gSystem->mkdir((od+"/preselection_shapes").c_str(),true);
+    gSystem->mkdir((od+"/nminus1_shapes").c_str(),true);
+    gSystem->mkdir((od+"/lowE_fits").c_str(),true);
+    gSystem->mkdir((od+"/highE_fits").c_str(),true);
+    gSystem->mkdir((od+"/final_closure").c_str(),true);
+
+    if (!data || !aao || !cls || !dvc ||
+        data->norm_lowE.size()!=NORM_NOBS || aao->norm_lowE.size()!=NORM_NOBS ||
+        cls->norm_lowE.size()!=NORM_NOBS || dvc->norm_lowE.size()!=NORM_NOBS) {
         R.used_fallback=true; R.nominal=VAL_HISTORICAL_NOMINAL; R.low=R.nominal; R.high=R.nominal; return R;
     }
 
-    // Stage A: independent low-E fits of AAO + CLASDIS, mirroring slide 11.
+    // Shape-only QA before any exclusivity cut and with N-1 selections.  These
+    // plots intentionally normalize every sample to unit area: they answer the
+    // resolution/shape question without conflating it with MC sample statistics.
+    for (int io=0;io<NORM_NOBS;io++) {
+        draw_norm_shape_overlay(data->norm_pre[io].get(),aao->norm_pre[io].get(),cls->norm_pre[io].get(),dvc->norm_pre[io].get(),
+            std::string("Preselection shape QA: ")+NORM_OBS[io].key,
+            od+"/preselection_shapes/pre_"+NORM_OBS[io].key+".png");
+        draw_norm_shape_overlay(data->norm_nminus1[io].get(),aao->norm_nminus1[io].get(),cls->norm_nminus1[io].get(),dvc->norm_nminus1[io].get(),
+            std::string("N-1 exclusivity shape QA: ")+NORM_OBS[io].key,
+            od+"/nminus1_shapes/nminus1_"+NORM_OBS[io].key+".png");
+    }
+    draw_norm_cutflow(vv,od+"/normalization_cutflow.png");
+
+    // Stage A: low-E AAO + CLASDIS.  For each observable scan one common
+    // reconstructed-MC shift and extra Gaussian resolution.  The same morph is
+    // applied to AAO and CLASDIS, then their non-negative scale factors are
+    // solved analytically.  This mirrors the template-morph philosophy already
+    // used in the DVCS exclusivity-selection suite without modifying event-level
+    // MC kinematics or the later photon-efficiency numerator/denominator.
     for (int io=0;io<NORM_NOBS;io++) if (NORM_OBS[io].use_low) {
-        auto q=fit_two_templates(data->norm_lowE[io].get(),aao->norm_lowE[io].get(),cls->norm_lowE[io].get(),NORM_OBS[io].key);
+        auto raw=fit_two_templates_fixed_shapes(data->norm_lowE[io].get(),aao->norm_lowE[io].get(),cls->norm_lowE[io].get(),NORM_OBS[io].key);
+        auto q=fit_two_templates_morphed(data->norm_lowE[io].get(),aao->norm_lowE[io].get(),cls->norm_lowE[io].get(),NORM_OBS[io].key);
         if (q.valid) R.low_points.push_back(q);
         draw_norm_fit(data->norm_lowE[io].get(),aao->norm_lowE[io].get(),cls->norm_lowE[io].get(),dvc->norm_lowE[io].get(),
+                      raw.valid?raw.aao:0,raw.valid?raw.clasdis:0,0.0,
+                      std::string("Low-E raw templates: ")+NORM_OBS[io].key+" (E_{#gamma}<2 GeV)",
+                      od+"/lowE_fits/raw_"+NORM_OBS[io].key+".png",raw.chi2,raw.ndf);
+        draw_norm_fit(data->norm_lowE[io].get(),aao->norm_lowE[io].get(),cls->norm_lowE[io].get(),dvc->norm_lowE[io].get(),
                       q.valid?q.aao:0,q.valid?q.clasdis:0,0.0,
-                      std::string("Low-E normalization: ")+NORM_OBS[io].key+" (E_{#gamma}<2 GeV)",
-                      od+"/lowE_"+NORM_OBS[io].key+".png",q.chi2,q.ndf);
+                      std::string("Low-E morphed templates: ")+NORM_OBS[io].key+" (E_{#gamma}<2 GeV)",
+                      od+"/lowE_fits/morphed_"+NORM_OBS[io].key+".png",q.chi2,q.ndf,q.morph_shift,q.morph_sigma);
     }
     const double A=mean_valid(R.low_points,0), B=mean_valid(R.low_points,1);
 
-    // Stage B: with A/B fixed, independently determine DVCS above 3 GeV.
+    // Stage B: with A/B fixed to the low-E means, determine DVCS above 3 GeV.
+    // Again one common morph is scanned for all three reconstructed-MC pieces.
     for (int io=0;io<NORM_NOBS;io++) if (NORM_OBS[io].use_high) {
-        auto q=fit_dvcs_template(data->norm_highE[io].get(),aao->norm_highE[io].get(),cls->norm_highE[io].get(),dvc->norm_highE[io].get(),A,B,NORM_OBS[io].key);
+        auto raw=fit_dvcs_fixed_shapes(data->norm_highE[io].get(),aao->norm_highE[io].get(),cls->norm_highE[io].get(),dvc->norm_highE[io].get(),A,B,NORM_OBS[io].key);
+        auto q=fit_dvcs_template_morphed(data->norm_highE[io].get(),aao->norm_highE[io].get(),cls->norm_highE[io].get(),dvc->norm_highE[io].get(),A,B,NORM_OBS[io].key);
         if (q.valid) R.high_points.push_back(q);
         draw_norm_fit(data->norm_highE[io].get(),aao->norm_highE[io].get(),cls->norm_highE[io].get(),dvc->norm_highE[io].get(),
+                      A,B,raw.valid?raw.dvcs:0,
+                      std::string("High-E raw templates: ")+NORM_OBS[io].key+" (E_{#gamma}>3 GeV)",
+                      od+"/highE_fits/raw_"+NORM_OBS[io].key+".png",raw.chi2,raw.ndf);
+        draw_norm_fit(data->norm_highE[io].get(),aao->norm_highE[io].get(),cls->norm_highE[io].get(),dvc->norm_highE[io].get(),
                       A,B,q.valid?q.dvcs:0,
-                      std::string("High-E DVCS normalization: ")+NORM_OBS[io].key+" (E_{#gamma}>3 GeV)",
-                      od+"/highE_"+NORM_OBS[io].key+".png",q.chi2,q.ndf);
+                      std::string("High-E morphed templates: ")+NORM_OBS[io].key+" (E_{#gamma}>3 GeV)",
+                      od+"/highE_fits/morphed_"+NORM_OBS[io].key+".png",q.chi2,q.ndf,q.morph_shift,q.morph_sigma);
     }
     const double C=mean_valid(R.high_points,2);
     R.valid=(A>0 && B>0 && C>=0 && R.low_points.size()>=2 && R.high_points.size()>=2);
@@ -2467,20 +2743,75 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
         R.high={"derived_high",ar.second,br.second,cr.second};
     }
 
-    // Full-range post-fit diagnostics with the final nominal mixture.
+    auto find_low=[&](const std::string& k)->const NormFitPoint* { for (const auto& q:R.low_points) if (q.observable==k) return &q; return nullptr; };
+    auto find_high=[&](const std::string& k)->const NormFitPoint* { for (const auto& q:R.high_points) if (q.observable==k) return &q; return nullptr; };
+
+    // Full selected-sample closure.  Save raw and morphed versions side-by-side.
+    // The morph is a normalization-fit nuisance only; the normalization factors,
+    // not the morph, propagate to the photon-efficiency extraction.
     for (int io=0;io<NORM_NOBS;io++) {
         draw_norm_fit(data->norm_full[io].get(),aao->norm_full[io].get(),cls->norm_full[io].get(),dvc->norm_full[io].get(),
                       R.nominal.aao,R.nominal.clasdis,R.nominal.dvcs,
-                      std::string("Final normalized MC: ")+NORM_OBS[io].key,
-                      od+"/final_"+NORM_OBS[io].key+".png");
+                      std::string("Final selected closure (raw MC): ")+NORM_OBS[io].key,
+                      od+"/final_closure/raw_"+NORM_OBS[io].key+".png");
+        const NormFitPoint* q=find_low(NORM_OBS[io].key);
+        if (!q) q=find_high(NORM_OBS[io].key);
+        const double sh=q?q->morph_shift:0.0, sg=q?q->morph_sigma:0.0;
+        draw_norm_fit(data->norm_full[io].get(),aao->norm_full[io].get(),cls->norm_full[io].get(),dvc->norm_full[io].get(),
+                      R.nominal.aao,R.nominal.clasdis,R.nominal.dvcs,
+                      std::string("Final selected closure (morphed MC QA): ")+NORM_OBS[io].key,
+                      od+"/final_closure/morphed_"+NORM_OBS[io].key+".png",-1,0,sh,sg);
     }
 
-    // Summary CSV and text report.
+    // Dedicated energy-composition plot with the two normalization-region boundaries.
+    {
+        const int io=NORM_EGAMMA;
+        std::unique_ptr<TH1D> d((TH1D*)data->norm_full[io]->Clone("energy_data")); d->SetDirectory(nullptr);
+        std::unique_ptr<TH1D> a((TH1D*)aao->norm_full[io]->Clone("energy_aao")); a->Scale(R.nominal.aao); a->SetDirectory(nullptr);
+        std::unique_ptr<TH1D> c((TH1D*)cls->norm_full[io]->Clone("energy_cls")); c->Scale(R.nominal.clasdis); c->SetDirectory(nullptr);
+        std::unique_ptr<TH1D> v((TH1D*)dvc->norm_full[io]->Clone("energy_dvc")); v->Scale(R.nominal.dvcs); v->SetDirectory(nullptr);
+        std::unique_ptr<TH1D> t((TH1D*)a->Clone("energy_total")); t->Add(c.get()); t->Add(v.get()); t->SetDirectory(nullptr);
+        d->SetMarkerStyle(20); d->SetMarkerSize(0.65); d->SetLineColor(kBlack); d->SetStats(0);
+        style_norm_component(a.get(),kRed+1); style_norm_component(c.get(),kOrange+7); style_norm_component(v.get(),kGreen+2); style_norm_component(t.get(),kBlue+1,3);
+        TCanvas ce("c_energy_regions","",1100,760); d->SetTitle("Normalization regions and fitted MC composition;E_{#gamma} [GeV];Candidates");
+        d->SetMaximum(1.25*std::max(d->GetMaximum(),t->GetMaximum())); d->Draw("E1"); a->Draw("HIST SAME"); c->Draw("HIST SAME"); v->Draw("HIST SAME"); t->Draw("HIST SAME"); d->Draw("E1 SAME");
+        TLine l2(2.0,0,2.0,d->GetMaximum()); l2.SetLineStyle(2); l2.SetLineWidth(2); l2.Draw();
+        TLine l3(3.0,0,3.0,d->GetMaximum()); l3.SetLineStyle(2); l3.SetLineWidth(2); l3.Draw();
+        TLegend leg(0.62,0.66,0.89,0.89); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.AddEntry(d.get(),"Data","lep"); leg.AddEntry(a.get(),"AAO","l"); leg.AddEntry(c.get(),"CLASDIS","l"); leg.AddEntry(v.get(),"DVCSgen","l"); leg.AddEntry(t.get(),"Total MC","l"); leg.Draw();
+        ce.SaveAs((od+"/normalization_energy_regions.png").c_str());
+    }
+
+    // Cut-flow CSV and component-fraction diagnostics.
+    {
+        std::ofstream cf(od+"/normalization_cutflow.csv");
+        cf << "sample,baseline,mx2_ep,mx2_eg,dphi_pg,angle_gX,all_cuts,all_over_baseline\n";
+        for (const auto& vp:vv) if (vp) {
+            const double f=vp->norm_cutflow[0]>0?double(vp->norm_cutflow[5])/vp->norm_cutflow[0]:0;
+            cf << vp->name; for (int i=0;i<6;i++) cf << ","<<vp->norm_cutflow[i]; cf << ","<<f<<"\n";
+        }
+    }
+    {
+        std::ofstream ff(od+"/component_fractions.csv");
+        ff << "region,aao,clasdis,dvcs,total,aao_fraction,clasdis_fraction,dvcs_fraction\n";
+        auto write_region=[&](const char* label,const TH1D* ha,const TH1D* hc,const TH1D* hv,double lo,double hi) {
+            int ba=ha->FindBin(lo+1e-9), bb=ha->FindBin(hi-1e-9);
+            const double ya=R.nominal.aao*ha->Integral(ba,bb), yc=R.nominal.clasdis*hc->Integral(ba,bb), yv=R.nominal.dvcs*hv->Integral(ba,bb);
+            const double yt=ya+yc+yv; ff<<label<<","<<ya<<","<<yc<<","<<yv<<","<<yt<<","<<(yt?ya/yt:0)<<","<<(yt?yc/yt:0)<<","<<(yt?yv/yt:0)<<"\n";
+        };
+        const int io=NORM_EGAMMA;
+        write_region("lowE",aao->norm_full[io].get(),cls->norm_full[io].get(),dvc->norm_full[io].get(),0.4,2.0);
+        write_region("transition",aao->norm_full[io].get(),cls->norm_full[io].get(),dvc->norm_full[io].get(),2.0,3.0);
+        write_region("highE",aao->norm_full[io].get(),cls->norm_full[io].get(),dvc->norm_full[io].get(),3.0,8.0);
+        write_region("full",aao->norm_full[io].get(),cls->norm_full[io].get(),dvc->norm_full[io].get(),0.4,8.0);
+    }
+
+    // Summary CSVs.
     std::ofstream csv(od+"/normalization_fit_results.csv");
-    csv << "stage,observable,valid,aao,aao_err,clasdis,clasdis_err,dvcs,dvcs_err,chi2,ndf,chi2_ndf\n";
-    for (const auto& q:R.low_points) csv << "lowE,"<<q.observable<<","<<q.valid<<","<<q.aao<<","<<q.aao_err<<","<<q.clasdis<<","<<q.clasdis_err<<",0,0,"<<q.chi2<<","<<q.ndf<<","<<(q.ndf?q.chi2/q.ndf:0)<<"\n";
-    for (const auto& q:R.high_points) csv << "highE,"<<q.observable<<","<<q.valid<<","<<q.aao<<",0,"<<q.clasdis<<",0,"<<q.dvcs<<","<<q.dvcs_err<<","<<q.chi2<<","<<q.ndf<<","<<(q.ndf?q.chi2/q.ndf:0)<<"\n";
+    csv << "stage,observable,valid,aao,aao_err,clasdis,clasdis_err,dvcs,dvcs_err,morph_shift,morph_sigma,raw_chi2,raw_ndf,raw_chi2_ndf,morphed_chi2,morphed_ndf,morphed_chi2_ndf\n";
+    for (const auto& q:R.low_points) csv << "lowE,"<<q.observable<<","<<q.valid<<","<<q.aao<<","<<q.aao_err<<","<<q.clasdis<<","<<q.clasdis_err<<",0,0,"<<q.morph_shift<<","<<q.morph_sigma<<","<<q.raw_chi2<<","<<q.raw_ndf<<","<<(q.raw_ndf?q.raw_chi2/q.raw_ndf:0)<<","<<q.chi2<<","<<q.ndf<<","<<(q.ndf?q.chi2/q.ndf:0)<<"\n";
+    for (const auto& q:R.high_points) csv << "highE,"<<q.observable<<","<<q.valid<<","<<q.aao<<",0,"<<q.clasdis<<",0,"<<q.dvcs<<","<<q.dvcs_err<<","<<q.morph_shift<<","<<q.morph_sigma<<","<<q.raw_chi2<<","<<q.raw_ndf<<","<<(q.raw_ndf?q.raw_chi2/q.raw_ndf:0)<<","<<q.chi2<<","<<q.ndf<<","<<(q.ndf?q.chi2/q.ndf:0)<<"\n";
     csv.close();
+
     std::ofstream fac(od+"/normalization_factors.csv");
     fac << "set,aao,clasdis,dvcs\n";
     fac << "derived_nominal,"<<R.nominal.aao<<","<<R.nominal.clasdis<<","<<R.nominal.dvcs<<"\n";
@@ -2488,16 +2819,21 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     fac << "derived_high,"<<R.high.aao<<","<<R.high.clasdis<<","<<R.high.dvcs<<"\n";
     fac << "Valerii_June_reference,0.307,0.315,1.10\n";
     fac.close();
+
     std::ofstream txt(od+"/normalization_summary.txt");
     txt << "Data-driven MC template normalization\n====================================\n"
-        << "Method: unit-count templates; no MC::Event.weight.\n"
-        << "Low-E stage: fit AAO + CLASDIS independently in each observable for E_gamma<2 GeV.\n"
-        << "High-E stage: fix mean AAO/CLASDIS and fit DVCS independently for E_gamma>3 GeV.\n"
-        << "Nominal factors are unweighted means across valid observable fits; low/high sets are component-wise extrema and are used as a conservative normalization variation.\n\n"
+        << "MC event weights: unit counts only; MC::Event.weight is not used.\n"
+        << "Normalization selection: -0.231<Mx2(ep)<0.309 GeV2; Mx2(e-gamma)>1.4 GeV2; |DeltaPhi(p,gamma)|<5.7 deg; angle(gamma,X)<9.2 deg.\n"
+        << "Fit histograms use an N-1 implementation of these cuts for the observable being fitted.\n"
+        << "Low-E stage: AAO + CLASDIS for E_gamma<2 GeV. High-E stage: fix their means, then fit DVCS for E_gamma>3 GeV.\n"
+        << "Normalization-only template morph: one common MC shift + extra Gaussian sigma per observable, scanned over +/-"<<NORM_MAX_SHIFT_BINS<<" and 0-"<<NORM_MAX_SMEAR_BINS<<" histogram bins.\n"
+        << "The morph is NOT applied to event-level MC and does NOT alter the photon-efficiency numerator or denominator.\n"
+        << "Nominal factors are unweighted means across valid observable fits; component-wise extrema define a conservative normalization variation.\n"
+        << "The CLASDIS generated-level restriction mentioned in the June presentation is intentionally not reproduced here, per current analysis choice.\n\n"
         << "Derived nominal: AAO="<<R.nominal.aao<<" CLASDIS="<<R.nominal.clasdis<<" DVCS="<<R.nominal.dvcs<<"\n"
         << "Derived low:     AAO="<<R.low.aao<<" CLASDIS="<<R.low.clasdis<<" DVCS="<<R.low.dvcs<<"\n"
         << "Derived high:    AAO="<<R.high.aao<<" CLASDIS="<<R.high.clasdis<<" DVCS="<<R.high.dvcs<<"\n"
-        << "Valerii June reference: AAO=0.307 CLASDIS=0.315 DVCS=1.10\n"
+        << "Valerii June reference only: AAO=0.307 CLASDIS=0.315 DVCS=1.10\n"
         << "Low-E valid observable fits: "<<R.low_points.size()<<"; high-E valid observable fits: "<<R.high_points.size()<<"\n"
         << "Fallback used: "<<(R.used_fallback?"YES":"NO")<<"\n";
     txt.close();
@@ -2516,6 +2852,8 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
         for (const auto& vp:vv) if (vp) {
             TDirectory* d=rf.mkdir(vp->name.c_str()); if (!d) continue; d->cd();
             for (int io=0;io<NORM_NOBS;io++) {
+                if (io<(int)vp->norm_pre.size() && vp->norm_pre[io]) vp->norm_pre[io]->Write(Form("pre_%s",NORM_OBS[io].key));
+                if (io<(int)vp->norm_nminus1.size() && vp->norm_nminus1[io]) vp->norm_nminus1[io]->Write(Form("nminus1_%s",NORM_OBS[io].key));
                 if (io<(int)vp->norm_full.size() && vp->norm_full[io]) vp->norm_full[io]->Write(Form("full_%s",NORM_OBS[io].key));
                 if (io<(int)vp->norm_lowE.size() && vp->norm_lowE[io]) vp->norm_lowE[io]->Write(Form("lowE_%s",NORM_OBS[io].key));
                 if (io<(int)vp->norm_highE.size() && vp->norm_highE[io]) vp->norm_highE[io]->Write(Form("highE_%s",NORM_OBS[io].key));
@@ -2652,7 +2990,8 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
             << "MC events are unit weighted inside each component; only the component normalization constants are applied.\n"
             << "The skim MC::Event.weight branch is NOT used in the Valerii FD calculation.\n"
             << "Tag photon: FD/PCAL only; probe coordinates: missing gamma2.\n"
-            << "Stage-1 0.08<Mx(ep)<0.20 GeV enrichment is NOT applied in this reproduction.\n"
+            << "June normalization/exclusivity cuts are applied to the Valerii denominator; the older stage-1 0.08<Mx(ep)<0.20 GeV development window is not used.\n"
+            << "Normalization template morphing is QA/calibration only and does not smear event-level efficiency MC.\n"
             << "Numerator photon threshold remains the analysis skim threshold p>=0.4 GeV.\n\n"
             << "Nominal 2-sigma bins with valid data and weighted-MC fits: " << valid << " / " << VAL_NBIN << "\n";
     if (cn>0) summary << "Unweighted mean correction across valid bins (diagnostic only): " << csum/cn << "\n";
@@ -2671,7 +3010,10 @@ void run_valerii_fd_reproduction(const std::string& out) {
               << "============================================================\n"
               << "MC events are unit weighted inside each component.\n"
               << "AAO/CLASDIS/DVCS normalization factors are derived from this run's template fits.\n"
+              << "June normalization cuts are applied to the ep-gamma-X denominator.\n"
+              << "Template fits use N-1 cuts and a common MC shift + extra Gaussian smearing nuisance.\n"
               << "Low E_gamma<2 GeV determines AAO+CLASDIS; high E_gamma>3 GeV determines DVCS.\n"
+              << "Template morphing is normalization-only; event-level MC remains unsmeared.\n"
               << "The skim MC::Event.weight branch is NOT used in this path.\n"
               << "Data/MC fits are independent in every p/theta/phi bin.\n"
               << "Primary correction convention: epsilon_data / epsilon_MC.\n"
@@ -2754,6 +3096,10 @@ void photon_efficiency_valerii_reproduction() {
         "normalization/normalization_fit_results.csv",
         "normalization/normalization_factors.csv",
         "normalization/normalization_factor_summary.png",
+        "normalization/normalization_cutflow.csv",
+        "normalization/normalization_cutflow.png",
+        "normalization/component_fractions.csv",
+        "normalization/normalization_energy_regions.png",
         "normalization/normalization_histograms.root"
     };
     for (const char* fn:expected) {
