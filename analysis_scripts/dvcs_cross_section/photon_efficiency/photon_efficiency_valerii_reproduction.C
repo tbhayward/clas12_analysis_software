@@ -1,18 +1,17 @@
 // photon_efficiency_valerii_reproduction.C
 //
-// Stage-1 photon-efficiency analysis.
+// Stage-1 photon tag-and-probe diagnostic analysis.
 // Purposefully simple before moving to the full Valerii p x theta x phi maps:
 //
 //   * fully integrated FD extraction;
 //   * fully integrated FT extraction;
 //   * FT split into two broad energy bins: 0.4-2 GeV and >=2 GeV;
-//   * 1-, 2-, and 3-sigma Delta-p matching;
+//   * 1-, 2-, and 3-sigma Delta-p raw recovery fractions;
 //   * cut-flow accounting;
 //   * pi0-parent-window stability scan;
 //   * denominator p/theta/phi QA;
 //   * automatic use of whatever AAOgen / CLASDIS / DVCSgen ROOT files exist;
-//   * sample-level parallel scans (data / AAOgen / CLASDIS / DVCSgen);
-//   * one full tree scan per sample (no second counting pass);
+//   * process-level parallel analysis of data / AAOgen / CLASDIS / DVCSgen;
 //   * optional MC-truth closure diagnostics when truth branches are present.
 //
 // Every invocation deletes and rebuilds ./output.
@@ -37,16 +36,19 @@
 #include <TString.h>
 #include <TStyle.h>
 #include <TSystem.h>
+#include <TParameter.h>
+#include <TNamed.h>
+
+#include <sys/types.h>
+#include <sys/wait.h>
+#include <unistd.h>
 
 #include <algorithm>
 #include <cmath>
 #include <fstream>
-#include <future>
 #include <iomanip>
 #include <iostream>
 #include <memory>
-#include <mutex>
-#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -108,9 +110,6 @@ static const FTHole FT_HOLES[] = {
 };
 
 // Residual histogram and fit.
-// FT fits require more statistics than the earlier exploratory version; this
-// prevents a few-bin fluctuation (e.g. the current low-E data sample) from
-// being promoted to a physical efficiency.
 static const int    DP_NBIN = 100;
 static const double DP_HMIN = -1.0;
 static const double DP_HMAX =  1.0;
@@ -257,10 +256,6 @@ struct Branches {
 };
 
 bool attach(TChain& c, Branches& b) {
-    // Reading only the branches used below is substantially faster for the
-    // multi-million-entry AAOgen chains than deserializing the full tree.
-    c.SetBranchStatus("*",0);
-
     const char* required[] = {
         "runnum","evnum","is_mc","mc_weight","p_pass_standard",
         "tag_detector","tag_pass_beta","tag_pass_fiducial",
@@ -279,7 +274,11 @@ bool attach(TChain& c, Branches& b) {
     } // endfor
     if (!ok) return false;
 
+    // Read only branches used by this macro.  This materially reduces I/O for
+    // multi-million-entry samples.
+    c.SetBranchStatus("*",0);
     for (const char* n : required) c.SetBranchStatus(n,1);
+    if (c.GetBranch("e_vz")) c.SetBranchStatus("e_vz",1);
 
     c.SetBranchAddress("runnum",&b.runnum);
     c.SetBranchAddress("evnum",&b.evnum);
@@ -308,7 +307,6 @@ bool attach(TChain& c, Branches& b) {
 
     // Vertex branch name in the current converter.
     if (c.GetBranch("e_vz")) {
-        c.SetBranchStatus("e_vz",1);
         c.SetBranchAddress("e_vz",&b.e_vz);
         b.have_e_vz=true;
     }
@@ -325,8 +323,8 @@ bool attach(TChain& c, Branches& b) {
         if (!c.GetBranch(n)) truth_ok=false;
 
     if (truth_ok) {
-        b.have_truth=true;
         for (const char* n : truth_required) c.SetBranchStatus(n,1);
+        b.have_truth=true;
         c.SetBranchAddress("truth_probe_index",&b.truth_probe_index);
         c.SetBranchAddress("truth_probe_pid",&b.truth_probe_pid);
         c.SetBranchAddress("truth_probe_parent",&b.truth_probe_parent);
@@ -389,12 +387,6 @@ int best_probe_candidate(const Branches& b, int detector) {
     return best;
 }
 
-// The meaning/normalization of MC::Event.weight is generator dependent and is
-// not assumed here.  Primary efficiencies therefore use unit event weights for
-// BOTH data and MC.  The raw branch is retained only as a QA diagnostic.
-double raw_mc_weight(const Branches& b) {
-    return std::isfinite(b.mc_weight) ? b.mc_weight : 0.0;
-}
 
 // -----------------------------------------------------------------------------
 // FT-face projection preparation.
@@ -596,22 +588,14 @@ struct RegionResult {
     std::unique_ptr<TH1D> residual;
     FitResult fit;
 
-    // Primary efficiency bookkeeping is deliberately UNWEIGHTED.
     long long denominator_rows=0;
     long long numerator_rows[3]={0,0,0};
     long long reconstructed_candidates=0;
 
-    // Raw MC::Event.weight diagnostics only.  These are never used to define
-    // the primary fit or efficiency until the generator-weight semantics are
-    // explicitly validated.
-    double raw_weight_denominator=0, raw_weight_denominator_w2=0;
-    double raw_weight_reconstructed=0;
-    double raw_weight_numerator[3]={0,0,0};
-
-    // Cache the nominal-region residual once during the tree scan.  This lets
-    // us apply the fitted 1/2/3-sigma windows without rereading the full TChain.
+    // Candidate residuals cached during the single tree pass. After the fit is
+    // known, exact 1/2/3-sigma matched counts are obtained without rereading
+    // the TChain. This roughly halves input I/O for large samples.
     std::vector<double> cached_dp;
-    std::vector<double> cached_raw_weight;
 
     // MC truth closure.
     long long truth_pi0_probe=0;
@@ -648,10 +632,12 @@ struct SampleResult {
     bool is_mc=false;
     long long entries=0;
 
-    long long raw_weight_finite=0, raw_weight_nonfinite=0;
-    long long raw_weight_zero=0, raw_weight_negative=0;
-    double raw_weight_sum=0, raw_weight_sum2=0;
-    double raw_weight_min=0, raw_weight_max=0;
+    // Raw MC::Event.weight diagnostics only. These weights are NOT used in
+    // stage-1 residuals or raw recovery fractions until their generator-specific
+    // meaning and the full Valerii normalization prescription are established.
+    long long weight_n=0, weight_nonfinite=0, weight_zero=0, weight_negative=0;
+    double weight_sum=0, weight_sum2=0;
+    double weight_min=0, weight_max=0;
 
     CutFlow cutflow;
     FTPlaneEstimate ft_plane;
@@ -687,6 +673,7 @@ void init_region(RegionResult& r,
         DP_NBIN,DP_HMIN,DP_HMAX));
     r.residual->Sumw2();
     r.residual->SetDirectory(nullptr);
+    r.cached_dp.reserve(10000);
 }
 
 bool in_region(const Branches& b, const RegionResult& r) {
@@ -729,85 +716,66 @@ void init_sample(SampleResult& s) {
     } // endfor
 }
 
-double efficiency(const RegionResult& r, int ns) {
+double recovery_fraction(const RegionResult& r, int ns) {
     if (r.denominator_rows<=0) return -1;
     return static_cast<double>(r.numerator_rows[ns-1]) /
            static_cast<double>(r.denominator_rows);
 }
 
-double raw_weighted_efficiency(const RegionResult& r, int ns) {
-    if (!(r.raw_weight_denominator>0)) return -1;
-    return r.raw_weight_numerator[ns-1]/r.raw_weight_denominator;
+double recovery_fraction_error(const RegionResult& r, int ns) {
+    const double f=recovery_fraction(r,ns);
+    if (!(f>=0 && f<=1) || r.denominator_rows<=0) return 0;
+    return std::sqrt(std::max(0.0,f*(1.0-f)/
+                             static_cast<double>(r.denominator_rows)));
 }
 
-double raw_weight_neff(const RegionResult& r) {
-    if (!(r.raw_weight_denominator_w2>0)) return 0;
-    return r.raw_weight_denominator*r.raw_weight_denominator /
-           r.raw_weight_denominator_w2;
-}
-
-double efficiency_error(const RegionResult& r, int ns) {
-    if (r.denominator_rows<=0) return 0;
-    const double e=efficiency(r,ns);
-    if (!(e>=0 && e<=1)) return 0;
-    return std::sqrt(std::max(0.0,e*(1.0-e)/r.denominator_rows));
+double raw_weight_neff(const SampleResult& s) {
+    if (s.weight_sum2<=0) return 0;
+    return s.weight_sum*s.weight_sum/s.weight_sum2;
 }
 
 // -----------------------------------------------------------------------------
 // Fill helpers.
 // -----------------------------------------------------------------------------
-void fill_region_residual(RegionResult& r, const Branches& b, double raww) {
+void fill_region_residual(RegionResult& r, const Branches& b) {
     if (!in_region(b,r)) return;
 
     r.denominator_rows++;
-    r.raw_weight_denominator += raww;
-    r.raw_weight_denominator_w2 += raww*raww;
-
     const int k=best_probe_candidate(b,r.detector);
-    double dp=std::numeric_limits<double>::quiet_NaN();
+    if (k<0) return;
 
-    if (k>=0) {
-        r.reconstructed_candidates++;
-        r.raw_weight_reconstructed += raww;
-        dp=b.neutral_p[k]-b.probe_corr_p;
-        if (std::isfinite(dp)) r.residual->Fill(dp,1.0);
-
-        if (b.have_truth &&
-            b.truth_probe_pid==22 &&
-            b.truth_probe_parent==111) {
-
-            r.truth_pi0_probe++;
-            const double da_truth=opening_angle_deg(
-                b.neutral_theta[k],b.neutral_phi[k],
-                b.truth_probe_theta,b.truth_probe_phi);
-
-            if (finite_good(da_truth)) {
-                r.selected_reco_with_truth++;
-                if (da_truth<1.0) r.reco_truth_da_lt1++;
-                if (da_truth<2.0) r.reco_truth_da_lt2++;
-                if (da_truth<3.0) r.reco_truth_da_lt3++;
-            }
-        }
+    r.reconstructed_candidates++;
+    const double dp=b.neutral_p[k]-b.probe_corr_p;
+    if (std::isfinite(dp)) {
+        r.residual->Fill(dp);
+        r.cached_dp.push_back(dp);
     }
 
-    r.cached_dp.push_back(dp);
-    r.cached_raw_weight.push_back(raww);
+    if (b.have_truth &&
+        b.truth_probe_pid==22 &&
+        b.truth_probe_parent==111) {
+
+        r.truth_pi0_probe++;
+        const double da_truth=opening_angle_deg(
+            b.neutral_theta[k],b.neutral_phi[k],
+            b.truth_probe_theta,b.truth_probe_phi);
+
+        if (finite_good(da_truth)) {
+            r.selected_reco_with_truth++;
+            if (da_truth<1.0) r.reco_truth_da_lt1++;
+            if (da_truth<2.0) r.reco_truth_da_lt2++;
+            if (da_truth<3.0) r.reco_truth_da_lt3++;
+        }
+    }
 }
 
 void finalize_region_counts(RegionResult& r) {
-    if (!r.fit.valid) return;
+    if (!r.fit.valid || r.denominator_rows<=0) return;
 
-    const size_t n=std::min(r.cached_dp.size(),r.cached_raw_weight.size());
-    for (size_t i=0;i<n;i++) {
-        const double dp=r.cached_dp[i];
-        if (!std::isfinite(dp)) continue;
+    for (double dp : r.cached_dp) {
         const double d=std::fabs(dp-r.fit.mean);
-
         for (int ns=1;ns<=3;ns++) {
-            if (d<ns*r.fit.sigma) {
-                r.numerator_rows[ns-1]++;
-                r.raw_weight_numerator[ns-1]+=r.cached_raw_weight[i];
-            }
+            if (d<ns*r.fit.sigma) r.numerator_rows[ns-1]++;
         } // endfor
     } // endfor
 }
@@ -815,69 +783,58 @@ void finalize_region_counts(RegionResult& r) {
 // -----------------------------------------------------------------------------
 // Main per-sample analysis.
 // -----------------------------------------------------------------------------
-bool scan_sample(SampleResult& s) {
+bool analyze_sample(SampleResult& s) {
     const std::string pattern=make_pattern(s.input);
     TChain c("PhotonEfficiency");
     const int nf=c.Add(pattern.c_str());
     s.entries=c.GetEntries();
 
-    {
-        static std::mutex print_mutex;
-        std::lock_guard<std::mutex> lock(print_mutex);
-        std::cout << "\n[" << s.name << "] files=" << nf
-                  << " entries=" << s.entries << "\n";
-    }
+    std::cout << "\n[" << s.name << "] files=" << nf
+              << " entries=" << s.entries << "\n";
 
     if (nf<=0 || s.entries<=0) return false;
 
     Branches b;
     b.reset_arrays();
     if (!attach(c,b)) return false;
-
-    // ROOT read-ahead cache helps especially for remote/cache-backed HIPO-derived
-    // ROOT files.  Branch filtering above keeps the cache focused on useful data.
     c.SetCacheSize(64LL*1024LL*1024LL);
-    c.SetCacheLearnEntries(20);
+    c.AddBranchToCache("*",kTRUE);
 
     init_sample(s);
     s.ft_plane=estimate_ft_plane(c,b);
 
-    {
-        static std::mutex print_mutex;
-        std::lock_guard<std::mutex> lock(print_mutex);
-        std::cout << "[" << s.name << "] inferred FT response-plane z: ";
-        if (s.ft_plane.valid)
-            std::cout << s.ft_plane.z << " cm from " << s.ft_plane.n << " responses\n";
-        else
-            std::cout << "unavailable\n";
-    }
+    std::cout << "[" << s.name << "] inferred FT response-plane z: ";
+    if (s.ft_plane.valid)
+        std::cout << s.ft_plane.z << " cm from " << s.ft_plane.n << " responses\n";
+    else
+        std::cout << "unavailable\n";
 
-    // ONE full pass: cut flow, residuals, cached nominal events, kinematics,
-    // parent-window scan, and raw MC-weight diagnostics.
-    const Long64_t nentries=c.GetEntries();
-    for (Long64_t i=0;i<nentries;i++) {
+    // Pass 1: cut flow, residuals, kinematics, mass-window scan.
+    for (Long64_t i=0;i<c.GetEntries();i++) {
         c.GetEntry(i);
         s.cutflow.all++;
 
+        // Preserve MC::Event.weight only as a diagnostic.  It is deliberately
+        // NOT applied to stage-1 histograms or recovery fractions.
         if (s.is_mc) {
-            if (std::isfinite(b.mc_weight)) {
-                const double rw=b.mc_weight;
-                if (s.raw_weight_finite==0) {
-                    s.raw_weight_min=rw;
-                    s.raw_weight_max=rw;
-                } else {
-                    s.raw_weight_min=std::min(s.raw_weight_min,rw);
-                    s.raw_weight_max=std::max(s.raw_weight_max,rw);
-                }
-                s.raw_weight_finite++;
-                s.raw_weight_sum+=rw;
-                s.raw_weight_sum2+=rw*rw;
-                if (rw==0) s.raw_weight_zero++;
-                if (rw<0) s.raw_weight_negative++;
+            if (!std::isfinite(b.mc_weight)) {
+                s.weight_nonfinite++;
             } else {
-                s.raw_weight_nonfinite++;
+                if (s.weight_n==0) {
+                    s.weight_min=b.mc_weight;
+                    s.weight_max=b.mc_weight;
+                } else {
+                    s.weight_min=std::min(s.weight_min,b.mc_weight);
+                    s.weight_max=std::max(s.weight_max,b.mc_weight);
+                }
+                s.weight_n++;
+                if (b.mc_weight==0) s.weight_zero++;
+                if (b.mc_weight<0) s.weight_negative++;
+                s.weight_sum+=b.mc_weight;
+                s.weight_sum2+=b.mc_weight*b.mc_weight;
             }
         }
+
 
         if (!b.p_pass_standard) continue;
         s.cutflow.proton++;
@@ -894,10 +851,7 @@ bool scan_sample(SampleResult& s) {
             !finite_good(b.probe_corr_phi)) continue;
         s.cutflow.finite_probe++;
 
-        // Primary histograms are unweighted.  Raw MC::Event.weight is carried
-        // separately only for QA until its semantics are established.
-        const double raww=s.is_mc ? raw_mc_weight(b) : 1.0;
-
+        // Parent-window stability scan before imposing the nominal window.
         for (auto& wr : s.windows) {
             if (!finite_good(b.Mx_ep) ||
                 b.Mx_ep<wr.w.lo || b.Mx_ep>wr.w.hi) continue;
@@ -907,7 +861,7 @@ bool scan_sample(SampleResult& s) {
                 const int k=best_probe_candidate(b,1);
                 if (k>=0) {
                     wr.fd_reco++;
-                    wr.fd_h->Fill(b.neutral_p[k]-b.probe_corr_p,1.0);
+                    wr.fd_h->Fill(b.neutral_p[k]-b.probe_corr_p);
                 }
             }
 
@@ -916,7 +870,7 @@ bool scan_sample(SampleResult& s) {
                 const int k=best_probe_candidate(b,0);
                 if (k>=0) {
                     wr.ft_reco++;
-                    wr.ft_h->Fill(b.neutral_p[k]-b.probe_corr_p,1.0);
+                    wr.ft_h->Fill(b.neutral_p[k]-b.probe_corr_p);
                 }
             }
         } // endfor
@@ -924,9 +878,9 @@ bool scan_sample(SampleResult& s) {
         if (!pass_nominal_mass(b)) continue;
         s.cutflow.nominal_mass++;
 
-        s.denom_p->Fill(b.probe_corr_p,1.0);
-        s.denom_theta->Fill(b.probe_corr_theta,1.0);
-        s.denom_phi->Fill(wrap_phi(b.probe_corr_phi),1.0);
+        s.denom_p->Fill(b.probe_corr_p);
+        s.denom_theta->Fill(b.probe_corr_theta);
+        s.denom_phi->Fill(wrap_phi(b.probe_corr_phi));
 
         if (in_fd(b)) s.cutflow.fd++;
         if (in_ft(b)) {
@@ -935,24 +889,17 @@ bool scan_sample(SampleResult& s) {
             const FTProjection q=project_ft(b,s.ft_plane);
             if (q.valid) {
                 s.cutflow.ft_projectable++;
-                s.ft_xy_projected->Fill(q.x,q.y,1.0);
+                s.ft_xy_projected->Fill(q.x,q.y);
                 if (q.fiducial) s.cutflow.ft_projected_fid++;
             }
         }
 
-        fill_region_residual(s.fd,b,raww);
-        fill_region_residual(s.ft_all,b,raww);
-        fill_region_residual(s.ft_low,b,raww);
-        fill_region_residual(s.ft_high,b,raww);
+        fill_region_residual(s.fd,b);
+        fill_region_residual(s.ft_all,b);
+        fill_region_residual(s.ft_low,b);
+        fill_region_residual(s.ft_high,b);
     } // endfor
 
-    return true;
-}
-
-void finalize_sample(SampleResult& s) {
-    // Fits are intentionally done after all parallel scans finish.  That keeps
-    // ROOT minimizer activity single-threaded while the expensive file I/O and
-    // event loops run concurrently.
     s.fd.fit=fit_residual(s.fd.residual.get(),MIN_FIT_ENTRIES_FD);
     s.ft_all.fit=fit_residual(s.ft_all.residual.get(),MIN_FIT_ENTRIES_FT);
     s.ft_low.fit=fit_residual(s.ft_low.residual.get(),MIN_FIT_ENTRIES_FT);
@@ -963,10 +910,14 @@ void finalize_sample(SampleResult& s) {
         wr.ft_fit=fit_residual(wr.ft_h.get(),MIN_FIT_ENTRIES_FT);
     } // endfor
 
+    // Exact 1/2/3-sigma raw-recovery counts from residuals cached during
+    // the single tree pass.  This avoids rereading every ROOT entry.
     finalize_region_counts(s.fd);
     finalize_region_counts(s.ft_all);
     finalize_region_counts(s.ft_low);
     finalize_region_counts(s.ft_high);
+
+    return true;
 }
 
 // -----------------------------------------------------------------------------
@@ -1072,7 +1023,7 @@ void save_combined_kinematics(
             c.cd(is*3+j+1);
             gPad->SetLeftMargin(0.12);
             gPad->SetBottomMargin(0.12);
-            hh[j]->SetTitle(Form("%s;%s;candidates",
+            hh[j]->SetTitle(Form("%s;%s;Candidates",
                                  s.name.c_str(),hh[j]->GetXaxis()->GetTitle()));
             hh[j]->Draw("E");
         } // endfor
@@ -1131,18 +1082,18 @@ void write_region_csv_header(std::ofstream& f) {
       << "fit_valid,fit_reason,fit_candidates,mean,mean_err,sigma,sigma_err,"
       << "chi2,ndf,denominator_rows,reconstructed_rows,"
       << "matched_rows_1sigma,matched_rows_2sigma,matched_rows_3sigma,"
-      << "eff_1sigma,eff_2sigma,eff_3sigma,"
-      << "err_1sigma,err_2sigma,err_3sigma,"
-      << "raw_weight_denominator,raw_weight_neff,raw_weight_reconstructed,"
-      << "raw_weight_matched_1sigma,raw_weight_matched_2sigma,raw_weight_matched_3sigma,"
-      << "raw_weight_eff_1sigma,raw_weight_eff_2sigma,raw_weight_eff_3sigma,"
+      << "raw_recovery_1sigma,raw_recovery_2sigma,raw_recovery_3sigma,"
+      << "raw_recovery_err_1sigma,raw_recovery_err_2sigma,raw_recovery_err_3sigma,"
       << "truth_pi0_probe,selected_reco_with_truth,"
-      << "reco_truth_da_lt1,reco_truth_da_lt2,reco_truth_da_lt3\n";
+      << "reco_truth_da_lt1,reco_truth_da_lt2,reco_truth_da_lt3,"
+      << "mc_weight_n,mc_weight_mean,mc_weight_min,mc_weight_max,mc_weight_neff,"
+      << "mc_weight_zero,mc_weight_negative,mc_weight_nonfinite\n";
 }
 
 void append_region_csv(std::ofstream& f,
                        const SampleResult& s,
                        const RegionResult& r) {
+    const double wmean=s.weight_n>0 ? s.weight_sum/static_cast<double>(s.weight_n) : 0.0;
     f << s.name << "," << r.name << ","
       << r.pmin << "," << r.pmax << ","
       << r.thmin << "," << r.thmax << ","
@@ -1154,18 +1105,16 @@ void append_region_csv(std::ofstream& f,
       << r.fit.chi2 << "," << r.fit.ndf << ","
       << r.denominator_rows << "," << r.reconstructed_candidates << ","
       << r.numerator_rows[0] << "," << r.numerator_rows[1] << "," << r.numerator_rows[2] << ","
-      << efficiency(r,1) << "," << efficiency(r,2) << "," << efficiency(r,3) << ","
-      << efficiency_error(r,1) << "," << efficiency_error(r,2) << "," << efficiency_error(r,3) << ","
-      << r.raw_weight_denominator << "," << raw_weight_neff(r) << ","
-      << r.raw_weight_reconstructed << ","
-      << r.raw_weight_numerator[0] << "," << r.raw_weight_numerator[1] << ","
-      << r.raw_weight_numerator[2] << ","
-      << raw_weighted_efficiency(r,1) << ","
-      << raw_weighted_efficiency(r,2) << ","
-      << raw_weighted_efficiency(r,3) << ","
+      << recovery_fraction(r,1) << "," << recovery_fraction(r,2) << "," << recovery_fraction(r,3) << ","
+      << recovery_fraction_error(r,1) << ","
+      << recovery_fraction_error(r,2) << ","
+      << recovery_fraction_error(r,3) << ","
       << r.truth_pi0_probe << "," << r.selected_reco_with_truth << ","
       << r.reco_truth_da_lt1 << "," << r.reco_truth_da_lt2 << ","
-      << r.reco_truth_da_lt3 << "\n";
+      << r.reco_truth_da_lt3 << ","
+      << s.weight_n << "," << wmean << "," << s.weight_min << "," << s.weight_max << ","
+      << raw_weight_neff(s) << "," << s.weight_zero << "," << s.weight_negative << ","
+      << s.weight_nonfinite << "\n";
 }
 
 void write_all_summary(
@@ -1173,16 +1122,25 @@ void write_all_summary(
         const std::string& out) {
     std::ofstream f(out+"/analysis_summary.txt");
 
-    f << "Photon-efficiency stage-1 summary\n"
-      << "=================================\n"
+    f << "Photon tag-and-probe stage-1 diagnostic summary\n"
+      << "==============================================\n"
       << "Nominal parent window: " << PI0_M_MIN
       << " < Mx(ep) < " << PI0_M_MAX << " GeV\n\n"
-      << "WEIGHTING CONVENTION\n"
-      << "--------------------\n"
-      << "PRIMARY fits and efficiencies use UNIT WEIGHTS for both data and MC.\n"
-      << "The mc_weight branch is copied from MC::Event.weight, but its generator-\n"
-      << "specific meaning is not assumed.  Raw-weighted quantities are retained\n"
-      << "only as QA diagnostics and are never used in the quoted data/MC ratio.\n\n";
+      << "IMPORTANT INTERPRETATION\n"
+      << "------------------------\n"
+      << "The 1/2/3-sigma quantities below are RAW RECOVERY FRACTIONS, not\n"
+      << "physical photon efficiencies.  In data, the ep-gamma denominator is\n"
+      << "not yet separated into true ep-pi0 and non-pi0 components.  Therefore\n"
+      << "no data/MC efficiency ratio or cross-section correction is reported at\n"
+      << "this stage.  The physical efficiency will be formed only after the\n"
+      << "Valerii-style normalized AAOgen + CLASDIS + DVCSgen composition /\n"
+      << "background procedure is reproduced.\n\n"
+      << "MC::Event.weight POLICY\n"
+      << "-----------------------\n"
+      << "MC::Event.weight is copied into the skim but its generator-specific\n"
+      << "meaning has not yet been established.  It is NOT used in residual fits,\n"
+      << "histograms, or raw recovery fractions.  Its distribution is printed only\n"
+      << "as QA so that the later normalization prescription can be audited.\n\n";
 
     for (const auto& sp : samples) {
         const SampleResult& s=*sp;
@@ -1190,20 +1148,19 @@ void write_all_summary(
           << "SAMPLE: " << s.name << "\n"
           << "Input: " << s.input << "\n"
           << "Tree entries: " << s.entries << "\n"
-          << "Primary weighting: unit weights" << "\n";
+          << "MC sample: " << (s.is_mc?"yes":"no") << "\n\n";
 
         if (s.is_mc) {
-            const double meanw=s.raw_weight_finite>0 ? s.raw_weight_sum/s.raw_weight_finite : 0;
-            const double neff=s.raw_weight_sum2>0 ? s.raw_weight_sum*s.raw_weight_sum/s.raw_weight_sum2 : 0;
-            f << "Raw MC::Event.weight QA: finite=" << s.raw_weight_finite
-              << ", nonfinite=" << s.raw_weight_nonfinite
-              << ", zero=" << s.raw_weight_zero
-              << ", negative=" << s.raw_weight_negative << "\n"
-              << "Raw weight min/mean/max: " << s.raw_weight_min << " / "
-              << meanw << " / " << s.raw_weight_max << "\n"
-              << "Raw weight global N_eff: " << neff << "\n";
+            const double mean=s.weight_n>0 ? s.weight_sum/static_cast<double>(s.weight_n) : 0.0;
+            f << "Raw MC::Event.weight QA\n"
+              << "-----------------------\n"
+              << "finite entries: " << s.weight_n << "\n"
+              << "mean/min/max: " << mean << " / " << s.weight_min << " / " << s.weight_max << "\n"
+              << "N_eff if these weights were used: " << raw_weight_neff(s) << "\n"
+              << "zero / negative / nonfinite: " << s.weight_zero << " / "
+              << s.weight_negative << " / " << s.weight_nonfinite << "\n"
+              << "NOTE: these weights are not applied in stage 1.\n\n";
         }
-        f << "\n";
 
         f << "Cut flow\n--------\n";
         auto row=[&](const char* label,long long n) {
@@ -1233,24 +1190,20 @@ void write_all_summary(
         for (const RegionResult* r : rr) {
             f << "--- " << r->name << " ---\n"
               << "denominator rows: " << r->denominator_rows << "\n"
-              << "reconstructed rows: " << r->reconstructed_candidates << "\n"
+              << "reconstructed candidates: " << r->reconstructed_candidates << "\n"
               << "fit valid: " << (r->fit.valid?1:0)
               << " (" << r->fit.reason << ")\n"
               << "mean: " << r->fit.mean << " +/- " << r->fit.mean_err << " GeV\n"
               << "sigma: " << r->fit.sigma << " +/- " << r->fit.sigma_err << " GeV\n";
 
             for (int ns=1;ns<=3;ns++) {
-                f << ns << " sigma efficiency (unit weight): "
-                  << efficiency(*r,ns) << " +/- "
-                  << efficiency_error(*r,ns);
-                if (s.is_mc)
-                    f << "   [raw MC-weight QA: "
-                      << raw_weighted_efficiency(*r,ns) << "]";
-                f << "\n";
+                f << ns << " sigma raw recovery fraction: "
+                  << recovery_fraction(*r,ns) << " +/- "
+                  << recovery_fraction_error(*r,ns) << "\n";
             } // endfor
 
             if (r->truth_pi0_probe>0) {
-                f << "MC truth pi0-probe rows: " << r->truth_pi0_probe << "\n"
+                f << "MC truth pi0-probe rows among reconstructed candidates: " << r->truth_pi0_probe << "\n"
                   << "selected reco candidates with truth comparison: "
                   << r->selected_reco_with_truth << "\n"
                   << "reco-to-truth dAlpha <1/<2/<3 deg: "
@@ -1262,84 +1215,310 @@ void write_all_summary(
         } // endfor
     } // endfor
 
-    // Compact comparisons.  Per user preference, always display DATA/MC first.
-    const SampleResult* data=nullptr;
-    for (const auto& sp : samples)
-        if (sp->name=="data") data=sp.get();
-
-    if (data) {
-        f << "============================================================\n"
-          << "DATA / MC EFFICIENCY COMPARISONS\n"
-          << "===============================\n"
-          << "Convention here is epsilon_data / epsilon_MC.  The corresponding\n"
-          << "cross-section correction factor is its inverse, epsilon_MC / epsilon_data.\n\n";
-
-        for (const auto& sp : samples) {
-            if (sp.get()==data) continue;
-            const RegionResult* dr[] = {&data->fd,&data->ft_all,&data->ft_low,&data->ft_high};
-            const RegionResult* mr[] = {&sp->fd,&sp->ft_all,&sp->ft_low,&sp->ft_high};
-            f << "MC sample: " << sp->name << "\n";
-            for (int ir=0;ir<4;ir++) {
-                f << "  " << dr[ir]->name << ":\n";
-                for (int ns=1;ns<=3;ns++) {
-                    const double ed=efficiency(*dr[ir],ns);
-                    const double em=efficiency(*mr[ir],ns);
-                    if (ed>0 && em>0) {
-                        f << "    " << ns << " sigma  data/MC=" << ed/em
-                          << "   MC/data correction=" << em/ed << "\n";
-                    } else {
-                        f << "    " << ns << " sigma  unavailable\n";
-                    }
-                } // endfor
-            } // endfor
-            f << "\n";
-        } // endfor
-    }
+    f << "============================================================\n"
+      << "No data/MC efficiency correction is produced in stage 1.\n";
 }
 
-void write_root(const std::vector<std::unique_ptr<SampleResult>>& samples,
-                const std::string& out) {
-    TFile f((out+"/analysis_histograms.root").c_str(),"RECREATE");
+// -----------------------------------------------------------------------------
+// Worker-file serialization for process-level parallelism.
+// Each child ROOT process image analyzes exactly one independent sample and
+// writes one temporary ROOT file.  The parent waits, reloads those files, then
+// creates the same compact combined output as before.  This uses POSIX fork(),
+// not std::thread/std::async, avoiding the Cling __once_call TLS linker issue.
+// -----------------------------------------------------------------------------
+template <typename T>
+void put_param(TDirectory* d, const std::string& name, T value) {
+    d->cd();
+    TParameter<T> p(name.c_str(),value);
+    p.Write();
+}
 
-    for (const auto& sp : samples) {
-        f.mkdir(sp->name.c_str());
-        f.cd(sp->name.c_str());
+template <typename T>
+bool get_param(TDirectory* d, const std::string& name, T& value) {
+    auto* p=dynamic_cast<TParameter<T>*>(d->Get(name.c_str()));
+    if (!p) return false;
+    value=p->GetVal();
+    return true;
+}
 
-        sp->fd.residual->Write();
-        sp->ft_all.residual->Write();
-        sp->ft_low.residual->Write();
-        sp->ft_high.residual->Write();
+void write_fit_state(TDirectory* d, const std::string& pre, const FitResult& r) {
+    put_param<int>(d,pre+"valid",r.valid?1:0);
+    put_param<int>(d,pre+"root_status",r.root_status);
+    put_param<Long64_t>(d,pre+"candidates",r.candidates);
+    put_param<double>(d,pre+"amplitude",r.amplitude);
+    put_param<double>(d,pre+"mean",r.mean);
+    put_param<double>(d,pre+"mean_err",r.mean_err);
+    put_param<double>(d,pre+"sigma",r.sigma);
+    put_param<double>(d,pre+"sigma_err",r.sigma_err);
+    put_param<double>(d,pre+"bg0",r.bg0);
+    put_param<double>(d,pre+"bg1",r.bg1);
+    put_param<double>(d,pre+"fit_lo",r.fit_lo);
+    put_param<double>(d,pre+"fit_hi",r.fit_hi);
+    put_param<double>(d,pre+"chi2",r.chi2);
+    put_param<int>(d,pre+"ndf",r.ndf);
+    TNamed reason((pre+"reason").c_str(),r.reason.c_str());
+    reason.Write();
+}
 
-        sp->denom_p->Write();
-        sp->denom_theta->Write();
-        sp->denom_phi->Write();
-        sp->ft_xy_projected->Write();
+void read_fit_state(TDirectory* d, const std::string& pre, FitResult& r) {
+    int iv=0;
+    get_param<int>(d,pre+"valid",iv); r.valid=(iv!=0);
+    get_param<int>(d,pre+"root_status",r.root_status);
+    Long64_t nc=0; get_param<Long64_t>(d,pre+"candidates",nc); r.candidates=nc;
+    get_param<double>(d,pre+"amplitude",r.amplitude);
+    get_param<double>(d,pre+"mean",r.mean);
+    get_param<double>(d,pre+"mean_err",r.mean_err);
+    get_param<double>(d,pre+"sigma",r.sigma);
+    get_param<double>(d,pre+"sigma_err",r.sigma_err);
+    get_param<double>(d,pre+"bg0",r.bg0);
+    get_param<double>(d,pre+"bg1",r.bg1);
+    get_param<double>(d,pre+"fit_lo",r.fit_lo);
+    get_param<double>(d,pre+"fit_hi",r.fit_hi);
+    get_param<double>(d,pre+"chi2",r.chi2);
+    get_param<int>(d,pre+"ndf",r.ndf);
+    auto* n=dynamic_cast<TNamed*>(d->Get((pre+"reason").c_str()));
+    r.reason=n?n->GetTitle():"unavailable";
+}
 
-        for (const auto& wr : sp->windows) {
-            wr.fd_h->Write();
-            wr.ft_h->Write();
+void write_region_state(TDirectory* parent, const RegionResult& r) {
+    TDirectory* d=parent->mkdir(r.name.c_str());
+    d->cd();
+    r.residual->Write("residual");
+    put_param<int>(d,"detector",r.detector);
+    put_param<double>(d,"pmin",r.pmin); put_param<double>(d,"pmax",r.pmax);
+    put_param<double>(d,"thmin",r.thmin); put_param<double>(d,"thmax",r.thmax);
+    put_param<Long64_t>(d,"denominator_rows",r.denominator_rows);
+    put_param<Long64_t>(d,"reconstructed_candidates",r.reconstructed_candidates);
+    for (int i=0;i<3;i++) put_param<Long64_t>(d,Form("numerator_rows_%d",i),r.numerator_rows[i]);
+    put_param<Long64_t>(d,"truth_pi0_probe",r.truth_pi0_probe);
+    put_param<Long64_t>(d,"selected_reco_with_truth",r.selected_reco_with_truth);
+    put_param<Long64_t>(d,"reco_truth_da_lt1",r.reco_truth_da_lt1);
+    put_param<Long64_t>(d,"reco_truth_da_lt2",r.reco_truth_da_lt2);
+    put_param<Long64_t>(d,"reco_truth_da_lt3",r.reco_truth_da_lt3);
+    write_fit_state(d,"fit_",r.fit);
+}
+
+void read_region_state(TDirectory* parent, RegionResult& r) {
+    TDirectory* d=dynamic_cast<TDirectory*>(parent->Get(r.name.c_str()));
+    if (!d) return;
+    if (auto* h=dynamic_cast<TH1D*>(d->Get("residual"))) {
+        r.residual.reset(dynamic_cast<TH1D*>(h->Clone()));
+        r.residual->SetDirectory(nullptr);
+    }
+    get_param<int>(d,"detector",r.detector);
+    get_param<double>(d,"pmin",r.pmin); get_param<double>(d,"pmax",r.pmax);
+    get_param<double>(d,"thmin",r.thmin); get_param<double>(d,"thmax",r.thmax);
+    Long64_t ll=0;
+    get_param<Long64_t>(d,"denominator_rows",ll); r.denominator_rows=ll;
+    get_param<Long64_t>(d,"reconstructed_candidates",ll); r.reconstructed_candidates=ll;
+    for (int i=0;i<3;i++) { get_param<Long64_t>(d,Form("numerator_rows_%d",i),ll); r.numerator_rows[i]=ll; }
+    get_param<Long64_t>(d,"truth_pi0_probe",ll); r.truth_pi0_probe=ll;
+    get_param<Long64_t>(d,"selected_reco_with_truth",ll); r.selected_reco_with_truth=ll;
+    get_param<Long64_t>(d,"reco_truth_da_lt1",ll); r.reco_truth_da_lt1=ll;
+    get_param<Long64_t>(d,"reco_truth_da_lt2",ll); r.reco_truth_da_lt2=ll;
+    get_param<Long64_t>(d,"reco_truth_da_lt3",ll); r.reco_truth_da_lt3=ll;
+    read_fit_state(d,"fit_",r.fit);
+}
+
+bool save_worker_result(const SampleResult& s, const std::string& path) {
+    TFile f(path.c_str(),"RECREATE");
+    if (f.IsZombie()) return false;
+    TNamed nname("sample_name",s.name.c_str()); nname.Write();
+    TNamed ninput("input",s.input.c_str()); ninput.Write();
+    put_param<int>(&f,"is_mc",s.is_mc?1:0);
+    put_param<Long64_t>(&f,"entries",s.entries);
+    put_param<Long64_t>(&f,"weight_n",s.weight_n);
+    put_param<Long64_t>(&f,"weight_nonfinite",s.weight_nonfinite);
+    put_param<Long64_t>(&f,"weight_zero",s.weight_zero);
+    put_param<Long64_t>(&f,"weight_negative",s.weight_negative);
+    put_param<double>(&f,"weight_sum",s.weight_sum);
+    put_param<double>(&f,"weight_sum2",s.weight_sum2);
+    put_param<double>(&f,"weight_min",s.weight_min);
+    put_param<double>(&f,"weight_max",s.weight_max);
+
+    put_param<Long64_t>(&f,"cf_all",s.cutflow.all);
+    put_param<Long64_t>(&f,"cf_proton",s.cutflow.proton);
+    put_param<Long64_t>(&f,"cf_tag_beta",s.cutflow.tag_beta);
+    put_param<Long64_t>(&f,"cf_tag_fid",s.cutflow.tag_fid);
+    put_param<Long64_t>(&f,"cf_finite_probe",s.cutflow.finite_probe);
+    put_param<Long64_t>(&f,"cf_nominal_mass",s.cutflow.nominal_mass);
+    put_param<Long64_t>(&f,"cf_fd",s.cutflow.fd);
+    put_param<Long64_t>(&f,"cf_ft",s.cutflow.ft);
+    put_param<Long64_t>(&f,"cf_ft_projectable",s.cutflow.ft_projectable);
+    put_param<Long64_t>(&f,"cf_ft_projected_fid",s.cutflow.ft_projected_fid);
+    put_param<int>(&f,"ft_plane_valid",s.ft_plane.valid?1:0);
+    put_param<double>(&f,"ft_plane_z",s.ft_plane.z);
+    put_param<Long64_t>(&f,"ft_plane_n",s.ft_plane.n);
+
+    f.mkdir("regions");
+    TDirectory* rd=dynamic_cast<TDirectory*>(f.Get("regions"));
+    write_region_state(rd,s.fd); write_region_state(rd,s.ft_all);
+    write_region_state(rd,s.ft_low); write_region_state(rd,s.ft_high);
+
+    f.mkdir("qa");
+    TDirectory* qd=dynamic_cast<TDirectory*>(f.Get("qa")); qd->cd();
+    s.denom_p->Write("denom_p"); s.denom_theta->Write("denom_theta");
+    s.denom_phi->Write("denom_phi"); s.ft_xy_projected->Write("ft_xy_projected");
+
+    f.mkdir("windows");
+    TDirectory* wd=dynamic_cast<TDirectory*>(f.Get("windows"));
+    for (size_t i=0;i<s.windows.size();i++) {
+        const auto& wr=s.windows[i];
+        TDirectory* d=wd->mkdir(Form("w%zu",i)); d->cd();
+        TNamed label("label",wr.w.label); label.Write();
+        put_param<double>(d,"lo",wr.w.lo); put_param<double>(d,"hi",wr.w.hi);
+        put_param<Long64_t>(d,"fd_denom",wr.fd_denom); put_param<Long64_t>(d,"fd_reco",wr.fd_reco);
+        put_param<Long64_t>(d,"ft_denom",wr.ft_denom); put_param<Long64_t>(d,"ft_reco",wr.ft_reco);
+        wr.fd_h->Write("fd_h"); wr.ft_h->Write("ft_h");
+        write_fit_state(d,"fd_fit_",wr.fd_fit); write_fit_state(d,"ft_fit_",wr.ft_fit);
+    } // endfor
+    f.Close();
+    return true;
+}
+
+std::unique_ptr<SampleResult> load_worker_result(const std::string& path) {
+    TFile f(path.c_str(),"READ");
+    if (f.IsZombie()) return nullptr;
+    auto* nn=dynamic_cast<TNamed*>(f.Get("sample_name"));
+    auto* ni=dynamic_cast<TNamed*>(f.Get("input"));
+    if (!nn || !ni) return nullptr;
+
+    std::unique_ptr<SampleResult> s(new SampleResult);
+    s->name=nn->GetTitle(); s->input=ni->GetTitle();
+    int imc=0; get_param<int>(&f,"is_mc",imc); s->is_mc=(imc!=0);
+    Long64_t ll=0;
+    get_param<Long64_t>(&f,"entries",ll); s->entries=ll;
+    get_param<Long64_t>(&f,"weight_n",ll); s->weight_n=ll;
+    get_param<Long64_t>(&f,"weight_nonfinite",ll); s->weight_nonfinite=ll;
+    get_param<Long64_t>(&f,"weight_zero",ll); s->weight_zero=ll;
+    get_param<Long64_t>(&f,"weight_negative",ll); s->weight_negative=ll;
+    get_param<double>(&f,"weight_sum",s->weight_sum); get_param<double>(&f,"weight_sum2",s->weight_sum2);
+    get_param<double>(&f,"weight_min",s->weight_min); get_param<double>(&f,"weight_max",s->weight_max);
+
+    get_param<Long64_t>(&f,"cf_all",ll); s->cutflow.all=ll;
+    get_param<Long64_t>(&f,"cf_proton",ll); s->cutflow.proton=ll;
+    get_param<Long64_t>(&f,"cf_tag_beta",ll); s->cutflow.tag_beta=ll;
+    get_param<Long64_t>(&f,"cf_tag_fid",ll); s->cutflow.tag_fid=ll;
+    get_param<Long64_t>(&f,"cf_finite_probe",ll); s->cutflow.finite_probe=ll;
+    get_param<Long64_t>(&f,"cf_nominal_mass",ll); s->cutflow.nominal_mass=ll;
+    get_param<Long64_t>(&f,"cf_fd",ll); s->cutflow.fd=ll;
+    get_param<Long64_t>(&f,"cf_ft",ll); s->cutflow.ft=ll;
+    get_param<Long64_t>(&f,"cf_ft_projectable",ll); s->cutflow.ft_projectable=ll;
+    get_param<Long64_t>(&f,"cf_ft_projected_fid",ll); s->cutflow.ft_projected_fid=ll;
+    int ipv=0; get_param<int>(&f,"ft_plane_valid",ipv); s->ft_plane.valid=(ipv!=0);
+    get_param<double>(&f,"ft_plane_z",s->ft_plane.z); get_param<Long64_t>(&f,"ft_plane_n",ll); s->ft_plane.n=ll;
+
+    init_sample(*s);
+    TDirectory* rd=dynamic_cast<TDirectory*>(f.Get("regions"));
+    if (rd) { read_region_state(rd,s->fd); read_region_state(rd,s->ft_all); read_region_state(rd,s->ft_low); read_region_state(rd,s->ft_high); }
+
+    TDirectory* qd=dynamic_cast<TDirectory*>(f.Get("qa"));
+    if (qd) {
+        if (auto* h=dynamic_cast<TH1D*>(qd->Get("denom_p"))) { s->denom_p.reset(dynamic_cast<TH1D*>(h->Clone())); s->denom_p->SetDirectory(nullptr); }
+        if (auto* h=dynamic_cast<TH1D*>(qd->Get("denom_theta"))) { s->denom_theta.reset(dynamic_cast<TH1D*>(h->Clone())); s->denom_theta->SetDirectory(nullptr); }
+        if (auto* h=dynamic_cast<TH1D*>(qd->Get("denom_phi"))) { s->denom_phi.reset(dynamic_cast<TH1D*>(h->Clone())); s->denom_phi->SetDirectory(nullptr); }
+        if (auto* h=dynamic_cast<TH2D*>(qd->Get("ft_xy_projected"))) { s->ft_xy_projected.reset(dynamic_cast<TH2D*>(h->Clone())); s->ft_xy_projected->SetDirectory(nullptr); }
+    }
+
+    TDirectory* wd=dynamic_cast<TDirectory*>(f.Get("windows"));
+    if (wd) {
+        for (size_t i=0;i<s->windows.size();i++) {
+            TDirectory* d=dynamic_cast<TDirectory*>(wd->Get(Form("w%zu",i)));
+            if (!d) continue;
+            auto& wr=s->windows[i];
+            get_param<Long64_t>(d,"fd_denom",ll); wr.fd_denom=ll;
+            get_param<Long64_t>(d,"fd_reco",ll); wr.fd_reco=ll;
+            get_param<Long64_t>(d,"ft_denom",ll); wr.ft_denom=ll;
+            get_param<Long64_t>(d,"ft_reco",ll); wr.ft_reco=ll;
+            if (auto* h=dynamic_cast<TH1D*>(d->Get("fd_h"))) { wr.fd_h.reset(dynamic_cast<TH1D*>(h->Clone())); wr.fd_h->SetDirectory(nullptr); }
+            if (auto* h=dynamic_cast<TH1D*>(d->Get("ft_h"))) { wr.ft_h.reset(dynamic_cast<TH1D*>(h->Clone())); wr.ft_h->SetDirectory(nullptr); }
+            read_fit_state(d,"fd_fit_",wr.fd_fit); read_fit_state(d,"ft_fit_",wr.ft_fit);
         } // endfor
-        f.cd();
+    }
+    f.Close();
+    return s;
+}
+
+struct SampleSpec {
+    std::string name,dir;
+    bool is_mc=false;
+};
+
+int analyze_worker(const SampleSpec& spec, const std::string& worker_dir) {
+    SampleResult s;
+    s.name=spec.name; s.input=spec.dir; s.is_mc=spec.is_mc;
+    if (!analyze_sample(s)) return 2;
+    const std::string path=worker_dir+"/"+spec.name+".root";
+    return save_worker_result(s,path) ? 0 : 3;
+}
+
+std::vector<std::unique_ptr<SampleResult>> analyze_samples_parallel(const std::string& out) {
+    const SampleSpec all_specs[] = {
+        {"data",DATA_DIR,false},
+        {"aaogen",AAOGEN_DIR,true},
+        {"clasdis",CLASDIS_DIR,true},
+        {"dvcsgen",DVCSGEN_DIR,true}
+    };
+
+    std::vector<SampleSpec> specs;
+    for (const auto& spec : all_specs) {
+        if (has_root_files(spec.dir)) {
+            std::cout << "[AUTO] Found " << spec.name << " ROOT files in " << spec.dir << "\n";
+            specs.push_back(spec);
+        } else {
+            std::cout << "[AUTO] No " << spec.name << " ROOT files yet; skipping.\n";
+        }
     } // endfor
 
-    f.Close();
-}
+    std::vector<std::unique_ptr<SampleResult>> samples;
+    if (specs.empty()) return samples;
 
-void add_if_available(const std::string& name,
-                      const std::string& dir,
-                      bool is_mc,
-                      std::vector<std::unique_ptr<SampleResult>>& samples) {
-    if (!has_root_files(dir)) {
-        std::cout << "[AUTO] No " << name << " ROOT files yet; skipping.\n";
-        return;
-    }
+    const std::string worker_dir=out+"/.workers";
+    gSystem->mkdir(worker_dir.c_str(),true);
+    std::cout.flush(); std::cerr.flush();
 
-    std::cout << "[AUTO] Found " << name << " ROOT files in " << dir << "\n";
-    std::unique_ptr<SampleResult> s(new SampleResult);
-    s->name=name;
-    s->input=dir;
-    s->is_mc=is_mc;
-    samples.push_back(std::move(s));
+    struct Child { pid_t pid; SampleSpec spec; };
+    std::vector<Child> children;
+
+    for (const auto& spec : specs) {
+        const pid_t pid=fork();
+        if (pid==0) {
+            const int rc=analyze_worker(spec,worker_dir);
+            std::cout.flush(); std::cerr.flush();
+            _exit(rc);
+        } else if (pid>0) {
+            children.push_back({pid,spec});
+            std::cout << "[PARALLEL] launched " << spec.name << " worker pid=" << pid << "\n";
+        } else {
+            std::cerr << "WARNING: fork() failed for " << spec.name
+                      << "; running that sample sequentially.\n";
+            const int rc=analyze_worker(spec,worker_dir);
+            if (rc!=0) std::cerr << "WARNING: sequential worker failed for " << spec.name << " rc=" << rc << "\n";
+        }
+    } // endfor
+
+    for (const auto& child : children) {
+        int status=0;
+        waitpid(child.pid,&status,0);
+        if (!WIFEXITED(status) || WEXITSTATUS(status)!=0) {
+            std::cerr << "WARNING: worker " << child.spec.name << " failed";
+            if (WIFEXITED(status)) std::cerr << " with rc=" << WEXITSTATUS(status);
+            std::cerr << "\n";
+        } else {
+            std::cout << "[PARALLEL] finished " << child.spec.name << "\n";
+        }
+    } // endfor
+
+    // Preserve deterministic column order: data, AAOgen, CLASDIS, DVCSgen.
+    for (const auto& spec : specs) {
+        const std::string path=worker_dir+"/"+spec.name+".root";
+        if (gSystem->AccessPathName(path.c_str())!=kFALSE) continue;
+        auto s=load_worker_result(path);
+        if (s) samples.push_back(std::move(s));
+        else std::cerr << "WARNING: could not reload worker result " << path << "\n";
+    } // endfor
+
+    return samples;
 }
 
 } // namespace pe
@@ -1349,66 +1528,33 @@ void photon_efficiency_valerii_reproduction() {
 
     gROOT->SetBatch(kTRUE);
     gStyle->SetOptStat(0);
-    ROOT::EnableThreadSafety();
-    TH1::AddDirectory(kFALSE);
 
     const std::string out="output";
     reset_output(out);
 
     std::cout
         << "\n============================================================\n"
-        << " Photon-efficiency stage-1 analysis\n"
+        << " Photon tag-and-probe stage-1 diagnostics\n"
         << "============================================================\n"
         << "FD: fully integrated\n"
         << "FT: integrated + 0.4-2 GeV + >=2 GeV\n"
         << "Matching: Delta p_gamma2 = p_rec - p_miss\n"
-        << "Primary data and MC efficiencies: UNIT WEIGHTS\n"
-        << "Sample scans: parallel; each TChain is read once\n"
+        << "Primary numbers: unweighted RAW RECOVERY FRACTIONS (not efficiencies)\n"
+        << "MC::Event.weight: QA only, not applied\n"
+        << "Execution: independent samples analyzed in parallel child processes\n"
         << "Outputs are rebuilt in ./output each invocation.\n"
         << "============================================================\n";
 
-    std::vector<std::unique_ptr<SampleResult>> samples;
-
-    add_if_available("data",DATA_DIR,false,samples);
-    add_if_available("aaogen",AAOGEN_DIR,true,samples);
-    add_if_available("clasdis",CLASDIS_DIR,true,samples);
-    add_if_available("dvcsgen",DVCSGEN_DIR,true,samples);
-
-    // Parallelize the expensive independent TChain scans across samples.
-    // Fits are finalized serially afterward to avoid concurrent ROOT minimizers.
-    std::vector<std::future<bool>> scan_jobs;
-    scan_jobs.reserve(samples.size());
-    for (auto& sp : samples) {
-        SampleResult* ptr=sp.get();
-        scan_jobs.emplace_back(std::async(std::launch::async,[ptr]() {
-            return scan_sample(*ptr);
-        }));
-    } // endfor
-
-    std::vector<std::unique_ptr<SampleResult>> good_samples;
-    for (size_t i=0;i<samples.size();i++) {
-        bool ok=false;
-        try { ok=scan_jobs[i].get(); }
-        catch (const std::exception& e) {
-            std::cerr << "WARNING: scan failed for " << samples[i]->name
-                      << ": " << e.what() << "\n";
-        }
-        if (ok) good_samples.push_back(std::move(samples[i]));
-    } // endfor
-    samples.swap(good_samples);
-
-    for (auto& sp : samples) finalize_sample(*sp);
+    std::vector<std::unique_ptr<SampleResult>> samples=analyze_samples_parallel(out);
 
     std::ofstream csv(out+"/integrated_results.csv");
     write_region_csv_header(csv);
-
     for (const auto& sp : samples) {
         append_region_csv(csv,*sp,sp->fd);
         append_region_csv(csv,*sp,sp->ft_all);
         append_region_csv(csv,*sp,sp->ft_low);
         append_region_csv(csv,*sp,sp->ft_high);
     } // endfor
-
     csv.close();
 
     save_combined_residuals(samples,out);
@@ -1417,6 +1563,9 @@ void photon_efficiency_valerii_reproduction() {
     write_window_scan_all(samples,out);
     write_all_summary(samples,out);
     write_root(samples,out);
+
+    // Temporary worker files are implementation details; keep output compact.
+    gSystem->Exec(("rm -rf "+out+"/.workers").c_str());
 
     std::cout
         << "\nFinished. Compact output products:\n"
@@ -1428,3 +1577,4 @@ void photon_efficiency_valerii_reproduction() {
         << "  output/FT_projected_xy.png\n"
         << "  output/analysis_histograms.root\n";
 }
+
