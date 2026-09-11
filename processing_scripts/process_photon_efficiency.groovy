@@ -201,7 +201,7 @@ static void appendCandidate(List vals, Map c) {
     vals.add(c.p); vals.add(c.theta); vals.add(c.phi); vals.add(c.da); vals.add(c.x); vals.add(c.y); vals.add(c.z)
 }
 
-static void main(String[] args) {
+static void processPhotonEfficiency(String[] args) {
     if (args.length < 2) {
         println "Usage: process_photon_efficiency.groovy <input.hipo|dir> <output.txt> [mc_beam] [run_override] [qadb_override] [is_mc] [mx2_min] [mx2_max]"
         System.exit(1)
@@ -375,6 +375,7 @@ static void main(String[] args) {
     println String.format(java.util.Locale.US,"Done: events=%d accepted_ep_pairs=%d rows=%d time=%.2f min output=%s",nevt,npair,nrow,min,output)
 }
 
-// Groovy scripts executed with run-groovy do not automatically invoke a
-// user-defined static main(String[]).  Explicitly enter the processor here.
-main(args)
+// Execute the processor from the Groovy script body.
+// Do not name this method main(): Groovy generates its own script-class main(),
+// and calling main(args) from the script body recursively re-enters run().
+processPhotonEfficiency(args)
