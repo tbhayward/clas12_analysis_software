@@ -671,10 +671,7 @@ void process_sample(const std::string& name,
 } // namespace pe
 
 void photon_efficiency_valerii_reproduction(
-        const char* data_input,
-        const char* aaogen_input="",
-        const char* clasdis_input="",
-        const char* dvcsgen_input="") {
+        const char* data_input="/work/clas12/thayward/photon_efficiency/ROOT_trees/data/fa18_inb") {
 
     using namespace pe;
 
@@ -706,10 +703,57 @@ void photon_efficiency_valerii_reproduction(
 
     std::vector<std::unique_ptr<SampleResult>> results;
 
+    // Data path may still be overridden by the single function argument.
     process_sample("data",data_input?data_input:"",false,out,results);
-    process_sample("aaogen",aaogen_input?aaogen_input:"",true,out,results);
-    process_sample("clasdis",clasdis_input?clasdis_input:"",true,out,results);
-    process_sample("dvcsgen",dvcsgen_input?dvcsgen_input:"",true,out,results);
+
+    // Automatically discover whatever MC has finished so far.  Missing or
+    // empty directories are simply skipped, so this same command can be rerun
+    // while production is still accumulating ROOT files.
+    const std::string aaogen_dir =
+        "/work/clas12/thayward/photon_efficiency/ROOT_trees/aaogen/fa18_inb";
+    const std::string clasdis_dir =
+        "/work/clas12/thayward/photon_efficiency/ROOT_trees/clasdis/fa18_inb";
+    const std::string dvcsgen_dir =
+        "/work/clas12/thayward/photon_efficiency/ROOT_trees/dvcsgen/fa18_inb";
+
+    auto has_root_files = [](const std::string& dir) -> bool {
+        void* dp = gSystem->OpenDirectory(dir.c_str());
+        if (!dp) return false;
+
+        const char* entry = nullptr;
+        bool found = false;
+        while ((entry = gSystem->GetDirEntry(dp))) {
+            std::string name(entry);
+            if (name.size() >= 5 &&
+                name.substr(name.size()-5) == ".root") {
+                found = true;
+                break;
+            }
+        }
+        gSystem->FreeDirectory(dp);
+        return found;
+    };
+
+    if (has_root_files(aaogen_dir)) {
+        std::cout << "\n[AUTO] Found AAOgen ROOT files: " << aaogen_dir << "\n";
+        process_sample("aaogen",aaogen_dir,true,out,results);
+    } else {
+        std::cout << "\n[AUTO] No AAOgen ROOT files yet; skipping.\n";
+    }
+
+    if (has_root_files(clasdis_dir)) {
+        std::cout << "\n[AUTO] Found CLASDIS ROOT files: " << clasdis_dir << "\n";
+        process_sample("clasdis",clasdis_dir,true,out,results);
+    } else {
+        std::cout << "\n[AUTO] No CLASDIS ROOT files yet; skipping.\n";
+    }
+
+    if (has_root_files(dvcsgen_dir)) {
+        std::cout << "\n[AUTO] Found DVCSgen ROOT files: " << dvcsgen_dir << "\n";
+        process_sample("dvcsgen",dvcsgen_dir,true,out,results);
+    } else {
+        std::cout << "\n[AUTO] No DVCSgen ROOT files yet; skipping.\n";
+    }
 
     write_csv(results,out);
 
