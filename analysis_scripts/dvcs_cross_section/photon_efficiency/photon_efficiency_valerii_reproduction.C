@@ -94,8 +94,10 @@ static const double FT_P_SPLIT = 2.0;
 static const double FT_P_MAX = 8.5;
 
 // FT nominal geometry from the existing CLAS12 fiducial implementation.
-// We calculate a projected-face diagnostic but do NOT yet make it mandatory;
-// that lets us validate the projection before changing the denominator.
+// The inferred probe is projected to the FT response plane and MUST land in
+// the usable annulus and outside the excluded holes before it enters an FT
+// denominator.  This is the FT analogue of applying the detector fiducial
+// acceptance to the expected probe.
 static const double FT_R_MIN = 8.5;   // cm
 static const double FT_R_MAX = 15.5;  // cm
 
@@ -123,6 +125,9 @@ static const double SIGMA_MIN = 0.010;
 static const double SIGMA_MAX = 0.400;
 static const double MAX_REL_SIGMA_ERR = 0.50;
 static const double MAX_MEAN_ERR = 0.100;
+static const double FIT_MEAN_MIN = -0.50;
+static const double FIT_MEAN_MAX =  0.50;
+static const double MEAN_BOUNDARY_TOL = 0.010;
 
 // Parent-window scan.  Only a compact CSV is written.
 struct MassWindow {
@@ -534,7 +539,7 @@ FitResult fit_residual(TH1D* h, int min_entries) {
     TF1 f("fit_tmp","gaus(0)+pol1(3)",lo,hi);
     f.SetParameters(h->GetMaximum(),mu,sg,
                     std::max(0.0,h->GetBinContent(1)),0.0);
-    f.SetParLimits(1,-0.50,0.50);
+    f.SetParLimits(1,FIT_MEAN_MIN,FIT_MEAN_MAX);
     f.SetParLimits(2,SIGMA_MIN,SIGMA_MAX);
 
     r.root_status=h->Fit(&f,"QNR");
@@ -552,6 +557,11 @@ FitResult fit_residual(TH1D* h, int min_entries) {
 
     if (r.root_status!=0) {
         r.reason="ROOT fit status != 0";
+        return r;
+    }
+    if (r.mean<=FIT_MEAN_MIN+MEAN_BOUNDARY_TOL ||
+        r.mean>=FIT_MEAN_MAX-MEAN_BOUNDARY_TOL) {
+        r.reason="mean at/near fit boundary";
         return r;
     }
     if (!(r.sigma>SIGMA_MIN*1.01 && r.sigma<SIGMA_MAX*0.99)) {
@@ -737,8 +747,17 @@ double raw_weight_neff(const SampleResult& s) {
 // -----------------------------------------------------------------------------
 // Fill helpers.
 // -----------------------------------------------------------------------------
-void fill_region_residual(RegionResult& r, const Branches& b) {
+void fill_region_residual(RegionResult& r, const Branches& b,
+                          const FTProjection* ft_projection=nullptr) {
     if (!in_region(b,r)) return;
+
+    // For FT regions, angular acceptance alone is insufficient because the FT
+    // is annular and contains excluded holes.  Only inferred probes that
+    // project into the usable FT fiducial area belong in the denominator.
+    if (r.detector==0) {
+        if (!ft_projection || !ft_projection->valid || !ft_projection->fiducial)
+            return;
+    }
 
     r.denominator_rows++;
     const int k=best_probe_candidate(b,r.detector);
@@ -851,6 +870,12 @@ bool analyze_sample(SampleResult& s) {
             !finite_good(b.probe_corr_phi)) continue;
         s.cutflow.finite_probe++;
 
+        // Compute the projected FT intersection once per event.  It is used
+        // both for the parent-window scan and for the nominal FT denominator.
+        FTProjection ft_projection;
+        const bool ft_angular=in_ft(b);
+        if (ft_angular) ft_projection=project_ft(b,s.ft_plane);
+
         // Parent-window stability scan before imposing the nominal window.
         for (auto& wr : s.windows) {
             if (!finite_good(b.Mx_ep) ||
@@ -865,7 +890,9 @@ bool analyze_sample(SampleResult& s) {
                 }
             }
 
-            if (in_ft(b)) {
+            // FT parent-window results now use the same projected-face
+            // fiducial requirement as the nominal FT denominator.
+            if (ft_angular && ft_projection.valid && ft_projection.fiducial) {
                 wr.ft_denom++;
                 const int k=best_probe_candidate(b,0);
                 if (k>=0) {
@@ -883,21 +910,19 @@ bool analyze_sample(SampleResult& s) {
         s.denom_phi->Fill(wrap_phi(b.probe_corr_phi));
 
         if (in_fd(b)) s.cutflow.fd++;
-        if (in_ft(b)) {
+        if (ft_angular) {
             s.cutflow.ft++;
-
-            const FTProjection q=project_ft(b,s.ft_plane);
-            if (q.valid) {
+            if (ft_projection.valid) {
                 s.cutflow.ft_projectable++;
-                s.ft_xy_projected->Fill(q.x,q.y);
-                if (q.fiducial) s.cutflow.ft_projected_fid++;
+                s.ft_xy_projected->Fill(ft_projection.x,ft_projection.y);
+                if (ft_projection.fiducial) s.cutflow.ft_projected_fid++;
             }
         }
 
         fill_region_residual(s.fd,b);
-        fill_region_residual(s.ft_all,b);
-        fill_region_residual(s.ft_low,b);
-        fill_region_residual(s.ft_high,b);
+        fill_region_residual(s.ft_all,b,&ft_projection);
+        fill_region_residual(s.ft_low,b,&ft_projection);
+        fill_region_residual(s.ft_high,b,&ft_projection);
     } // endfor
 
     s.fd.fit=fit_residual(s.fd.residual.get(),MIN_FIT_ENTRIES_FD);
@@ -1184,7 +1209,9 @@ void write_all_summary(
         if (s.ft_plane.valid)
             f << "FT response-plane z: " << s.ft_plane.z
               << " cm from " << s.ft_plane.n << " reconstructed FT responses\n";
-        f << "FT projected fiducial remains diagnostic only at this stage.\n\n";
+        f << "FT denominator requires projected FT fiducial acceptance.\n"
+          << "The angular FT row above is retained as a geometry diagnostic; "
+          << "the region denominators below use the projected-fiducial subset.\n\n";
 
         const RegionResult* rr[] = {&s.fd,&s.ft_all,&s.ft_low,&s.ft_high};
         for (const RegionResult* r : rr) {
@@ -1571,7 +1598,7 @@ void photon_efficiency_valerii_reproduction() {
         << " Photon tag-and-probe stage-1 diagnostics\n"
         << "============================================================\n"
         << "FD: fully integrated\n"
-        << "FT: integrated + 0.4-2 GeV + >=2 GeV\n"
+        << "FT: projected-fiducial integrated + 0.4-2 GeV + >=2 GeV\n"
         << "Matching: Delta p_gamma2 = p_rec - p_miss\n"
         << "Primary numbers: unweighted RAW RECOVERY FRACTIONS (not efficiencies)\n"
         << "MC::Event.weight: QA only, not applied\n"
