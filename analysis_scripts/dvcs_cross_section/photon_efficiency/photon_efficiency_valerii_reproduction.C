@@ -30,6 +30,7 @@
 #include <TLatex.h>
 #include <TLine.h>
 #include <TMath.h>
+#include <TPad.h>
 #include <TROOT.h>
 #include <TString.h>
 #include <TStyle.h>
@@ -582,7 +583,9 @@ struct RegionResult {
     double numerator_w2[3]={0,0,0};
 
     long long denominator_rows=0;
+    long long numerator_rows[3]={0,0,0};
     long long reconstructed_candidates=0;
+    double reconstructed_weight=0, reconstructed_weight_w2=0;
 
     // MC truth closure.
     long long truth_pi0_probe=0;
@@ -700,6 +703,17 @@ double efficiency(const RegionResult& r, int ns) {
     return r.numerator[ns-1]/r.denominator;
 }
 
+double unweighted_fraction(const RegionResult& r, int ns) {
+    if (r.denominator_rows<=0) return -1;
+    return static_cast<double>(r.numerator_rows[ns-1]) /
+           static_cast<double>(r.denominator_rows);
+}
+
+double effective_denominator(const RegionResult& r) {
+    if (r.denominator_w2<=0) return 0;
+    return r.denominator*r.denominator/r.denominator_w2;
+}
+
 double efficiency_error(const RegionResult& r, int ns, bool weighted) {
     if (r.denominator<=0) return 0;
 
@@ -725,6 +739,8 @@ void fill_region_residual(RegionResult& r, const Branches& b, double w) {
     if (k<0) return;
 
     r.reconstructed_candidates++;
+    r.reconstructed_weight+=w;
+    r.reconstructed_weight_w2+=w*w;
     const double dp=b.neutral_p[k]-b.probe_corr_p;
     if (std::isfinite(dp)) r.residual->Fill(dp,w);
 
@@ -762,6 +778,7 @@ void fill_region_counts(RegionResult& r, const Branches& b, double w) {
         if (d<ns*r.fit.sigma) {
             r.numerator[ns-1]+=w;
             r.numerator_w2[ns-1]+=w*w;
+            r.numerator_rows[ns-1]++;
         }
     } // endfor
 }
@@ -893,31 +910,34 @@ bool analyze_sample(SampleResult& s) {
 // -----------------------------------------------------------------------------
 // Output.
 // -----------------------------------------------------------------------------
-void save_residual_plot(const SampleResult& s,
-                        const RegionResult& r,
-                        const std::string& out) {
-    TCanvas c(Form("c_%s_%s",s.name.c_str(),r.name.c_str()),"",950,720);
+void draw_residual_pad(const SampleResult& s, const RegionResult& r) {
+    gPad->SetLeftMargin(0.12);
+    gPad->SetRightMargin(0.04);
+    gPad->SetBottomMargin(0.12);
+    gPad->SetTopMargin(0.07);
+
     r.residual->SetLineWidth(2);
+    r.residual->GetXaxis()->SetTitleSize(0.045);
+    r.residual->GetYaxis()->SetTitleSize(0.045);
+    r.residual->GetXaxis()->SetLabelSize(0.038);
+    r.residual->GetYaxis()->SetLabelSize(0.038);
     r.residual->Draw("E");
 
     const double ymax=std::max(1.0,r.residual->GetMaximum());
 
-    std::unique_ptr<TF1> fit_draw;
     if (r.fit.valid) {
-        // Reconstruct the exact fitted gaus(0)+pol1(3) function from the
-        // parameters saved by fit_residual(), and overlay it on the data.
-        fit_draw.reset(new TF1(
+        TF1 fit_draw(
             Form("fit_draw_%s_%s",s.name.c_str(),r.name.c_str()),
             "gaus(0)+pol1(3)",
-            r.fit.fit_lo,r.fit.fit_hi));
-        fit_draw->SetParameters(
+            r.fit.fit_lo,r.fit.fit_hi);
+        fit_draw.SetParameters(
             r.fit.amplitude,
             r.fit.mean,
             r.fit.sigma,
             r.fit.bg0,
             r.fit.bg1);
-        fit_draw->SetLineWidth(3);
-        fit_draw->Draw("SAME");
+        fit_draw.SetLineWidth(3);
+        fit_draw.DrawCopy("SAME");
 
         for (int ns=1;ns<=3;ns++) {
             TLine l1(r.fit.mean-ns*r.fit.sigma,0,
@@ -926,100 +946,133 @@ void save_residual_plot(const SampleResult& s,
                      r.fit.mean+ns*r.fit.sigma,0.92*ymax);
             l1.SetLineStyle(ns);
             l2.SetLineStyle(ns);
-            l1.Draw();
-            l2.Draw();
+            l1.DrawClone();
+            l2.DrawClone();
         } // endfor
     }
 
     TLatex tx;
     tx.SetNDC();
-    tx.SetTextSize(0.033);
-    tx.DrawLatex(0.13,0.88,Form("%s %s",s.name.c_str(),r.name.c_str()));
-    tx.DrawLatex(0.13,0.83,Form("denom = %lld, reconstructed = %lld",
+    tx.SetTextSize(0.034);
+    // Deliberately lower than the previous version so the first line is
+    // comfortably clear of the upper frame, even in the combined canvas.
+    tx.DrawLatex(0.15,0.80,Form("%s %s",s.name.c_str(),r.name.c_str()));
+    tx.DrawLatex(0.15,0.75,Form("N_{den}=%lld, N_{reco}=%lld",
                                 r.denominator_rows,r.reconstructed_candidates));
 
     if (r.fit.valid) {
-        tx.DrawLatex(0.13,0.78,
-            Form("#mu = %.4f #pm %.4f GeV",r.fit.mean,r.fit.mean_err));
-        tx.DrawLatex(0.13,0.73,
-            Form("#sigma = %.4f #pm %.4f GeV",r.fit.sigma,r.fit.sigma_err));
-        tx.DrawLatex(0.13,0.68,
-            Form("#chi^{2}/ndf = %.1f/%d",r.fit.chi2,r.fit.ndf));
+        tx.DrawLatex(0.15,0.70,
+            Form("#mu=%.4f#pm%.4f GeV",r.fit.mean,r.fit.mean_err));
+        tx.DrawLatex(0.15,0.65,
+            Form("#sigma=%.4f#pm%.4f GeV",r.fit.sigma,r.fit.sigma_err));
+        tx.DrawLatex(0.15,0.60,
+            Form("#chi^{2}/ndf=%.1f/%d",r.fit.chi2,r.fit.ndf));
     } else {
-        tx.DrawLatex(0.13,0.78,Form("FIT INVALID: %s",r.fit.reason.c_str()));
+        tx.DrawLatex(0.15,0.70,Form("FIT INVALID: %s",r.fit.reason.c_str()));
     }
-
-    c.SaveAs((out+"/"+s.name+"_"+r.name+"_delta_p.png").c_str());
 }
 
-void save_kinematics(const SampleResult& s, const std::string& out) {
-    TCanvas c(Form("c_%s_kin",s.name.c_str()),"",1500,450);
-    c.Divide(3,1);
-    c.cd(1); s.denom_p->Draw("E");
-    c.cd(2); s.denom_theta->Draw("E");
-    c.cd(3); s.denom_phi->Draw("E");
-    c.SaveAs((out+"/"+s.name+"_denominator_kinematics.png").c_str());
+void save_combined_residuals(
+        const std::vector<std::unique_ptr<SampleResult>>& samples,
+        const std::string& out) {
+    if (samples.empty()) return;
+
+    const int ncol=samples.size();
+    const int nrow=4;
+    TCanvas c("c_all_residuals","",520*ncol,420*nrow);
+    c.Divide(ncol,nrow,0.001,0.001);
+
+    for (int is=0;is<ncol;is++) {
+        const SampleResult& s=*samples[is];
+        const RegionResult* rr[] = {&s.fd,&s.ft_all,&s.ft_low,&s.ft_high};
+        for (int ir=0;ir<nrow;ir++) {
+            c.cd(ir*ncol+is+1);
+            draw_residual_pad(s,*rr[ir]);
+        } // endfor
+    } // endfor
+
+    c.SaveAs((out+"/delta_p_residuals.png").c_str());
 }
 
-void save_ft_projection(const SampleResult& s, const std::string& out) {
-    if (!s.ft_plane.valid) return;
+void save_combined_kinematics(
+        const std::vector<std::unique_ptr<SampleResult>>& samples,
+        const std::string& out) {
+    if (samples.empty()) return;
 
-    TCanvas c(Form("c_%s_ft_xy",s.name.c_str()),"",800,750);
-    s.ft_xy_projected->Draw("COLZ");
-    c.SaveAs((out+"/"+s.name+"_FT_projected_xy.png").c_str());
+    const int nrow=samples.size();
+    TCanvas c("c_all_kinematics","",1500,390*nrow);
+    c.Divide(3,nrow,0.001,0.001);
+
+    for (int is=0;is<nrow;is++) {
+        const SampleResult& s=*samples[is];
+        TH1D* hh[] = {s.denom_p.get(),s.denom_theta.get(),s.denom_phi.get()};
+        for (int j=0;j<3;j++) {
+            c.cd(is*3+j+1);
+            gPad->SetLeftMargin(0.12);
+            gPad->SetBottomMargin(0.12);
+            hh[j]->SetTitle(Form("%s;%s;weighted candidates",
+                                 s.name.c_str(),hh[j]->GetXaxis()->GetTitle()));
+            hh[j]->Draw("E");
+        } // endfor
+    } // endfor
+
+    c.SaveAs((out+"/denominator_kinematics.png").c_str());
 }
 
-void write_cutflow(const SampleResult& s, const std::string& out) {
-    std::ofstream f(out+"/"+s.name+"_cutflow.txt");
-    auto row=[&](const char* label,long long n) {
-        const double pct=s.cutflow.all>0 ? 100.0*n/s.cutflow.all : 0;
-        f << std::left << std::setw(30) << label
-          << std::right << std::setw(12) << n
-          << "  " << std::fixed << std::setprecision(3) << pct
-          << "% of skim rows\n";
-    };
+void save_combined_ft_projection(
+        const std::vector<std::unique_ptr<SampleResult>>& samples,
+        const std::string& out) {
+    int nvalid=0;
+    for (const auto& sp : samples) if (sp->ft_plane.valid) nvalid++;
+    if (nvalid==0) return;
 
-    row("all skim rows",s.cutflow.all);
-    row("standard proton",s.cutflow.proton);
-    row("tag beta",s.cutflow.tag_beta);
-    row("tag fiducial",s.cutflow.tag_fid);
-    row("finite probe kinematics",s.cutflow.finite_probe);
-    row("nominal pi0 parent window",s.cutflow.nominal_mass);
-    row("FD analysis region",s.cutflow.fd);
-    row("FT angular region",s.cutflow.ft);
-    row("FT projectable",s.cutflow.ft_projectable);
-    row("FT projected fiducial",s.cutflow.ft_projected_fid);
+    const int ncol=std::min(2,nvalid);
+    const int nrow=(nvalid+ncol-1)/ncol;
+    TCanvas c("c_all_ft_xy","",760*ncol,680*nrow);
+    c.Divide(ncol,nrow,0.002,0.002);
 
-    if (s.ft_plane.valid)
-        f << "\nInferred FT response-plane z = " << s.ft_plane.z
-          << " cm from " << s.ft_plane.n << " reconstructed FT responses.\n";
+    int ipad=0;
+    for (const auto& sp : samples) {
+        if (!sp->ft_plane.valid) continue;
+        c.cd(++ipad);
+        gPad->SetRightMargin(0.15);
+        sp->ft_xy_projected->SetTitle(
+            Form("%s;projected FT x [cm];projected FT y [cm]",sp->name.c_str()));
+        sp->ft_xy_projected->Draw("COLZ");
+    } // endfor
 
-    f << "\nNOTE: FT projected fiducial is diagnostic only in this stage;\n"
-      << "the extraction denominator still uses the angular FT region.\n";
+    c.SaveAs((out+"/FT_projected_xy.png").c_str());
 }
 
-void write_window_scan(const SampleResult& s, const std::string& out) {
-    std::ofstream f(out+"/"+s.name+"_parent_window_scan.csv");
-    f << "window,mmin,mmax,fd_denom,fd_reco,fd_fit_valid,fd_mean,fd_sigma,"
+void write_window_scan_all(
+        const std::vector<std::unique_ptr<SampleResult>>& samples,
+        const std::string& out) {
+    std::ofstream f(out+"/parent_window_scan.csv");
+    f << "sample,window,mmin,mmax,fd_denom,fd_reco,fd_fit_valid,fd_mean,fd_sigma,"
       << "ft_denom,ft_reco,ft_fit_valid,ft_mean,ft_sigma\n";
 
-    for (const auto& wr : s.windows) {
-        f << wr.w.label << "," << wr.w.lo << "," << wr.w.hi << ","
-          << wr.fd_denom << "," << wr.fd_reco << ","
-          << (wr.fd_fit.valid?1:0) << ","
-          << wr.fd_fit.mean << "," << wr.fd_fit.sigma << ","
-          << wr.ft_denom << "," << wr.ft_reco << ","
-          << (wr.ft_fit.valid?1:0) << ","
-          << wr.ft_fit.mean << "," << wr.ft_fit.sigma << "\n";
+    for (const auto& sp : samples) {
+        for (const auto& wr : sp->windows) {
+            f << sp->name << "," << wr.w.label << "," << wr.w.lo << "," << wr.w.hi << ","
+              << wr.fd_denom << "," << wr.fd_reco << ","
+              << (wr.fd_fit.valid?1:0) << ","
+              << wr.fd_fit.mean << "," << wr.fd_fit.sigma << ","
+              << wr.ft_denom << "," << wr.ft_reco << ","
+              << (wr.ft_fit.valid?1:0) << ","
+              << wr.ft_fit.mean << "," << wr.ft_fit.sigma << "\n";
+        } // endfor
     } // endfor
 }
 
 void write_region_csv_header(std::ofstream& f) {
-    f << "sample,region,pmin,pmax,thetamin,thetamax,"
+    f << "sample,region,pmin,pmax,thetamin,thetamax,weighted_mc,"
       << "fit_valid,fit_reason,fit_candidates,mean,mean_err,sigma,sigma_err,"
-      << "chi2,ndf,denominator,reconstructed,"
-      << "num_1sigma,num_2sigma,num_3sigma,"
+      << "chi2,ndf,denominator_rows,denominator_weight_sum,denominator_neff,"
+      << "reconstructed_rows,reconstructed_weight_sum,"
+      << "matched_rows_1sigma,matched_rows_2sigma,matched_rows_3sigma,"
+      << "matched_weight_1sigma,matched_weight_2sigma,matched_weight_3sigma,"
       << "eff_1sigma,eff_2sigma,eff_3sigma,"
+      << "unweighted_fraction_1sigma,unweighted_fraction_2sigma,unweighted_fraction_3sigma,"
       << "err_1sigma,err_2sigma,err_3sigma,"
       << "truth_pi0_probe,selected_reco_with_truth,"
       << "reco_truth_da_lt1,reco_truth_da_lt2,reco_truth_da_lt3\n";
@@ -1031,14 +1084,19 @@ void append_region_csv(std::ofstream& f,
     f << s.name << "," << r.name << ","
       << r.pmin << "," << r.pmax << ","
       << r.thmin << "," << r.thmax << ","
+      << (s.weighted?1:0) << ","
       << (r.fit.valid?1:0) << ",\"" << r.fit.reason << "\","
       << r.fit.candidates << ","
       << r.fit.mean << "," << r.fit.mean_err << ","
       << r.fit.sigma << "," << r.fit.sigma_err << ","
       << r.fit.chi2 << "," << r.fit.ndf << ","
-      << r.denominator << "," << r.reconstructed_candidates << ","
+      << r.denominator_rows << "," << r.denominator << ","
+      << effective_denominator(r) << ","
+      << r.reconstructed_candidates << "," << r.reconstructed_weight << ","
+      << r.numerator_rows[0] << "," << r.numerator_rows[1] << "," << r.numerator_rows[2] << ","
       << r.numerator[0] << "," << r.numerator[1] << "," << r.numerator[2] << ","
       << efficiency(r,1) << "," << efficiency(r,2) << "," << efficiency(r,3) << ","
+      << unweighted_fraction(r,1) << "," << unweighted_fraction(r,2) << "," << unweighted_fraction(r,3) << ","
       << efficiency_error(r,1,s.weighted) << ","
       << efficiency_error(r,2,s.weighted) << ","
       << efficiency_error(r,3,s.weighted) << ","
@@ -1047,41 +1105,123 @@ void append_region_csv(std::ofstream& f,
       << r.reco_truth_da_lt3 << "\n";
 }
 
-void write_sample_summary(const SampleResult& s, const std::string& out) {
-    std::ofstream f(out+"/"+s.name+"_summary.txt");
+void write_all_summary(
+        const std::vector<std::unique_ptr<SampleResult>>& samples,
+        const std::string& out) {
+    std::ofstream f(out+"/analysis_summary.txt");
 
-    f << "Sample: " << s.name << "\n"
-      << "Input: " << s.input << "\n"
-      << "Tree entries: " << s.entries << "\n"
+    f << "Photon-efficiency stage-1 summary\n"
+      << "=================================\n"
       << "Nominal parent window: " << PI0_M_MIN
-      << " < Mx(ep) < " << PI0_M_MAX << " GeV\n\n";
+      << " < Mx(ep) < " << PI0_M_MAX << " GeV\n\n"
+      << "WEIGHTING CONVENTION\n"
+      << "--------------------\n"
+      << "Data use unit event weight.  MC samples use the mc_weight branch,\n"
+      << "which is copied directly from MC::Event.weight in the input HIPO.\n"
+      << "Therefore MC fitted residuals and quoted primary efficiencies are\n"
+      << "generator-weighted.  Unweighted row-count fractions are printed\n"
+      << "alongside them as a QA diagnostic.  N_eff is the effective number\n"
+      << "of denominator events after weighting: (sum w)^2 / sum(w^2).\n\n";
 
-    const RegionResult* rr[] = {&s.fd,&s.ft_all,&s.ft_low,&s.ft_high};
-    for (const RegionResult* r : rr) {
-        f << "--- " << r->name << " ---\n"
-          << "denominator rows: " << r->denominator_rows << "\n"
-          << "reconstructed candidates: " << r->reconstructed_candidates << "\n"
-          << "fit valid: " << (r->fit.valid?1:0)
-          << " (" << r->fit.reason << ")\n"
-          << "mean: " << r->fit.mean << " +/- " << r->fit.mean_err << " GeV\n"
-          << "sigma: " << r->fit.sigma << " +/- " << r->fit.sigma_err << " GeV\n";
+    for (const auto& sp : samples) {
+        const SampleResult& s=*sp;
+        f << "============================================================\n"
+          << "SAMPLE: " << s.name << "\n"
+          << "Input: " << s.input << "\n"
+          << "Tree entries: " << s.entries << "\n"
+          << "MC weighting enabled: " << (s.weighted?"yes":"no") << "\n\n";
 
-        for (int ns=1;ns<=3;ns++)
-            f << ns << " sigma matched fraction: "
-              << efficiency(*r,ns) << " +/- "
-              << efficiency_error(*r,ns,s.weighted) << "\n";
+        f << "Cut flow\n--------\n";
+        auto row=[&](const char* label,long long n) {
+            const double pct=s.cutflow.all>0 ? 100.0*n/s.cutflow.all : 0;
+            f << std::left << std::setw(30) << label
+              << std::right << std::setw(12) << n
+              << "  " << std::fixed << std::setprecision(3) << pct
+              << "% of skim rows\n";
+        };
+        row("all skim rows",s.cutflow.all);
+        row("standard proton",s.cutflow.proton);
+        row("tag beta",s.cutflow.tag_beta);
+        row("tag fiducial",s.cutflow.tag_fid);
+        row("finite probe kinematics",s.cutflow.finite_probe);
+        row("nominal pi0 parent window",s.cutflow.nominal_mass);
+        row("FD analysis region",s.cutflow.fd);
+        row("FT angular region",s.cutflow.ft);
+        row("FT projectable",s.cutflow.ft_projectable);
+        row("FT projected fiducial",s.cutflow.ft_projected_fid);
 
-        if (r->truth_pi0_probe>0) {
-            f << "MC truth pi0-probe rows: " << r->truth_pi0_probe << "\n"
-              << "selected reco candidates with truth comparison: "
-              << r->selected_reco_with_truth << "\n"
-              << "reco-to-truth dAlpha <1/<2/<3 deg: "
-              << r->reco_truth_da_lt1 << " / "
-              << r->reco_truth_da_lt2 << " / "
-              << r->reco_truth_da_lt3 << "\n";
-        }
-        f << "\n";
+        if (s.ft_plane.valid)
+            f << "FT response-plane z: " << s.ft_plane.z
+              << " cm from " << s.ft_plane.n << " reconstructed FT responses\n";
+        f << "FT projected fiducial remains diagnostic only at this stage.\n\n";
+
+        const RegionResult* rr[] = {&s.fd,&s.ft_all,&s.ft_low,&s.ft_high};
+        for (const RegionResult* r : rr) {
+            f << "--- " << r->name << " ---\n"
+              << "denominator rows: " << r->denominator_rows << "\n"
+              << "denominator sum(w): " << r->denominator << "\n"
+              << "denominator N_eff: " << effective_denominator(*r) << "\n"
+              << "reconstructed rows: " << r->reconstructed_candidates << "\n"
+              << "reconstructed sum(w): " << r->reconstructed_weight << "\n"
+              << "fit valid: " << (r->fit.valid?1:0)
+              << " (" << r->fit.reason << ")\n"
+              << "mean: " << r->fit.mean << " +/- " << r->fit.mean_err << " GeV\n"
+              << "sigma: " << r->fit.sigma << " +/- " << r->fit.sigma_err << " GeV\n";
+
+            for (int ns=1;ns<=3;ns++) {
+                f << ns << " sigma weighted efficiency: "
+                  << efficiency(*r,ns) << " +/- "
+                  << efficiency_error(*r,ns,s.weighted)
+                  << "   [row-count fraction: "
+                  << unweighted_fraction(*r,ns) << "]\n";
+            } // endfor
+
+            if (r->truth_pi0_probe>0) {
+                f << "MC truth pi0-probe rows: " << r->truth_pi0_probe << "\n"
+                  << "selected reco candidates with truth comparison: "
+                  << r->selected_reco_with_truth << "\n"
+                  << "reco-to-truth dAlpha <1/<2/<3 deg: "
+                  << r->reco_truth_da_lt1 << " / "
+                  << r->reco_truth_da_lt2 << " / "
+                  << r->reco_truth_da_lt3 << "\n";
+            }
+            f << "\n";
+        } // endfor
     } // endfor
+
+    // Compact comparisons.  Per user preference, always display DATA/MC first.
+    const SampleResult* data=nullptr;
+    for (const auto& sp : samples)
+        if (sp->name=="data") data=sp.get();
+
+    if (data) {
+        f << "============================================================\n"
+          << "DATA / MC EFFICIENCY COMPARISONS\n"
+          << "===============================\n"
+          << "Convention here is epsilon_data / epsilon_MC.  The corresponding\n"
+          << "cross-section correction factor is its inverse, epsilon_MC / epsilon_data.\n\n";
+
+        for (const auto& sp : samples) {
+            if (sp.get()==data) continue;
+            const RegionResult* dr[] = {&data->fd,&data->ft_all,&data->ft_low,&data->ft_high};
+            const RegionResult* mr[] = {&sp->fd,&sp->ft_all,&sp->ft_low,&sp->ft_high};
+            f << "MC sample: " << sp->name << "\n";
+            for (int ir=0;ir<4;ir++) {
+                f << "  " << dr[ir]->name << ":\n";
+                for (int ns=1;ns<=3;ns++) {
+                    const double ed=efficiency(*dr[ir],ns);
+                    const double em=efficiency(*mr[ir],ns);
+                    if (ed>0 && em>0) {
+                        f << "    " << ns << " sigma  data/MC=" << ed/em
+                          << "   MC/data correction=" << em/ed << "\n";
+                    } else {
+                        f << "    " << ns << " sigma  unavailable\n";
+                    }
+                } // endfor
+            } // endfor
+            f << "\n";
+        } // endfor
+    }
 }
 
 void write_root(const std::vector<std::unique_ptr<SampleResult>>& samples,
@@ -1167,18 +1307,6 @@ void photon_efficiency_valerii_reproduction() {
     write_region_csv_header(csv);
 
     for (const auto& sp : samples) {
-        save_residual_plot(*sp,sp->fd,out);
-        save_residual_plot(*sp,sp->ft_all,out);
-        save_residual_plot(*sp,sp->ft_low,out);
-        save_residual_plot(*sp,sp->ft_high,out);
-
-        save_kinematics(*sp,out);
-        save_ft_projection(*sp,out);
-
-        write_cutflow(*sp,out);
-        write_window_scan(*sp,out);
-        write_sample_summary(*sp,out);
-
         append_region_csv(csv,*sp,sp->fd);
         append_region_csv(csv,*sp,sp->ft_all);
         append_region_csv(csv,*sp,sp->ft_low);
@@ -1186,18 +1314,21 @@ void photon_efficiency_valerii_reproduction() {
     } // endfor
 
     csv.close();
+
+    save_combined_residuals(samples,out);
+    save_combined_kinematics(samples,out);
+    save_combined_ft_projection(samples,out);
+    write_window_scan_all(samples,out);
+    write_all_summary(samples,out);
     write_root(samples,out);
 
     std::cout
-        << "\nFinished. Main products:\n"
+        << "\nFinished. Compact output products:\n"
+        << "  output/analysis_summary.txt\n"
         << "  output/integrated_results.csv\n"
-        << "  output/data_cutflow.txt\n"
-        << "  output/data_parent_window_scan.csv\n"
-        << "  output/data_FD_delta_p.png\n"
-        << "  output/data_FT_all_delta_p.png\n"
-        << "  output/data_FT_Elt2_delta_p.png\n"
-        << "  output/data_FT_Ege2_delta_p.png\n"
-        << "  output/data_denominator_kinematics.png\n"
-        << "  output/data_FT_projected_xy.png\n"
+        << "  output/parent_window_scan.csv\n"
+        << "  output/delta_p_residuals.png\n"
+        << "  output/denominator_kinematics.png\n"
+        << "  output/FT_projected_xy.png\n"
         << "  output/analysis_histograms.root\n";
 }
