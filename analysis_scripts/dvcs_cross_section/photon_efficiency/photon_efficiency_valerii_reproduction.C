@@ -1800,7 +1800,7 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         hcount[ib]->SetDirectory(nullptr);
     } // endfor
 
-    long long selected=0,reco=0,badw=0,outside_count_range=0;
+    long long selected=0,reco=0,outside_count_range=0;
     for (Long64_t i=0;i<c.GetEntries();i++) {
         c.GetEntry(i);
 
@@ -1816,11 +1816,13 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         const int ib=val_flat_bin(b.probe_corr_p,b.probe_corr_theta,b.probe_corr_phi);
         if (ib<0) continue;
 
-        double tw=1.0;
-        if (spec.is_mc) {
-            if (!std::isfinite(b.mc_weight)) { badw++; continue; }
-            tw=b.mc_weight;
-        }
+        // Valerii FD reproduction: use UNIT event weights inside each MC sample.
+        // The AAO/CLASDIS/DVCS relative normalizations are applied only when the
+        // component histograms are combined below.  In particular, do not use
+        // the skim's MC::Event.weight branch here: for CLASDIS that quantity is
+        // not an event-statistics weight and would catastrophically distort the
+        // mixture.
+        const double tw=1.0;
 
         rows[ib]++;
         sumw[ib]+=tw;
@@ -1844,7 +1846,6 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     put_param<Long64_t>(&f,"entries",c.GetEntries());
     put_param<Long64_t>(&f,"selected_denominator_rows",selected);
     put_param<Long64_t>(&f,"reconstructed_candidate_rows",reco);
-    put_param<Long64_t>(&f,"nonfinite_mc_weight_rows",badw);
     put_param<Long64_t>(&f,"residual_rows_outside_count_range",outside_count_range);
 
     TTree denominators("denominators","Valerii FD denominator sums by analysis bin");
@@ -2202,7 +2203,7 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
     csv.close();
 
     std::ofstream qa(out+"/valerii_fd_component_weight_qa.csv");
-    qa << "component,is_mc,tree_entries,denom_rows,base_sumw,base_sumw2,mean_base_weight,nominal_scale,scaled_sumw,scaled_neff\n";
+    qa << "component,is_mc,tree_entries,denom_rows,unit_sumw,unit_sumw2,mean_event_weight,nominal_component_scale,scaled_sumw,scaled_neff\n";
     for (const auto& vp:vv) {
         long long rows=0; double sw=0,sw2=0;
         for (const auto& b:vp->bins) { rows+=b.denom_rows; sw+=b.denom_w; sw2+=b.denom_w2; }
@@ -2248,7 +2249,8 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
             << "Residual histograms: 60 bins on [-1,1] GeV\n"
             << "Nominal MC normalization: 0.307*AAO + 0.315*CLASDIS(no-exclusivity) + 1.10*DVCS\n"
             << "Alternative normalization sets: (0.266,0.303,1.10), (0.330,0.320,1.10)\n"
-            << "Every MC normalization multiplies the saved MC::Event.weight.\n"
+            << "MC events are unit weighted inside each component; only the component normalization constants are applied.\n"
+            << "The skim MC::Event.weight branch is NOT used in the Valerii FD calculation.\n"
             << "Tag photon: FD/PCAL only; probe coordinates: missing gamma2.\n"
             << "Stage-1 0.08<Mx(ep)<0.20 GeV enrichment is NOT applied in this reproduction.\n"
             << "Numerator photon threshold remains the analysis skim threshold p>=0.4 GeV.\n\n"
@@ -2268,7 +2270,9 @@ void run_valerii_fd_reproduction(const std::string& out) {
               << " Valerii-style FD 7x3x6 reproduction\n"
               << "============================================================\n"
               << "MC nominal weights: 0.307 AAO + 0.315 CLASDIS + 1.10 DVCS\n"
-              << "Each scale multiplies saved MC::Event.weight.\n"
+              << "MC events are unit weighted inside each component.\n"
+              << "Only the AAO/CLASDIS/DVCS component normalization constants are applied.\n"
+              << "The skim MC::Event.weight branch is NOT used in this path.\n"
               << "Data/MC fits are independent in every p/theta/phi bin.\n"
               << "Primary correction convention: epsilon_data / epsilon_MC.\n"
               << "============================================================\n";
@@ -2296,7 +2300,7 @@ void photon_efficiency_valerii_reproduction() {
         << "FT: projected-fiducial integrated + 0.4-2 GeV + >=2 GeV\n"
         << "Matching: Delta p_gamma2 = p_rec - p_miss\n"
         << "Primary numbers: unweighted RAW RECOVERY FRACTIONS (not efficiencies)\n"
-        << "Stage-1 MC::Event.weight: QA only; Valerii FD path applies saved weight x normalization\n"
+        << "Stage-1 MC::Event.weight: QA only; Valerii FD path uses unit MC events x component normalization\n"
         << "Execution: independent samples analyzed in parallel child processes\n"
         << "Outputs are rebuilt in ./output each invocation.\n"
         << "============================================================\n";
