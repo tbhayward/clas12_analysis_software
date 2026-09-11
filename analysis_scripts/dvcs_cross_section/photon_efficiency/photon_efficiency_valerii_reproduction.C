@@ -1733,10 +1733,16 @@ FitResult fit_valerii_residual(TH1D* h) {
     // Keep the same Gaussian + linear-background form already validated in the
     // stage-1 diagnostic until the original production fitter source is imported.
     TF1 f("val_fit_tmp","gaus(0)+pol1(3)",VAL_DP_MIN,VAL_DP_MAX);
-    f.SetParameters(std::max(1.0,h->GetMaximum()),mu,sg,
-                    std::max(0.0,h->GetBinContent(1)),0.0);
+    // ROOT emits a noisy ParameterSettings warning when SetParameters is called
+    // with a seed already outside a subsequently imposed bound.  Clamp the
+    // seeds first, then install the limits, so every per-bin fit starts from a
+    // legal point without changing the allowed fit region.
+    mu=std::max(-0.749,std::min(0.749,mu));
+    sg=std::max(0.0101,std::min(0.499,sg));
     f.SetParLimits(1,-0.75,0.75);
     f.SetParLimits(2,0.010,0.500);
+    f.SetParameters(std::max(1.0,h->GetMaximum()),mu,sg,
+                    std::max(0.0,h->GetBinContent(1)),0.0);
     r.root_status=h->Fit(&f,"QNR");
     r.amplitude=f.GetParameter(0);
     r.mean=f.GetParameter(1);
@@ -2087,15 +2093,23 @@ void val_draw_map(const std::array<ValBinResult,VAL_NBIN>& rr,
                   const std::string& what,const std::string& outfile) {
     // Match Valerii's note display convention: show the first six momentum bins;
     // retain the 3.7-6 GeV bin in CSV/ROOT products.
+    //
+    // IMPORTANT ROOT ownership detail: objects drawn on a TPad are referenced
+    // by pointer.  A stack-local TH2D destroyed at the end of each loop
+    // iteration leaves the pad holding a dangling pointer; the later SaveAs()
+    // then produces a completely blank canvas.  Keep all six maps alive until
+    // after the canvas has been painted and written.
     TCanvas c(Form("c_%s",what.c_str()),"",1500,920);
     c.Divide(3,2,0.003,0.003);
+    std::vector<std::unique_ptr<TH2D>> maps;
+    maps.reserve(6);
     for (int ip=0;ip<6;ip++) {
-        c.cd(ip+1); gPad->SetRightMargin(0.16); gPad->SetBottomMargin(0.13);
-        TH2D h(Form("hm_%s_%d",what.c_str(),ip),
+        maps.emplace_back(new TH2D(Form("hm_%s_%d",what.c_str(),ip),
                Form("%.2f < p < %.2f GeV;wrapped #phi [deg];#theta [deg]",
                     VAL_P_EDGES[ip],VAL_P_EDGES[ip+1]),
-               VAL_NPH,VAL_PH_EDGES,VAL_NT,VAL_T_EDGES);
-        h.SetDirectory(nullptr);
+               VAL_NPH,VAL_PH_EDGES,VAL_NT,VAL_T_EDGES));
+        TH2D* h=maps.back().get();
+        h->SetDirectory(nullptr);
         for (int it=0;it<VAL_NT;it++) for (int iph=0;iph<VAL_NPH;iph++) {
             const int ib=(ip*VAL_NT+it)*VAL_NPH+iph;
             double z=0;
@@ -2104,11 +2118,18 @@ void val_draw_map(const std::array<ValBinResult,VAL_NBIN>& rr,
             else if (what=="correction") z=rr[ib].nominal_valid?rr[ib].correction[1]:0;
             else if (what=="data_sigma") z=rr[ib].data_fit.valid?rr[ib].data_fit.sigma:0;
             else if (what=="mc_sigma") z=rr[ib].mc_fit.valid?rr[ib].mc_fit.sigma:0;
-            h.SetBinContent(iph+1,it+1,z);
+            h->SetBinContent(iph+1,it+1,z);
         } // endfor
-        h.SetStats(0);
-        h.Draw("COLZ TEXT");
+        h->SetStats(0);
+        c.cd(ip+1);
+        gPad->SetRightMargin(0.16);
+        gPad->SetBottomMargin(0.13);
+        h->Draw("COLZ TEXT");
+        gPad->Modified();
+        gPad->Update();
     } // endfor
+    c.Modified();
+    c.Update();
     c.SaveAs(outfile.c_str());
 }
 
@@ -2181,15 +2202,16 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
     csv.close();
 
     std::ofstream qa(out+"/valerii_fd_component_weight_qa.csv");
-    qa << "component,is_mc,tree_entries,denom_rows,base_sumw,base_sumw2,nominal_scale,scaled_sumw,scaled_neff\n";
+    qa << "component,is_mc,tree_entries,denom_rows,base_sumw,base_sumw2,mean_base_weight,nominal_scale,scaled_sumw,scaled_neff\n";
     for (const auto& vp:vv) {
         long long rows=0; double sw=0,sw2=0;
         for (const auto& b:vp->bins) { rows+=b.denom_rows; sw+=b.denom_w; sw2+=b.denom_w2; }
         const double sc=vp->is_mc?val_component_scale(vp->name,VAL_NORMS[0]):1.0;
         const double ssw=sc*sw, ssw2=sc*sc*sw2;
         const double neff=ssw2>0?ssw*ssw/ssw2:0;
+        const double meanw=rows>0?sw/static_cast<double>(rows):0.0;
         qa << vp->name << "," << (vp->is_mc?1:0) << "," << vp->entries << "," << rows << ","
-           << sw << "," << sw2 << "," << sc << "," << ssw << "," << neff << "\n";
+           << sw << "," << sw2 << "," << meanw << "," << sc << "," << ssw << "," << neff << "\n";
     } // endfor
     qa.close();
 
