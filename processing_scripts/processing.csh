@@ -27,17 +27,43 @@ if ( $#argv >= 1 && "$1" == "processing_scripts/process_photon_efficiency.groovy
     set pe_mx2epgmin = -0.25
     set pe_mx2epgmax = 0.25
 
-    if ( $#argv >= 4 ) set pe_nfiles = "$4"
-    if ( $#argv >= 5 ) set pe_beam = "$5"
-    if ( $#argv >= 6 ) set pe_run = "$6"
-    if ( $#argv >= 7 ) set pe_qadb = "$7"
-    if ( $#argv >= 8 ) set pe_ismc = "$8"
-    if ( $#argv >= 9 ) set pe_workers = "$9"
-    if ( $#argv >= 10 ) set pe_mx2min = "$argv[10]"
-    if ( $#argv >= 11 ) set pe_mx2max = "$argv[11]"
-    if ( $#argv >= 12 ) set pe_keep_txt = "$argv[12]"
-    if ( $#argv >= 13 ) set pe_mx2epgmin = "$argv[13]"
-    if ( $#argv >= 14 ) set pe_mx2epgmax = "$argv[14]"
+    # Use block-form conditionals here.  In csh, variable expansion happens before
+    # a one-line `if (...) set ...` is evaluated, so referencing a missing
+    # $argv[N] can raise "argv: Subscript out of range" even when the condition
+    # is false.
+    if ( $#argv >= 4 ) then
+        set pe_nfiles = "$4"
+    endif
+    if ( $#argv >= 5 ) then
+        set pe_beam = "$5"
+    endif
+    if ( $#argv >= 6 ) then
+        set pe_run = "$6"
+    endif
+    if ( $#argv >= 7 ) then
+        set pe_qadb = "$7"
+    endif
+    if ( $#argv >= 8 ) then
+        set pe_ismc = "$8"
+    endif
+    if ( $#argv >= 9 ) then
+        set pe_workers = "$9"
+    endif
+    if ( $#argv >= 10 ) then
+        set pe_mx2min = "$argv[10]"
+    endif
+    if ( $#argv >= 11 ) then
+        set pe_mx2max = "$argv[11]"
+    endif
+    if ( $#argv >= 12 ) then
+        set pe_keep_txt = "$argv[12]"
+    endif
+    if ( $#argv >= 13 ) then
+        set pe_mx2epgmin = "$argv[13]"
+    endif
+    if ( $#argv >= 14 ) then
+        set pe_mx2epgmax = "$argv[14]"
+    endif
 
     echo "Pulling the latest changes from the repository..."
     git pull
