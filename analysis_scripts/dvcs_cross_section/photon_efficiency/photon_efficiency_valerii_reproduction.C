@@ -11,6 +11,8 @@
 //   * pi0-parent-window stability scan;
 //   * denominator p/theta/phi QA;
 //   * automatic use of whatever AAOgen / CLASDIS / DVCSgen ROOT files exist;
+//   * sample-level parallel scans (data / AAOgen / CLASDIS / DVCSgen);
+//   * one full tree scan per sample (no second counting pass);
 //   * optional MC-truth closure diagnostics when truth branches are present.
 //
 // Every invocation deletes and rebuilds ./output.
@@ -39,9 +41,12 @@
 #include <algorithm>
 #include <cmath>
 #include <fstream>
+#include <future>
 #include <iomanip>
 #include <iostream>
 #include <memory>
+#include <mutex>
+#include <limits>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -103,6 +108,9 @@ static const FTHole FT_HOLES[] = {
 };
 
 // Residual histogram and fit.
+// FT fits require more statistics than the earlier exploratory version; this
+// prevents a few-bin fluctuation (e.g. the current low-E data sample) from
+// being promoted to a physical efficiency.
 static const int    DP_NBIN = 100;
 static const double DP_HMIN = -1.0;
 static const double DP_HMAX =  1.0;
@@ -110,7 +118,7 @@ static const double FIT_MIN = -0.60;
 static const double FIT_MAX =  0.60;
 
 static const int MIN_FIT_ENTRIES_FD = 100;
-static const int MIN_FIT_ENTRIES_FT = 20;
+static const int MIN_FIT_ENTRIES_FT = 75;
 
 static const double SIGMA_MIN = 0.010;
 static const double SIGMA_MAX = 0.400;
@@ -249,6 +257,10 @@ struct Branches {
 };
 
 bool attach(TChain& c, Branches& b) {
+    // Reading only the branches used below is substantially faster for the
+    // multi-million-entry AAOgen chains than deserializing the full tree.
+    c.SetBranchStatus("*",0);
+
     const char* required[] = {
         "runnum","evnum","is_mc","mc_weight","p_pass_standard",
         "tag_detector","tag_pass_beta","tag_pass_fiducial",
@@ -266,6 +278,8 @@ bool attach(TChain& c, Branches& b) {
         }
     } // endfor
     if (!ok) return false;
+
+    for (const char* n : required) c.SetBranchStatus(n,1);
 
     c.SetBranchAddress("runnum",&b.runnum);
     c.SetBranchAddress("evnum",&b.evnum);
@@ -294,6 +308,7 @@ bool attach(TChain& c, Branches& b) {
 
     // Vertex branch name in the current converter.
     if (c.GetBranch("e_vz")) {
+        c.SetBranchStatus("e_vz",1);
         c.SetBranchAddress("e_vz",&b.e_vz);
         b.have_e_vz=true;
     }
@@ -311,6 +326,7 @@ bool attach(TChain& c, Branches& b) {
 
     if (truth_ok) {
         b.have_truth=true;
+        for (const char* n : truth_required) c.SetBranchStatus(n,1);
         c.SetBranchAddress("truth_probe_index",&b.truth_probe_index);
         c.SetBranchAddress("truth_probe_pid",&b.truth_probe_pid);
         c.SetBranchAddress("truth_probe_parent",&b.truth_probe_parent);
@@ -373,8 +389,10 @@ int best_probe_candidate(const Branches& b, int detector) {
     return best;
 }
 
-double event_weight(const Branches& b, bool weighted) {
-    if (!weighted) return 1.0;
+// The meaning/normalization of MC::Event.weight is generator dependent and is
+// not assumed here.  Primary efficiencies therefore use unit event weights for
+// BOTH data and MC.  The raw branch is retained only as a QA diagnostic.
+double raw_mc_weight(const Branches& b) {
     return std::isfinite(b.mc_weight) ? b.mc_weight : 0.0;
 }
 
@@ -578,14 +596,22 @@ struct RegionResult {
     std::unique_ptr<TH1D> residual;
     FitResult fit;
 
-    double denominator=0, denominator_w2=0;
-    double numerator[3]={0,0,0};
-    double numerator_w2[3]={0,0,0};
-
+    // Primary efficiency bookkeeping is deliberately UNWEIGHTED.
     long long denominator_rows=0;
     long long numerator_rows[3]={0,0,0};
     long long reconstructed_candidates=0;
-    double reconstructed_weight=0, reconstructed_weight_w2=0;
+
+    // Raw MC::Event.weight diagnostics only.  These are never used to define
+    // the primary fit or efficiency until the generator-weight semantics are
+    // explicitly validated.
+    double raw_weight_denominator=0, raw_weight_denominator_w2=0;
+    double raw_weight_reconstructed=0;
+    double raw_weight_numerator[3]={0,0,0};
+
+    // Cache the nominal-region residual once during the tree scan.  This lets
+    // us apply the fitted 1/2/3-sigma windows without rereading the full TChain.
+    std::vector<double> cached_dp;
+    std::vector<double> cached_raw_weight;
 
     // MC truth closure.
     long long truth_pi0_probe=0;
@@ -619,8 +645,13 @@ struct WindowResult {
 
 struct SampleResult {
     std::string name,input;
-    bool weighted=false;
+    bool is_mc=false;
     long long entries=0;
+
+    long long raw_weight_finite=0, raw_weight_nonfinite=0;
+    long long raw_weight_zero=0, raw_weight_negative=0;
+    double raw_weight_sum=0, raw_weight_sum2=0;
+    double raw_weight_min=0, raw_weight_max=0;
 
     CutFlow cutflow;
     FTPlaneEstimate ft_plane;
@@ -699,101 +730,103 @@ void init_sample(SampleResult& s) {
 }
 
 double efficiency(const RegionResult& r, int ns) {
-    if (r.denominator<=0) return -1;
-    return r.numerator[ns-1]/r.denominator;
-}
-
-double unweighted_fraction(const RegionResult& r, int ns) {
     if (r.denominator_rows<=0) return -1;
     return static_cast<double>(r.numerator_rows[ns-1]) /
            static_cast<double>(r.denominator_rows);
 }
 
-double effective_denominator(const RegionResult& r) {
-    if (r.denominator_w2<=0) return 0;
-    return r.denominator*r.denominator/r.denominator_w2;
+double raw_weighted_efficiency(const RegionResult& r, int ns) {
+    if (!(r.raw_weight_denominator>0)) return -1;
+    return r.raw_weight_numerator[ns-1]/r.raw_weight_denominator;
 }
 
-double efficiency_error(const RegionResult& r, int ns, bool weighted) {
-    if (r.denominator<=0) return 0;
+double raw_weight_neff(const RegionResult& r) {
+    if (!(r.raw_weight_denominator_w2>0)) return 0;
+    return r.raw_weight_denominator*r.raw_weight_denominator /
+           r.raw_weight_denominator_w2;
+}
 
+double efficiency_error(const RegionResult& r, int ns) {
+    if (r.denominator_rows<=0) return 0;
     const double e=efficiency(r,ns);
     if (!(e>=0 && e<=1)) return 0;
-
-    double n=r.denominator;
-    if (weighted) {
-        if (r.denominator_w2<=0) return 0;
-        n=r.denominator*r.denominator/r.denominator_w2;
-    }
-    return n>0 ? std::sqrt(std::max(0.0,e*(1.0-e)/n)) : 0;
+    return std::sqrt(std::max(0.0,e*(1.0-e)/r.denominator_rows));
 }
 
 // -----------------------------------------------------------------------------
 // Fill helpers.
 // -----------------------------------------------------------------------------
-void fill_region_residual(RegionResult& r, const Branches& b, double w) {
+void fill_region_residual(RegionResult& r, const Branches& b, double raww) {
     if (!in_region(b,r)) return;
 
     r.denominator_rows++;
+    r.raw_weight_denominator += raww;
+    r.raw_weight_denominator_w2 += raww*raww;
+
     const int k=best_probe_candidate(b,r.detector);
-    if (k<0) return;
+    double dp=std::numeric_limits<double>::quiet_NaN();
 
-    r.reconstructed_candidates++;
-    r.reconstructed_weight+=w;
-    r.reconstructed_weight_w2+=w*w;
-    const double dp=b.neutral_p[k]-b.probe_corr_p;
-    if (std::isfinite(dp)) r.residual->Fill(dp,w);
+    if (k>=0) {
+        r.reconstructed_candidates++;
+        r.raw_weight_reconstructed += raww;
+        dp=b.neutral_p[k]-b.probe_corr_p;
+        if (std::isfinite(dp)) r.residual->Fill(dp,1.0);
 
-    if (b.have_truth &&
-        b.truth_probe_pid==22 &&
-        b.truth_probe_parent==111) {
+        if (b.have_truth &&
+            b.truth_probe_pid==22 &&
+            b.truth_probe_parent==111) {
 
-        r.truth_pi0_probe++;
-        const double da_truth=opening_angle_deg(
-            b.neutral_theta[k],b.neutral_phi[k],
-            b.truth_probe_theta,b.truth_probe_phi);
+            r.truth_pi0_probe++;
+            const double da_truth=opening_angle_deg(
+                b.neutral_theta[k],b.neutral_phi[k],
+                b.truth_probe_theta,b.truth_probe_phi);
 
-        if (finite_good(da_truth)) {
-            r.selected_reco_with_truth++;
-            if (da_truth<1.0) r.reco_truth_da_lt1++;
-            if (da_truth<2.0) r.reco_truth_da_lt2++;
-            if (da_truth<3.0) r.reco_truth_da_lt3++;
+            if (finite_good(da_truth)) {
+                r.selected_reco_with_truth++;
+                if (da_truth<1.0) r.reco_truth_da_lt1++;
+                if (da_truth<2.0) r.reco_truth_da_lt2++;
+                if (da_truth<3.0) r.reco_truth_da_lt3++;
+            }
         }
     }
+
+    r.cached_dp.push_back(dp);
+    r.cached_raw_weight.push_back(raww);
 }
 
-void fill_region_counts(RegionResult& r, const Branches& b, double w) {
-    if (!in_region(b,r)) return;
+void finalize_region_counts(RegionResult& r) {
+    if (!r.fit.valid) return;
 
-    r.denominator+=w;
-    r.denominator_w2+=w*w;
+    const size_t n=std::min(r.cached_dp.size(),r.cached_raw_weight.size());
+    for (size_t i=0;i<n;i++) {
+        const double dp=r.cached_dp[i];
+        if (!std::isfinite(dp)) continue;
+        const double d=std::fabs(dp-r.fit.mean);
 
-    const int k=best_probe_candidate(b,r.detector);
-    if (!r.fit.valid || k<0) return;
-
-    const double dp=b.neutral_p[k]-b.probe_corr_p;
-    const double d=std::fabs(dp-r.fit.mean);
-
-    for (int ns=1;ns<=3;ns++) {
-        if (d<ns*r.fit.sigma) {
-            r.numerator[ns-1]+=w;
-            r.numerator_w2[ns-1]+=w*w;
-            r.numerator_rows[ns-1]++;
-        }
+        for (int ns=1;ns<=3;ns++) {
+            if (d<ns*r.fit.sigma) {
+                r.numerator_rows[ns-1]++;
+                r.raw_weight_numerator[ns-1]+=r.cached_raw_weight[i];
+            }
+        } // endfor
     } // endfor
 }
 
 // -----------------------------------------------------------------------------
 // Main per-sample analysis.
 // -----------------------------------------------------------------------------
-bool analyze_sample(SampleResult& s) {
+bool scan_sample(SampleResult& s) {
     const std::string pattern=make_pattern(s.input);
     TChain c("PhotonEfficiency");
     const int nf=c.Add(pattern.c_str());
     s.entries=c.GetEntries();
 
-    std::cout << "\n[" << s.name << "] files=" << nf
-              << " entries=" << s.entries << "\n";
+    {
+        static std::mutex print_mutex;
+        std::lock_guard<std::mutex> lock(print_mutex);
+        std::cout << "\n[" << s.name << "] files=" << nf
+                  << " entries=" << s.entries << "\n";
+    }
 
     if (nf<=0 || s.entries<=0) return false;
 
@@ -801,19 +834,50 @@ bool analyze_sample(SampleResult& s) {
     b.reset_arrays();
     if (!attach(c,b)) return false;
 
+    // ROOT read-ahead cache helps especially for remote/cache-backed HIPO-derived
+    // ROOT files.  Branch filtering above keeps the cache focused on useful data.
+    c.SetCacheSize(64LL*1024LL*1024LL);
+    c.SetCacheLearnEntries(20);
+
     init_sample(s);
     s.ft_plane=estimate_ft_plane(c,b);
 
-    std::cout << "[" << s.name << "] inferred FT response-plane z: ";
-    if (s.ft_plane.valid)
-        std::cout << s.ft_plane.z << " cm from " << s.ft_plane.n << " responses\n";
-    else
-        std::cout << "unavailable\n";
+    {
+        static std::mutex print_mutex;
+        std::lock_guard<std::mutex> lock(print_mutex);
+        std::cout << "[" << s.name << "] inferred FT response-plane z: ";
+        if (s.ft_plane.valid)
+            std::cout << s.ft_plane.z << " cm from " << s.ft_plane.n << " responses\n";
+        else
+            std::cout << "unavailable\n";
+    }
 
-    // Pass 1: cut flow, residuals, kinematics, mass-window scan.
-    for (Long64_t i=0;i<c.GetEntries();i++) {
+    // ONE full pass: cut flow, residuals, cached nominal events, kinematics,
+    // parent-window scan, and raw MC-weight diagnostics.
+    const Long64_t nentries=c.GetEntries();
+    for (Long64_t i=0;i<nentries;i++) {
         c.GetEntry(i);
         s.cutflow.all++;
+
+        if (s.is_mc) {
+            if (std::isfinite(b.mc_weight)) {
+                const double rw=b.mc_weight;
+                if (s.raw_weight_finite==0) {
+                    s.raw_weight_min=rw;
+                    s.raw_weight_max=rw;
+                } else {
+                    s.raw_weight_min=std::min(s.raw_weight_min,rw);
+                    s.raw_weight_max=std::max(s.raw_weight_max,rw);
+                }
+                s.raw_weight_finite++;
+                s.raw_weight_sum+=rw;
+                s.raw_weight_sum2+=rw*rw;
+                if (rw==0) s.raw_weight_zero++;
+                if (rw<0) s.raw_weight_negative++;
+            } else {
+                s.raw_weight_nonfinite++;
+            }
+        }
 
         if (!b.p_pass_standard) continue;
         s.cutflow.proton++;
@@ -830,8 +894,10 @@ bool analyze_sample(SampleResult& s) {
             !finite_good(b.probe_corr_phi)) continue;
         s.cutflow.finite_probe++;
 
-        // Parent-window stability scan before imposing the nominal window.
-        const double w=event_weight(b,s.weighted);
+        // Primary histograms are unweighted.  Raw MC::Event.weight is carried
+        // separately only for QA until its semantics are established.
+        const double raww=s.is_mc ? raw_mc_weight(b) : 1.0;
+
         for (auto& wr : s.windows) {
             if (!finite_good(b.Mx_ep) ||
                 b.Mx_ep<wr.w.lo || b.Mx_ep>wr.w.hi) continue;
@@ -841,7 +907,7 @@ bool analyze_sample(SampleResult& s) {
                 const int k=best_probe_candidate(b,1);
                 if (k>=0) {
                     wr.fd_reco++;
-                    wr.fd_h->Fill(b.neutral_p[k]-b.probe_corr_p,w);
+                    wr.fd_h->Fill(b.neutral_p[k]-b.probe_corr_p,1.0);
                 }
             }
 
@@ -850,7 +916,7 @@ bool analyze_sample(SampleResult& s) {
                 const int k=best_probe_candidate(b,0);
                 if (k>=0) {
                     wr.ft_reco++;
-                    wr.ft_h->Fill(b.neutral_p[k]-b.probe_corr_p,w);
+                    wr.ft_h->Fill(b.neutral_p[k]-b.probe_corr_p,1.0);
                 }
             }
         } // endfor
@@ -858,9 +924,9 @@ bool analyze_sample(SampleResult& s) {
         if (!pass_nominal_mass(b)) continue;
         s.cutflow.nominal_mass++;
 
-        s.denom_p->Fill(b.probe_corr_p,w);
-        s.denom_theta->Fill(b.probe_corr_theta,w);
-        s.denom_phi->Fill(wrap_phi(b.probe_corr_phi),w);
+        s.denom_p->Fill(b.probe_corr_p,1.0);
+        s.denom_theta->Fill(b.probe_corr_theta,1.0);
+        s.denom_phi->Fill(wrap_phi(b.probe_corr_phi),1.0);
 
         if (in_fd(b)) s.cutflow.fd++;
         if (in_ft(b)) {
@@ -869,17 +935,24 @@ bool analyze_sample(SampleResult& s) {
             const FTProjection q=project_ft(b,s.ft_plane);
             if (q.valid) {
                 s.cutflow.ft_projectable++;
-                s.ft_xy_projected->Fill(q.x,q.y,w);
+                s.ft_xy_projected->Fill(q.x,q.y,1.0);
                 if (q.fiducial) s.cutflow.ft_projected_fid++;
             }
         }
 
-        fill_region_residual(s.fd,b,w);
-        fill_region_residual(s.ft_all,b,w);
-        fill_region_residual(s.ft_low,b,w);
-        fill_region_residual(s.ft_high,b,w);
+        fill_region_residual(s.fd,b,raww);
+        fill_region_residual(s.ft_all,b,raww);
+        fill_region_residual(s.ft_low,b,raww);
+        fill_region_residual(s.ft_high,b,raww);
     } // endfor
 
+    return true;
+}
+
+void finalize_sample(SampleResult& s) {
+    // Fits are intentionally done after all parallel scans finish.  That keeps
+    // ROOT minimizer activity single-threaded while the expensive file I/O and
+    // event loops run concurrently.
     s.fd.fit=fit_residual(s.fd.residual.get(),MIN_FIT_ENTRIES_FD);
     s.ft_all.fit=fit_residual(s.ft_all.residual.get(),MIN_FIT_ENTRIES_FT);
     s.ft_low.fit=fit_residual(s.ft_low.residual.get(),MIN_FIT_ENTRIES_FT);
@@ -890,21 +963,10 @@ bool analyze_sample(SampleResult& s) {
         wr.ft_fit=fit_residual(wr.ft_h.get(),MIN_FIT_ENTRIES_FT);
     } // endfor
 
-    // Pass 2: 1/2/3 sigma counts.
-    for (Long64_t i=0;i<c.GetEntries();i++) {
-        c.GetEntry(i);
-        if (!pass_before_mass(b)) continue;
-        if (!pass_nominal_mass(b)) continue;
-
-        const double w=event_weight(b,s.weighted);
-
-        fill_region_counts(s.fd,b,w);
-        fill_region_counts(s.ft_all,b,w);
-        fill_region_counts(s.ft_low,b,w);
-        fill_region_counts(s.ft_high,b,w);
-    } // endfor
-
-    return true;
+    finalize_region_counts(s.fd);
+    finalize_region_counts(s.ft_all);
+    finalize_region_counts(s.ft_low);
+    finalize_region_counts(s.ft_high);
 }
 
 // -----------------------------------------------------------------------------
@@ -956,19 +1018,19 @@ void draw_residual_pad(const SampleResult& s, const RegionResult& r) {
     tx.SetTextSize(0.034);
     // Deliberately lower than the previous version so the first line is
     // comfortably clear of the upper frame, even in the combined canvas.
-    tx.DrawLatex(0.15,0.80,Form("%s %s",s.name.c_str(),r.name.c_str()));
-    tx.DrawLatex(0.15,0.75,Form("N_{den}=%lld, N_{reco}=%lld",
+    tx.DrawLatex(0.15,0.76,Form("%s %s",s.name.c_str(),r.name.c_str()));
+    tx.DrawLatex(0.15,0.71,Form("N_{den}=%lld, N_{reco}=%lld",
                                 r.denominator_rows,r.reconstructed_candidates));
 
     if (r.fit.valid) {
-        tx.DrawLatex(0.15,0.70,
+        tx.DrawLatex(0.15,0.66,
             Form("#mu=%.4f#pm%.4f GeV",r.fit.mean,r.fit.mean_err));
-        tx.DrawLatex(0.15,0.65,
+        tx.DrawLatex(0.15,0.61,
             Form("#sigma=%.4f#pm%.4f GeV",r.fit.sigma,r.fit.sigma_err));
-        tx.DrawLatex(0.15,0.60,
+        tx.DrawLatex(0.15,0.56,
             Form("#chi^{2}/ndf=%.1f/%d",r.fit.chi2,r.fit.ndf));
     } else {
-        tx.DrawLatex(0.15,0.70,Form("FIT INVALID: %s",r.fit.reason.c_str()));
+        tx.DrawLatex(0.15,0.66,Form("FIT INVALID: %s",r.fit.reason.c_str()));
     }
 }
 
@@ -1010,7 +1072,7 @@ void save_combined_kinematics(
             c.cd(is*3+j+1);
             gPad->SetLeftMargin(0.12);
             gPad->SetBottomMargin(0.12);
-            hh[j]->SetTitle(Form("%s;%s;weighted candidates",
+            hh[j]->SetTitle(Form("%s;%s;candidates",
                                  s.name.c_str(),hh[j]->GetXaxis()->GetTitle()));
             hh[j]->Draw("E");
         } // endfor
@@ -1065,15 +1127,15 @@ void write_window_scan_all(
 }
 
 void write_region_csv_header(std::ofstream& f) {
-    f << "sample,region,pmin,pmax,thetamin,thetamax,weighted_mc,"
+    f << "sample,region,pmin,pmax,thetamin,thetamax,is_mc,"
       << "fit_valid,fit_reason,fit_candidates,mean,mean_err,sigma,sigma_err,"
-      << "chi2,ndf,denominator_rows,denominator_weight_sum,denominator_neff,"
-      << "reconstructed_rows,reconstructed_weight_sum,"
+      << "chi2,ndf,denominator_rows,reconstructed_rows,"
       << "matched_rows_1sigma,matched_rows_2sigma,matched_rows_3sigma,"
-      << "matched_weight_1sigma,matched_weight_2sigma,matched_weight_3sigma,"
       << "eff_1sigma,eff_2sigma,eff_3sigma,"
-      << "unweighted_fraction_1sigma,unweighted_fraction_2sigma,unweighted_fraction_3sigma,"
       << "err_1sigma,err_2sigma,err_3sigma,"
+      << "raw_weight_denominator,raw_weight_neff,raw_weight_reconstructed,"
+      << "raw_weight_matched_1sigma,raw_weight_matched_2sigma,raw_weight_matched_3sigma,"
+      << "raw_weight_eff_1sigma,raw_weight_eff_2sigma,raw_weight_eff_3sigma,"
       << "truth_pi0_probe,selected_reco_with_truth,"
       << "reco_truth_da_lt1,reco_truth_da_lt2,reco_truth_da_lt3\n";
 }
@@ -1084,22 +1146,23 @@ void append_region_csv(std::ofstream& f,
     f << s.name << "," << r.name << ","
       << r.pmin << "," << r.pmax << ","
       << r.thmin << "," << r.thmax << ","
-      << (s.weighted?1:0) << ","
+      << (s.is_mc?1:0) << ","
       << (r.fit.valid?1:0) << ",\"" << r.fit.reason << "\","
       << r.fit.candidates << ","
       << r.fit.mean << "," << r.fit.mean_err << ","
       << r.fit.sigma << "," << r.fit.sigma_err << ","
       << r.fit.chi2 << "," << r.fit.ndf << ","
-      << r.denominator_rows << "," << r.denominator << ","
-      << effective_denominator(r) << ","
-      << r.reconstructed_candidates << "," << r.reconstructed_weight << ","
+      << r.denominator_rows << "," << r.reconstructed_candidates << ","
       << r.numerator_rows[0] << "," << r.numerator_rows[1] << "," << r.numerator_rows[2] << ","
-      << r.numerator[0] << "," << r.numerator[1] << "," << r.numerator[2] << ","
       << efficiency(r,1) << "," << efficiency(r,2) << "," << efficiency(r,3) << ","
-      << unweighted_fraction(r,1) << "," << unweighted_fraction(r,2) << "," << unweighted_fraction(r,3) << ","
-      << efficiency_error(r,1,s.weighted) << ","
-      << efficiency_error(r,2,s.weighted) << ","
-      << efficiency_error(r,3,s.weighted) << ","
+      << efficiency_error(r,1) << "," << efficiency_error(r,2) << "," << efficiency_error(r,3) << ","
+      << r.raw_weight_denominator << "," << raw_weight_neff(r) << ","
+      << r.raw_weight_reconstructed << ","
+      << r.raw_weight_numerator[0] << "," << r.raw_weight_numerator[1] << ","
+      << r.raw_weight_numerator[2] << ","
+      << raw_weighted_efficiency(r,1) << ","
+      << raw_weighted_efficiency(r,2) << ","
+      << raw_weighted_efficiency(r,3) << ","
       << r.truth_pi0_probe << "," << r.selected_reco_with_truth << ","
       << r.reco_truth_da_lt1 << "," << r.reco_truth_da_lt2 << ","
       << r.reco_truth_da_lt3 << "\n";
@@ -1116,12 +1179,10 @@ void write_all_summary(
       << " < Mx(ep) < " << PI0_M_MAX << " GeV\n\n"
       << "WEIGHTING CONVENTION\n"
       << "--------------------\n"
-      << "Data use unit event weight.  MC samples use the mc_weight branch,\n"
-      << "which is copied directly from MC::Event.weight in the input HIPO.\n"
-      << "Therefore MC fitted residuals and quoted primary efficiencies are\n"
-      << "generator-weighted.  Unweighted row-count fractions are printed\n"
-      << "alongside them as a QA diagnostic.  N_eff is the effective number\n"
-      << "of denominator events after weighting: (sum w)^2 / sum(w^2).\n\n";
+      << "PRIMARY fits and efficiencies use UNIT WEIGHTS for both data and MC.\n"
+      << "The mc_weight branch is copied from MC::Event.weight, but its generator-\n"
+      << "specific meaning is not assumed.  Raw-weighted quantities are retained\n"
+      << "only as QA diagnostics and are never used in the quoted data/MC ratio.\n\n";
 
     for (const auto& sp : samples) {
         const SampleResult& s=*sp;
@@ -1129,7 +1190,20 @@ void write_all_summary(
           << "SAMPLE: " << s.name << "\n"
           << "Input: " << s.input << "\n"
           << "Tree entries: " << s.entries << "\n"
-          << "MC weighting enabled: " << (s.weighted?"yes":"no") << "\n\n";
+          << "Primary weighting: unit weights" << "\n";
+
+        if (s.is_mc) {
+            const double meanw=s.raw_weight_finite>0 ? s.raw_weight_sum/s.raw_weight_finite : 0;
+            const double neff=s.raw_weight_sum2>0 ? s.raw_weight_sum*s.raw_weight_sum/s.raw_weight_sum2 : 0;
+            f << "Raw MC::Event.weight QA: finite=" << s.raw_weight_finite
+              << ", nonfinite=" << s.raw_weight_nonfinite
+              << ", zero=" << s.raw_weight_zero
+              << ", negative=" << s.raw_weight_negative << "\n"
+              << "Raw weight min/mean/max: " << s.raw_weight_min << " / "
+              << meanw << " / " << s.raw_weight_max << "\n"
+              << "Raw weight global N_eff: " << neff << "\n";
+        }
+        f << "\n";
 
         f << "Cut flow\n--------\n";
         auto row=[&](const char* label,long long n) {
@@ -1159,21 +1233,20 @@ void write_all_summary(
         for (const RegionResult* r : rr) {
             f << "--- " << r->name << " ---\n"
               << "denominator rows: " << r->denominator_rows << "\n"
-              << "denominator sum(w): " << r->denominator << "\n"
-              << "denominator N_eff: " << effective_denominator(*r) << "\n"
               << "reconstructed rows: " << r->reconstructed_candidates << "\n"
-              << "reconstructed sum(w): " << r->reconstructed_weight << "\n"
               << "fit valid: " << (r->fit.valid?1:0)
               << " (" << r->fit.reason << ")\n"
               << "mean: " << r->fit.mean << " +/- " << r->fit.mean_err << " GeV\n"
               << "sigma: " << r->fit.sigma << " +/- " << r->fit.sigma_err << " GeV\n";
 
             for (int ns=1;ns<=3;ns++) {
-                f << ns << " sigma weighted efficiency: "
+                f << ns << " sigma efficiency (unit weight): "
                   << efficiency(*r,ns) << " +/- "
-                  << efficiency_error(*r,ns,s.weighted)
-                  << "   [row-count fraction: "
-                  << unweighted_fraction(*r,ns) << "]\n";
+                  << efficiency_error(*r,ns);
+                if (s.is_mc)
+                    f << "   [raw MC-weight QA: "
+                      << raw_weighted_efficiency(*r,ns) << "]";
+                f << "\n";
             } // endfor
 
             if (r->truth_pi0_probe>0) {
@@ -1252,26 +1325,20 @@ void write_root(const std::vector<std::unique_ptr<SampleResult>>& samples,
     f.Close();
 }
 
-void process_if_available(const std::string& name,
-                          const std::string& dir,
-                          bool weighted,
-                          std::vector<std::unique_ptr<SampleResult>>& samples) {
+void add_if_available(const std::string& name,
+                      const std::string& dir,
+                      bool is_mc,
+                      std::vector<std::unique_ptr<SampleResult>>& samples) {
     if (!has_root_files(dir)) {
         std::cout << "[AUTO] No " << name << " ROOT files yet; skipping.\n";
         return;
     }
 
     std::cout << "[AUTO] Found " << name << " ROOT files in " << dir << "\n";
-
     std::unique_ptr<SampleResult> s(new SampleResult);
     s->name=name;
     s->input=dir;
-    s->weighted=weighted;
-
-    if (!analyze_sample(*s)) {
-        std::cerr << "WARNING: failed to analyze " << name << "\n";
-        return;
-    }
+    s->is_mc=is_mc;
     samples.push_back(std::move(s));
 }
 
@@ -1282,6 +1349,8 @@ void photon_efficiency_valerii_reproduction() {
 
     gROOT->SetBatch(kTRUE);
     gStyle->SetOptStat(0);
+    ROOT::EnableThreadSafety();
+    TH1::AddDirectory(kFALSE);
 
     const std::string out="output";
     reset_output(out);
@@ -1293,15 +1362,42 @@ void photon_efficiency_valerii_reproduction() {
         << "FD: fully integrated\n"
         << "FT: integrated + 0.4-2 GeV + >=2 GeV\n"
         << "Matching: Delta p_gamma2 = p_rec - p_miss\n"
+        << "Primary data and MC efficiencies: UNIT WEIGHTS\n"
+        << "Sample scans: parallel; each TChain is read once\n"
         << "Outputs are rebuilt in ./output each invocation.\n"
         << "============================================================\n";
 
     std::vector<std::unique_ptr<SampleResult>> samples;
 
-    process_if_available("data",DATA_DIR,false,samples);
-    process_if_available("aaogen",AAOGEN_DIR,true,samples);
-    process_if_available("clasdis",CLASDIS_DIR,true,samples);
-    process_if_available("dvcsgen",DVCSGEN_DIR,true,samples);
+    add_if_available("data",DATA_DIR,false,samples);
+    add_if_available("aaogen",AAOGEN_DIR,true,samples);
+    add_if_available("clasdis",CLASDIS_DIR,true,samples);
+    add_if_available("dvcsgen",DVCSGEN_DIR,true,samples);
+
+    // Parallelize the expensive independent TChain scans across samples.
+    // Fits are finalized serially afterward to avoid concurrent ROOT minimizers.
+    std::vector<std::future<bool>> scan_jobs;
+    scan_jobs.reserve(samples.size());
+    for (auto& sp : samples) {
+        SampleResult* ptr=sp.get();
+        scan_jobs.emplace_back(std::async(std::launch::async,[ptr]() {
+            return scan_sample(*ptr);
+        }));
+    } // endfor
+
+    std::vector<std::unique_ptr<SampleResult>> good_samples;
+    for (size_t i=0;i<samples.size();i++) {
+        bool ok=false;
+        try { ok=scan_jobs[i].get(); }
+        catch (const std::exception& e) {
+            std::cerr << "WARNING: scan failed for " << samples[i]->name
+                      << ": " << e.what() << "\n";
+        }
+        if (ok) good_samples.push_back(std::move(samples[i]));
+    } // endfor
+    samples.swap(good_samples);
+
+    for (auto& sp : samples) finalize_sample(*sp);
 
     std::ofstream csv(out+"/integrated_results.csv");
     write_region_csv_header(csv);
