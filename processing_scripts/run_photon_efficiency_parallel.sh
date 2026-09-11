@@ -4,6 +4,10 @@ set -euo pipefail
 # Called by processing.csh for process_photon_efficiency.groovy.
 # Usage:
 #   run_photon_efficiency_parallel.sh INPUT OUTPUT_DIR NFILES BEAM RUN_OVERRIDE QADB_OVERRIDE IS_MC NWORKERS MX2_MIN MX2_MAX KEEP_TXT MX2_EPG_MIN MX2_EPG_MAX
+#
+# Existing non-empty ROOT outputs are skipped automatically.  This lets a full
+# production command be restarted safely and lets statistics accumulate run by
+# run without reprocessing completed HIPO files.
 
 INPUT=${1:?input HIPO file/directory required}
 OUTDIR=${2:?output directory required}
@@ -23,6 +27,7 @@ SCRIPT="processing_scripts/process_photon_efficiency.groovy"
 JAR="processing_classes/dist/processing_classes.jar"
 CONVERTER_SRC="processing_scripts/convert_photon_efficiency_txt_to_root.cpp"
 CONVERTER="processing_scripts/convert_photon_efficiency_txt_to_root"
+
 mkdir -p "$OUTDIR"
 
 if ! command -v root-config >/dev/null 2>&1; then
@@ -34,11 +39,13 @@ g++ -O2 $(root-config --cflags) "$CONVERTER_SRC" -o "$CONVERTER" $(root-config -
 
 listfile=$(mktemp)
 trap 'rm -f "$listfile"' EXIT
+
 if [[ -f "$INPUT" ]]; then
   printf '%s\n' "$INPUT" > "$listfile"
 else
   find "$INPUT" -type f -name '*.hipo' | sort > "$listfile"
 fi
+
 if [[ "$NFILES" =~ ^[0-9]+$ ]] && (( NFILES > 0 )); then
   head -n "$NFILES" "$listfile" > "${listfile}.limited"
   mv "${listfile}.limited" "$listfile"
@@ -52,24 +59,34 @@ fi
 
 echo "Photon-efficiency processing: $TOTAL HIPO files, $NWORKERS worker(s)"
 echo "Output directory: $OUTDIR"
+echo "Existing non-empty ROOT outputs: skipped"
 echo "Loose Mx2(ep) window: [$MX2_MIN, $MX2_MAX] GeV^2"
 echo "Loose Mx2(ep gamma_tag) window: [$MX2_EPG_MIN, $MX2_EPG_MAX] GeV^2"
 
-export OUTDIR BEAM RUN_OVERRIDE QADB_OVERRIDE IS_MC MX2_MIN MX2_MAX KEEP_TXT MX2_EPG_MIN MX2_EPG_MAX SCRIPT JAR CONVERTER
+export OUTDIR BEAM RUN_OVERRIDE QADB_OVERRIDE IS_MC MX2_MIN MX2_MAX KEEP_TXT
+export MX2_EPG_MIN MX2_EPG_MAX SCRIPT JAR CONVERTER
 
-worker='\
-hipo="$1"; \
-base=$(basename "$hipo" .hipo); \
-txt="$OUTDIR/${base}_photon_efficiency.txt"; \
-root="$OUTDIR/${base}_photon_efficiency.root"; \
-echo "[START] $hipo"; \
-coatjava/bin/run-groovy -cp "$JAR" "$SCRIPT" "$hipo" "$txt" "$BEAM" "$RUN_OVERRIDE" "$QADB_OVERRIDE" "$IS_MC" "$MX2_MIN" "$MX2_MAX" "$MX2_EPG_MIN" "$MX2_EPG_MAX" && \
+worker='
+hipo="$1"
+base=$(basename "$hipo" .hipo)
+txt="$OUTDIR/${base}_photon_efficiency.txt"
+root="$OUTDIR/${base}_photon_efficiency.root"
+
+if [[ -s "$root" ]]; then
+  echo "[SKIP ] $root already exists"
+  exit 0
+fi
+
+echo "[START] $hipo"
+
+coatjava/bin/run-groovy -cp "$JAR" "$SCRIPT" \
+  "$hipo" "$txt" "$BEAM" "$RUN_OVERRIDE" "$QADB_OVERRIDE" "$IS_MC" \
+  "$MX2_MIN" "$MX2_MAX" "$MX2_EPG_MIN" "$MX2_EPG_MAX" && \
 "$CONVERTER" "$txt" "$root" && \
 { if [[ "$KEEP_TXT" == "0" ]]; then rm -f "$txt"; fi; } && \
-echo "[DONE ] $root"\
+echo "[DONE ] $root"
 '
 
-# -n1 gives one HIPO file to each worker.  -P supplies immediate parallelism.
 xargs -d '\n' -n 1 -P "$NWORKERS" bash -c "$worker" _ < "$listfile"
 
 echo "All requested photon-efficiency files completed."
