@@ -1649,7 +1649,7 @@ std::vector<std::unique_ptr<SampleResult>> analyze_samples_parallel(const std::s
 //   * 1-, 2-, and 3-sigma matching using the fit belonging to data or MC;
 //   * epsilon_data, epsilon_MC, and epsilon_data/epsilon_MC correction maps;
 //   * data-driven normalization variations from observable-to-observable spread;
-  * normalization-only template shift/smearing nuisances (event-level MC is untouched).
+//   * normalization-only template shift/smearing nuisances (event-level MC is untouched).
 //
 // The existing stage-1 nominal Mx(ep) enrichment window is NOT imposed here.
 // Valerii's ep-gamma-X denominator is intentionally treated as a mixed sample;
@@ -2794,7 +2794,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
         std::ofstream ff(od+"/component_fractions.csv");
         ff << "region,aao,clasdis,dvcs,total,aao_fraction,clasdis_fraction,dvcs_fraction\n";
         auto write_region=[&](const char* label,const TH1D* ha,const TH1D* hc,const TH1D* hv,double lo,double hi) {
-            int ba=ha->FindBin(lo+1e-9), bb=ha->FindBin(hi-1e-9);
+            int ba=ha->GetXaxis()->FindBin(lo+1e-9), bb=ha->GetXaxis()->FindBin(hi-1e-9);
             const double ya=R.nominal.aao*ha->Integral(ba,bb), yc=R.nominal.clasdis*hc->Integral(ba,bb), yv=R.nominal.dvcs*hv->Integral(ba,bb);
             const double yt=ya+yc+yv; ff<<label<<","<<ya<<","<<yc<<","<<yv<<","<<yt<<","<<(yt?ya/yt:0)<<","<<(yt?yc/yt:0)<<","<<(yt?yv/yt:0)<<"\n";
         };
