@@ -1320,6 +1320,40 @@ void read_region_state(TDirectory* parent, RegionResult& r) {
     read_fit_state(d,"fit_",r.fit);
 }
 
+
+void write_root(const std::vector<std::unique_ptr<SampleResult>>& samples,
+                const std::string& out) {
+    TFile f((out+"/analysis_histograms.root").c_str(),"RECREATE");
+    if (f.IsZombie()) {
+        std::cerr << "WARNING: could not create " << out << "/analysis_histograms.root\n";
+        return;
+    }
+
+    for (const auto& sp : samples) {
+        if (!sp) continue;
+        f.mkdir(sp->name.c_str());
+        f.cd(sp->name.c_str());
+
+        if (sp->fd.residual) sp->fd.residual->Write();
+        if (sp->ft_all.residual) sp->ft_all.residual->Write();
+        if (sp->ft_low.residual) sp->ft_low.residual->Write();
+        if (sp->ft_high.residual) sp->ft_high.residual->Write();
+
+        if (sp->denom_p) sp->denom_p->Write();
+        if (sp->denom_theta) sp->denom_theta->Write();
+        if (sp->denom_phi) sp->denom_phi->Write();
+        if (sp->ft_xy_projected) sp->ft_xy_projected->Write();
+
+        for (const auto& wr : sp->windows) {
+            if (wr.fd_h) wr.fd_h->Write();
+            if (wr.ft_h) wr.ft_h->Write();
+        } // endfor
+        f.cd();
+    } // endfor
+
+    f.Close();
+}
+
 bool save_worker_result(const SampleResult& s, const std::string& path) {
     TFile f(path.c_str(),"RECREATE");
     if (f.IsZombie()) return false;
