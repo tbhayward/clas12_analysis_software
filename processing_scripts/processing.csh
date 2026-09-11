@@ -2,6 +2,48 @@
 
 source source_file.txt
 
+
+# Dedicated photon-efficiency path.  This mode processes one HIPO file per worker,
+# converts each completed text checkpoint immediately to a ROOT tree, and can run
+# multiple files in parallel.  It exits here so the legacy argument conventions
+# below remain unchanged for all existing processing scripts.
+if ( $#argv >= 1 && "$1" == "processing_scripts/process_photon_efficiency.groovy" ) then
+    if ( $#argv < 3 ) then
+        echo "Usage: ./processing_scripts/processing.csh processing_scripts/process_photon_efficiency.groovy INPUT_HIPO_OR_DIR OUTPUT_DIR [NFILES=0] [BEAM=10.6041] [RUN_OVERRIDE=0] [QADB_OVERRIDE=0] [IS_MC=0] [NWORKERS=1] [MX2_MIN=-1.0] [MX2_MAX=2.0] [KEEP_TXT=0]"
+        exit 1
+    endif
+
+    set pe_input = "$2"
+    set pe_outdir = "$3"
+    set pe_nfiles = 0
+    set pe_beam = 10.6041
+    set pe_run = 0
+    set pe_qadb = 0
+    set pe_ismc = 0
+    set pe_workers = 1
+    set pe_mx2min = -1.0
+    set pe_mx2max = 2.0
+    set pe_keep_txt = 0
+
+    if ( $#argv >= 4 ) set pe_nfiles = "$4"
+    if ( $#argv >= 5 ) set pe_beam = "$5"
+    if ( $#argv >= 6 ) set pe_run = "$6"
+    if ( $#argv >= 7 ) set pe_qadb = "$7"
+    if ( $#argv >= 8 ) set pe_ismc = "$8"
+    if ( $#argv >= 9 ) set pe_workers = "$9"
+    if ( $#argv >= 10 ) set pe_mx2min = "$argv[10]"
+    if ( $#argv >= 11 ) set pe_mx2max = "$argv[11]"
+    if ( $#argv >= 12 ) set pe_keep_txt = "$argv[12]"
+
+    echo "Pulling the latest changes from the repository..."
+    git pull
+    echo "Sourcing qadb..."
+    module load qadb/3.4.1
+
+    ./processing_scripts/run_photon_efficiency_parallel.sh "$pe_input" "$pe_outdir" "$pe_nfiles" "$pe_beam" "$pe_run" "$pe_qadb" "$pe_ismc" "$pe_workers" "$pe_mx2min" "$pe_mx2max" "$pe_keep_txt"
+    exit $status
+endif
+
 # Set the first argument to be processing two particles if not provided
 if ( $#argv < 1 ) then
     set arg1 = "processing_scripts/processing_two_particles.groovy"

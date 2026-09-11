@@ -95,6 +95,8 @@ public class TwoParticles {
         HipoDataBank configBank = (HipoDataBank) event.getBank("RUN::config");
         HipoDataBank rec_Bank = (HipoDataBank) event.getBank("REC::Particle");
         HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter");
+        HipoDataBank ft_Bank = event.hasBank("REC::ForwardTagger")
+                ? (HipoDataBank) event.getBank("REC::ForwardTagger") : null;
         HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
 
         helicity = eventBank.getByte("helicity", 0);
@@ -134,7 +136,7 @@ public class TwoParticles {
         boolean passesCentralDetector_1 = generic_tests.central_detector_cut(p_rec_index, rec_Bank)
                 ? fiducial_cuts.cvt_fiducial_cut(p_rec_index, rec_Bank, traj_Bank, 1) : true;
         boolean passesForwardTagger_1 = generic_tests.forward_tagger_cut(p_rec_index, rec_Bank)
-                ? fiducial_cuts.forward_tagger_fiducial_cut(p_rec_index, rec_Bank, cal_Bank) : true;
+                ? (ft_Bank != null && fiducial_cuts.forward_tagger_fiducial_cut(p_rec_index, rec_Bank, ft_Bank)) : true;
         boolean p_fiducial_check = passesForwardTagger_1 && passesForwardDetector_1 && passesCentralDetector_1;
 
         fiducial_status = 0;
@@ -547,7 +549,7 @@ public class TwoParticles {
 //        boolean passesCentralDetector_1 = generic_tests.central_detector_cut(p_rec_index, rec_Bank)
 //                ? fiducial_cuts.cvt_fiducial_cut(p_rec_index, rec_Bank, traj_Bank, 1) : true;
 //        boolean passesForwardTagger_1 = generic_tests.forward_tagger_cut(p_rec_index, rec_Bank)
-//                ? fiducial_cuts.forward_tagger_fiducial_cut(p_rec_index, rec_Bank, cal_Bank) : true;
+//                ? (ft_Bank != null && fiducial_cuts.forward_tagger_fiducial_cut(p_rec_index, rec_Bank, ft_Bank)) : true;
 //        boolean p_fiducial_check = passesForwardTagger_1 && passesForwardDetector_1 && passesCentralDetector_1;
 //
 //        fiducial_status = 0;
