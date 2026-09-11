@@ -374,3 +374,7 @@ static void main(String[] args) {
     double min=(System.currentTimeMillis()-start)/60000.0
     println String.format(java.util.Locale.US,"Done: events=%d accepted_ep_pairs=%d rows=%d time=%.2f min output=%s",nevt,npair,nrow,min,output)
 }
+
+// Groovy scripts executed with run-groovy do not automatically invoke a
+// user-defined static main(String[]).  Explicitly enter the processor here.
+main(args)
