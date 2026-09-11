@@ -672,7 +672,6 @@ void process_sample(const std::string& name,
 
 void photon_efficiency_valerii_reproduction(
         const char* data_input,
-        const char* output_dir="valerii_reproduction_output",
         const char* aaogen_input="",
         const char* clasdis_input="",
         const char* dvcsgen_input="") {
@@ -682,7 +681,13 @@ void photon_efficiency_valerii_reproduction(
     gROOT->SetBatch(kTRUE);
     gStyle->SetOptStat(0);
 
-    std::string out=output_dir ? output_dir : "valerii_reproduction_output";
+    // Keep one clean analysis-output directory.  Every invocation replaces
+    // the previous contents so iterative development does not accumulate
+    // versioned output directories.
+    std::string out="output";
+    if (gSystem->AccessPathName(out.c_str()) == kFALSE) {
+        gSystem->Exec(("rm -rf " + out).c_str());
+    }
     ensure_dir(out);
 
     std::cout
