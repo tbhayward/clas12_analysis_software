@@ -1,7 +1,10 @@
 // photon_efficiency_valerii_reproduction.C
 //
-// Stage-1 photon tag-and-probe diagnostic analysis.
-// Purposefully simple before moving to the full Valerii p x theta x phi maps:
+// Photon tag-and-probe analysis with two layers:
+//   (1) stage-1 integrated diagnostics;
+//   (2) a Valerii-style FD 7 x 3 x 6 efficiency/correction reproduction.
+//
+// The stage-1 layer remains useful QA; the Valerii layer is the physics path.
 //
 //   * fully integrated FD extraction;
 //   * fully integrated FT extraction;
@@ -36,6 +39,7 @@
 #include <TString.h>
 #include <TStyle.h>
 #include <TSystem.h>
+#include <TTree.h>
 #include <TParameter.h>
 #include <TNamed.h>
 
@@ -44,6 +48,7 @@
 #include <unistd.h>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <fstream>
 #include <iomanip>
@@ -1582,6 +1587,639 @@ std::vector<std::unique_ptr<SampleResult>> analyze_samples_parallel(const std::s
     return samples;
 }
 
+
+// -----------------------------------------------------------------------------
+// Valerii-style FD reproduction.
+//
+// This is deliberately separated from the stage-1 integrated diagnostics above.
+// It follows the workflow documented in Gamma_efficiency_Aug30_2026 as closely
+// as the current skim permits:
+//   * exact saved 7 x 3 x 6 missing-gamma2 p/theta/phi binning;
+//   * FD/PCAL tag requirement and FD probe acceptance;
+//   * data and weighted-total-MC Delta-p fits independently in every bin;
+//   * nominal weighted MC = AAO + no-exclusivity CLASDIS + DVCS;
+//   * saved base/generator event weight multiplied by Valerii normalization;
+//   * 1-, 2-, and 3-sigma matching using the fit belonging to data or MC;
+//   * epsilon_data, epsilon_MC, and epsilon_data/epsilon_MC correction maps;
+//   * two published alternative normalization sets as a normalization variation.
+//
+// The existing stage-1 nominal Mx(ep) enrichment window is NOT imposed here.
+// Valerii's ep-gamma-X denominator is intentionally treated as a mixed sample;
+// the weighted MC composition handles the pi0/non-pi0 mixture.
+// -----------------------------------------------------------------------------
+
+static const int VAL_NP=7;
+static const int VAL_NT=3;
+static const int VAL_NPH=6;
+static const int VAL_NBIN=VAL_NP*VAL_NT*VAL_NPH;
+static const double VAL_P_EDGES[VAL_NP+1] = {0.35,0.50,1.10,1.70,2.30,2.90,3.70,6.00};
+static const double VAL_T_EDGES[VAL_NT+1] = {6.0,20.0,27.0,36.0};
+static const double VAL_PH_EDGES[VAL_NPH+1] = {-30.0,30.0,90.0,150.0,210.0,270.0,330.0};
+static const int VAL_DP_NBIN=60;
+static const double VAL_DP_MIN=-1.0;
+static const double VAL_DP_MAX= 1.0;
+static const int VAL_MIN_FIT_ENTRIES=30;
+
+struct ValNormSet {
+    const char* label;
+    double aao;
+    double clasdis;
+    double dvcs;
+};
+static const ValNormSet VAL_NORMS[] = {
+    {"nominal",0.307,0.315,1.10},
+    {"set1",   0.266,0.303,1.10},
+    {"set2",   0.330,0.320,1.10}
+};
+
+struct ValCandidate {
+    double dp=0;
+    double base_weight=1;
+};
+
+struct ValComponentBin {
+    long long denom_rows=0;
+    double denom_w=0;
+    double denom_w2=0;
+    std::vector<ValCandidate> candidates;
+};
+
+struct ValComponent {
+    std::string name;
+    bool is_mc=false;
+    long long entries=0;
+    std::array<ValComponentBin,VAL_NBIN> bins;
+};
+
+struct ValEval {
+    bool valid=false;
+    double denom=0, denom_w2=0;
+    double num=0, num_w2=0;
+    double efficiency=-1, efficiency_err=0;
+};
+
+struct ValBinResult {
+    FitResult data_fit;
+    FitResult mc_fit;
+    std::array<ValEval,3> data;
+    std::array<ValEval,3> mc;
+    std::array<double,3> correction{{-1,-1,-1}};
+    std::array<double,3> correction_stat_err{{0,0,0}};
+    double correction_norm_set1=-1;
+    double correction_norm_set2=-1;
+    double norm_systematic=0;
+    double matching_systematic=0;
+    double partial_total_unc=0;
+    bool nominal_valid=false;
+};
+
+int val_axis_bin(double x, const double* e, int n) {
+    for (int i=0;i<n;i++) {
+        const bool last=(i==n-1);
+        if (x>=e[i] && (x<e[i+1] || (last && x<=e[i+1]))) return i;
+    } // endfor
+    return -1;
+}
+
+int val_flat_bin(double p,double th,double ph) {
+    const int ip=val_axis_bin(p,VAL_P_EDGES,VAL_NP);
+    const int it=val_axis_bin(th,VAL_T_EDGES,VAL_NT);
+    const double wph=wrap_phi(ph);
+    const int iph=val_axis_bin(wph,VAL_PH_EDGES,VAL_NPH);
+    if (ip<0 || it<0 || iph<0) return -1;
+    return (ip*VAL_NT+it)*VAL_NPH+iph;
+}
+
+void val_unflatten(int ib,int& ip,int& it,int& iph) {
+    iph=ib%VAL_NPH;
+    const int q=ib/VAL_NPH;
+    it=q%VAL_NT;
+    ip=q/VAL_NT;
+}
+
+double val_component_scale(const std::string& name,const ValNormSet& n) {
+    if (name=="aaogen") return n.aao;
+    if (name=="clasdis") return n.clasdis;
+    if (name=="dvcsgen") return n.dvcs;
+    return 1.0;
+}
+
+FitResult fit_valerii_residual(TH1D* h) {
+    FitResult r;
+    if (!h) { r.reason="null histogram"; return r; }
+    r.candidates=static_cast<long long>(h->GetEntries());
+    if (h->GetEntries()<VAL_MIN_FIT_ENTRIES) {
+        r.reason="too few candidates";
+        return r;
+    }
+
+    const double peak=h->GetBinCenter(h->GetMaximumBin());
+    const double seed_lo=std::max(VAL_DP_MIN,peak-0.20);
+    const double seed_hi=std::min(VAL_DP_MAX,peak+0.20);
+    TF1 seed("val_seed_tmp","gaus",seed_lo,seed_hi);
+    seed.SetParameters(std::max(1.0,h->GetMaximum()),peak,0.10);
+    seed.SetParLimits(2,0.010,0.500);
+    const int seed_status=h->Fit(&seed,"QNR");
+
+    double mu=peak;
+    double sg=0.10;
+    if (seed_status==0) {
+        mu=seed.GetParameter(1);
+        sg=std::fabs(seed.GetParameter(2));
+    }
+    if (!(sg>0.010 && sg<0.500)) sg=0.10;
+
+    // The documented Valerii fit range is the full [-1,1] GeV residual range.
+    // Keep the same Gaussian + linear-background form already validated in the
+    // stage-1 diagnostic until the original production fitter source is imported.
+    TF1 f("val_fit_tmp","gaus(0)+pol1(3)",VAL_DP_MIN,VAL_DP_MAX);
+    f.SetParameters(std::max(1.0,h->GetMaximum()),mu,sg,
+                    std::max(0.0,h->GetBinContent(1)),0.0);
+    f.SetParLimits(1,-0.75,0.75);
+    f.SetParLimits(2,0.010,0.500);
+    r.root_status=h->Fit(&f,"QNR");
+    r.amplitude=f.GetParameter(0);
+    r.mean=f.GetParameter(1);
+    r.mean_err=f.GetParError(1);
+    r.sigma=std::fabs(f.GetParameter(2));
+    r.sigma_err=f.GetParError(2);
+    r.bg0=f.GetParameter(3);
+    r.bg1=f.GetParameter(4);
+    r.fit_lo=VAL_DP_MIN;
+    r.fit_hi=VAL_DP_MAX;
+    r.chi2=f.GetChisquare();
+    r.ndf=f.GetNDF();
+
+    if (r.root_status!=0) { r.reason="ROOT fit status != 0"; return r; }
+    if (r.mean<=-0.74 || r.mean>=0.74) { r.reason="mean at/near fit boundary"; return r; }
+    if (!(r.sigma>0.0101 && r.sigma<0.495)) { r.reason="sigma at/near fit boundary"; return r; }
+    if (!(r.sigma_err>0) || r.sigma_err/r.sigma>0.50) { r.reason="sigma uncertainty too large"; return r; }
+    if (!(r.mean_err>=0) || r.mean_err>0.15) { r.reason="mean uncertainty too large"; return r; }
+    if (r.ndf<=0) { r.reason="non-positive NDF"; return r; }
+    r.valid=true;
+    r.reason="valid";
+    return r;
+}
+
+bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path) {
+    const std::string pattern=make_pattern(spec.dir);
+    TChain c("PhotonEfficiency");
+    const int nf=c.Add(pattern.c_str());
+    if (nf<=0 || c.GetEntries()<=0) return false;
+
+    Branches b;
+    b.reset_arrays();
+    if (!attach(c,b)) return false;
+    c.SetCacheSize(64LL*1024LL*1024LL);
+    c.AddBranchToCache("*",kTRUE);
+
+    std::array<long long,VAL_NBIN> rows{};
+    std::array<double,VAL_NBIN> sumw{};
+    std::array<double,VAL_NBIN> sumw2{};
+
+    TFile f(path.c_str(),"RECREATE");
+    if (f.IsZombie()) return false;
+    TNamed nm("sample_name",spec.name.c_str()); nm.Write();
+    put_param<int>(&f,"is_mc",spec.is_mc?1:0);
+    put_param<Long64_t>(&f,"entries",c.GetEntries());
+
+    Int_t tbin=-1;
+    Double_t tdp=0,tw=1;
+    TTree candidates("candidates","Valerii FD reconstructed probe candidates");
+    candidates.Branch("bin",&tbin,"bin/I");
+    candidates.Branch("dp",&tdp,"dp/D");
+    candidates.Branch("base_weight",&tw,"base_weight/D");
+
+    long long selected=0,reco=0,badw=0;
+    for (Long64_t i=0;i<c.GetEntries();i++) {
+        c.GetEntry(i);
+
+        // Match the FD/PCAL workflow: the observed tag photon must itself be FD.
+        // The mixed ep-gamma-X denominator is NOT restricted by the stage-1 pi0
+        // parent window.
+        if (!b.p_pass_standard) continue;
+        if (!b.tag_pass_beta || !b.tag_pass_fiducial) continue;
+        if (b.tag_detector!=1) continue;
+        if (!finite_good(b.probe_corr_p) || !finite_good(b.probe_corr_theta) ||
+            !finite_good(b.probe_corr_phi)) continue;
+
+        tbin=val_flat_bin(b.probe_corr_p,b.probe_corr_theta,b.probe_corr_phi);
+        if (tbin<0) continue;
+
+        tw=1.0;
+        if (spec.is_mc) {
+            if (!std::isfinite(b.mc_weight)) { badw++; continue; }
+            tw=b.mc_weight;
+        }
+
+        rows[tbin]++;
+        sumw[tbin]+=tw;
+        sumw2[tbin]+=tw*tw;
+        selected++;
+
+        const int k=best_probe_candidate(b,1);
+        if (k<0) continue;
+        tdp=b.neutral_p[k]-b.probe_corr_p;
+        if (!std::isfinite(tdp)) continue;
+        candidates.Fill();
+        reco++;
+    } // endfor
+
+    TTree denominators("denominators","Valerii FD denominator sums by analysis bin");
+    Int_t dbin=-1;
+    Long64_t drows=0;
+    Double_t dsumw=0,dsumw2=0;
+    denominators.Branch("bin",&dbin,"bin/I");
+    denominators.Branch("rows",&drows,"rows/L");
+    denominators.Branch("sumw",&dsumw,"sumw/D");
+    denominators.Branch("sumw2",&dsumw2,"sumw2/D");
+    for (dbin=0;dbin<VAL_NBIN;dbin++) {
+        drows=rows[dbin]; dsumw=sumw[dbin]; dsumw2=sumw2[dbin];
+        denominators.Fill();
+    } // endfor
+
+    put_param<Long64_t>(&f,"selected_denominator_rows",selected);
+    put_param<Long64_t>(&f,"reconstructed_candidate_rows",reco);
+    put_param<Long64_t>(&f,"nonfinite_mc_weight_rows",badw);
+    candidates.Write();
+    denominators.Write();
+    f.Close();
+    return true;
+}
+
+std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
+    TFile f(path.c_str(),"READ");
+    if (f.IsZombie()) return nullptr;
+    auto* nn=dynamic_cast<TNamed*>(f.Get("sample_name"));
+    if (!nn) return nullptr;
+
+    std::unique_ptr<ValComponent> v(new ValComponent);
+    v->name=nn->GetTitle();
+    int imc=0; get_param<int>(&f,"is_mc",imc); v->is_mc=(imc!=0);
+    Long64_t ent=0; get_param<Long64_t>(&f,"entries",ent); v->entries=ent;
+
+    auto* den=dynamic_cast<TTree*>(f.Get("denominators"));
+    if (!den) return nullptr;
+    Int_t ib=-1; Long64_t rows=0; Double_t sw=0,sw2=0;
+    den->SetBranchAddress("bin",&ib);
+    den->SetBranchAddress("rows",&rows);
+    den->SetBranchAddress("sumw",&sw);
+    den->SetBranchAddress("sumw2",&sw2);
+    for (Long64_t i=0;i<den->GetEntries();i++) {
+        den->GetEntry(i);
+        if (ib<0 || ib>=VAL_NBIN) continue;
+        v->bins[ib].denom_rows=rows;
+        v->bins[ib].denom_w=sw;
+        v->bins[ib].denom_w2=sw2;
+    } // endfor
+
+    auto* tr=dynamic_cast<TTree*>(f.Get("candidates"));
+    if (!tr) return nullptr;
+    Double_t dp=0,bw=1;
+    tr->SetBranchAddress("bin",&ib);
+    tr->SetBranchAddress("dp",&dp);
+    tr->SetBranchAddress("base_weight",&bw);
+    for (Long64_t i=0;i<tr->GetEntries();i++) {
+        tr->GetEntry(i);
+        if (ib<0 || ib>=VAL_NBIN) continue;
+        v->bins[ib].candidates.push_back({dp,bw});
+    } // endfor
+    f.Close();
+    return v;
+}
+
+std::vector<std::unique_ptr<ValComponent>> build_val_components_parallel(const std::string& out) {
+    const SampleSpec all_specs[] = {
+        {"data",DATA_DIR,false},
+        {"aaogen",AAOGEN_DIR,true},
+        {"clasdis",CLASDIS_DIR,true},
+        {"dvcsgen",DVCSGEN_DIR,true}
+    };
+    const std::string wdir=out+"/.valerii_workers";
+    gSystem->mkdir(wdir.c_str(),true);
+
+    struct VChild { pid_t pid; SampleSpec spec; };
+    std::vector<VChild> children;
+    std::vector<SampleSpec> specs;
+    std::cout.flush(); std::cerr.flush();
+
+    for (const auto& spec:all_specs) {
+        if (!has_root_files(spec.dir)) continue;
+        specs.push_back(spec);
+        const pid_t pid=fork();
+        if (pid==0) {
+            const std::string path=wdir+"/"+spec.name+".root";
+            const bool ok=analyze_val_component_worker(spec,path);
+            std::cout.flush(); std::cerr.flush();
+            _exit(ok?0:2);
+        } else if (pid>0) {
+            children.push_back({pid,spec});
+            std::cout << "[VALERII] launched " << spec.name << " worker pid=" << pid << "\n";
+        } else {
+            std::cerr << "WARNING: Valerii fork failed for " << spec.name << "; running sequentially.\n";
+            analyze_val_component_worker(spec,wdir+"/"+spec.name+".root");
+        }
+    } // endfor
+
+    for (const auto& ch:children) {
+        int status=0; waitpid(ch.pid,&status,0);
+        if (!WIFEXITED(status) || WEXITSTATUS(status)!=0)
+            std::cerr << "WARNING: Valerii worker failed for " << ch.spec.name << "\n";
+        else
+            std::cout << "[VALERII] finished " << ch.spec.name << "\n";
+    } // endfor
+
+    std::vector<std::unique_ptr<ValComponent>> outv;
+    for (const auto& spec:specs) {
+        auto p=load_val_component(wdir+"/"+spec.name+".root");
+        if (p) outv.push_back(std::move(p));
+    } // endfor
+    return outv;
+}
+
+const ValComponent* find_val_component(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                       const std::string& name) {
+    for (const auto& v:vv) if (v && v->name==name) return v.get();
+    return nullptr;
+}
+
+ValEval val_eval_data(const ValComponentBin& b,const FitResult& fit,int ns) {
+    ValEval e;
+    if (!fit.valid || b.denom_rows<=0) return e;
+    e.denom=static_cast<double>(b.denom_rows);
+    e.denom_w2=e.denom;
+    for (const auto& c:b.candidates) {
+        if (std::fabs(c.dp-fit.mean)<ns*fit.sigma) {
+            e.num+=1.0; e.num_w2+=1.0;
+        }
+    } // endfor
+    e.efficiency=e.num/e.denom;
+    const double fail_w2=std::max(0.0,e.denom_w2-e.num_w2);
+    const double var=((1.0-e.efficiency)*(1.0-e.efficiency)*e.num_w2 +
+                      e.efficiency*e.efficiency*fail_w2)/(e.denom*e.denom);
+    e.efficiency_err=std::sqrt(std::max(0.0,var));
+    e.valid=true;
+    return e;
+}
+
+ValEval val_eval_mc(const std::vector<std::unique_ptr<ValComponent>>& vv,int ib,
+                    const ValNormSet& norm,const FitResult& fit,int ns) {
+    ValEval e;
+    if (!fit.valid) return e;
+    for (const auto& vp:vv) {
+        if (!vp || !vp->is_mc) continue;
+        const double scale=val_component_scale(vp->name,norm);
+        const auto& b=vp->bins[ib];
+        e.denom += scale*b.denom_w;
+        e.denom_w2 += scale*scale*b.denom_w2;
+        for (const auto& c:b.candidates) {
+            const double w=scale*c.base_weight;
+            if (std::fabs(c.dp-fit.mean)<ns*fit.sigma) {
+                e.num+=w; e.num_w2+=w*w;
+            }
+        } // endfor
+    } // endfor
+    if (!(e.denom>0)) return e;
+    e.efficiency=e.num/e.denom;
+    const double fail_w2=std::max(0.0,e.denom_w2-e.num_w2);
+    const double var=((1.0-e.efficiency)*(1.0-e.efficiency)*e.num_w2 +
+                      e.efficiency*e.efficiency*fail_w2)/(e.denom*e.denom);
+    e.efficiency_err=std::sqrt(std::max(0.0,var));
+    e.valid=std::isfinite(e.efficiency) && e.efficiency>=0;
+    return e;
+}
+
+std::unique_ptr<TH1D> val_make_data_hist(const ValComponent* data,int ib,const char* name) {
+    std::unique_ptr<TH1D> h(new TH1D(name,";#Delta p_{#gamma2} [GeV];Candidates",
+                                     VAL_DP_NBIN,VAL_DP_MIN,VAL_DP_MAX));
+    h->Sumw2(); h->SetDirectory(nullptr);
+    if (data) for (const auto& c:data->bins[ib].candidates) h->Fill(c.dp);
+    return h;
+}
+
+std::unique_ptr<TH1D> val_make_mc_hist(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                       int ib,const ValNormSet& norm,const char* name) {
+    std::unique_ptr<TH1D> h(new TH1D(name,";#Delta p_{#gamma2} [GeV];Weighted candidates",
+                                     VAL_DP_NBIN,VAL_DP_MIN,VAL_DP_MAX));
+    h->Sumw2(); h->SetDirectory(nullptr);
+    for (const auto& vp:vv) {
+        if (!vp || !vp->is_mc) continue;
+        const double scale=val_component_scale(vp->name,norm);
+        for (const auto& c:vp->bins[ib].candidates) h->Fill(c.dp,scale*c.base_weight);
+    } // endfor
+    return h;
+}
+
+std::array<ValBinResult,VAL_NBIN> evaluate_valerii_fd(
+        const std::vector<std::unique_ptr<ValComponent>>& vv,
+        const ValNormSet& norm,
+        std::vector<std::unique_ptr<TH1D>>* data_hists=nullptr,
+        std::vector<std::unique_ptr<TH1D>>* mc_hists=nullptr) {
+    std::array<ValBinResult,VAL_NBIN> rr;
+    const ValComponent* data=find_val_component(vv,"data");
+    if (!data) return rr;
+
+    for (int ib=0;ib<VAL_NBIN;ib++) {
+        auto hd=val_make_data_hist(data,ib,Form("h_val_data_b%03d",ib));
+        auto hm=val_make_mc_hist(vv,ib,norm,Form("h_val_mc_%s_b%03d",norm.label,ib));
+        rr[ib].data_fit=fit_valerii_residual(hd.get());
+        rr[ib].mc_fit=fit_valerii_residual(hm.get());
+
+        for (int ns=1;ns<=3;ns++) {
+            rr[ib].data[ns-1]=val_eval_data(data->bins[ib],rr[ib].data_fit,ns);
+            rr[ib].mc[ns-1]=val_eval_mc(vv,ib,norm,rr[ib].mc_fit,ns);
+            const auto& ed=rr[ib].data[ns-1];
+            const auto& em=rr[ib].mc[ns-1];
+            if (ed.valid && em.valid && em.efficiency>0 && ed.efficiency>=0) {
+                const double c=ed.efficiency/em.efficiency;
+                rr[ib].correction[ns-1]=c;
+                double rel2=0;
+                if (ed.efficiency>0) rel2+=std::pow(ed.efficiency_err/ed.efficiency,2);
+                if (em.efficiency>0) rel2+=std::pow(em.efficiency_err/em.efficiency,2);
+                rr[ib].correction_stat_err[ns-1]=std::fabs(c)*std::sqrt(rel2);
+            }
+        } // endfor
+        rr[ib].nominal_valid=rr[ib].data_fit.valid && rr[ib].mc_fit.valid &&
+                             rr[ib].correction[1]>0 && std::isfinite(rr[ib].correction[1]);
+
+        if (data_hists) data_hists->push_back(std::move(hd));
+        if (mc_hists) mc_hists->push_back(std::move(hm));
+    } // endfor
+    return rr;
+}
+
+void val_draw_map(const std::array<ValBinResult,VAL_NBIN>& rr,
+                  const std::string& what,const std::string& outfile) {
+    // Match Valerii's note display convention: show the first six momentum bins;
+    // retain the 3.7-6 GeV bin in CSV/ROOT products.
+    TCanvas c(Form("c_%s",what.c_str()),"",1500,920);
+    c.Divide(3,2,0.003,0.003);
+    for (int ip=0;ip<6;ip++) {
+        c.cd(ip+1); gPad->SetRightMargin(0.16); gPad->SetBottomMargin(0.13);
+        TH2D h(Form("hm_%s_%d",what.c_str(),ip),
+               Form("%.2f < p < %.2f GeV;wrapped #phi [deg];#theta [deg]",
+                    VAL_P_EDGES[ip],VAL_P_EDGES[ip+1]),
+               VAL_NPH,VAL_PH_EDGES,VAL_NT,VAL_T_EDGES);
+        h.SetDirectory(nullptr);
+        for (int it=0;it<VAL_NT;it++) for (int iph=0;iph<VAL_NPH;iph++) {
+            const int ib=(ip*VAL_NT+it)*VAL_NPH+iph;
+            double z=0;
+            if (what=="data_eff") z=rr[ib].data[1].valid?rr[ib].data[1].efficiency:0;
+            else if (what=="mc_eff") z=rr[ib].mc[1].valid?rr[ib].mc[1].efficiency:0;
+            else if (what=="correction") z=rr[ib].nominal_valid?rr[ib].correction[1]:0;
+            else if (what=="data_sigma") z=rr[ib].data_fit.valid?rr[ib].data_fit.sigma:0;
+            else if (what=="mc_sigma") z=rr[ib].mc_fit.valid?rr[ib].mc_fit.sigma:0;
+            h.SetBinContent(iph+1,it+1,z);
+        } // endfor
+        h.SetStats(0);
+        h.Draw("COLZ TEXT");
+    } // endfor
+    c.SaveAs(outfile.c_str());
+}
+
+void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                           const std::string& out) {
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* aao=find_val_component(vv,"aaogen");
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
+    if (!data || !aao || !cls || !dvc) {
+        std::ofstream s(out+"/valerii_fd_summary.txt");
+        s << "Valerii FD reproduction not evaluated: data, AAOgen, CLASDIS, and DVCSgen are all required.\n";
+        return;
+    }
+
+    std::vector<std::unique_ptr<TH1D>> hd_nom,hm_nom;
+    auto nominal=evaluate_valerii_fd(vv,VAL_NORMS[0],&hd_nom,&hm_nom);
+    auto set1=evaluate_valerii_fd(vv,VAL_NORMS[1]);
+    auto set2=evaluate_valerii_fd(vv,VAL_NORMS[2]);
+
+    for (int ib=0;ib<VAL_NBIN;ib++) {
+        nominal[ib].correction_norm_set1=set1[ib].correction[1];
+        nominal[ib].correction_norm_set2=set2[ib].correction[1];
+        if (nominal[ib].nominal_valid) {
+            const double c0=nominal[ib].correction[1];
+            double sn=0;
+            if (set1[ib].correction[1]>0) sn=std::max(sn,std::fabs(set1[ib].correction[1]-c0));
+            if (set2[ib].correction[1]>0) sn=std::max(sn,std::fabs(set2[ib].correction[1]-c0));
+            nominal[ib].norm_systematic=sn;
+            double sm=0;
+            if (nominal[ib].correction[0]>0) sm=std::max(sm,std::fabs(nominal[ib].correction[0]-c0));
+            if (nominal[ib].correction[2]>0) sm=std::max(sm,std::fabs(nominal[ib].correction[2]-c0));
+            nominal[ib].matching_systematic=sm;
+            nominal[ib].partial_total_unc=std::sqrt(
+                nominal[ib].correction_stat_err[1]*nominal[ib].correction_stat_err[1] + sn*sn + sm*sm);
+        }
+    } // endfor
+
+    std::ofstream csv(out+"/valerii_fd_results.csv");
+    csv << "bin,ip,it,iphi,p_lo,p_hi,theta_lo,theta_hi,phi_lo,phi_hi,"
+        << "data_fit_valid,data_mu,data_mu_err,data_sigma,data_sigma_err,"
+        << "mc_fit_valid,mc_mu,mc_mu_err,mc_sigma,mc_sigma_err,"
+        << "data_denom,mc_denom,"
+        << "data_eff_1s,data_eff_1s_err,mc_eff_1s,mc_eff_1s_err,corr_1s,corr_1s_staterr,"
+        << "data_eff_2s,data_eff_2s_err,mc_eff_2s,mc_eff_2s_err,corr_2s,corr_2s_staterr,"
+        << "data_eff_3s,data_eff_3s_err,mc_eff_3s,mc_eff_3s_err,corr_3s,corr_3s_staterr,"
+        << "corr_2s_norm_set1,corr_2s_norm_set2,norm_syst,matching_syst,partial_total_unc,partial_rel_unc\n";
+    for (int ib=0;ib<VAL_NBIN;ib++) {
+        int ip,it,iph; val_unflatten(ib,ip,it,iph);
+        const auto& r=nominal[ib];
+        csv << ib << "," << ip << "," << it << "," << iph << ","
+            << VAL_P_EDGES[ip] << "," << VAL_P_EDGES[ip+1] << ","
+            << VAL_T_EDGES[it] << "," << VAL_T_EDGES[it+1] << ","
+            << VAL_PH_EDGES[iph] << "," << VAL_PH_EDGES[iph+1] << ","
+            << (r.data_fit.valid?1:0) << "," << r.data_fit.mean << "," << r.data_fit.mean_err << ","
+            << r.data_fit.sigma << "," << r.data_fit.sigma_err << ","
+            << (r.mc_fit.valid?1:0) << "," << r.mc_fit.mean << "," << r.mc_fit.mean_err << ","
+            << r.mc_fit.sigma << "," << r.mc_fit.sigma_err << ","
+            << r.data[1].denom << "," << r.mc[1].denom;
+        for (int ns=0;ns<3;ns++) {
+            csv << "," << r.data[ns].efficiency << "," << r.data[ns].efficiency_err
+                << "," << r.mc[ns].efficiency << "," << r.mc[ns].efficiency_err
+                << "," << r.correction[ns] << "," << r.correction_stat_err[ns];
+        } // endfor
+        const double rel=(r.nominal_valid && r.correction[1]!=0)?r.partial_total_unc/std::fabs(r.correction[1]):-1;
+        csv << "," << r.correction_norm_set1 << "," << r.correction_norm_set2
+            << "," << r.norm_systematic << "," << r.matching_systematic
+            << "," << r.partial_total_unc << "," << rel << "\n";
+    } // endfor
+    csv.close();
+
+    std::ofstream qa(out+"/valerii_fd_component_weight_qa.csv");
+    qa << "component,is_mc,tree_entries,denom_rows,base_sumw,base_sumw2,nominal_scale,scaled_sumw,scaled_neff\n";
+    for (const auto& vp:vv) {
+        long long rows=0; double sw=0,sw2=0;
+        for (const auto& b:vp->bins) { rows+=b.denom_rows; sw+=b.denom_w; sw2+=b.denom_w2; }
+        const double sc=vp->is_mc?val_component_scale(vp->name,VAL_NORMS[0]):1.0;
+        const double ssw=sc*sw, ssw2=sc*sc*sw2;
+        const double neff=ssw2>0?ssw*ssw/ssw2:0;
+        qa << vp->name << "," << (vp->is_mc?1:0) << "," << vp->entries << "," << rows << ","
+           << sw << "," << sw2 << "," << sc << "," << ssw << "," << neff << "\n";
+    } // endfor
+    qa.close();
+
+    val_draw_map(nominal,"data_eff",out+"/valerii_fd_data_efficiency_2sigma.png");
+    val_draw_map(nominal,"mc_eff",out+"/valerii_fd_weighted_mc_efficiency_2sigma.png");
+    val_draw_map(nominal,"correction",out+"/valerii_fd_data_over_mc_correction_2sigma.png");
+    val_draw_map(nominal,"data_sigma",out+"/valerii_fd_data_sigma.png");
+    val_draw_map(nominal,"mc_sigma",out+"/valerii_fd_weighted_mc_sigma.png");
+
+    TFile rf((out+"/valerii_fd_histograms.root").c_str(),"RECREATE");
+    if (!rf.IsZombie()) {
+        for (int ib=0;ib<VAL_NBIN;ib++) {
+            int ip,it,iph; val_unflatten(ib,ip,it,iph);
+            TDirectory* d=rf.mkdir(Form("bin_%03d_p%d_t%d_phi%d",ib,ip,it,iph));
+            d->cd();
+            if (ib<(int)hd_nom.size() && hd_nom[ib]) hd_nom[ib]->Write("data_dp");
+            if (ib<(int)hm_nom.size() && hm_nom[ib]) hm_nom[ib]->Write("weighted_mc_dp");
+            write_fit_state(d,"data_fit_",nominal[ib].data_fit);
+            write_fit_state(d,"mc_fit_",nominal[ib].mc_fit);
+        } // endfor
+        rf.Close();
+    }
+
+    long long valid=0;
+    double csum=0; long long cn=0;
+    for (const auto& r:nominal) if (r.nominal_valid) { valid++; csum+=r.correction[1]; cn++; }
+    std::ofstream summary(out+"/valerii_fd_summary.txt");
+    summary << "Valerii-style FD photon-efficiency reproduction\n"
+            << "==============================================\n"
+            << "Binning: 7 p x 3 theta x 6 wrapped-phi = 126 bins\n"
+            << "p edges [GeV]: 0.35 0.50 1.10 1.70 2.30 2.90 3.70 6.00\n"
+            << "theta edges [deg]: 6 20 27 36\n"
+            << "phi edges [deg]: -30 30 90 150 210 270 330\n"
+            << "Residual histograms: 60 bins on [-1,1] GeV\n"
+            << "Nominal MC normalization: 0.307*AAO + 0.315*CLASDIS(no-exclusivity) + 1.10*DVCS\n"
+            << "Alternative normalization sets: (0.266,0.303,1.10), (0.330,0.320,1.10)\n"
+            << "Every MC normalization multiplies the saved MC::Event.weight.\n"
+            << "Tag photon: FD/PCAL only; probe coordinates: missing gamma2.\n"
+            << "Stage-1 0.08<Mx(ep)<0.20 GeV enrichment is NOT applied in this reproduction.\n"
+            << "Numerator photon threshold remains the analysis skim threshold p>=0.4 GeV.\n\n"
+            << "Nominal 2-sigma bins with valid data and weighted-MC fits: " << valid << " / " << VAL_NBIN << "\n";
+    if (cn>0) summary << "Unweighted mean correction across valid bins (diagnostic only): " << csum/cn << "\n";
+    summary << "\nIMPORTANT: partial_total_unc currently combines statistical, normalization-set, and\n"
+            << "1/2/3-sigma matching-window variations only.  The PCAL/DC/SF configuration\n"
+            << "variation from Valerii is not yet reproducible from the present skim, so the\n"
+            << "final >30% reliability/neutral-correction rule is intentionally NOT applied yet.\n"
+            << "The fit model remains Gaussian + linear background; replace it if the original\n"
+            << "production fitter source establishes a different functional form.\n";
+    summary.close();
+}
+
+void run_valerii_fd_reproduction(const std::string& out) {
+    std::cout << "\n============================================================\n"
+              << " Valerii-style FD 7x3x6 reproduction\n"
+              << "============================================================\n"
+              << "MC nominal weights: 0.307 AAO + 0.315 CLASDIS + 1.10 DVCS\n"
+              << "Each scale multiplies saved MC::Event.weight.\n"
+              << "Data/MC fits are independent in every p/theta/phi bin.\n"
+              << "Primary correction convention: epsilon_data / epsilon_MC.\n"
+              << "============================================================\n";
+    auto vv=build_val_components_parallel(out);
+    write_valerii_outputs(vv,out);
+    gSystem->Exec(("rm -rf "+out+"/.valerii_workers").c_str());
+}
+
 } // namespace pe
 
 void photon_efficiency_valerii_reproduction() {
@@ -1601,12 +2239,17 @@ void photon_efficiency_valerii_reproduction() {
         << "FT: projected-fiducial integrated + 0.4-2 GeV + >=2 GeV\n"
         << "Matching: Delta p_gamma2 = p_rec - p_miss\n"
         << "Primary numbers: unweighted RAW RECOVERY FRACTIONS (not efficiencies)\n"
-        << "MC::Event.weight: QA only, not applied\n"
+        << "Stage-1 MC::Event.weight: QA only; Valerii FD path applies saved weight x normalization\n"
         << "Execution: independent samples analyzed in parallel child processes\n"
         << "Outputs are rebuilt in ./output each invocation.\n"
         << "============================================================\n";
 
     std::vector<std::unique_ptr<SampleResult>> samples=analyze_samples_parallel(out);
+
+    // Run the second process-level pass before creating graphics in the parent.
+    // Forking before canvases/files are opened avoids inheriting unnecessary ROOT
+    // graphics state into the Valerii workers.
+    run_valerii_fd_reproduction(out);
 
     std::ofstream csv(out+"/integrated_results.csv");
     write_region_csv_header(csv);
@@ -1636,6 +2279,15 @@ void photon_efficiency_valerii_reproduction() {
         << "  output/delta_p_residuals.png\n"
         << "  output/denominator_kinematics.png\n"
         << "  output/FT_projected_xy.png\n"
-        << "  output/analysis_histograms.root\n";
+        << "  output/analysis_histograms.root\n"
+        << "  output/valerii_fd_summary.txt\n"
+        << "  output/valerii_fd_results.csv\n"
+        << "  output/valerii_fd_component_weight_qa.csv\n"
+        << "  output/valerii_fd_data_efficiency_2sigma.png\n"
+        << "  output/valerii_fd_weighted_mc_efficiency_2sigma.png\n"
+        << "  output/valerii_fd_data_over_mc_correction_2sigma.png\n"
+        << "  output/valerii_fd_data_sigma.png\n"
+        << "  output/valerii_fd_weighted_mc_sigma.png\n"
+        << "  output/valerii_fd_histograms.root\n";
 }
 
