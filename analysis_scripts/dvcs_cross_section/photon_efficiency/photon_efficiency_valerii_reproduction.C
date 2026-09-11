@@ -33,6 +33,9 @@
 #include <TH2D.h>
 #include <TLatex.h>
 #include <TLine.h>
+#include <TLegend.h>
+#include <TGraphErrors.h>
+#include <THStack.h>
 #include <TMath.h>
 #include <TPad.h>
 #include <TROOT.h>
@@ -57,6 +60,9 @@
 #include <sstream>
 #include <string>
 #include <vector>
+#include <map>
+#include <limits>
+#include <numeric>
 
 namespace pe {
 
@@ -219,8 +225,21 @@ struct Branches {
     Int_t tag_detector=-1, tag_pass_beta=0, tag_pass_fiducial=0;
     Double_t mc_weight=1.0;
 
-    Double_t Mx_ep=0;
+    Double_t Mx_ep=0, Mx2_ep=0;
+    bool have_Mx2_ep=false;
     Double_t probe_corr_p=0, probe_corr_theta=0, probe_corr_phi=0;
+
+    // Additional skim quantities used by the data-driven MC normalization.
+    // These are optional for the stage-1 QA, but the normalization stage will
+    // explicitly report which observables are unavailable if a legacy skim is used.
+    Double_t beam_energy=0;
+    Double_t e_p=0, e_theta=0, e_phi=0;
+    Double_t p_corr_p=0, p_corr_theta=0, p_corr_phi=0;
+    Double_t tag_corr_p=0, tag_corr_theta=0, tag_corr_phi=0;
+    Double_t Mx2_epg_corr=0;
+    Double_t probe_corr_E=0;
+    bool have_beam_energy=false, have_e_kin=false, have_p_corr_kin=false;
+    bool have_tag_corr_kin=false, have_Mx2_epg_corr=false, have_probe_corr_E=false;
 
     // Optional event vertex, if available in the current converter.
     Double_t e_vz=0;
@@ -290,6 +309,17 @@ bool attach(TChain& c, Branches& b) {
     for (const char* n : required) c.SetBranchStatus(n,1);
     if (c.GetBranch("e_vz")) c.SetBranchStatus("e_vz",1);
 
+    // Optional normalization branches.  They are present in the current
+    // photon-efficiency converter, but keeping them optional preserves
+    // compatibility with older skim files used for stage-1 diagnostics.
+    const char* norm_optional[] = {
+        "beam_energy","e_p","e_theta","e_phi",
+        "p_corr_p","p_corr_theta","p_corr_phi",
+        "tag_corr_p","tag_corr_theta","tag_corr_phi",
+        "Mx2_ep","Mx2_epg_corr","probe_corr_E"
+    };
+    for (const char* n : norm_optional) if (c.GetBranch(n)) c.SetBranchStatus(n,1);
+
     c.SetBranchAddress("runnum",&b.runnum);
     c.SetBranchAddress("evnum",&b.evnum);
     c.SetBranchAddress("is_mc",&b.is_mc);
@@ -302,6 +332,23 @@ bool attach(TChain& c, Branches& b) {
     c.SetBranchAddress("probe_corr_p",&b.probe_corr_p);
     c.SetBranchAddress("probe_corr_theta",&b.probe_corr_theta);
     c.SetBranchAddress("probe_corr_phi",&b.probe_corr_phi);
+
+    if (c.GetBranch("Mx2_ep")) { c.SetBranchAddress("Mx2_ep",&b.Mx2_ep); b.have_Mx2_ep=true; }
+    if (c.GetBranch("beam_energy")) { c.SetBranchAddress("beam_energy",&b.beam_energy); b.have_beam_energy=true; }
+    if (c.GetBranch("e_p") && c.GetBranch("e_theta") && c.GetBranch("e_phi")) {
+        c.SetBranchAddress("e_p",&b.e_p); c.SetBranchAddress("e_theta",&b.e_theta);
+        c.SetBranchAddress("e_phi",&b.e_phi); b.have_e_kin=true;
+    }
+    if (c.GetBranch("p_corr_p") && c.GetBranch("p_corr_theta") && c.GetBranch("p_corr_phi")) {
+        c.SetBranchAddress("p_corr_p",&b.p_corr_p); c.SetBranchAddress("p_corr_theta",&b.p_corr_theta);
+        c.SetBranchAddress("p_corr_phi",&b.p_corr_phi); b.have_p_corr_kin=true;
+    }
+    if (c.GetBranch("tag_corr_p") && c.GetBranch("tag_corr_theta") && c.GetBranch("tag_corr_phi")) {
+        c.SetBranchAddress("tag_corr_p",&b.tag_corr_p); c.SetBranchAddress("tag_corr_theta",&b.tag_corr_theta);
+        c.SetBranchAddress("tag_corr_phi",&b.tag_corr_phi); b.have_tag_corr_kin=true;
+    }
+    if (c.GetBranch("Mx2_epg_corr")) { c.SetBranchAddress("Mx2_epg_corr",&b.Mx2_epg_corr); b.have_Mx2_epg_corr=true; }
+    if (c.GetBranch("probe_corr_E")) { c.SetBranchAddress("probe_corr_E",&b.probe_corr_E); b.have_probe_corr_E=true; }
 
     c.SetBranchAddress("neutral_idx",b.neutral_idx);
     c.SetBranchAddress("neutral_pid",b.neutral_pid);
@@ -1621,16 +1668,15 @@ static const double VAL_DP_MAX= 1.0;
 static const int VAL_MIN_FIT_ENTRIES=30;
 
 struct ValNormSet {
-    const char* label;
-    double aao;
-    double clasdis;
-    double dvcs;
+    std::string label;
+    double aao=1.0;
+    double clasdis=1.0;
+    double dvcs=1.0;
 };
-static const ValNormSet VAL_NORMS[] = {
-    {"nominal",0.307,0.315,1.10},
-    {"set1",   0.266,0.303,1.10},
-    {"set2",   0.330,0.320,1.10}
-};
+
+// Historical June-2026 Valerii factors.  These are now comparison references
+// only; the active factors are derived from this run's data and MC templates.
+static const ValNormSet VAL_HISTORICAL_NOMINAL = {"Valerii_June_nominal",0.307,0.315,1.10};
 
 static const int VAL_COUNT_NBIN=4000;
 static const double VAL_COUNT_MIN=-4.0;
@@ -1649,6 +1695,59 @@ struct ValComponent {
     bool is_mc=false;
     long long entries=0;
     std::array<ValComponentBin,VAL_NBIN> bins;
+
+    // Histograms used by the data-driven template-normalization stage.
+    // Index order is defined by NormObs below.
+    std::vector<std::unique_ptr<TH1D>> norm_full;
+    std::vector<std::unique_ptr<TH1D>> norm_lowE;
+    std::vector<std::unique_ptr<TH1D>> norm_highE;
+    bool normalization_branches_complete=false;
+};
+
+enum NormObs {
+    NORM_MX2_EP=0,
+    NORM_MX2_EPG=1,
+    NORM_ANGLE_GX=2,
+    NORM_EGAMMA=3,
+    NORM_MX2_EG=4,
+    NORM_DPHI_PG=5,
+    NORM_NOBS=6
+};
+
+struct NormObsDef {
+    const char* key;
+    const char* title;
+    int nb; double lo,hi;
+    bool use_low;
+    bool use_high;
+};
+
+static const NormObsDef NORM_OBS[NORM_NOBS] = {
+    {"Mx2_ep",     "M_{X}^{2}(ep);M_{X}^{2}(ep) [GeV^{2}];Candidates",          90,-0.50,1.30,true, false},
+    {"Mx2_epg",    "M_{X}^{2}(ep#gamma);M_{X}^{2}(ep#gamma) [GeV^{2}];Candidates",80,-0.25,0.25,true, true},
+    {"angle_gX",   "#angle(#gamma,X);#angle(#gamma,X) [deg];Candidates",       75,0.0,30.0,true, true},
+    {"Egamma",     "Tag-photon energy;E_{#gamma} [GeV];Candidates",             95,0.4,8.0,true, true},
+    {"Mx2_eg",     "M_{X}^{2}(e#gamma);M_{X}^{2}(e#gamma) [GeV^{2}];Candidates",100,0.0,6.0,true, true},
+    {"dphi_pg",    "#Delta#phi(p,#gamma);#Delta#phi(p,#gamma) [deg];Candidates",100,-30.0,30.0,false,true}
+};
+
+struct NormFitPoint {
+    std::string observable;
+    bool valid=false;
+    double aao=0,aao_err=0;
+    double clasdis=0,clasdis_err=0;
+    double dvcs=0,dvcs_err=0;
+    double chi2=0; int ndf=0;
+};
+
+struct NormDerivation {
+    bool valid=false;
+    bool used_fallback=false;
+    ValNormSet nominal;
+    ValNormSet low;
+    ValNormSet high;
+    std::vector<NormFitPoint> low_points;
+    std::vector<NormFitPoint> high_points;
 };
 
 struct ValEval {
@@ -1767,6 +1866,152 @@ FitResult fit_valerii_residual(TH1D* h) {
     return r;
 }
 
+
+std::unique_ptr<TH1D> make_norm_hist(int io,const char* region,const std::string& sample) {
+    const auto& d=NORM_OBS[io];
+    std::unique_ptr<TH1D> h(new TH1D(Form("norm_%s_%s_%s",region,d.key,sample.c_str()),d.title,d.nb,d.lo,d.hi));
+    h->Sumw2(); h->SetDirectory(nullptr);
+    return h;
+}
+
+double invariant_m2_from_epg(const Branches& b) {
+    if (!b.have_beam_energy || !b.have_e_kin || !b.have_tag_corr_kin) return std::numeric_limits<double>::quiet_NaN();
+    const double me=0.00051099895, mp=0.9382720813;
+    const double et=b.e_p>0?std::sqrt(b.e_p*b.e_p+me*me):0.0;
+    const double th=deg2rad(b.e_theta), ph=deg2rad(b.e_phi);
+    const double ex=b.e_p*std::sin(th)*std::cos(ph), ey=b.e_p*std::sin(th)*std::sin(ph), ez=b.e_p*std::cos(th);
+    const double gt=deg2rad(b.tag_corr_theta), gp=deg2rad(b.tag_corr_phi);
+    const double gx=b.tag_corr_p*std::sin(gt)*std::cos(gp), gy=b.tag_corr_p*std::sin(gt)*std::sin(gp), gz=b.tag_corr_p*std::cos(gt);
+    const double ebeam=b.beam_energy;
+    const double pbeam=std::sqrt(std::max(0.0,ebeam*ebeam-me*me));
+    const double px=-(ex+gx), py=-(ey+gy), pz=pbeam-ez-gz;
+    const double E=ebeam+mp-et-b.tag_corr_p;
+    return E*E-px*px-py*py-pz*pz;
+}
+
+double norm_observable_value(const Branches& b,int io) {
+    if (io==NORM_MX2_EP) return b.have_Mx2_ep?b.Mx2_ep:(b.Mx_ep>=0?b.Mx_ep*b.Mx_ep:-b.Mx_ep*b.Mx_ep);
+    if (io==NORM_MX2_EPG) return b.have_Mx2_epg_corr?b.Mx2_epg_corr:std::numeric_limits<double>::quiet_NaN();
+    if (io==NORM_ANGLE_GX) {
+        if (!b.have_tag_corr_kin) return std::numeric_limits<double>::quiet_NaN();
+        return opening_angle_deg(b.tag_corr_theta,b.tag_corr_phi,b.probe_corr_theta,b.probe_corr_phi);
+    }
+    if (io==NORM_EGAMMA) return b.have_tag_corr_kin?b.tag_corr_p:std::numeric_limits<double>::quiet_NaN();
+    if (io==NORM_MX2_EG) return invariant_m2_from_epg(b);
+    if (io==NORM_DPHI_PG) {
+        if (!b.have_p_corr_kin || !b.have_tag_corr_kin) return std::numeric_limits<double>::quiet_NaN();
+        double d=b.p_corr_phi-b.tag_corr_phi;
+        while (d<=-180) d+=360; while (d>180) d-=360;
+        return d;
+    }
+    return std::numeric_limits<double>::quiet_NaN();
+}
+
+// Weighted least-squares two-template normalization.  Data statistical errors
+// set the bin weights; MC is intentionally treated as a fixed template here,
+// matching the practical template-fit procedure shown in Valerii's presentation.
+NormFitPoint fit_two_templates(const TH1D* data,const TH1D* aao,const TH1D* cls,const std::string& key) {
+    NormFitPoint r; r.observable=key;
+    if (!data || !aao || !cls) return r;
+    double saa=0,sbb=0,sab=0,sad=0,sbd=0; int used=0;
+    for (int i=1;i<=data->GetNbinsX();i++) {
+        const double d=data->GetBinContent(i), a=aao->GetBinContent(i), b=cls->GetBinContent(i);
+        if (d<=0 && a<=0 && b<=0) continue;
+        const double w=1.0/std::max(1.0,d);
+        saa+=w*a*a; sbb+=w*b*b; sab+=w*a*b; sad+=w*a*d; sbd+=w*b*d; used++;
+    }
+    const double det=saa*sbb-sab*sab;
+    if (used<5 || !(det>0)) return r;
+    double A=(sad*sbb-sbd*sab)/det;
+    double B=(sbd*saa-sad*sab)/det;
+    if (A<0) { A=0; B=(sbb>0?sbd/sbb:0); }
+    if (B<0) { B=0; A=(saa>0?sad/saa:0); }
+    if (!(A>=0 && B>=0) || !std::isfinite(A) || !std::isfinite(B)) return r;
+    double chi2=0; int n=0;
+    for (int i=1;i<=data->GetNbinsX();i++) {
+        const double d=data->GetBinContent(i), a=aao->GetBinContent(i), b=cls->GetBinContent(i);
+        if (d<=0 && a<=0 && b<=0) continue;
+        const double var=std::max(1.0,d);
+        const double q=d-A*a-B*b; chi2+=q*q/var; n++;
+    }
+    r.aao=A; r.clasdis=B; r.aao_err=(det>0?std::sqrt(sbb/det):0); r.clasdis_err=(det>0?std::sqrt(saa/det):0);
+    r.chi2=chi2; r.ndf=std::max(0,n-2); r.valid=(r.ndf>0);
+    return r;
+}
+
+NormFitPoint fit_dvcs_template(const TH1D* data,const TH1D* aao,const TH1D* cls,const TH1D* dvc,
+                               double A,double B,const std::string& key) {
+    NormFitPoint r; r.observable=key; r.aao=A; r.clasdis=B;
+    if (!data || !aao || !cls || !dvc) return r;
+    double sxx=0,sxy=0; int used=0;
+    for (int i=1;i<=data->GetNbinsX();i++) {
+        const double d=data->GetBinContent(i), x=dvc->GetBinContent(i);
+        const double fixed=A*aao->GetBinContent(i)+B*cls->GetBinContent(i);
+        if (d<=0 && x<=0 && fixed<=0) continue;
+        const double w=1.0/std::max(1.0,d);
+        sxx+=w*x*x; sxy+=w*x*(d-fixed); used++;
+    }
+    if (used<5 || !(sxx>0)) return r;
+    double C=sxy/sxx; if (C<0) C=0;
+    double chi2=0; int n=0;
+    for (int i=1;i<=data->GetNbinsX();i++) {
+        const double d=data->GetBinContent(i);
+        const double m=A*aao->GetBinContent(i)+B*cls->GetBinContent(i)+C*dvc->GetBinContent(i);
+        if (d<=0 && m<=0) continue;
+        const double q=d-m; chi2+=q*q/std::max(1.0,d); n++;
+    }
+    r.dvcs=C; r.dvcs_err=std::sqrt(1.0/sxx); r.chi2=chi2; r.ndf=std::max(0,n-1); r.valid=(r.ndf>0 && std::isfinite(C));
+    return r;
+}
+
+double mean_valid(const std::vector<NormFitPoint>& v,int which) {
+    double s=0; int n=0;
+    for (const auto& x:v) if (x.valid) { double q=(which==0?x.aao:(which==1?x.clasdis:x.dvcs)); if (q>=0 && std::isfinite(q)) {s+=q;n++;} }
+    return n?s/n:0;
+}
+
+std::pair<double,double> range_valid(const std::vector<NormFitPoint>& v,int which,double fallback) {
+    double lo=1e300,hi=-1e300; int n=0;
+    for (const auto& x:v) if (x.valid) { double q=(which==0?x.aao:(which==1?x.clasdis:x.dvcs)); if (q>=0 && std::isfinite(q)) {lo=std::min(lo,q);hi=std::max(hi,q);n++;} }
+    return n?std::make_pair(lo,hi):std::make_pair(fallback,fallback);
+}
+
+void style_norm_component(TH1D* h,int color,int width=2) {
+    if (!h) return; h->SetLineColor(color); h->SetLineWidth(width); h->SetFillStyle(0); h->SetStats(0);
+}
+
+void draw_norm_fit(const TH1D* hd,const TH1D* ha,const TH1D* hc,const TH1D* hv,
+                   double A,double B,double C,const std::string& title,const std::string& file,
+                   double chi2=-1,int ndf=0) {
+    if (!hd || !ha || !hc || !hv) return;
+    std::unique_ptr<TH1D> d((TH1D*)hd->Clone("norm_draw_data")); d->SetDirectory(nullptr);
+    std::unique_ptr<TH1D> a((TH1D*)ha->Clone("norm_draw_aao")); a->Scale(A); a->SetDirectory(nullptr);
+    std::unique_ptr<TH1D> c((TH1D*)hc->Clone("norm_draw_cls")); c->Scale(B); c->SetDirectory(nullptr);
+    std::unique_ptr<TH1D> v((TH1D*)hv->Clone("norm_draw_dvc")); v->Scale(C); v->SetDirectory(nullptr);
+    std::unique_ptr<TH1D> tot((TH1D*)a->Clone("norm_draw_total")); tot->Add(c.get()); tot->Add(v.get()); tot->SetDirectory(nullptr);
+    std::unique_ptr<TH1D> pull((TH1D*)d->Clone("norm_draw_pull")); pull->Reset(); pull->SetDirectory(nullptr);
+    for (int i=1;i<=pull->GetNbinsX();i++) {
+        const double den=std::sqrt(std::max(1.0,d->GetBinContent(i)));
+        pull->SetBinContent(i,(d->GetBinContent(i)-tot->GetBinContent(i))/den);
+    }
+    d->SetMarkerStyle(20); d->SetMarkerSize(0.7); d->SetLineColor(kBlack);
+    style_norm_component(a.get(),kRed+1); style_norm_component(c.get(),kOrange+7); style_norm_component(v.get(),kGreen+2); style_norm_component(tot.get(),kBlue+1,3);
+    TCanvas can("c_norm_fit","",1100,850);
+    TPad top("norm_top","",0,0.27,1,1); TPad bot("norm_bot","",0,0,1,0.27);
+    top.SetBottomMargin(0.02); bot.SetTopMargin(0.03); bot.SetBottomMargin(0.33); top.Draw(); bot.Draw();
+    top.cd();
+    d->SetTitle(title.c_str()); d->GetXaxis()->SetLabelSize(0); d->SetMaximum(1.25*std::max(d->GetMaximum(),tot->GetMaximum()));
+    d->Draw("E1"); a->Draw("HIST SAME"); c->Draw("HIST SAME"); v->Draw("HIST SAME"); tot->Draw("HIST SAME"); d->Draw("E1 SAME");
+    TLegend leg(0.58,0.63,0.88,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0);
+    leg.AddEntry(d.get(),"Data","lep"); leg.AddEntry(a.get(),Form("AAO #times %.4g",A),"l");
+    leg.AddEntry(c.get(),Form("CLASDIS #times %.4g",B),"l"); leg.AddEntry(v.get(),Form("DVCSgen #times %.4g",C),"l"); leg.AddEntry(tot.get(),"Total MC","l"); leg.Draw();
+    TLatex tx; tx.SetNDC(); tx.SetTextSize(0.035); if (ndf>0) tx.DrawLatex(0.15,0.86,Form("#chi^{2}/ndf = %.1f/%d = %.2f",chi2,ndf,chi2/ndf));
+    bot.cd(); pull->SetTitle(""); pull->GetYaxis()->SetTitle("Pull"); pull->GetYaxis()->SetNdivisions(505); pull->GetYaxis()->SetTitleSize(0.10); pull->GetYaxis()->SetLabelSize(0.08); pull->GetYaxis()->SetTitleOffset(0.45);
+    pull->GetXaxis()->SetTitle(hd->GetXaxis()->GetTitle()); pull->GetXaxis()->SetTitleSize(0.12); pull->GetXaxis()->SetLabelSize(0.09); pull->SetMinimum(-5); pull->SetMaximum(5); pull->Draw("HIST");
+    TLine z(pull->GetXaxis()->GetXmin(),0,pull->GetXaxis()->GetXmax(),0); z.SetLineStyle(2); z.Draw();
+    can.SaveAs(file.c_str());
+}
+
 bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path) {
     const std::string pattern=make_pattern(spec.dir);
     TChain c("PhotonEfficiency");
@@ -1789,6 +2034,12 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     // distributions and their weighted sums, so persist fixed-size histograms.
     std::array<std::unique_ptr<TH1D>,VAL_NBIN> hfit;
     std::array<std::unique_ptr<TH1D>,VAL_NBIN> hcount;
+    std::vector<std::unique_ptr<TH1D>> norm_full, norm_low, norm_high;
+    for (int io=0;io<NORM_NOBS;io++) {
+        norm_full.push_back(make_norm_hist(io,"full",spec.name));
+        norm_low.push_back(make_norm_hist(io,"lowE",spec.name));
+        norm_high.push_back(make_norm_hist(io,"highE",spec.name));
+    } // endfor
     for (int ib=0;ib<VAL_NBIN;ib++) {
         hfit[ib].reset(new TH1D(Form("fit_b%03d",ib),";#Delta p_{#gamma2} [GeV];weighted candidates",
                                 VAL_DP_NBIN,VAL_DP_MIN,VAL_DP_MAX));
@@ -1815,6 +2066,18 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
 
         const int ib=val_flat_bin(b.probe_corr_p,b.probe_corr_theta,b.probe_corr_phi);
         if (ib<0) continue;
+
+        // Data-driven normalization diagnostics.  Valerii's June presentation
+        // determines AAO+SIDIS below E_gamma=2 GeV and DVCS above 3 GeV.
+        // Fill the same observables with unit event counts for every sample.
+        const double Eg=b.have_tag_corr_kin?b.tag_corr_p:std::numeric_limits<double>::quiet_NaN();
+        for (int io=0;io<NORM_NOBS;io++) {
+            double x=norm_observable_value(b,io);
+            if (!std::isfinite(x)) continue;
+            norm_full[io]->Fill(x);
+            if (std::isfinite(Eg) && Eg<2.0) norm_low[io]->Fill(x);
+            if (std::isfinite(Eg) && Eg>3.0) norm_high[io]->Fill(x);
+        } // endfor
 
         // Valerii FD reproduction: use UNIT event weights inside each MC sample.
         // The AAO/CLASDIS/DVCS relative normalizations are applied only when the
@@ -1870,6 +2133,18 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         hcount[ib]->Write(Form("count_b%03d",ib));
     } // endfor
     f.cd();
+    TDirectory* nd=f.mkdir("normalization");
+    if (nd) {
+        nd->cd();
+        for (int io=0;io<NORM_NOBS;io++) {
+            norm_full[io]->Write(Form("full_%s",NORM_OBS[io].key));
+            norm_low[io]->Write(Form("lowE_%s",NORM_OBS[io].key));
+            norm_high[io]->Write(Form("highE_%s",NORM_OBS[io].key));
+        } // endfor
+        f.cd();
+    }
+    put_param<int>(&f,"normalization_branches_complete",
+        (b.have_tag_corr_kin && b.have_Mx2_epg_corr && b.have_beam_energy && b.have_e_kin && b.have_p_corr_kin)?1:0);
     const Int_t nwrite=f.Write();
     f.Close();
     if (nwrite<=0 || gSystem->AccessPathName(path.c_str())) {
@@ -1918,6 +2193,21 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
             if (v->bins[ib].residual_count) v->bins[ib].residual_count->SetDirectory(nullptr);
         }
     } // endfor
+    int ncomplete=0; get_param<int>(&f,"normalization_branches_complete",ncomplete); v->normalization_branches_complete=(ncomplete!=0);
+    auto* nd=dynamic_cast<TDirectory*>(f.Get("normalization"));
+    if (nd) {
+        for (int io=0;io<NORM_NOBS;io++) {
+            auto clone_one=[&](const char* region)->std::unique_ptr<TH1D> {
+                auto* h=dynamic_cast<TH1D*>(nd->Get(Form("%s_%s",region,NORM_OBS[io].key)));
+                if (!h) return nullptr;
+                std::unique_ptr<TH1D> q(dynamic_cast<TH1D*>(h->Clone(Form("%s_%s_%s",v->name.c_str(),region,NORM_OBS[io].key))));
+                if (q) q->SetDirectory(nullptr); return q;
+            };
+            v->norm_full.push_back(clone_one("full"));
+            v->norm_lowE.push_back(clone_one("lowE"));
+            v->norm_highE.push_back(clone_one("highE"));
+        } // endfor
+    }
     f.Close();
     return v;
 }
@@ -2063,7 +2353,7 @@ std::array<ValBinResult,VAL_NBIN> evaluate_valerii_fd(
 
     for (int ib=0;ib<VAL_NBIN;ib++) {
         auto hd=val_make_data_hist(data,ib,Form("h_val_data_b%03d",ib));
-        auto hm=val_make_mc_hist(vv,ib,norm,Form("h_val_mc_%s_b%03d",norm.label,ib));
+        auto hm=val_make_mc_hist(vv,ib,norm,Form("h_val_mc_%s_b%03d",norm.label.c_str(),ib));
         rr[ib].data_fit=fit_valerii_residual(hd.get());
         rr[ib].mc_fit=fit_valerii_residual(hm.get());
 
@@ -2134,6 +2424,109 @@ void val_draw_map(const std::array<ValBinResult,VAL_NBIN>& rr,
     c.SaveAs(outfile.c_str());
 }
 
+
+NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValComponent>>& vv,const std::string& out) {
+    NormDerivation R;
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* aao=find_val_component(vv,"aaogen");
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
+    const std::string od=out+"/normalization"; gSystem->mkdir(od.c_str(),true);
+    if (!data || !aao || !cls || !dvc || data->norm_lowE.size()!=NORM_NOBS || aao->norm_lowE.size()!=NORM_NOBS || cls->norm_lowE.size()!=NORM_NOBS || dvc->norm_lowE.size()!=NORM_NOBS) {
+        R.used_fallback=true; R.nominal=VAL_HISTORICAL_NOMINAL; R.low=R.nominal; R.high=R.nominal; return R;
+    }
+
+    // Stage A: independent low-E fits of AAO + CLASDIS, mirroring slide 11.
+    for (int io=0;io<NORM_NOBS;io++) if (NORM_OBS[io].use_low) {
+        auto q=fit_two_templates(data->norm_lowE[io].get(),aao->norm_lowE[io].get(),cls->norm_lowE[io].get(),NORM_OBS[io].key);
+        if (q.valid) R.low_points.push_back(q);
+        draw_norm_fit(data->norm_lowE[io].get(),aao->norm_lowE[io].get(),cls->norm_lowE[io].get(),dvc->norm_lowE[io].get(),
+                      q.valid?q.aao:0,q.valid?q.clasdis:0,0.0,
+                      std::string("Low-E normalization: ")+NORM_OBS[io].key+" (E_{#gamma}<2 GeV)",
+                      od+"/lowE_"+NORM_OBS[io].key+".png",q.chi2,q.ndf);
+    }
+    const double A=mean_valid(R.low_points,0), B=mean_valid(R.low_points,1);
+
+    // Stage B: with A/B fixed, independently determine DVCS above 3 GeV.
+    for (int io=0;io<NORM_NOBS;io++) if (NORM_OBS[io].use_high) {
+        auto q=fit_dvcs_template(data->norm_highE[io].get(),aao->norm_highE[io].get(),cls->norm_highE[io].get(),dvc->norm_highE[io].get(),A,B,NORM_OBS[io].key);
+        if (q.valid) R.high_points.push_back(q);
+        draw_norm_fit(data->norm_highE[io].get(),aao->norm_highE[io].get(),cls->norm_highE[io].get(),dvc->norm_highE[io].get(),
+                      A,B,q.valid?q.dvcs:0,
+                      std::string("High-E DVCS normalization: ")+NORM_OBS[io].key+" (E_{#gamma}>3 GeV)",
+                      od+"/highE_"+NORM_OBS[io].key+".png",q.chi2,q.ndf);
+    }
+    const double C=mean_valid(R.high_points,2);
+    R.valid=(A>0 && B>0 && C>=0 && R.low_points.size()>=2 && R.high_points.size()>=2);
+    if (!R.valid) {
+        R.used_fallback=true; R.nominal=VAL_HISTORICAL_NOMINAL; R.low=R.nominal; R.high=R.nominal;
+    } else {
+        R.nominal={"derived_nominal",A,B,C};
+        auto ar=range_valid(R.low_points,0,A), br=range_valid(R.low_points,1,B), cr=range_valid(R.high_points,2,C);
+        R.low={"derived_low",ar.first,br.first,cr.first};
+        R.high={"derived_high",ar.second,br.second,cr.second};
+    }
+
+    // Full-range post-fit diagnostics with the final nominal mixture.
+    for (int io=0;io<NORM_NOBS;io++) {
+        draw_norm_fit(data->norm_full[io].get(),aao->norm_full[io].get(),cls->norm_full[io].get(),dvc->norm_full[io].get(),
+                      R.nominal.aao,R.nominal.clasdis,R.nominal.dvcs,
+                      std::string("Final normalized MC: ")+NORM_OBS[io].key,
+                      od+"/final_"+NORM_OBS[io].key+".png");
+    }
+
+    // Summary CSV and text report.
+    std::ofstream csv(od+"/normalization_fit_results.csv");
+    csv << "stage,observable,valid,aao,aao_err,clasdis,clasdis_err,dvcs,dvcs_err,chi2,ndf,chi2_ndf\n";
+    for (const auto& q:R.low_points) csv << "lowE,"<<q.observable<<","<<q.valid<<","<<q.aao<<","<<q.aao_err<<","<<q.clasdis<<","<<q.clasdis_err<<",0,0,"<<q.chi2<<","<<q.ndf<<","<<(q.ndf?q.chi2/q.ndf:0)<<"\n";
+    for (const auto& q:R.high_points) csv << "highE,"<<q.observable<<","<<q.valid<<","<<q.aao<<",0,"<<q.clasdis<<",0,"<<q.dvcs<<","<<q.dvcs_err<<","<<q.chi2<<","<<q.ndf<<","<<(q.ndf?q.chi2/q.ndf:0)<<"\n";
+    csv.close();
+    std::ofstream fac(od+"/normalization_factors.csv");
+    fac << "set,aao,clasdis,dvcs\n";
+    fac << "derived_nominal,"<<R.nominal.aao<<","<<R.nominal.clasdis<<","<<R.nominal.dvcs<<"\n";
+    fac << "derived_low,"<<R.low.aao<<","<<R.low.clasdis<<","<<R.low.dvcs<<"\n";
+    fac << "derived_high,"<<R.high.aao<<","<<R.high.clasdis<<","<<R.high.dvcs<<"\n";
+    fac << "Valerii_June_reference,0.307,0.315,1.10\n";
+    fac.close();
+    std::ofstream txt(od+"/normalization_summary.txt");
+    txt << "Data-driven MC template normalization\n====================================\n"
+        << "Method: unit-count templates; no MC::Event.weight.\n"
+        << "Low-E stage: fit AAO + CLASDIS independently in each observable for E_gamma<2 GeV.\n"
+        << "High-E stage: fix mean AAO/CLASDIS and fit DVCS independently for E_gamma>3 GeV.\n"
+        << "Nominal factors are unweighted means across valid observable fits; low/high sets are component-wise extrema and are used as a conservative normalization variation.\n\n"
+        << "Derived nominal: AAO="<<R.nominal.aao<<" CLASDIS="<<R.nominal.clasdis<<" DVCS="<<R.nominal.dvcs<<"\n"
+        << "Derived low:     AAO="<<R.low.aao<<" CLASDIS="<<R.low.clasdis<<" DVCS="<<R.low.dvcs<<"\n"
+        << "Derived high:    AAO="<<R.high.aao<<" CLASDIS="<<R.high.clasdis<<" DVCS="<<R.high.dvcs<<"\n"
+        << "Valerii June reference: AAO=0.307 CLASDIS=0.315 DVCS=1.10\n"
+        << "Low-E valid observable fits: "<<R.low_points.size()<<"; high-E valid observable fits: "<<R.high_points.size()<<"\n"
+        << "Fallback used: "<<(R.used_fallback?"YES":"NO")<<"\n";
+    txt.close();
+
+    // Summary factor plot.
+    TCanvas cs("c_norm_summary","",1100,700); cs.SetGridy();
+    TH1D frame("norm_summary_frame","Normalization factors by observable;Observable;Scale factor",(int)(R.low_points.size()+R.high_points.size()),0,(int)(R.low_points.size()+R.high_points.size()));
+    frame.SetStats(0); frame.SetMinimum(0); double ymax=1.4*std::max({1.2,R.high.dvcs,R.high.aao,R.high.clasdis}); frame.SetMaximum(ymax);
+    int ib=1; for (const auto& q:R.low_points) { frame.GetXaxis()->SetBinLabel(ib,("low "+q.observable).c_str()); frame.SetBinContent(ib,std::max(q.aao,q.clasdis)); ib++; }
+    for (const auto& q:R.high_points) { frame.GetXaxis()->SetBinLabel(ib,("high "+q.observable).c_str()); frame.SetBinContent(ib,q.dvcs); ib++; }
+    frame.LabelsOption("v","X"); frame.Draw("HIST TEXT"); cs.SetBottomMargin(0.30); cs.SaveAs((od+"/normalization_factor_summary.png").c_str());
+
+    // Persist all normalization histograms for detailed offline inspection.
+    TFile rf((od+"/normalization_histograms.root").c_str(),"RECREATE");
+    if (!rf.IsZombie()) {
+        for (const auto& vp:vv) if (vp) {
+            TDirectory* d=rf.mkdir(vp->name.c_str()); if (!d) continue; d->cd();
+            for (int io=0;io<NORM_NOBS;io++) {
+                if (io<(int)vp->norm_full.size() && vp->norm_full[io]) vp->norm_full[io]->Write(Form("full_%s",NORM_OBS[io].key));
+                if (io<(int)vp->norm_lowE.size() && vp->norm_lowE[io]) vp->norm_lowE[io]->Write(Form("lowE_%s",NORM_OBS[io].key));
+                if (io<(int)vp->norm_highE.size() && vp->norm_highE[io]) vp->norm_highE[io]->Write(Form("highE_%s",NORM_OBS[io].key));
+            }
+            rf.cd();
+        }
+        rf.Close();
+    }
+    return R;
+}
+
 void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
                            const std::string& out) {
     const ValComponent* data=find_val_component(vv,"data");
@@ -2146,10 +2539,13 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
         return;
     }
 
+    // Derive the component normalizations from the actual files in this run
+    // before constructing the weighted-total MC used for the efficiency maps.
+    NormDerivation norm=derive_normalization(vv,out);
     std::vector<std::unique_ptr<TH1D>> hd_nom,hm_nom;
-    auto nominal=evaluate_valerii_fd(vv,VAL_NORMS[0],&hd_nom,&hm_nom);
-    auto set1=evaluate_valerii_fd(vv,VAL_NORMS[1]);
-    auto set2=evaluate_valerii_fd(vv,VAL_NORMS[2]);
+    auto nominal=evaluate_valerii_fd(vv,norm.nominal,&hd_nom,&hm_nom);
+    auto set1=evaluate_valerii_fd(vv,norm.low);
+    auto set2=evaluate_valerii_fd(vv,norm.high);
 
     for (int ib=0;ib<VAL_NBIN;ib++) {
         nominal[ib].correction_norm_set1=set1[ib].correction[1];
@@ -2207,7 +2603,7 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
     for (const auto& vp:vv) {
         long long rows=0; double sw=0,sw2=0;
         for (const auto& b:vp->bins) { rows+=b.denom_rows; sw+=b.denom_w; sw2+=b.denom_w2; }
-        const double sc=vp->is_mc?val_component_scale(vp->name,VAL_NORMS[0]):1.0;
+        const double sc=vp->is_mc?val_component_scale(vp->name,norm.nominal):1.0;
         const double ssw=sc*sw, ssw2=sc*sc*sw2;
         const double neff=ssw2>0?ssw*ssw/ssw2:0;
         const double meanw=rows>0?sw/static_cast<double>(rows):0.0;
@@ -2247,8 +2643,12 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
             << "theta edges [deg]: 6 20 27 36\n"
             << "phi edges [deg]: -30 30 90 150 210 270 330\n"
             << "Residual histograms: 60 bins on [-1,1] GeV\n"
-            << "Nominal MC normalization: 0.307*AAO + 0.315*CLASDIS(no-exclusivity) + 1.10*DVCS\n"
-            << "Alternative normalization sets: (0.266,0.303,1.10), (0.330,0.320,1.10)\n"
+            << "Active MC normalization is derived from this run's template fits.\n"
+            << "Derived nominal: " << norm.nominal.aao << "*AAO + " << norm.nominal.clasdis
+            << "*CLASDIS + " << norm.nominal.dvcs << "*DVCS\n"
+            << "Normalization-variation low: (" << norm.low.aao << "," << norm.low.clasdis << "," << norm.low.dvcs << ")\n"
+            << "Normalization-variation high: (" << norm.high.aao << "," << norm.high.clasdis << "," << norm.high.dvcs << ")\n"
+            << "Valerii June reference only: (0.307,0.315,1.10)\n"
             << "MC events are unit weighted inside each component; only the component normalization constants are applied.\n"
             << "The skim MC::Event.weight branch is NOT used in the Valerii FD calculation.\n"
             << "Tag photon: FD/PCAL only; probe coordinates: missing gamma2.\n"
@@ -2269,9 +2669,9 @@ void run_valerii_fd_reproduction(const std::string& out) {
     std::cout << "\n============================================================\n"
               << " Valerii-style FD 7x3x6 reproduction\n"
               << "============================================================\n"
-              << "MC nominal weights: 0.307 AAO + 0.315 CLASDIS + 1.10 DVCS\n"
               << "MC events are unit weighted inside each component.\n"
-              << "Only the AAO/CLASDIS/DVCS component normalization constants are applied.\n"
+              << "AAO/CLASDIS/DVCS normalization factors are derived from this run's template fits.\n"
+              << "Low E_gamma<2 GeV determines AAO+CLASDIS; high E_gamma>3 GeV determines DVCS.\n"
               << "The skim MC::Event.weight branch is NOT used in this path.\n"
               << "Data/MC fits are independent in every p/theta/phi bin.\n"
               << "Primary correction convention: epsilon_data / epsilon_MC.\n"
@@ -2349,7 +2749,12 @@ void photon_efficiency_valerii_reproduction() {
         "valerii_fd_data_over_mc_correction_2sigma.png",
         "valerii_fd_data_sigma.png",
         "valerii_fd_weighted_mc_sigma.png",
-        "valerii_fd_histograms.root"
+        "valerii_fd_histograms.root",
+        "normalization/normalization_summary.txt",
+        "normalization/normalization_fit_results.csv",
+        "normalization/normalization_factors.csv",
+        "normalization/normalization_factor_summary.png",
+        "normalization/normalization_histograms.root"
     };
     for (const char* fn:expected) {
         const std::string full=out+"/"+fn;
