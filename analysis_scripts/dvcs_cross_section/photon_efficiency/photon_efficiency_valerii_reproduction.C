@@ -1632,16 +1632,16 @@ static const ValNormSet VAL_NORMS[] = {
     {"set2",   0.330,0.320,1.10}
 };
 
-struct ValCandidate {
-    double dp=0;
-    double base_weight=1;
-};
+static const int VAL_COUNT_NBIN=4000;
+static const double VAL_COUNT_MIN=-4.0;
+static const double VAL_COUNT_MAX= 4.0;
 
 struct ValComponentBin {
     long long denom_rows=0;
     double denom_w=0;
     double denom_w2=0;
-    std::vector<ValCandidate> candidates;
+    std::unique_ptr<TH1D> residual_fit;
+    std::unique_ptr<TH1D> residual_count;
 };
 
 struct ValComponent {
@@ -1777,20 +1777,24 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     std::array<double,VAL_NBIN> sumw{};
     std::array<double,VAL_NBIN> sumw2{};
 
-    TFile f(path.c_str(),"RECREATE");
-    if (f.IsZombie()) return false;
-    TNamed nm("sample_name",spec.name.c_str()); nm.Write();
-    put_param<int>(&f,"is_mc",spec.is_mc?1:0);
-    put_param<Long64_t>(&f,"entries",c.GetEntries());
+    // Do NOT write one TTree row per reconstructed candidate.  With millions of
+    // skim rows that temporary representation can become multi-GB and exhaust
+    // the ifarm home/output filesystem.  The analysis only needs the residual
+    // distributions and their weighted sums, so persist fixed-size histograms.
+    std::array<std::unique_ptr<TH1D>,VAL_NBIN> hfit;
+    std::array<std::unique_ptr<TH1D>,VAL_NBIN> hcount;
+    for (int ib=0;ib<VAL_NBIN;ib++) {
+        hfit[ib].reset(new TH1D(Form("fit_b%03d",ib),";#Delta p_{#gamma2} [GeV];weighted candidates",
+                                VAL_DP_NBIN,VAL_DP_MIN,VAL_DP_MAX));
+        hcount[ib].reset(new TH1D(Form("count_b%03d",ib),";#Delta p_{#gamma2} [GeV];weighted candidates",
+                                  VAL_COUNT_NBIN,VAL_COUNT_MIN,VAL_COUNT_MAX));
+        hfit[ib]->Sumw2();
+        hcount[ib]->Sumw2();
+        hfit[ib]->SetDirectory(nullptr);
+        hcount[ib]->SetDirectory(nullptr);
+    } // endfor
 
-    Int_t tbin=-1;
-    Double_t tdp=0,tw=1;
-    TTree candidates("candidates","Valerii FD reconstructed probe candidates");
-    candidates.Branch("bin",&tbin,"bin/I");
-    candidates.Branch("dp",&tdp,"dp/D");
-    candidates.Branch("base_weight",&tw,"base_weight/D");
-
-    long long selected=0,reco=0,badw=0;
+    long long selected=0,reco=0,badw=0,outside_count_range=0;
     for (Long64_t i=0;i<c.GetEntries();i++) {
         c.GetEntry(i);
 
@@ -1803,27 +1807,39 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         if (!finite_good(b.probe_corr_p) || !finite_good(b.probe_corr_theta) ||
             !finite_good(b.probe_corr_phi)) continue;
 
-        tbin=val_flat_bin(b.probe_corr_p,b.probe_corr_theta,b.probe_corr_phi);
-        if (tbin<0) continue;
+        const int ib=val_flat_bin(b.probe_corr_p,b.probe_corr_theta,b.probe_corr_phi);
+        if (ib<0) continue;
 
-        tw=1.0;
+        double tw=1.0;
         if (spec.is_mc) {
             if (!std::isfinite(b.mc_weight)) { badw++; continue; }
             tw=b.mc_weight;
         }
 
-        rows[tbin]++;
-        sumw[tbin]+=tw;
-        sumw2[tbin]+=tw*tw;
+        rows[ib]++;
+        sumw[ib]+=tw;
+        sumw2[ib]+=tw*tw;
         selected++;
 
         const int k=best_probe_candidate(b,1);
         if (k<0) continue;
-        tdp=b.neutral_p[k]-b.probe_corr_p;
-        if (!std::isfinite(tdp)) continue;
-        candidates.Fill();
+        const double dp=b.neutral_p[k]-b.probe_corr_p;
+        if (!std::isfinite(dp)) continue;
+        hfit[ib]->Fill(dp,tw);
+        hcount[ib]->Fill(dp,tw);
+        if (dp<VAL_COUNT_MIN || dp>VAL_COUNT_MAX) outside_count_range++;
         reco++;
     } // endfor
+
+    TFile f(path.c_str(),"RECREATE");
+    if (f.IsZombie()) return false;
+    TNamed nm("sample_name",spec.name.c_str()); nm.Write();
+    put_param<int>(&f,"is_mc",spec.is_mc?1:0);
+    put_param<Long64_t>(&f,"entries",c.GetEntries());
+    put_param<Long64_t>(&f,"selected_denominator_rows",selected);
+    put_param<Long64_t>(&f,"reconstructed_candidate_rows",reco);
+    put_param<Long64_t>(&f,"nonfinite_mc_weight_rows",badw);
+    put_param<Long64_t>(&f,"residual_rows_outside_count_range",outside_count_range);
 
     TTree denominators("denominators","Valerii FD denominator sums by analysis bin");
     Int_t dbin=-1;
@@ -1837,16 +1853,24 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         drows=rows[dbin]; dsumw=sumw[dbin]; dsumw2=sumw2[dbin];
         denominators.Fill();
     } // endfor
-
-    put_param<Long64_t>(&f,"selected_denominator_rows",selected);
-    put_param<Long64_t>(&f,"reconstructed_candidate_rows",reco);
-    put_param<Long64_t>(&f,"nonfinite_mc_weight_rows",badw);
-    candidates.Write();
     denominators.Write();
+
+    TDirectory* rd=f.mkdir("residuals");
+    if (!rd) { f.Close(); return false; }
+    rd->cd();
+    for (int ib=0;ib<VAL_NBIN;ib++) {
+        hfit[ib]->Write(Form("fit_b%03d",ib));
+        hcount[ib]->Write(Form("count_b%03d",ib));
+    } // endfor
+    f.cd();
+    const Int_t nwrite=f.Write();
     f.Close();
+    if (nwrite<=0 || gSystem->AccessPathName(path.c_str())) {
+        std::cerr << "ERROR: failed to persist Valerii worker file " << path << "\n";
+        return false;
+    }
     return true;
 }
-
 std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
     TFile f(path.c_str(),"READ");
     if (f.IsZombie()) return nullptr;
@@ -1873,21 +1897,23 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
         v->bins[ib].denom_w2=sw2;
     } // endfor
 
-    auto* tr=dynamic_cast<TTree*>(f.Get("candidates"));
-    if (!tr) return nullptr;
-    Double_t dp=0,bw=1;
-    tr->SetBranchAddress("bin",&ib);
-    tr->SetBranchAddress("dp",&dp);
-    tr->SetBranchAddress("base_weight",&bw);
-    for (Long64_t i=0;i<tr->GetEntries();i++) {
-        tr->GetEntry(i);
-        if (ib<0 || ib>=VAL_NBIN) continue;
-        v->bins[ib].candidates.push_back({dp,bw});
+    auto* rd=dynamic_cast<TDirectory*>(f.Get("residuals"));
+    if (!rd) return nullptr;
+    for (ib=0;ib<VAL_NBIN;ib++) {
+        auto* hf=dynamic_cast<TH1D*>(rd->Get(Form("fit_b%03d",ib)));
+        auto* hc=dynamic_cast<TH1D*>(rd->Get(Form("count_b%03d",ib)));
+        if (hf) {
+            v->bins[ib].residual_fit.reset(dynamic_cast<TH1D*>(hf->Clone(Form("%s_fit_b%03d",v->name.c_str(),ib))));
+            if (v->bins[ib].residual_fit) v->bins[ib].residual_fit->SetDirectory(nullptr);
+        }
+        if (hc) {
+            v->bins[ib].residual_count.reset(dynamic_cast<TH1D*>(hc->Clone(Form("%s_count_b%03d",v->name.c_str(),ib))));
+            if (v->bins[ib].residual_count) v->bins[ib].residual_count->SetDirectory(nullptr);
+        }
     } // endfor
     f.Close();
     return v;
 }
-
 std::vector<std::unique_ptr<ValComponent>> build_val_components_parallel(const std::string& out) {
     const SampleSpec all_specs[] = {
         {"data",DATA_DIR,false},
@@ -1896,6 +1922,9 @@ std::vector<std::unique_ptr<ValComponent>> build_val_components_parallel(const s
         {"dvcsgen",DVCSGEN_DIR,true}
     };
     const std::string wdir=out+"/.valerii_workers";
+    // A previous interrupted/no-space run can leave corrupt worker files behind.
+    // Never attempt to recover/reuse them.
+    gSystem->Exec(("rm -rf "+wdir).c_str());
     gSystem->mkdir(wdir.c_str(),true);
 
     struct VChild { pid_t pid; SampleSpec spec; };
@@ -1943,22 +1972,32 @@ const ValComponent* find_val_component(const std::vector<std::unique_ptr<ValComp
     return nullptr;
 }
 
+void val_integrate_window(const TH1D* h,double lo,double hi,double& sw,double& sw2) {
+    sw=0; sw2=0;
+    if (!h || !(hi>lo)) return;
+    const int nb=h->GetNbinsX();
+    for (int j=1;j<=nb;j++) {
+        const double x=h->GetBinCenter(j);
+        if (x<=lo || x>=hi) continue;
+        sw += h->GetBinContent(j);
+        const double e=h->GetBinError(j);
+        sw2 += e*e;
+    } // endfor
+}
+
 ValEval val_eval_data(const ValComponentBin& b,const FitResult& fit,int ns) {
     ValEval e;
-    if (!fit.valid || b.denom_rows<=0) return e;
+    if (!fit.valid || b.denom_rows<=0 || !b.residual_count) return e;
     e.denom=static_cast<double>(b.denom_rows);
     e.denom_w2=e.denom;
-    for (const auto& c:b.candidates) {
-        if (std::fabs(c.dp-fit.mean)<ns*fit.sigma) {
-            e.num+=1.0; e.num_w2+=1.0;
-        }
-    } // endfor
+    val_integrate_window(b.residual_count.get(),fit.mean-ns*fit.sigma,fit.mean+ns*fit.sigma,
+                         e.num,e.num_w2);
     e.efficiency=e.num/e.denom;
     const double fail_w2=std::max(0.0,e.denom_w2-e.num_w2);
     const double var=((1.0-e.efficiency)*(1.0-e.efficiency)*e.num_w2 +
                       e.efficiency*e.efficiency*fail_w2)/(e.denom*e.denom);
     e.efficiency_err=std::sqrt(std::max(0.0,var));
-    e.valid=true;
+    e.valid=std::isfinite(e.efficiency) && e.efficiency>=0;
     return e;
 }
 
@@ -1972,12 +2011,10 @@ ValEval val_eval_mc(const std::vector<std::unique_ptr<ValComponent>>& vv,int ib,
         const auto& b=vp->bins[ib];
         e.denom += scale*b.denom_w;
         e.denom_w2 += scale*scale*b.denom_w2;
-        for (const auto& c:b.candidates) {
-            const double w=scale*c.base_weight;
-            if (std::fabs(c.dp-fit.mean)<ns*fit.sigma) {
-                e.num+=w; e.num_w2+=w*w;
-            }
-        } // endfor
+        double n=0,n2=0;
+        val_integrate_window(b.residual_count.get(),fit.mean-ns*fit.sigma,fit.mean+ns*fit.sigma,n,n2);
+        e.num += scale*n;
+        e.num_w2 += scale*scale*n2;
     } // endfor
     if (!(e.denom>0)) return e;
     e.efficiency=e.num/e.denom;
@@ -1990,10 +2027,9 @@ ValEval val_eval_mc(const std::vector<std::unique_ptr<ValComponent>>& vv,int ib,
 }
 
 std::unique_ptr<TH1D> val_make_data_hist(const ValComponent* data,int ib,const char* name) {
-    std::unique_ptr<TH1D> h(new TH1D(name,";#Delta p_{#gamma2} [GeV];Candidates",
-                                     VAL_DP_NBIN,VAL_DP_MIN,VAL_DP_MAX));
-    h->Sumw2(); h->SetDirectory(nullptr);
-    if (data) for (const auto& c:data->bins[ib].candidates) h->Fill(c.dp);
+    if (!data || !data->bins[ib].residual_fit) return nullptr;
+    std::unique_ptr<TH1D> h(dynamic_cast<TH1D*>(data->bins[ib].residual_fit->Clone(name)));
+    if (h) h->SetDirectory(nullptr);
     return h;
 }
 
@@ -2003,13 +2039,12 @@ std::unique_ptr<TH1D> val_make_mc_hist(const std::vector<std::unique_ptr<ValComp
                                      VAL_DP_NBIN,VAL_DP_MIN,VAL_DP_MAX));
     h->Sumw2(); h->SetDirectory(nullptr);
     for (const auto& vp:vv) {
-        if (!vp || !vp->is_mc) continue;
+        if (!vp || !vp->is_mc || !vp->bins[ib].residual_fit) continue;
         const double scale=val_component_scale(vp->name,norm);
-        for (const auto& c:vp->bins[ib].candidates) h->Fill(c.dp,scale*c.base_weight);
+        h->Add(vp->bins[ib].residual_fit.get(),scale);
     } // endfor
     return h;
 }
-
 std::array<ValBinResult,VAL_NBIN> evaluate_valerii_fd(
         const std::vector<std::unique_ptr<ValComponent>>& vv,
         const ValNormSet& norm,
@@ -2271,23 +2306,32 @@ void photon_efficiency_valerii_reproduction() {
     // Temporary worker files are implementation details; keep output compact.
     gSystem->Exec(("rm -rf "+out+"/.workers").c_str());
 
-    std::cout
-        << "\nFinished. Compact output products:\n"
-        << "  output/analysis_summary.txt\n"
-        << "  output/integrated_results.csv\n"
-        << "  output/parent_window_scan.csv\n"
-        << "  output/delta_p_residuals.png\n"
-        << "  output/denominator_kinematics.png\n"
-        << "  output/FT_projected_xy.png\n"
-        << "  output/analysis_histograms.root\n"
-        << "  output/valerii_fd_summary.txt\n"
-        << "  output/valerii_fd_results.csv\n"
-        << "  output/valerii_fd_component_weight_qa.csv\n"
-        << "  output/valerii_fd_data_efficiency_2sigma.png\n"
-        << "  output/valerii_fd_weighted_mc_efficiency_2sigma.png\n"
-        << "  output/valerii_fd_data_over_mc_correction_2sigma.png\n"
-        << "  output/valerii_fd_data_sigma.png\n"
-        << "  output/valerii_fd_weighted_mc_sigma.png\n"
-        << "  output/valerii_fd_histograms.root\n";
+    std::cout << "\nFinished. Output products actually present on disk:\n";
+    const char* expected[] = {
+        "analysis_summary.txt",
+        "integrated_results.csv",
+        "parent_window_scan.csv",
+        "delta_p_residuals.png",
+        "denominator_kinematics.png",
+        "FT_projected_xy.png",
+        "analysis_histograms.root",
+        "valerii_fd_summary.txt",
+        "valerii_fd_results.csv",
+        "valerii_fd_component_weight_qa.csv",
+        "valerii_fd_data_efficiency_2sigma.png",
+        "valerii_fd_weighted_mc_efficiency_2sigma.png",
+        "valerii_fd_data_over_mc_correction_2sigma.png",
+        "valerii_fd_data_sigma.png",
+        "valerii_fd_weighted_mc_sigma.png",
+        "valerii_fd_histograms.root"
+    };
+    for (const char* fn:expected) {
+        const std::string full=out+"/"+fn;
+        if (!gSystem->AccessPathName(full.c_str()))
+            std::cout << "  " << full << "\n";
+    } // endfor
+    if (gSystem->AccessPathName((out+"/valerii_fd_results.csv").c_str())) {
+        std::cerr << "WARNING: Valerii FD products were not completed. Check worker errors above.\n";
+    }
 }
 
