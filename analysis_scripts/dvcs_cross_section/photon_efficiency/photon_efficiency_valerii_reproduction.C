@@ -1720,7 +1720,8 @@ enum NormObs {
     NORM_EGAMMA=3,
     NORM_MX2_EG=4,
     NORM_DPHI_PG=5,
-    NORM_NOBS=6
+    NORM_DPHI_PG_RAW=6,
+    NORM_NOBS=7
 };
 
 struct NormObsDef {
@@ -1737,7 +1738,8 @@ static const NormObsDef NORM_OBS[NORM_NOBS] = {
     {"angle_gX",   "#angle(#gamma,X);#angle(#gamma,X) [deg];Candidates",       75,0.0,30.0,true, true},
     {"Egamma",     "Tag-photon energy;E_{#gamma} [GeV];Candidates",             95,0.4,8.0,true, true},
     {"Mx2_eg",     "M_{X}^{2}(e#gamma);M_{X}^{2}(e#gamma) [GeV^{2}];Candidates",100,0.0,6.0,true, true},
-    {"dphi_pg",    "#Delta#phi(p,#gamma);#Delta#phi(p,#gamma) [deg];Candidates",100,-30.0,30.0,false,true}
+    {"dphi_pg",    "Coplanarity residual;#Delta#phi_{copl}(p,#gamma) [deg];Candidates",100,-30.0,30.0,false,true},
+    {"dphi_pg_raw","Raw wrapped proton-photon azimuth;wrap(#phi_{p}-#phi_{#gamma}) [deg];Candidates",180,-180.0,180.0,false,false}
 };
 
 // June-2026 Valerii normalization/exclusivity selection.  The presentation
@@ -1746,6 +1748,7 @@ static const NormObsDef NORM_OBS[NORM_NOBS] = {
 static const double NORM_MX2_EP_MIN=-0.231;
 static const double NORM_MX2_EP_MAX= 0.309;
 static const double NORM_MX2_EG_MIN= 1.4;
+// Coplanarity cut: zero means proton and tag photon are back-to-back.
 static const double NORM_DPHI_MAX=5.7;
 static const double NORM_ANGLE_GX_MAX=9.2;
 
@@ -1933,11 +1936,21 @@ double norm_observable_value(const Branches& b,int io) {
     }
     if (io==NORM_EGAMMA) return b.have_tag_corr_kin?b.tag_corr_p:std::numeric_limits<double>::quiet_NaN();
     if (io==NORM_MX2_EG) return invariant_m2_from_epg(b);
-    if (io==NORM_DPHI_PG) {
+    if (io==NORM_DPHI_PG || io==NORM_DPHI_PG_RAW) {
         if (!b.have_p_corr_kin || !b.have_tag_corr_kin) return std::numeric_limits<double>::quiet_NaN();
+
+        // Raw wrapped azimuthal separation in degrees.
         double d=b.p_corr_phi-b.tag_corr_phi;
-        while (d<=-180) d+=360; while (d>180) d-=360;
-        return d;
+        while (d<=-180.0) d+=360.0;
+        while (d> 180.0) d-=360.0;
+
+        if (io==NORM_DPHI_PG_RAW) return d;
+
+        // Coplanarity residual relative to the back-to-back condition.
+        // Perfect transverse coplanarity is |Delta phi| = 180 deg, so this
+        // residual is zero there. Keep a signed residual for QA plots.
+        const double sign=(d>=0.0 ? 1.0 : -1.0);
+        return sign*(180.0-std::fabs(d));
     }
     return std::numeric_limits<double>::quiet_NaN();
 }
@@ -3016,7 +3029,8 @@ void run_valerii_fd_reproduction(const std::string& out) {
               << "Template morphing is normalization-only; event-level MC remains unsmeared.\n"
               << "The skim MC::Event.weight branch is NOT used in this path.\n"
               << "Data/MC fits are independent in every p/theta/phi bin.\n"
-              << "Primary correction convention: epsilon_data / epsilon_MC.\n"
+              << "Primary correction convention: epsilon_data / epsilon_MC.
+Coplanarity: |Delta phi_copl| < 5.7 deg, with zero at back-to-back phi.\n"
               << "============================================================\n";
     auto vv=build_val_components_parallel(out);
     write_valerii_outputs(vv,out);
