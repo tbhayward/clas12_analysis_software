@@ -3029,8 +3029,8 @@ void run_valerii_fd_reproduction(const std::string& out) {
               << "Template morphing is normalization-only; event-level MC remains unsmeared.\n"
               << "The skim MC::Event.weight branch is NOT used in this path.\n"
               << "Data/MC fits are independent in every p/theta/phi bin.\n"
-              << "Primary correction convention: epsilon_data / epsilon_MC.
-Coplanarity: |Delta phi_copl| < 5.7 deg, with zero at back-to-back phi.\n"
+              << "Primary correction convention: epsilon_data / epsilon_MC.\n"
+              << "Coplanarity: |Delta phi_copl| < 5.7 deg, with zero at back-to-back phi.\n"
               << "============================================================\n";
     auto vv=build_val_components_parallel(out);
     write_valerii_outputs(vv,out);
