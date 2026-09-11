@@ -14,6 +14,8 @@
  *   5 is_mc (0/1)
  *   6 loose Mx2(ep) minimum (default -1.0 GeV^2)
  *   7 loose Mx2(ep) maximum (default  2.0 GeV^2)
+ *   8 loose Mx2(ep gamma_tag) minimum (default -0.25 GeV^2)
+ *   9 loose Mx2(ep gamma_tag) maximum (default  0.25 GeV^2)
  *
  * The tag photon is only required to be REC::Particle pid==22, p>=0.4 GeV,
  * and have FD/FT status.  beta/fiducial decisions are SAVED, not imposed.
@@ -139,51 +141,84 @@ static double[] candidateDirection(int i, HipoDataBank recBank, HipoDataBank cal
     return [xyz[0]-vxRef, xyz[1]-vyRef, xyz[2]-vzRef] as double[]
 }
 
-static List<Map> nearestCandidates(HipoDataBank recBank, HipoDataBank calBank, HipoDataBank ftBank,
-                                   double predx, double predy, double predz,
-                                   double vxRef, double vyRef, double vzRef,
-                                   int electronIndex, int protonIndex, int tagIndex,
-                                   boolean neutralOnly, int nsave) {
-    List<Map> out=[]
+static void insertNearest(List<Map> out, Map cand, int nsave) {
+    int pos=0
+    while (pos<out.size() && out[pos].da <= cand.da) pos++
+    out.add(pos,cand)
+    if (out.size()>nsave) out.remove(out.size()-1)
+}
+
+// Find the nearest neutral candidates and nearest candidates of any charge in
+// ONE REC::Particle scan.  Only the best N are retained as we go, so no large
+// temporary candidate lists or full-list sorts are created for each tag.
+static Map nearestCandidateSets(HipoDataBank recBank, HipoDataBank calBank, HipoDataBank ftBank,
+                                double predx, double predy, double predz,
+                                double vxRef, double vyRef, double vzRef,
+                                int electronIndex, int protonIndex, int tagIndex) {
+    List<Map> neutrals=[]
+    List<Map> any=[]
     for (int i=0; i<recBank.rows(); i++) {
         if (i==electronIndex || i==protonIndex || i==tagIndex) continue
-        int charge = recBank.getByte("charge",i)
-        if (neutralOnly && charge != 0) continue
-        double[] dir = candidateDirection(i,recBank,calBank,ftBank,vxRef,vyRef,vzRef)
-        double da = openingDeg(predx,predy,predz,dir[0],dir[1],dir[2])
+        int charge=recBank.getByte("charge",i)
+        double[] dir=candidateDirection(i,recBank,calBank,ftBank,vxRef,vyRef,vzRef)
+        double da=openingDeg(predx,predy,predz,dir[0],dir[1],dir[2])
         if (da < -900) continue
         double pmag=p3(recBank.getFloat("px",i),recBank.getFloat("py",i),recBank.getFloat("pz",i))
         int status=recBank.getInt("status",i), det=detectorFromStatus(status)
         double[] xyz=responseXYZ(i,det,calBank,ftBank)
-        out << [idx:i, pid:recBank.getInt("pid",i), charge:charge, status:status, det:det,
-                p:pmag, theta:thetaDeg(dir[0],dir[1],dir[2]), phi:phiDeg(dir[0],dir[1]), da:da,
-                x:xyz[0],y:xyz[1],z:xyz[2]]
+        Map cand=[idx:i, pid:recBank.getInt("pid",i), charge:charge, status:status, det:det,
+                  p:pmag, theta:thetaDeg(dir[0],dir[1],dir[2]), phi:phiDeg(dir[0],dir[1]), da:da,
+                  x:xyz[0],y:xyz[1],z:xyz[2]]
+        insertNearest(any,cand,N_ANY_SAVE)
+        if (charge==0) insertNearest(neutrals,cand,N_NEUTRAL_SAVE)
     }
-    out.sort { a,b -> a.da <=> b.da }
-    if (out.size()>nsave) return out[0..<nsave]
-    return out
+    return [neutrals:neutrals, any:any]
 }
 
-static Map truthMatch(HipoDataEvent event, double dx, double dy, double dz, boolean requirePhoton, boolean requirePi0Parent) {
-    Map best=[pid:ISENT,parent:ISENT,p:SENT,theta:SENT,phi:SENT,da:SENT,index:ISENT]
-    if (!event.hasBank("MC::Lund")) return best
+static Map emptyTruth() {
+    return [pid:ISENT,parent:ISENT,p:SENT,theta:SENT,phi:SENT,da:SENT,index:ISENT]
+}
+
+// Determine both probe and tag truth matches in one MC::Lund scan.  The probe
+// prefers a generated photon whose parent is a pi0; if none exists, it falls
+// back to the nearest generated photon of any parent.  The tag diagnostic keeps
+// the nearest generated particle, matching the previous behavior.
+static Map truthMatches(HipoDataEvent event,
+                        double predx, double predy, double predz,
+                        double tagx, double tagy, double tagz) {
+    Map bestProbePi0=emptyTruth(), bestProbeAny=emptyTruth(), bestTag=emptyTruth()
+    if (!event.hasBank("MC::Lund")) return [probe:bestProbeAny, tag:bestTag]
     HipoDataBank lund=(HipoDataBank)event.getBank("MC::Lund")
-    double bestDa=1.0e9
+    double bestProbePi0Da=1.0e9, bestProbeAnyDa=1.0e9, bestTagDa=1.0e9
     for (int i=0;i<lund.rows();i++) {
         int pid=lund.getInt("pid",i)
-        if (requirePhoton && pid!=22) continue
         int parentPid=0
         int parent=lund.getInt("parent",i)
         if (parent>0 && parent-1<lund.rows()) parentPid=lund.getInt("pid",parent-1)
-        if (requirePi0Parent && parentPid!=111) continue
         double px=lund.getFloat("px",i), py=lund.getFloat("py",i), pz=lund.getFloat("pz",i)
-        double da=openingDeg(dx,dy,dz,px,py,pz)
-        if (da>=0 && da<bestDa) {
-            bestDa=da
-            best=[pid:pid,parent:parentPid,p:p3(px,py,pz),theta:thetaDeg(px,py,pz),phi:phiDeg(px,py),da:da,index:i]
+        double pp=p3(px,py,pz)
+        double th=thetaDeg(px,py,pz), ph=phiDeg(px,py)
+
+        double daTag=openingDeg(tagx,tagy,tagz,px,py,pz)
+        if (daTag>=0 && daTag<bestTagDa) {
+            bestTagDa=daTag
+            bestTag=[pid:pid,parent:parentPid,p:pp,theta:th,phi:ph,da:daTag,index:i]
+        }
+
+        if (pid==22) {
+            double daProbe=openingDeg(predx,predy,predz,px,py,pz)
+            if (daProbe>=0 && daProbe<bestProbeAnyDa) {
+                bestProbeAnyDa=daProbe
+                bestProbeAny=[pid:pid,parent:parentPid,p:pp,theta:th,phi:ph,da:daProbe,index:i]
+            }
+            if (parentPid==111 && daProbe>=0 && daProbe<bestProbePi0Da) {
+                bestProbePi0Da=daProbe
+                bestProbePi0=[pid:pid,parent:parentPid,p:pp,theta:th,phi:ph,da:daProbe,index:i]
+            }
         }
     }
-    return best
+    Map probe=(bestProbePi0.pid!=ISENT) ? bestProbePi0 : bestProbeAny
+    return [probe:probe, tag:bestTag]
 }
 
 static String fmt(Object x) {
@@ -203,7 +238,7 @@ static void appendCandidate(List vals, Map c) {
 
 static void processPhotonEfficiency(String[] args) {
     if (args.length < 2) {
-        println "Usage: process_photon_efficiency.groovy <input.hipo|dir> <output.txt> [mc_beam] [run_override] [qadb_override] [is_mc] [mx2_min] [mx2_max]"
+        println "Usage: process_photon_efficiency.groovy <input.hipo|dir> <output.txt> [mc_beam] [run_override] [qadb_override] [is_mc] [mx2_min] [mx2_max] [mx2_epg_min] [mx2_epg_max]"
         System.exit(1)
     }
     long start=System.currentTimeMillis()
@@ -215,6 +250,8 @@ static void processPhotonEfficiency(String[] args) {
     int isMC=args.length>5 ? Integer.parseInt(args[5]) : 0
     double mx2Min=args.length>6 ? Double.parseDouble(args[6]) : -1.0
     double mx2Max=args.length>7 ? Double.parseDouble(args[7]) : 2.0
+    double mx2EpgMin=args.length>8 ? Double.parseDouble(args[8]) : -0.25
+    double mx2EpgMax=args.length>9 ? Double.parseDouble(args[9]) : 0.25
 
     List<File> hipos=[]
     if (input.isFile() && input.name.endsWith('.hipo')) hipos << input
@@ -237,7 +274,7 @@ static void processPhotonEfficiency(String[] args) {
     File outf=new File(output); outf.parentFile?.mkdirs(); outf.delete()
     BufferedWriter writer=new BufferedWriter(new FileWriter(outf))
     StringBuilder batch=new StringBuilder(); int lineCount=0
-    long nevt=0, nrow=0, npair=0
+    long nevt=0, nrow=0, npair=0, ntag=0, nprobePositive=0, nprobeMx2=0
 
     for (File hf : hipos) {
         println "Opening ${hf.absolutePath}"
@@ -321,16 +358,31 @@ static void processPhotonEfficiency(String[] args) {
                     eloss.sebastian_photon_energy_loss_corrections(ig,gcorr,rec,run)
                     LorentzVector tagCorr=new LorentzVector(); tagCorr.setPxPyPzM(gcorr[0],gcorr[1],gcorr[2],0)
 
+                    ntag++
                     LorentzVector probeRaw=new LorentzVector(beam); probeRaw.add(target); probeRaw.sub(ele); probeRaw.sub(prot); probeRaw.sub(tagRaw)
+                    // A missing photon hypothesis with non-positive energy is not a physical
+                    // tag-and-probe denominator and is discarded before any matching work.
+                    if (probeRaw.e() <= 0.0) continue
+                    nprobePositive++
+
+                    // probeRaw.mass2() is exactly Mx2(ep gamma_tag) for the raw tag-photon
+                    // four-vector.  This broad configurable window suppresses generic SIDIS
+                    // combinatorics while remaining vastly wider than the gamma missing-mass
+                    // peak used in the final offline pi0 selection.
+                    double mx2epg=probeRaw.mass2()
+                    if (mx2epg<mx2EpgMin || mx2epg>mx2EpgMax) continue
+                    nprobeMx2++
+
                     LorentzVector probeCorr=new LorentzVector(beam); probeCorr.add(target); probeCorr.sub(ele); probeCorr.sub(prot); probeCorr.sub(tagCorr)
                     double predx=probeRaw.px(), predy=probeRaw.py(), predz=probeRaw.pz()
 
-                    List<Map> neutrals=nearestCandidates(rec,cal,ft,predx,predy,predz,0,0,evz,0,ip,ig,true,N_NEUTRAL_SAVE)
-                    List<Map> any=nearestCandidates(rec,cal,ft,predx,predy,predz,0,0,evz,0,ip,ig,false,N_ANY_SAVE)
+                    Map candSets=nearestCandidateSets(rec,cal,ft,predx,predy,predz,0,0,evz,0,ip,ig)
+                    List<Map> neutrals=(List<Map>)candSets.neutrals
+                    List<Map> any=(List<Map>)candSets.any
 
-                    Map truthProbePi0=truthMatch(event,predx,predy,predz,true,true)
-                    Map truthProbeAny=truthProbePi0.pid!=ISENT ? truthProbePi0 : truthMatch(event,predx,predy,predz,true,false)
-                    Map truthTag=truthMatch(event,gpx,gpy,gpz,false,false)
+                    Map truth=truthMatches(event,predx,predy,predz,gpx,gpy,gpz)
+                    Map truthProbeAny=(Map)truth.probe
+                    Map truthTag=(Map)truth.tag
 
                     List vals=[]
                     vals.add(runnum); vals.add(evnum); vals.add(helicity); vals.add(isMC)
@@ -350,7 +402,7 @@ static void processPhotonEfficiency(String[] args) {
                     vals.add(tagXYZ[0]); vals.add(tagXYZ[1]); vals.add(tagXYZ[2]); vals.add(tagXYZ[0]>-900?Math.hypot(tagXYZ[0],tagXYZ[1]):SENT)
 
                     vals.add(mx2ep); vals.add(mx2ep>=0?Math.sqrt(mx2ep):-Math.sqrt(-mx2ep))
-                    vals.add(probeRaw.mass2()); vals.add(probeRaw.e()); vals.add(probeRaw.p()); vals.add(thetaDeg(predx,predy,predz)); vals.add(phiDeg(predx,predy))
+                    vals.add(mx2epg); vals.add(probeRaw.e()); vals.add(probeRaw.p()); vals.add(thetaDeg(predx,predy,predz)); vals.add(phiDeg(predx,predy))
                     vals.add(probeRaw.px()); vals.add(probeRaw.py()); vals.add(probeRaw.pz())
                     vals.add(probeCorr.mass2()); vals.add(probeCorr.e()); vals.add(probeCorr.p()); vals.add(thetaDeg(probeCorr.px(),probeCorr.py(),probeCorr.pz())); vals.add(phiDeg(probeCorr.px(),probeCorr.py()))
                     vals.add(probeCorr.px()); vals.add(probeCorr.py()); vals.add(probeCorr.pz())
@@ -365,14 +417,14 @@ static void processPhotonEfficiency(String[] args) {
                     if (lineCount>=1000) { writer.write(batch.toString()); batch.setLength(0); lineCount=0 }
                 } // tag
             } // proton
-            if (nevt%1000000==0) println "processed ${nevt} events, wrote ${nrow} tag hypotheses"
+            if (nevt%1000000==0) println "processed ${nevt} events: ep_pairs=${npair}, tags=${ntag}, positive_probe=${nprobePositive}, loose_Mx2_epg=${nprobeMx2}, rows=${nrow}"
         }
         reader.close()
     }
     if (batch.length()>0) writer.write(batch.toString())
     writer.close()
     double min=(System.currentTimeMillis()-start)/60000.0
-    println String.format(java.util.Locale.US,"Done: events=%d accepted_ep_pairs=%d rows=%d time=%.2f min output=%s",nevt,npair,nrow,min,output)
+    println String.format(java.util.Locale.US,"Done: events=%d accepted_ep_pairs=%d tag_candidates=%d positive_probe=%d loose_Mx2_epg=%d rows=%d time=%.2f min output=%s",nevt,npair,ntag,nprobePositive,nprobeMx2,nrow,min,output)
 }
 
 // Execute the processor from the Groovy script body.

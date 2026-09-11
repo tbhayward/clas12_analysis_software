@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Called by processing.csh for process_photon_efficiency.groovy.
 # Usage:
-#   run_photon_efficiency_parallel.sh INPUT OUTPUT_DIR NFILES BEAM RUN_OVERRIDE QADB_OVERRIDE IS_MC NWORKERS MX2_MIN MX2_MAX KEEP_TXT
+#   run_photon_efficiency_parallel.sh INPUT OUTPUT_DIR NFILES BEAM RUN_OVERRIDE QADB_OVERRIDE IS_MC NWORKERS MX2_MIN MX2_MAX KEEP_TXT MX2_EPG_MIN MX2_EPG_MAX
 
 INPUT=${1:?input HIPO file/directory required}
 OUTDIR=${2:?output directory required}
@@ -16,6 +16,8 @@ NWORKERS=${8:-1}
 MX2_MIN=${9:--1.0}
 MX2_MAX=${10:-2.0}
 KEEP_TXT=${11:-0}
+MX2_EPG_MIN=${12:--0.25}
+MX2_EPG_MAX=${13:-0.25}
 
 SCRIPT="processing_scripts/process_photon_efficiency.groovy"
 JAR="processing_classes/dist/processing_classes.jar"
@@ -51,8 +53,9 @@ fi
 echo "Photon-efficiency processing: $TOTAL HIPO files, $NWORKERS worker(s)"
 echo "Output directory: $OUTDIR"
 echo "Loose Mx2(ep) window: [$MX2_MIN, $MX2_MAX] GeV^2"
+echo "Loose Mx2(ep gamma_tag) window: [$MX2_EPG_MIN, $MX2_EPG_MAX] GeV^2"
 
-export OUTDIR BEAM RUN_OVERRIDE QADB_OVERRIDE IS_MC MX2_MIN MX2_MAX KEEP_TXT SCRIPT JAR CONVERTER
+export OUTDIR BEAM RUN_OVERRIDE QADB_OVERRIDE IS_MC MX2_MIN MX2_MAX KEEP_TXT MX2_EPG_MIN MX2_EPG_MAX SCRIPT JAR CONVERTER
 
 worker='\
 hipo="$1"; \
@@ -60,7 +63,7 @@ base=$(basename "$hipo" .hipo); \
 txt="$OUTDIR/${base}_photon_efficiency.txt"; \
 root="$OUTDIR/${base}_photon_efficiency.root"; \
 echo "[START] $hipo"; \
-coatjava/bin/run-groovy -cp "$JAR" "$SCRIPT" "$hipo" "$txt" "$BEAM" "$RUN_OVERRIDE" "$QADB_OVERRIDE" "$IS_MC" "$MX2_MIN" "$MX2_MAX" && \
+coatjava/bin/run-groovy -cp "$JAR" "$SCRIPT" "$hipo" "$txt" "$BEAM" "$RUN_OVERRIDE" "$QADB_OVERRIDE" "$IS_MC" "$MX2_MIN" "$MX2_MAX" "$MX2_EPG_MIN" "$MX2_EPG_MAX" && \
 "$CONVERTER" "$txt" "$root" && \
 { if [[ "$KEEP_TXT" == "0" ]]; then rm -f "$txt"; fi; } && \
 echo "[DONE ] $root"\
