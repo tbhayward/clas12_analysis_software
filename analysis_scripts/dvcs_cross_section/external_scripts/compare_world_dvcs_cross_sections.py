@@ -117,11 +117,11 @@ class Pass2UnavailableError(RuntimeError):
 #endclass
 
 
-PASS2_OVERALL_NORM_FRAC = 0.021633307652784
+PASS2_OVERALL_NORM_FRAC = 0.0744342205735
 PASS2_XS_COL = "normed cross sections, ep->epg, exp, 10.6 GeV, unpol"
 PASS2_PTP_COL = "Syst. err (point-to-point total)"
 PASS2_CORR_FRAC_COL = "correlated scale sys frac, 10.6 GeV"
-PASS2_NORM_FRAC_COL = "uncorrelated normalization sys frac, 10.6 GeV"
+PASS2_NORM_FRAC_COL = "overall normalization sys frac, 10.6 GeV"
 
 PROTON_MASS_GEV = 0.9382720813
 PASS2_PERIOD_SPECS = {
@@ -4459,11 +4459,8 @@ def build_complete_pass2_anchor_legend(
 
     handles, labels = [], []
     for key in DATASET_ORDER:
-        # Pass-2/Hayward has its own anchor canvases and must never appear in
-        # the Lee-anchor legend, even when a finalized pass-2 sample is loaded.
-        if key == "pass2":
-            continue
-        #endif
+        # These are pass-2/Hayward-centered canvases, so Hayward belongs in
+        # the legend together with the external measurements.
         style = DATASET_STYLES[key]
         handles.append(Line2D(
             [0], [0],
@@ -4477,31 +4474,23 @@ def build_complete_pass2_anchor_legend(
         if key in omit:
             label = f"{DATASET_LABELS[key]} (excluded)"
         elif scenario is None:
-            # Quote the known overall normalization if available.
-            if key == "pass2":
-                label = f"{DATASET_LABELS[key]} (2.16% norm + kin. corr.)"
-            else:
-                # Collect ONLY the normalization values belonging to this
-                # dataset itself.  The previous implementation flattened both
-                # norm_frac_a and norm_frac_b from every matched row involving
-                # the dataset, which mixed in the partner experiment's
-                # normalization and produced nonsense labels (e.g. ~18% for
-                # Lee instead of the correct 31%).
-                vals_a = matches.loc[
-                    matches["dataset_a"] == key,
-                    "norm_frac_a",
-                ].to_numpy(float)
-                vals_b = matches.loc[
-                    matches["dataset_b"] == key,
-                    "norm_frac_b",
-                ].to_numpy(float)
-                vals = np.concatenate([vals_a, vals_b])
-                vals = vals[np.isfinite(vals) & (vals > 0)]
-                label = (
-                    f"{DATASET_LABELS[key]} ({100*np.nanmedian(vals):.1f}% norm)"
-                    if vals.size else DATASET_LABELS[key]
-                )
-            #endif
+            # Collect ONLY the normalization values belonging to this dataset
+            # itself.  For pass-2 this is the finalized overall normalization
+            # (base target/charge plus proton-efficiency normalization).
+            vals_a = matches.loc[
+                matches["dataset_a"] == key,
+                "norm_frac_a",
+            ].to_numpy(float)
+            vals_b = matches.loc[
+                matches["dataset_b"] == key,
+                "norm_frac_b",
+            ].to_numpy(float)
+            vals = np.concatenate([vals_a, vals_b])
+            vals = vals[np.isfinite(vals) & (vals > 0)]
+            label = (
+                f"{DATASET_LABELS[key]} ({100*np.nanmedian(vals):.1f}% norm)"
+                if vals.size else DATASET_LABELS[key]
+            )
         else:
             label = f"{DATASET_LABELS[key]} ({100*(corr.get(key,1.0)-1):+.1f}% norm)"
         #endif
@@ -4907,6 +4896,10 @@ def build_complete_lee_anchor_legend(
     labels: List[str] = []
 
     for key in DATASET_ORDER:
+        # Lee/pass-1-centered canvases deliberately exclude pass-2/Hayward.
+        if key == "pass2":
+            continue
+        #endif
         style = DATASET_STYLES[key]
         handles.append(
             Line2D(
