@@ -1459,7 +1459,11 @@ void write_root(const std::vector<std::unique_ptr<SampleResult>>& samples,
 
 bool save_worker_result(const SampleResult& s, const std::string& path) {
     TFile f(path.c_str(),"RECREATE");
-    if (f.IsZombie()) return false;
+    if (f.IsZombie()) {
+        std::cerr << "ERROR: cannot create cache file " << path
+                  << ". Check free space/quota on the cache filesystem.\n";
+        return false;
+    }
     TNamed nname("sample_name",s.name.c_str()); nname.Write();
     TNamed ninput("input",s.input.c_str()); ninput.Write();
     put_param<int>(&f,"is_mc",s.is_mc?1:0);
@@ -1622,7 +1626,9 @@ std::string concise_input_signature(const std::string& dir) {
 }
 
 std::string concise_cache_path(const SampleSpec& s) {
-    const std::string d=".photon_efficiency_cache/concise";
+    // Large worker ROOT files belong on /work, not in the source/home filesystem.
+    const std::string d="/work/clas12/thayward/photon_efficiency/cache/concise";
+    gSystem->mkdir("/work/clas12/thayward/photon_efficiency/cache",true);
     gSystem->mkdir(d.c_str(),true);
     return d+"/"+s.name+"_"+concise_input_signature(s.dir)+".root";
 }
@@ -2825,11 +2831,28 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     put_param<int>(&f,"normalization_branches_complete",
         (b.have_tag_corr_kin && b.have_Mx2_epg_corr && b.have_beam_energy && b.have_e_kin && b.have_p_corr_kin)?1:0);
     const Int_t nwrite=f.Write();
+    const bool root_write_error=f.TestBit(TFile::kWriteError);
     f.Close();
-    if (nwrite<=0 || gSystem->AccessPathName(path.c_str())) {
-        std::cerr << "ERROR: failed to persist Valerii worker file " << path << "\n";
+
+    if (nwrite<=0 || root_write_error || gSystem->AccessPathName(path.c_str())) {
+        std::cerr << "ERROR: failed to persist worker cache file " << path << "\n";
+        gSystem->Unlink(path.c_str());
         return false;
     }
+
+    // Reopen once before reporting success.  This catches truncated files from
+    // quota/full-filesystem failures immediately instead of poisoning a rerun.
+    {
+        TFile check(path.c_str(),"READ");
+        if (check.IsZombie() || check.TestBit(TFile::kRecovered)) {
+            std::cerr << "ERROR: cache file is corrupt/incomplete: " << path << "\n";
+            check.Close();
+            gSystem->Unlink(path.c_str());
+            return false;
+        }
+        check.Close();
+    }
+
     return true;
 }
 std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
@@ -5356,8 +5379,23 @@ void run_concise_analysis(const std::string& out) {
     concise_make_dirs(out);
 
     auto vv=build_val_components_parallel(out);
-    if (vv.empty()) {
-        std::cerr << "ERROR: no samples available\n";
+
+    auto have_sample=[&](const std::string& name)->bool {
+        return find_val_component(vv,name)!=nullptr;
+    };
+
+    const bool complete =
+        have_sample("data") &&
+        have_sample("aaogen") &&
+        have_sample("clasdis") &&
+        have_sample("dvcsgen");
+
+    if (!complete) {
+        std::cerr
+            << "\nERROR: stopping analysis because the cache is incomplete.\n"
+            << "All four samples are required: data, aaogen, clasdis, dvcsgen.\n"
+            << "No normalization, pi0-fraction, or efficiency products will be "
+            << "made from a partial MC mixture.\n";
         return;
     } // endif
 
@@ -5421,6 +5459,7 @@ void photon_efficiency_valerii_reproduction() {
         << "3) pi0 fraction of selected ep-gamma-X events\n"
         << "4) integrated FD/FT photon efficiency, split at 2 GeV\n"
         << "One parallel tree scan per sample; persistent cache on reruns.\n"
+        << "Cache: /work/clas12/thayward/photon_efficiency/cache/concise\n"
         << "============================================================\n";
 
     pe::run_concise_analysis("output");
