@@ -1585,7 +1585,7 @@ struct SampleSpec {
     bool is_mc=false;
 };
 
-static const char* CONCISE_CACHE_VERSION="20260912_concise_v5_detector_norm";
+static const char* CONCISE_CACHE_VERSION="20260912_concise_v7_corr_globalnorm";
 
 std::uint64_t concise_hash(const std::string& s,std::uint64_t h=1469598103934665603ULL) {
     for (unsigned char c:s) {
@@ -1841,6 +1841,13 @@ struct ValComponent {
     std::vector<std::unique_ptr<TH1D>> norm_ft_highE;
     std::array<long long,6> norm_ft_cutflow{{0,0,0,0,0,0}};
 
+    // Baseline correlations with inferred probe energy, plus the sequential
+    // probe-energy spectra used to check whether tighter cuts sculpt coverage.
+    std::vector<std::unique_ptr<TH2D>> corr_fd;
+    std::vector<std::unique_ptr<TH2D>> corr_ft;
+    std::vector<std::unique_ptr<TH1D>> eprobe_stage_fd;
+    std::vector<std::unique_ptr<TH1D>> eprobe_stage_ft;
+
     bool normalization_branches_complete=false;
 };
 
@@ -1900,6 +1907,28 @@ static const NormObsDef NORM_OBS[NORM_NOBS] = {
                      120,-2.0,2.0,false,true}
 };
 
+// Exclusivity-vs-probe-energy diagnostics. These are filled at the detector-
+// accepted ep-gamma-X baseline, BEFORE any active exclusivity cut, so cut
+// optimization can be checked directly against the probe-energy coverage used
+// by the efficiency map.
+static const int CORR_NOBS=7;
+static const int CORR_OBS[CORR_NOBS] = {
+    NORM_MX2_EP,
+    NORM_MX2_EPG,
+    NORM_MX2_EG,
+    NORM_DPHI_TRENTO_SHIFT180,
+    NORM_ANGLE_GX,
+    NORM_ANGLE_EX,
+    NORM_DELTA_T_PG
+};
+static const int EPROBE_NBIN=40;
+static const double EPROBE_MIN=0.40;
+static const double EPROBE_MAX=8.40;
+static const int EPROBE_NSTAGE=5;
+static const char* EPROBE_STAGE_KEY[EPROBE_NSTAGE] = {
+    "baseline","mx2_ep","mx2_eg","coplanarity","angle_gX"
+};
+
 // June-2026 Valerii normalization/exclusivity selection.
 // Slide 9 labels the final angular cut as Angle(e,X)<9.2 deg, but the literal
 // scattered-electron/missing-probe opening angle removes essentially the whole
@@ -1951,6 +1980,15 @@ struct NormDerivation {
     ValNormSet high;
     std::vector<NormFitPoint> low_points;
     std::vector<NormFitPoint> high_points;
+
+    // Common low-E AAOgen/CLASDIS normalization across several observables.
+    // Per-observable fits above remain QA only.
+    NormFitPoint low_global;
+
+    // FT-only sensitivity test: omit CLASDIS and renormalize AAOgen + DVCSgen.
+    // This does not replace the nominal three-component extraction.
+    bool no_clasdis_valid=false;
+    ValNormSet no_clasdis;
 };
 
 struct ValEval {
@@ -2074,6 +2112,29 @@ std::unique_ptr<TH1D> make_norm_hist(int io,const char* region,const std::string
     const auto& d=NORM_OBS[io];
     std::unique_ptr<TH1D> h(new TH1D(Form("norm_%s_%s_%s",region,d.key,sample.c_str()),d.title,d.nb,d.lo,d.hi));
     h->Sumw2(); h->SetDirectory(nullptr);
+    return h;
+}
+
+std::unique_ptr<TH2D> make_corr_hist(int io,const char* detector,const std::string& sample) {
+    const auto& d=NORM_OBS[io];
+    const int ny=std::min(90,d.nb);
+    std::unique_ptr<TH2D> h(new TH2D(
+        Form("corr_%s_%s_%s",detector,d.key,sample.c_str()),
+        Form(";E_{#gamma,probe} (GeV);%s",d.key),
+        EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX,ny,d.lo,d.hi));
+    h->Sumw2();
+    h->SetDirectory(nullptr);
+    return h;
+}
+
+std::unique_ptr<TH1D> make_eprobe_stage_hist(const char* detector,int stage,
+                                             const std::string& sample) {
+    std::unique_ptr<TH1D> h(new TH1D(
+        Form("eprobe_%s_%s_%s",detector,EPROBE_STAGE_KEY[stage],sample.c_str()),
+        ";E_{#gamma,probe} (GeV);Candidates",
+        EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX));
+    h->Sumw2();
+    h->SetDirectory(nullptr);
     return h;
 }
 
@@ -2578,6 +2639,19 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         norm_ft_low.push_back(make_norm_hist(io,"ft_lowE",spec.name));
         norm_ft_high.push_back(make_norm_hist(io,"ft_highE",spec.name));
     } // endfor
+    std::vector<std::unique_ptr<TH2D>> corr_fd,corr_ft;
+    for (int jc=0;jc<CORR_NOBS;jc++) {
+        const int io=CORR_OBS[jc];
+        corr_fd.push_back(make_corr_hist(io,"FD",spec.name));
+        corr_ft.push_back(make_corr_hist(io,"FT",spec.name));
+    } // endfor
+
+    std::vector<std::unique_ptr<TH1D>> eprobe_stage_fd,eprobe_stage_ft;
+    for (int is=0;is<EPROBE_NSTAGE;is++) {
+        eprobe_stage_fd.push_back(make_eprobe_stage_hist("FD",is,spec.name));
+        eprobe_stage_ft.push_back(make_eprobe_stage_hist("FT",is,spec.name));
+    } // endfor
+
     std::array<long long,6> norm_cutflow{{0,0,0,0,0,0}};
     std::array<long long,6> norm_ft_cutflow{{0,0,0,0,0,0}};
     for (int ib=0;ib<VAL_NBIN;ib++) {
@@ -2623,6 +2697,33 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
             ftp=project_ft(b,ft_plane);
             probe_ft=ftp.valid && ftp.fiducial;
         } // endif
+
+        auto fill_corr_sample = [&](bool accept,
+                                    std::vector<std::unique_ptr<TH2D>>& corr,
+                                    std::vector<std::unique_ptr<TH1D>>& stages) {
+            if (!accept || !std::isfinite(b.probe_corr_p)) return;
+
+            // Baseline correlations: no exclusivity requirement has yet been applied.
+            for (int jc=0;jc<CORR_NOBS;jc++) {
+                const double y=norm_observable_value(b,CORR_OBS[jc]);
+                if (std::isfinite(y)) corr[jc]->Fill(b.probe_corr_p,y);
+            } // endfor
+
+            stages[0]->Fill(b.probe_corr_p);
+            if (ncf.mx2_ep) {
+                stages[1]->Fill(b.probe_corr_p);
+                if (ncf.mx2_eg) {
+                    stages[2]->Fill(b.probe_corr_p);
+                    if (ncf.dphi_trento) {
+                        stages[3]->Fill(b.probe_corr_p);
+                        if (ncf.angle_gX) stages[4]->Fill(b.probe_corr_p);
+                    } // endif
+                } // endif
+            } // endif
+        };
+
+        fill_corr_sample(probe_fd,corr_fd,eprobe_stage_fd);
+        fill_corr_sample(probe_ft,corr_ft,eprobe_stage_ft);
 
         auto fill_norm_sample = [&](bool accept,
                                     std::vector<std::unique_ptr<TH1D>>& pre,
@@ -2780,6 +2881,22 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         } // endfor
         f.cd();
     } // endif
+
+    auto write_corr_dir = [&](const char* dirname,
+                              const std::vector<std::unique_ptr<TH2D>>& corr,
+                              const std::vector<std::unique_ptr<TH1D>>& stages) {
+        TDirectory* d=f.mkdir(dirname);
+        if (!d) return;
+        d->cd();
+        for (int jc=0;jc<CORR_NOBS;jc++)
+            if (corr[jc]) corr[jc]->Write(Form("corr_%s",NORM_OBS[CORR_OBS[jc]].key));
+        for (int is=0;is<EPROBE_NSTAGE;is++)
+            if (stages[is]) stages[is]->Write(Form("eprobe_%s",EPROBE_STAGE_KEY[is]));
+        f.cd();
+    };
+
+    write_corr_dir("correlations_FD",corr_fd,eprobe_stage_fd);
+    write_corr_dir("correlations_FT",corr_ft,eprobe_stage_ft);
 
     TDirectory* rd=f.mkdir("residuals");
     if (!rd) { f.Close(); return false; }
@@ -2967,6 +3084,40 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
         get_param<Long64_t>(&f,Form("norm_ft_cutflow_%d",ic),q);
         v->norm_ft_cutflow[ic]=q;
     } // endfor
+
+    auto load_corr_dir = [&](const char* dirname,
+                             std::vector<std::unique_ptr<TH2D>>& corr,
+                             std::vector<std::unique_ptr<TH1D>>& stages) {
+        auto* d=dynamic_cast<TDirectory*>(f.Get(dirname));
+        for (int jc=0;jc<CORR_NOBS;jc++) {
+            std::unique_ptr<TH2D> q;
+            if (d) {
+                auto* h=dynamic_cast<TH2D*>(d->Get(Form("corr_%s",NORM_OBS[CORR_OBS[jc]].key)));
+                if (h) {
+                    q.reset(dynamic_cast<TH2D*>(h->Clone(
+                        Form("%s_%s_corr_%s",v->name.c_str(),dirname,NORM_OBS[CORR_OBS[jc]].key))));
+                    if (q) q->SetDirectory(nullptr);
+                } // endif
+            } // endif
+            corr.push_back(std::move(q));
+        } // endfor
+        for (int is=0;is<EPROBE_NSTAGE;is++) {
+            std::unique_ptr<TH1D> q;
+            if (d) {
+                auto* h=dynamic_cast<TH1D*>(d->Get(Form("eprobe_%s",EPROBE_STAGE_KEY[is])));
+                if (h) {
+                    q.reset(dynamic_cast<TH1D*>(h->Clone(
+                        Form("%s_%s_eprobe_%s",v->name.c_str(),dirname,EPROBE_STAGE_KEY[is]))));
+                    if (q) q->SetDirectory(nullptr);
+                } // endif
+            } // endif
+            stages.push_back(std::move(q));
+        } // endfor
+    };
+
+    load_corr_dir("correlations_FD",v->corr_fd,v->eprobe_stage_fd);
+    load_corr_dir("correlations_FT",v->corr_ft,v->eprobe_stage_ft);
+
     f.Close();
     return v;
 }
@@ -4463,6 +4614,262 @@ double rms_spread(const std::vector<double>& x,double mean) {
     return std::sqrt(s/double(x.size()-1));
 }
 
+
+struct SimMorphState {
+    int io=-1;
+    double shift=0;
+    double sigma=0;
+};
+
+NormFitPoint fit_two_templates_simultaneous_morphed(
+        const std::vector<std::unique_ptr<TH1D>>& data,
+        const std::vector<std::unique_ptr<TH1D>>& aao,
+        const std::vector<std::unique_ptr<TH1D>>& cls,
+        const std::vector<int>& obs) {
+    NormFitPoint out;
+    out.observable="simultaneous_lowE";
+    if (obs.empty()) return out;
+
+    std::vector<SimMorphState> states;
+    states.reserve(obs.size());
+
+    // Start each observable from its individually preferred common MC morph.
+    for (int io:obs) {
+        if (io<0 || io>=NORM_NOBS ||
+            io>=int(data.size()) || io>=int(aao.size()) || io>=int(cls.size()) ||
+            !data[io] || !aao[io] || !cls[io]) continue;
+        auto q=fit_two_templates_morphed(data[io].get(),aao[io].get(),cls[io].get(),
+                                         NORM_OBS[io].key);
+        SimMorphState s;
+        s.io=io;
+        if (q.valid) {
+            s.shift=q.morph_shift;
+            s.sigma=q.morph_sigma;
+        } // endif
+        states.push_back(s);
+    } // endfor
+    if (states.size()<2) return out;
+
+    auto solve_common = [&](double& A,double& B,double& eA,double& eB,
+                            double& chi2,int& used)->bool {
+        double saa=0,sbb=0,sab=0,sad=0,sbd=0;
+        used=0;
+        for (const auto& s:states) {
+            auto ma=morph_norm_hist(aao[s.io].get(),s.shift,s.sigma,"sim_ma");
+            auto mc=morph_norm_hist(cls[s.io].get(),s.shift,s.sigma,"sim_mc");
+            const TH1D* hd=data[s.io].get();
+            if (!ma || !mc || !hd) continue;
+            for (int ib=1;ib<=hd->GetNbinsX();ib++) {
+                const double d=hd->GetBinContent(ib);
+                const double va=ma->GetBinContent(ib);
+                const double vb=mc->GetBinContent(ib);
+                if (d<=0 && va<=0 && vb<=0) continue;
+                const double w=1.0/std::max(1.0,d);
+                saa+=w*va*va;
+                sbb+=w*vb*vb;
+                sab+=w*va*vb;
+                sad+=w*va*d;
+                sbd+=w*vb*d;
+                used++;
+            } // endfor
+        } // endfor
+
+        const double det=saa*sbb-sab*sab;
+        if (used<10 || !(det>0)) return false;
+        A=(sad*sbb-sbd*sab)/det;
+        B=(sbd*saa-sad*sab)/det;
+
+        // Enforce physical non-negative component normalizations.
+        if (A<0) {
+            A=0;
+            B=(sbb>0?sbd/sbb:0);
+        } // endif
+        if (B<0) {
+            B=0;
+            A=(saa>0?sad/saa:0);
+        } // endif
+        if (!(A>=0 && B>=0) || !std::isfinite(A) || !std::isfinite(B))
+            return false;
+
+        eA=(det>0?std::sqrt(std::max(0.0,sbb/det)):0);
+        eB=(det>0?std::sqrt(std::max(0.0,saa/det)):0);
+
+        chi2=0;
+        for (const auto& s:states) {
+            auto ma=morph_norm_hist(aao[s.io].get(),s.shift,s.sigma,"sim_ma_chi");
+            auto mc=morph_norm_hist(cls[s.io].get(),s.shift,s.sigma,"sim_mc_chi");
+            const TH1D* hd=data[s.io].get();
+            if (!ma || !mc || !hd) continue;
+            for (int ib=1;ib<=hd->GetNbinsX();ib++) {
+                const double d=hd->GetBinContent(ib);
+                const double m=A*ma->GetBinContent(ib)+B*mc->GetBinContent(ib);
+                if (d<=0 && m<=0) continue;
+                const double q=d-m;
+                chi2+=q*q/std::max(1.0,d);
+            } // endfor
+        } // endfor
+        return true;
+    };
+
+    double A=0,B=0,eA=0,eB=0,chi2=0;
+    int used=0;
+    if (!solve_common(A,B,eA,eB,chi2,used)) return out;
+
+    // Alternate between one common normalization solution and an independent
+    // detector-resolution morph for each observable.  The morph changes shape
+    // only; A and B remain common to every observable.
+    for (int iter=0;iter<3;iter++) {
+        for (auto& s:states) {
+            const TH1D* hd=data[s.io].get();
+            const double bw=hd->GetXaxis()->GetBinWidth(1);
+            double bestchi=std::numeric_limits<double>::infinity();
+            double bestshift=s.shift,bestsigma=s.sigma;
+
+            for (double sb=-NORM_MAX_SHIFT_BINS;
+                 sb<=NORM_MAX_SHIFT_BINS+1e-9;
+                 sb+=NORM_MORPH_STEP_BINS) {
+                const double shift=sb*bw;
+                for (double wb=0;
+                     wb<=NORM_MAX_SMEAR_BINS+1e-9;
+                     wb+=NORM_MORPH_STEP_BINS) {
+                    const double sigma=wb*bw;
+                    auto ma=morph_norm_hist(aao[s.io].get(),shift,sigma,"sim_scan_a");
+                    auto mc=morph_norm_hist(cls[s.io].get(),shift,sigma,"sim_scan_c");
+                    if (!ma || !mc) continue;
+                    double c2=0;
+                    for (int ib=1;ib<=hd->GetNbinsX();ib++) {
+                        const double d=hd->GetBinContent(ib);
+                        const double m=A*ma->GetBinContent(ib)+B*mc->GetBinContent(ib);
+                        if (d<=0 && m<=0) continue;
+                        const double q=d-m;
+                        c2+=q*q/std::max(1.0,d);
+                    } // endfor
+                    if (c2<bestchi) {
+                        bestchi=c2;
+                        bestshift=shift;
+                        bestsigma=sigma;
+                    } // endif
+                } // endfor
+            } // endfor
+            s.shift=bestshift;
+            s.sigma=bestsigma;
+        } // endfor
+
+        if (!solve_common(A,B,eA,eB,chi2,used)) return out;
+    } // endfor
+
+    out.aao=A;
+    out.clasdis=B;
+    out.aao_err=eA;
+    out.clasdis_err=eB;
+    out.chi2=chi2;
+    // Two common normalizations + two shape nuisances per observable.
+    out.ndf=std::max(1,used-2-2*int(states.size()));
+    out.valid=std::isfinite(A) && std::isfinite(B) && out.ndf>0;
+    return out;
+}
+
+NormFitPoint fit_one_template_simultaneous_morphed(
+        const std::vector<std::unique_ptr<TH1D>>& data,
+        const std::vector<std::unique_ptr<TH1D>>& templ,
+        const std::vector<int>& obs,
+        const std::string& label) {
+    NormFitPoint out;
+    out.observable=label;
+    if (obs.empty()) return out;
+
+    struct OneState { int io=-1; double shift=0,sigma=0; };
+    std::vector<OneState> states;
+    for (int io:obs) {
+        if (io<0 || io>=NORM_NOBS ||
+            io>=int(data.size()) || io>=int(templ.size()) ||
+            !data[io] || !templ[io]) continue;
+        states.push_back({io,0,0});
+    } // endfor
+    if (states.size()<2) return out;
+
+    auto solveA=[&](double& A,double& eA,double& chi2,int& used)->bool {
+        double sxx=0,sxd=0;
+        used=0;
+        for (const auto& s:states) {
+            auto mt=morph_norm_hist(templ[s.io].get(),s.shift,s.sigma,"one_mt");
+            const TH1D* hd=data[s.io].get();
+            if (!mt || !hd) continue;
+            for (int ib=1;ib<=hd->GetNbinsX();ib++) {
+                const double d=hd->GetBinContent(ib), x=mt->GetBinContent(ib);
+                if (d<=0 && x<=0) continue;
+                const double w=1.0/std::max(1.0,d);
+                sxx+=w*x*x;
+                sxd+=w*x*d;
+                used++;
+            } // endfor
+        } // endfor
+        if (!(sxx>0) || used<10) return false;
+        A=std::max(0.0,sxd/sxx);
+        eA=std::sqrt(1.0/sxx);
+        chi2=0;
+        for (const auto& s:states) {
+            auto mt=morph_norm_hist(templ[s.io].get(),s.shift,s.sigma,"one_mt_chi");
+            const TH1D* hd=data[s.io].get();
+            for (int ib=1;ib<=hd->GetNbinsX();ib++) {
+                const double d=hd->GetBinContent(ib), m=A*mt->GetBinContent(ib);
+                if (d<=0 && m<=0) continue;
+                const double q=d-m;
+                chi2+=q*q/std::max(1.0,d);
+            } // endfor
+        } // endfor
+        return true;
+    };
+
+    double A=0,eA=0,chi2=0;
+    int used=0;
+    if (!solveA(A,eA,chi2,used)) return out;
+
+    for (int iter=0;iter<3;iter++) {
+        for (auto& s:states) {
+            const TH1D* hd=data[s.io].get();
+            const double bw=hd->GetXaxis()->GetBinWidth(1);
+            double bestchi=std::numeric_limits<double>::infinity();
+            double bestshift=s.shift,bestsigma=s.sigma;
+            for (double sb=-NORM_MAX_SHIFT_BINS;
+                 sb<=NORM_MAX_SHIFT_BINS+1e-9;
+                 sb+=NORM_MORPH_STEP_BINS) {
+                const double shift=sb*bw;
+                for (double wb=0;
+                     wb<=NORM_MAX_SMEAR_BINS+1e-9;
+                     wb+=NORM_MORPH_STEP_BINS) {
+                    const double sigma=wb*bw;
+                    auto mt=morph_norm_hist(templ[s.io].get(),shift,sigma,"one_scan");
+                    if (!mt) continue;
+                    double c2=0;
+                    for (int ib=1;ib<=hd->GetNbinsX();ib++) {
+                        const double d=hd->GetBinContent(ib);
+                        const double m=A*mt->GetBinContent(ib);
+                        if (d<=0 && m<=0) continue;
+                        const double q=d-m;
+                        c2+=q*q/std::max(1.0,d);
+                    } // endfor
+                    if (c2<bestchi) {
+                        bestchi=c2;
+                        bestshift=shift;
+                        bestsigma=sigma;
+                    } // endif
+                } // endfor
+            } // endfor
+            s.shift=bestshift;
+            s.sigma=bestsigma;
+        } // endfor
+        if (!solveA(A,eA,chi2,used)) return out;
+    } // endfor
+
+    out.aao=A;
+    out.aao_err=eA;
+    out.chi2=chi2;
+    out.ndf=std::max(1,used-1-2*int(states.size()));
+    out.valid=std::isfinite(A) && out.ndf>0;
+    return out;
+}
+
 NormDerivation derive_normalization_concise(
         const std::vector<std::unique_ptr<ValComponent>>& vv,
         bool ft_probe) {
@@ -4480,18 +4887,44 @@ NormDerivation derive_normalization_concise(
         return R;
     } // endif
 
+    const auto& dl=norm_low_for(data,ft_probe);
+    const auto& al=norm_low_for(aao,ft_probe);
+    const auto& cl=norm_low_for(cls,ft_probe);
+
+    // Keep every Valerii-style one-observable result for QA.  These are no
+    // longer averaged to determine the nominal AAOgen/CLASDIS normalization.
     for (int io=0;io<NORM_NOBS;io++) {
         if (!NORM_OBS[io].use_low) continue;
-        const auto& dl=norm_low_for(data,ft_probe);
-        const auto& al=norm_low_for(aao,ft_probe);
-        const auto& cl=norm_low_for(cls,ft_probe);
         auto q=fit_two_templates_morphed(
             dl[io].get(),al[io].get(),cl[io].get(),NORM_OBS[io].key);
         if (q.valid) R.low_points.push_back(q);
     } // endfor
 
-    const double A=mean_valid(R.low_points,0);
-    const double B=mean_valid(R.low_points,1);
+    // Nominal common low-E normalization.  angle(gamma,X) is deliberately a
+    // validation observable here: its baseline data shape contains a visibly
+    // DVCS-like shoulder.  The low-E Valerii step assumes DVCS is negligible,
+    // so forcing AAOgen/CLASDIS alone to absorb that shoulder biases B upward.
+    // Once the high-E DVCS normalization is known, DVCSgen is overlaid on the
+    // low-E panels as a closure check.
+    const std::vector<int> low_global_obs = {
+        NORM_MX2_EP,
+        NORM_MX2_EPG,
+        NORM_EGAMMA,
+        NORM_MX2_EG
+    };
+    R.low_global=fit_two_templates_simultaneous_morphed(
+        dl,al,cl,low_global_obs);
+
+    if (!R.low_global.valid) {
+        R.used_fallback=true;
+        R.nominal=VAL_HISTORICAL_NOMINAL;
+        R.low=R.nominal;
+        R.high=R.nominal;
+        return R;
+    } // endif
+
+    const double A=R.low_global.aao;
+    const double B=R.low_global.clasdis;
 
     for (int io=0;io<NORM_NOBS;io++) {
         if (!NORM_OBS[io].use_high) continue;
@@ -4506,8 +4939,8 @@ NormDerivation derive_normalization_concise(
     } // endfor
 
     const double C=mean_valid(R.high_points,2);
-    R.valid=(A>0 && B>0 && C>=0 &&
-             R.low_points.size()>=2 && R.high_points.size()>=2);
+    R.valid=(A>=0 && B>=0 && C>=0 &&
+             R.low_global.valid && R.high_points.size()>=2);
 
     if (!R.valid) {
         R.used_fallback=true;
@@ -4517,11 +4950,14 @@ NormDerivation derive_normalization_concise(
         return R;
     } // endif
 
-    R.nominal={"derived_mean",A,B,C};
+    R.nominal={"derived_simultaneous",A,B,C};
 
-    // "low/high" are mean +/- one-observable spread, clipped non-negative.
+    // Normalization envelope: use the spread of the included low-E diagnostic
+    // fits around the simultaneous solution.  angle(gamma,X) remains a closure
+    // diagnostic and is not allowed to dominate this envelope.
     std::vector<double> av,bv,cv;
     for (const auto& q:R.low_points) {
+        if (q.observable=="angle_gX") continue;
         av.push_back(q.aao);
         bv.push_back(q.clasdis);
     } // endfor
@@ -4531,8 +4967,37 @@ NormDerivation derive_normalization_concise(
     const double sb=rms_spread(bv,B);
     const double sc=rms_spread(cv,C);
 
-    R.low={"mean_minus_spread",std::max(0.0,A-sa),std::max(0.0,B-sb),std::max(0.0,C-sc)};
-    R.high={"mean_plus_spread",A+sa,B+sb,C+sc};
+    R.low={"simultaneous_minus_spread",
+           std::max(0.0,A-sa),std::max(0.0,B-sb),std::max(0.0,C-sc)};
+    R.high={"simultaneous_plus_spread",A+sa,B+sb,C+sc};
+
+    // FT-only alternate model requested for the study: remove CLASDIS, refit
+    // AAOgen simultaneously at low tag energy, then refit DVCSgen at high tag
+    // energy with CLASDIS fixed exactly to zero.
+    if (ft_probe) {
+        const auto altA=fit_one_template_simultaneous_morphed(
+            dl,al,low_global_obs,"simultaneous_lowE_AAO_only");
+        if (altA.valid) {
+            std::vector<NormFitPoint> alt_high;
+            for (int io=0;io<NORM_NOBS;io++) {
+                if (!NORM_OBS[io].use_high) continue;
+                const auto& dh=norm_high_for(data,true);
+                const auto& ah=norm_high_for(aao,true);
+                const auto& ch=norm_high_for(cls,true);
+                const auto& vh=norm_high_for(dvc,true);
+                auto q=fit_dvcs_template_morphed(
+                    dh[io].get(),ah[io].get(),ch[io].get(),vh[io].get(),
+                    altA.aao,0.0,NORM_OBS[io].key);
+                if (q.valid) alt_high.push_back(q);
+            } // endfor
+            const double Calt=mean_valid(alt_high,2);
+            if (Calt>=0 && alt_high.size()>=2) {
+                R.no_clasdis_valid=true;
+                R.no_clasdis={"FT_AAO_plus_DVCS_only",altA.aao,0.0,Calt};
+            } // endif
+        } // endif
+    } // endif
+
     return R;
 }
 
@@ -4583,6 +5048,203 @@ void concise_make_dirs(const std::string& out) {
     gSystem->mkdir((out+"/2_normalization/FT").c_str(),true);
     gSystem->mkdir((out+"/3_pi0_fraction").c_str(),true);
     gSystem->mkdir((out+"/4_efficiency").c_str(),true);
+}
+
+
+std::string corr_axis_title(int io) {
+    if (io==NORM_MX2_EP) return "M_{X}^{2}(ep) (GeV^{2})";
+    if (io==NORM_MX2_EPG) return "M_{X}^{2}(ep#gamma) (GeV^{2})";
+    if (io==NORM_MX2_EG) return "M_{X}^{2}(e#gamma) (GeV^{2})";
+    if (io==NORM_DPHI_TRENTO_SHIFT180) return "#Delta#phi_{copl} (deg)";
+    if (io==NORM_ANGLE_GX) return "angle(#gamma,X) (deg)";
+    if (io==NORM_ANGLE_EX) return "angle(e,X) (deg)";
+    if (io==NORM_DELTA_T_PG) return "#Delta t=t_{p}-t_{#gamma} (GeV^{2})";
+    return NORM_OBS[io].key;
+}
+
+void draw_corr_cut_lines(int io,double xmin,double xmax) {
+    auto hline=[&](double y) {
+        TLine* l=new TLine(xmin,y,xmax,y);
+        l->SetLineStyle(2);
+        l->SetLineWidth(2);
+        l->Draw();
+    };
+    if (io==NORM_MX2_EP) {
+        hline(NORM_MX2_EP_MIN);
+        hline(NORM_MX2_EP_MAX);
+    } else if (io==NORM_MX2_EG) {
+        hline(NORM_MX2_EG_MIN);
+    } else if (io==NORM_DPHI_TRENTO_SHIFT180) {
+        hline(-NORM_DPHI_TRENTO_MAX);
+        hline(+NORM_DPHI_TRENTO_MAX);
+    } else if (io==NORM_ANGLE_GX) {
+        hline(NORM_ANGLE_GX_MAX);
+    } // endif
+}
+
+std::unique_ptr<TH2D> conditionalize_corr(const TH2D* src,const char* name) {
+    if (!src) return nullptr;
+    std::unique_ptr<TH2D> h(dynamic_cast<TH2D*>(src->Clone(name)));
+    if (!h) return nullptr;
+    h->SetDirectory(nullptr);
+    h->SetStats(0);
+    for (int ix=1;ix<=h->GetNbinsX();ix++) {
+        double s=0;
+        for (int iy=1;iy<=h->GetNbinsY();iy++)
+            s+=h->GetBinContent(ix,iy);
+        if (!(s>0)) continue;
+        for (int iy=1;iy<=h->GetNbinsY();iy++) {
+            h->SetBinContent(ix,iy,h->GetBinContent(ix,iy)/s);
+            h->SetBinError(ix,iy,h->GetBinError(ix,iy)/s);
+        } // endfor
+    } // endfor
+    return h;
+}
+
+void draw_exclusivity_correlations(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                   const std::string& dir,
+                                   bool ft_probe) {
+    const char* names[]={"data","aaogen","clasdis","dvcsgen"};
+    const char* labels[]={"Data","AAOgen (#pi^{0})","CLASDIS","DVCSgen"};
+    std::vector<std::unique_ptr<TH2D>> keep;
+
+    TCanvas c(ft_probe?"c_corr_ft":"c_corr_fd","",2300,3250);
+    c.Divide(4,CORR_NOBS,0.001,0.001);
+
+    for (int jc=0;jc<CORR_NOBS;jc++) {
+        const int io=CORR_OBS[jc];
+        for (int is=0;is<4;is++) {
+            const ValComponent* v=find_val_component(vv,names[is]);
+            if (!v) continue;
+            const auto& vec=ft_probe?v->corr_ft:v->corr_fd;
+            if (jc>=int(vec.size()) || !vec[jc]) continue;
+
+            auto h=conditionalize_corr(vec[jc].get(),
+                Form("corr_draw_%s_%d_%d",ft_probe?"ft":"fd",jc,is));
+            if (!h) continue;
+
+            const int ipad=jc*4+is+1;
+            c.cd(ipad);
+            gPad->SetLeftMargin(is==0?0.20:0.13);
+            gPad->SetRightMargin(0.035);
+            gPad->SetBottomMargin(jc==CORR_NOBS-1?0.18:0.10);
+            gPad->SetTopMargin(jc==0?0.18:0.07);
+            gPad->SetTicks(1,1);
+
+            h->SetTitle("");
+            h->GetXaxis()->SetTitle(jc==CORR_NOBS-1?"E_{#gamma,probe} (GeV)":"");
+            h->GetYaxis()->SetTitle(is==0?corr_axis_title(io).c_str():"");
+            h->GetXaxis()->SetTitleSize(0.060);
+            h->GetYaxis()->SetTitleSize(0.055);
+            h->GetXaxis()->SetLabelSize(0.045);
+            h->GetYaxis()->SetLabelSize(0.045);
+            h->GetYaxis()->SetTitleOffset(1.55);
+
+            // Compact display windows only; the stored correlations retain the
+            // full histogram ranges.
+            if (io==NORM_ANGLE_GX) h->GetYaxis()->SetRangeUser(0,20);
+            if (io==NORM_ANGLE_EX) h->GetYaxis()->SetRangeUser(0,30);
+            if (io==NORM_DPHI_TRENTO_SHIFT180) h->GetYaxis()->SetRangeUser(-30,30);
+            if (io==NORM_DELTA_T_PG) h->GetYaxis()->SetRangeUser(-2,2);
+
+            h->Draw("COL");
+            draw_corr_cut_lines(io,EPROBE_MIN,EPROBE_MAX);
+
+            TLatex tx;
+            tx.SetNDC();
+            tx.SetTextFont(42);
+            if (jc==0) {
+                tx.SetTextSize(0.062);
+                tx.DrawLatex(0.17,0.92,labels[is]);
+            } // endif
+            if (is==3) {
+                tx.SetTextSize(0.047);
+                tx.DrawLatex(0.67,0.88,
+                    Form("#rho = %.2f",vec[jc]->GetCorrelationFactor()));
+            } // endif
+
+            keep.push_back(std::move(h));
+        } // endfor
+    } // endfor
+
+    c.SaveAs((dir+"/exclusivity_correlations_vs_Eprobe.png").c_str());
+}
+
+void draw_eprobe_cut_survival(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                              const std::string& dir,
+                              bool ft_probe) {
+    const char* names[]={"data","aaogen","clasdis","dvcsgen"};
+    const char* labels[]={"Data","AAOgen (#pi^{0})","CLASDIS","DVCSgen"};
+    const int cols[]={kBlack,kBlue+1,kMagenta+1,kRed+1,kGreen+2};
+    const char* stage_labels[]={
+        "baseline",
+        "after M_{X}^{2}(ep)",
+        "after M_{X}^{2}(e#gamma)",
+        "after coplanarity",
+        "after angle(#gamma,X)"
+    };
+
+    TCanvas c(ft_probe?"c_surv_ft":"c_surv_fd","",1500,1050);
+    c.Divide(2,2);
+    std::vector<std::unique_ptr<TH1D>> keep;
+
+    for (int isamp=0;isamp<4;isamp++) {
+        const ValComponent* v=find_val_component(vv,names[isamp]);
+        if (!v) continue;
+        const auto& st=ft_probe?v->eprobe_stage_ft:v->eprobe_stage_fd;
+        if (st.size()<EPROBE_NSTAGE || !st[0]) continue;
+
+        c.cd(isamp+1);
+        gPad->SetLeftMargin(0.14);
+        gPad->SetRightMargin(0.04);
+        gPad->SetBottomMargin(0.15);
+        gPad->SetTopMargin(0.14);
+
+        TH1D frame(Form("surv_frame_%d",isamp),
+                   ";E_{#gamma,probe} (GeV);Fraction of baseline candidates",
+                   EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX);
+        frame.SetStats(0);
+        frame.SetMinimum(0);
+        frame.SetMaximum(1.05);
+        frame.Draw("AXIS");
+
+        for (int ist=0;ist<EPROBE_NSTAGE;ist++) {
+            if (!st[ist]) continue;
+            std::unique_ptr<TH1D> h(dynamic_cast<TH1D*>(st[ist]->Clone(
+                Form("surv_%d_%d",isamp,ist))));
+            h->SetDirectory(nullptr);
+            h->SetStats(0);
+            for (int ib=1;ib<=h->GetNbinsX();ib++) {
+                const double den=st[0]->GetBinContent(ib);
+                const double num=st[ist]->GetBinContent(ib);
+                h->SetBinContent(ib,den>0?num/den:0);
+                h->SetBinError(ib,0);
+            } // endfor
+            h->SetLineColor(cols[ist]);
+            h->SetLineWidth(2+(ist==EPROBE_NSTAGE-1));
+            h->SetMarkerColor(cols[ist]);
+            h->Draw("HIST SAME");
+            keep.push_back(std::move(h));
+        } // endfor
+
+        TLatex tx;
+        tx.SetNDC();
+        tx.SetTextFont(42);
+        tx.SetTextSize(0.052);
+        tx.DrawLatex(0.16,0.92,labels[isamp]);
+
+        if (isamp==0) {
+            TLegend leg(0.48,0.53,0.94,0.86);
+            leg.SetBorderSize(0);
+            leg.SetFillStyle(0);
+            leg.SetTextSize(0.030);
+            for (int ist=0;ist<EPROBE_NSTAGE;ist++)
+                leg.AddEntry(keep[ist].get(),stage_labels[ist],"l");
+            leg.Draw();
+        } // endif
+    } // endfor
+
+    c.SaveAs((dir+"/Eprobe_cut_survival.png").c_str());
 }
 
 void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
@@ -4696,6 +5358,10 @@ void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& 
         for (int i=0;i<6;i++) csv << "," << cf[i];
         csv << "\n";
     } // endfor
+    csv.close();
+
+    draw_exclusivity_correlations(vv,dir,ft_probe);
+    draw_eprobe_cut_survival(vv,dir,ft_probe);
 }
 
 
@@ -4862,12 +5528,14 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
             gPad->SetLeftMargin(0.20); gPad->SetRightMargin(0.04); gPad->SetBottomMargin(0.21); gPad->SetTopMargin(0.12);
             draw_norm_panel(nullptr,norm_low_for(data,ft_probe)[io].get(),norm_low_for(aao,ft_probe)[io].get(),
                             norm_low_for(cls,ft_probe)[io].get(),norm_low_for(dvc,ft_probe)[io].get(),
-                            q.aao,q.clasdis,0.0,q,Form("(%c) %s",'a'+pad-1,pretty_norm_observable(q.observable).c_str()));
+                            R.nominal.aao,R.nominal.clasdis,R.nominal.dvcs,q,
+                            Form("(%c) %s%s",'a'+pad-1,pretty_norm_observable(q.observable).c_str(),
+                                 q.observable=="angle_gX"?" [validation]":""));
             if (pad==1) {
                 TLegend* leg=new TLegend(0.57,0.58,0.94,0.86);
                 leg->SetBorderSize(0); leg->SetFillStyle(0);
-                leg->AddEntry((TObject*)nullptr,Form("AAO = %.3f",q.aao),"");
-                leg->AddEntry((TObject*)nullptr,Form("CLASDIS = %.3f",q.clasdis),"");
+                leg->AddEntry((TObject*)nullptr,Form("common AAO = %.3f",R.nominal.aao),"");
+                leg->AddEntry((TObject*)nullptr,Form("common CLASDIS = %.3f",R.nominal.clasdis),"");
                 leg->Draw();
             } // endif
         } // endfor
@@ -4878,13 +5546,18 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
             tx.SetNDC();
             tx.SetTextFont(42);
             tx.SetTextSize(0.060);
-            tx.DrawLatex(0.12,0.82,"Mean low-E normalization");
+            tx.DrawLatex(0.12,0.82,"Simultaneous low-E normalization");
             tx.SetTextSize(0.052);
             tx.DrawLatex(0.12,0.66,Form("AAOgen = %.3f",R.nominal.aao));
             tx.DrawLatex(0.12,0.54,Form("CLASDIS = %.3f",R.nominal.clasdis));
+            if (R.no_clasdis_valid) {
+                tx.SetTextSize(0.044);
+                tx.DrawLatex(0.12,0.45,Form("FT AAO+DVCS-only: AAO = %.3f",R.no_clasdis.aao));
+            } // endif
             tx.SetTextSize(0.040);
-            tx.DrawLatex(0.12,0.38,"AAOgen and CLASDIS are interpreted");
-            tx.DrawLatex(0.12,0.32,"jointly as the #pi^{0}-bearing class.");
+            tx.DrawLatex(0.12,0.38,"One common AAOgen/CLASDIS pair fits");
+            tx.DrawLatex(0.12,0.32,"M_{X}^{2}(ep), M_{X}^{2}(ep#gamma), E_{#gamma}, M_{X}^{2}(e#gamma).");
+            tx.DrawLatex(0.12,0.26,"angle(#gamma,X) is validation-only; DVCS overlay fixed from high E.");
 
             TLegend leg(0.10,0.05,0.92,0.25);
             leg.SetNColumns(2);
@@ -4957,20 +5630,37 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
 
     std::ofstream csv(dir+"/summary.csv");
     csv << "stage,observable,aao,clasdis,dvcs,chi2_ndf,morph_shift,morph_sigma\n";
+
+    csv << "lowE_global,simultaneous_without_angle_gX,"
+        <<R.low_global.aao<<","<<R.low_global.clasdis<<",0,"
+        <<(R.low_global.ndf?R.low_global.chi2/R.low_global.ndf:0)<<",0,0\n";
+
     for (const auto& q:R.low_points)
-        csv << "lowE,"<<q.observable<<","<<q.aao<<","<<q.clasdis<<",0,"
+        csv << "lowE_diagnostic,"<<q.observable<<","<<q.aao<<","<<q.clasdis<<",0,"
             <<(q.ndf?q.chi2/q.ndf:0)<<","<<q.morph_shift<<","<<q.morph_sigma<<"\n";
+
     for (const auto& q:R.high_points)
         csv << "highE,"<<q.observable<<","<<R.nominal.aao<<","<<R.nominal.clasdis<<","<<q.dvcs<<","
             <<(q.ndf?q.chi2/q.ndf:0)<<","<<q.morph_shift<<","<<q.morph_sigma<<"\n";
 
     std::vector<double> av,bv,cv;
-    for (const auto& q:R.low_points) { av.push_back(q.aao); bv.push_back(q.clasdis); }
+    for (const auto& q:R.low_points) {
+        if (q.observable=="angle_gX") continue;
+        av.push_back(q.aao);
+        bv.push_back(q.clasdis);
+    } // endfor
     for (const auto& q:R.high_points) cv.push_back(q.dvcs);
-    csv << "nominal_mean,ALL,"<<R.nominal.aao<<","<<R.nominal.clasdis<<","<<R.nominal.dvcs<<",0,0,0\n";
-    csv << "observable_stddev,ALL,"
+
+    csv << "nominal_simultaneous,ALL,"
+        <<R.nominal.aao<<","<<R.nominal.clasdis<<","<<R.nominal.dvcs<<",0,0,0\n";
+    csv << "diagnostic_stddev_without_angle_gX,ALL,"
         <<rms_spread(av,R.nominal.aao)<<","<<rms_spread(bv,R.nominal.clasdis)<<","
         <<rms_spread(cv,R.nominal.dvcs)<<",0,0,0\n";
+
+    if (R.no_clasdis_valid)
+        csv << "FT_alternate_no_CLASDIS,ALL,"
+            <<R.no_clasdis.aao<<",0,"<<R.no_clasdis.dvcs<<",0,0,0\n";
+
 }
 
 void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
@@ -5012,6 +5702,30 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
 
     h.Draw("P");
 
+    TGraphErrors gAlt;
+    if (Rft.no_clasdis_valid) {
+        int ip=0;
+        for (int ir=CR_FT_LOW;ir<=CR_FT_HIGH;ir++) {
+            const auto qa=coarse_composition(vv,Rft.no_clasdis,ir);
+            if (qa.f_pi0<0) continue;
+            gAlt.SetPoint(ip,ir+0.5,qa.f_pi0);
+            gAlt.SetPointError(ip,0,0);
+            ip++;
+        } // endfor
+        gAlt.SetMarkerStyle(24);
+        gAlt.SetMarkerSize(1.5);
+        gAlt.SetLineWidth(2);
+        gAlt.Draw("P SAME");
+
+        TLegend legAlt(0.55,0.77,0.94,0.89);
+        legAlt.SetBorderSize(0);
+        legAlt.SetFillStyle(0);
+        legAlt.SetTextSize(0.032);
+        legAlt.AddEntry(&h,"nominal AAO + CLASDIS + DVCS","p");
+        legAlt.AddEntry(&gAlt,"FT sensitivity: AAO + DVCS only","p");
+        legAlt.Draw();
+    } // endif
+
     TLatex tx;
     tx.SetNDC();
     tx.SetTextFont(42);
@@ -5050,12 +5764,29 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
         cc.SetBottomMargin(0.25); cc.SetTopMargin(0.12);
         hA.Draw("HIST"); hC.Draw("HIST SAME"); hD.Draw("HIST SAME"); hP.Draw("P SAME");
 
+        TGraphErrors gAltComp;
+        if (Rft.no_clasdis_valid) {
+            int ip=0;
+            for (int ir=CR_FT_LOW;ir<=CR_FT_HIGH;ir++) {
+                const auto qa=coarse_composition(vv,Rft.no_clasdis,ir);
+                if (qa.f_pi0<0) continue;
+                gAltComp.SetPoint(ip,ir+0.5,qa.f_pi0);
+                gAltComp.SetPointError(ip,0,0);
+                ip++;
+            } // endfor
+            gAltComp.SetMarkerStyle(24);
+            gAltComp.SetMarkerSize(1.35);
+            gAltComp.Draw("P SAME");
+        } // endif
+
         TLegend leg(0.58,0.60,0.93,0.86);
         leg.SetBorderSize(0); leg.SetFillStyle(0);
         leg.AddEntry(&hA,"AAOgen","l");
         leg.AddEntry(&hC,"CLASDIS","l");
         leg.AddEntry(&hD,"DVCSgen","l");
         leg.AddEntry(&hP,"#pi^{0}-bearing fraction","p");
+        if (Rft.no_clasdis_valid)
+            leg.AddEntry(&gAltComp,"FT #pi^{0} fraction, AAO + DVCS only","p");
         leg.Draw();
 
         TLatex txc; txc.SetNDC(); txc.SetTextFont(42); txc.SetTextSize(0.040);
@@ -5064,11 +5795,20 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
     }
 
     std::ofstream csv(dir+"/summary.csv");
-    csv << "region,aao_yield,clasdis_yield,dvcs_yield,clasdis_pi0_fraction,pi0_fraction\n";
+    csv << "region,aao_yield,clasdis_yield,dvcs_yield,clasdis_pi0_fraction,pi0_fraction,"
+           "alt_no_clasdis_aao_yield,alt_no_clasdis_dvcs_yield,alt_no_clasdis_pi0_fraction\n";
     for (int ir=0;ir<CR_N;ir++) {
         const auto q=coarse_composition(vv,(ir<2?Rfd.nominal:Rft.nominal),ir);
+        double aya=0,ayd=0,af=-1;
+        if (ir>=CR_FT_LOW && Rft.no_clasdis_valid) {
+            const auto qa=coarse_composition(vv,Rft.no_clasdis,ir);
+            aya=qa.ya;
+            ayd=qa.yd;
+            af=qa.f_pi0;
+        } // endif
         csv << CR_KEY[ir]<<","<<q.ya<<","<<q.yc<<","<<q.yd<<","
-            <<q.f_clasdis_pi0<<","<<q.f_pi0<<"\n";
+            <<q.f_clasdis_pi0<<","<<q.f_pi0<<","
+            <<aya<<","<<ayd<<","<<af<<"\n";
     } // endfor
 }
 
