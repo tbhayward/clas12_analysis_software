@@ -3104,8 +3104,8 @@ void draw_step1d_coplanarity_overlay(const std::vector<std::unique_ptr<ValCompon
     if (!data || !aao || !cls || !dvc) return;
 
     auto geth=[](const ValComponent* v)->const TH1D* {
-        if (!v || v->norm_after_mx2ep_mx2eg.size()<=NORM_DPHI) return nullptr;
-        return v->norm_after_mx2ep_mx2eg[NORM_DPHI].get();
+        if (!v || v->norm_after_mx2ep_mx2eg.size()<=NORM_DPHI_TRENTO_SHIFT180) return nullptr;
+        return v->norm_after_mx2ep_mx2eg[NORM_DPHI_TRENTO_SHIFT180].get();
     };
     const TH1D *hd0=geth(data), *ha0=geth(aao), *hc0=geth(cls), *hv0=geth(dvc);
     if (!hd0 || !ha0 || !hc0 || !hv0) return;
@@ -3137,8 +3137,8 @@ void draw_step1d_coplanarity_overlay(const std::vector<std::unique_ptr<ValCompon
     hd->Draw("E1"); ha->Draw("HIST SAME"); hc->Draw("HIST SAME"); hv->Draw("HIST SAME"); hd->Draw("E1 SAME");
 
     const double ymax=hd->GetMaximum()*1.24;
-    TLine llo(-NORM_DPHI_MAX,0.0,-NORM_DPHI_MAX,ymax);
-    TLine lhi(+NORM_DPHI_MAX,0.0,+NORM_DPHI_MAX,ymax);
+    TLine llo(-NORM_DPHI_TRENTO_MAX,0.0,-NORM_DPHI_TRENTO_MAX,ymax);
+    TLine lhi(+NORM_DPHI_TRENTO_MAX,0.0,+NORM_DPHI_TRENTO_MAX,ymax);
     llo.SetLineStyle(2); lhi.SetLineStyle(2); llo.SetLineWidth(2); lhi.SetLineWidth(2);
     llo.Draw(); lhi.Draw();
 
@@ -3148,7 +3148,7 @@ void draw_step1d_coplanarity_overlay(const std::vector<std::unique_ptr<ValCompon
     leg.AddEntry(ha.get(),"AAO (unit area)","l");
     leg.AddEntry(hc.get(),"CLASDIS (unit area)","l");
     leg.AddEntry(hv.get(),"DVCSgen (unit area)","l");
-    leg.AddEntry(&llo,Form("|#Delta#phi_{copl}| < %.1f deg",NORM_DPHI_MAX),"l");
+    leg.AddEntry(&llo,Form("|#Delta#phi_{copl}| < %.1f deg",NORM_DPHI_TRENTO_MAX),"l");
     leg.Draw();
 
     TLatex tx; tx.SetNDC(); tx.SetTextSize(0.035);
@@ -3167,17 +3167,17 @@ void draw_step1d_coplanarity_individual(const std::vector<std::unique_ptr<ValCom
 
     for (int is=0;is<4;is++) {
         const ValComponent* v=find_val_component(vv,names[is]);
-        if (!v || v->norm_after_mx2ep_mx2eg.size()<=NORM_DPHI ||
-            !v->norm_after_mx2ep_mx2eg[NORM_DPHI]) continue;
-        std::unique_ptr<TH1D> h((TH1D*)v->norm_after_mx2ep_mx2eg[NORM_DPHI]->Clone(Form("step1d_%s_counts",names[is])));
+        if (!v || v->norm_after_mx2ep_mx2eg.size()<=NORM_DPHI_TRENTO_SHIFT180 ||
+            !v->norm_after_mx2ep_mx2eg[NORM_DPHI_TRENTO_SHIFT180]) continue;
+        std::unique_ptr<TH1D> h((TH1D*)v->norm_after_mx2ep_mx2eg[NORM_DPHI_TRENTO_SHIFT180]->Clone(Form("step1d_%s_counts",names[is])));
         h->SetDirectory(nullptr); h->SetStats(0); h->SetLineColor(colors[is]); h->SetLineWidth(2);
         h->SetTitle(Form("%s: Trento coplanarity after Steps 1B+1C",labels[is]));
         h->GetXaxis()->SetTitle("#Delta#phi_{copl} (deg)");
         h->GetYaxis()->SetTitle("Candidates");
         can.cd(is+1); h->Draw("HIST");
         const double ymax=std::max(1.0,1.05*h->GetMaximum());
-        TLine* llo=new TLine(-NORM_DPHI_MAX,0.0,-NORM_DPHI_MAX,ymax);
-        TLine* lhi=new TLine(+NORM_DPHI_MAX,0.0,+NORM_DPHI_MAX,ymax);
+        TLine* llo=new TLine(-NORM_DPHI_TRENTO_MAX,0.0,-NORM_DPHI_TRENTO_MAX,ymax);
+        TLine* lhi=new TLine(+NORM_DPHI_TRENTO_MAX,0.0,+NORM_DPHI_TRENTO_MAX,ymax);
         llo->SetLineStyle(2); lhi->SetLineStyle(2); llo->SetLineWidth(2); lhi->SetLineWidth(2);
         llo->Draw(); lhi->Draw();
 
@@ -3202,7 +3202,7 @@ void write_step1d_coplanarity_summary(const std::vector<std::unique_ptr<ValCompo
         << "Input sample: events already passing M_X^2(ep) and M_X^2(e gamma).\n"
         << "Residual definition: wrapped Trento-style coplanarity residual with zero\n"
         << "at the back-to-back proton/tag-photon transverse configuration.\n"
-        << "Active requirement: |Delta phi_copl| < " << NORM_DPHI_MAX << " deg.\n"
+        << "Active requirement: |Delta phi_copl| < " << NORM_DPHI_TRENTO_MAX << " deg.\n"
         << "The later angle(gamma,X) requirement is NOT included here.\n\n";
     for (const auto& vp:vv) {
         if (!vp) continue;
