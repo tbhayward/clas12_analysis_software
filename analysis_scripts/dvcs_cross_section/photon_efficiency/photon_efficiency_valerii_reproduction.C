@@ -5,8 +5,9 @@
 //   (2) a Valerii-style FD 7 x 3 x 6 efficiency/correction reproduction.
 //
 // The stage-1 layer remains useful QA; the Valerii layer is the physics path.
-// NOTE: the June-2026 Delta-phi(p,gamma) exclusivity cut is currently disabled;
-// Trento/exclusive-plane diagnostics are produced first to establish its convention.
+// NOTE: the June-2026 Delta-phi(p,gamma) exclusivity requirement is implemented
+// as |delta phi_copl| < 5.7 deg using the zero-centered Trento-plane residual.
+// Raw lab and unshifted Trento observables are retained as QA diagnostics.
 //
 //   * fully integrated FD extraction;
 //   * fully integrated FT extraction;
@@ -733,7 +734,7 @@ void init_region(RegionResult& r,
 
     r.residual.reset(new TH1D(
         Form("h_%s_%s_dp",sample.c_str(),name.c_str()),
-        Form("%s %s;#Delta p_{#gamma2}=p_{rec}-p_{miss} [GeV];Candidates",
+        Form("%s %s;#Delta p_{#gamma2}=p_{rec}-p_{miss} (GeV);Candidates",
              sample.c_str(),name.c_str()),
         DP_NBIN,DP_HMIN,DP_HMAX));
     r.residual->Sumw2();
@@ -753,13 +754,13 @@ void init_sample(SampleResult& s) {
     init_region(s.ft_high,s.name,"FT_Ege2",0,FT_P_SPLIT,FT_P_MAX,FT_THETA_MIN,FT_THETA_MAX);
 
     s.denom_p.reset(new TH1D(Form("h_%s_denom_p",s.name.c_str()),
-                             ";missing-#gamma_{2} p [GeV];Candidates",80,0,8));
+                             ";missing-#gamma_{2} p (GeV);Candidates",80,0,8));
     s.denom_theta.reset(new TH1D(Form("h_%s_denom_theta",s.name.c_str()),
-                                 ";missing-#gamma_{2} #theta [deg];Candidates",80,0,40));
+                                 ";missing-#gamma_{2} #theta (deg);Candidates",80,0,40));
     s.denom_phi.reset(new TH1D(Form("h_%s_denom_phi",s.name.c_str()),
-                               ";missing-#gamma_{2} wrapped #phi [deg];Candidates",72,-30,330));
+                               ";missing-#gamma_{2} wrapped #phi (deg);Candidates",72,-30,330));
     s.ft_xy_projected.reset(new TH2D(Form("h_%s_ft_xy",s.name.c_str()),
-                                     ";projected FT x [cm];projected FT y [cm]",
+                                     ";projected FT x (cm);projected FT y (cm)",
                                      100,-20,20,100,-20,20));
 
     s.denom_p->Sumw2(); s.denom_theta->Sumw2(); s.denom_phi->Sumw2();
@@ -772,9 +773,9 @@ void init_sample(SampleResult& s) {
         WindowResult wr;
         wr.w=mw;
         wr.fd_h.reset(new TH1D(Form("h_%s_%s_fd",s.name.c_str(),mw.label),
-                               ";#Delta p [GeV];Candidates",DP_NBIN,DP_HMIN,DP_HMAX));
+                               ";#Delta p (GeV);Candidates",DP_NBIN,DP_HMIN,DP_HMAX));
         wr.ft_h.reset(new TH1D(Form("h_%s_%s_ft",s.name.c_str(),mw.label),
-                               ";#Delta p [GeV];Candidates",DP_NBIN,DP_HMIN,DP_HMAX));
+                               ";#Delta p (GeV);Candidates",DP_NBIN,DP_HMIN,DP_HMAX));
         wr.fd_h->Sumw2(); wr.ft_h->Sumw2();
         wr.fd_h->SetDirectory(nullptr); wr.ft_h->SetDirectory(nullptr);
         s.windows.push_back(std::move(wr));
@@ -1130,7 +1131,7 @@ void save_combined_ft_projection(
         c.cd(++ipad);
         gPad->SetRightMargin(0.15);
         sp->ft_xy_projected->SetTitle(
-            Form("%s;projected FT x [cm];projected FT y [cm]",sp->name.c_str()));
+            Form("%s;projected FT x (cm);projected FT y (cm)",sp->name.c_str()));
         sp->ft_xy_projected->Draw("COLZ");
     } // endfor
 
@@ -1723,9 +1724,8 @@ enum NormObs {
     NORM_EGAMMA=3,
     NORM_MX2_EG=4,
 
-    // Azimuthal QA.  No phi/coplanarity cut is applied at this stage.
-    // These observables exist only to determine which convention reproduces
-    // the narrow exclusivity variable used by Valerii.
+    // Azimuthal QA plus the active zero-centered Trento coplanarity residual.
+    // Raw lab phi and the individual/unshifted Trento quantities remain QA-only.
     NORM_DPHI_PG_RAW=5,
     NORM_PHI_P_TRENTO=6,
     NORM_PHI_G_TRENTO=7,
@@ -1744,25 +1744,25 @@ struct NormObsDef {
 };
 
 static const NormObsDef NORM_OBS[NORM_NOBS] = {
-    {"Mx2_ep",     "M_{X}^{2}(ep);M_{X}^{2}(ep) [GeV^{2}];Candidates",          90,-0.50,1.30,true, false},
-    {"Mx2_epg",    "M_{X}^{2}(ep#gamma);M_{X}^{2}(ep#gamma) [GeV^{2}];Candidates",80,-0.25,0.25,true, true},
-    {"angle_gX",   "#angle(#gamma,X);#angle(#gamma,X) [deg];Candidates",       75,0.0,30.0,true, true},
-    {"Egamma",     "Tag-photon energy;E_{#gamma} [GeV];Candidates",             95,0.4,8.0,true, true},
-    {"Mx2_eg",     "M_{X}^{2}(e#gamma);M_{X}^{2}(e#gamma) [GeV^{2}];Candidates",100,0.0,6.0,true, true},
+    {"Mx2_ep",     "M_{X}^{2}(ep);M_{X}^{2}(ep) (GeV^{2});Candidates",          90,-0.50,1.30,true, false},
+    {"Mx2_epg",    "M_{X}^{2}(ep#gamma);M_{X}^{2}(ep#gamma) (GeV^{2});Candidates",80,-0.25,0.25,true, true},
+    {"angle_gX",   "#angle(#gamma,X);#angle(#gamma,X) (deg);Candidates",       75,0.0,30.0,true, true},
+    {"Egamma",     "Tag-photon energy;E_{#gamma} (GeV);Candidates",             95,0.4,8.0,true, true},
+    {"Mx2_eg",     "M_{X}^{2}(e#gamma);M_{X}^{2}(e#gamma) (GeV^{2});Candidates",100,0.0,6.0,true, true},
 
-    // The following are QA-only while we establish Valerii's azimuthal
-    // convention.  They intentionally do NOT participate in low/high-E
-    // normalization fits yet.
-    {"dphi_pg_raw", "Raw lab azimuth difference;wrap(#phi_{p}^{lab}-#phi_{#gamma}^{lab}) [deg];Candidates",
+    // Raw lab and individual/unshifted Trento quantities are QA-only.
+    // The final zero-centered Trento coplanarity residual is also used as the
+    // active exclusivity cut and as a high-E DVCS normalization diagnostic.
+    {"dphi_pg_raw", "Raw lab azimuth difference;wrap(#phi_{p}^{lab}-#phi_{#gamma}^{lab}) (deg);Candidates",
                      180,-180.0,180.0,false,false},
-    {"phi_p_trento", "Proton Trento azimuth;#phi_{p}^{Trento} [deg];Candidates",
+    {"phi_p_trento", "Proton Trento azimuth;#phi_{p}^{Trento} (deg);Candidates",
                      180,-180.0,180.0,false,false},
-    {"phi_g_trento", "Tag-photon Trento azimuth;#phi_{#gamma}^{Trento} [deg];Candidates",
+    {"phi_g_trento", "Tag-photon Trento azimuth;#phi_{#gamma}^{Trento} (deg);Candidates",
                      180,-180.0,180.0,false,false},
-    {"dphi_trento", "Trento azimuth difference;wrap(#phi_{p}^{Trento}-#phi_{#gamma}^{Trento}) [deg];Candidates",
+    {"dphi_trento", "Trento azimuth difference;wrap(#phi_{p}^{Trento}-#phi_{#gamma}^{Trento}) (deg);Candidates",
                      180,-180.0,180.0,false,false},
-    {"dphi_trento_shift180", "Trento coplanarity residual;#Delta#phi_{Trento}-180^{#circ} [deg];Candidates",
-                     120,-30.0,30.0,false,false}
+    {"dphi_trento_shift180", "Trento coplanarity residual;#delta#phi_{copl} (deg);Candidates",
+                     120,-30.0,30.0,false,true}
 };
 
 // June-2026 Valerii normalization/exclusivity selection.  The presentation
@@ -1771,10 +1771,11 @@ static const NormObsDef NORM_OBS[NORM_NOBS] = {
 static const double NORM_MX2_EP_MIN=-0.231;
 static const double NORM_MX2_EP_MAX= 0.309;
 static const double NORM_MX2_EG_MIN= 1.4;
-// IMPORTANT: the June-2026 presentation quotes a |Delta phi(p,gamma)|<5.7 deg
-// exclusivity requirement but does not define the azimuth convention.  We do
-// NOT apply that cut until the Trento/exclusive-plane convention is validated
-// from the QA distributions below.
+// The Trento/exclusive-plane QA shows the exclusive topology peaking at zero
+// after shifting the proton-photon Trento-angle difference by 180 degrees.
+// Use Valerii's quoted |Delta phi(p,gamma)| < 5.7 deg requirement on that
+// zero-centered coplanarity residual.
+static const double NORM_DPHI_TRENTO_MAX=5.7;
 static const double NORM_ANGLE_GX_MAX=9.2;
 
 // Template morphing deliberately follows the philosophy used in the DVCS
@@ -2048,6 +2049,7 @@ struct NormCutFlags {
     bool finite=false;
     bool mx2_ep=false;
     bool mx2_eg=false;
+    bool dphi_trento=false;
     bool angle_gX=false;
     bool all=false;
 };
@@ -2056,16 +2058,19 @@ NormCutFlags norm_cut_flags(const Branches& b) {
     NormCutFlags f;
     const double mx2ep=norm_observable_value(b,NORM_MX2_EP);
     const double mx2eg=norm_observable_value(b,NORM_MX2_EG);
+    const double dphi =norm_observable_value(b,NORM_DPHI_TRENTO_SHIFT180);
     const double ang  =norm_observable_value(b,NORM_ANGLE_GX);
-    f.finite=std::isfinite(mx2ep) && std::isfinite(mx2eg) && std::isfinite(ang);
+
+    f.finite=std::isfinite(mx2ep) && std::isfinite(mx2eg) &&
+             std::isfinite(dphi) && std::isfinite(ang);
     if (!f.finite) return f;
+
     f.mx2_ep=(mx2ep>NORM_MX2_EP_MIN && mx2ep<NORM_MX2_EP_MAX);
     f.mx2_eg=(mx2eg>NORM_MX2_EG_MIN);
+    f.dphi_trento=(std::fabs(dphi)<NORM_DPHI_TRENTO_MAX);
     f.angle_gX=(ang<NORM_ANGLE_GX_MAX);
 
-    // No Delta-phi requirement is applied until the Trento/exclusive-plane
-    // convention is validated from the QA distributions.
-    f.all=f.mx2_ep && f.mx2_eg && f.angle_gX;
+    f.all=f.mx2_ep && f.mx2_eg && f.dphi_trento && f.angle_gX;
     return f;
 }
 
@@ -2073,6 +2078,11 @@ bool norm_pass_nminus1(const NormCutFlags& f,int io) {
     if (!f.finite) return false;
     if (io!=NORM_MX2_EP && !f.mx2_ep) return false;
     if (io!=NORM_MX2_EG && !f.mx2_eg) return false;
+
+    // When plotting/fitting the coplanarity residual itself, omit its own hard
+    // cut.  All other observables see the active |delta phi_copl| < 5.7 deg cut.
+    if (io!=NORM_DPHI_TRENTO_SHIFT180 && !f.dphi_trento) return false;
+
     if (io!=NORM_ANGLE_GX && !f.angle_gX) return false;
     return true;
 }
@@ -2293,7 +2303,7 @@ void draw_norm_shape_overlay(const TH1D* hd,const TH1D* ha,const TH1D* hc,const 
 }
 
 void draw_norm_cutflow(const std::vector<std::unique_ptr<ValComponent>>& vv,const std::string& file) {
-    const char* labs[6]={"baseline","Mx2(ep)","Mx2(e#gamma)","#Delta#phi disabled","angle(#gamma,X)","all active cuts"};
+    const char* labs[6]={"baseline","Mx2(ep)","Mx2(e#gamma)","|#delta#phi_{copl}|<5.7^{#circ}","angle(#gamma,X)","all cuts"};
     TCanvas c("c_norm_cutflow","",1150,760);
     TLegend leg(0.68,0.68,0.90,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0);
     std::vector<std::unique_ptr<TH1D>> keep;
@@ -2345,9 +2355,9 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     } // endfor
     std::array<long long,6> norm_cutflow{{0,0,0,0,0,0}};
     for (int ib=0;ib<VAL_NBIN;ib++) {
-        hfit[ib].reset(new TH1D(Form("fit_b%03d",ib),";#Delta p_{#gamma2} [GeV];weighted candidates",
+        hfit[ib].reset(new TH1D(Form("fit_b%03d",ib),";#Delta p_{#gamma2} (GeV);weighted candidates",
                                 VAL_DP_NBIN,VAL_DP_MIN,VAL_DP_MAX));
-        hcount[ib].reset(new TH1D(Form("count_b%03d",ib),";#Delta p_{#gamma2} [GeV];weighted candidates",
+        hcount[ib].reset(new TH1D(Form("count_b%03d",ib),";#Delta p_{#gamma2} (GeV);weighted candidates",
                                   VAL_COUNT_NBIN,VAL_COUNT_MIN,VAL_COUNT_MAX));
         hfit[ib]->Sumw2();
         hcount[ib]->Sumw2();
@@ -2384,13 +2394,10 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
             norm_cutflow[1]++;
             if (ncf.mx2_eg) {
                 norm_cutflow[2]++;
-
-                // Slot 3 used to be the guessed lab-phi coplanarity cut.
-                // Keep the slot for stable CSV/ROOT structure, but apply no
-                // azimuthal requirement until the Trento QA is understood.
-                norm_cutflow[3]++;
-
-                if (ncf.angle_gX) norm_cutflow[4]++;
+                if (ncf.dphi_trento) {
+                    norm_cutflow[3]++;
+                    if (ncf.angle_gX) norm_cutflow[4]++;
+                }
             }
         }
         if (ncf.all) norm_cutflow[5]++;
@@ -2674,7 +2681,7 @@ std::unique_ptr<TH1D> val_make_data_hist(const ValComponent* data,int ib,const c
 
 std::unique_ptr<TH1D> val_make_mc_hist(const std::vector<std::unique_ptr<ValComponent>>& vv,
                                        int ib,const ValNormSet& norm,const char* name) {
-    std::unique_ptr<TH1D> h(new TH1D(name,";#Delta p_{#gamma2} [GeV];Weighted candidates",
+    std::unique_ptr<TH1D> h(new TH1D(name,";#Delta p_{#gamma2} (GeV);Weighted candidates",
                                      VAL_DP_NBIN,VAL_DP_MIN,VAL_DP_MAX));
     h->Sumw2(); h->SetDirectory(nullptr);
     for (const auto& vp:vv) {
@@ -2738,7 +2745,7 @@ void val_draw_map(const std::array<ValBinResult,VAL_NBIN>& rr,
     maps.reserve(6);
     for (int ip=0;ip<6;ip++) {
         maps.emplace_back(new TH2D(Form("hm_%s_%d",what.c_str(),ip),
-               Form("%.2f < p < %.2f GeV;wrapped #phi [deg];#theta [deg]",
+               Form("%.2f < p < %.2f GeV;wrapped #phi (deg);#theta (deg)",
                     VAL_P_EDGES[ip],VAL_P_EDGES[ip+1]),
                VAL_NPH,VAL_PH_EDGES,VAL_NT,VAL_T_EDGES));
         TH2D* h=maps.back().get();
@@ -2876,7 +2883,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
         std::unique_ptr<TH1D> t((TH1D*)a->Clone("energy_total")); t->Add(c.get()); t->Add(v.get()); t->SetDirectory(nullptr);
         d->SetMarkerStyle(20); d->SetMarkerSize(0.65); d->SetLineColor(kBlack); d->SetStats(0);
         style_norm_component(a.get(),kRed+1); style_norm_component(c.get(),kOrange+7); style_norm_component(v.get(),kGreen+2); style_norm_component(t.get(),kBlue+1,3);
-        TCanvas ce("c_energy_regions","",1100,760); d->SetTitle("Normalization regions and fitted MC composition;E_{#gamma} [GeV];Candidates");
+        TCanvas ce("c_energy_regions","",1100,760); d->SetTitle("Normalization regions and fitted MC composition;E_{#gamma} (GeV);Candidates");
         d->SetMaximum(1.25*std::max(d->GetMaximum(),t->GetMaximum())); d->Draw("E1"); a->Draw("HIST SAME"); c->Draw("HIST SAME"); v->Draw("HIST SAME"); t->Draw("HIST SAME"); d->Draw("E1 SAME");
         TLine l2(2.0,0,2.0,d->GetMaximum()); l2.SetLineStyle(2); l2.SetLineWidth(2); l2.Draw();
         TLine l3(3.0,0,3.0,d->GetMaximum()); l3.SetLineStyle(2); l3.SetLineWidth(2); l3.Draw();
@@ -3080,9 +3087,9 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
     summary << "Valerii-style FD photon-efficiency reproduction\n"
             << "==============================================\n"
             << "Binning: 7 p x 3 theta x 6 wrapped-phi = 126 bins\n"
-            << "p edges [GeV]: 0.35 0.50 1.10 1.70 2.30 2.90 3.70 6.00\n"
-            << "theta edges [deg]: 6 20 27 36\n"
-            << "phi edges [deg]: -30 30 90 150 210 270 330\n"
+            << "p edges (GeV): 0.35 0.50 1.10 1.70 2.30 2.90 3.70 6.00\n"
+            << "theta edges (deg): 6 20 27 36\n"
+            << "phi edges (deg): -30 30 90 150 210 270 330\n"
             << "Residual histograms: 60 bins on [-1,1] GeV\n"
             << "Active MC normalization is derived from this run's template fits.\n"
             << "Derived nominal: " << norm.nominal.aao << "*AAO + " << norm.nominal.clasdis
@@ -3120,8 +3127,8 @@ void run_valerii_fd_reproduction(const std::string& out) {
               << "The skim MC::Event.weight branch is NOT used in this path.\n"
               << "Data/MC fits are independent in every p/theta/phi bin.\n"
               << "Primary correction convention: epsilon_data / epsilon_MC.\n"
-              << "Delta-phi exclusivity cut: DISABLED pending Trento-convention validation.\n"
-              << "QA includes lab dphi, proton/photon Trento phi, their difference, and 180-deg residual.\n"
+              << "Delta-phi exclusivity cut: |delta phi_copl| < 5.7 deg using the Trento-plane residual.\n"
+              << "Raw lab dphi and the underlying Trento-angle quantities remain QA diagnostics.\n"
               << "============================================================\n";
     auto vv=build_val_components_parallel(out);
     write_valerii_outputs(vv,out);
