@@ -2778,6 +2778,160 @@ void val_draw_map(const std::array<ValBinResult,VAL_NBIN>& rr,
 }
 
 
+
+void draw_step1b_mx2_ep_overlay(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                const std::string& file) {
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* aao=find_val_component(vv,"aaogen");
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
+    if (!data || !aao || !cls || !dvc) return;
+    if (data->norm_pre.size()<=NORM_MX2_EP || aao->norm_pre.size()<=NORM_MX2_EP ||
+        cls->norm_pre.size()<=NORM_MX2_EP || dvc->norm_pre.size()<=NORM_MX2_EP) return;
+
+    const TH1D* hd0=data->norm_pre[NORM_MX2_EP].get();
+    const TH1D* ha0=aao->norm_pre[NORM_MX2_EP].get();
+    const TH1D* hc0=cls->norm_pre[NORM_MX2_EP].get();
+    const TH1D* hv0=dvc->norm_pre[NORM_MX2_EP].get();
+    if (!hd0 || !ha0 || !hc0 || !hv0) return;
+
+    std::unique_ptr<TH1D> hd((TH1D*)hd0->Clone("step1b_data"));
+    std::unique_ptr<TH1D> ha((TH1D*)ha0->Clone("step1b_aao"));
+    std::unique_ptr<TH1D> hc((TH1D*)hc0->Clone("step1b_cls"));
+    std::unique_ptr<TH1D> hv((TH1D*)hv0->Clone("step1b_dvc"));
+    hd->SetDirectory(nullptr); ha->SetDirectory(nullptr);
+    hc->SetDirectory(nullptr); hv->SetDirectory(nullptr);
+
+    auto unit=[](TH1D* h) {
+        const double q=h ? h->Integral() : 0.0;
+        if (h && q>0.0) h->Scale(1.0/q);
+    };
+    unit(hd.get()); unit(ha.get()); unit(hc.get()); unit(hv.get());
+
+    hd->SetStats(0); hd->SetMarkerStyle(20); hd->SetMarkerSize(0.65);
+    hd->SetLineColor(kBlack); hd->SetMarkerColor(kBlack);
+    style_norm_component(ha.get(),kRed+1);
+    style_norm_component(hc.get(),kOrange+7);
+    style_norm_component(hv.get(),kGreen+2);
+
+    TCanvas can("c_step1b_mx2_overlay","",1100,780);
+    hd->SetTitle("Step 1B: baseline M_{X}^{2}(ep) and selected #pi^{0}-like window");
+    hd->GetXaxis()->SetTitle("M_{X}^{2}(ep) (GeV^{2})");
+    hd->GetYaxis()->SetTitle("Unit-area candidates");
+    hd->SetMaximum(1.30*std::max({hd->GetMaximum(),ha->GetMaximum(),hc->GetMaximum(),hv->GetMaximum()}));
+
+    hd->Draw("E1");
+    ha->Draw("HIST SAME");
+    hc->Draw("HIST SAME");
+    hv->Draw("HIST SAME");
+    hd->Draw("E1 SAME");
+
+    const double ymax=hd->GetMaximum()*1.24;
+    TLine llo(NORM_MX2_EP_MIN,0.0,NORM_MX2_EP_MIN,ymax);
+    TLine lhi(NORM_MX2_EP_MAX,0.0,NORM_MX2_EP_MAX,ymax);
+    llo.SetLineStyle(2); lhi.SetLineStyle(2);
+    llo.SetLineWidth(2); lhi.SetLineWidth(2);
+    llo.Draw(); lhi.Draw();
+
+    TLegend leg(0.60,0.64,0.89,0.89);
+    leg.SetBorderSize(0); leg.SetFillStyle(0);
+    leg.AddEntry(hd.get(),"Data","lep");
+    leg.AddEntry(ha.get(),"AAO (unit area)","l");
+    leg.AddEntry(hc.get(),"CLASDIS (unit area)","l");
+    leg.AddEntry(hv.get(),"DVCSgen (unit area)","l");
+    leg.AddEntry(&llo,"M_{X}^{2}(ep) selection","l");
+    leg.Draw();
+
+    TLatex tx; tx.SetNDC(); tx.SetTextSize(0.036);
+    tx.DrawLatex(0.14,0.86,Form("%.3f < M_{X}^{2}(ep) < %.3f GeV^{2}",
+                               NORM_MX2_EP_MIN,NORM_MX2_EP_MAX));
+
+    can.SaveAs(file.c_str());
+}
+
+void draw_step1b_mx2_ep_individual(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                   const std::string& file) {
+    TCanvas can("c_step1b_mx2_individual","",1350,950);
+    can.Divide(2,2);
+
+    const char* names[4]={"data","aaogen","clasdis","dvcsgen"};
+    const char* labels[4]={"Data","AAOgen","CLASDIS","DVCSgen"};
+    const int colors[4]={kBlack,kRed+1,kOrange+7,kGreen+2};
+
+    std::vector<std::unique_ptr<TH1D>> keep;
+    for (int is=0;is<4;is++) {
+        const ValComponent* v=find_val_component(vv,names[is]);
+        if (!v || v->norm_pre.size()<=NORM_MX2_EP || !v->norm_pre[NORM_MX2_EP]) continue;
+
+        std::unique_ptr<TH1D> h((TH1D*)v->norm_pre[NORM_MX2_EP]->Clone(Form("step1b_%s_counts",names[is])));
+        h->SetDirectory(nullptr);
+        h->SetStats(0);
+        h->SetLineColor(colors[is]);
+        h->SetMarkerColor(colors[is]);
+        h->SetLineWidth(2);
+        h->SetTitle(Form("%s baseline M_{X}^{2}(ep)",labels[is]));
+        h->GetXaxis()->SetTitle("M_{X}^{2}(ep) (GeV^{2})");
+        h->GetYaxis()->SetTitle("Candidates");
+
+        can.cd(is+1);
+        gPad->SetRightMargin(0.05);
+        h->Draw("HIST");
+
+        const double ymax=std::max(1.0,1.05*h->GetMaximum());
+        TLine* llo=new TLine(NORM_MX2_EP_MIN,0.0,NORM_MX2_EP_MIN,ymax);
+        TLine* lhi=new TLine(NORM_MX2_EP_MAX,0.0,NORM_MX2_EP_MAX,ymax);
+        llo->SetLineStyle(2); lhi->SetLineStyle(2);
+        llo->SetLineWidth(2); lhi->SetLineWidth(2);
+        llo->Draw(); lhi->Draw();
+
+        const long long n0=v->norm_cutflow[0];
+        const long long n1=v->norm_cutflow[1];
+        const double frac=(n0>0 ? double(n1)/double(n0) : 0.0);
+        TLatex tx; tx.SetNDC(); tx.SetTextSize(0.042);
+        tx.DrawLatex(0.14,0.86,Form("pass = %lld / %lld = %.2f%%",n1,n0,100.0*frac));
+
+        keep.push_back(std::move(h));
+    }
+
+    can.SaveAs(file.c_str());
+}
+
+void write_step1b_mx2_ep_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                 const std::string& dir) {
+    gSystem->mkdir(dir.c_str(),true);
+
+    std::ofstream csv(dir+"/mx2_ep_survival.csv");
+    csv << "sample,baseline,pass_mx2_ep,fail_mx2_ep,survival_fraction\n";
+
+    std::ofstream txt(dir+"/mx2_ep_summary.txt");
+    txt << "Step 1B: M_X^2(ep) exclusivity requirement\n"
+        << "==========================================\n"
+        << "Definition: M_X^2(ep) = (k + p_target - k' - p')^2.\n"
+        << "Active window: " << NORM_MX2_EP_MIN << " < M_X^2(ep) < "
+        << NORM_MX2_EP_MAX << " GeV^2.\n"
+        << "This is evaluated after the common reconstructed ep-gamma-X baseline and\n"
+        << "before M_X^2(e-gamma), Trento coplanarity, and angle(gamma,X) cuts.\n\n";
+
+    for (const auto& vp:vv) {
+        if (!vp) continue;
+        const long long n0=vp->norm_cutflow[0];
+        const long long n1=vp->norm_cutflow[1];
+        const long long nf=std::max(0LL,n0-n1);
+        const double frac=(n0>0 ? double(n1)/double(n0) : 0.0);
+
+        csv << vp->name << "," << n0 << "," << n1 << "," << nf << "," << frac << "\n";
+        txt << vp->name << ": " << n1 << " / " << n0
+            << " = " << 100.0*frac << "% survive\n";
+    }
+
+    csv.close();
+    txt.close();
+
+    draw_step1b_mx2_ep_overlay(vv,dir+"/mx2_ep_unit_area_with_cut.png");
+    draw_step1b_mx2_ep_individual(vv,dir+"/mx2_ep_counts_with_cut.png");
+}
+
+
 NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValComponent>>& vv,const std::string& out) {
     NormDerivation R;
     const ValComponent* data=find_val_component(vv,"data");
@@ -2790,6 +2944,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     gSystem->mkdir((od+"/lowE_fits").c_str(),true);
     gSystem->mkdir((od+"/highE_fits").c_str(),true);
     gSystem->mkdir((od+"/final_closure").c_str(),true);
+    gSystem->mkdir((od+"/step1b_mx2_ep").c_str(),true);
 
     if (!data || !aao || !cls || !dvc ||
         data->norm_lowE.size()!=NORM_NOBS || aao->norm_lowE.size()!=NORM_NOBS ||
@@ -2809,6 +2964,11 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
             od+"/nminus1_shapes/nminus1_"+NORM_OBS[io].key+".png");
     }
     draw_norm_cutflow(vv,od+"/normalization_cutflow.png");
+
+    // Step 1B diagnostics are deliberately written before any template
+    // normalization is attempted.  They document exactly what the first
+    // exclusivity requirement does to the baseline ep-gamma-X sample.
+    write_step1b_mx2_ep_summary(vv,od+"/step1b_mx2_ep");
 
     // Stage A: low-E AAO + CLASDIS.  For each observable scan one common
     // reconstructed-MC shift and extra Gaussian resolution.  The same morph is
