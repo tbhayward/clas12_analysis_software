@@ -7186,6 +7186,653 @@ void draw_efficiency_prefinal_diagnostics(
     csv.close();
 }
 
+// ============================================================================
+// BEST-CURRENT INTEGRATED EFFICIENCY EXTRACTION
+//
+// Philosophy:
+//   * FD: retain the validated Valerii-style Gaussian 3sigma result as nominal.
+//   * FT: the nominal Gaussian fit is statistically unstable.  Use an ensemble
+//     of rebinned core fits instead of a single fragile fit.
+//   * The ensemble varies only technically reasonable choices:
+//       rebinning = 2,4,5,8
+//       local core-fit half-width = 0.55,0.75,0.95 GeV
+//       counting window = 2.5,3.0,3.5 sigma
+//   * Each variant uses the same pi0 composition and normalized background
+//     subtraction as the production method.
+//   * FT nominal = median of accepted variants.
+//   * FT method uncertainty = central-68% half-width of accepted variants.
+//   * FD robust ensemble is reported only as a closure/cross-check.
+// ============================================================================
+
+struct RobustCoreFit {
+    bool valid=false;
+    std::string reason;
+    double mean=0;
+    double sigma=0;
+    double mean_err=0;
+    double sigma_err=0;
+    double chi2=0;
+    int ndf=0;
+};
+
+struct RobustEfficiencyVariant {
+    bool valid=false;
+    int rebin=1;
+    double fit_half=0;
+    double nsigma=0;
+    RobustCoreFit data_fit;
+    RobustCoreFit mc_fit;
+    double data_pi0_denom=0;
+    double mc_pi0_denom=0;
+    double data_num_raw=0;
+    double predicted_bg=0;
+    double data_pi0_num=0;
+    double mc_pi0_num=0;
+    double eff_data=0;
+    double eff_mc=0;
+    double ratio=0;
+    double ratio_stat=0;
+};
+
+struct RobustEfficiencySummary {
+    bool valid=false;
+    int nvalid=0;
+    int nattempt=0;
+    double ratio=0;
+    double ratio_stat=0;
+    double method_low=0;
+    double method_high=0;
+    double method_half68=0;
+    double eff_data=0;
+    double eff_mc=0;
+    double mu_data=0;
+    double sigma_data=0;
+    double mu_mc=0;
+    double sigma_mc=0;
+    RobustEfficiencyVariant representative;
+    std::vector<RobustEfficiencyVariant> variants;
+};
+
+double percentile_sorted(const std::vector<double>& x,double q) {
+    if (x.empty()) return 0;
+    if (x.size()==1) return x[0];
+    q=std::max(0.0,std::min(1.0,q));
+    const double u=q*double(x.size()-1);
+    const size_t i=size_t(std::floor(u));
+    const size_t j=std::min(x.size()-1,i+1);
+    const double f=u-double(i);
+    return (1.0-f)*x[i]+f*x[j];
+}
+
+RobustCoreFit fit_rebinned_residual_core(const TH1D* src,
+                                         int rebin,double fit_half,
+                                         const char* tag) {
+    RobustCoreFit out;
+    if (!src) { out.reason="null histogram"; return out; }
+
+    std::unique_ptr<TH1D> h((TH1D*)src->Clone(Form("robust_core_%s",tag)));
+    if (!h) { out.reason="clone failed"; return out; }
+    h->SetDirectory(nullptr);
+    if (rebin>1) h->Rebin(rebin);
+
+    if (h->Integral() < 15) {
+        out.reason="too few residual candidates";
+        return out;
+    }
+
+    // Locate the physical response peak near Delta p = 0 rather than allowing
+    // the long negative combinatorial tail to seed the fit.
+    int peakbin=-1;
+    double peakheight=-1;
+    for (int ib=1;ib<=h->GetNbinsX();ib++) {
+        const double x=h->GetBinCenter(ib);
+        if (x < -0.80 || x > 0.50) continue;
+        if (h->GetBinContent(ib)>peakheight) {
+            peakheight=h->GetBinContent(ib);
+            peakbin=ib;
+        }
+    } // endfor
+    if (peakbin<0 || !(peakheight>0)) {
+        out.reason="no core peak";
+        return out;
+    }
+
+    const double peak=h->GetBinCenter(peakbin);
+    const double seed_lo=std::max(-0.85,peak-0.28);
+    const double seed_hi=std::min(+0.65,peak+0.28);
+
+    TF1 seed(Form("robust_seed_%s",tag),"gaus",seed_lo,seed_hi);
+    seed.SetParameters(std::max(1.0,peakheight),peak,0.18);
+    seed.SetParLimits(1,peak-0.25,peak+0.25);
+    seed.SetParLimits(2,0.035,0.55);
+    const int seed_status=h->Fit(&seed,"QNR");
+
+    double mu=peak;
+    double sg=0.20;
+    if (seed_status==0) {
+        mu=seed.GetParameter(1);
+        sg=std::fabs(seed.GetParameter(2));
+    }
+    if (!(sg>0.035 && sg<0.55)) sg=0.20;
+
+    // Local core fit.  This is intentionally narrower than the old full
+    // [-1,1] fit so the sparse FT core is not driven by the broad negative tail.
+    const double flo=std::max(-1.50,mu-fit_half);
+    const double fhi=std::min(+1.10,mu+fit_half);
+    if (!(fhi-flo>0.45)) {
+        out.reason="invalid local fit range";
+        return out;
+    }
+
+    TF1 f(Form("robust_fit_%s",tag),"gaus(0)+pol1(3)",flo,fhi);
+    f.SetParameters(std::max(1.0,peakheight),mu,sg,
+                    std::max(0.0,h->GetBinContent(h->FindBin(flo))),0.0);
+    f.SetParLimits(0,0.0,std::max(10.0,20.0*peakheight));
+    f.SetParLimits(1,std::max(-0.70,peak-0.35),std::min(0.55,peak+0.35));
+    f.SetParLimits(2,0.035,0.55);
+
+    const int status=h->Fit(&f,"QNR");
+    out.mean=f.GetParameter(1);
+    out.sigma=std::fabs(f.GetParameter(2));
+    out.mean_err=f.GetParError(1);
+    out.sigma_err=f.GetParError(2);
+    out.chi2=f.GetChisquare();
+    out.ndf=f.GetNDF();
+
+    if (status!=0) { out.reason="ROOT fit status != 0"; return out; }
+    if (!(out.mean>-0.70 && out.mean<0.55)) {
+        out.reason="mean outside physical core range"; return out;
+    }
+    if (!(out.sigma>0.035 && out.sigma<0.545)) {
+        out.reason="sigma at fit boundary"; return out;
+    }
+    if (!(out.mean_err>=0) || out.mean_err>0.30) {
+        out.reason="mean uncertainty too large"; return out;
+    }
+    if (!(out.sigma_err>0) || out.sigma_err/out.sigma>0.80) {
+        out.reason="sigma uncertainty too large"; return out;
+    }
+    if (out.ndf<=2) { out.reason="too few fit degrees of freedom"; return out; }
+
+    out.valid=true;
+    out.reason="valid";
+    return out;
+}
+
+RobustEfficiencyVariant robust_efficiency_variant(
+        const std::vector<std::unique_ptr<ValComponent>>& vv,
+        const NormDerivation& R,int ir,
+        int rebin,double fit_half,double nsigma) {
+    RobustEfficiencyVariant out;
+    out.rebin=rebin;
+    out.fit_half=fit_half;
+    out.nsigma=nsigma;
+
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* a=find_val_component(vv,"aaogen");
+    const ValComponent* c=find_val_component(vv,"clasdis");
+    const ValComponent* d=find_val_component(vv,"dvcsgen");
+    if (!data || !a || !c || !d) return out;
+
+    const auto comp=coarse_composition(vv,R.nominal,ir);
+    if (!(comp.f_pi0>0)) return out;
+    const double fc=comp.f_clasdis_pi0;
+
+    const auto& rd=data->coarse[ir];
+    const auto& ra=a->coarse[ir];
+    const auto& rc=c->coarse[ir];
+    const auto& rv=d->coarse[ir];
+    if (!rd.residual || !ra.residual || !rc.residual || !rv.residual ||
+        rd.denom_rows<=0) return out;
+
+    std::unique_ptr<TH1D> hd((TH1D*)rd.residual->Clone(
+        Form("robust_data_r%d_rb%d_f%.0f",ir,rebin,100*fit_half)));
+    hd->SetDirectory(nullptr);
+
+    std::unique_ptr<TH1D> hsig((TH1D*)ra.residual->Clone(
+        Form("robust_sig_r%d_rb%d_f%.0f",ir,rebin,100*fit_half)));
+    hsig->SetDirectory(nullptr);
+    hsig->Scale(R.nominal.aao);
+
+    std::unique_ptr<TH1D> hcpi((TH1D*)rc.residual->Clone(
+        Form("robust_cpi_r%d_rb%d_f%.0f",ir,rebin,100*fit_half)));
+    hcpi->SetDirectory(nullptr);
+    hcpi->Scale(R.nominal.clasdis*fc);
+    hsig->Add(hcpi.get());
+
+    std::unique_ptr<TH1D> hbg((TH1D*)rv.residual->Clone(
+        Form("robust_bg_r%d_rb%d_f%.0f",ir,rebin,100*fit_half)));
+    hbg->SetDirectory(nullptr);
+    hbg->Scale(R.nominal.dvcs);
+
+    std::unique_ptr<TH1D> hcb((TH1D*)rc.residual->Clone(
+        Form("robust_cbg_r%d_rb%d_f%.0f",ir,rebin,100*fit_half)));
+    hcb->SetDirectory(nullptr);
+    hcb->Scale(R.nominal.clasdis*(1.0-fc));
+    hbg->Add(hcb.get());
+
+    out.data_fit=fit_rebinned_residual_core(
+        hd.get(),rebin,fit_half,
+        Form("data_r%d_rb%d_f%d",ir,rebin,int(100*fit_half)));
+    out.mc_fit=fit_rebinned_residual_core(
+        hsig.get(),rebin,fit_half,
+        Form("mc_r%d_rb%d_f%d",ir,rebin,int(100*fit_half)));
+
+    if (!out.data_fit.valid || !out.mc_fit.valid) return out;
+
+    // Reject pathological data/MC core fits even if ROOT technically converges.
+    if (std::fabs(out.data_fit.mean-out.mc_fit.mean)>0.50) return out;
+    const double sr=out.data_fit.sigma/out.mc_fit.sigma;
+    if (!(sr>0.35 && sr<3.0)) return out;
+
+    const double dlo=out.data_fit.mean-nsigma*out.data_fit.sigma;
+    const double dhi=out.data_fit.mean+nsigma*out.data_fit.sigma;
+    const double mlo=out.mc_fit.mean-nsigma*out.mc_fit.sigma;
+    const double mhi=out.mc_fit.mean+nsigma*out.mc_fit.sigma;
+
+    out.data_num_raw=hist_integral_window(hd.get(),dlo,dhi);
+
+    const double bg_denom=
+        R.nominal.dvcs*double(rv.denom_rows) +
+        R.nominal.clasdis*(1.0-fc)*double(rc.denom_rows);
+    const double bg_num=hist_integral_window(hbg.get(),dlo,dhi);
+    const double bg_eff=(bg_denom>0)?bg_num/bg_denom:0.0;
+
+    out.data_pi0_denom=comp.f_pi0*double(rd.denom_rows);
+    out.predicted_bg=(1.0-comp.f_pi0)*double(rd.denom_rows)*bg_eff;
+    out.data_pi0_num=out.data_num_raw-out.predicted_bg;
+
+    out.mc_pi0_denom=
+        R.nominal.aao*double(ra.denom_rows) +
+        R.nominal.clasdis*fc*double(rc.denom_rows);
+    out.mc_pi0_num=hist_integral_window(hsig.get(),mlo,mhi);
+
+    if (!(out.data_pi0_denom>0 && out.mc_pi0_denom>0 &&
+          out.mc_pi0_num>0 && out.data_pi0_num>0)) return out;
+
+    out.eff_data=out.data_pi0_num/out.data_pi0_denom;
+    out.eff_mc=out.mc_pi0_num/out.mc_pi0_denom;
+    if (!(out.eff_data>0 && out.eff_data<1.0 &&
+          out.eff_mc>0 && out.eff_mc<1.0)) return out;
+
+    out.ratio=out.eff_data/out.eff_mc;
+
+    // Statistical uncertainty.  Normalization/composition and fit-choice
+    // variation are intentionally kept separate.
+    const double ed=std::sqrt(
+        out.eff_data*(1.0-out.eff_data)/out.data_pi0_denom);
+
+    const double wa=R.nominal.aao;
+    const double wc=R.nominal.clasdis*fc;
+    const double sw=wa*double(ra.denom_rows)+wc*double(rc.denom_rows);
+    const double sw2=wa*wa*double(ra.denom_rows)+wc*wc*double(rc.denom_rows);
+    const double neff=(sw2>0)?sw*sw/sw2:0.0;
+    const double em=(neff>0)?std::sqrt(
+        out.eff_mc*(1.0-out.eff_mc)/neff):0.0;
+
+    out.ratio_stat=out.ratio*std::sqrt(
+        (ed/out.eff_data)*(ed/out.eff_data) +
+        (em/out.eff_mc)*(em/out.eff_mc));
+
+    out.valid=true;
+    return out;
+}
+
+RobustEfficiencySummary robust_efficiency_ensemble(
+        const std::vector<std::unique_ptr<ValComponent>>& vv,
+        const NormDerivation& R,int ir) {
+    RobustEfficiencySummary s;
+
+    const int rebins[]={2,4,5,8};
+    const double fit_halves[]={0.55,0.75,0.95};
+    const double nsigmas[]={2.5,3.0,3.5};
+
+    for (int rb:rebins) {
+        for (double fh:fit_halves) {
+            for (double ns:nsigmas) {
+                s.nattempt++;
+                auto v=robust_efficiency_variant(vv,R,ir,rb,fh,ns);
+                if (v.valid) {
+                    s.variants.push_back(v);
+                    s.nvalid++;
+                } // endif
+            } // endfor
+        } // endfor
+    } // endfor
+
+    if (s.nvalid<6) return s;
+
+    std::vector<double> ratios,stats,eds,ems,mud,sgd,mum,sgm;
+    for (const auto& v:s.variants) {
+        ratios.push_back(v.ratio);
+        stats.push_back(v.ratio_stat);
+        eds.push_back(v.eff_data);
+        ems.push_back(v.eff_mc);
+        mud.push_back(v.data_fit.mean);
+        sgd.push_back(v.data_fit.sigma);
+        mum.push_back(v.mc_fit.mean);
+        sgm.push_back(v.mc_fit.sigma);
+    } // endfor
+
+    auto sortv=[](std::vector<double>& x){std::sort(x.begin(),x.end());};
+    sortv(ratios); sortv(stats); sortv(eds); sortv(ems);
+    sortv(mud); sortv(sgd); sortv(mum); sortv(sgm);
+
+    s.ratio=percentile_sorted(ratios,0.50);
+    s.ratio_stat=percentile_sorted(stats,0.50);
+    s.method_low=percentile_sorted(ratios,0.16);
+    s.method_high=percentile_sorted(ratios,0.84);
+    s.method_half68=0.5*(s.method_high-s.method_low);
+    s.eff_data=percentile_sorted(eds,0.50);
+    s.eff_mc=percentile_sorted(ems,0.50);
+    s.mu_data=percentile_sorted(mud,0.50);
+    s.sigma_data=percentile_sorted(sgd,0.50);
+    s.mu_mc=percentile_sorted(mum,0.50);
+    s.sigma_mc=percentile_sorted(sgm,0.50);
+
+    // Representative variant = valid variant nearest the median ratio.
+    double bd=std::numeric_limits<double>::infinity();
+    for (const auto& v:s.variants) {
+        const double d=std::fabs(v.ratio-s.ratio);
+        if (d<bd) { bd=d; s.representative=v; }
+    } // endfor
+
+    s.valid=true;
+    return s;
+}
+
+void draw_best_current_efficiency(
+        const std::vector<std::unique_ptr<ValComponent>>& vv,
+        const NormDerivation& Rfd,const NormDerivation& Rft,
+        const std::string& dir) {
+
+    std::array<IntegratedEfficiencyResult,CR_N> standard;
+    std::array<RobustEfficiencySummary,CR_N> robust;
+
+    for (int ir=0;ir<CR_N;ir++) {
+        const NormDerivation& R=(ir<2)?Rfd:Rft;
+        standard[ir]=integrated_efficiency(vv,R,ir,nullptr,nullptr);
+        robust[ir]=robust_efficiency_ensemble(vv,R,ir);
+    } // endfor
+
+    // Best-current convention:
+    //   FD -> validated standard Gaussian 3sigma method.
+    //   FT -> robust core-fit ensemble.
+    std::array<double,CR_N> best{},stat{},meth{};
+    std::array<int,CR_N> best_valid{};
+    for (int ir=0;ir<CR_N;ir++) {
+        if (ir<2 && standard[ir].valid) {
+            best_valid[ir]=1;
+            best[ir]=standard[ir].ratio;
+            stat[ir]=standard[ir].ratio_err;
+
+            // Use the robust FD ensemble only as a method-stability diagnostic.
+            // The provisional method scale is at least the central-68% ensemble
+            // spread and at least the shift from the validated nominal method.
+            if (robust[ir].valid) {
+                meth[ir]=std::max(
+                    robust[ir].method_half68,
+                    std::fabs(robust[ir].ratio-standard[ir].ratio));
+            }
+        } else if (ir>=2 && robust[ir].valid) {
+            best_valid[ir]=1;
+            best[ir]=robust[ir].ratio;
+            stat[ir]=robust[ir].ratio_stat;
+            meth[ir]=robust[ir].method_half68;
+        } // endif
+    } // endfor
+
+    // ---------------- plot: best current ----------------
+    TCanvas cbest("c_best_current_eff","",1500,820);
+    cbest.SetLeftMargin(0.11);
+    cbest.SetRightMargin(0.04);
+    cbest.SetBottomMargin(0.22);
+    cbest.SetTopMargin(0.14);
+
+    TH1D axis("axis_best_current_eff",
+              ";Detector / probe-energy region;#epsilon_{data}/#epsilon_{MC}",
+              CR_N,0,CR_N);
+    axis.SetDirectory(nullptr);
+    axis.SetStats(0);
+    axis.SetMinimum(0.0);
+    axis.SetMaximum(1.45);
+    for (int ir=0;ir<CR_N;ir++)
+        axis.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
+    axis.GetXaxis()->SetLabelSize(0.042);
+    axis.GetYaxis()->SetTitleSize(0.050);
+    axis.GetYaxis()->SetTitleOffset(1.05);
+    axis.Draw("AXIS");
+
+    TGraphErrors gstat;
+    gstat.SetMarkerStyle(20);
+    gstat.SetMarkerSize(1.35);
+    gstat.SetLineWidth(2);
+
+    TGraphErrors gmethod;
+    gmethod.SetMarkerStyle(20);
+    gmethod.SetMarkerSize(1.35);
+    gmethod.SetLineWidth(6);
+
+    for (int ir=0;ir<CR_N;ir++) {
+        if (!best_valid[ir]) continue;
+        const double x=ir+0.5;
+        int n=gmethod.GetN();
+        gmethod.SetPoint(n,x,best[ir]);
+        gmethod.SetPointError(n,0,meth[ir]);
+        n=gstat.GetN();
+        gstat.SetPoint(n,x,best[ir]);
+        gstat.SetPointError(n,0,stat[ir]);
+    } // endfor
+
+    gmethod.Draw("P SAME");
+    gstat.Draw("P SAME");
+    TLine one(0,1,CR_N,1);
+    one.SetLineStyle(2);
+    one.SetLineWidth(2);
+    one.Draw();
+
+    TLatex tx;
+    tx.SetNDC();
+    tx.SetTextFont(42);
+    tx.SetTextSize(0.048);
+    tx.DrawLatex(0.12,0.93,"Best-current integrated photon-efficiency ratios");
+    tx.SetTextSize(0.032);
+    tx.DrawLatex(0.12,0.875,
+        "FD: Valerii Gaussian 3#sigma; FT: robust rebinned core-fit ensemble");
+
+    TLegend leg(0.58,0.77,0.94,0.89);
+    leg.SetBorderSize(0);
+    leg.SetFillStyle(0);
+    leg.SetTextSize(0.030);
+    leg.AddEntry(&gstat,"statistical uncertainty","lep");
+    leg.AddEntry(&gmethod,"provisional residual-fit method spread","lep");
+    leg.Draw();
+
+    cbest.SaveAs((dir+"/best_current_efficiency_ratio.png").c_str());
+
+    // ---------------- plot: method closure ----------------
+    TCanvas cclose("c_best_current_closure","",1500,820);
+    cclose.SetLeftMargin(0.11);
+    cclose.SetRightMargin(0.04);
+    cclose.SetBottomMargin(0.22);
+    cclose.SetTopMargin(0.14);
+
+    TH1D ax2("axis_best_current_closure",
+             ";Detector / probe-energy region;#epsilon_{data}/#epsilon_{MC}",
+             CR_N,0,CR_N);
+    ax2.SetDirectory(nullptr);
+    ax2.SetStats(0);
+    ax2.SetMinimum(0.0);
+    ax2.SetMaximum(1.55);
+    for (int ir=0;ir<CR_N;ir++)
+        ax2.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
+    ax2.GetXaxis()->SetLabelSize(0.042);
+    ax2.Draw("AXIS");
+
+    TGraphErrors gs;
+    gs.SetMarkerStyle(20); gs.SetMarkerSize(1.25);
+    TGraphErrors gr;
+    gr.SetMarkerStyle(24); gr.SetMarkerSize(1.30);
+
+    for (int ir=0;ir<CR_N;ir++) {
+        if (standard[ir].valid) {
+            int n=gs.GetN();
+            gs.SetPoint(n,ir+0.42,standard[ir].ratio);
+            gs.SetPointError(n,0,standard[ir].ratio_err);
+        } // endif
+        if (robust[ir].valid) {
+            int n=gr.GetN();
+            gr.SetPoint(n,ir+0.58,robust[ir].ratio);
+            gr.SetPointError(n,0,robust[ir].method_half68);
+        } // endif
+    } // endfor
+
+    gs.Draw("P SAME");
+    gr.Draw("P SAME");
+    TLine one2(0,1,CR_N,1);
+    one2.SetLineStyle(2); one2.Draw();
+
+    TLegend leg2(0.55,0.76,0.94,0.89);
+    leg2.SetBorderSize(0); leg2.SetFillStyle(0); leg2.SetTextSize(0.030);
+    leg2.AddEntry(&gs,"standard Gaussian 3#sigma","lep");
+    leg2.AddEntry(&gr,"robust core-fit ensemble","lep");
+    leg2.Draw();
+
+    TLatex tc;
+    tc.SetNDC(); tc.SetTextFont(42); tc.SetTextSize(0.048);
+    tc.DrawLatex(0.12,0.93,"Residual-method closure / stability");
+    cclose.SaveAs((dir+"/best_current_method_closure.png").c_str());
+
+    // ---------------- plot: representative robust residual fits ----------------
+    TCanvas cres("c_best_current_residuals","",1550,1100);
+    cres.Divide(2,2,0.001,0.001);
+
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* a=find_val_component(vv,"aaogen");
+    const ValComponent* c=find_val_component(vv,"clasdis");
+
+    for (int ir=0;ir<CR_N;ir++) {
+        cres.cd(ir+1);
+        gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.04);
+        gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.13);
+        gPad->SetTicks(1,1);
+
+        if (!robust[ir].valid || !data || !a || !c) {
+            TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.05);
+            t.DrawLatex(0.18,0.55,Form("%s: no robust solution",CR_LABEL[ir]));
+            continue;
+        } // endif
+
+        const NormDerivation& R=(ir<2)?Rfd:Rft;
+        const auto comp=coarse_composition(vv,R.nominal,ir);
+        const double fc=comp.f_clasdis_pi0;
+        const auto& v=robust[ir].representative;
+
+        std::unique_ptr<TH1D> hd((TH1D*)data->coarse[ir].residual->Clone(
+            Form("best_res_data_%d",ir)));
+        hd->SetDirectory(nullptr);
+
+        std::unique_ptr<TH1D> hm((TH1D*)a->coarse[ir].residual->Clone(
+            Form("best_res_mc_%d",ir)));
+        hm->SetDirectory(nullptr);
+        hm->Scale(R.nominal.aao);
+        std::unique_ptr<TH1D> hc((TH1D*)c->coarse[ir].residual->Clone(
+            Form("best_res_c_%d",ir)));
+        hc->SetDirectory(nullptr);
+        hc->Scale(R.nominal.clasdis*fc);
+        hm->Add(hc.get());
+
+        hd->SetStats(0);
+        hd->SetMarkerStyle(20);
+        hd->SetMarkerSize(0.45);
+        hd->GetXaxis()->SetTitle("#Delta p_{#gamma2} (GeV)");
+        hd->GetYaxis()->SetTitle("Candidates");
+        hd->Draw("E1");
+
+        // Scale MC only for visual shape comparison in this QA canvas.
+        std::unique_ptr<TH1D> hmd((TH1D*)hm->Clone(Form("best_res_mcdraw_%d",ir)));
+        hmd->SetDirectory(nullptr);
+        const double wint_d=hist_integral_window(
+            hd.get(),v.data_fit.mean-3*v.data_fit.sigma,
+            v.data_fit.mean+3*v.data_fit.sigma);
+        const double wint_m=hist_integral_window(
+            hm.get(),v.mc_fit.mean-3*v.mc_fit.sigma,
+            v.mc_fit.mean+3*v.mc_fit.sigma);
+        if (wint_m>0) hmd->Scale(wint_d/wint_m);
+        hmd->SetLineWidth(2);
+        hmd->Draw("HIST SAME");
+        hd->Draw("E1 SAME");
+
+        TLine* ld1=new TLine(v.data_fit.mean-v.nsigma*v.data_fit.sigma,0,
+                             v.data_fit.mean-v.nsigma*v.data_fit.sigma,
+                             1.05*hd->GetMaximum());
+        TLine* ld2=new TLine(v.data_fit.mean+v.nsigma*v.data_fit.sigma,0,
+                             v.data_fit.mean+v.nsigma*v.data_fit.sigma,
+                             1.05*hd->GetMaximum());
+        ld1->SetLineStyle(2); ld2->SetLineStyle(2);
+        ld1->Draw(); ld2->Draw();
+
+        TLatex t;
+        t.SetNDC(); t.SetTextFont(42);
+        t.SetTextSize(0.046);
+        t.DrawLatex(0.17,0.92,Form("(%c) %s",'a'+ir,CR_LABEL[ir]));
+        t.SetTextSize(0.029);
+        t.DrawLatex(0.17,0.84,
+            Form("representative: rebin=%d, fit half-width=%.2f GeV, %.1f#sigma",
+                 v.rebin,v.fit_half,v.nsigma));
+        t.DrawLatex(0.17,0.79,
+            Form("#mu_{data}=%.3f, #sigma_{data}=%.3f GeV",
+                 v.data_fit.mean,v.data_fit.sigma));
+        t.DrawLatex(0.17,0.74,
+            Form("#mu_{MC}=%.3f, #sigma_{MC}=%.3f GeV",
+                 v.mc_fit.mean,v.mc_fit.sigma));
+    } // endfor
+
+    cres.SaveAs((dir+"/best_current_residual_fit_QA.png").c_str());
+
+    // ---------------- CSV ----------------
+    std::ofstream csv(dir+"/best_current_summary.csv");
+    csv << "region,best_valid,best_method,best_data_over_mc,stat_unc,"
+           "provisional_method_unc,correction_mc_over_data,"
+           "standard_valid,standard_data_over_mc,"
+           "robust_valid,robust_nvalid,robust_nattempt,robust_median,"
+           "robust_p16,robust_p84,robust_eff_data,robust_eff_mc,"
+           "robust_mu_data,robust_sigma_data,robust_mu_mc,robust_sigma_mc\n";
+    csv << std::setprecision(10);
+
+    for (int ir=0;ir<CR_N;ir++) {
+        const char* method=(ir<2)?"Valerii_Gaussian_3sigma":"robust_core_ensemble";
+        csv << CR_KEY[ir] << "," << best_valid[ir] << "," << method << ","
+            << best[ir] << "," << stat[ir] << "," << meth[ir] << ","
+            << ((best[ir]>0)?1.0/best[ir]:0.0) << ","
+            << standard[ir].valid << "," << standard[ir].ratio << ","
+            << robust[ir].valid << "," << robust[ir].nvalid << ","
+            << robust[ir].nattempt << "," << robust[ir].ratio << ","
+            << robust[ir].method_low << "," << robust[ir].method_high << ","
+            << robust[ir].eff_data << "," << robust[ir].eff_mc << ","
+            << robust[ir].mu_data << "," << robust[ir].sigma_data << ","
+            << robust[ir].mu_mc << "," << robust[ir].sigma_mc << "\n";
+    } // endfor
+
+    csv << "\n# Robust ensemble variants\n";
+    csv << "region,rebin,fit_half_GeV,nsigma,ratio,ratio_stat,"
+           "eff_data,eff_mc,mu_data,sigma_data,mu_mc,sigma_mc,"
+           "data_raw_num,predicted_background,data_pi0_num,mc_pi0_num\n";
+    for (int ir=0;ir<CR_N;ir++) {
+        for (const auto& v:robust[ir].variants) {
+            csv << CR_KEY[ir] << "," << v.rebin << "," << v.fit_half << ","
+                << v.nsigma << "," << v.ratio << "," << v.ratio_stat << ","
+                << v.eff_data << "," << v.eff_mc << ","
+                << v.data_fit.mean << "," << v.data_fit.sigma << ","
+                << v.mc_fit.mean << "," << v.mc_fit.sigma << ","
+                << v.data_num_raw << "," << v.predicted_bg << ","
+                << v.data_pi0_num << "," << v.mc_pi0_num << "\n";
+        } // endfor
+    } // endfor
+    csv.close();
+}
+
+
 void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
                              const NormDerivation& Rfd,
                              const NormDerivation& Rft,
@@ -7387,6 +8034,8 @@ void run_concise_analysis(const std::string& out) {
     draw_pi0_summary(vv,norm_fd,norm_ft,out+"/3_pi0_fraction");
     draw_efficiency_summary(vv,norm_fd,norm_ft,out+"/4_efficiency");
     draw_efficiency_prefinal_diagnostics(
+        vv,norm_fd,norm_ft,out+"/4_efficiency");
+    draw_best_current_efficiency(
         vv,norm_fd,norm_ft,out+"/4_efficiency");
 
     std::cout << "\nConcise output written to:\n"
