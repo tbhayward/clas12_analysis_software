@@ -1715,6 +1715,9 @@ struct ValComponent {
     // Sequential Step-1D diagnostic: after M_X^2(ep) and M_X^2(e gamma),
     // before Trento coplanarity and angle(gamma,X).
     std::vector<std::unique_ptr<TH1D>> norm_after_mx2ep_mx2eg;
+    // Sequential Step-1E diagnostic: after M_X^2(ep), M_X^2(e gamma),
+    // and Trento coplanarity, before angle(gamma,X).
+    std::vector<std::unique_ptr<TH1D>> norm_after_mx2ep_mx2eg_dphi;
     std::vector<std::unique_ptr<TH1D>> norm_nminus1;
     std::vector<std::unique_ptr<TH1D>> norm_full;
     std::vector<std::unique_ptr<TH1D>> norm_lowE;
@@ -2355,11 +2358,13 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     // distributions and their weighted sums, so persist fixed-size histograms.
     std::array<std::unique_ptr<TH1D>,VAL_NBIN> hfit;
     std::array<std::unique_ptr<TH1D>,VAL_NBIN> hcount;
-    std::vector<std::unique_ptr<TH1D>> norm_pre, norm_after_mx2ep, norm_after_mx2ep_mx2eg, norm_nminus1, norm_full, norm_low, norm_high;
+    std::vector<std::unique_ptr<TH1D>> norm_pre, norm_after_mx2ep, norm_after_mx2ep_mx2eg,
+        norm_after_mx2ep_mx2eg_dphi, norm_nminus1, norm_full, norm_low, norm_high;
     for (int io=0;io<NORM_NOBS;io++) {
         norm_pre.push_back(make_norm_hist(io,"pre",spec.name));
         norm_after_mx2ep.push_back(make_norm_hist(io,"after_mx2ep",spec.name));
         norm_after_mx2ep_mx2eg.push_back(make_norm_hist(io,"after_mx2ep_mx2eg",spec.name));
+        norm_after_mx2ep_mx2eg_dphi.push_back(make_norm_hist(io,"after_mx2ep_mx2eg_dphi",spec.name));
         norm_nminus1.push_back(make_norm_hist(io,"nminus1",spec.name));
         norm_full.push_back(make_norm_hist(io,"full",spec.name));
         norm_low.push_back(make_norm_hist(io,"lowE",spec.name));
@@ -2420,6 +2425,8 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
             norm_pre[io]->Fill(x);
             if (ncf.mx2_ep) norm_after_mx2ep[io]->Fill(x);
             if (ncf.mx2_ep && ncf.mx2_eg) norm_after_mx2ep_mx2eg[io]->Fill(x);
+            if (ncf.mx2_ep && ncf.mx2_eg && ncf.dphi_trento)
+                norm_after_mx2ep_mx2eg_dphi[io]->Fill(x);
             if (norm_pass_nminus1(ncf,io)) {
                 norm_nminus1[io]->Fill(x);
                 if (std::isfinite(Eg) && Eg<2.0) norm_low[io]->Fill(x);
@@ -2495,6 +2502,7 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
             norm_pre[io]->Write(Form("pre_%s",NORM_OBS[io].key));
             norm_after_mx2ep[io]->Write(Form("after_mx2ep_%s",NORM_OBS[io].key));
             norm_after_mx2ep_mx2eg[io]->Write(Form("after_mx2ep_mx2eg_%s",NORM_OBS[io].key));
+            norm_after_mx2ep_mx2eg_dphi[io]->Write(Form("after_mx2ep_mx2eg_dphi_%s",NORM_OBS[io].key));
             norm_nminus1[io]->Write(Form("nminus1_%s",NORM_OBS[io].key));
             norm_full[io]->Write(Form("full_%s",NORM_OBS[io].key));
             norm_low[io]->Write(Form("lowE_%s",NORM_OBS[io].key));
@@ -2566,6 +2574,7 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
             v->norm_pre.push_back(clone_one("pre"));
             v->norm_after_mx2ep.push_back(clone_one("after_mx2ep"));
             v->norm_after_mx2ep_mx2eg.push_back(clone_one("after_mx2ep_mx2eg"));
+            v->norm_after_mx2ep_mx2eg_dphi.push_back(clone_one("after_mx2ep_mx2eg_dphi"));
             v->norm_nminus1.push_back(clone_one("nminus1"));
             v->norm_full.push_back(clone_one("full"));
             v->norm_lowE.push_back(clone_one("lowE"));
@@ -3218,6 +3227,170 @@ void write_step1d_coplanarity_summary(const std::vector<std::unique_ptr<ValCompo
 }
 
 
+
+void draw_step1e_angle_gX_overlay(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                  const std::string& file) {
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* aao=find_val_component(vv,"aaogen");
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
+    if (!data || !aao || !cls || !dvc) return;
+
+    auto geth=[](const ValComponent* v)->const TH1D* {
+        if (!v || v->norm_after_mx2ep_mx2eg_dphi.size()<=NORM_ANGLE_GX) return nullptr;
+        return v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_GX].get();
+    };
+    const TH1D *hd0=geth(data), *ha0=geth(aao), *hc0=geth(cls), *hv0=geth(dvc);
+    if (!hd0 || !ha0 || !hc0 || !hv0) return;
+
+    std::unique_ptr<TH1D> hd((TH1D*)hd0->Clone("step1e_data"));
+    std::unique_ptr<TH1D> ha((TH1D*)ha0->Clone("step1e_aao"));
+    std::unique_ptr<TH1D> hc((TH1D*)hc0->Clone("step1e_cls"));
+    std::unique_ptr<TH1D> hv((TH1D*)hv0->Clone("step1e_dvc"));
+    hd->SetDirectory(nullptr); ha->SetDirectory(nullptr);
+    hc->SetDirectory(nullptr); hv->SetDirectory(nullptr);
+
+    auto unit=[](TH1D* h) {
+        const double q=h ? h->Integral() : 0.0;
+        if (h && q>0.0) h->Scale(1.0/q);
+    };
+    unit(hd.get()); unit(ha.get()); unit(hc.get()); unit(hv.get());
+
+    hd->SetStats(0);
+    hd->SetMarkerStyle(20);
+    hd->SetMarkerSize(0.65);
+    hd->SetLineColor(kBlack);
+    hd->SetMarkerColor(kBlack);
+    style_norm_component(ha.get(),kRed+1);
+    style_norm_component(hc.get(),kOrange+7);
+    style_norm_component(hv.get(),kGreen+2);
+
+    TCanvas can("c_step1e_anglegX_overlay","",1100,780);
+    hd->SetTitle("Step 1E: angle(#gamma,X) after Steps 1B+1C+1D");
+    hd->GetXaxis()->SetTitle("angle(#gamma,X) (deg)");
+    hd->GetYaxis()->SetTitle("Unit-area candidates");
+    hd->SetMaximum(1.30*std::max({hd->GetMaximum(),ha->GetMaximum(),hc->GetMaximum(),hv->GetMaximum()}));
+
+    hd->Draw("E1");
+    ha->Draw("HIST SAME");
+    hc->Draw("HIST SAME");
+    hv->Draw("HIST SAME");
+    hd->Draw("E1 SAME");
+
+    const double ymax=hd->GetMaximum()*1.24;
+    TLine cut(NORM_ANGLE_GX_MAX,0.0,NORM_ANGLE_GX_MAX,ymax);
+    cut.SetLineStyle(2);
+    cut.SetLineWidth(2);
+    cut.Draw();
+
+    TLegend leg(0.60,0.64,0.89,0.89);
+    leg.SetBorderSize(0);
+    leg.SetFillStyle(0);
+    leg.AddEntry(hd.get(),"Data","lep");
+    leg.AddEntry(ha.get(),"AAO (unit area)","l");
+    leg.AddEntry(hc.get(),"CLASDIS (unit area)","l");
+    leg.AddEntry(hv.get(),"DVCSgen (unit area)","l");
+    leg.AddEntry(&cut,Form("angle(#gamma,X) < %.1f deg",NORM_ANGLE_GX_MAX),"l");
+    leg.Draw();
+
+    TLatex tx;
+    tx.SetNDC();
+    tx.SetTextSize(0.035);
+    tx.DrawLatex(0.14,0.86,"Input sample already passes M_{X}^{2}(ep), M_{X}^{2}(e#gamma), and Trento coplanarity");
+
+    can.SaveAs(file.c_str());
+}
+
+void draw_step1e_angle_gX_individual(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                     const std::string& file) {
+    TCanvas can("c_step1e_anglegX_individual","",1350,950);
+    can.Divide(2,2);
+
+    const char* names[4]={"data","aaogen","clasdis","dvcsgen"};
+    const char* labels[4]={"Data","AAOgen","CLASDIS","DVCSgen"};
+    const int colors[4]={kBlack,kRed+1,kOrange+7,kGreen+2};
+    std::vector<std::unique_ptr<TH1D>> keep;
+
+    for (int is=0;is<4;is++) {
+        const ValComponent* v=find_val_component(vv,names[is]);
+        if (!v || v->norm_after_mx2ep_mx2eg_dphi.size()<=NORM_ANGLE_GX ||
+            !v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_GX]) continue;
+
+        std::unique_ptr<TH1D> h(
+            (TH1D*)v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_GX]->
+                Clone(Form("step1e_%s_counts",names[is]))
+        );
+        h->SetDirectory(nullptr);
+        h->SetStats(0);
+        h->SetLineColor(colors[is]);
+        h->SetMarkerColor(colors[is]);
+        h->SetLineWidth(2);
+        h->SetTitle(Form("%s: angle(#gamma,X) after Steps 1B+1C+1D",labels[is]));
+        h->GetXaxis()->SetTitle("angle(#gamma,X) (deg)");
+        h->GetYaxis()->SetTitle("Candidates");
+
+        can.cd(is+1);
+        h->Draw("HIST");
+
+        const double ymax=std::max(1.0,1.05*h->GetMaximum());
+        TLine* cut=new TLine(NORM_ANGLE_GX_MAX,0.0,NORM_ANGLE_GX_MAX,ymax);
+        cut->SetLineStyle(2);
+        cut->SetLineWidth(2);
+        cut->Draw();
+
+        const long long nin=v->norm_cutflow[3];
+        const long long nout=v->norm_cutflow[4];
+        const double frac=(nin>0 ? double(nout)/double(nin) : 0.0);
+
+        TLatex tx;
+        tx.SetNDC();
+        tx.SetTextSize(0.042);
+        tx.DrawLatex(0.14,0.86,Form("pass = %lld / %lld = %.2f%%",nout,nin,100.0*frac));
+
+        keep.push_back(std::move(h));
+    }
+
+    can.SaveAs(file.c_str());
+}
+
+void write_step1e_angle_gX_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                   const std::string& dir) {
+    gSystem->mkdir(dir.c_str(),true);
+
+    std::ofstream csv(dir+"/angle_gX_survival.csv");
+    csv << "sample,input_after_steps_1B_1C_1D,pass_angle_gX,fail_angle_gX,survival_fraction\n";
+
+    std::ofstream txt(dir+"/angle_gX_summary.txt");
+    txt << "Step 1E: angle(gamma,X) requirement\n"
+        << "===================================\n"
+        << "Input sample: events already passing M_X^2(ep), M_X^2(e gamma), and\n"
+        << "the Trento coplanarity requirement.\n"
+        << "Definition used by the macro: opening angle between the reconstructed\n"
+        << "tag-photon direction and the inferred missing-object direction X.\n"
+        << "Active requirement: angle(gamma,X) < " << NORM_ANGLE_GX_MAX << " deg.\n"
+        << "This is the final sequential exclusivity requirement in Step 1.\n\n";
+
+    for (const auto& vp:vv) {
+        if (!vp) continue;
+
+        const long long nin=vp->norm_cutflow[3];
+        const long long nout=vp->norm_cutflow[4];
+        const long long nf=std::max(0LL,nin-nout);
+        const double frac=(nin>0 ? double(nout)/double(nin) : 0.0);
+
+        csv << vp->name << "," << nin << "," << nout << "," << nf << "," << frac << "\n";
+        txt << vp->name << ": " << nout << " / " << nin
+            << " = " << 100.0*frac << "% survive\n";
+    }
+
+    csv.close();
+    txt.close();
+
+    draw_step1e_angle_gX_overlay(vv,dir+"/angle_gX_unit_area_after_steps_1B_1C_1D.png");
+    draw_step1e_angle_gX_individual(vv,dir+"/angle_gX_counts_after_steps_1B_1C_1D.png");
+}
+
+
 NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValComponent>>& vv,const std::string& out) {
     NormDerivation R;
     const ValComponent* data=find_val_component(vv,"data");
@@ -3233,6 +3406,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     gSystem->mkdir((od+"/step1b_mx2_ep").c_str(),true);
     gSystem->mkdir((od+"/step1c_mx2_eg").c_str(),true);
     gSystem->mkdir((od+"/step1d_coplanarity").c_str(),true);
+    gSystem->mkdir((od+"/step1e_angle_gX").c_str(),true);
 
     if (!data || !aao || !cls || !dvc ||
         data->norm_lowE.size()!=NORM_NOBS || aao->norm_lowE.size()!=NORM_NOBS ||
@@ -3265,6 +3439,10 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     // Step 1D diagnostics: inspect the Trento coplanarity residual sequentially
     // after Steps 1B+1C and before angle(gamma,X).
     write_step1d_coplanarity_summary(vv,od+"/step1d_coplanarity");
+
+    // Step 1E diagnostics: inspect angle(gamma,X) sequentially after all
+    // preceding Step-1 exclusivity requirements and before its own cut.
+    write_step1e_angle_gX_summary(vv,od+"/step1e_angle_gX");
 
     // Stage A: low-E AAO + CLASDIS.  For each observable scan one common
     // reconstructed-MC shift and extra Gaussian resolution.  The same morph is
@@ -3424,8 +3602,12 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
             for (int io=0;io<NORM_NOBS;io++) {
                 if (io<(int)vp->norm_pre.size() && vp->norm_pre[io]) vp->norm_pre[io]->Write(Form("pre_%s",NORM_OBS[io].key));
                 if (io<(int)vp->norm_after_mx2ep.size() && vp->norm_after_mx2ep[io]) vp->norm_after_mx2ep[io]->Write(Form("after_mx2ep_%s",NORM_OBS[io].key));
-                if (io<(int)vp->norm_after_mx2ep_mx2eg.size() && vp->norm_after_mx2ep_mx2eg[io]) vp->norm_after_mx2ep_mx2eg[io]->Write(Form("after_mx2ep_mx2eg_%s",NORM_OBS[io].key));
-                if (io<(int)vp->norm_nminus1.size() && vp->norm_nminus1[io]) vp->norm_nminus1[io]->Write(Form("nminus1_%s",NORM_OBS[io].key));
+                if (io<(int)vp->norm_after_mx2ep_mx2eg.size() && vp->norm_after_mx2ep_mx2eg[io])
+                    vp->norm_after_mx2ep_mx2eg[io]->Write(Form("after_mx2ep_mx2eg_%s",NORM_OBS[io].key));
+                if (io<(int)vp->norm_after_mx2ep_mx2eg_dphi.size() && vp->norm_after_mx2ep_mx2eg_dphi[io])
+                    vp->norm_after_mx2ep_mx2eg_dphi[io]->Write(Form("after_mx2ep_mx2eg_dphi_%s",NORM_OBS[io].key));
+                if (io<(int)vp->norm_nminus1.size() && vp->norm_nminus1[io])
+                    vp->norm_nminus1[io]->Write(Form("nminus1_%s",NORM_OBS[io].key));
                 if (io<(int)vp->norm_full.size() && vp->norm_full[io]) vp->norm_full[io]->Write(Form("full_%s",NORM_OBS[io].key));
                 if (io<(int)vp->norm_lowE.size() && vp->norm_lowE[io]) vp->norm_lowE[io]->Write(Form("lowE_%s",NORM_OBS[io].key));
                 if (io<(int)vp->norm_highE.size() && vp->norm_highE[io]) vp->norm_highE[io]->Write(Form("highE_%s",NORM_OBS[io].key));
