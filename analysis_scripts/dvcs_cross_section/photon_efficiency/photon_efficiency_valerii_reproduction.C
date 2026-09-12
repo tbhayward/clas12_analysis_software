@@ -1777,9 +1777,13 @@ enum CoarseRegionIndex {
     CR_N=4
 };
 
-static const char* CR_KEY[CR_N]={"FD_Elt2","FD_Ege2","FT_Elt2","FT_Ege2"};
-static const char* CR_LABEL[CR_N]={"FD, E_{#gamma}<2 GeV","FD, E_{#gamma}#geq2 GeV",
-                                   "FT, E_{#gamma}<2 GeV","FT, E_{#gamma}#geq2 GeV"};
+static const char* CR_KEY[CR_N]={"FD_lowE","FD_highE","FT_lowE","FT_highE"};
+static const char* CR_LABEL[CR_N]={
+    "#splitline{FD}{E_{#gamma}<2 GeV}",
+    "#splitline{FD}{E_{#gamma}#geq2 GeV}",
+    "#splitline{FT}{E_{#gamma}<2 GeV}",
+    "#splitline{FT}{E_{#gamma}#geq2 GeV}"
+};
 
 struct CoarseValRegion {
     long long denom_rows=0;
@@ -2567,6 +2571,58 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         if (!finite_good(b.probe_corr_p) || !finite_good(b.probe_corr_theta) ||
             !finite_good(b.probe_corr_phi)) continue;
 
+        // Compute the exclusivity selection BEFORE applying the FD-only
+        // Valerii 7x3x6 binning.  This is essential for the coarse FT study:
+        // the missing probe can lie in the FT even though the observed tag is FD.
+        const double Eg=b.have_tag_corr_kin?b.tag_corr_p:std::numeric_limits<double>::quiet_NaN();
+        const NormCutFlags ncf=norm_cut_flags(b);
+
+        // Coarse integrated efficiency regions are independent of the legacy
+        // FD 7x3x6 binning.  They use the same exclusivity selection.
+        if (ncf.all) {
+            int cr=-1;
+            int probe_detector=-1;
+
+            const bool probe_fd=(b.probe_corr_p>=PROBE_P_MIN &&
+                                 b.probe_corr_theta>=FD_THETA_MIN &&
+                                 b.probe_corr_theta<=FD_THETA_MAX);
+
+            bool probe_ft=false;
+            FTProjection ftp;
+            if (b.probe_corr_p>=PROBE_P_MIN &&
+                b.probe_corr_theta>=FT_THETA_MIN &&
+                b.probe_corr_theta<=FT_THETA_MAX) {
+                ftp=project_ft(b,ft_plane);
+                probe_ft=ftp.valid && ftp.fiducial;
+            } // endif
+
+            if (probe_fd) {
+                cr=(b.probe_corr_p<2.0 ? CR_FD_LOW : CR_FD_HIGH);
+                probe_detector=1;
+            } else if (probe_ft) {
+                cr=(b.probe_corr_p<2.0 ? CR_FT_LOW : CR_FT_HIGH);
+                probe_detector=0;
+            } // endif
+
+            if (cr>=0) {
+                coarse_rows[cr]++;
+
+                if (spec.is_mc && b.have_truth) {
+                    coarse_truth_rows[cr]++;
+                    if (b.truth_probe_pid==22 && b.truth_probe_parent==111)
+                        coarse_truth_pi0[cr]++;
+                } // endif
+
+                const int kc=best_probe_candidate(b,probe_detector);
+                if (kc>=0) {
+                    const double dpc=b.neutral_p[kc]-b.probe_corr_p;
+                    if (std::isfinite(dpc)) coarse_h[cr]->Fill(dpc);
+                } // endif
+            } // endif
+        } // endif
+
+        // The detailed normalization and legacy Valerii efficiency study remain
+        // FD-only, exactly as in the original workflow.
         const int ib=val_flat_bin(b.probe_corr_p,b.probe_corr_theta,b.probe_corr_phi);
         if (ib<0) continue;
 
@@ -2574,10 +2630,7 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         // candidate shapes, then apply the June-2026 exclusivity cuts.  For
         // each fit observable, the low/high-E template uses an N-1 selection:
         // every exclusivity cut is active except a cut directly on that plotted
-        // observable.  This prevents a hard cut from manufacturing agreement in
-        // the very distribution used to determine a normalization factor.
-        const double Eg=b.have_tag_corr_kin?b.tag_corr_p:std::numeric_limits<double>::quiet_NaN();
-        const NormCutFlags ncf=norm_cut_flags(b);
+        // observable.
         norm_cutflow[0]++;
         if (ncf.mx2_ep) {
             norm_cutflow[1]++;
@@ -2612,50 +2665,6 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         // to be enriched in ep-pi0-like events before asking whether the probe
         // photon was reconstructed.
         if (!ncf.all) continue;
-
-        // ------------------------------------------------------------------
-        // Coarse fully-integrated photon-efficiency regions.
-        // Same exclusivity selection as the normalization stage; only detector
-        // geometry and the E_gamma=2 GeV split remain.
-        // ------------------------------------------------------------------
-        int cr=-1;
-        int probe_detector=-1;
-
-        const bool probe_fd=(b.probe_corr_theta>=FD_THETA_MIN &&
-                             b.probe_corr_theta<=FD_THETA_MAX &&
-                             b.probe_corr_p>=PROBE_P_MIN);
-        FTProjection ftp;
-        bool probe_ft=false;
-        if (b.probe_corr_theta>=FT_THETA_MIN &&
-            b.probe_corr_theta<=FT_THETA_MAX &&
-            b.probe_corr_p>=PROBE_P_MIN) {
-            ftp=project_ft(b,ft_plane);
-            probe_ft=ftp.valid && ftp.fiducial;
-        } // endif
-
-        if (probe_fd) {
-            cr=(b.probe_corr_p<2.0 ? CR_FD_LOW : CR_FD_HIGH);
-            probe_detector=1;
-        } else if (probe_ft) {
-            cr=(b.probe_corr_p<2.0 ? CR_FT_LOW : CR_FT_HIGH);
-            probe_detector=0;
-        } // endif
-
-        if (cr>=0) {
-            coarse_rows[cr]++;
-
-            if (spec.is_mc && b.have_truth) {
-                coarse_truth_rows[cr]++;
-                if (b.truth_probe_pid==22 && b.truth_probe_parent==111)
-                    coarse_truth_pi0[cr]++;
-            } // endif
-
-            const int kc=best_probe_candidate(b,probe_detector);
-            if (kc>=0) {
-                const double dpc=b.neutral_p[kc]-b.probe_corr_p;
-                if (std::isfinite(dpc)) coarse_h[cr]->Fill(dpc);
-            } // endif
-        } // endif
 
         // Valerii FD reproduction: use UNIT event weights inside each MC sample.
         // The AAO/CLASDIS/DVCS relative normalizations are applied only when the
@@ -4523,6 +4532,18 @@ void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& 
     } // endfor
 }
 
+
+std::string pretty_norm_observable(const std::string& key) {
+    if (key=="Mx2_ep") return "M_{X}^{2}(ep)";
+    if (key=="Mx2_epg") return "M_{X}^{2}(ep#gamma)";
+    if (key=="angle_gX") return "angle(#gamma,X)";
+    if (key=="Egamma") return "E_{#gamma}";
+    if (key=="Mx2_eg") return "M_{X}^{2}(e#gamma)";
+    if (key=="dphi_trento_shift180") return "#Delta#phi_{copl}";
+    if (key=="delta_t_pg") return "#Delta t(p,#gamma)";
+    return key;
+}
+
 void draw_norm_panel(TH1D* frame,const TH1D* hd,const TH1D* ha,const TH1D* hc,const TH1D* hv,
                      double A,double B,double C,const NormFitPoint& q,const char* panel) {
     std::unique_ptr<TH1D> d((TH1D*)hd->Clone(Form("d_%s",panel))); d->SetDirectory(nullptr);
@@ -4542,9 +4563,12 @@ void draw_norm_panel(TH1D* frame,const TH1D* hd,const TH1D* ha,const TH1D* hc,co
 
     d->SetTitle("");
     d->SetMaximum(1.30*std::max(d->GetMaximum(),t->GetMaximum()));
-    d->Draw("E1");
-    a->Draw("HIST SAME"); c->Draw("HIST SAME"); v->Draw("HIST SAME");
-    t->Draw("HIST SAME"); d->Draw("E1 SAME");
+    d->DrawCopy("E1");
+    a->DrawCopy("HIST SAME");
+    c->DrawCopy("HIST SAME");
+    v->DrawCopy("HIST SAME");
+    t->DrawCopy("HIST SAME");
+    d->DrawCopy("E1 SAME");
 
     TLatex tx;
     tx.SetNDC();
@@ -4576,7 +4600,7 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
         style_norm_component(v.get(),kGreen+2); style_norm_component(t.get(),kBlue+1,3);
 
         TCanvas ce("c_norm_energy","",1150,760);
-        ce.SetLeftMargin(0.12); ce.SetRightMargin(0.04); ce.SetTopMargin(0.08);
+        ce.SetLeftMargin(0.12); ce.SetRightMargin(0.04); ce.SetTopMargin(0.14);
         d->SetMaximum(1.28*std::max(d->GetMaximum(),t->GetMaximum()));
         d->GetXaxis()->SetTitle("E_{#gamma} (GeV)");
         d->GetYaxis()->SetTitle("Candidates");
@@ -4589,7 +4613,7 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
         leg.AddEntry(c.get(),"CLASDIS","l"); leg.AddEntry(v.get(),"DVCSgen","l");
         leg.AddEntry(t.get(),"Total MC","l"); leg.Draw();
         TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.040);
-        tx.DrawLatex(0.14,0.91,"Low E: AAOgen + CLASDIS fit; high E: DVCSgen fit");
+        tx.DrawLatex(0.14,0.935,"Low E: AAOgen + CLASDIS fit; high E: DVCSgen fit");
         ce.SaveAs((dir+"/energy_regions.png").c_str());
     }
 
@@ -4606,7 +4630,7 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
             gPad->SetLeftMargin(0.13); gPad->SetRightMargin(0.04); gPad->SetTopMargin(0.10);
             draw_norm_panel(nullptr,data->norm_lowE[io].get(),aao->norm_lowE[io].get(),
                             cls->norm_lowE[io].get(),dvc->norm_lowE[io].get(),
-                            q.aao,q.clasdis,0.0,q,Form("(%c) %s",'a'+pad-1,q.observable.c_str()));
+                            q.aao,q.clasdis,0.0,q,Form("(%c) %s",'a'+pad-1,pretty_norm_observable(q.observable).c_str()));
             if (pad==1) {
                 TLegend* leg=new TLegend(0.57,0.58,0.94,0.86);
                 leg->SetBorderSize(0); leg->SetFillStyle(0);
@@ -4615,6 +4639,21 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
                 leg->Draw();
             } // endif
         } // endfor
+        if (pad<6) {
+            c.cd(6);
+            gPad->SetLeftMargin(0.10);
+            TLatex tx;
+            tx.SetNDC();
+            tx.SetTextFont(42);
+            tx.SetTextSize(0.060);
+            tx.DrawLatex(0.12,0.82,"Mean low-E normalization");
+            tx.SetTextSize(0.052);
+            tx.DrawLatex(0.12,0.66,Form("AAOgen = %.3f",R.nominal.aao));
+            tx.DrawLatex(0.12,0.54,Form("CLASDIS = %.3f",R.nominal.clasdis));
+            tx.SetTextSize(0.040);
+            tx.DrawLatex(0.12,0.34,"AAOgen and CLASDIS are interpreted");
+            tx.DrawLatex(0.12,0.27,"jointly as the #pi^{0}-bearing class.");
+        } // endif
         c.SaveAs((dir+"/lowE_fits.png").c_str());
     }
 
@@ -4632,8 +4671,21 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
             draw_norm_panel(nullptr,data->norm_highE[io].get(),aao->norm_highE[io].get(),
                             cls->norm_highE[io].get(),dvc->norm_highE[io].get(),
                             R.nominal.aao,R.nominal.clasdis,q.dvcs,q,
-                            Form("(%c) %s",'a'+pad-1,q.observable.c_str()));
+                            Form("(%c) %s",'a'+pad-1,pretty_norm_observable(q.observable).c_str()));
         } // endfor
+        if (pad<6) {
+            c.cd(6);
+            TLatex tx;
+            tx.SetNDC();
+            tx.SetTextFont(42);
+            tx.SetTextSize(0.060);
+            tx.DrawLatex(0.12,0.82,"Mean high-E normalization");
+            tx.SetTextSize(0.052);
+            tx.DrawLatex(0.12,0.64,Form("DVCSgen = %.3f",R.nominal.dvcs));
+            tx.SetTextSize(0.040);
+            tx.DrawLatex(0.12,0.43,"AAOgen + CLASDIS fixed to");
+            tx.DrawLatex(0.12,0.36,"their low-E mean values.");
+        } // endif
         c.SaveAs((dir+"/highE_fits.png").c_str());
     }
 
@@ -4650,7 +4702,7 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
     for (const auto& q:R.low_points) { av.push_back(q.aao); bv.push_back(q.clasdis); }
     for (const auto& q:R.high_points) cv.push_back(q.dvcs);
     csv << "nominal_mean,ALL,"<<R.nominal.aao<<","<<R.nominal.clasdis<<","<<R.nominal.dvcs<<",0,0,0\n";
-    csv << "spread_1sigma,ALL,"
+    csv << "observable_stddev,ALL,"
         <<rms_spread(av,R.nominal.aao)<<","<<rms_spread(bv,R.nominal.clasdis)<<","
         <<rms_spread(cv,R.nominal.dvcs)<<",0,0,0\n";
 }
@@ -4658,39 +4710,46 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
 void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
                       const NormDerivation& R,const std::string& dir) {
     const ValComponent* cls=find_val_component(vv,"clasdis");
-    TCanvas c("c_pi0_summary","",1450,650);
-    c.Divide(2,1);
 
-    c.cd(1);
-    gPad->SetLeftMargin(0.14); gPad->SetTopMargin(0.10);
-    TH1D hcomp("h_pi0_components",";MC component;#pi^{0}-bearing fraction",3,0,3);
-    hcomp.SetStats(0); hcomp.SetMinimum(0); hcomp.SetMaximum(1.05);
-    hcomp.GetXaxis()->SetBinLabel(1,"AAOgen");
-    hcomp.GetXaxis()->SetBinLabel(2,"CLASDIS");
-    hcomp.GetXaxis()->SetBinLabel(3,"DVCSgen");
-    hcomp.SetBinContent(1,1.0);
-    double fc=0;
+    double fc_global=0.9877;
     long long tr=0,tp=0;
-    if (cls) for (int ir=0;ir<CR_N;ir++) { tr+=cls->coarse[ir].truth_rows; tp+=cls->coarse[ir].truth_pi0_rows; }
-    if (tr>0) fc=double(tp)/double(tr); else fc=0.9877;
-    hcomp.SetBinContent(2,fc);
-    hcomp.SetBinContent(3,0.0);
-    hcomp.SetMarkerStyle(20); hcomp.SetMarkerSize(1.5); hcomp.Draw("P");
-    TLatex tx1; tx1.SetNDC(); tx1.SetTextFont(42); tx1.SetTextSize(0.050);
-    tx1.DrawLatex(0.16,0.91,"(a) Component #pi^{0} content");
+    if (cls) {
+        for (int ir=0;ir<CR_N;ir++) {
+            tr+=cls->coarse[ir].truth_rows;
+            tp+=cls->coarse[ir].truth_pi0_rows;
+        } // endfor
+    } // endif
+    if (tr>0) fc_global=double(tp)/double(tr);
 
-    c.cd(2);
-    gPad->SetLeftMargin(0.14); gPad->SetTopMargin(0.10);
-    TH1D hreg("h_pi0_regions",";Region;#pi^{0} fraction of selected ep#gammaX",CR_N,0,CR_N);
-    hreg.SetStats(0); hreg.SetMinimum(0); hreg.SetMaximum(1.05);
+    TCanvas c("c_pi0_summary","",1050,720);
+    c.SetLeftMargin(0.13);
+    c.SetRightMargin(0.04);
+    c.SetBottomMargin(0.22);
+    c.SetTopMargin(0.12);
+
+    TH1D h("h_pi0_regions",
+           ";Detector / probe-energy region;#pi^{0}-bearing fraction of selected ep#gammaX",
+           CR_N,0,CR_N);
+    h.SetStats(0);
+    h.SetMinimum(0.0);
+    h.SetMaximum(1.05);
+    h.SetMarkerStyle(20);
+    h.SetMarkerSize(1.45);
+
     for (int ir=0;ir<CR_N;ir++) {
-        hreg.GetXaxis()->SetBinLabel(ir+1,CR_KEY[ir]);
+        h.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
         const auto q=coarse_composition(vv,R.nominal,ir);
-        hreg.SetBinContent(ir+1,q.f_pi0);
+        if (q.f_pi0>=0) h.SetBinContent(ir+1,q.f_pi0);
     } // endfor
-    hreg.SetMarkerStyle(20); hreg.SetMarkerSize(1.5); hreg.Draw("P");
-    TLatex tx2; tx2.SetNDC(); tx2.SetTextFont(42); tx2.SetTextSize(0.050);
-    tx2.DrawLatex(0.16,0.91,"(b) Data-model composition by detector and energy");
+
+    h.Draw("P");
+
+    TLatex tx;
+    tx.SetNDC();
+    tx.SetTextFont(42);
+    tx.SetTextSize(0.040);
+    tx.DrawLatex(0.15,0.93,Form("AAOgen: 100%% #pi^{0};  CLASDIS truth: %.1f%% #pi^{0};  DVCSgen: 0%% #pi^{0}",
+                                100.0*fc_global));
 
     c.SaveAs((dir+"/pi0_fraction.png").c_str());
 
@@ -4703,11 +4762,14 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
     } // endfor
 }
 
+
 struct IntegratedEfficiencyResult {
     bool valid=false;
     double f_pi0=0;
     double data_denom=0,data_num_raw=0,data_num_bg=0,data_num_pi0=0;
-    double eff_data=0,eff_mc=0,ratio=0;
+    double eff_data=0,eff_data_err=0;
+    double eff_mc=0,eff_mc_err=0;
+    double ratio=0,ratio_err=0;
     double mu_data=0,sigma_data=0,mu_mc=0,sigma_mc=0;
 };
 
@@ -4763,10 +4825,10 @@ IntegratedEfficiencyResult integrated_efficiency(
     FitResult fm=fit_valerii_residual(hpi0.get());
     if (!fd.valid || !fm.valid) return out;
 
-    const double data_num=hist_integral_window(hd.get(),fd.mean-2*fd.sigma,fd.mean+2*fd.sigma);
+    const double data_num=hist_integral_window(hd.get(),fd.mean-3*fd.sigma,fd.mean+3*fd.sigma);
     const double bg_denom=R.nominal.dvcs*rv.denom_rows +
                           R.nominal.clasdis*(1.0-fc)*rc.denom_rows;
-    const double bg_num=hist_integral_window(hbg.get(),fd.mean-2*fd.sigma,fd.mean+2*fd.sigma);
+    const double bg_num=hist_integral_window(hbg.get(),fd.mean-3*fd.sigma,fd.mean+3*fd.sigma);
     const double bg_eff=(bg_denom>0 ? bg_num/bg_denom : 0.0);
 
     const double data_pi0_denom=comp.f_pi0*double(rd.denom_rows);
@@ -4775,7 +4837,7 @@ IntegratedEfficiencyResult integrated_efficiency(
 
     const double mc_pi0_denom=R.nominal.aao*ra.denom_rows +
                               R.nominal.clasdis*fc*rc.denom_rows;
-    const double mc_pi0_num=hist_integral_window(hpi0.get(),fm.mean-2*fm.sigma,fm.mean+2*fm.sigma);
+    const double mc_pi0_num=hist_integral_window(hpi0.get(),fm.mean-3*fm.sigma,fm.mean+3*fm.sigma);
 
     if (!(data_pi0_denom>0 && mc_pi0_denom>0 && mc_pi0_num>0)) return out;
 
@@ -4788,6 +4850,28 @@ IntegratedEfficiencyResult integrated_efficiency(
     out.eff_data=data_pi0_num/data_pi0_denom;
     out.eff_mc=mc_pi0_num/mc_pi0_denom;
     out.ratio=(out.eff_mc>0 ? out.eff_data/out.eff_mc : 0);
+
+    // Statistical uncertainties only.  Composition fractions and normalization
+    // constants are held fixed here; their variation is treated later as a
+    // systematic uncertainty.
+    if (out.eff_data>=0.0 && out.eff_data<=1.0 && data_pi0_denom>0.0)
+        out.eff_data_err=std::sqrt(out.eff_data*(1.0-out.eff_data)/data_pi0_denom);
+
+    // Effective MC denominator for two constant-weight pi0-bearing components.
+    const double wa=R.nominal.aao;
+    const double wc=R.nominal.clasdis*fc;
+    const double sw=wa*double(ra.denom_rows)+wc*double(rc.denom_rows);
+    const double sw2=wa*wa*double(ra.denom_rows)+wc*wc*double(rc.denom_rows);
+    const double neff=(sw2>0 ? sw*sw/sw2 : 0.0);
+    if (out.eff_mc>=0.0 && out.eff_mc<=1.0 && neff>0.0)
+        out.eff_mc_err=std::sqrt(out.eff_mc*(1.0-out.eff_mc)/neff);
+
+    if (out.ratio>0 && out.eff_data>0 && out.eff_mc>0) {
+        const double rd=out.eff_data_err/out.eff_data;
+        const double rm=out.eff_mc_err/out.eff_mc;
+        out.ratio_err=out.ratio*std::sqrt(rd*rd+rm*rm);
+    } // endif
+
     out.mu_data=fd.mean; out.sigma_data=fd.sigma;
     out.mu_mc=fm.mean; out.sigma_mc=fm.sigma;
 
@@ -4812,12 +4896,21 @@ void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& v
             c.cd(ir+1);
             gPad->SetLeftMargin(0.13); gPad->SetTopMargin(0.11);
             if (!rr[ir].valid || !hd[ir] || !hm[ir]) continue;
-            hd[ir]->SetStats(0); hd[ir]->SetMarkerStyle(20); hd[ir]->SetMarkerSize(0.55); hd[ir]->SetLineColor(kBlack);
-            hm[ir]->SetLineColor(kBlue+1); hm[ir]->SetLineWidth(2);
+            // Rebin display copies only; fitting/counting above uses the native binning.
+            hd[ir]->Rebin(4);
+            hm[ir]->Rebin(4);
+            hd[ir]->SetStats(0);
+            hd[ir]->SetMarkerStyle(20);
+            hd[ir]->SetMarkerSize(0.45);
+            hd[ir]->SetLineColor(kBlack);
+            hm[ir]->SetLineColor(kBlue+1);
+            hm[ir]->SetLineWidth(2);
             hd[ir]->SetMaximum(1.25*std::max(hd[ir]->GetMaximum(),hm[ir]->GetMaximum()));
             hd[ir]->GetXaxis()->SetTitle("#Delta p_{#gamma2} (GeV)");
-            hd[ir]->GetYaxis()->SetTitle("Candidates");
-            hd[ir]->Draw("E1"); hm[ir]->Draw("HIST SAME"); hd[ir]->Draw("E1 SAME");
+            hd[ir]->GetYaxis()->SetTitle("Candidates / display bin");
+            hd[ir]->Draw("E1");
+            hm[ir]->Draw("HIST SAME");
+            hd[ir]->Draw("E1 SAME");
             TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.048);
             tx.DrawLatex(0.16,0.92,Form("(%c) %s",'a'+ir,CR_LABEL[ir]));
             if (ir==0) {
@@ -4831,54 +4924,103 @@ void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& v
         c.SaveAs((dir+"/residuals.png").c_str());
     }
 
-    // Summary.
+    // Summary with statistical uncertainties only.
     {
-        TCanvas c("c_eff_summary","",1450,650);
+        TCanvas c("c_eff_summary","",1500,700);
         c.Divide(2,1);
 
         c.cd(1);
-        gPad->SetLeftMargin(0.14); gPad->SetTopMargin(0.10);
-        TGraph gd,gm;
-        gd.SetMarkerStyle(20); gd.SetMarkerSize(1.25);
-        gm.SetMarkerStyle(24); gm.SetMarkerSize(1.25);
+        gPad->SetLeftMargin(0.14);
+        gPad->SetRightMargin(0.04);
+        gPad->SetBottomMargin(0.24);
+        gPad->SetTopMargin(0.13);
+
+        TGraphErrors gd,gm;
+        gd.SetMarkerStyle(20); gd.SetMarkerSize(1.20);
+        gm.SetMarkerStyle(24); gm.SetMarkerSize(1.20);
+
         for (int ir=0;ir<CR_N;ir++) if (rr[ir].valid) {
-            gd.SetPoint(gd.GetN(),ir+0.5,rr[ir].eff_data);
-            gm.SetPoint(gm.GetN(),ir+0.5,rr[ir].eff_mc);
+            int n=gd.GetN();
+            gd.SetPoint(n,ir+0.5,rr[ir].eff_data);
+            gd.SetPointError(n,0.0,rr[ir].eff_data_err);
+
+            n=gm.GetN();
+            gm.SetPoint(n,ir+0.5,rr[ir].eff_mc);
+            gm.SetPointError(n,0.0,rr[ir].eff_mc_err);
         } // endfor
-        TH1D axis("axis_eff",";Region;Photon efficiency",CR_N,0,CR_N);
-        axis.SetStats(0); axis.SetMinimum(0); axis.SetMaximum(1.05);
-        for (int ir=0;ir<CR_N;ir++) axis.GetXaxis()->SetBinLabel(ir+1,CR_KEY[ir]);
+
+        TH1D axis("axis_eff",";Detector / probe-energy region;Photon efficiency",CR_N,0,CR_N);
+        axis.SetStats(0);
+        axis.SetMinimum(0.0);
+        axis.SetMaximum(1.05);
+        for (int ir=0;ir<CR_N;ir++) axis.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
+        axis.GetXaxis()->SetLabelSize(0.040);
         axis.Draw();
-        gd.Draw("P SAME"); gm.Draw("P SAME");
-        TLegend leg(0.60,0.74,0.92,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0);
+        gd.Draw("P SAME");
+        gm.Draw("P SAME");
+
+        TLegend leg(0.50,0.70,0.91,0.84);
+        leg.SetBorderSize(0);
+        leg.SetFillStyle(0);
         leg.AddEntry(&gd,"Data (#pi^{0}-corrected)","p");
-        leg.AddEntry(&gm,"#pi^{0} MC","p"); leg.Draw();
-        TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.050);
-        tx.DrawLatex(0.16,0.91,"(a) Integrated 2#sigma efficiencies");
+        leg.AddEntry(&gm,"#pi^{0} MC","p");
+        leg.Draw();
+
+        TLatex tx;
+        tx.SetNDC();
+        tx.SetTextFont(42);
+        tx.SetTextSize(0.050);
+        tx.DrawLatex(0.16,0.93,"(a) Integrated 3#sigma photon efficiencies");
 
         c.cd(2);
-        gPad->SetLeftMargin(0.14); gPad->SetTopMargin(0.10);
-        TH1D hr("h_ratio",";Region;#epsilon_{data}/#epsilon_{MC}",CR_N,0,CR_N);
-        hr.SetStats(0); hr.SetMinimum(0.5); hr.SetMaximum(1.5); hr.SetMarkerStyle(20); hr.SetMarkerSize(1.4);
-        for (int ir=0;ir<CR_N;ir++) {
-            hr.GetXaxis()->SetBinLabel(ir+1,CR_KEY[ir]);
-            if (rr[ir].valid) hr.SetBinContent(ir+1,rr[ir].ratio);
+        gPad->SetLeftMargin(0.14);
+        gPad->SetRightMargin(0.04);
+        gPad->SetBottomMargin(0.24);
+        gPad->SetTopMargin(0.13);
+
+        TH1D axisr("axis_ratio",";Detector / probe-energy region;#epsilon_{data}/#epsilon_{MC}",
+                   CR_N,0,CR_N);
+        axisr.SetStats(0);
+        axisr.SetMinimum(0.45);
+        axisr.SetMaximum(1.55);
+        for (int ir=0;ir<CR_N;ir++) axisr.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
+        axisr.GetXaxis()->SetLabelSize(0.040);
+        axisr.Draw();
+
+        TGraphErrors gr;
+        gr.SetMarkerStyle(20);
+        gr.SetMarkerSize(1.30);
+        for (int ir=0;ir<CR_N;ir++) if (rr[ir].valid) {
+            const int n=gr.GetN();
+            gr.SetPoint(n,ir+0.5,rr[ir].ratio);
+            gr.SetPointError(n,0.0,rr[ir].ratio_err);
         } // endfor
-        hr.Draw("P");
-        TLine one(0,1.0,CR_N,1.0); one.SetLineStyle(2); one.Draw();
-        TLatex tx2; tx2.SetNDC(); tx2.SetTextFont(42); tx2.SetTextSize(0.050);
-        tx2.DrawLatex(0.16,0.91,"(b) Data / MC correction ratio");
+        gr.Draw("P SAME");
+
+        TLine one(0,1.0,CR_N,1.0);
+        one.SetLineStyle(2);
+        one.Draw();
+
+        TLatex tx2;
+        tx2.SetNDC();
+        tx2.SetTextFont(42);
+        tx2.SetTextSize(0.050);
+        tx2.DrawLatex(0.16,0.93,"(b) Data / MC photon-efficiency ratio");
+
         c.SaveAs((dir+"/efficiency_summary.png").c_str());
     }
 
     std::ofstream csv(dir+"/summary.csv");
     csv << "region,valid,pi0_fraction,data_denom,data_num_raw,predicted_background_num,"
-           "data_pi0_num,eff_data,eff_mc,data_over_mc,mu_data,sigma_data,mu_mc,sigma_mc\n";
+           "data_pi0_num,eff_data,eff_data_stat,eff_mc,eff_mc_stat,"
+           "data_over_mc,data_over_mc_stat,mu_data,sigma_data,mu_mc,sigma_mc\n";
     for (int ir=0;ir<CR_N;ir++) {
         const auto& q=rr[ir];
         csv << CR_KEY[ir]<<","<<q.valid<<","<<q.f_pi0<<","<<q.data_denom<<","
             <<q.data_num_raw<<","<<q.data_num_bg<<","<<q.data_num_pi0<<","
-            <<q.eff_data<<","<<q.eff_mc<<","<<q.ratio<<","
+            <<q.eff_data<<","<<q.eff_data_err<<","
+            <<q.eff_mc<<","<<q.eff_mc_err<<","
+            <<q.ratio<<","<<q.ratio_err<<","
             <<q.mu_data<<","<<q.sigma_data<<","<<q.mu_mc<<","<<q.sigma_mc<<"\n";
     } // endfor
 }
