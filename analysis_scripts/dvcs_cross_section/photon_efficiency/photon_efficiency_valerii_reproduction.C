@@ -57,6 +57,7 @@
 #include <algorithm>
 #include <array>
 #include <cmath>
+#include <cstdint>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
@@ -228,6 +229,56 @@ bool has_root_files(const std::string& dir) {
     gSystem->FreeDirectory(dp);
     return found;
 }
+
+
+static const char* WORKER_CACHE_VERSION="20260912_v3_pi0truth";
+
+std::uint64_t fnv1a64(const std::string& s,std::uint64_t h=1469598103934665603ULL) {
+    for (unsigned char c:s) {
+        h ^= std::uint64_t(c);
+        h *= 1099511628211ULL;
+    } // endfor
+    return h;
+}
+
+std::string sample_input_signature(const std::string& dir) {
+    void* dp=gSystem->OpenDirectory(dir.c_str());
+    if (!dp) return "missing";
+
+    std::vector<std::string> files;
+    const char* entry=nullptr;
+    while ((entry=gSystem->GetDirEntry(dp))) {
+        std::string n(entry);
+        if (n.size()>=5 && n.substr(n.size()-5)==".root")
+            files.push_back(n);
+    } // endwhile
+    gSystem->FreeDirectory(dp);
+    std::sort(files.begin(),files.end());
+
+    std::uint64_t h=fnv1a64(WORKER_CACHE_VERSION);
+    h=fnv1a64(dir,h);
+
+    for (const auto& n:files) {
+        const std::string p=dir + (dir.empty() || dir.back()=='/' ? "" : "/") + n;
+        Long_t id=0,size=0,flags=0,mtime=0;
+        if (gSystem->GetPathInfo(p.c_str(),&id,&size,&flags,&mtime)==0) {
+            std::ostringstream ss;
+            ss << n << ":" << size << ":" << mtime;
+            h=fnv1a64(ss.str(),h);
+        } else {
+            h=fnv1a64(n,h);
+        } // endif
+    } // endfor
+
+    std::ostringstream out;
+    out << std::hex << h;
+    return out.str();
+}
+
+std::string cache_root() {
+    return ".photon_efficiency_cache";
+}
+
 
 void reset_output(const std::string& out) {
     if (gSystem->AccessPathName(out.c_str())==kFALSE)
@@ -1582,6 +1633,22 @@ struct SampleSpec {
     bool is_mc=false;
 };
 
+std::string worker_cache_path(const std::string& layer,
+                              const SampleSpec& spec) {
+    const std::string sig=sample_input_signature(spec.dir);
+    const std::string d=cache_root()+"/"+std::string(WORKER_CACHE_VERSION)+"/"+layer;
+    gSystem->mkdir(d.c_str(),true);
+    return d+"/"+spec.name+"_"+sig+".root";
+}
+
+bool valid_root_file(const std::string& path) {
+    if (gSystem->AccessPathName(path.c_str())!=kFALSE) return false;
+    TFile f(path.c_str(),"READ");
+    const bool ok=!f.IsZombie() && !f.TestBit(TFile::kRecovered);
+    f.Close();
+    return ok;
+}
+
 int analyze_worker(const SampleSpec& spec, const std::string& worker_dir) {
     SampleResult s;
     s.name=spec.name; s.input=spec.dir; s.is_mc=spec.is_mc;
@@ -1611,28 +1678,42 @@ std::vector<std::unique_ptr<SampleResult>> analyze_samples_parallel(const std::s
     std::vector<std::unique_ptr<SampleResult>> samples;
     if (specs.empty()) return samples;
 
-    const std::string worker_dir=out+"/.workers";
-    gSystem->mkdir(worker_dir.c_str(),true);
     std::cout.flush(); std::cerr.flush();
 
-    struct Child { pid_t pid; SampleSpec spec; };
+    struct Child { pid_t pid; SampleSpec spec; std::string path; };
     std::vector<Child> children;
 
+    std::map<std::string,std::string> cache_paths;
+
     for (const auto& spec : specs) {
+        const std::string path=worker_cache_path("stage1",spec);
+        cache_paths[spec.name]=path;
+
+        if (valid_root_file(path)) {
+            std::cout << "[CACHE] stage-1 " << spec.name << " -> reuse " << path << "\n";
+            continue;
+        } // endif
+
         const pid_t pid=fork();
         if (pid==0) {
-            const int rc=analyze_worker(spec,worker_dir);
+            SampleResult s;
+            s.name=spec.name; s.input=spec.dir; s.is_mc=spec.is_mc;
+            const int rc=analyze_sample(s) && save_worker_result(s,path) ? 0 : 2;
             std::cout.flush(); std::cerr.flush();
             _exit(rc);
         } else if (pid>0) {
-            children.push_back({pid,spec});
-            std::cout << "[PARALLEL] launched " << spec.name << " worker pid=" << pid << "\n";
+            children.push_back({pid,spec,path});
+            std::cout << "[PARALLEL] launched stage-1 " << spec.name
+                      << " worker pid=" << pid << "\n";
         } else {
             std::cerr << "WARNING: fork() failed for " << spec.name
                       << "; running that sample sequentially.\n";
-            const int rc=analyze_worker(spec,worker_dir);
-            if (rc!=0) std::cerr << "WARNING: sequential worker failed for " << spec.name << " rc=" << rc << "\n";
-        }
+            SampleResult s;
+            s.name=spec.name; s.input=spec.dir; s.is_mc=spec.is_mc;
+            if (!(analyze_sample(s) && save_worker_result(s,path)))
+                std::cerr << "WARNING: sequential stage-1 worker failed for "
+                          << spec.name << "\n";
+        } // endif
     } // endfor
 
     for (const auto& child : children) {
@@ -1649,8 +1730,8 @@ std::vector<std::unique_ptr<SampleResult>> analyze_samples_parallel(const std::s
 
     // Preserve deterministic column order: data, AAOgen, CLASDIS, DVCSgen.
     for (const auto& spec : specs) {
-        const std::string path=worker_dir+"/"+spec.name+".root";
-        if (gSystem->AccessPathName(path.c_str())!=kFALSE) continue;
+        const std::string path=cache_paths[spec.name];
+        if (!valid_root_file(path)) continue;
         auto s=load_worker_result(path);
         if (s) samples.push_back(std::move(s));
         else std::cerr << "WARNING: could not reload worker result " << path << "\n";
@@ -2149,12 +2230,12 @@ struct NormCutFlags {
     bool all=false;
 };
 
-NormCutFlags norm_cut_flags(const Branches& b) {
+NormCutFlags norm_cut_flags_from_values(const std::array<double,NORM_NOBS>& x) {
     NormCutFlags f;
-    const double mx2ep=norm_observable_value(b,NORM_MX2_EP);
-    const double mx2eg=norm_observable_value(b,NORM_MX2_EG);
-    const double dphi =norm_observable_value(b,NORM_DPHI_TRENTO_SHIFT180);
-    const double ang  =norm_observable_value(b,NORM_ANGLE_GX);
+    const double mx2ep=x[NORM_MX2_EP];
+    const double mx2eg=x[NORM_MX2_EG];
+    const double dphi=x[NORM_DPHI_TRENTO_SHIFT180];
+    const double ang=x[NORM_ANGLE_GX];
 
     f.finite=std::isfinite(mx2ep) && std::isfinite(mx2eg) &&
              std::isfinite(dphi) && std::isfinite(ang);
@@ -2164,9 +2245,15 @@ NormCutFlags norm_cut_flags(const Branches& b) {
     f.mx2_eg=(mx2eg>NORM_MX2_EG_MIN);
     f.dphi_trento=(std::fabs(dphi)<NORM_DPHI_TRENTO_MAX);
     f.angle_gX=(ang<NORM_ANGLE_GX_MAX);
-
     f.all=f.mx2_ep && f.mx2_eg && f.dphi_trento && f.angle_gX;
     return f;
+}
+
+NormCutFlags norm_cut_flags(const Branches& b) {
+    std::array<double,NORM_NOBS> x;
+    for (int io=0;io<NORM_NOBS;io++)
+        x[io]=norm_observable_value(b,io);
+    return norm_cut_flags_from_values(x);
 }
 
 bool norm_pass_nminus1(const NormCutFlags& f,int io) {
@@ -2492,8 +2579,12 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         // every exclusivity cut is active except a cut directly on that plotted
         // observable.  This prevents a hard cut from manufacturing agreement in
         // the very distribution used to determine a normalization factor.
-        const double Eg=b.have_tag_corr_kin?b.tag_corr_p:std::numeric_limits<double>::quiet_NaN();
-        const NormCutFlags ncf=norm_cut_flags(b);
+        std::array<double,NORM_NOBS> norm_x;
+        for (int io=0;io<NORM_NOBS;io++)
+            norm_x[io]=norm_observable_value(b,io);
+
+        const double Eg=norm_x[NORM_EGAMMA];
+        const NormCutFlags ncf=norm_cut_flags_from_values(norm_x);
         norm_cutflow[0]++;
         if (ncf.mx2_ep) {
             norm_cutflow[1]++;
@@ -2508,7 +2599,7 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         if (ncf.all) norm_cutflow[5]++;
 
         for (int io=0;io<NORM_NOBS;io++) {
-            const double x=norm_observable_value(b,io);
+            const double x=norm_x[io];
             if (!std::isfinite(x)) continue;
             norm_pre[io]->Fill(x);
             if (ncf.mx2_ep) norm_after_mx2ep[io]->Fill(x);
@@ -2698,33 +2789,40 @@ std::vector<std::unique_ptr<ValComponent>> build_val_components_parallel(const s
         {"clasdis",CLASDIS_DIR,true},
         {"dvcsgen",DVCSGEN_DIR,true}
     };
-    const std::string wdir=out+"/.valerii_workers";
-    // A previous interrupted/no-space run can leave corrupt worker files behind.
-    // Never attempt to recover/reuse them.
-    gSystem->Exec(("rm -rf "+wdir).c_str());
-    gSystem->mkdir(wdir.c_str(),true);
-
-    struct VChild { pid_t pid; SampleSpec spec; };
+    struct VChild { pid_t pid; SampleSpec spec; std::string path; };
     std::vector<VChild> children;
     std::vector<SampleSpec> specs;
     std::cout.flush(); std::cerr.flush();
 
+    std::map<std::string,std::string> cache_paths;
+
     for (const auto& spec:all_specs) {
         if (!has_root_files(spec.dir)) continue;
         specs.push_back(spec);
+
+        const std::string path=worker_cache_path("valerii",spec);
+        cache_paths[spec.name]=path;
+
+        if (valid_root_file(path)) {
+            std::cout << "[CACHE] Valerii " << spec.name << " -> reuse "
+                      << path << "\n";
+            continue;
+        } // endif
+
         const pid_t pid=fork();
         if (pid==0) {
-            const std::string path=wdir+"/"+spec.name+".root";
             const bool ok=analyze_val_component_worker(spec,path);
             std::cout.flush(); std::cerr.flush();
             _exit(ok?0:2);
         } else if (pid>0) {
-            children.push_back({pid,spec});
-            std::cout << "[VALERII] launched " << spec.name << " worker pid=" << pid << "\n";
+            children.push_back({pid,spec,path});
+            std::cout << "[VALERII] launched " << spec.name
+                      << " worker pid=" << pid << "\n";
         } else {
-            std::cerr << "WARNING: Valerii fork failed for " << spec.name << "; running sequentially.\n";
-            analyze_val_component_worker(spec,wdir+"/"+spec.name+".root");
-        }
+            std::cerr << "WARNING: Valerii fork failed for " << spec.name
+                      << "; running sequentially.\n";
+            analyze_val_component_worker(spec,path);
+        } // endif
     } // endfor
 
     for (const auto& ch:children) {
@@ -2737,7 +2835,9 @@ std::vector<std::unique_ptr<ValComponent>> build_val_components_parallel(const s
 
     std::vector<std::unique_ptr<ValComponent>> outv;
     for (const auto& spec:specs) {
-        auto p=load_val_component(wdir+"/"+spec.name+".root");
+        const std::string path=cache_paths[spec.name];
+        if (!valid_root_file(path)) continue;
+        auto p=load_val_component(path);
         if (p) outv.push_back(std::move(p));
     } // endfor
     return outv;
@@ -2828,17 +2928,50 @@ struct Pi0TruthSummary {
     long long truth_rows=0;
     long long pi0_rows=0;
     double fraction=-1.0;
+    bool from_truth=false;
+    bool from_generator_definition=false;
 };
 
 Pi0TruthSummary component_pi0_truth(const ValComponent* v) {
     Pi0TruthSummary r;
     if (!v || !v->is_mc) return r;
+
     for (int ib=0;ib<VAL_NBIN;ib++) {
         r.truth_rows += v->bins[ib].truth_rows;
         r.pi0_rows += v->bins[ib].truth_pi0_rows;
-    }
-    if (r.truth_rows>0) r.fraction=double(r.pi0_rows)/double(r.truth_rows);
+    } // endfor
+
+    if (r.truth_rows>0) {
+        r.fraction=double(r.pi0_rows)/double(r.truth_rows);
+        r.from_truth=true;
+        return r;
+    } // endif
+
+    // Some generator HIPO samples do not contain the truth-parent information
+    // needed by the skim.  Their physics content is nevertheless known:
+    // AAOgen is exclusive ep-pi0 and DVCSgen is ep-gamma.
+    if (v->name=="aaogen") {
+        r.fraction=1.0;
+        r.from_generator_definition=true;
+    } else if (v->name=="dvcsgen") {
+        r.fraction=0.0;
+        r.from_generator_definition=true;
+    } // endif
+
     return r;
+}
+
+double component_pi0_fraction_in_bin(const ValComponent* v,int ib,double fallback) {
+    if (!v || ib<0 || ib>=VAL_NBIN) return fallback;
+
+    if (v->name=="aaogen") return 1.0;
+    if (v->name=="dvcsgen") return 0.0;
+
+    const auto& b=v->bins[ib];
+    if (b.truth_rows>0)
+        return double(b.truth_pi0_rows)/double(b.truth_rows);
+
+    return fallback;
 }
 
 void write_pi0_truth_composition(const std::vector<std::unique_ptr<ValComponent>>& vv,
@@ -2850,28 +2983,70 @@ void write_pi0_truth_composition(const std::vector<std::unique_ptr<ValComponent>
     const ValComponent* cls=find_val_component(vv,"clasdis");
     const ValComponent* dvc=find_val_component(vv,"dvcsgen");
 
-    struct C { const char* name; const ValComponent* v; double scale; };
-    const C cc[]={{"aaogen",aao,nd.nominal.aao},
-                  {"clasdis",cls,nd.nominal.clasdis},
-                  {"dvcsgen",dvc,nd.nominal.dvcs}};
+    const Pi0TruthSummary aao_summary=component_pi0_truth(aao);
+    const Pi0TruthSummary cls_summary=component_pi0_truth(cls);
+    const Pi0TruthSummary dvc_summary=component_pi0_truth(dvc);
+
+    struct C {
+        const char* name;
+        const ValComponent* v;
+        double scale;
+        Pi0TruthSummary truth;
+    };
+    const C cc[]={
+        {"aaogen",aao,nd.nominal.aao,aao_summary},
+        {"clasdis",cls,nd.nominal.clasdis,cls_summary},
+        {"dvcsgen",dvc,nd.nominal.dvcs,dvc_summary}
+    };
 
     std::ofstream comp(dir+"/mc_component_pi0_truth.csv");
-    comp << "component,truth_classified_rows,truth_pi0_rows,pi0_truth_fraction,nominal_scale\n";
+    comp << "component,selected_rows,truth_classified_rows,truth_pi0_rows,"
+            "pi0_fraction,source,nominal_scale,normalized_selected_yield,"
+            "normalized_pi0_yield\n";
 
-    double model_total=0.0, model_pi0=0.0;
+    double model_total=0.0;
+    double model_pi0=0.0;
+
     for (const auto& c:cc) {
-        const Pi0TruthSummary r=component_pi0_truth(c.v);
-        comp << c.name << "," << r.truth_rows << "," << r.pi0_rows << ","
-             << r.fraction << "," << c.scale << "\n";
-        model_total += c.scale*double(r.truth_rows);
-        model_pi0 += c.scale*double(r.pi0_rows);
-    }
+        long long selected_rows=0;
+        if (c.v) {
+            for (int ib=0;ib<VAL_NBIN;ib++)
+                selected_rows += c.v->bins[ib].denom_rows;
+        } // endif
+
+        const double ytot=c.scale*double(selected_rows);
+        const double ypi0=(c.truth.fraction>=0 ? ytot*c.truth.fraction : 0.0);
+
+        model_total += ytot;
+        model_pi0 += ypi0;
+
+        std::string src="unavailable";
+        if (c.truth.from_truth) src="MC_truth";
+        else if (c.truth.from_generator_definition) src="generator_definition";
+
+        comp << c.name << ","
+             << selected_rows << ","
+             << c.truth.truth_rows << ","
+             << c.truth.pi0_rows << ","
+             << c.truth.fraction << ","
+             << src << ","
+             << c.scale << ","
+             << ytot << ","
+             << ypi0 << "\n";
+    } // endfor
     comp.close();
+
+    const double integrated_fraction=(model_total>0 ? model_pi0/model_total : -1.0);
+
+    // CLASDIS integrated truth fraction is the fallback for a sparse bin with
+    // no truth-classified rows.  AAOgen and DVCSgen use known generator content.
+    const double clasdis_fallback=(cls_summary.fraction>=0 ? cls_summary.fraction : 0.0);
 
     std::ofstream bins(dir+"/normalized_epgamma_pi0_fraction_by_bin.csv");
     bins << "bin,ip,itheta,iphi,p_lo,p_hi,theta_lo,theta_hi,phi_lo,phi_hi,"
-            "weighted_total_truth,weighted_pi0_truth,pi0_fraction,"
-            "aao_pi0_fraction,clasdis_pi0_fraction,dvcs_pi0_fraction\n";
+            "normalized_total,normalized_pi0,pi0_fraction,"
+            "aao_fraction,clasdis_fraction,dvcs_fraction,"
+            "aao_rows,clasdis_rows,dvcs_rows\n";
 
     TH2D hmap("h_pi0_fraction_ptheta",
               ";Missing-probe p (GeV);Missing-probe #theta (deg)",
@@ -2880,33 +3055,44 @@ void write_pi0_truth_composition(const std::vector<std::unique_ptr<ValComponent>
 
     for (int ip=0;ip<VAL_NP;ip++) {
         for (int it=0;it<VAL_NT;it++) {
-            double totpt=0,pi0pt=0;
+            double totpt=0.0;
+            double pi0pt=0.0;
+
             for (int iph=0;iph<VAL_NPH;iph++) {
                 const int ib=(ip*VAL_NT+it)*VAL_NPH+iph;
-                double tot=0,pi0=0,fa=-1,fc=-1,fd=-1;
-                for (const auto& c:cc) {
-                    if (!c.v) continue;
-                    const auto& b=c.v->bins[ib];
-                    if (b.truth_rows<=0) continue;
-                    const double f=double(b.truth_pi0_rows)/double(b.truth_rows);
-                    if (std::string(c.name)=="aaogen") fa=f;
-                    else if (std::string(c.name)=="clasdis") fc=f;
-                    else if (std::string(c.name)=="dvcsgen") fd=f;
-                    tot += c.scale*double(b.truth_rows);
-                    pi0 += c.scale*double(b.truth_pi0_rows);
-                }
-                const double frac=(tot>0?pi0/tot:-1.0);
+
+                const double fa=component_pi0_fraction_in_bin(aao,ib,1.0);
+                const double fc=component_pi0_fraction_in_bin(cls,ib,clasdis_fallback);
+                const double fd=component_pi0_fraction_in_bin(dvc,ib,0.0);
+
+                const long long na=aao ? aao->bins[ib].denom_rows : 0;
+                const long long nc=cls ? cls->bins[ib].denom_rows : 0;
+                const long long ndv=dvc ? dvc->bins[ib].denom_rows : 0;
+
+                const double ya=nd.nominal.aao*double(na);
+                const double yc=nd.nominal.clasdis*double(nc);
+                const double yd=nd.nominal.dvcs*double(ndv);
+
+                const double tot=ya+yc+yd;
+                const double pi0=ya*fa+yc*fc+yd*fd;
+                const double frac=(tot>0 ? pi0/tot : -1.0);
+
                 bins << ib << "," << ip << "," << it << "," << iph << ","
                      << VAL_P_EDGES[ip] << "," << VAL_P_EDGES[ip+1] << ","
                      << VAL_T_EDGES[it] << "," << VAL_T_EDGES[it+1] << ","
                      << VAL_PH_EDGES[iph] << "," << VAL_PH_EDGES[iph+1] << ","
                      << tot << "," << pi0 << "," << frac << ","
-                     << fa << "," << fc << "," << fd << "\n";
-                totpt += tot; pi0pt += pi0;
-            }
-            if (totpt>0) hmap.SetBinContent(ip+1,it+1,pi0pt/totpt);
-        }
-    }
+                     << fa << "," << fc << "," << fd << ","
+                     << na << "," << nc << "," << ndv << "\n";
+
+                totpt += tot;
+                pi0pt += pi0;
+            } // endfor
+
+            if (totpt>0)
+                hmap.SetBinContent(ip+1,it+1,pi0pt/totpt);
+        } // endfor
+    } // endfor
     bins.close();
 
     TCanvas c("c_pi0_truth_summary","",1500,650);
@@ -2915,42 +3101,72 @@ void write_pi0_truth_composition(const std::vector<std::unique_ptr<ValComponent>
     c.cd(1);
     gPad->SetLeftMargin(0.14);
     TH1D hcomp("h_component_pi0_truth",
-               ";MC component;Truth #pi^{0}-photon fraction",3,0,3);
-    hcomp.SetStats(0); hcomp.SetMinimum(-0.05); hcomp.SetMaximum(1.05);
-    hcomp.SetMarkerStyle(20); hcomp.SetMarkerSize(1.4);
+               ";MC component;#pi^{0}-bearing fraction",3,0,3);
+    hcomp.SetStats(0);
+    hcomp.SetMinimum(-0.05);
+    hcomp.SetMaximum(1.05);
+    hcomp.SetMarkerStyle(20);
+    hcomp.SetMarkerSize(1.4);
+
+    const Pi0TruthSummary ss[]={aao_summary,cls_summary,dvc_summary};
+    const char* ll[]={"AAOgen","CLASDIS","DVCSgen"};
     for (int i=0;i<3;i++) {
-        const Pi0TruthSummary r=component_pi0_truth(cc[i].v);
-        hcomp.GetXaxis()->SetBinLabel(i+1,cc[i].name);
-        if (r.fraction>=0) hcomp.SetBinContent(i+1,r.fraction);
-    }
+        hcomp.GetXaxis()->SetBinLabel(i+1,ll[i]);
+        if (ss[i].fraction>=0) hcomp.SetBinContent(i+1,ss[i].fraction);
+    } // endfor
     hcomp.Draw("P");
-    TLine one(0,1.0,3,1.0); one.SetLineStyle(3); one.Draw();
-    TLatex t1; t1.SetNDC(); t1.SetTextFont(42); t1.SetTextSize(0.050);
-    t1.DrawLatex(0.16,0.91,"(a) Truth composition after all cuts");
+
+    TLine one(0,1.0,3,1.0);
+    one.SetLineStyle(3);
+    one.Draw();
+
+    TLatex t1;
+    t1.SetNDC();
+    t1.SetTextFont(42);
+    t1.SetTextSize(0.050);
+    t1.DrawLatex(0.16,0.91,"(a) #pi^{0}-bearing fraction after selection");
 
     c.cd(2);
     gPad->SetLeftMargin(0.15);
     gPad->SetRightMargin(0.16);
-    hmap.SetMinimum(0.0); hmap.SetMaximum(1.0);
+    hmap.SetMinimum(0.0);
+    hmap.SetMaximum(1.0);
     hmap.GetZaxis()->SetTitle("Normalized-model #pi^{0} fraction");
     hmap.Draw("COLZ TEXT");
-    TLatex t2; t2.SetNDC(); t2.SetTextFont(42); t2.SetTextSize(0.050);
-    t2.DrawLatex(0.16,0.91,"(b) #pi^{0} fraction vs missing-probe kinematics");
+
+    TLatex t2;
+    t2.SetNDC();
+    t2.SetTextFont(42);
+    t2.SetTextSize(0.050);
+    t2.DrawLatex(0.16,0.91,"(b) Selected ep#gammaX #pi^{0} fraction");
 
     c.SaveAs((dir+"/epgamma_pi0_fraction_summary.png").c_str());
 
     std::ofstream txt(dir+"/epgamma_pi0_fraction_summary.txt");
-    txt << "Truth-based pi0 composition of selected ep-gamma-X candidates\n"
-        << "=============================================================\n"
-        << "Classification: truth_probe_pid==22 and truth_probe_parent==111.\n"
-        << "Nominal data-derived AAO/CLASDIS/DVCS factors weight the MC mixture.\n\n";
+    txt << "Pi0 composition of selected ep-gamma-X candidates\n"
+        << "===============================================\n"
+        << "AAOgen: pi0 fraction fixed to 1 by generator definition when truth-parent\n"
+        << "information is unavailable.\n"
+        << "CLASDIS: pi0 fraction measured from MC truth using truth_probe_pid==22\n"
+        << "and truth_probe_parent==111.\n"
+        << "DVCSgen: pi0 fraction fixed to 0 by generator definition when truth-parent\n"
+        << "information is unavailable.\n\n";
+
     for (const auto& c0:cc) {
-        const Pi0TruthSummary r=component_pi0_truth(c0.v);
-        txt << c0.name << ": " << r.pi0_rows << "/" << r.truth_rows
-            << " = " << r.fraction << "; scale=" << c0.scale << "\n";
-    }
+        std::string src="unavailable";
+        if (c0.truth.from_truth) src="MC truth";
+        else if (c0.truth.from_generator_definition) src="generator definition";
+
+        txt << c0.name
+            << ": pi0 fraction=" << c0.truth.fraction
+            << " (" << src << ")"
+            << ", normalization scale=" << c0.scale << "\n";
+    } // endfor
+
     txt << "\nIntegrated normalized-model pi0 fraction = "
-        << (model_total>0?model_pi0/model_total:-1.0) << "\n";
+        << integrated_fraction << "\n"
+        << "Normalized total yield = " << model_total << "\n"
+        << "Normalized pi0-bearing yield = " << model_pi0 << "\n";
     txt.close();
 }
 
@@ -4401,7 +4617,8 @@ void photon_efficiency_valerii_reproduction() {
         << "Primary numbers: unweighted RAW RECOVERY FRACTIONS (not efficiencies)\n"
         << "Stage-1 MC::Event.weight: QA only; Valerii FD path uses unit MC events x component normalization\n"
         << "Execution: independent samples analyzed in parallel child processes\n"
-        << "Outputs are rebuilt in ./output each invocation.\n"
+        << "Heavy worker scans are cached persistently and invalidated when ROOT inputs change.\n"
+        << "Presentation outputs are rebuilt in ./output each invocation.\n"
         << "============================================================\n";
 
     std::vector<std::unique_ptr<SampleResult>> samples=analyze_samples_parallel(out);
@@ -4428,8 +4645,9 @@ void photon_efficiency_valerii_reproduction() {
     write_all_summary(samples,out);
     write_root(samples,out);
 
-    // Temporary worker files are implementation details; keep output compact.
-    gSystem->Exec(("rm -rf "+out+"/.workers").c_str());
+    // Heavy per-sample worker products live in a persistent cache outside
+    // ./output.  Repeated plotting/fit iterations therefore avoid rescanning
+    // millions of ROOT-tree entries unless the input file list changes.
 
     std::cout << "\nFinished. Output products actually present on disk:\n";
     const char* expected[] = {
