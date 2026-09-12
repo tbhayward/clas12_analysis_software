@@ -2082,9 +2082,12 @@ double norm_observable_value(const Branches& b,int io) {
     if (io==NORM_MX2_EG) return invariant_m2_from_epg(b);
     if (io==NORM_DPHI_PG_RAW) {
         if (!b.have_p_corr_kin || !b.have_tag_corr_kin)
-            if (io==NORM_DELTA_T_PG) return norm_delta_t_pg(b);
-    return std::numeric_limits<double>::quiet_NaN();
+            return std::numeric_limits<double>::quiet_NaN();
         return wrap180(b.p_corr_phi-b.tag_corr_phi);
+    }
+
+    if (io==NORM_DELTA_T_PG) {
+        return norm_delta_t_pg(b);
     }
 
     if (io==NORM_PHI_P_TRENTO || io==NORM_PHI_G_TRENTO ||
@@ -3581,6 +3584,140 @@ void write_step2a_energy_region_diagnostics(const std::vector<std::unique_ptr<Va
 }
 
 
+
+void write_lowE_pi0_balance_diagnostics(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                        const std::vector<NormFitPoint>& low_points,
+                                        const std::string& dir) {
+    gSystem->mkdir(dir.c_str(),true);
+
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* aao=find_val_component(vv,"aaogen");
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    if (!data || !aao || !cls) return;
+
+    std::ofstream csv(dir+"/lowE_pi0_balance.csv");
+    csv << "observable,"
+           "aao_scale,clasdis_scale,"
+           "data_entries,raw_aao_entries,raw_clasdis_entries,"
+           "scaled_aao_yield,scaled_clasdis_yield,scaled_aao_plus_clasdis,"
+           "model_over_data,aao_fraction_of_aao_plus_clasdis\n";
+
+    struct Row {
+        std::string obs;
+        double model_over_data=0;
+        double aao_fraction=0;
+        double aao_scale=0;
+        double cls_scale=0;
+    };
+    std::vector<Row> rows;
+
+    auto obs_index=[](const std::string& key)->int {
+        for (int io=0;io<NORM_NOBS;io++) {
+            if (key==NORM_OBS[io].key) return io;
+        }
+        return -1;
+    };
+
+    for (const auto& q:low_points) {
+        if (!q.valid) continue;
+        const int io=obs_index(q.observable);
+        if (io<0) continue;
+        if (io>=(int)data->norm_lowE.size() ||
+            io>=(int)aao->norm_lowE.size() ||
+            io>=(int)cls->norm_lowE.size()) continue;
+        const TH1D* hd=data->norm_lowE[io].get();
+        const TH1D* ha=aao->norm_lowE[io].get();
+        const TH1D* hc=cls->norm_lowE[io].get();
+        if (!hd || !ha || !hc) continue;
+
+        const double nd=hd->Integral(1,hd->GetNbinsX());
+        const double na=ha->Integral(1,ha->GetNbinsX());
+        const double nc=hc->Integral(1,hc->GetNbinsX());
+        const double ya=q.aao*na;
+        const double yc=q.clasdis*nc;
+        const double ysum=ya+yc;
+        const double ratio=(nd>0 ? ysum/nd : 0.0);
+        const double fa=(ysum>0 ? ya/ysum : 0.0);
+
+        csv << q.observable << ","
+            << q.aao << "," << q.clasdis << ","
+            << nd << "," << na << "," << nc << ","
+            << ya << "," << yc << "," << ysum << ","
+            << ratio << "," << fa << "\n";
+
+        rows.push_back({q.observable,ratio,fa,q.aao,q.clasdis});
+    }
+    csv.close();
+
+    std::ofstream txt(dir+"/lowE_pi0_balance_summary.txt");
+    txt << "Low-E AAO/CLASDIS balance diagnostic\n"
+        << "===================================\n"
+        << "These are the per-observable Valerii-style E_gamma<2 GeV fits.\n"
+        << "AAO and CLASDIS are kept as separate templates because their phase-space\n"
+        << "coverage and shapes differ, and CLASDIS is not assumed to be a pure exclusive\n"
+        << "pi0 sample.  For the photon-efficiency problem, however, both templates can\n"
+        << "supply pi0-bearing events with a real partner photon.  Therefore the fitted\n"
+        << "sum of their yields is monitored explicitly in addition to the individual\n"
+        << "scale factors.\n\n";
+    for (const auto& r:rows) {
+        txt << r.obs
+            << ": model/data=" << r.model_over_data
+            << ", AAO fraction of (AAO+CLASDIS)=" << r.aao_fraction
+            << ", scales=(" << r.aao_scale << "," << r.cls_scale << ")\n";
+    }
+    txt.close();
+
+    if (rows.empty()) return;
+
+    // Plot 1: does the total fitted AAO+CLASDIS yield remain stable even when
+    // their individual coefficients trade against one another?
+    {
+        TCanvas c("c_lowE_pi0_total_closure","",1100,720);
+        TH1D h("h_lowE_pi0_total_closure",
+               "Low-E fitted AAO+CLASDIS total;Normalization observable;(AAO+CLASDIS fitted yield) / data yield",
+               (int)rows.size(),0,(int)rows.size());
+        h.SetStats(0);
+        h.SetMarkerStyle(20);
+        h.SetMarkerSize(1.1);
+        for (int i=0;i<(int)rows.size();i++) {
+            h.GetXaxis()->SetBinLabel(i+1,rows[i].obs.c_str());
+            h.SetBinContent(i+1,rows[i].model_over_data);
+        }
+        h.SetMinimum(0.0);
+        h.SetMaximum(std::max(1.5,1.20*h.GetMaximum()));
+        h.Draw("P");
+        TLine one(0,1.0,rows.size(),1.0);
+        one.SetLineStyle(2);
+        one.SetLineWidth(2);
+        one.Draw();
+        c.SetBottomMargin(0.22);
+        h.GetXaxis()->LabelsOption("v");
+        c.SaveAs((dir+"/lowE_pi0_total_closure.png").c_str());
+    }
+
+    // Plot 2: show the generator tradeoff directly.
+    {
+        TCanvas c("c_lowE_pi0_balance","",1100,720);
+        TH1D h("h_lowE_pi0_balance",
+               "Low-E AAO share of fitted AAO+CLASDIS yield;Normalization observable;AAO / (AAO+CLASDIS)",
+               (int)rows.size(),0,(int)rows.size());
+        h.SetStats(0);
+        h.SetMarkerStyle(20);
+        h.SetMarkerSize(1.1);
+        for (int i=0;i<(int)rows.size();i++) {
+            h.GetXaxis()->SetBinLabel(i+1,rows[i].obs.c_str());
+            h.SetBinContent(i+1,rows[i].aao_fraction);
+        }
+        h.SetMinimum(0.0);
+        h.SetMaximum(1.0);
+        h.Draw("P");
+        c.SetBottomMargin(0.22);
+        h.GetXaxis()->LabelsOption("v");
+        c.SaveAs((dir+"/lowE_aao_fraction_of_pi0_model.png").c_str());
+    }
+}
+
+
 NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValComponent>>& vv,const std::string& out) {
     NormDerivation R;
     const ValComponent* data=find_val_component(vv,"data");
@@ -3598,6 +3735,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     gSystem->mkdir((od+"/step1d_coplanarity").c_str(),true);
     gSystem->mkdir((od+"/step1e_angle_gX").c_str(),true);
     gSystem->mkdir((od+"/step2a_energy_regions").c_str(),true);
+    gSystem->mkdir((od+"/step2b_lowE_pi0_balance").c_str(),true);
 
     if (!data || !aao || !cls || !dvc ||
         data->norm_lowE.size()!=NORM_NOBS || aao->norm_lowE.size()!=NORM_NOBS ||
@@ -3660,10 +3798,19 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
                       std::string("Low-E morphed templates: ")+NORM_OBS[io].key+" (E_{#gamma}<2 GeV)",
                       od+"/lowE_fits/morphed_"+NORM_OBS[io].key+".png",q.chi2,q.ndf,q.morph_shift,q.morph_sigma);
     }
+    // Before reducing the per-observable fits to Valerii's average
+    // normalization factors, explicitly inspect whether AAO and CLASDIS are
+    // trading against one another while their summed pi0-bearing yield remains
+    // stable.  This is diagnostic only: the nominal factors below still follow
+    // Valerii's per-observable-average prescription.
+    write_lowE_pi0_balance_diagnostics(vv,R.low_points,od+"/step2b_lowE_pi0_balance");
+
     const double A=mean_valid(R.low_points,0), B=mean_valid(R.low_points,1);
 
     // Stage B: with A/B fixed to the low-E means, determine DVCS above 3 GeV.
     // The 2-3 GeV transition region is NOT used to derive any scale factor.
+    // Delta-t is defined as t_p - t_gamma and is included here as one of
+    // Valerii's high-E exclusivity/normalization diagnostics.
     // Again one common morph is scanned for all three reconstructed-MC pieces.
     for (int io=0;io<NORM_NOBS;io++) if (NORM_OBS[io].use_high) {
         auto raw=fit_dvcs_fixed_shapes(data->norm_highE[io].get(),aao->norm_highE[io].get(),cls->norm_highE[io].get(),dvc->norm_highE[io].get(),A,B,NORM_OBS[io].key);
@@ -3780,7 +3927,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
         << "Derived low:     AAO="<<R.low.aao<<" CLASDIS="<<R.low.clasdis<<" DVCS="<<R.low.dvcs<<"\n"
         << "Derived high:    AAO="<<R.high.aao<<" CLASDIS="<<R.high.clasdis<<" DVCS="<<R.high.dvcs<<"\n"
         << "Valerii June reference only: AAO=0.307 CLASDIS=0.315 DVCS=1.10\n"
-        << "Low-E valid observable fits: "<<R.low_points.size()<<"; high-E valid observable fits: "<<R.high_points.size()<<"\n"
+        << "Low-E valid observable fits: "<<R.low_points.size()<<"; high-E valid observable fits: "<<R.high_points.size()<<"\n"        << "Delta-t definition: t_p - t_gamma, with t_p=(p_target-p')^2 and t_gamma=(q-gamma_tag)^2.\n"
         << "Fallback used: "<<(R.used_fallback?"YES":"NO")<<"\n";
     txt.close();
 
