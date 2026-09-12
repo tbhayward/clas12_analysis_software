@@ -1581,7 +1581,7 @@ struct SampleSpec {
     bool is_mc=false;
 };
 
-static const char* CONCISE_CACHE_VERSION="20260912_concise_v3";
+static const char* CONCISE_CACHE_VERSION="20260912_concise_v5_detector_norm";
 
 std::uint64_t concise_hash(const std::string& s,std::uint64_t h=1469598103934665603ULL) {
     for (unsigned char c:s) {
@@ -1821,6 +1821,20 @@ struct ValComponent {
     std::vector<std::unique_ptr<TH1D>> norm_lowE;
     std::vector<std::unique_ptr<TH1D>> norm_highE;
     std::array<long long,6> norm_cutflow{{0,0,0,0,0,0}};
+
+    // Independent FT-probe exclusivity/normalization sample.  The observed tag
+    // photon remains FD, exactly as in the tag-and-probe workflow; the inferred
+    // probe must project into the FT fiducial annulus.
+    std::vector<std::unique_ptr<TH1D>> norm_ft_pre;
+    std::vector<std::unique_ptr<TH1D>> norm_ft_after_mx2ep;
+    std::vector<std::unique_ptr<TH1D>> norm_ft_after_mx2ep_mx2eg;
+    std::vector<std::unique_ptr<TH1D>> norm_ft_after_mx2ep_mx2eg_dphi;
+    std::vector<std::unique_ptr<TH1D>> norm_ft_nminus1;
+    std::vector<std::unique_ptr<TH1D>> norm_ft_full;
+    std::vector<std::unique_ptr<TH1D>> norm_ft_lowE;
+    std::vector<std::unique_ptr<TH1D>> norm_ft_highE;
+    std::array<long long,6> norm_ft_cutflow{{0,0,0,0,0,0}};
+
     bool normalization_branches_complete=false;
 };
 
@@ -2536,17 +2550,30 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     std::array<std::unique_ptr<TH1D>,VAL_NBIN> hcount;
     std::vector<std::unique_ptr<TH1D>> norm_pre, norm_after_mx2ep, norm_after_mx2ep_mx2eg,
         norm_after_mx2ep_mx2eg_dphi, norm_nminus1, norm_full, norm_low, norm_high;
+    std::vector<std::unique_ptr<TH1D>> norm_ft_pre, norm_ft_after_mx2ep, norm_ft_after_mx2ep_mx2eg,
+        norm_ft_after_mx2ep_mx2eg_dphi, norm_ft_nminus1, norm_ft_full, norm_ft_low, norm_ft_high;
+
     for (int io=0;io<NORM_NOBS;io++) {
-        norm_pre.push_back(make_norm_hist(io,"pre",spec.name));
-        norm_after_mx2ep.push_back(make_norm_hist(io,"after_mx2ep",spec.name));
-        norm_after_mx2ep_mx2eg.push_back(make_norm_hist(io,"after_mx2ep_mx2eg",spec.name));
-        norm_after_mx2ep_mx2eg_dphi.push_back(make_norm_hist(io,"after_mx2ep_mx2eg_dphi",spec.name));
-        norm_nminus1.push_back(make_norm_hist(io,"nminus1",spec.name));
-        norm_full.push_back(make_norm_hist(io,"full",spec.name));
-        norm_low.push_back(make_norm_hist(io,"lowE",spec.name));
-        norm_high.push_back(make_norm_hist(io,"highE",spec.name));
+        norm_pre.push_back(make_norm_hist(io,"fd_pre",spec.name));
+        norm_after_mx2ep.push_back(make_norm_hist(io,"fd_after_mx2ep",spec.name));
+        norm_after_mx2ep_mx2eg.push_back(make_norm_hist(io,"fd_after_mx2ep_mx2eg",spec.name));
+        norm_after_mx2ep_mx2eg_dphi.push_back(make_norm_hist(io,"fd_after_mx2ep_mx2eg_dphi",spec.name));
+        norm_nminus1.push_back(make_norm_hist(io,"fd_nminus1",spec.name));
+        norm_full.push_back(make_norm_hist(io,"fd_full",spec.name));
+        norm_low.push_back(make_norm_hist(io,"fd_lowE",spec.name));
+        norm_high.push_back(make_norm_hist(io,"fd_highE",spec.name));
+
+        norm_ft_pre.push_back(make_norm_hist(io,"ft_pre",spec.name));
+        norm_ft_after_mx2ep.push_back(make_norm_hist(io,"ft_after_mx2ep",spec.name));
+        norm_ft_after_mx2ep_mx2eg.push_back(make_norm_hist(io,"ft_after_mx2ep_mx2eg",spec.name));
+        norm_ft_after_mx2ep_mx2eg_dphi.push_back(make_norm_hist(io,"ft_after_mx2ep_mx2eg_dphi",spec.name));
+        norm_ft_nminus1.push_back(make_norm_hist(io,"ft_nminus1",spec.name));
+        norm_ft_full.push_back(make_norm_hist(io,"ft_full",spec.name));
+        norm_ft_low.push_back(make_norm_hist(io,"ft_lowE",spec.name));
+        norm_ft_high.push_back(make_norm_hist(io,"ft_highE",spec.name));
     } // endfor
     std::array<long long,6> norm_cutflow{{0,0,0,0,0,0}};
+    std::array<long long,6> norm_ft_cutflow{{0,0,0,0,0,0}};
     for (int ib=0;ib<VAL_NBIN;ib++) {
         hfit[ib].reset(new TH1D(Form("fit_b%03d",ib),";#Delta p_{#gamma2} (GeV);weighted candidates",
                                 VAL_DP_NBIN,VAL_DP_MIN,VAL_DP_MAX));
@@ -2577,25 +2604,84 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         const double Eg=b.have_tag_corr_kin?b.tag_corr_p:std::numeric_limits<double>::quiet_NaN();
         const NormCutFlags ncf=norm_cut_flags(b);
 
-        // Coarse integrated efficiency regions are independent of the legacy
-        // FD 7x3x6 binning.  They use the same exclusivity selection.
+        // Detector-specific inferred-probe acceptance.
+        const bool probe_fd=(b.probe_corr_p>=PROBE_P_MIN &&
+                             b.probe_corr_theta>=FD_THETA_MIN &&
+                             b.probe_corr_theta<=FD_THETA_MAX);
+
+        bool probe_ft=false;
+        FTProjection ftp;
+        if (b.probe_corr_p>=PROBE_P_MIN &&
+            b.probe_corr_theta>=FT_THETA_MIN &&
+            b.probe_corr_theta<=FT_THETA_MAX) {
+            ftp=project_ft(b,ft_plane);
+            probe_ft=ftp.valid && ftp.fiducial;
+        } // endif
+
+        auto fill_norm_sample = [&](bool accept,
+                                    std::vector<std::unique_ptr<TH1D>>& pre,
+                                    std::vector<std::unique_ptr<TH1D>>& after_ep,
+                                    std::vector<std::unique_ptr<TH1D>>& after_e_g,
+                                    std::vector<std::unique_ptr<TH1D>>& after_dphi,
+                                    std::vector<std::unique_ptr<TH1D>>& nminus1,
+                                    std::vector<std::unique_ptr<TH1D>>& full,
+                                    std::vector<std::unique_ptr<TH1D>>& low,
+                                    std::vector<std::unique_ptr<TH1D>>& high,
+                                    std::array<long long,6>& cutflow) {
+            if (!accept) return;
+
+            cutflow[0]++;
+            if (ncf.mx2_ep) {
+                cutflow[1]++;
+                if (ncf.mx2_eg) {
+                    cutflow[2]++;
+                    if (ncf.dphi_trento) {
+                        cutflow[3]++;
+                        if (ncf.angle_gX) cutflow[4]++;
+                    } // endif
+                } // endif
+            } // endif
+            if (ncf.all) cutflow[5]++;
+
+            for (int io=0;io<NORM_NOBS;io++) {
+                const double x=norm_observable_value(b,io);
+                if (!std::isfinite(x)) continue;
+
+                pre[io]->Fill(x);
+                if (ncf.mx2_ep) after_ep[io]->Fill(x);
+                if (ncf.mx2_ep && ncf.mx2_eg) after_e_g[io]->Fill(x);
+                if (ncf.mx2_ep && ncf.mx2_eg && ncf.dphi_trento)
+                    after_dphi[io]->Fill(x);
+
+                if (norm_pass_nminus1(ncf,io)) {
+                    nminus1[io]->Fill(x);
+                    // IMPORTANT: Valerii's normalization control regions use
+                    // the OBSERVED TAG-photon energy, not the inferred probe.
+                    if (std::isfinite(Eg) && Eg<2.0) low[io]->Fill(x);
+                    if (std::isfinite(Eg) && Eg>3.0) high[io]->Fill(x);
+                } // endif
+
+                if (ncf.all) full[io]->Fill(x);
+            } // endfor
+        };
+
+        // The same exclusivity sequence is evaluated independently for the
+        // FD-probe and FT-probe populations.
+        fill_norm_sample(probe_fd,
+                         norm_pre,norm_after_mx2ep,norm_after_mx2ep_mx2eg,
+                         norm_after_mx2ep_mx2eg_dphi,norm_nminus1,norm_full,
+                         norm_low,norm_high,norm_cutflow);
+
+        fill_norm_sample(probe_ft,
+                         norm_ft_pre,norm_ft_after_mx2ep,norm_ft_after_mx2ep_mx2eg,
+                         norm_ft_after_mx2ep_mx2eg_dphi,norm_ft_nminus1,norm_ft_full,
+                         norm_ft_low,norm_ft_high,norm_ft_cutflow);
+
+        // Coarse integrated efficiency regions use the corresponding detector
+        // acceptance and the PROBE-energy split requested for the final result.
         if (ncf.all) {
             int cr=-1;
             int probe_detector=-1;
-
-            const bool probe_fd=(b.probe_corr_p>=PROBE_P_MIN &&
-                                 b.probe_corr_theta>=FD_THETA_MIN &&
-                                 b.probe_corr_theta<=FD_THETA_MAX);
-
-            bool probe_ft=false;
-            FTProjection ftp;
-            if (b.probe_corr_p>=PROBE_P_MIN &&
-                b.probe_corr_theta>=FT_THETA_MIN &&
-                b.probe_corr_theta<=FT_THETA_MAX) {
-                ftp=project_ft(b,ft_plane);
-                probe_ft=ftp.valid && ftp.fiducial;
-            } // endif
-
             if (probe_fd) {
                 cr=(b.probe_corr_p<2.0 ? CR_FD_LOW : CR_FD_HIGH);
                 probe_detector=1;
@@ -2606,7 +2692,6 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
 
             if (cr>=0) {
                 coarse_rows[cr]++;
-
                 if (spec.is_mc && b.have_truth) {
                     coarse_truth_rows[cr]++;
                     if (b.truth_probe_pid==22 && b.truth_probe_parent==111)
@@ -2621,49 +2706,12 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
             } // endif
         } // endif
 
-        // The detailed normalization and legacy Valerii efficiency study remain
-        // FD-only, exactly as in the original workflow.
+        // Legacy detailed Valerii 7x3x6 output remains FD-only and is retained
+        // internally for future granularity studies.  It no longer controls the
+        // concise detector-integrated FD/FT normalization.
         const int ib=val_flat_bin(b.probe_corr_p,b.probe_corr_theta,b.probe_corr_phi);
         if (ib<0) continue;
 
-        // Data-driven normalization diagnostics.  First retain the baseline
-        // candidate shapes, then apply the June-2026 exclusivity cuts.  For
-        // each fit observable, the low/high-E template uses an N-1 selection:
-        // every exclusivity cut is active except a cut directly on that plotted
-        // observable.
-        norm_cutflow[0]++;
-        if (ncf.mx2_ep) {
-            norm_cutflow[1]++;
-            if (ncf.mx2_eg) {
-                norm_cutflow[2]++;
-                if (ncf.dphi_trento) {
-                    norm_cutflow[3]++;
-                    if (ncf.angle_gX) norm_cutflow[4]++;
-                }
-            }
-        }
-        if (ncf.all) norm_cutflow[5]++;
-
-        for (int io=0;io<NORM_NOBS;io++) {
-            const double x=norm_observable_value(b,io);
-            if (!std::isfinite(x)) continue;
-            norm_pre[io]->Fill(x);
-            if (ncf.mx2_ep) norm_after_mx2ep[io]->Fill(x);
-            if (ncf.mx2_ep && ncf.mx2_eg) norm_after_mx2ep_mx2eg[io]->Fill(x);
-            if (ncf.mx2_ep && ncf.mx2_eg && ncf.dphi_trento)
-                norm_after_mx2ep_mx2eg_dphi[io]->Fill(x);
-            if (norm_pass_nminus1(ncf,io)) {
-                norm_nminus1[io]->Fill(x);
-                if (std::isfinite(Eg) && Eg<2.0) norm_low[io]->Fill(x);
-                if (std::isfinite(Eg) && Eg>3.0) norm_high[io]->Fill(x);
-            }
-            if (ncf.all) norm_full[io]->Fill(x);
-        } // endfor
-
-        // The efficiency denominator itself uses the same exclusivity selection
-        // as the normalization stage.  This is the ep-gamma-X sample intended
-        // to be enriched in ep-pi0-like events before asking whether the probe
-        // photon was reconstructed.
         if (!ncf.all) continue;
 
         // Valerii FD reproduction: use UNIT event weights inside each MC sample.
@@ -2735,22 +2783,45 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         hcount[ib]->Write(Form("count_b%03d",ib));
     } // endfor
     f.cd();
-    TDirectory* nd=f.mkdir("normalization");
-    if (nd) {
+    auto write_norm_dir = [&](const char* dirname,
+                              std::vector<std::unique_ptr<TH1D>>& pre,
+                              std::vector<std::unique_ptr<TH1D>>& after_ep,
+                              std::vector<std::unique_ptr<TH1D>>& after_e_g,
+                              std::vector<std::unique_ptr<TH1D>>& after_dphi,
+                              std::vector<std::unique_ptr<TH1D>>& nminus1,
+                              std::vector<std::unique_ptr<TH1D>>& full,
+                              std::vector<std::unique_ptr<TH1D>>& low,
+                              std::vector<std::unique_ptr<TH1D>>& high) {
+        TDirectory* nd=f.mkdir(dirname);
+        if (!nd) return;
         nd->cd();
         for (int io=0;io<NORM_NOBS;io++) {
-            norm_pre[io]->Write(Form("pre_%s",NORM_OBS[io].key));
-            norm_after_mx2ep[io]->Write(Form("after_mx2ep_%s",NORM_OBS[io].key));
-            norm_after_mx2ep_mx2eg[io]->Write(Form("after_mx2ep_mx2eg_%s",NORM_OBS[io].key));
-            norm_after_mx2ep_mx2eg_dphi[io]->Write(Form("after_mx2ep_mx2eg_dphi_%s",NORM_OBS[io].key));
-            norm_nminus1[io]->Write(Form("nminus1_%s",NORM_OBS[io].key));
-            norm_full[io]->Write(Form("full_%s",NORM_OBS[io].key));
-            norm_low[io]->Write(Form("lowE_%s",NORM_OBS[io].key));
-            norm_high[io]->Write(Form("highE_%s",NORM_OBS[io].key));
+            pre[io]->Write(Form("pre_%s",NORM_OBS[io].key));
+            after_ep[io]->Write(Form("after_mx2ep_%s",NORM_OBS[io].key));
+            after_e_g[io]->Write(Form("after_mx2ep_mx2eg_%s",NORM_OBS[io].key));
+            after_dphi[io]->Write(Form("after_mx2ep_mx2eg_dphi_%s",NORM_OBS[io].key));
+            nminus1[io]->Write(Form("nminus1_%s",NORM_OBS[io].key));
+            full[io]->Write(Form("full_%s",NORM_OBS[io].key));
+            low[io]->Write(Form("lowE_%s",NORM_OBS[io].key));
+            high[io]->Write(Form("highE_%s",NORM_OBS[io].key));
         } // endfor
         f.cd();
-    }
-    for (int ic=0;ic<6;ic++) put_param<Long64_t>(&f,Form("norm_cutflow_%d",ic),norm_cutflow[ic]);
+    };
+
+    write_norm_dir("normalization_FD",
+                   norm_pre,norm_after_mx2ep,norm_after_mx2ep_mx2eg,
+                   norm_after_mx2ep_mx2eg_dphi,norm_nminus1,norm_full,
+                   norm_low,norm_high);
+
+    write_norm_dir("normalization_FT",
+                   norm_ft_pre,norm_ft_after_mx2ep,norm_ft_after_mx2ep_mx2eg,
+                   norm_ft_after_mx2ep_mx2eg_dphi,norm_ft_nminus1,norm_ft_full,
+                   norm_ft_low,norm_ft_high);
+
+    for (int ic=0;ic<6;ic++) {
+        put_param<Long64_t>(&f,Form("norm_fd_cutflow_%d",ic),norm_cutflow[ic]);
+        put_param<Long64_t>(&f,Form("norm_ft_cutflow_%d",ic),norm_ft_cutflow[ic]);
+    } // endfor
     put_param<int>(&f,"normalization_branches_complete",
         (b.have_tag_corr_kin && b.have_Mx2_epg_corr && b.have_beam_energy && b.have_e_kin && b.have_p_corr_kin)?1:0);
     const Int_t nwrite=f.Write();
@@ -2819,28 +2890,59 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
             if (v->bins[ib].residual_count) v->bins[ib].residual_count->SetDirectory(nullptr);
         }
     } // endfor
-    int ncomplete=0; get_param<int>(&f,"normalization_branches_complete",ncomplete); v->normalization_branches_complete=(ncomplete!=0);
-    auto* nd=dynamic_cast<TDirectory*>(f.Get("normalization"));
-    if (nd) {
+    int ncomplete=0;
+    get_param<int>(&f,"normalization_branches_complete",ncomplete);
+    v->normalization_branches_complete=(ncomplete!=0);
+
+    auto load_norm_dir = [&](const char* dirname,
+                             std::vector<std::unique_ptr<TH1D>>& pre,
+                             std::vector<std::unique_ptr<TH1D>>& after_ep,
+                             std::vector<std::unique_ptr<TH1D>>& after_e_g,
+                             std::vector<std::unique_ptr<TH1D>>& after_dphi,
+                             std::vector<std::unique_ptr<TH1D>>& nminus1,
+                             std::vector<std::unique_ptr<TH1D>>& full,
+                             std::vector<std::unique_ptr<TH1D>>& low,
+                             std::vector<std::unique_ptr<TH1D>>& high) {
+        auto* nd=dynamic_cast<TDirectory*>(f.Get(dirname));
         for (int io=0;io<NORM_NOBS;io++) {
             auto clone_one=[&](const char* region)->std::unique_ptr<TH1D> {
+                if (!nd) return nullptr;
                 auto* h=dynamic_cast<TH1D*>(nd->Get(Form("%s_%s",region,NORM_OBS[io].key)));
                 if (!h) return nullptr;
-                std::unique_ptr<TH1D> q(dynamic_cast<TH1D*>(h->Clone(Form("%s_%s_%s",v->name.c_str(),region,NORM_OBS[io].key))));
-                if (q) q->SetDirectory(nullptr); return q;
+                std::unique_ptr<TH1D> q(dynamic_cast<TH1D*>(h->Clone(
+                    Form("%s_%s_%s_%s",v->name.c_str(),dirname,region,NORM_OBS[io].key))));
+                if (q) q->SetDirectory(nullptr);
+                return q;
             };
-            v->norm_pre.push_back(clone_one("pre"));
-            v->norm_after_mx2ep.push_back(clone_one("after_mx2ep"));
-            v->norm_after_mx2ep_mx2eg.push_back(clone_one("after_mx2ep_mx2eg"));
-            v->norm_after_mx2ep_mx2eg_dphi.push_back(clone_one("after_mx2ep_mx2eg_dphi"));
-            v->norm_nminus1.push_back(clone_one("nminus1"));
-            v->norm_full.push_back(clone_one("full"));
-            v->norm_lowE.push_back(clone_one("lowE"));
-            v->norm_highE.push_back(clone_one("highE"));
+
+            pre.push_back(clone_one("pre"));
+            after_ep.push_back(clone_one("after_mx2ep"));
+            after_e_g.push_back(clone_one("after_mx2ep_mx2eg"));
+            after_dphi.push_back(clone_one("after_mx2ep_mx2eg_dphi"));
+            nminus1.push_back(clone_one("nminus1"));
+            full.push_back(clone_one("full"));
+            low.push_back(clone_one("lowE"));
+            high.push_back(clone_one("highE"));
         } // endfor
-    }
+    };
+
+    load_norm_dir("normalization_FD",
+                  v->norm_pre,v->norm_after_mx2ep,v->norm_after_mx2ep_mx2eg,
+                  v->norm_after_mx2ep_mx2eg_dphi,v->norm_nminus1,v->norm_full,
+                  v->norm_lowE,v->norm_highE);
+
+    load_norm_dir("normalization_FT",
+                  v->norm_ft_pre,v->norm_ft_after_mx2ep,v->norm_ft_after_mx2ep_mx2eg,
+                  v->norm_ft_after_mx2ep_mx2eg_dphi,v->norm_ft_nminus1,v->norm_ft_full,
+                  v->norm_ft_lowE,v->norm_ft_highE);
+
     for (int ic=0;ic<6;ic++) {
-        Long64_t q=0; get_param<Long64_t>(&f,Form("norm_cutflow_%d",ic),q); v->norm_cutflow[ic]=q;
+        Long64_t q=0;
+        get_param<Long64_t>(&f,Form("norm_fd_cutflow_%d",ic),q);
+        v->norm_cutflow[ic]=q;
+        q=0;
+        get_param<Long64_t>(&f,Form("norm_ft_cutflow_%d",ic),q);
+        v->norm_ft_cutflow[ic]=q;
     } // endfor
     f.Close();
     return v;
@@ -4305,6 +4407,32 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
     summary.close();
 }
 
+
+const std::vector<std::unique_ptr<TH1D>>& norm_pre_for(const ValComponent* v,bool ft) {
+    return ft ? v->norm_ft_pre : v->norm_pre;
+}
+const std::vector<std::unique_ptr<TH1D>>& norm_after_ep_for(const ValComponent* v,bool ft) {
+    return ft ? v->norm_ft_after_mx2ep : v->norm_after_mx2ep;
+}
+const std::vector<std::unique_ptr<TH1D>>& norm_after_eg_for(const ValComponent* v,bool ft) {
+    return ft ? v->norm_ft_after_mx2ep_mx2eg : v->norm_after_mx2ep_mx2eg;
+}
+const std::vector<std::unique_ptr<TH1D>>& norm_after_dphi_for(const ValComponent* v,bool ft) {
+    return ft ? v->norm_ft_after_mx2ep_mx2eg_dphi : v->norm_after_mx2ep_mx2eg_dphi;
+}
+const std::vector<std::unique_ptr<TH1D>>& norm_low_for(const ValComponent* v,bool ft) {
+    return ft ? v->norm_ft_lowE : v->norm_lowE;
+}
+const std::vector<std::unique_ptr<TH1D>>& norm_high_for(const ValComponent* v,bool ft) {
+    return ft ? v->norm_ft_highE : v->norm_highE;
+}
+const std::vector<std::unique_ptr<TH1D>>& norm_full_for(const ValComponent* v,bool ft) {
+    return ft ? v->norm_ft_full : v->norm_full;
+}
+const std::array<long long,6>& norm_cutflow_for(const ValComponent* v,bool ft) {
+    return ft ? v->norm_ft_cutflow : v->norm_cutflow;
+}
+
 double rms_spread(const std::vector<double>& x,double mean) {
     if (x.size()<2) return 0.0;
     double s=0.0;
@@ -4313,7 +4441,8 @@ double rms_spread(const std::vector<double>& x,double mean) {
 }
 
 NormDerivation derive_normalization_concise(
-        const std::vector<std::unique_ptr<ValComponent>>& vv) {
+        const std::vector<std::unique_ptr<ValComponent>>& vv,
+        bool ft_probe) {
     NormDerivation R;
     const ValComponent* data=find_val_component(vv,"data");
     const ValComponent* aao=find_val_component(vv,"aaogen");
@@ -4330,11 +4459,11 @@ NormDerivation derive_normalization_concise(
 
     for (int io=0;io<NORM_NOBS;io++) {
         if (!NORM_OBS[io].use_low) continue;
+        const auto& dl=norm_low_for(data,ft_probe);
+        const auto& al=norm_low_for(aao,ft_probe);
+        const auto& cl=norm_low_for(cls,ft_probe);
         auto q=fit_two_templates_morphed(
-            data->norm_lowE[io].get(),
-            aao->norm_lowE[io].get(),
-            cls->norm_lowE[io].get(),
-            NORM_OBS[io].key);
+            dl[io].get(),al[io].get(),cl[io].get(),NORM_OBS[io].key);
         if (q.valid) R.low_points.push_back(q);
     } // endfor
 
@@ -4343,11 +4472,12 @@ NormDerivation derive_normalization_concise(
 
     for (int io=0;io<NORM_NOBS;io++) {
         if (!NORM_OBS[io].use_high) continue;
+        const auto& dh=norm_high_for(data,ft_probe);
+        const auto& ah=norm_high_for(aao,ft_probe);
+        const auto& ch=norm_high_for(cls,ft_probe);
+        const auto& vh=norm_high_for(dvc,ft_probe);
         auto q=fit_dvcs_template_morphed(
-            data->norm_highE[io].get(),
-            aao->norm_highE[io].get(),
-            cls->norm_highE[io].get(),
-            dvc->norm_highE[io].get(),
+            dh[io].get(),ah[io].get(),ch[io].get(),vh[io].get(),
             A,B,NORM_OBS[io].key);
         if (q.valid) R.high_points.push_back(q);
     } // endfor
@@ -4424,14 +4554,17 @@ CoarseComposition coarse_composition(const std::vector<std::unique_ptr<ValCompon
 
 void concise_make_dirs(const std::string& out) {
     reset_output(out);
-    gSystem->mkdir((out+"/1_exclusivity").c_str(),true);
-    gSystem->mkdir((out+"/2_normalization").c_str(),true);
+    gSystem->mkdir((out+"/1_exclusivity/FD").c_str(),true);
+    gSystem->mkdir((out+"/1_exclusivity/FT").c_str(),true);
+    gSystem->mkdir((out+"/2_normalization/FD").c_str(),true);
+    gSystem->mkdir((out+"/2_normalization/FT").c_str(),true);
     gSystem->mkdir((out+"/3_pi0_fraction").c_str(),true);
     gSystem->mkdir((out+"/4_efficiency").c_str(),true);
 }
 
 void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
-                              const std::string& dir) {
+                              const std::string& dir,
+                              bool ft_probe) {
     const ValComponent* data=find_val_component(vv,"data");
     const ValComponent* aao=find_val_component(vv,"aaogen");
     const ValComponent* cls=find_val_component(vv,"clasdis");
@@ -4446,11 +4579,11 @@ void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& 
         {NORM_ANGLE_GX,3,NORM_ANGLE_GX_MAX,0,false,"(d) angle(#gamma,X)"}
     };
 
-    auto geth=[](const ValComponent* v,int stage,int io)->const TH1D* {
-        if (stage==0) return v->norm_pre[io].get();
-        if (stage==1) return v->norm_after_mx2ep[io].get();
-        if (stage==2) return v->norm_after_mx2ep_mx2eg[io].get();
-        return v->norm_after_mx2ep_mx2eg_dphi[io].get();
+    auto geth=[&](const ValComponent* v,int stage,int io)->const TH1D* {
+        if (stage==0) return norm_pre_for(v,ft_probe)[io].get();
+        if (stage==1) return norm_after_ep_for(v,ft_probe)[io].get();
+        if (stage==2) return norm_after_eg_for(v,ft_probe)[io].get();
+        return norm_after_dphi_for(v,ft_probe)[io].get();
     };
 
     const ValComponent* ss[]={data,aao,cls,dvc};
@@ -4458,7 +4591,7 @@ void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& 
     const char* lab[]={"Data","AAOgen","CLASDIS","DVCSgen"};
     std::vector<std::unique_ptr<TH1D>> keep;
 
-    TCanvas c("c_exclusivity_summary","",1500,1100);
+    TCanvas c(ft_probe?"c_exclusivity_summary_ft":"c_exclusivity_summary_fd","",1500,1100);
     c.Divide(2,2);
 
     for (int ip=0;ip<4;ip++) {
@@ -4536,7 +4669,8 @@ void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& 
     csv << "sample,baseline,mx2_ep,mx2_eg,coplanarity,angle_gX,all_cuts\n";
     for (const auto& v:vv) {
         csv << v->name;
-        for (int i=0;i<6;i++) csv << "," << v->norm_cutflow[i];
+        const auto& cf=norm_cutflow_for(v.get(),ft_probe);
+        for (int i=0;i<6;i++) csv << "," << cf[i];
         csv << "\n";
     } // endfor
 }
@@ -4638,7 +4772,9 @@ void draw_norm_panel(TH1D* frame,const TH1D* hd,const TH1D* ha,const TH1D* hc,co
 }
 
 void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
-                                const NormDerivation& R,const std::string& dir) {
+                                const NormDerivation& R,
+                                const std::string& dir,
+                                bool ft_probe) {
     const ValComponent* data=find_val_component(vv,"data");
     const ValComponent* aao=find_val_component(vv,"aaogen");
     const ValComponent* cls=find_val_component(vv,"clasdis");
@@ -4648,10 +4784,14 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
     // Energy-region overview.
     {
         const int io=NORM_EGAMMA;
-        std::unique_ptr<TH1D> d((TH1D*)data->norm_full[io]->Clone("normE_d"));
-        std::unique_ptr<TH1D> a((TH1D*)aao->norm_full[io]->Clone("normE_a"));
-        std::unique_ptr<TH1D> c((TH1D*)cls->norm_full[io]->Clone("normE_c"));
-        std::unique_ptr<TH1D> v((TH1D*)dvc->norm_full[io]->Clone("normE_v"));
+        const auto& df=norm_full_for(data,ft_probe);
+        const auto& af=norm_full_for(aao,ft_probe);
+        const auto& cf=norm_full_for(cls,ft_probe);
+        const auto& vf=norm_full_for(dvc,ft_probe);
+        std::unique_ptr<TH1D> d((TH1D*)df[io]->Clone("normE_d"));
+        std::unique_ptr<TH1D> a((TH1D*)af[io]->Clone("normE_a"));
+        std::unique_ptr<TH1D> c((TH1D*)cf[io]->Clone("normE_c"));
+        std::unique_ptr<TH1D> v((TH1D*)vf[io]->Clone("normE_v"));
         d->SetDirectory(nullptr); a->SetDirectory(nullptr); c->SetDirectory(nullptr); v->SetDirectory(nullptr);
         a->Scale(R.nominal.aao); c->Scale(R.nominal.clasdis); v->Scale(R.nominal.dvcs);
         std::unique_ptr<TH1D> t((TH1D*)a->Clone("normE_t")); t->Add(c.get()); t->Add(v.get());
@@ -4673,7 +4813,8 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
         leg.AddEntry(c.get(),"CLASDIS","l"); leg.AddEntry(v.get(),"DVCSgen","l");
         leg.AddEntry(t.get(),"Total MC","l"); leg.Draw();
         TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.040);
-        tx.DrawLatex(0.14,0.945,"Low E: AAOgen + CLASDIS fit; high E: DVCSgen fit");
+        tx.DrawLatex(0.14,0.945,Form("%s-probe normalization: low tag-E fits AAOgen+CLASDIS; high tag-E fits DVCSgen",
+                                      ft_probe?"FT":"FD"));
         ce.SaveAs((dir+"/energy_regions.png").c_str());
     }
 
@@ -4696,8 +4837,8 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
             if (io<0 || pad>=6) continue;
             c.cd(++pad);
             gPad->SetLeftMargin(0.20); gPad->SetRightMargin(0.04); gPad->SetBottomMargin(0.21); gPad->SetTopMargin(0.12);
-            draw_norm_panel(nullptr,data->norm_lowE[io].get(),aao->norm_lowE[io].get(),
-                            cls->norm_lowE[io].get(),dvc->norm_lowE[io].get(),
+            draw_norm_panel(nullptr,norm_low_for(data,ft_probe)[io].get(),norm_low_for(aao,ft_probe)[io].get(),
+                            norm_low_for(cls,ft_probe)[io].get(),norm_low_for(dvc,ft_probe)[io].get(),
                             q.aao,q.clasdis,0.0,q,Form("(%c) %s",'a'+pad-1,pretty_norm_observable(q.observable).c_str()));
             if (pad==1) {
                 TLegend* leg=new TLegend(0.57,0.58,0.94,0.86);
@@ -4753,8 +4894,8 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
             if (io<0 || pad>=6) continue;
             c.cd(++pad);
             gPad->SetLeftMargin(0.20); gPad->SetRightMargin(0.04); gPad->SetBottomMargin(0.21); gPad->SetTopMargin(0.12);
-            draw_norm_panel(nullptr,data->norm_highE[io].get(),aao->norm_highE[io].get(),
-                            cls->norm_highE[io].get(),dvc->norm_highE[io].get(),
+            draw_norm_panel(nullptr,norm_high_for(data,ft_probe)[io].get(),norm_high_for(aao,ft_probe)[io].get(),
+                            norm_high_for(cls,ft_probe)[io].get(),norm_high_for(dvc,ft_probe)[io].get(),
                             R.nominal.aao,R.nominal.clasdis,q.dvcs,q,
                             Form("(%c) %s",'a'+pad-1,pretty_norm_observable(q.observable).c_str()));
         } // endfor
@@ -4810,7 +4951,9 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
 }
 
 void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
-                      const NormDerivation& R,const std::string& dir) {
+                      const NormDerivation& Rfd,
+                      const NormDerivation& Rft,
+                      const std::string& dir) {
     const ValComponent* cls=find_val_component(vv,"clasdis");
 
     double fc_global=0.9877;
@@ -4840,7 +4983,7 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
 
     for (int ir=0;ir<CR_N;ir++) {
         h.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
-        const auto q=coarse_composition(vv,R.nominal,ir);
+        const auto q=coarse_composition(vv,(ir<2?Rfd.nominal:Rft.nominal),ir);
         if (q.f_pi0>=0) h.SetBinContent(ir+1,q.f_pi0);
     } // endfor
 
@@ -4869,7 +5012,7 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
 
         for (int ir=0;ir<CR_N;ir++) {
             hA.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
-            const auto q=coarse_composition(vv,R.nominal,ir);
+            const auto q=coarse_composition(vv,(ir<2?Rfd.nominal:Rft.nominal),ir);
             const double s=q.ya+q.yc+q.yd;
             if (s>0) {
                 hA.SetBinContent(ir+1,q.ya/s);
@@ -4900,7 +5043,7 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
     std::ofstream csv(dir+"/summary.csv");
     csv << "region,aao_yield,clasdis_yield,dvcs_yield,clasdis_pi0_fraction,pi0_fraction\n";
     for (int ir=0;ir<CR_N;ir++) {
-        const auto q=coarse_composition(vv,R.nominal,ir);
+        const auto q=coarse_composition(vv,(ir<2?Rfd.nominal:Rft.nominal),ir);
         csv << CR_KEY[ir]<<","<<q.ya<<","<<q.yc<<","<<q.yd<<","
             <<q.f_clasdis_pi0<<","<<q.f_pi0<<"\n";
     } // endfor
@@ -5047,12 +5190,16 @@ IntegratedEfficiencyResult integrated_efficiency(
 }
 
 void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
-                             const NormDerivation& R,const std::string& dir) {
+                             const NormDerivation& Rfd,
+                             const NormDerivation& Rft,
+                             const std::string& dir) {
     std::array<IntegratedEfficiencyResult,CR_N> rr;
     std::array<std::unique_ptr<TH1D>,CR_N> hd,hm;
 
-    for (int ir=0;ir<CR_N;ir++)
+    for (int ir=0;ir<CR_N;ir++) {
+        const NormDerivation& R=(ir<2 ? Rfd : Rft);
         rr[ir]=integrated_efficiency(vv,R,ir,&hd[ir],&hm[ir]);
+    } // endfor
 
     // Residuals.
     {
@@ -5214,16 +5361,21 @@ void run_concise_analysis(const std::string& out) {
         return;
     } // endif
 
-    const NormDerivation norm=derive_normalization_concise(vv);
+    const NormDerivation norm_fd=derive_normalization_concise(vv,false);
+    const NormDerivation norm_ft=derive_normalization_concise(vv,true);
 
-    draw_exclusivity_summary(vv,out+"/1_exclusivity");
-    draw_normalization_summary(vv,norm,out+"/2_normalization");
-    draw_pi0_summary(vv,norm,out+"/3_pi0_fraction");
-    draw_efficiency_summary(vv,norm,out+"/4_efficiency");
+    draw_exclusivity_summary(vv,out+"/1_exclusivity/FD",false);
+    draw_exclusivity_summary(vv,out+"/1_exclusivity/FT",true);
+
+    draw_normalization_summary(vv,norm_fd,out+"/2_normalization/FD",false);
+    draw_normalization_summary(vv,norm_ft,out+"/2_normalization/FT",true);
+
+    draw_pi0_summary(vv,norm_fd,norm_ft,out+"/3_pi0_fraction");
+    draw_efficiency_summary(vv,norm_fd,norm_ft,out+"/4_efficiency");
 
     std::cout << "\nConcise output written to:\n"
-              << "  " << out << "/1_exclusivity/\n"
-              << "  " << out << "/2_normalization/\n"
+              << "  " << out << "/1_exclusivity/FD and FT/\n"
+              << "  " << out << "/2_normalization/FD and FT/\n"
               << "  " << out << "/3_pi0_fraction/\n"
               << "  " << out << "/4_efficiency/\n";
 }
@@ -5264,8 +5416,8 @@ void photon_efficiency_valerii_reproduction() {
         << "\n============================================================\n"
         << " Concise photon-efficiency analysis\n"
         << "============================================================\n"
-        << "1) exclusivity selection\n"
-        << "2) Valerii-style data-driven normalization\n"
+        << "1) independent FD-probe and FT-probe exclusivity selection\n"
+        << "2) independent FD-probe and FT-probe Valerii-style normalization\n"
         << "3) pi0 fraction of selected ep-gamma-X events\n"
         << "4) integrated FD/FT photon efficiency, split at 2 GeV\n"
         << "One parallel tree scan per sample; persistent cache on reruns.\n"
