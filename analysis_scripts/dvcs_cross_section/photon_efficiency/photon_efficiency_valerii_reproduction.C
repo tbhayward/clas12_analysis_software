@@ -1581,7 +1581,7 @@ struct SampleSpec {
     bool is_mc=false;
 };
 
-static const char* CONCISE_CACHE_VERSION="20260912_concise_v1";
+static const char* CONCISE_CACHE_VERSION="20260912_concise_v3";
 
 std::uint64_t concise_hash(const std::string& s,std::uint64_t h=1469598103934665603ULL) {
     for (unsigned char c:s) {
@@ -2494,7 +2494,7 @@ void draw_norm_cutflow(const std::vector<std::unique_ptr<ValComponent>>& vv,cons
         h->Draw(first?"HIST P":"HIST P SAME"); first=false; leg.AddEntry(h.get(),vp->name.c_str(),"lp");
         keep.push_back(std::move(h)); idx++;
     }
-    leg.Draw(); c.SetBottomMargin(0.22); c.SaveAs(file.c_str());
+    leg.Draw(); c.SetBottomMargin(0.25); c.SaveAs(file.c_str());
 }
 
 bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path) {
@@ -4465,8 +4465,8 @@ void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& 
         c.cd(ip+1);
         gPad->SetLeftMargin(0.13);
         gPad->SetRightMargin(0.04);
-        gPad->SetBottomMargin(0.12);
-        gPad->SetTopMargin(0.10);
+        gPad->SetBottomMargin(0.14);
+        gPad->SetTopMargin(0.14);
 
         std::vector<TH1D*> hh;
         double ymax=0;
@@ -4492,6 +4492,15 @@ void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& 
 
         hh[0]->SetTitle("");
         hh[0]->GetYaxis()->SetTitle("Unit-area candidates");
+
+        // Display ranges only; event selection and normalization fits are unchanged.
+        if (pp[ip].obs==NORM_ANGLE_GX) {
+            for (auto* h:hh) if (h) h->GetXaxis()->SetRangeUser(0.0,20.0);
+            hh[0]->GetXaxis()->SetTitle("angle(#gamma,X) (deg)");
+        } else if (pp[ip].obs==NORM_DPHI_TRENTO_SHIFT180) {
+            hh[0]->GetXaxis()->SetTitle("#Delta#phi_{copl} (deg)");
+        }
+
         hh[0]->SetMaximum(1.27*ymax);
         hh[0]->Draw("E1");
         for (int is=1;is<4;is++) hh[is]->Draw("HIST SAME");
@@ -4509,7 +4518,7 @@ void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& 
         tx.SetNDC();
         tx.SetTextFont(42);
         tx.SetTextSize(0.050);
-        tx.DrawLatex(0.15,0.92,pp[ip].label);
+        tx.DrawLatex(0.15,0.94,pp[ip].label);
 
         if (ip==0) {
             TLegend* leg=new TLegend(0.62,0.66,0.94,0.88);
@@ -4562,6 +4571,32 @@ void draw_norm_panel(TH1D* frame,const TH1D* hd,const TH1D* ha,const TH1D* hc,co
     style_norm_component(t.get(),kBlue+1,3);
 
     d->SetTitle("");
+
+    // Compact display ranges only.  The template fits themselves use the
+    // original full histogram ranges defined above.
+    if (q.observable=="Mx2_ep") {
+        d->GetXaxis()->SetRangeUser(-0.15,0.15);
+        d->GetXaxis()->SetTitle("M_{X}^{2}(ep) (GeV^{2})");
+    } else if (q.observable=="Mx2_epg") {
+        d->GetXaxis()->SetRangeUser(-0.15,0.15);
+        d->GetXaxis()->SetTitle("M_{X}^{2}(ep#gamma) (GeV^{2})");
+    } else if (q.observable=="angle_gX") {
+        d->GetXaxis()->SetRangeUser(0.0,20.0);
+        d->GetXaxis()->SetTitle("angle(#gamma,X) (deg)");
+    } else if (q.observable=="Egamma") {
+        d->GetXaxis()->SetRangeUser(0.4,2.05);
+        d->GetXaxis()->SetTitle("Tag-photon energy E_{#gamma} (GeV)");
+    } else if (q.observable=="Mx2_eg") {
+        d->GetXaxis()->SetRangeUser(1.0,5.5);
+        d->GetXaxis()->SetTitle("M_{X}^{2}(e#gamma) (GeV^{2})");
+    } else if (q.observable=="dphi_trento_shift180") {
+        d->GetXaxis()->SetRangeUser(-20.0,20.0);
+        d->GetXaxis()->SetTitle("#Delta#phi_{copl} (deg)");
+    } else if (q.observable=="delta_t_pg") {
+        d->GetXaxis()->SetRangeUser(-0.5,1.5);
+        d->GetXaxis()->SetTitle("#Delta t=t_{p}-t_{#gamma} (GeV^{2})");
+    }
+
     d->SetMaximum(1.30*std::max(d->GetMaximum(),t->GetMaximum()));
     d->DrawCopy("E1");
     a->DrawCopy("HIST SAME");
@@ -4600,23 +4635,31 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
         style_norm_component(v.get(),kGreen+2); style_norm_component(t.get(),kBlue+1,3);
 
         TCanvas ce("c_norm_energy","",1150,760);
-        ce.SetLeftMargin(0.12); ce.SetRightMargin(0.04); ce.SetTopMargin(0.14);
+        ce.SetLeftMargin(0.12); ce.SetRightMargin(0.04); ce.SetTopMargin(0.16);
         d->SetMaximum(1.28*std::max(d->GetMaximum(),t->GetMaximum()));
-        d->GetXaxis()->SetTitle("E_{#gamma} (GeV)");
+        d->GetXaxis()->SetTitle("Tag-photon energy E_{#gamma} (GeV)");
         d->GetYaxis()->SetTitle("Candidates");
         d->Draw("E1"); a->Draw("HIST SAME"); c->Draw("HIST SAME"); v->Draw("HIST SAME");
         t->Draw("HIST SAME"); d->Draw("E1 SAME");
         TLine l2(2.0,0,2.0,d->GetMaximum()); l2.SetLineStyle(2); l2.Draw();
         TLine l3(3.0,0,3.0,d->GetMaximum()); l3.SetLineStyle(2); l3.Draw();
-        TLegend leg(0.64,0.63,0.94,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0);
+        TLegend leg(0.64,0.57,0.94,0.82); leg.SetBorderSize(0); leg.SetFillStyle(0);
         leg.AddEntry(d.get(),"Data","lep"); leg.AddEntry(a.get(),"AAOgen","l");
         leg.AddEntry(c.get(),"CLASDIS","l"); leg.AddEntry(v.get(),"DVCSgen","l");
         leg.AddEntry(t.get(),"Total MC","l"); leg.Draw();
         TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.040);
-        tx.DrawLatex(0.14,0.935,"Low E: AAOgen + CLASDIS fit; high E: DVCSgen fit");
+        tx.DrawLatex(0.14,0.945,"Low E: AAOgen + CLASDIS fit; high E: DVCSgen fit");
         ce.SaveAs((dir+"/energy_regions.png").c_str());
     }
 
+    // The low- and high-energy canvases intentionally use different
+    // observable sets because this follows Valerii's two-stage normalization:
+    // low E constrains AAOgen+CLASDIS using Mx2(ep), Mx2(epgamma),
+    // angle(gamma,X), tag-photon energy, and Mx2(egamma);
+    // high E fixes those two normalizations and constrains DVCSgen using
+    // Mx2(epgamma), angle(gamma,X), Mx2(egamma), Delta-phi, and Delta-t.
+    // Common observables therefore appear in both stages; energy is low-E-only,
+    // while Delta-phi and Delta-t are high-E-only.
     // Low-E fit canvas.
     {
         TCanvas c("c_low_norm","",1500,980);
@@ -4627,7 +4670,7 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
             for (int j=0;j<NORM_NOBS;j++) if (q.observable==NORM_OBS[j].key) io=j;
             if (io<0 || pad>=6) continue;
             c.cd(++pad);
-            gPad->SetLeftMargin(0.13); gPad->SetRightMargin(0.04); gPad->SetTopMargin(0.10);
+            gPad->SetLeftMargin(0.17); gPad->SetRightMargin(0.04); gPad->SetBottomMargin(0.18); gPad->SetTopMargin(0.12);
             draw_norm_panel(nullptr,data->norm_lowE[io].get(),aao->norm_lowE[io].get(),
                             cls->norm_lowE[io].get(),dvc->norm_lowE[io].get(),
                             q.aao,q.clasdis,0.0,q,Form("(%c) %s",'a'+pad-1,pretty_norm_observable(q.observable).c_str()));
@@ -4651,8 +4694,25 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
             tx.DrawLatex(0.12,0.66,Form("AAOgen = %.3f",R.nominal.aao));
             tx.DrawLatex(0.12,0.54,Form("CLASDIS = %.3f",R.nominal.clasdis));
             tx.SetTextSize(0.040);
-            tx.DrawLatex(0.12,0.34,"AAOgen and CLASDIS are interpreted");
-            tx.DrawLatex(0.12,0.27,"jointly as the #pi^{0}-bearing class.");
+            tx.DrawLatex(0.12,0.38,"AAOgen and CLASDIS are interpreted");
+            tx.DrawLatex(0.12,0.32,"jointly as the #pi^{0}-bearing class.");
+
+            TLegend leg(0.10,0.05,0.92,0.25);
+            leg.SetNColumns(2);
+            leg.SetBorderSize(0);
+            leg.SetFillStyle(0);
+            TGraph gData,gAAO,gCLS,gDVCS,gTot;
+            gData.SetMarkerStyle(20); gData.SetMarkerColor(kBlack);
+            gAAO.SetLineColor(kRed+1); gAAO.SetLineWidth(2);
+            gCLS.SetLineColor(kOrange+7); gCLS.SetLineWidth(2);
+            gDVCS.SetLineColor(kGreen+2); gDVCS.SetLineWidth(2);
+            gTot.SetLineColor(kBlue+1); gTot.SetLineWidth(3);
+            leg.AddEntry(&gData,"Data","p");
+            leg.AddEntry(&gAAO,"AAOgen","l");
+            leg.AddEntry(&gCLS,"CLASDIS","l");
+            leg.AddEntry(&gDVCS,"DVCSgen","l");
+            leg.AddEntry(&gTot,"Total MC","l");
+            leg.Draw();
         } // endif
         c.SaveAs((dir+"/lowE_fits.png").c_str());
     }
@@ -4667,7 +4727,7 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
             for (int j=0;j<NORM_NOBS;j++) if (q.observable==NORM_OBS[j].key) io=j;
             if (io<0 || pad>=6) continue;
             c.cd(++pad);
-            gPad->SetLeftMargin(0.13); gPad->SetRightMargin(0.04); gPad->SetTopMargin(0.10);
+            gPad->SetLeftMargin(0.17); gPad->SetRightMargin(0.04); gPad->SetBottomMargin(0.18); gPad->SetTopMargin(0.12);
             draw_norm_panel(nullptr,data->norm_highE[io].get(),aao->norm_highE[io].get(),
                             cls->norm_highE[io].get(),dvc->norm_highE[io].get(),
                             R.nominal.aao,R.nominal.clasdis,q.dvcs,q,
@@ -4683,8 +4743,25 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
             tx.SetTextSize(0.052);
             tx.DrawLatex(0.12,0.64,Form("DVCSgen = %.3f",R.nominal.dvcs));
             tx.SetTextSize(0.040);
-            tx.DrawLatex(0.12,0.43,"AAOgen + CLASDIS fixed to");
-            tx.DrawLatex(0.12,0.36,"their low-E mean values.");
+            tx.DrawLatex(0.12,0.46,"AAOgen + CLASDIS fixed to");
+            tx.DrawLatex(0.12,0.40,"their low-E mean values.");
+
+            TLegend leg(0.10,0.08,0.92,0.30);
+            leg.SetNColumns(2);
+            leg.SetBorderSize(0);
+            leg.SetFillStyle(0);
+            TGraph gData,gAAO,gCLS,gDVCS,gTot;
+            gData.SetMarkerStyle(20); gData.SetMarkerColor(kBlack);
+            gAAO.SetLineColor(kRed+1); gAAO.SetLineWidth(2);
+            gCLS.SetLineColor(kOrange+7); gCLS.SetLineWidth(2);
+            gDVCS.SetLineColor(kGreen+2); gDVCS.SetLineWidth(2);
+            gTot.SetLineColor(kBlue+1); gTot.SetLineWidth(3);
+            leg.AddEntry(&gData,"Data","p");
+            leg.AddEntry(&gAAO,"AAOgen","l");
+            leg.AddEntry(&gCLS,"CLASDIS","l");
+            leg.AddEntry(&gDVCS,"DVCSgen","l");
+            leg.AddEntry(&gTot,"Total MC","l");
+            leg.Draw();
         } // endif
         c.SaveAs((dir+"/highE_fits.png").c_str());
     }
