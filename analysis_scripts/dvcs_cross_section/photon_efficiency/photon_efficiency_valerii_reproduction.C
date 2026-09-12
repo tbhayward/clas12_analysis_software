@@ -1741,8 +1741,9 @@ enum NormObs {
     NORM_PHI_G_TRENTO=8,
     NORM_DPHI_TRENTO=9,
     NORM_DPHI_TRENTO_SHIFT180=10,
+    NORM_DELTA_T_PG=11,
 
-    NORM_NOBS=11
+    NORM_NOBS=12
 };
 
 struct NormObsDef {
@@ -1776,14 +1777,18 @@ static const NormObsDef NORM_OBS[NORM_NOBS] = {
     {"dphi_trento", "Trento azimuth difference;wrap(#phi_{p}^{Trento}-#phi_{#gamma}^{Trento}) (deg);Candidates",
                      180,-180.0,180.0,false,false},
     {"dphi_trento_shift180", "Trento coplanarity residual;#delta#phi_{copl} (deg);Candidates",
-                     120,-30.0,30.0,false,true}
+                     120,-30.0,30.0,false,true},
+    {"delta_t_pg", "#Delta t(p,#gamma);t_{p}-t_{#gamma} (GeV^{2});Candidates",
+                     120,-2.0,2.0,false,true}
 };
 
 // June-2026 Valerii normalization/exclusivity selection.
-// IMPORTANT distinction from the presentation:
-//   * slide 9 exclusivity cut: angle(e,X) < 9.2 deg;
-//   * slide 11 normalization observable: angle(gamma,X).
-// X is the inferred missing probe already stored in the skim.
+// Slide 9 labels the final angular cut as Angle(e,X)<9.2 deg, but the literal
+// scattered-electron/missing-probe opening angle removes essentially the whole
+// reconstructed sample.  Until that shorthand is resolved, the active Step-1E
+// selection is angle(gamma,X)<9.2 deg, which gives the expected smooth exclusive
+// behavior and is also the angular observable used in Valerii's normalization plots.
+// angle(e,X) remains available as QA only.
 static const double NORM_MX2_EP_MIN=-0.231;
 static const double NORM_MX2_EP_MAX= 0.309;
 static const double NORM_MX2_EG_MIN= 1.4;
@@ -1792,7 +1797,7 @@ static const double NORM_MX2_EG_MIN= 1.4;
 // Use Valerii's quoted |Delta phi(p,gamma)| < 5.7 deg requirement on that
 // zero-centered coplanarity residual.
 static const double NORM_DPHI_TRENTO_MAX=5.7;
-static const double NORM_ANGLE_EX_MAX=9.2;
+static const double NORM_ANGLE_GX_MAX=9.2;
 
 // Template morphing deliberately follows the philosophy used in the DVCS
 // exclusivity-selection suite: allow the reconstructed-MC template to shift and
@@ -2019,6 +2024,49 @@ bool trento_phi_deg(const Branches& b,
     return std::isfinite(phi_deg);
 }
 
+
+double norm_delta_t_pg(const Branches& b) {
+    if (!b.have_beam_energy || !b.have_e_kin || !b.have_p_corr_kin || !b.have_tag_corr_kin)
+        return std::numeric_limits<double>::quiet_NaN();
+
+    const double mp=0.9382720813;
+    const double me=0.00051099895;
+
+    const double Eb=b.beam_energy;
+    const double pb=std::sqrt(std::max(0.0,Eb*Eb-me*me));
+    TLorentzVector k(0.0,0.0,pb,Eb);
+    TLorentzVector target(0.0,0.0,0.0,mp);
+
+    const double eth=deg2rad(b.e_theta), eph=deg2rad(b.e_phi);
+    TLorentzVector kp;
+    kp.SetPxPyPzE(b.e_p*std::sin(eth)*std::cos(eph),
+                  b.e_p*std::sin(eth)*std::sin(eph),
+                  b.e_p*std::cos(eth),
+                  std::sqrt(b.e_p*b.e_p+me*me));
+
+    const double pth=deg2rad(b.p_corr_theta), pph=deg2rad(b.p_corr_phi);
+    TLorentzVector pp;
+    pp.SetPxPyPzE(b.p_corr_p*std::sin(pth)*std::cos(pph),
+                  b.p_corr_p*std::sin(pth)*std::sin(pph),
+                  b.p_corr_p*std::cos(pth),
+                  std::sqrt(b.p_corr_p*b.p_corr_p+mp*mp));
+
+    const double gth=deg2rad(b.tag_corr_theta), gph=deg2rad(b.tag_corr_phi);
+    TLorentzVector g;
+    g.SetPxPyPzE(b.tag_corr_p*std::sin(gth)*std::cos(gph),
+                 b.tag_corr_p*std::sin(gth)*std::sin(gph),
+                 b.tag_corr_p*std::cos(gth),
+                 b.tag_corr_p);
+
+    const TLorentzVector q=k-kp;
+
+    const double tp=(target-pp).M2();
+    const double tg=(q-g).M2();
+    const double dt=tp-tg;
+
+    return std::isfinite(dt) ? dt : std::numeric_limits<double>::quiet_NaN();
+}
+
 double norm_observable_value(const Branches& b,int io) {
     if (io==NORM_MX2_EP) return b.have_Mx2_ep?b.Mx2_ep:(b.Mx_ep>=0?b.Mx_ep*b.Mx_ep:-b.Mx_ep*b.Mx_ep);
     if (io==NORM_MX2_EPG) return b.have_Mx2_epg_corr?b.Mx2_epg_corr:std::numeric_limits<double>::quiet_NaN();
@@ -2034,7 +2082,8 @@ double norm_observable_value(const Branches& b,int io) {
     if (io==NORM_MX2_EG) return invariant_m2_from_epg(b);
     if (io==NORM_DPHI_PG_RAW) {
         if (!b.have_p_corr_kin || !b.have_tag_corr_kin)
-            return std::numeric_limits<double>::quiet_NaN();
+            if (io==NORM_DELTA_T_PG) return norm_delta_t_pg(b);
+    return std::numeric_limits<double>::quiet_NaN();
         return wrap180(b.p_corr_phi-b.tag_corr_phi);
     }
 
@@ -2070,7 +2119,7 @@ struct NormCutFlags {
     bool mx2_ep=false;
     bool mx2_eg=false;
     bool dphi_trento=false;
-    bool angle_eX=false;
+    bool angle_gX=false;
     bool all=false;
 };
 
@@ -2079,7 +2128,7 @@ NormCutFlags norm_cut_flags(const Branches& b) {
     const double mx2ep=norm_observable_value(b,NORM_MX2_EP);
     const double mx2eg=norm_observable_value(b,NORM_MX2_EG);
     const double dphi =norm_observable_value(b,NORM_DPHI_TRENTO_SHIFT180);
-    const double ang  =norm_observable_value(b,NORM_ANGLE_EX);
+    const double ang  =norm_observable_value(b,NORM_ANGLE_GX);
 
     f.finite=std::isfinite(mx2ep) && std::isfinite(mx2eg) &&
              std::isfinite(dphi) && std::isfinite(ang);
@@ -2088,9 +2137,9 @@ NormCutFlags norm_cut_flags(const Branches& b) {
     f.mx2_ep=(mx2ep>NORM_MX2_EP_MIN && mx2ep<NORM_MX2_EP_MAX);
     f.mx2_eg=(mx2eg>NORM_MX2_EG_MIN);
     f.dphi_trento=(std::fabs(dphi)<NORM_DPHI_TRENTO_MAX);
-    f.angle_eX=(ang<NORM_ANGLE_EX_MAX);
+    f.angle_gX=(ang<NORM_ANGLE_GX_MAX);
 
-    f.all=f.mx2_ep && f.mx2_eg && f.dphi_trento && f.angle_eX;
+    f.all=f.mx2_ep && f.mx2_eg && f.dphi_trento && f.angle_gX;
     return f;
 }
 
@@ -2103,7 +2152,7 @@ bool norm_pass_nminus1(const NormCutFlags& f,int io) {
     // cut.  All other observables see the active |delta phi_copl| < 5.7 deg cut.
     if (io!=NORM_DPHI_TRENTO_SHIFT180 && !f.dphi_trento) return false;
 
-    if (io!=NORM_ANGLE_EX && !f.angle_eX) return false;
+    if (io!=NORM_ANGLE_GX && !f.angle_gX) return false;
     return true;
 }
 
@@ -2424,7 +2473,7 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
                 norm_cutflow[2]++;
                 if (ncf.dphi_trento) {
                     norm_cutflow[3]++;
-                    if (ncf.angle_eX) norm_cutflow[4]++;
+                    if (ncf.angle_gX) norm_cutflow[4]++;
                 }
             }
         }
@@ -3239,7 +3288,7 @@ void write_step1d_coplanarity_summary(const std::vector<std::unique_ptr<ValCompo
 
 
 
-void draw_step1e_angle_eX_overlay(const std::vector<std::unique_ptr<ValComponent>>& vv,
+void draw_step1e_angle_gX_overlay(const std::vector<std::unique_ptr<ValComponent>>& vv,
                                   const std::string& file) {
     const ValComponent* data=find_val_component(vv,"data");
     const ValComponent* aao=find_val_component(vv,"aaogen");
@@ -3248,8 +3297,8 @@ void draw_step1e_angle_eX_overlay(const std::vector<std::unique_ptr<ValComponent
     if (!data || !aao || !cls || !dvc) return;
 
     auto geth=[](const ValComponent* v)->const TH1D* {
-        if (!v || v->norm_after_mx2ep_mx2eg_dphi.size()<=NORM_ANGLE_EX) return nullptr;
-        return v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_EX].get();
+        if (!v || v->norm_after_mx2ep_mx2eg_dphi.size()<=NORM_ANGLE_GX) return nullptr;
+        return v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_GX].get();
     };
     const TH1D *hd0=geth(data), *ha0=geth(aao), *hc0=geth(cls), *hv0=geth(dvc);
     if (!hd0 || !ha0 || !hc0 || !hv0) return;
@@ -3277,8 +3326,8 @@ void draw_step1e_angle_eX_overlay(const std::vector<std::unique_ptr<ValComponent
     style_norm_component(hv.get(),kGreen+2);
 
     TCanvas can("c_step1e_anglegX_overlay","",1100,780);
-    hd->SetTitle("Step 1E: angle(e,X) after Steps 1B+1C+1D");
-    hd->GetXaxis()->SetTitle("angle(e,X) (deg)");
+    hd->SetTitle("Step 1E: angle(#gamma,X) after Steps 1B+1C+1D");
+    hd->GetXaxis()->SetTitle("angle(#gamma,X) (deg)");
     hd->GetYaxis()->SetTitle("Unit-area candidates");
     hd->SetMaximum(1.30*std::max({hd->GetMaximum(),ha->GetMaximum(),hc->GetMaximum(),hv->GetMaximum()}));
 
@@ -3289,7 +3338,7 @@ void draw_step1e_angle_eX_overlay(const std::vector<std::unique_ptr<ValComponent
     hd->Draw("E1 SAME");
 
     const double ymax=hd->GetMaximum()*1.24;
-    TLine cut(NORM_ANGLE_EX_MAX,0.0,NORM_ANGLE_EX_MAX,ymax);
+    TLine cut(NORM_ANGLE_GX_MAX,0.0,NORM_ANGLE_GX_MAX,ymax);
     cut.SetLineStyle(2);
     cut.SetLineWidth(2);
     cut.Draw();
@@ -3301,7 +3350,7 @@ void draw_step1e_angle_eX_overlay(const std::vector<std::unique_ptr<ValComponent
     leg.AddEntry(ha.get(),"AAO (unit area)","l");
     leg.AddEntry(hc.get(),"CLASDIS (unit area)","l");
     leg.AddEntry(hv.get(),"DVCSgen (unit area)","l");
-    leg.AddEntry(&cut,Form("angle(e,X) < %.1f deg",NORM_ANGLE_EX_MAX),"l");
+    leg.AddEntry(&cut,Form("angle(#gamma,X) < %.1f deg",NORM_ANGLE_GX_MAX),"l");
     leg.Draw();
 
     TLatex tx;
@@ -3312,7 +3361,7 @@ void draw_step1e_angle_eX_overlay(const std::vector<std::unique_ptr<ValComponent
     can.SaveAs(file.c_str());
 }
 
-void draw_step1e_angle_eX_individual(const std::vector<std::unique_ptr<ValComponent>>& vv,
+void draw_step1e_angle_gX_individual(const std::vector<std::unique_ptr<ValComponent>>& vv,
                                      const std::string& file) {
     TCanvas can("c_step1e_anglegX_individual","",1350,950);
     can.Divide(2,2);
@@ -3324,11 +3373,11 @@ void draw_step1e_angle_eX_individual(const std::vector<std::unique_ptr<ValCompon
 
     for (int is=0;is<4;is++) {
         const ValComponent* v=find_val_component(vv,names[is]);
-        if (!v || v->norm_after_mx2ep_mx2eg_dphi.size()<=NORM_ANGLE_EX ||
-            !v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_EX]) continue;
+        if (!v || v->norm_after_mx2ep_mx2eg_dphi.size()<=NORM_ANGLE_GX ||
+            !v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_GX]) continue;
 
         std::unique_ptr<TH1D> h(
-            (TH1D*)v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_EX]->
+            (TH1D*)v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_GX]->
                 Clone(Form("step1e_%s_counts",names[is]))
         );
         h->SetDirectory(nullptr);
@@ -3336,15 +3385,15 @@ void draw_step1e_angle_eX_individual(const std::vector<std::unique_ptr<ValCompon
         h->SetLineColor(colors[is]);
         h->SetMarkerColor(colors[is]);
         h->SetLineWidth(2);
-        h->SetTitle(Form("%s: angle(e,X) after Steps 1B+1C+1D",labels[is]));
-        h->GetXaxis()->SetTitle("angle(e,X) (deg)");
+        h->SetTitle(Form("%s: angle(#gamma,X) after Steps 1B+1C+1D",labels[is]));
+        h->GetXaxis()->SetTitle("angle(#gamma,X) (deg)");
         h->GetYaxis()->SetTitle("Candidates");
 
         can.cd(is+1);
         h->Draw("HIST");
 
         const double ymax=std::max(1.0,1.05*h->GetMaximum());
-        TLine* cut=new TLine(NORM_ANGLE_EX_MAX,0.0,NORM_ANGLE_EX_MAX,ymax);
+        TLine* cut=new TLine(NORM_ANGLE_GX_MAX,0.0,NORM_ANGLE_GX_MAX,ymax);
         cut->SetLineStyle(2);
         cut->SetLineWidth(2);
         cut->Draw();
@@ -3364,21 +3413,21 @@ void draw_step1e_angle_eX_individual(const std::vector<std::unique_ptr<ValCompon
     can.SaveAs(file.c_str());
 }
 
-void write_step1e_angle_eX_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
+void write_step1e_angle_gX_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
                                    const std::string& dir) {
     gSystem->mkdir(dir.c_str(),true);
 
-    std::ofstream csv(dir+"/angle_eX_survival.csv");
+    std::ofstream csv(dir+"/angle_gX_survival.csv");
     csv << "sample,input_after_steps_1B_1C_1D,pass_angle_gX,fail_angle_gX,survival_fraction\n";
 
-    std::ofstream txt(dir+"/angle_eX_summary.txt");
-    txt << "Step 1E: angle(e,X) requirement\n"
+    std::ofstream txt(dir+"/angle_gX_summary.txt");
+    txt << "Step 1E: angle(#gamma,X) requirement\n"
         << "===================================\n"
         << "Input sample: events already passing M_X^2(ep), M_X^2(e gamma), and\n"
         << "the Trento coplanarity requirement.\n"
         << "Definition used by the macro: opening angle between the reconstructed\n"
         << "tag-photon direction and the inferred missing-object direction X.\n"
-        << "Active requirement: angle(e,X) < " << NORM_ANGLE_EX_MAX << " deg.\n"
+        << "Active requirement: angle(#gamma,X) < " << NORM_ANGLE_GX_MAX << " deg.\n"
         << "This is the final sequential exclusivity requirement in Step 1.\n\n";
 
     for (const auto& vp:vv) {
@@ -3397,8 +3446,8 @@ void write_step1e_angle_eX_summary(const std::vector<std::unique_ptr<ValComponen
     csv.close();
     txt.close();
 
-    draw_step1e_angle_eX_overlay(vv,dir+"/angle_eX_unit_area_after_steps_1B_1C_1D.png");
-    draw_step1e_angle_eX_individual(vv,dir+"/angle_eX_counts_after_steps_1B_1C_1D.png");
+    draw_step1e_angle_gX_overlay(vv,dir+"/angle_gX_unit_area_after_steps_1B_1C_1D.png");
+    draw_step1e_angle_gX_individual(vv,dir+"/angle_gX_counts_after_steps_1B_1C_1D.png");
 }
 
 
@@ -3526,7 +3575,8 @@ void write_step2a_energy_region_diagnostics(const std::vector<std::unique_ptr<Va
         << "  * retain only as a closure/cross-check region.\n\n"
         << "High-energy region: E_gamma > 3 GeV\n"
         << "  * hold the low-E AAO and CLASDIS factors fixed;\n"
-        << "  * determine the DVCS normalization factor.\n";
+        << "  * determine the DVCS normalization factor;\n"
+        << "  * include Delta t = t_p - t_gamma among the high-E diagnostics.\n";
     txt.close();
 }
 
@@ -3546,7 +3596,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     gSystem->mkdir((od+"/step1b_mx2_ep").c_str(),true);
     gSystem->mkdir((od+"/step1c_mx2_eg").c_str(),true);
     gSystem->mkdir((od+"/step1d_coplanarity").c_str(),true);
-    gSystem->mkdir((od+"/step1e_angle_eX").c_str(),true);
+    gSystem->mkdir((od+"/step1e_angle_gX").c_str(),true);
     gSystem->mkdir((od+"/step2a_energy_regions").c_str(),true);
 
     if (!data || !aao || !cls || !dvc ||
@@ -3583,7 +3633,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
 
     // Step 1E diagnostics: inspect angle(gamma,X) sequentially after all
     // preceding Step-1 exclusivity requirements and before its own cut.
-    write_step1e_angle_eX_summary(vv,od+"/step1e_angle_eX");
+    write_step1e_angle_gX_summary(vv,od+"/step1e_angle_gX");
 
     // Step 2A: reproduce Valerii's energy-region logic before fitting any
     // component normalization.  The 2-3 GeV transition region is explicitly
@@ -3922,6 +3972,7 @@ void run_valerii_fd_reproduction(const std::string& out) {
               << "Primary correction convention: epsilon_data / epsilon_MC.\n"
               << "Delta-phi exclusivity cut: |delta phi_copl| < 5.7 deg using the Trento-plane residual.\n"
               << "Raw lab dphi and the underlying Trento-angle quantities remain QA diagnostics.\n"
+              << "High-E DVCS normalization diagnostics include Delta t = t_p - t_gamma.\n"
               << "============================================================\n";
     auto vv=build_val_components_parallel(out);
     write_valerii_outputs(vv,out);
