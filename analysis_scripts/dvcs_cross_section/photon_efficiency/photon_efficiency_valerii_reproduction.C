@@ -1585,7 +1585,7 @@ struct SampleSpec {
     bool is_mc=false;
 };
 
-static const char* CONCISE_CACHE_VERSION="20260912_concise_v7_corr_globalnorm";
+static const char* CONCISE_CACHE_VERSION="20260912_concise_v8_ft_cutscan";
 
 std::uint64_t concise_hash(const std::string& s,std::uint64_t h=1469598103934665603ULL) {
     for (unsigned char c:s) {
@@ -1848,6 +1848,10 @@ struct ValComponent {
     std::vector<std::unique_ptr<TH1D>> eprobe_stage_fd;
     std::vector<std::unique_ptr<TH1D>> eprobe_stage_ft;
 
+    // FT N-1 distributions used for the exclusivity cut optimization.
+    // x = inferred probe energy, y = scanned exclusivity variable.
+    std::vector<std::unique_ptr<TH2D>> cutscan_ft;
+
     bool normalization_branches_complete=false;
 };
 
@@ -1928,6 +1932,32 @@ static const int EPROBE_NSTAGE=5;
 static const char* EPROBE_STAGE_KEY[EPROBE_NSTAGE] = {
     "baseline","mx2_ep","mx2_eg","coplanarity","angle_gX"
 };
+
+// FT cut optimization.  Each scan is N-1: all of the other nominal
+// exclusivity requirements are imposed while the listed variable is varied.
+// Mx2(epgamma) is an additional tightening inside the loose skim window.
+static const int CUTSCAN_NVAR=4;
+static const int CUTSCAN_OBS[CUTSCAN_NVAR] = {
+    NORM_MX2_EPG,
+    NORM_DPHI_TRENTO_SHIFT180,
+    NORM_MX2_EP,
+    NORM_ANGLE_GX
+};
+static const char* CUTSCAN_KEY[CUTSCAN_NVAR] = {
+    "Mx2_epg_halfwidth",
+    "dphi_absmax",
+    "Mx2_ep_halfwidth",
+    "angle_gX_max"
+};
+static const char* CUTSCAN_XTITLE[CUTSCAN_NVAR] = {
+    "|M_{X}^{2}(ep#gamma)| maximum (GeV^{2})",
+    "|#Delta#phi_{copl}| maximum (deg)",
+    "M_{X}^{2}(ep) half-width (GeV^{2})",
+    "angle(#gamma,X) maximum (deg)"
+};
+static const int CUTSCAN_NPOINT=25;
+static const double CUTSCAN_MX2EP_CENTER=0.039; // center of [-0.231,0.309] GeV^2
+
 
 // June-2026 Valerii normalization/exclusivity selection.
 // Slide 9 labels the final angular cut as Angle(e,X)<9.2 deg, but the literal
@@ -2133,6 +2163,19 @@ std::unique_ptr<TH1D> make_eprobe_stage_hist(const char* detector,int stage,
         Form("eprobe_%s_%s_%s",detector,EPROBE_STAGE_KEY[stage],sample.c_str()),
         ";E_{#gamma,probe} (GeV);Candidates",
         EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX));
+    h->Sumw2();
+    h->SetDirectory(nullptr);
+    return h;
+}
+
+std::unique_ptr<TH2D> make_cutscan_hist(int iv,const std::string& sample) {
+    const int io=CUTSCAN_OBS[iv];
+    const auto& d=NORM_OBS[io];
+    const int ny=std::min(120,d.nb);
+    std::unique_ptr<TH2D> h(new TH2D(
+        Form("cutscan_ft_%s_%s",CUTSCAN_KEY[iv],sample.c_str()),
+        Form(";E_{#gamma,probe} (GeV);%s",d.key),
+        EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX,ny,d.lo,d.hi));
     h->Sumw2();
     h->SetDirectory(nullptr);
     return h;
@@ -2652,6 +2695,10 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         eprobe_stage_ft.push_back(make_eprobe_stage_hist("FT",is,spec.name));
     } // endfor
 
+    std::vector<std::unique_ptr<TH2D>> cutscan_ft;
+    for (int iv=0;iv<CUTSCAN_NVAR;iv++)
+        cutscan_ft.push_back(make_cutscan_hist(iv,spec.name));
+
     std::array<long long,6> norm_cutflow{{0,0,0,0,0,0}};
     std::array<long long,6> norm_ft_cutflow{{0,0,0,0,0,0}};
     for (int ib=0;ib<VAL_NBIN;ib++) {
@@ -2724,6 +2771,32 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
 
         fill_corr_sample(probe_fd,corr_fd,eprobe_stage_fd);
         fill_corr_sample(probe_ft,corr_ft,eprobe_stage_ft);
+
+        // FT N-1 cut-scan inputs.  These retain the Eprobe coordinate so every
+        // prospective cut can be evaluated for both purity and energy sculpting.
+        if (probe_ft) {
+            for (int iv=0;iv<CUTSCAN_NVAR;iv++) {
+                const int io=CUTSCAN_OBS[iv];
+                bool pass_other=false;
+
+                if (io==NORM_MX2_EPG) {
+                    // Mx2(epgamma) is not one of the active June cuts; scan it
+                    // as an additional tightening after the full nominal set.
+                    pass_other=ncf.all;
+                } else if (io==NORM_MX2_EP) {
+                    pass_other=ncf.mx2_eg && ncf.dphi_trento && ncf.angle_gX;
+                } else if (io==NORM_DPHI_TRENTO_SHIFT180) {
+                    pass_other=ncf.mx2_ep && ncf.mx2_eg && ncf.angle_gX;
+                } else if (io==NORM_ANGLE_GX) {
+                    pass_other=ncf.mx2_ep && ncf.mx2_eg && ncf.dphi_trento;
+                } // endif
+
+                if (!pass_other) continue;
+                const double y=norm_observable_value(b,io);
+                if (std::isfinite(y))
+                    cutscan_ft[iv]->Fill(b.probe_corr_p,y);
+            } // endfor
+        } // endif
 
         auto fill_norm_sample = [&](bool accept,
                                     std::vector<std::unique_ptr<TH1D>>& pre,
@@ -2897,6 +2970,16 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
 
     write_corr_dir("correlations_FD",corr_fd,eprobe_stage_fd);
     write_corr_dir("correlations_FT",corr_ft,eprobe_stage_ft);
+
+    {
+        TDirectory* sd=f.mkdir("cutscan_FT");
+        if (sd) {
+            sd->cd();
+            for (int iv=0;iv<CUTSCAN_NVAR;iv++)
+                if (cutscan_ft[iv]) cutscan_ft[iv]->Write(CUTSCAN_KEY[iv]);
+            f.cd();
+        } // endif
+    }
 
     TDirectory* rd=f.mkdir("residuals");
     if (!rd) { f.Close(); return false; }
@@ -3117,6 +3200,22 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
 
     load_corr_dir("correlations_FD",v->corr_fd,v->eprobe_stage_fd);
     load_corr_dir("correlations_FT",v->corr_ft,v->eprobe_stage_ft);
+
+    {
+        auto* sd=dynamic_cast<TDirectory*>(f.Get("cutscan_FT"));
+        for (int iv=0;iv<CUTSCAN_NVAR;iv++) {
+            std::unique_ptr<TH2D> q;
+            if (sd) {
+                auto* h=dynamic_cast<TH2D*>(sd->Get(CUTSCAN_KEY[iv]));
+                if (h) {
+                    q.reset(dynamic_cast<TH2D*>(h->Clone(
+                        Form("%s_cutscan_FT_%s",v->name.c_str(),CUTSCAN_KEY[iv]))));
+                    if (q) q->SetDirectory(nullptr);
+                } // endif
+            } // endif
+            v->cutscan_ft.push_back(std::move(q));
+        } // endfor
+    }
 
     f.Close();
     return v;
@@ -5178,15 +5277,34 @@ void draw_eprobe_cut_survival(const std::vector<std::unique_ptr<ValComponent>>& 
     const int cols[]={kBlack,kBlue+1,kMagenta+1,kRed+1,kGreen+2};
     const char* stage_labels[]={
         "baseline",
-        "after M_{X}^{2}(ep)",
-        "after M_{X}^{2}(e#gamma)",
-        "after coplanarity",
-        "after angle(#gamma,X)"
+        "M_{X}^{2}(ep)",
+        "M_{X}^{2}(e#gamma)",
+        "coplanarity",
+        "angle(#gamma,X)"
     };
 
-    TCanvas c(ft_probe?"c_surv_ft":"c_surv_fd","",1500,1050);
-    c.Divide(2,2);
+    TCanvas c(ft_probe?"c_surv_ft":"c_surv_fd","",2200,1200);
+    c.Divide(4,2,0.001,0.001);
     std::vector<std::unique_ptr<TH1D>> keep;
+
+    auto make_ratio = [&](const TH1D* num,const TH1D* den,const char* name)->std::unique_ptr<TH1D> {
+        if (!num || !den) return nullptr;
+        std::unique_ptr<TH1D> h(dynamic_cast<TH1D*>(num->Clone(name)));
+        if (!h) return nullptr;
+        h->SetDirectory(nullptr);
+        h->Reset("ICES");
+        h->SetStats(0);
+
+        for (int ib=1;ib<=num->GetNbinsX();ib++) {
+            const double n=num->GetBinContent(ib);
+            const double d=den->GetBinContent(ib);
+            if (!(d>0)) continue;
+            const double p=std::max(0.0,std::min(1.0,n/d));
+            h->SetBinContent(ib,p);
+            h->SetBinError(ib,std::sqrt(std::max(0.0,p*(1.0-p)/d)));
+        } // endfor
+        return h;
+    };
 
     for (int isamp=0;isamp<4;isamp++) {
         const ValComponent* v=find_val_component(vv,names[isamp]);
@@ -5194,36 +5312,37 @@ void draw_eprobe_cut_survival(const std::vector<std::unique_ptr<ValComponent>>& 
         const auto& st=ft_probe?v->eprobe_stage_ft:v->eprobe_stage_fd;
         if (st.size()<EPROBE_NSTAGE || !st[0]) continue;
 
+        // Top row: cumulative survival relative to detector-accepted baseline.
         c.cd(isamp+1);
-        gPad->SetLeftMargin(0.14);
-        gPad->SetRightMargin(0.04);
+        gPad->SetLeftMargin(isamp==0?0.16:0.11);
+        gPad->SetRightMargin(0.03);
         gPad->SetBottomMargin(0.15);
         gPad->SetTopMargin(0.14);
+        gPad->SetTicks(1,1);
 
         TH1D frame(Form("surv_frame_%d",isamp),
-                   ";E_{#gamma,probe} (GeV);Fraction of baseline candidates",
+                   ";E_{#gamma,probe} (GeV);Cumulative survival",
                    EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX);
         frame.SetStats(0);
         frame.SetMinimum(0);
         frame.SetMaximum(1.05);
+        frame.GetXaxis()->SetTitleSize(0.050);
+        frame.GetYaxis()->SetTitleSize(0.050);
+        frame.GetYaxis()->SetTitleOffset(isamp==0?1.35:1.0);
         frame.Draw("AXIS");
 
+        std::vector<TH1D*> cumulative;
         for (int ist=0;ist<EPROBE_NSTAGE;ist++) {
-            if (!st[ist]) continue;
-            std::unique_ptr<TH1D> h(dynamic_cast<TH1D*>(st[ist]->Clone(
-                Form("surv_%d_%d",isamp,ist))));
-            h->SetDirectory(nullptr);
-            h->SetStats(0);
-            for (int ib=1;ib<=h->GetNbinsX();ib++) {
-                const double den=st[0]->GetBinContent(ib);
-                const double num=st[ist]->GetBinContent(ib);
-                h->SetBinContent(ib,den>0?num/den:0);
-                h->SetBinError(ib,0);
-            } // endfor
+            auto h=make_ratio(st[ist].get(),st[0].get(),
+                              Form("surv_cum_%d_%d",isamp,ist));
+            if (!h) continue;
             h->SetLineColor(cols[ist]);
-            h->SetLineWidth(2+(ist==EPROBE_NSTAGE-1));
             h->SetMarkerColor(cols[ist]);
-            h->Draw("HIST SAME");
+            h->SetMarkerStyle(20+ist);
+            h->SetMarkerSize(0.45);
+            h->SetLineWidth(2);
+            h->Draw("E1 SAME");
+            cumulative.push_back(h.get());
             keep.push_back(std::move(h));
         } // endfor
 
@@ -5231,20 +5350,342 @@ void draw_eprobe_cut_survival(const std::vector<std::unique_ptr<ValComponent>>& 
         tx.SetNDC();
         tx.SetTextFont(42);
         tx.SetTextSize(0.052);
-        tx.DrawLatex(0.16,0.92,labels[isamp]);
+        tx.DrawLatex(0.15,0.92,labels[isamp]);
 
         if (isamp==0) {
-            TLegend leg(0.48,0.53,0.94,0.86);
-            leg.SetBorderSize(0);
-            leg.SetFillStyle(0);
-            leg.SetTextSize(0.030);
-            for (int ist=0;ist<EPROBE_NSTAGE;ist++)
-                leg.AddEntry(keep[ist].get(),stage_labels[ist],"l");
-            leg.Draw();
+            TLegend* leg=new TLegend(0.40,0.50,0.96,0.85);
+            leg->SetBorderSize(0);
+            leg->SetFillStyle(0);
+            leg->SetTextSize(0.031);
+            for (int ist=0;ist<int(cumulative.size());ist++)
+                leg->AddEntry(cumulative[ist],stage_labels[ist],"lep");
+            leg->Draw();
+        } // endif
+
+        // Bottom row: incremental efficiency of each cut relative to the stage
+        // immediately before it.  This isolates which cut sculpts Eprobe.
+        c.cd(4+isamp+1);
+        gPad->SetLeftMargin(isamp==0?0.16:0.11);
+        gPad->SetRightMargin(0.03);
+        gPad->SetBottomMargin(0.17);
+        gPad->SetTopMargin(0.10);
+        gPad->SetTicks(1,1);
+
+        TH1D iframe(Form("surv_iframe_%d",isamp),
+                    ";E_{#gamma,probe} (GeV);Incremental cut efficiency",
+                    EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX);
+        iframe.SetStats(0);
+        iframe.SetMinimum(0);
+        iframe.SetMaximum(1.05);
+        iframe.GetXaxis()->SetTitleSize(0.050);
+        iframe.GetYaxis()->SetTitleSize(0.050);
+        iframe.GetYaxis()->SetTitleOffset(isamp==0?1.35:1.0);
+        iframe.Draw("AXIS");
+
+        std::vector<TH1D*> incremental;
+        for (int ist=1;ist<EPROBE_NSTAGE;ist++) {
+            auto h=make_ratio(st[ist].get(),st[ist-1].get(),
+                              Form("surv_inc_%d_%d",isamp,ist));
+            if (!h) continue;
+            h->SetLineColor(cols[ist]);
+            h->SetMarkerColor(cols[ist]);
+            h->SetMarkerStyle(20+ist);
+            h->SetMarkerSize(0.45);
+            h->SetLineWidth(2);
+            h->Draw("E1 SAME");
+            incremental.push_back(h.get());
+            keep.push_back(std::move(h));
+        } // endfor
+
+        if (isamp==0) {
+            TLegend* leg=new TLegend(0.39,0.53,0.96,0.85);
+            leg->SetBorderSize(0);
+            leg->SetFillStyle(0);
+            leg->SetTextSize(0.031);
+            for (int ist=1;ist<EPROBE_NSTAGE;ist++)
+                if (ist-1<int(incremental.size()))
+                    leg->AddEntry(incremental[ist-1],stage_labels[ist],"lep");
+            leg->Draw();
         } // endif
     } // endfor
 
     c.SaveAs((dir+"/Eprobe_cut_survival.png").c_str());
+}
+
+struct FTCutScanPoint {
+    int iv=-1;
+    double cut=0;
+    double pi0_purity=0;
+    double two_gen_purity=0;
+    double data_retention=0;
+    double aao_retention=0;
+    double aao_high_retention=0;
+    double eprobe_distortion=0;
+    double y_data=0;
+    double y_aao=0;
+    double y_clasdis=0;
+    double y_dvcs=0;
+};
+
+double cutscan_value(int iv,int ip) {
+    const double f=(CUTSCAN_NPOINT>1)?double(ip)/double(CUTSCAN_NPOINT-1):0.0;
+    if (iv==0) return 0.03 + f*(0.25-0.03);  // |Mx2(epgamma)|
+    if (iv==1) return 2.0  + f*(12.0-2.0);   // |Delta phi|
+    if (iv==2) return 0.08 + f*(0.40-0.08);  // Mx2(ep) half-width
+    if (iv==3) return 4.0  + f*(16.0-4.0);   // angle(gamma,X)
+    return 0;
+}
+
+double cutscan_nominal_value(int iv) {
+    if (iv==0) return 0.25; // loose skim limit; no tighter active cut yet
+    if (iv==1) return NORM_DPHI_TRENTO_MAX;
+    if (iv==2) return 0.5*(NORM_MX2_EP_MAX-NORM_MX2_EP_MIN);
+    if (iv==3) return NORM_ANGLE_GX_MAX;
+    return 0;
+}
+
+bool cutscan_pass(int iv,double y,double cut) {
+    if (!std::isfinite(y)) return false;
+    if (iv==0) return std::fabs(y)<cut;
+    if (iv==1) return std::fabs(y)<cut;
+    if (iv==2) return std::fabs(y-CUTSCAN_MX2EP_CENTER)<cut;
+    if (iv==3) return y<cut;
+    return false;
+}
+
+std::unique_ptr<TH1D> cutscan_project_eprobe(const TH2D* h2,int iv,double cut,const char* name) {
+    if (!h2) return nullptr;
+    std::unique_ptr<TH1D> h(new TH1D(name,";E_{#gamma,probe} (GeV);Candidates",
+                                     EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX));
+    h->Sumw2();
+    h->SetDirectory(nullptr);
+
+    for (int ix=1;ix<=h2->GetNbinsX();ix++) {
+        double s=0,s2=0;
+        for (int iy=1;iy<=h2->GetNbinsY();iy++) {
+            const double y=h2->GetYaxis()->GetBinCenter(iy);
+            if (!cutscan_pass(iv,y,cut)) continue;
+            s += h2->GetBinContent(ix,iy);
+            const double e=h2->GetBinError(ix,iy);
+            s2 += e*e;
+        } // endfor
+        h->SetBinContent(ix,s);
+        h->SetBinError(ix,std::sqrt(std::max(0.0,s2)));
+    } // endfor
+    return h;
+}
+
+double hist_integral_range(const TH1D* h,double lo,double hi) {
+    if (!h) return 0;
+    double s=0;
+    for (int ib=1;ib<=h->GetNbinsX();ib++) {
+        const double x=h->GetBinCenter(ib);
+        if (x>=lo && x<hi) s+=h->GetBinContent(ib);
+    } // endfor
+    return s;
+}
+
+// Shape-only difference between two Eprobe spectra.  Zero means the cut leaves
+// the normalized energy spectrum unchanged; larger values mean more sculpting.
+double eprobe_total_variation(const TH1D* selected,const TH1D* baseline) {
+    if (!selected || !baseline) return 0;
+    const double ns=selected->Integral();
+    const double nb=baseline->Integral();
+    if (!(ns>0) || !(nb>0)) return 0;
+
+    double tv=0;
+    for (int ib=1;ib<=selected->GetNbinsX();ib++) {
+        const double ps=selected->GetBinContent(ib)/ns;
+        const double pb=baseline->GetBinContent(ib)/nb;
+        tv += std::fabs(ps-pb);
+    } // endfor
+    return 0.5*tv;
+}
+
+double selected_clasdis_pi0_fraction(const TH1D* selected,const ValComponent* cls) {
+    if (!selected || !cls) return 1.0;
+    const double nl=hist_integral_range(selected,EPROBE_MIN,2.0);
+    const double nh=hist_integral_range(selected,2.0,EPROBE_MAX+1e-6);
+    const double nt=nl+nh;
+    if (!(nt>0)) return 1.0;
+    const double fl=coarse_clasdis_pi0_fraction(cls,CR_FT_LOW);
+    const double fh=coarse_clasdis_pi0_fraction(cls,CR_FT_HIGH);
+    return (nl*fl+nh*fh)/nt;
+}
+
+void draw_ft_cut_optimization(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                              const NormDerivation& R,
+                              const std::string& dir) {
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* aao=find_val_component(vv,"aaogen");
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
+    if (!data || !aao || !cls || !dvc) return;
+    if (data->cutscan_ft.size()<CUTSCAN_NVAR ||
+        aao->cutscan_ft.size()<CUTSCAN_NVAR ||
+        cls->cutscan_ft.size()<CUTSCAN_NVAR ||
+        dvc->cutscan_ft.size()<CUTSCAN_NVAR) return;
+    if (aao->eprobe_stage_ft.empty() || data->eprobe_stage_ft.empty()) return;
+
+    const TH1D* aao_baseline=aao->eprobe_stage_ft[0].get();
+    const TH1D* data_baseline=data->eprobe_stage_ft[0].get();
+    if (!aao_baseline || !data_baseline) return;
+
+    const double aao_base=std::max(1.0,aao_baseline->Integral());
+    const double data_base=std::max(1.0,data_baseline->Integral());
+    const double aao_high_base=std::max(1.0,hist_integral_range(aao_baseline,2.0,EPROBE_MAX+1e-6));
+
+    std::vector<FTCutScanPoint> pts;
+    std::array<std::vector<FTCutScanPoint>,CUTSCAN_NVAR> byvar;
+
+    for (int iv=0;iv<CUTSCAN_NVAR;iv++) {
+        for (int ip=0;ip<CUTSCAN_NPOINT;ip++) {
+            const double cut=cutscan_value(iv,ip);
+
+            auto hd=cutscan_project_eprobe(data->cutscan_ft[iv].get(),iv,cut,
+                                           Form("scan_data_%d_%d",iv,ip));
+            auto ha=cutscan_project_eprobe(aao->cutscan_ft[iv].get(),iv,cut,
+                                           Form("scan_aao_%d_%d",iv,ip));
+            auto hc=cutscan_project_eprobe(cls->cutscan_ft[iv].get(),iv,cut,
+                                           Form("scan_cls_%d_%d",iv,ip));
+            auto hv=cutscan_project_eprobe(dvc->cutscan_ft[iv].get(),iv,cut,
+                                           Form("scan_dvc_%d_%d",iv,ip));
+            if (!hd || !ha || !hc || !hv) continue;
+
+            FTCutScanPoint q;
+            q.iv=iv;
+            q.cut=cut;
+            q.y_data=hd->Integral();
+            q.y_aao=R.nominal.aao*ha->Integral();
+            q.y_clasdis=R.nominal.clasdis*hc->Integral();
+            q.y_dvcs=R.nominal.dvcs*hv->Integral();
+
+            const double fc=selected_clasdis_pi0_fraction(hc.get(),cls);
+            const double total=q.y_aao+q.y_clasdis+q.y_dvcs;
+            if (total>0)
+                q.pi0_purity=(q.y_aao+fc*q.y_clasdis)/total;
+
+            const double two=q.y_aao+q.y_dvcs;
+            if (two>0) q.two_gen_purity=q.y_aao/two;
+
+            q.data_retention=q.y_data/data_base;
+            q.aao_retention=ha->Integral()/aao_base;
+            q.aao_high_retention=
+                hist_integral_range(ha.get(),2.0,EPROBE_MAX+1e-6)/aao_high_base;
+            q.eprobe_distortion=eprobe_total_variation(ha.get(),aao_baseline);
+
+            pts.push_back(q);
+            byvar[iv].push_back(q);
+        } // endfor
+    } // endfor
+
+    const char* row_titles[CUTSCAN_NVAR]={
+        "M_{X}^{2}(ep#gamma)",
+        "Trento coplanarity",
+        "M_{X}^{2}(ep)",
+        "angle(#gamma,X)"
+    };
+
+    TCanvas c("c_ft_cut_optimization","",2100,2200);
+    c.Divide(4,CUTSCAN_NVAR,0.001,0.001);
+
+    for (int iv=0;iv<CUTSCAN_NVAR;iv++) {
+        if (byvar[iv].empty()) continue;
+
+        for (int metric=0;metric<4;metric++) {
+            c.cd(iv*4+metric+1);
+            gPad->SetLeftMargin(metric==0?0.18:0.13);
+            gPad->SetRightMargin(0.035);
+            gPad->SetBottomMargin(iv==CUTSCAN_NVAR-1?0.18:0.12);
+            gPad->SetTopMargin(iv==0?0.18:0.08);
+            gPad->SetTicks(1,1);
+
+            std::unique_ptr<TGraph> g(new TGraph());
+            int ipt=0;
+            for (const auto& q:byvar[iv]) {
+                double y=0;
+                if (metric==0) y=q.two_gen_purity;
+                if (metric==1) y=q.aao_retention;
+                if (metric==2) y=q.aao_high_retention;
+                if (metric==3) y=q.eprobe_distortion;
+                g->SetPoint(ipt++,q.cut,y);
+            } // endfor
+
+            g->SetLineWidth(3);
+            g->SetMarkerStyle(20);
+            g->SetMarkerSize(0.65);
+            g->SetTitle("");
+            g->GetXaxis()->SetTitle(iv==CUTSCAN_NVAR-1?CUTSCAN_XTITLE[iv]:"");
+
+            if (metric==0) {
+                g->GetYaxis()->SetTitle("AAO/(AAO+DVCS)");
+                g->SetMinimum(0); g->SetMaximum(1.02);
+            } else if (metric==1) {
+                g->GetYaxis()->SetTitle("AAO retention");
+                g->SetMinimum(0); g->SetMaximum(1.02);
+            } else if (metric==2) {
+                g->GetYaxis()->SetTitle("AAO E_{probe}#geq2 retention");
+                g->SetMinimum(0); g->SetMaximum(1.02);
+            } else {
+                g->GetYaxis()->SetTitle("E_{probe} shape distortion");
+                g->SetMinimum(0);
+                double ymax=0.05;
+                for (const auto& q:byvar[iv]) ymax=std::max(ymax,q.eprobe_distortion);
+                g->SetMaximum(std::min(1.0,1.20*ymax));
+            } // endif
+
+            g->GetXaxis()->SetTitleSize(0.050);
+            g->GetYaxis()->SetTitleSize(0.047);
+            g->GetXaxis()->SetLabelSize(0.040);
+            g->GetYaxis()->SetLabelSize(0.040);
+            g->GetYaxis()->SetTitleOffset(metric==0?1.65:1.35);
+            g->Draw("ALP");
+
+            const double xnom=cutscan_nominal_value(iv);
+            const double ymin=g->GetYaxis()->GetXmin();
+            const double ymax=g->GetYaxis()->GetXmax();
+            TLine* l=new TLine(xnom,ymin,xnom,ymax);
+            l->SetLineStyle(2);
+            l->SetLineWidth(2);
+            l->Draw();
+
+            TLatex tx;
+            tx.SetNDC();
+            tx.SetTextFont(42);
+            if (metric==0) {
+                tx.SetTextSize(0.048);
+                tx.DrawLatex(0.18,0.91,Form("(%c) %s",'a'+iv,row_titles[iv]));
+            } // endif
+            if (iv==0) {
+                tx.SetTextSize(0.043);
+                const char* hdr=
+                    metric==0?"#pi^{0} purity proxy":
+                    metric==1?"all-E AAO retention":
+                    metric==2?"high-E AAO retention":
+                              "energy sculpting";
+                tx.DrawLatex(0.18,0.91,hdr);
+            } // endif
+        } // endfor
+    } // endfor
+
+    c.SaveAs((dir+"/FT_cut_optimization.png").c_str());
+
+    // Append the full scan to the one existing FT exclusivity summary file.
+    std::ofstream csv(dir+"/summary.csv",std::ios::app);
+    csv << "\n# FT one-variable N-1 cut scan\n";
+    csv << "scan_variable,cut_value,pi0_purity_nominal,two_generator_AAO_fraction,"
+           "data_retention_from_detector_baseline,AAO_retention_from_detector_baseline,"
+           "AAO_highE_retention_from_detector_baseline,Eprobe_shape_distortion,"
+           "normalized_AAO_yield,normalized_CLASDIS_yield,normalized_DVCS_yield\n";
+    csv << std::setprecision(10);
+    for (const auto& q:pts) {
+        csv << CUTSCAN_KEY[q.iv] << "," << q.cut << ","
+            << q.pi0_purity << "," << q.two_gen_purity << ","
+            << q.data_retention << "," << q.aao_retention << ","
+            << q.aao_high_retention << "," << q.eprobe_distortion << ","
+            << q.y_aao << "," << q.y_clasdis << "," << q.y_dvcs << "\n";
+    } // endfor
+    csv.close();
 }
 
 void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
@@ -6144,6 +6585,7 @@ void run_concise_analysis(const std::string& out) {
 
     draw_exclusivity_summary(vv,out+"/1_exclusivity/FD",false);
     draw_exclusivity_summary(vv,out+"/1_exclusivity/FT",true);
+    draw_ft_cut_optimization(vv,norm_ft,out+"/1_exclusivity/FT");
 
     draw_normalization_summary(vv,norm_fd,out+"/2_normalization/FD",false);
     draw_normalization_summary(vv,norm_ft,out+"/2_normalization/FT",true);
