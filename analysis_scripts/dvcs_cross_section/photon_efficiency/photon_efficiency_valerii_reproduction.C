@@ -231,7 +231,7 @@ bool has_root_files(const std::string& dir) {
 }
 
 
-static const char* WORKER_CACHE_VERSION="20260912_v3_pi0truth";
+static const char* WORKER_CACHE_VERSION="20260912_v4_unified";
 
 std::uint64_t fnv1a64(const std::string& s,std::uint64_t h=1469598103934665603ULL) {
     for (unsigned char c:s) {
@@ -1510,6 +1510,28 @@ void write_root(const std::vector<std::unique_ptr<SampleResult>>& samples,
 }
 
 bool save_worker_result(const SampleResult& s, const std::string& path) {
+    // Finalize the stage-1 products without rereading the input tree.
+    stage1.fd.fit=fit_residual(stage1.fd.residual.get(),MIN_FIT_ENTRIES_FD);
+    stage1.ft_all.fit=fit_residual(stage1.ft_all.residual.get(),MIN_FIT_ENTRIES_FT);
+    stage1.ft_low.fit=fit_residual(stage1.ft_low.residual.get(),MIN_FIT_ENTRIES_FT);
+    stage1.ft_high.fit=fit_residual(stage1.ft_high.residual.get(),MIN_FIT_ENTRIES_FT);
+
+    for (auto& wr : stage1.windows) {
+        wr.fd_fit=fit_residual(wr.fd_h.get(),MIN_FIT_ENTRIES_FD);
+        wr.ft_fit=fit_residual(wr.ft_h.get(),MIN_FIT_ENTRIES_FT);
+    } // endfor
+
+    finalize_region_counts(stage1.fd);
+    finalize_region_counts(stage1.ft_all);
+    finalize_region_counts(stage1.ft_low);
+    finalize_region_counts(stage1.ft_high);
+
+    if (!save_worker_result(stage1,stage1_path)) {
+        std::cerr << "ERROR: failed to save unified stage-1 cache "
+                  << stage1_path << "\n";
+        return false;
+    } // endif
+
     TFile f(path.c_str(),"RECREATE");
     if (f.IsZombie()) return false;
     TNamed nname("sample_name",s.name.c_str()); nname.Write();
@@ -2489,7 +2511,7 @@ void draw_norm_shape_overlay(const TH1D* hd,const TH1D* ha,const TH1D* hc,const 
 }
 
 void draw_norm_cutflow(const std::vector<std::unique_ptr<ValComponent>>& vv,const std::string& file) {
-    const char* labs[6]={"baseline","Mx2(ep)","Mx2(e#gamma)","|#delta#phi_{copl}|<5.7^{#circ}","angle(e,X)","all cuts"};
+    const char* labs[6]={"baseline","Mx2(ep)","Mx2(e#gamma)","|#delta#phi_{copl}|<5.7^{#circ}","angle(#gamma,X)","all cuts"};
     TCanvas c("c_norm_cutflow","",1150,760);
     TLegend leg(0.68,0.68,0.90,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0);
     std::vector<std::unique_ptr<TH1D>> keep;
@@ -2509,7 +2531,7 @@ void draw_norm_cutflow(const std::vector<std::unique_ptr<ValComponent>>& vv,cons
     leg.Draw(); c.SetBottomMargin(0.22); c.SaveAs(file.c_str());
 }
 
-bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path) {
+bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path,const std::string& stage1_path) {
     const std::string pattern=make_pattern(spec.dir);
     TChain c("PhotonEfficiency");
     const int nf=c.Add(pattern.c_str());
@@ -2520,6 +2542,16 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     if (!attach(c,b)) return false;
     c.SetCacheSize(64LL*1024LL*1024LL);
     c.AddBranchToCache("*",kTRUE);
+
+    // Unified pass: fill the original stage-1 diagnostics and the Valerii
+    // normalization/efficiency sufficient statistics from the same TChain scan.
+    SampleResult stage1;
+    stage1.name=spec.name;
+    stage1.input=spec.dir;
+    stage1.is_mc=spec.is_mc;
+    stage1.entries=c.GetEntries();
+    init_sample(stage1);
+    stage1.ft_plane=estimate_ft_plane(c,b);
 
     std::array<long long,VAL_NBIN> rows{};
     std::array<double,VAL_NBIN> sumw{};
@@ -2560,6 +2592,110 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     long long selected=0,reco=0,outside_count_range=0;
     for (Long64_t i=0;i<c.GetEntries();i++) {
         c.GetEntry(i);
+
+        // ------------------------------------------------------------------
+        // Stage-1 diagnostics (same definitions as analyze_sample()).
+        // ------------------------------------------------------------------
+        stage1.cutflow.all++;
+
+        if (stage1.is_mc) {
+            if (!std::isfinite(b.mc_weight)) {
+                stage1.weight_nonfinite++;
+            } else {
+                if (stage1.weight_n==0) {
+                    stage1.weight_min=b.mc_weight;
+                    stage1.weight_max=b.mc_weight;
+                } else {
+                    stage1.weight_min=std::min(stage1.weight_min,b.mc_weight);
+                    stage1.weight_max=std::max(stage1.weight_max,b.mc_weight);
+                } // endif
+                stage1.weight_n++;
+                if (b.mc_weight==0) stage1.weight_zero++;
+                if (b.mc_weight<0) stage1.weight_negative++;
+                stage1.weight_sum+=b.mc_weight;
+                stage1.weight_sum2+=b.mc_weight*b.mc_weight;
+            } // endif
+        } // endif
+
+        if (b.p_pass_standard) {
+            stage1.cutflow.proton++;
+
+            if (b.tag_pass_beta) {
+                stage1.cutflow.tag_beta++;
+
+                if (b.tag_pass_fiducial) {
+                    stage1.cutflow.tag_fid++;
+
+                    if ((b.tag_detector==0 || b.tag_detector==1) &&
+                        finite_good(b.probe_corr_p) &&
+                        finite_good(b.probe_corr_theta) &&
+                        finite_good(b.probe_corr_phi)) {
+
+                        stage1.cutflow.finite_probe++;
+
+                        FTProjection ft_projection_stage1;
+                        const bool ft_angular_stage1=in_ft(b);
+                        if (ft_angular_stage1)
+                            ft_projection_stage1=project_ft(b,stage1.ft_plane);
+
+                        for (auto& wr : stage1.windows) {
+                            if (!finite_good(b.Mx_ep) ||
+                                b.Mx_ep<wr.w.lo || b.Mx_ep>wr.w.hi) continue;
+
+                            if (in_fd(b)) {
+                                wr.fd_denom++;
+                                const int k=best_probe_candidate(b,1);
+                                if (k>=0) {
+                                    wr.fd_reco++;
+                                    wr.fd_h->Fill(b.neutral_p[k]-b.probe_corr_p);
+                                } // endif
+                            } // endif
+
+                            if (ft_angular_stage1 &&
+                                ft_projection_stage1.valid &&
+                                ft_projection_stage1.fiducial) {
+                                wr.ft_denom++;
+                                const int k=best_probe_candidate(b,0);
+                                if (k>=0) {
+                                    wr.ft_reco++;
+                                    wr.ft_h->Fill(b.neutral_p[k]-b.probe_corr_p);
+                                } // endif
+                            } // endif
+                        } // endfor
+
+                        if (pass_nominal_mass(b)) {
+                            stage1.cutflow.nominal_mass++;
+
+                            stage1.denom_p->Fill(b.probe_corr_p);
+                            stage1.denom_theta->Fill(b.probe_corr_theta);
+                            stage1.denom_phi->Fill(wrap_phi(b.probe_corr_phi));
+
+                            if (in_fd(b)) stage1.cutflow.fd++;
+                            if (ft_angular_stage1) {
+                                stage1.cutflow.ft++;
+                                if (ft_projection_stage1.valid) {
+                                    stage1.cutflow.ft_projectable++;
+                                    stage1.ft_xy_projected->Fill(
+                                        ft_projection_stage1.x,
+                                        ft_projection_stage1.y);
+                                    if (ft_projection_stage1.fiducial)
+                                        stage1.cutflow.ft_projected_fid++;
+                                } // endif
+                            } // endif
+
+                            fill_region_residual(stage1.fd,b);
+                            fill_region_residual(stage1.ft_all,b,&ft_projection_stage1);
+                            fill_region_residual(stage1.ft_low,b,&ft_projection_stage1);
+                            fill_region_residual(stage1.ft_high,b,&ft_projection_stage1);
+                        } // endif
+                    } // endif
+                } // endif
+            } // endif
+        } // endif
+
+        // ------------------------------------------------------------------
+        // Valerii FD workflow.
+        // ------------------------------------------------------------------
 
         // Match the FD/PCAL workflow: the observed tag photon must itself be FD.
         // The mixed ep-gamma-X denominator is NOT restricted by the stage-1 pi0
@@ -2789,7 +2925,7 @@ std::vector<std::unique_ptr<ValComponent>> build_val_components_parallel(const s
         {"clasdis",CLASDIS_DIR,true},
         {"dvcsgen",DVCSGEN_DIR,true}
     };
-    struct VChild { pid_t pid; SampleSpec spec; std::string path; };
+    struct VChild { pid_t pid; SampleSpec spec; std::string path; std::string stage1_path; };
     std::vector<VChild> children;
     std::vector<SampleSpec> specs;
     std::cout.flush(); std::cerr.flush();
@@ -2801,36 +2937,37 @@ std::vector<std::unique_ptr<ValComponent>> build_val_components_parallel(const s
         specs.push_back(spec);
 
         const std::string path=worker_cache_path("valerii",spec);
+        const std::string stage1_path=worker_cache_path("stage1",spec);
         cache_paths[spec.name]=path;
 
-        if (valid_root_file(path)) {
-            std::cout << "[CACHE] Valerii " << spec.name << " -> reuse "
-                      << path << "\n";
+        if (valid_root_file(path) && valid_root_file(stage1_path)) {
+            std::cout << "[CACHE] unified " << spec.name
+                      << " -> reuse Valerii + stage-1 products\n";
             continue;
         } // endif
 
         const pid_t pid=fork();
         if (pid==0) {
-            const bool ok=analyze_val_component_worker(spec,path);
+            const bool ok=analyze_val_component_worker(spec,path,stage1_path);
             std::cout.flush(); std::cerr.flush();
             _exit(ok?0:2);
         } else if (pid>0) {
-            children.push_back({pid,spec,path});
-            std::cout << "[VALERII] launched " << spec.name
+            children.push_back({pid,spec,path,stage1_path});
+            std::cout << "[UNIFIED] launched " << spec.name
                       << " worker pid=" << pid << "\n";
         } else {
-            std::cerr << "WARNING: Valerii fork failed for " << spec.name
+            std::cerr << "WARNING: unified worker fork failed for " << spec.name
                       << "; running sequentially.\n";
-            analyze_val_component_worker(spec,path);
+            analyze_val_component_worker(spec,path,stage1_path);
         } // endif
     } // endfor
 
     for (const auto& ch:children) {
         int status=0; waitpid(ch.pid,&status,0);
         if (!WIFEXITED(status) || WEXITSTATUS(status)!=0)
-            std::cerr << "WARNING: Valerii worker failed for " << ch.spec.name << "\n";
+            std::cerr << "WARNING: unified worker failed for " << ch.spec.name << "\n";
         else
-            std::cout << "[VALERII] finished " << ch.spec.name << "\n";
+            std::cout << "[UNIFIED] finished " << ch.spec.name << "\n";
     } // endfor
 
     std::vector<std::unique_ptr<ValComponent>> outv;
@@ -3141,6 +3278,87 @@ void write_pi0_truth_composition(const std::vector<std::unique_ptr<ValComponent>
     t2.DrawLatex(0.16,0.91,"(b) Selected ep#gammaX #pi^{0} fraction");
 
     c.SaveAs((dir+"/epgamma_pi0_fraction_summary.png").c_str());
+
+    // Physics-class presentation used by the efficiency discussion:
+    // pi0-bearing versus genuine single-photon content.
+    {
+        std::array<double,VAL_NP> p_tot{};
+        std::array<double,VAL_NP> p_pi0{};
+
+        for (int ip=0;ip<VAL_NP;ip++) {
+            for (int it=0;it<VAL_NT;it++) {
+                for (int iph=0;iph<VAL_NPH;iph++) {
+                    const int ib=(ip*VAL_NT+it)*VAL_NPH+iph;
+                    const long long na=aao ? aao->bins[ib].denom_rows : 0;
+                    const long long nc=cls ? cls->bins[ib].denom_rows : 0;
+                    const long long ndv=dvc ? dvc->bins[ib].denom_rows : 0;
+
+                    const double fa=1.0;
+                    const double fc=component_pi0_fraction_in_bin(
+                        cls,ib,(cls_summary.fraction>=0?cls_summary.fraction:0.0));
+                    const double fd=0.0;
+
+                    const double ya=nd.nominal.aao*double(na);
+                    const double yc=nd.nominal.clasdis*double(nc);
+                    const double yd=nd.nominal.dvcs*double(ndv);
+
+                    p_tot[ip] += ya+yc+yd;
+                    p_pi0[ip] += ya*fa+yc*fc+yd*fd;
+                } // endfor
+            } // endfor
+        } // endfor
+
+        TCanvas cp("c_physics_class","",1450,620);
+        cp.Divide(2,1);
+
+        cp.cd(1);
+        gPad->SetLeftMargin(0.14);
+        TH1D hclass("h_physics_class",
+                    ";Selected-event physics class;Fraction of normalized model",
+                    2,0,2);
+        hclass.SetStats(0);
+        hclass.GetXaxis()->SetBinLabel(1,"#pi^{0}-bearing");
+        hclass.GetXaxis()->SetBinLabel(2,"single-#gamma");
+        hclass.SetMinimum(0.0);
+        hclass.SetMaximum(1.0);
+        hclass.SetBinContent(1,integrated_fraction);
+        hclass.SetBinContent(2,integrated_fraction>=0?1.0-integrated_fraction:0.0);
+        hclass.SetMarkerStyle(20);
+        hclass.SetMarkerSize(1.5);
+        hclass.Draw("P");
+        TLatex tc1;
+        tc1.SetNDC();
+        tc1.SetTextFont(42);
+        tc1.SetTextSize(0.050);
+        tc1.DrawLatex(0.16,0.91,"(a) Integrated selected-event composition");
+
+        cp.cd(2);
+        gPad->SetLeftMargin(0.14);
+        TGraphErrors gp;
+        gp.SetName("g_pi0_fraction_vs_p");
+        gp.SetMarkerStyle(20);
+        gp.SetMarkerSize(1.15);
+        for (int ip=0;ip<VAL_NP;ip++) {
+            if (p_tot[ip]<=0) continue;
+            const double x=0.5*(VAL_P_EDGES[ip]+VAL_P_EDGES[ip+1]);
+            const double ex=0.5*(VAL_P_EDGES[ip+1]-VAL_P_EDGES[ip]);
+            const double y=p_pi0[ip]/p_tot[ip];
+            const int n=gp.GetN();
+            gp.SetPoint(n,x,y);
+            gp.SetPointError(n,ex,0.0);
+        } // endfor
+        gp.SetTitle(";Missing-probe p (GeV);#pi^{0}-bearing fraction");
+        gp.SetMinimum(0.0);
+        gp.SetMaximum(1.0);
+        gp.Draw("AP");
+        TLatex tc2;
+        tc2.SetNDC();
+        tc2.SetTextFont(42);
+        tc2.SetTextSize(0.050);
+        tc2.DrawLatex(0.16,0.91,"(b) Kinematic dependence");
+
+        cp.SaveAs((dir+"/physics_class_composition.png").c_str());
+    }
 
     std::ofstream txt(dir+"/epgamma_pi0_fraction_summary.txt");
     txt << "Pi0 composition of selected ep-gamma-X candidates\n"
@@ -4616,17 +4834,20 @@ void photon_efficiency_valerii_reproduction() {
         << "Matching: Delta p_gamma2 = p_rec - p_miss\n"
         << "Primary numbers: unweighted RAW RECOVERY FRACTIONS (not efficiencies)\n"
         << "Stage-1 MC::Event.weight: QA only; Valerii FD path uses unit MC events x component normalization\n"
-        << "Execution: independent samples analyzed in parallel child processes\n"
-        << "Heavy worker scans are cached persistently and invalidated when ROOT inputs change.\n"
+        << "Execution: one unified TChain scan per sample, parallel across samples\n"
+        << "The unified scan fills stage-1 + Valerii sufficient statistics together.\n"
+        << "Heavy worker products are cached persistently and invalidated when ROOT inputs change.\n"
         << "Presentation outputs are rebuilt in ./output each invocation.\n"
         << "============================================================\n";
 
-    std::vector<std::unique_ptr<SampleResult>> samples=analyze_samples_parallel(out);
-
-    // Run the second process-level pass before creating graphics in the parent.
-    // Forking before canvases/files are opened avoids inheriting unnecessary ROOT
-    // graphics state into the Valerii workers.
+    // The unified per-sample workers fill BOTH the Valerii sufficient
+    // statistics and the original stage-1 diagnostics in one TChain traversal.
+    // run_valerii_fd_reproduction() therefore populates both persistent caches.
     run_valerii_fd_reproduction(out);
+
+    // This now loads the stage-1 cache produced above; it does not rescan the
+    // input trees unless the unified worker failed or the cache is invalid.
+    std::vector<std::unique_ptr<SampleResult>> samples=analyze_samples_parallel(out);
 
     std::ofstream csv(out+"/integrated_results.csv");
     write_region_csv_header(csv);
