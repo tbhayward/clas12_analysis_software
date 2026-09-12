@@ -1712,6 +1712,9 @@ struct ValComponent {
     // Sequential Step-1 diagnostic: distributions after the M_X^2(ep) cut
     // but before M_X^2(e gamma), coplanarity, and angle(gamma,X).
     std::vector<std::unique_ptr<TH1D>> norm_after_mx2ep;
+    // Sequential Step-1D diagnostic: after M_X^2(ep) and M_X^2(e gamma),
+    // before Trento coplanarity and angle(gamma,X).
+    std::vector<std::unique_ptr<TH1D>> norm_after_mx2ep_mx2eg;
     std::vector<std::unique_ptr<TH1D>> norm_nminus1;
     std::vector<std::unique_ptr<TH1D>> norm_full;
     std::vector<std::unique_ptr<TH1D>> norm_lowE;
@@ -2352,10 +2355,11 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     // distributions and their weighted sums, so persist fixed-size histograms.
     std::array<std::unique_ptr<TH1D>,VAL_NBIN> hfit;
     std::array<std::unique_ptr<TH1D>,VAL_NBIN> hcount;
-    std::vector<std::unique_ptr<TH1D>> norm_pre, norm_after_mx2ep, norm_nminus1, norm_full, norm_low, norm_high;
+    std::vector<std::unique_ptr<TH1D>> norm_pre, norm_after_mx2ep, norm_after_mx2ep_mx2eg, norm_nminus1, norm_full, norm_low, norm_high;
     for (int io=0;io<NORM_NOBS;io++) {
         norm_pre.push_back(make_norm_hist(io,"pre",spec.name));
         norm_after_mx2ep.push_back(make_norm_hist(io,"after_mx2ep",spec.name));
+        norm_after_mx2ep_mx2eg.push_back(make_norm_hist(io,"after_mx2ep_mx2eg",spec.name));
         norm_nminus1.push_back(make_norm_hist(io,"nminus1",spec.name));
         norm_full.push_back(make_norm_hist(io,"full",spec.name));
         norm_low.push_back(make_norm_hist(io,"lowE",spec.name));
@@ -2415,6 +2419,7 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
             if (!std::isfinite(x)) continue;
             norm_pre[io]->Fill(x);
             if (ncf.mx2_ep) norm_after_mx2ep[io]->Fill(x);
+            if (ncf.mx2_ep && ncf.mx2_eg) norm_after_mx2ep_mx2eg[io]->Fill(x);
             if (norm_pass_nminus1(ncf,io)) {
                 norm_nminus1[io]->Fill(x);
                 if (std::isfinite(Eg) && Eg<2.0) norm_low[io]->Fill(x);
@@ -2489,6 +2494,7 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         for (int io=0;io<NORM_NOBS;io++) {
             norm_pre[io]->Write(Form("pre_%s",NORM_OBS[io].key));
             norm_after_mx2ep[io]->Write(Form("after_mx2ep_%s",NORM_OBS[io].key));
+            norm_after_mx2ep_mx2eg[io]->Write(Form("after_mx2ep_mx2eg_%s",NORM_OBS[io].key));
             norm_nminus1[io]->Write(Form("nminus1_%s",NORM_OBS[io].key));
             norm_full[io]->Write(Form("full_%s",NORM_OBS[io].key));
             norm_low[io]->Write(Form("lowE_%s",NORM_OBS[io].key));
@@ -2559,6 +2565,7 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
             };
             v->norm_pre.push_back(clone_one("pre"));
             v->norm_after_mx2ep.push_back(clone_one("after_mx2ep"));
+            v->norm_after_mx2ep_mx2eg.push_back(clone_one("after_mx2ep_mx2eg"));
             v->norm_nminus1.push_back(clone_one("nminus1"));
             v->norm_full.push_back(clone_one("full"));
             v->norm_lowE.push_back(clone_one("lowE"));
@@ -3087,6 +3094,130 @@ void write_step1c_mx2_eg_summary(const std::vector<std::unique_ptr<ValComponent>
 }
 
 
+
+void draw_step1d_coplanarity_overlay(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                     const std::string& file) {
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* aao=find_val_component(vv,"aaogen");
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
+    if (!data || !aao || !cls || !dvc) return;
+
+    auto geth=[](const ValComponent* v)->const TH1D* {
+        if (!v || v->norm_after_mx2ep_mx2eg.size()<=NORM_DPHI) return nullptr;
+        return v->norm_after_mx2ep_mx2eg[NORM_DPHI].get();
+    };
+    const TH1D *hd0=geth(data), *ha0=geth(aao), *hc0=geth(cls), *hv0=geth(dvc);
+    if (!hd0 || !ha0 || !hc0 || !hv0) return;
+
+    std::unique_ptr<TH1D> hd((TH1D*)hd0->Clone("step1d_data"));
+    std::unique_ptr<TH1D> ha((TH1D*)ha0->Clone("step1d_aao"));
+    std::unique_ptr<TH1D> hc((TH1D*)hc0->Clone("step1d_cls"));
+    std::unique_ptr<TH1D> hv((TH1D*)hv0->Clone("step1d_dvc"));
+    hd->SetDirectory(nullptr); ha->SetDirectory(nullptr);
+    hc->SetDirectory(nullptr); hv->SetDirectory(nullptr);
+
+    auto unit=[](TH1D* h) {
+        const double q=h ? h->Integral() : 0.0;
+        if (h && q>0.0) h->Scale(1.0/q);
+    };
+    unit(hd.get()); unit(ha.get()); unit(hc.get()); unit(hv.get());
+
+    hd->SetStats(0); hd->SetMarkerStyle(20); hd->SetMarkerSize(0.65);
+    hd->SetLineColor(kBlack); hd->SetMarkerColor(kBlack);
+    style_norm_component(ha.get(),kRed+1);
+    style_norm_component(hc.get(),kOrange+7);
+    style_norm_component(hv.get(),kGreen+2);
+
+    TCanvas can("c_step1d_copl_overlay","",1100,780);
+    hd->SetTitle("Step 1D: Trento coplanarity after M_{X}^{2}(ep) and M_{X}^{2}(e#gamma)");
+    hd->GetXaxis()->SetTitle("#Delta#phi_{copl} (deg)");
+    hd->GetYaxis()->SetTitle("Unit-area candidates");
+    hd->SetMaximum(1.30*std::max({hd->GetMaximum(),ha->GetMaximum(),hc->GetMaximum(),hv->GetMaximum()}));
+    hd->Draw("E1"); ha->Draw("HIST SAME"); hc->Draw("HIST SAME"); hv->Draw("HIST SAME"); hd->Draw("E1 SAME");
+
+    const double ymax=hd->GetMaximum()*1.24;
+    TLine llo(-NORM_DPHI_MAX,0.0,-NORM_DPHI_MAX,ymax);
+    TLine lhi(+NORM_DPHI_MAX,0.0,+NORM_DPHI_MAX,ymax);
+    llo.SetLineStyle(2); lhi.SetLineStyle(2); llo.SetLineWidth(2); lhi.SetLineWidth(2);
+    llo.Draw(); lhi.Draw();
+
+    TLegend leg(0.60,0.64,0.89,0.89);
+    leg.SetBorderSize(0); leg.SetFillStyle(0);
+    leg.AddEntry(hd.get(),"Data","lep");
+    leg.AddEntry(ha.get(),"AAO (unit area)","l");
+    leg.AddEntry(hc.get(),"CLASDIS (unit area)","l");
+    leg.AddEntry(hv.get(),"DVCSgen (unit area)","l");
+    leg.AddEntry(&llo,Form("|#Delta#phi_{copl}| < %.1f deg",NORM_DPHI_MAX),"l");
+    leg.Draw();
+
+    TLatex tx; tx.SetNDC(); tx.SetTextSize(0.035);
+    tx.DrawLatex(0.14,0.86,"Zero corresponds to back-to-back proton and tag-photon transverse directions");
+    can.SaveAs(file.c_str());
+}
+
+void draw_step1d_coplanarity_individual(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                        const std::string& file) {
+    TCanvas can("c_step1d_copl_individual","",1350,950);
+    can.Divide(2,2);
+    const char* names[4]={"data","aaogen","clasdis","dvcsgen"};
+    const char* labels[4]={"Data","AAOgen","CLASDIS","DVCSgen"};
+    const int colors[4]={kBlack,kRed+1,kOrange+7,kGreen+2};
+    std::vector<std::unique_ptr<TH1D>> keep;
+
+    for (int is=0;is<4;is++) {
+        const ValComponent* v=find_val_component(vv,names[is]);
+        if (!v || v->norm_after_mx2ep_mx2eg.size()<=NORM_DPHI ||
+            !v->norm_after_mx2ep_mx2eg[NORM_DPHI]) continue;
+        std::unique_ptr<TH1D> h((TH1D*)v->norm_after_mx2ep_mx2eg[NORM_DPHI]->Clone(Form("step1d_%s_counts",names[is])));
+        h->SetDirectory(nullptr); h->SetStats(0); h->SetLineColor(colors[is]); h->SetLineWidth(2);
+        h->SetTitle(Form("%s: Trento coplanarity after Steps 1B+1C",labels[is]));
+        h->GetXaxis()->SetTitle("#Delta#phi_{copl} (deg)");
+        h->GetYaxis()->SetTitle("Candidates");
+        can.cd(is+1); h->Draw("HIST");
+        const double ymax=std::max(1.0,1.05*h->GetMaximum());
+        TLine* llo=new TLine(-NORM_DPHI_MAX,0.0,-NORM_DPHI_MAX,ymax);
+        TLine* lhi=new TLine(+NORM_DPHI_MAX,0.0,+NORM_DPHI_MAX,ymax);
+        llo->SetLineStyle(2); lhi->SetLineStyle(2); llo->SetLineWidth(2); lhi->SetLineWidth(2);
+        llo->Draw(); lhi->Draw();
+
+        const long long nin=v->norm_cutflow[2];
+        const long long nout=v->norm_cutflow[3];
+        const double frac=(nin>0 ? double(nout)/double(nin) : 0.0);
+        TLatex tx; tx.SetNDC(); tx.SetTextSize(0.042);
+        tx.DrawLatex(0.14,0.86,Form("pass = %lld / %lld = %.2f%%",nout,nin,100.0*frac));
+        keep.push_back(std::move(h));
+    }
+    can.SaveAs(file.c_str());
+}
+
+void write_step1d_coplanarity_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                      const std::string& dir) {
+    gSystem->mkdir(dir.c_str(),true);
+    std::ofstream csv(dir+"/coplanarity_survival.csv");
+    csv << "sample,input_after_mx2_ep_and_mx2_eg,pass_coplanarity,fail_coplanarity,survival_fraction\n";
+    std::ofstream txt(dir+"/coplanarity_summary.txt");
+    txt << "Step 1D: Trento coplanarity requirement\n"
+        << "=======================================\n"
+        << "Input sample: events already passing M_X^2(ep) and M_X^2(e gamma).\n"
+        << "Residual definition: wrapped Trento-style coplanarity residual with zero\n"
+        << "at the back-to-back proton/tag-photon transverse configuration.\n"
+        << "Active requirement: |Delta phi_copl| < " << NORM_DPHI_MAX << " deg.\n"
+        << "The later angle(gamma,X) requirement is NOT included here.\n\n";
+    for (const auto& vp:vv) {
+        if (!vp) continue;
+        const long long nin=vp->norm_cutflow[2], nout=vp->norm_cutflow[3];
+        const long long nf=std::max(0LL,nin-nout);
+        const double frac=(nin>0 ? double(nout)/double(nin) : 0.0);
+        csv << vp->name << "," << nin << "," << nout << "," << nf << "," << frac << "\n";
+        txt << vp->name << ": " << nout << " / " << nin << " = " << 100.0*frac << "% survive\n";
+    }
+    csv.close(); txt.close();
+    draw_step1d_coplanarity_overlay(vv,dir+"/coplanarity_unit_area_after_mx2_cuts.png");
+    draw_step1d_coplanarity_individual(vv,dir+"/coplanarity_counts_after_mx2_cuts.png");
+}
+
+
 NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValComponent>>& vv,const std::string& out) {
     NormDerivation R;
     const ValComponent* data=find_val_component(vv,"data");
@@ -3101,6 +3232,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     gSystem->mkdir((od+"/final_closure").c_str(),true);
     gSystem->mkdir((od+"/step1b_mx2_ep").c_str(),true);
     gSystem->mkdir((od+"/step1c_mx2_eg").c_str(),true);
+    gSystem->mkdir((od+"/step1d_coplanarity").c_str(),true);
 
     if (!data || !aao || !cls || !dvc ||
         data->norm_lowE.size()!=NORM_NOBS || aao->norm_lowE.size()!=NORM_NOBS ||
@@ -3129,6 +3261,10 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     // Step 1C diagnostics: inspect M_X^2(e gamma) sequentially after Step 1B
     // and before the later coplanarity / angle cuts.
     write_step1c_mx2_eg_summary(vv,od+"/step1c_mx2_eg");
+
+    // Step 1D diagnostics: inspect the Trento coplanarity residual sequentially
+    // after Steps 1B+1C and before angle(gamma,X).
+    write_step1d_coplanarity_summary(vv,od+"/step1d_coplanarity");
 
     // Stage A: low-E AAO + CLASDIS.  For each observable scan one common
     // reconstructed-MC shift and extra Gaussian resolution.  The same morph is
@@ -3288,6 +3424,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
             for (int io=0;io<NORM_NOBS;io++) {
                 if (io<(int)vp->norm_pre.size() && vp->norm_pre[io]) vp->norm_pre[io]->Write(Form("pre_%s",NORM_OBS[io].key));
                 if (io<(int)vp->norm_after_mx2ep.size() && vp->norm_after_mx2ep[io]) vp->norm_after_mx2ep[io]->Write(Form("after_mx2ep_%s",NORM_OBS[io].key));
+                if (io<(int)vp->norm_after_mx2ep_mx2eg.size() && vp->norm_after_mx2ep_mx2eg[io]) vp->norm_after_mx2ep_mx2eg[io]->Write(Form("after_mx2ep_mx2eg_%s",NORM_OBS[io].key));
                 if (io<(int)vp->norm_nminus1.size() && vp->norm_nminus1[io]) vp->norm_nminus1[io]->Write(Form("nminus1_%s",NORM_OBS[io].key));
                 if (io<(int)vp->norm_full.size() && vp->norm_full[io]) vp->norm_full[io]->Write(Form("full_%s",NORM_OBS[io].key));
                 if (io<(int)vp->norm_lowE.size() && vp->norm_lowE[io]) vp->norm_lowE[io]->Write(Form("lowE_%s",NORM_OBS[io].key));
