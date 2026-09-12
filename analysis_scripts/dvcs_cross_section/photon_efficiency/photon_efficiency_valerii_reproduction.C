@@ -70,6 +70,27 @@
 
 namespace pe {
 
+void set_publication_style() {
+    gStyle->SetOptStat(0);
+    gStyle->SetOptTitle(1);
+    gStyle->SetTitleFont(42,"XYZ");
+    gStyle->SetLabelFont(42,"XYZ");
+    gStyle->SetTextFont(42);
+    gStyle->SetLegendFont(42);
+    gStyle->SetTitleSize(0.050,"XYZ");
+    gStyle->SetLabelSize(0.043,"XYZ");
+    gStyle->SetTitleOffset(1.05,"X");
+    gStyle->SetTitleOffset(1.22,"Y");
+    gStyle->SetPadTickX(1);
+    gStyle->SetPadTickY(1);
+    gStyle->SetFrameLineWidth(2);
+    gStyle->SetHistLineWidth(2);
+    gStyle->SetEndErrorSize(4);
+    gStyle->SetLegendBorderSize(0);
+    gStyle->SetLegendFillColor(0);
+}
+
+
 // -----------------------------------------------------------------------------
 // Paths.
 // -----------------------------------------------------------------------------
@@ -1691,6 +1712,8 @@ struct ValComponentBin {
     long long denom_rows=0;
     double denom_w=0;
     double denom_w2=0;
+    long long truth_rows=0;
+    long long truth_pi0_rows=0;
     std::unique_ptr<TH1D> residual_fit;
     std::unique_ptr<TH1D> residual_count;
 };
@@ -2414,6 +2437,8 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     std::array<long long,VAL_NBIN> rows{};
     std::array<double,VAL_NBIN> sumw{};
     std::array<double,VAL_NBIN> sumw2{};
+    std::array<long long,VAL_NBIN> truth_rows{};
+    std::array<long long,VAL_NBIN> truth_pi0_rows{};
 
     // Do NOT write one TTree row per reconstructed candidate.  With millions of
     // skim rows that temporary representation can become multi-GB and exhaust
@@ -2515,6 +2540,11 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         rows[ib]++;
         sumw[ib]+=tw;
         sumw2[ib]+=tw*tw;
+        if (spec.is_mc && b.have_truth) {
+            truth_rows[ib]++;
+            if (b.truth_probe_pid==22 && b.truth_probe_parent==111)
+                truth_pi0_rows[ib]++;
+        }
         selected++;
 
         const int k=best_probe_candidate(b,1);
@@ -2538,14 +2568,17 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
 
     TTree denominators("denominators","Valerii FD denominator sums by analysis bin");
     Int_t dbin=-1;
-    Long64_t drows=0;
+    Long64_t drows=0,dtruth=0,dtruth_pi0=0;
     Double_t dsumw=0,dsumw2=0;
     denominators.Branch("bin",&dbin,"bin/I");
     denominators.Branch("rows",&drows,"rows/L");
     denominators.Branch("sumw",&dsumw,"sumw/D");
     denominators.Branch("sumw2",&dsumw2,"sumw2/D");
+    denominators.Branch("truth_rows",&dtruth,"truth_rows/L");
+    denominators.Branch("truth_pi0_rows",&dtruth_pi0,"truth_pi0_rows/L");
     for (dbin=0;dbin<VAL_NBIN;dbin++) {
         drows=rows[dbin]; dsumw=sumw[dbin]; dsumw2=sumw2[dbin];
+        dtruth=truth_rows[dbin]; dtruth_pi0=truth_pi0_rows[dbin];
         denominators.Fill();
     } // endfor
     denominators.Write();
@@ -2597,17 +2630,25 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
 
     auto* den=dynamic_cast<TTree*>(f.Get("denominators"));
     if (!den) return nullptr;
-    Int_t ib=-1; Long64_t rows=0; Double_t sw=0,sw2=0;
+    Int_t ib=-1;
+    Long64_t rows=0,truthrows=0,truthpi0=0;
+    Double_t sw=0,sw2=0;
     den->SetBranchAddress("bin",&ib);
     den->SetBranchAddress("rows",&rows);
     den->SetBranchAddress("sumw",&sw);
     den->SetBranchAddress("sumw2",&sw2);
+    const bool have_truthrows=(den->GetBranch("truth_rows")!=nullptr);
+    const bool have_truthpi0=(den->GetBranch("truth_pi0_rows")!=nullptr);
+    if (have_truthrows) den->SetBranchAddress("truth_rows",&truthrows);
+    if (have_truthpi0) den->SetBranchAddress("truth_pi0_rows",&truthpi0);
     for (Long64_t i=0;i<den->GetEntries();i++) {
         den->GetEntry(i);
         if (ib<0 || ib>=VAL_NBIN) continue;
         v->bins[ib].denom_rows=rows;
         v->bins[ib].denom_w=sw;
         v->bins[ib].denom_w2=sw2;
+        v->bins[ib].truth_rows=have_truthrows?truthrows:0;
+        v->bins[ib].truth_pi0_rows=have_truthpi0?truthpi0:0;
     } // endfor
 
     auto* rd=dynamic_cast<TDirectory*>(f.Get("residuals"));
@@ -2781,6 +2822,139 @@ std::unique_ptr<TH1D> val_make_mc_hist(const std::vector<std::unique_ptr<ValComp
     } // endfor
     return h;
 }
+
+
+struct Pi0TruthSummary {
+    long long truth_rows=0;
+    long long pi0_rows=0;
+    double fraction=-1.0;
+};
+
+Pi0TruthSummary component_pi0_truth(const ValComponent* v) {
+    Pi0TruthSummary r;
+    if (!v || !v->is_mc) return r;
+    for (int ib=0;ib<VAL_NBIN;ib++) {
+        r.truth_rows += v->bins[ib].truth_rows;
+        r.pi0_rows += v->bins[ib].truth_pi0_rows;
+    }
+    if (r.truth_rows>0) r.fraction=double(r.pi0_rows)/double(r.truth_rows);
+    return r;
+}
+
+void write_pi0_truth_composition(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                 const NormDerivation& nd,
+                                 const std::string& dir) {
+    gSystem->mkdir(dir.c_str(),true);
+
+    const ValComponent* aao=find_val_component(vv,"aaogen");
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
+
+    struct C { const char* name; const ValComponent* v; double scale; };
+    const C cc[]={{"aaogen",aao,nd.nominal.aao},
+                  {"clasdis",cls,nd.nominal.clasdis},
+                  {"dvcsgen",dvc,nd.nominal.dvcs}};
+
+    std::ofstream comp(dir+"/mc_component_pi0_truth.csv");
+    comp << "component,truth_classified_rows,truth_pi0_rows,pi0_truth_fraction,nominal_scale\n";
+
+    double model_total=0.0, model_pi0=0.0;
+    for (const auto& c:cc) {
+        const Pi0TruthSummary r=component_pi0_truth(c.v);
+        comp << c.name << "," << r.truth_rows << "," << r.pi0_rows << ","
+             << r.fraction << "," << c.scale << "\n";
+        model_total += c.scale*double(r.truth_rows);
+        model_pi0 += c.scale*double(r.pi0_rows);
+    }
+    comp.close();
+
+    std::ofstream bins(dir+"/normalized_epgamma_pi0_fraction_by_bin.csv");
+    bins << "bin,ip,itheta,iphi,p_lo,p_hi,theta_lo,theta_hi,phi_lo,phi_hi,"
+            "weighted_total_truth,weighted_pi0_truth,pi0_fraction,"
+            "aao_pi0_fraction,clasdis_pi0_fraction,dvcs_pi0_fraction\n";
+
+    TH2D hmap("h_pi0_fraction_ptheta",
+              ";Missing-probe p (GeV);Missing-probe #theta (deg)",
+              VAL_NP,VAL_P_EDGES,VAL_NT,VAL_T_EDGES);
+    hmap.SetStats(0);
+
+    for (int ip=0;ip<VAL_NP;ip++) {
+        for (int it=0;it<VAL_NT;it++) {
+            double totpt=0,pi0pt=0;
+            for (int iph=0;iph<VAL_NPH;iph++) {
+                const int ib=(ip*VAL_NT+it)*VAL_NPH+iph;
+                double tot=0,pi0=0,fa=-1,fc=-1,fd=-1;
+                for (const auto& c:cc) {
+                    if (!c.v) continue;
+                    const auto& b=c.v->bins[ib];
+                    if (b.truth_rows<=0) continue;
+                    const double f=double(b.truth_pi0_rows)/double(b.truth_rows);
+                    if (std::string(c.name)=="aaogen") fa=f;
+                    else if (std::string(c.name)=="clasdis") fc=f;
+                    else if (std::string(c.name)=="dvcsgen") fd=f;
+                    tot += c.scale*double(b.truth_rows);
+                    pi0 += c.scale*double(b.truth_pi0_rows);
+                }
+                const double frac=(tot>0?pi0/tot:-1.0);
+                bins << ib << "," << ip << "," << it << "," << iph << ","
+                     << VAL_P_EDGES[ip] << "," << VAL_P_EDGES[ip+1] << ","
+                     << VAL_T_EDGES[it] << "," << VAL_T_EDGES[it+1] << ","
+                     << VAL_PH_EDGES[iph] << "," << VAL_PH_EDGES[iph+1] << ","
+                     << tot << "," << pi0 << "," << frac << ","
+                     << fa << "," << fc << "," << fd << "\n";
+                totpt += tot; pi0pt += pi0;
+            }
+            if (totpt>0) hmap.SetBinContent(ip+1,it+1,pi0pt/totpt);
+        }
+    }
+    bins.close();
+
+    TCanvas c("c_pi0_truth_summary","",1500,650);
+    c.Divide(2,1);
+
+    c.cd(1);
+    gPad->SetLeftMargin(0.14);
+    TH1D hcomp("h_component_pi0_truth",
+               ";MC component;Truth #pi^{0}-photon fraction",3,0,3);
+    hcomp.SetStats(0); hcomp.SetMinimum(-0.05); hcomp.SetMaximum(1.05);
+    hcomp.SetMarkerStyle(20); hcomp.SetMarkerSize(1.4);
+    for (int i=0;i<3;i++) {
+        const Pi0TruthSummary r=component_pi0_truth(cc[i].v);
+        hcomp.GetXaxis()->SetBinLabel(i+1,cc[i].name);
+        if (r.fraction>=0) hcomp.SetBinContent(i+1,r.fraction);
+    }
+    hcomp.Draw("P");
+    TLine one(0,1.0,3,1.0); one.SetLineStyle(3); one.Draw();
+    TLatex t1; t1.SetNDC(); t1.SetTextFont(42); t1.SetTextSize(0.050);
+    t1.DrawLatex(0.16,0.91,"(a) Truth composition after all cuts");
+
+    c.cd(2);
+    gPad->SetLeftMargin(0.15);
+    gPad->SetRightMargin(0.16);
+    hmap.SetMinimum(0.0); hmap.SetMaximum(1.0);
+    hmap.GetZaxis()->SetTitle("Normalized-model #pi^{0} fraction");
+    hmap.Draw("COLZ TEXT");
+    TLatex t2; t2.SetNDC(); t2.SetTextFont(42); t2.SetTextSize(0.050);
+    t2.DrawLatex(0.16,0.91,"(b) #pi^{0} fraction vs missing-probe kinematics");
+
+    c.SaveAs((dir+"/epgamma_pi0_fraction_summary.png").c_str());
+
+    std::ofstream txt(dir+"/epgamma_pi0_fraction_summary.txt");
+    txt << "Truth-based pi0 composition of selected ep-gamma-X candidates\n"
+        << "=============================================================\n"
+        << "Classification: truth_probe_pid==22 and truth_probe_parent==111.\n"
+        << "Nominal data-derived AAO/CLASDIS/DVCS factors weight the MC mixture.\n\n";
+    for (const auto& c0:cc) {
+        const Pi0TruthSummary r=component_pi0_truth(c0.v);
+        txt << c0.name << ": " << r.pi0_rows << "/" << r.truth_rows
+            << " = " << r.fraction << "; scale=" << c0.scale << "\n";
+    }
+    txt << "\nIntegrated normalized-model pi0 fraction = "
+        << (model_total>0?model_pi0/model_total:-1.0) << "\n";
+    txt.close();
+}
+
+
 std::array<ValBinResult,VAL_NBIN> evaluate_valerii_fd(
         const std::vector<std::unique_ptr<ValComponent>>& vv,
         const ValNormSet& norm,
@@ -3669,52 +3843,130 @@ void write_lowE_pi0_balance_diagnostics(const std::vector<std::unique_ptr<ValCom
 
     if (rows.empty()) return;
 
-    // Plot 1: does the total fitted AAO+CLASDIS yield remain stable even when
-    // their individual coefficients trade against one another?
+    // Compact 1x2 summary.  Extend the right-panel range slightly beyond
+    // [0,1] so solutions pinned exactly to 0 or 1 remain visible.
     {
-        TCanvas c("c_lowE_pi0_total_closure","",1100,720);
-        TH1D h("h_lowE_pi0_total_closure",
-               "Low-E fitted AAO+CLASDIS total;Normalization observable;(AAO+CLASDIS fitted yield) / data yield",
-               (int)rows.size(),0,(int)rows.size());
-        h.SetStats(0);
-        h.SetMarkerStyle(20);
-        h.SetMarkerSize(1.1);
-        for (int i=0;i<(int)rows.size();i++) {
-            h.GetXaxis()->SetBinLabel(i+1,rows[i].obs.c_str());
-            h.SetBinContent(i+1,rows[i].model_over_data);
-        }
-        h.SetMinimum(0.0);
-        h.SetMaximum(std::max(1.5,1.20*h.GetMaximum()));
-        h.Draw("P");
-        TLine one(0,1.0,rows.size(),1.0);
-        one.SetLineStyle(2);
-        one.SetLineWidth(2);
-        one.Draw();
-        c.SetBottomMargin(0.22);
-        h.GetXaxis()->LabelsOption("v");
-        c.SaveAs((dir+"/lowE_pi0_total_closure.png").c_str());
-    }
+        TCanvas c("c_lowE_pi0_balance_summary","",1500,650);
+        c.Divide(2,1);
 
-    // Plot 2: show the generator tradeoff directly.
-    {
-        TCanvas c("c_lowE_pi0_balance","",1100,720);
-        TH1D h("h_lowE_pi0_balance",
-               "Low-E AAO share of fitted AAO+CLASDIS yield;Normalization observable;AAO / (AAO+CLASDIS)",
-               (int)rows.size(),0,(int)rows.size());
-        h.SetStats(0);
-        h.SetMarkerStyle(20);
-        h.SetMarkerSize(1.1);
+        c.cd(1);
+        gPad->SetLeftMargin(0.14);
+        gPad->SetBottomMargin(0.25);
+        TH1D htot("h_lowE_pi0_total_closure",
+                  ";Normalization observable;(AAO+CLASDIS fitted yield) / data yield",
+                  (int)rows.size(),0,(int)rows.size());
+        htot.SetStats(0); htot.SetMarkerStyle(20); htot.SetMarkerSize(1.30);
         for (int i=0;i<(int)rows.size();i++) {
-            h.GetXaxis()->SetBinLabel(i+1,rows[i].obs.c_str());
-            h.SetBinContent(i+1,rows[i].aao_fraction);
+            htot.GetXaxis()->SetBinLabel(i+1,rows[i].obs.c_str());
+            htot.SetBinContent(i+1,rows[i].model_over_data);
         }
-        h.SetMinimum(0.0);
-        h.SetMaximum(1.0);
-        h.Draw("P");
-        c.SetBottomMargin(0.22);
-        h.GetXaxis()->LabelsOption("v");
-        c.SaveAs((dir+"/lowE_aao_fraction_of_pi0_model.png").c_str());
+        htot.SetMinimum(0.78); htot.SetMaximum(1.08);
+        htot.GetXaxis()->LabelsOption("v");
+        htot.Draw("P");
+        TLine one(0,1.0,rows.size(),1.0);
+        one.SetLineStyle(2); one.SetLineWidth(2); one.Draw();
+        TLatex ta; ta.SetNDC(); ta.SetTextFont(42); ta.SetTextSize(0.050);
+        ta.DrawLatex(0.17,0.91,"(a) Combined low-E normalization");
+
+        c.cd(2);
+        gPad->SetLeftMargin(0.14);
+        gPad->SetBottomMargin(0.25);
+        TH1D hfrac("h_lowE_pi0_balance",
+                   ";Normalization observable;AAO fraction of fitted AAO+CLASDIS yield",
+                   (int)rows.size(),0,(int)rows.size());
+        hfrac.SetStats(0); hfrac.SetMarkerStyle(20); hfrac.SetMarkerSize(1.30);
+        for (int i=0;i<(int)rows.size();i++) {
+            hfrac.GetXaxis()->SetBinLabel(i+1,rows[i].obs.c_str());
+            hfrac.SetBinContent(i+1,rows[i].aao_fraction);
+        }
+        hfrac.SetMinimum(-0.08); hfrac.SetMaximum(1.08);
+        hfrac.GetXaxis()->LabelsOption("v");
+        hfrac.Draw("P");
+        TLine zero(0,0.0,rows.size(),0.0), unity(0,1.0,rows.size(),1.0);
+        zero.SetLineStyle(3); unity.SetLineStyle(3);
+        zero.Draw(); unity.Draw();
+        TLatex tb; tb.SetNDC(); tb.SetTextFont(42); tb.SetTextSize(0.050);
+        tb.DrawLatex(0.17,0.91,"(b) AAO/CLASDIS tradeoff");
+
+        c.SaveAs((dir+"/lowE_pi0_balance_summary.png").c_str());
     }
+}
+
+
+
+void draw_compact_step1_selection_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                          const std::string& file) {
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* aao=find_val_component(vv,"aaogen");
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
+    if (!data || !aao || !cls || !dvc) return;
+
+    struct P { int obs,stage; double c1,c2; bool two; const char* lab; };
+    const P pp[]={
+        {NORM_MX2_EP,0,NORM_MX2_EP_MIN,NORM_MX2_EP_MAX,true,"(a) M_{X}^{2}(ep)"},
+        {NORM_MX2_EG,1,NORM_MX2_EG_MIN,0,false,"(b) M_{X}^{2}(e#gamma)"},
+        {NORM_DPHI_TRENTO_SHIFT180,2,-NORM_DPHI_TRENTO_MAX,NORM_DPHI_TRENTO_MAX,true,"(c) Trento coplanarity"},
+        {NORM_ANGLE_GX,3,NORM_ANGLE_GX_MAX,0,false,"(d) angle(#gamma,X)"}
+    };
+    auto geth=[](const ValComponent* v,int st,int io)->const TH1D* {
+        if (!v) return nullptr;
+        if (st==0 && io<(int)v->norm_pre.size()) return v->norm_pre[io].get();
+        if (st==1 && io<(int)v->norm_after_mx2ep.size()) return v->norm_after_mx2ep[io].get();
+        if (st==2 && io<(int)v->norm_after_mx2ep_mx2eg.size()) return v->norm_after_mx2ep_mx2eg[io].get();
+        if (st==3 && io<(int)v->norm_after_mx2ep_mx2eg_dphi.size()) return v->norm_after_mx2ep_mx2eg_dphi[io].get();
+        return nullptr;
+    };
+
+    TCanvas c("c_step1_compact","",1500,1100);
+    c.Divide(2,2);
+    std::vector<std::unique_ptr<TH1D>> keep;
+    const ValComponent* vv4[]={data,aao,cls,dvc};
+    const int cols[]={kBlack,kRed+1,kOrange+7,kGreen+2};
+    const char* labs[]={"Data","AAOgen","CLASDIS","DVCSgen"};
+
+    for (int ip=0;ip<4;ip++) {
+        c.cd(ip+1); gPad->SetLeftMargin(0.13); gPad->SetBottomMargin(0.12);
+        std::vector<TH1D*> hs;
+        double ymax=0;
+        for (int j=0;j<4;j++) {
+            const TH1D* h0=geth(vv4[j],pp[ip].stage,pp[ip].obs);
+            if (!h0) { hs.push_back(nullptr); continue; }
+            std::unique_ptr<TH1D> h((TH1D*)h0->Clone(Form("compact_%d_%d",ip,j)));
+            h->SetDirectory(nullptr);
+            const double q=h->Integral(); if (q>0) h->Scale(1.0/q);
+            h->SetStats(0);
+            if (j==0) {
+                h->SetMarkerStyle(20); h->SetMarkerSize(0.55);
+                h->SetLineColor(kBlack); h->SetMarkerColor(kBlack);
+            } else { h->SetLineColor(cols[j]); h->SetLineWidth(2); }
+            ymax=std::max(ymax,h->GetMaximum());
+            hs.push_back(h.get()); keep.push_back(std::move(h));
+        }
+        if (!hs[0]) continue;
+        hs[0]->SetTitle(""); hs[0]->GetYaxis()->SetTitle("Unit-area candidates");
+        hs[0]->SetMaximum(1.28*ymax);
+        hs[0]->Draw("E1");
+        for (int j=1;j<4;j++) if (hs[j]) hs[j]->Draw("HIST SAME");
+        hs[0]->Draw("E1 SAME");
+
+        const double yy=1.20*ymax;
+        TLine* l1=new TLine(pp[ip].c1,0,pp[ip].c1,yy);
+        l1->SetLineStyle(2); l1->SetLineWidth(2); l1->Draw();
+        if (pp[ip].two) {
+            TLine* l2=new TLine(pp[ip].c2,0,pp[ip].c2,yy);
+            l2->SetLineStyle(2); l2->SetLineWidth(2); l2->Draw();
+        }
+        TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.047);
+        tx.DrawLatex(0.16,0.91,pp[ip].lab);
+        if (ip==0) {
+            TLegend* leg=new TLegend(0.58,0.64,0.88,0.88);
+            leg->SetBorderSize(0); leg->SetFillStyle(0);
+            for (int j=0;j<4;j++) if (hs[j]) leg->AddEntry(hs[j],labs[j],j==0?"lep":"l");
+            leg->Draw();
+        }
+    }
+    c.SaveAs(file.c_str());
 }
 
 
@@ -3772,6 +4024,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     // Step 1E diagnostics: inspect angle(gamma,X) sequentially after all
     // preceding Step-1 exclusivity requirements and before its own cut.
     write_step1e_angle_gX_summary(vv,od+"/step1e_angle_gX");
+    draw_compact_step1_selection_summary(vv,od+"/step1_selection_summary.png");
 
     // Step 2A: reproduce Valerii's energy-region logic before fitting any
     // component normalization.  The 2-3 GeV transition region is explicitly
@@ -3979,6 +4232,7 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
     // Derive the component normalizations from the actual files in this run
     // before constructing the weighted-total MC used for the efficiency maps.
     NormDerivation norm=derive_normalization(vv,out);
+    write_pi0_truth_composition(vv,norm,out+"/normalization/pi0_truth_composition");
     std::vector<std::unique_ptr<TH1D>> hd_nom,hm_nom;
     auto nominal=evaluate_valerii_fd(vv,norm.nominal,&hd_nom,&hm_nom);
     auto set1=evaluate_valerii_fd(vv,norm.low);
@@ -4132,7 +4386,7 @@ void photon_efficiency_valerii_reproduction() {
     using namespace pe;
 
     gROOT->SetBatch(kTRUE);
-    gStyle->SetOptStat(0);
+    set_publication_style();
 
     const std::string out="output";
     reset_output(out);
