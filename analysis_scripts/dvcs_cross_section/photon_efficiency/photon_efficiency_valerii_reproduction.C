@@ -5432,9 +5432,11 @@ void draw_eprobe_cut_survival(const std::vector<std::unique_ptr<ValComponent>>& 
         gPad->SetTopMargin(0.14);
         gPad->SetTicks(1,1);
 
-        TH1D* frame=new TH1D(Form("surv_frame_%d",isamp),
+        std::unique_ptr<TH1D> frame(new TH1D(
+                   Form("surv_frame_%s_%d",ft_probe?"FT":"FD",isamp),
                    ";E_{#gamma,probe} (GeV);Cumulative survival",
-                   EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX);
+                   EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX));
+        frame->SetDirectory(nullptr);
         frame->SetStats(0);
         frame->SetMinimum(0);
         frame->SetMaximum(1.05);
@@ -5442,6 +5444,7 @@ void draw_eprobe_cut_survival(const std::vector<std::unique_ptr<ValComponent>>& 
         frame->GetYaxis()->SetTitleSize(0.050);
         frame->GetYaxis()->SetTitleOffset(isamp==0?1.35:1.0);
         frame->Draw("AXIS");
+        keep.push_back(std::move(frame));
 
         std::vector<TH1D*> cumulative;
         for (int ist=0;ist<EPROBE_NSTAGE;ist++) {
@@ -5483,9 +5486,11 @@ void draw_eprobe_cut_survival(const std::vector<std::unique_ptr<ValComponent>>& 
         gPad->SetTopMargin(0.10);
         gPad->SetTicks(1,1);
 
-        TH1D* iframe=new TH1D(Form("surv_iframe_%d",isamp),
+        std::unique_ptr<TH1D> iframe(new TH1D(
+                    Form("surv_iframe_%s_%d",ft_probe?"FT":"FD",isamp),
                     ";E_{#gamma,probe} (GeV);Incremental cut efficiency",
-                    EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX);
+                    EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX));
+        iframe->SetDirectory(nullptr);
         iframe->SetStats(0);
         iframe->SetMinimum(0);
         iframe->SetMaximum(1.05);
@@ -5493,6 +5498,7 @@ void draw_eprobe_cut_survival(const std::vector<std::unique_ptr<ValComponent>>& 
         iframe->GetYaxis()->SetTitleSize(0.050);
         iframe->GetYaxis()->SetTitleOffset(isamp==0?1.35:1.0);
         iframe->Draw("AXIS");
+        keep.push_back(std::move(iframe));
 
         std::vector<TH1D*> incremental;
         for (int ist=1;ist<EPROBE_NSTAGE;ist++) {
@@ -5987,9 +5993,9 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
         l->Draw();
     };
 
-    draw_metric(1,"Low-E production #chi^{2}/ndf",
+    draw_metric(1,"Low-E simultaneous fit #chi^{2}/ndf",
                 [](const FTFitQualityPoint& q){return q.low_chi2ndf;},0,0);
-    draw_metric(2,"High-E mean #chi^{2}/ndf",
+    draw_metric(2,"Mean high-E fit #chi^{2}/ndf",
                 [](const FTFitQualityPoint& q){return q.high_mean_chi2ndf;},0,0);
     draw_metric(3,"AAO normalization",
                 [](const FTFitQualityPoint& q){return q.aao;},0,0);
@@ -6038,8 +6044,15 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
         g->SetLineWidth(3);
         g->SetMarkerStyle(20);
         g->SetMarkerSize(0.85);
+        const char* pretty =
+            (io==NORM_MX2_EPG) ? "M_{X}^{2}(ep#gamma)" :
+            (io==NORM_ANGLE_GX) ? "angle(#gamma,X)" :
+            (io==NORM_MX2_EG) ? "M_{X}^{2}(e#gamma)" :
+            (io==NORM_DPHI_TRENTO_SHIFT180) ? "Trento coplanarity" :
+            (io==NORM_DELTA_T_PG) ? "#Delta t(p,#gamma)" :
+            NORM_OBS[io].key;
         g->SetTitle(Form("%s;|#Delta#phi_{copl}| maximum (deg);#chi^{2}/ndf",
-                         NORM_OBS[io].key));
+                         pretty));
         g->GetXaxis()->SetTitleSize(0.050);
         g->GetYaxis()->SetTitleSize(0.050);
         g->GetYaxis()->SetTitleOffset(1.35);
@@ -6052,6 +6065,12 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
         l->SetLineStyle(2);
         l->SetLineWidth(2);
         l->Draw();
+
+        TLatex note;
+        note.SetNDC();
+        note.SetTextFont(42);
+        note.SetTextSize(0.030);
+        note.DrawLatex(0.18,0.86,"production morphed DVCS fit");
     } // endfor
 
     chigh.cd(6);
@@ -6093,6 +6112,29 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
             csv << "," << q.high_obs_chi2ndf[io];
         csv << "\n";
     } // endfor
+    // Also record the relative high-E AAO gain and low/high fit changes
+    // versus the nominal 5.7-degree point for quick interpretation.
+    const FTFitQualityPoint* nominal=nullptr;
+    for (const auto& q:pts)
+        if (std::fabs(q.copl-NORM_DPHI_TRENTO_MAX)<0.15) nominal=&q;
+
+    if (nominal) {
+        csv << "\n# Relative to nominal 5.7-deg coplanarity cut\n";
+        csv << "coplanarity_absmax_deg,highE_AAO_gain,"
+               "delta_lowE_chi2_ndf,delta_highE_mean_chi2_ndf,"
+               "AAO_scale_ratio,DVCS_scale_ratio\n";
+        for (const auto& q:pts) {
+            const double gain=(nominal->aao_highE_probe>0)
+                ? q.aao_highE_probe/nominal->aao_highE_probe : 0;
+            const double ar=(nominal->aao>0)?q.aao/nominal->aao:0;
+            const double dr=(nominal->dvcs>0)?q.dvcs/nominal->dvcs:0;
+            csv << q.copl << "," << gain << ","
+                << q.low_chi2ndf-nominal->low_chi2ndf << ","
+                << q.high_mean_chi2ndf-nominal->high_mean_chi2ndf << ","
+                << ar << "," << dr << "\n";
+        } // endfor
+    } // endif
+
     csv.close();
 }
 
