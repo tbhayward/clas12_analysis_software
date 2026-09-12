@@ -2090,7 +2090,11 @@ bool norm_pass_nminus1(const NormCutFlags& f,int io) {
 std::unique_ptr<TH1D> morph_norm_hist(const TH1D* src,double shift,double sigma,const char* name) {
     if (!src) return nullptr;
     std::unique_ptr<TH1D> out((TH1D*)src->Clone(name));
-    out->Reset("ICES"); out->SetDirectory(nullptr); out->Sumw2();
+    // Clone() carries the source histogram's Sumw2 array with it.  Calling
+    // Sumw2() again here produces one ROOT warning for every morphed template.
+    out->Reset("ICES");
+    out->SetDirectory(nullptr);
+    if (out->GetSumw2N()==0) out->Sumw2();
     const int nb=src->GetNbinsX();
     if (sigma<=1e-12) {
         for (int j=1;j<=nb;j++) {
