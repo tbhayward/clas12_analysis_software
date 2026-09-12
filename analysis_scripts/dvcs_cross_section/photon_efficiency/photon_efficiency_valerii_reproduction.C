@@ -71,26 +71,24 @@
 
 namespace pe {
 
-void set_publication_style() {
+void concise_publication_style() {
     gStyle->SetOptStat(0);
-    gStyle->SetOptTitle(1);
+    gStyle->SetOptTitle(0);
     gStyle->SetTitleFont(42,"XYZ");
     gStyle->SetLabelFont(42,"XYZ");
     gStyle->SetTextFont(42);
     gStyle->SetLegendFont(42);
     gStyle->SetTitleSize(0.050,"XYZ");
-    gStyle->SetLabelSize(0.043,"XYZ");
+    gStyle->SetLabelSize(0.042,"XYZ");
     gStyle->SetTitleOffset(1.05,"X");
-    gStyle->SetTitleOffset(1.22,"Y");
+    gStyle->SetTitleOffset(1.25,"Y");
     gStyle->SetPadTickX(1);
     gStyle->SetPadTickY(1);
     gStyle->SetFrameLineWidth(2);
     gStyle->SetHistLineWidth(2);
     gStyle->SetEndErrorSize(4);
     gStyle->SetLegendBorderSize(0);
-    gStyle->SetLegendFillColor(0);
 }
-
 
 // -----------------------------------------------------------------------------
 // Paths.
@@ -229,56 +227,6 @@ bool has_root_files(const std::string& dir) {
     gSystem->FreeDirectory(dp);
     return found;
 }
-
-
-static const char* WORKER_CACHE_VERSION="20260912_v4_unified";
-
-std::uint64_t fnv1a64(const std::string& s,std::uint64_t h=1469598103934665603ULL) {
-    for (unsigned char c:s) {
-        h ^= std::uint64_t(c);
-        h *= 1099511628211ULL;
-    } // endfor
-    return h;
-}
-
-std::string sample_input_signature(const std::string& dir) {
-    void* dp=gSystem->OpenDirectory(dir.c_str());
-    if (!dp) return "missing";
-
-    std::vector<std::string> files;
-    const char* entry=nullptr;
-    while ((entry=gSystem->GetDirEntry(dp))) {
-        std::string n(entry);
-        if (n.size()>=5 && n.substr(n.size()-5)==".root")
-            files.push_back(n);
-    } // endwhile
-    gSystem->FreeDirectory(dp);
-    std::sort(files.begin(),files.end());
-
-    std::uint64_t h=fnv1a64(WORKER_CACHE_VERSION);
-    h=fnv1a64(dir,h);
-
-    for (const auto& n:files) {
-        const std::string p=dir + (dir.empty() || dir.back()=='/' ? "" : "/") + n;
-        Long_t id=0,size=0,flags=0,mtime=0;
-        if (gSystem->GetPathInfo(p.c_str(),&id,&size,&flags,&mtime)==0) {
-            std::ostringstream ss;
-            ss << n << ":" << size << ":" << mtime;
-            h=fnv1a64(ss.str(),h);
-        } else {
-            h=fnv1a64(n,h);
-        } // endif
-    } // endfor
-
-    std::ostringstream out;
-    out << std::hex << h;
-    return out.str();
-}
-
-std::string cache_root() {
-    return ".photon_efficiency_cache";
-}
-
 
 void reset_output(const std::string& out) {
     if (gSystem->AccessPathName(out.c_str())==kFALSE)
@@ -1510,28 +1458,6 @@ void write_root(const std::vector<std::unique_ptr<SampleResult>>& samples,
 }
 
 bool save_worker_result(const SampleResult& s, const std::string& path) {
-    // Finalize the stage-1 products without rereading the input tree.
-    stage1.fd.fit=fit_residual(stage1.fd.residual.get(),MIN_FIT_ENTRIES_FD);
-    stage1.ft_all.fit=fit_residual(stage1.ft_all.residual.get(),MIN_FIT_ENTRIES_FT);
-    stage1.ft_low.fit=fit_residual(stage1.ft_low.residual.get(),MIN_FIT_ENTRIES_FT);
-    stage1.ft_high.fit=fit_residual(stage1.ft_high.residual.get(),MIN_FIT_ENTRIES_FT);
-
-    for (auto& wr : stage1.windows) {
-        wr.fd_fit=fit_residual(wr.fd_h.get(),MIN_FIT_ENTRIES_FD);
-        wr.ft_fit=fit_residual(wr.ft_h.get(),MIN_FIT_ENTRIES_FT);
-    } // endfor
-
-    finalize_region_counts(stage1.fd);
-    finalize_region_counts(stage1.ft_all);
-    finalize_region_counts(stage1.ft_low);
-    finalize_region_counts(stage1.ft_high);
-
-    if (!save_worker_result(stage1,stage1_path)) {
-        std::cerr << "ERROR: failed to save unified stage-1 cache "
-                  << stage1_path << "\n";
-        return false;
-    } // endif
-
     TFile f(path.c_str(),"RECREATE");
     if (f.IsZombie()) return false;
     TNamed nname("sample_name",s.name.c_str()); nname.Write();
@@ -1655,17 +1581,55 @@ struct SampleSpec {
     bool is_mc=false;
 };
 
-std::string worker_cache_path(const std::string& layer,
-                              const SampleSpec& spec) {
-    const std::string sig=sample_input_signature(spec.dir);
-    const std::string d=cache_root()+"/"+std::string(WORKER_CACHE_VERSION)+"/"+layer;
-    gSystem->mkdir(d.c_str(),true);
-    return d+"/"+spec.name+"_"+sig+".root";
+static const char* CONCISE_CACHE_VERSION="20260912_concise_v1";
+
+std::uint64_t concise_hash(const std::string& s,std::uint64_t h=1469598103934665603ULL) {
+    for (unsigned char c:s) {
+        h ^= std::uint64_t(c);
+        h *= 1099511628211ULL;
+    } // endfor
+    return h;
 }
 
-bool valid_root_file(const std::string& path) {
-    if (gSystem->AccessPathName(path.c_str())!=kFALSE) return false;
-    TFile f(path.c_str(),"READ");
+std::string concise_input_signature(const std::string& dir) {
+    void* dp=gSystem->OpenDirectory(dir.c_str());
+    if (!dp) return "missing";
+
+    std::vector<std::string> files;
+    const char* ent=nullptr;
+    while ((ent=gSystem->GetDirEntry(dp))) {
+        std::string n(ent);
+        if (n.size()>=5 && n.substr(n.size()-5)==".root")
+            files.push_back(n);
+    } // endwhile
+    gSystem->FreeDirectory(dp);
+    std::sort(files.begin(),files.end());
+
+    std::uint64_t h=concise_hash(CONCISE_CACHE_VERSION);
+    for (const auto& n:files) {
+        const std::string p=dir + (dir.empty() || dir.back()=='/' ? "" : "/") + n;
+        Long_t id=0,size=0,flags=0,mtime=0;
+        std::ostringstream ss;
+        ss << n;
+        if (gSystem->GetPathInfo(p.c_str(),&id,&size,&flags,&mtime)==0)
+            ss << ":" << size << ":" << mtime;
+        h=concise_hash(ss.str(),h);
+    } // endfor
+
+    std::ostringstream out;
+    out << std::hex << h;
+    return out.str();
+}
+
+std::string concise_cache_path(const SampleSpec& s) {
+    const std::string d=".photon_efficiency_cache/concise";
+    gSystem->mkdir(d.c_str(),true);
+    return d+"/"+s.name+"_"+concise_input_signature(s.dir)+".root";
+}
+
+bool concise_valid_root(const std::string& p) {
+    if (gSystem->AccessPathName(p.c_str())!=kFALSE) return false;
+    TFile f(p.c_str(),"READ");
     const bool ok=!f.IsZombie() && !f.TestBit(TFile::kRecovered);
     f.Close();
     return ok;
@@ -1700,42 +1664,28 @@ std::vector<std::unique_ptr<SampleResult>> analyze_samples_parallel(const std::s
     std::vector<std::unique_ptr<SampleResult>> samples;
     if (specs.empty()) return samples;
 
+    const std::string worker_dir=out+"/.workers";
+    gSystem->mkdir(worker_dir.c_str(),true);
     std::cout.flush(); std::cerr.flush();
 
-    struct Child { pid_t pid; SampleSpec spec; std::string path; };
+    struct Child { pid_t pid; SampleSpec spec; };
     std::vector<Child> children;
 
-    std::map<std::string,std::string> cache_paths;
-
     for (const auto& spec : specs) {
-        const std::string path=worker_cache_path("stage1",spec);
-        cache_paths[spec.name]=path;
-
-        if (valid_root_file(path)) {
-            std::cout << "[CACHE] stage-1 " << spec.name << " -> reuse " << path << "\n";
-            continue;
-        } // endif
-
         const pid_t pid=fork();
         if (pid==0) {
-            SampleResult s;
-            s.name=spec.name; s.input=spec.dir; s.is_mc=spec.is_mc;
-            const int rc=analyze_sample(s) && save_worker_result(s,path) ? 0 : 2;
+            const int rc=analyze_worker(spec,worker_dir);
             std::cout.flush(); std::cerr.flush();
             _exit(rc);
         } else if (pid>0) {
-            children.push_back({pid,spec,path});
-            std::cout << "[PARALLEL] launched stage-1 " << spec.name
-                      << " worker pid=" << pid << "\n";
+            children.push_back({pid,spec});
+            std::cout << "[PARALLEL] launched " << spec.name << " worker pid=" << pid << "\n";
         } else {
             std::cerr << "WARNING: fork() failed for " << spec.name
                       << "; running that sample sequentially.\n";
-            SampleResult s;
-            s.name=spec.name; s.input=spec.dir; s.is_mc=spec.is_mc;
-            if (!(analyze_sample(s) && save_worker_result(s,path)))
-                std::cerr << "WARNING: sequential stage-1 worker failed for "
-                          << spec.name << "\n";
-        } // endif
+            const int rc=analyze_worker(spec,worker_dir);
+            if (rc!=0) std::cerr << "WARNING: sequential worker failed for " << spec.name << " rc=" << rc << "\n";
+        }
     } // endfor
 
     for (const auto& child : children) {
@@ -1752,8 +1702,8 @@ std::vector<std::unique_ptr<SampleResult>> analyze_samples_parallel(const std::s
 
     // Preserve deterministic column order: data, AAOgen, CLASDIS, DVCSgen.
     for (const auto& spec : specs) {
-        const std::string path=cache_paths[spec.name];
-        if (!valid_root_file(path)) continue;
+        const std::string path=worker_dir+"/"+spec.name+".root";
+        if (gSystem->AccessPathName(path.c_str())!=kFALSE) continue;
         auto s=load_worker_result(path);
         if (s) samples.push_back(std::move(s));
         else std::cerr << "WARNING: could not reload worker result " << path << "\n";
@@ -1815,10 +1765,27 @@ struct ValComponentBin {
     long long denom_rows=0;
     double denom_w=0;
     double denom_w2=0;
-    long long truth_rows=0;
-    long long truth_pi0_rows=0;
     std::unique_ptr<TH1D> residual_fit;
     std::unique_ptr<TH1D> residual_count;
+};
+
+enum CoarseRegionIndex {
+    CR_FD_LOW=0,
+    CR_FD_HIGH=1,
+    CR_FT_LOW=2,
+    CR_FT_HIGH=3,
+    CR_N=4
+};
+
+static const char* CR_KEY[CR_N]={"FD_Elt2","FD_Ege2","FT_Elt2","FT_Ege2"};
+static const char* CR_LABEL[CR_N]={"FD, E_{#gamma}<2 GeV","FD, E_{#gamma}#geq2 GeV",
+                                   "FT, E_{#gamma}<2 GeV","FT, E_{#gamma}#geq2 GeV"};
+
+struct CoarseValRegion {
+    long long denom_rows=0;
+    long long truth_rows=0;
+    long long truth_pi0_rows=0;
+    std::unique_ptr<TH1D> residual;
 };
 
 struct ValComponent {
@@ -1826,6 +1793,7 @@ struct ValComponent {
     bool is_mc=false;
     long long entries=0;
     std::array<ValComponentBin,VAL_NBIN> bins;
+    std::array<CoarseValRegion,CR_N> coarse;
 
     // Histograms used by the data-driven template-normalization stage.
     // Index order is defined by NormObs below.
@@ -2252,12 +2220,12 @@ struct NormCutFlags {
     bool all=false;
 };
 
-NormCutFlags norm_cut_flags_from_values(const std::array<double,NORM_NOBS>& x) {
+NormCutFlags norm_cut_flags(const Branches& b) {
     NormCutFlags f;
-    const double mx2ep=x[NORM_MX2_EP];
-    const double mx2eg=x[NORM_MX2_EG];
-    const double dphi=x[NORM_DPHI_TRENTO_SHIFT180];
-    const double ang=x[NORM_ANGLE_GX];
+    const double mx2ep=norm_observable_value(b,NORM_MX2_EP);
+    const double mx2eg=norm_observable_value(b,NORM_MX2_EG);
+    const double dphi =norm_observable_value(b,NORM_DPHI_TRENTO_SHIFT180);
+    const double ang  =norm_observable_value(b,NORM_ANGLE_GX);
 
     f.finite=std::isfinite(mx2ep) && std::isfinite(mx2eg) &&
              std::isfinite(dphi) && std::isfinite(ang);
@@ -2267,15 +2235,9 @@ NormCutFlags norm_cut_flags_from_values(const std::array<double,NORM_NOBS>& x) {
     f.mx2_eg=(mx2eg>NORM_MX2_EG_MIN);
     f.dphi_trento=(std::fabs(dphi)<NORM_DPHI_TRENTO_MAX);
     f.angle_gX=(ang<NORM_ANGLE_GX_MAX);
+
     f.all=f.mx2_ep && f.mx2_eg && f.dphi_trento && f.angle_gX;
     return f;
-}
-
-NormCutFlags norm_cut_flags(const Branches& b) {
-    std::array<double,NORM_NOBS> x;
-    for (int io=0;io<NORM_NOBS;io++)
-        x[io]=norm_observable_value(b,io);
-    return norm_cut_flags_from_values(x);
 }
 
 bool norm_pass_nminus1(const NormCutFlags& f,int io) {
@@ -2511,7 +2473,7 @@ void draw_norm_shape_overlay(const TH1D* hd,const TH1D* ha,const TH1D* hc,const 
 }
 
 void draw_norm_cutflow(const std::vector<std::unique_ptr<ValComponent>>& vv,const std::string& file) {
-    const char* labs[6]={"baseline","Mx2(ep)","Mx2(e#gamma)","|#delta#phi_{copl}|<5.7^{#circ}","angle(#gamma,X)","all cuts"};
+    const char* labs[6]={"baseline","Mx2(ep)","Mx2(e#gamma)","|#delta#phi_{copl}|<5.7^{#circ}","angle(e,X)","all cuts"};
     TCanvas c("c_norm_cutflow","",1150,760);
     TLegend leg(0.68,0.68,0.90,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0);
     std::vector<std::unique_ptr<TH1D>> keep;
@@ -2531,7 +2493,7 @@ void draw_norm_cutflow(const std::vector<std::unique_ptr<ValComponent>>& vv,cons
     leg.Draw(); c.SetBottomMargin(0.22); c.SaveAs(file.c_str());
 }
 
-bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path,const std::string& stage1_path) {
+bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path) {
     const std::string pattern=make_pattern(spec.dir);
     TChain c("PhotonEfficiency");
     const int nf=c.Add(pattern.c_str());
@@ -2543,21 +2505,24 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     c.SetCacheSize(64LL*1024LL*1024LL);
     c.AddBranchToCache("*",kTRUE);
 
-    // Unified pass: fill the original stage-1 diagnostics and the Valerii
-    // normalization/efficiency sufficient statistics from the same TChain scan.
-    SampleResult stage1;
-    stage1.name=spec.name;
-    stage1.input=spec.dir;
-    stage1.is_mc=spec.is_mc;
-    stage1.entries=c.GetEntries();
-    init_sample(stage1);
-    stage1.ft_plane=estimate_ft_plane(c,b);
-
     std::array<long long,VAL_NBIN> rows{};
     std::array<double,VAL_NBIN> sumw{};
     std::array<double,VAL_NBIN> sumw2{};
-    std::array<long long,VAL_NBIN> truth_rows{};
-    std::array<long long,VAL_NBIN> truth_pi0_rows{};
+
+    std::array<long long,CR_N> coarse_rows{{0,0,0,0}};
+    std::array<long long,CR_N> coarse_truth_rows{{0,0,0,0}};
+    std::array<long long,CR_N> coarse_truth_pi0{{0,0,0,0}};
+    std::array<std::unique_ptr<TH1D>,CR_N> coarse_h;
+    for (int ir=0;ir<CR_N;ir++) {
+        coarse_h[ir].reset(new TH1D(
+            Form("coarse_%s",CR_KEY[ir]),
+            Form(";%s;Candidates","#Delta p_{#gamma2}=p_{rec}-p_{miss} (GeV)"),
+            VAL_COUNT_NBIN,VAL_COUNT_MIN,VAL_COUNT_MAX));
+        coarse_h[ir]->Sumw2();
+        coarse_h[ir]->SetDirectory(nullptr);
+    } // endfor
+
+    const FTPlaneEstimate ft_plane=estimate_ft_plane(c,b);
 
     // Do NOT write one TTree row per reconstructed candidate.  With millions of
     // skim rows that temporary representation can become multi-GB and exhaust
@@ -2593,110 +2558,6 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     for (Long64_t i=0;i<c.GetEntries();i++) {
         c.GetEntry(i);
 
-        // ------------------------------------------------------------------
-        // Stage-1 diagnostics (same definitions as analyze_sample()).
-        // ------------------------------------------------------------------
-        stage1.cutflow.all++;
-
-        if (stage1.is_mc) {
-            if (!std::isfinite(b.mc_weight)) {
-                stage1.weight_nonfinite++;
-            } else {
-                if (stage1.weight_n==0) {
-                    stage1.weight_min=b.mc_weight;
-                    stage1.weight_max=b.mc_weight;
-                } else {
-                    stage1.weight_min=std::min(stage1.weight_min,b.mc_weight);
-                    stage1.weight_max=std::max(stage1.weight_max,b.mc_weight);
-                } // endif
-                stage1.weight_n++;
-                if (b.mc_weight==0) stage1.weight_zero++;
-                if (b.mc_weight<0) stage1.weight_negative++;
-                stage1.weight_sum+=b.mc_weight;
-                stage1.weight_sum2+=b.mc_weight*b.mc_weight;
-            } // endif
-        } // endif
-
-        if (b.p_pass_standard) {
-            stage1.cutflow.proton++;
-
-            if (b.tag_pass_beta) {
-                stage1.cutflow.tag_beta++;
-
-                if (b.tag_pass_fiducial) {
-                    stage1.cutflow.tag_fid++;
-
-                    if ((b.tag_detector==0 || b.tag_detector==1) &&
-                        finite_good(b.probe_corr_p) &&
-                        finite_good(b.probe_corr_theta) &&
-                        finite_good(b.probe_corr_phi)) {
-
-                        stage1.cutflow.finite_probe++;
-
-                        FTProjection ft_projection_stage1;
-                        const bool ft_angular_stage1=in_ft(b);
-                        if (ft_angular_stage1)
-                            ft_projection_stage1=project_ft(b,stage1.ft_plane);
-
-                        for (auto& wr : stage1.windows) {
-                            if (!finite_good(b.Mx_ep) ||
-                                b.Mx_ep<wr.w.lo || b.Mx_ep>wr.w.hi) continue;
-
-                            if (in_fd(b)) {
-                                wr.fd_denom++;
-                                const int k=best_probe_candidate(b,1);
-                                if (k>=0) {
-                                    wr.fd_reco++;
-                                    wr.fd_h->Fill(b.neutral_p[k]-b.probe_corr_p);
-                                } // endif
-                            } // endif
-
-                            if (ft_angular_stage1 &&
-                                ft_projection_stage1.valid &&
-                                ft_projection_stage1.fiducial) {
-                                wr.ft_denom++;
-                                const int k=best_probe_candidate(b,0);
-                                if (k>=0) {
-                                    wr.ft_reco++;
-                                    wr.ft_h->Fill(b.neutral_p[k]-b.probe_corr_p);
-                                } // endif
-                            } // endif
-                        } // endfor
-
-                        if (pass_nominal_mass(b)) {
-                            stage1.cutflow.nominal_mass++;
-
-                            stage1.denom_p->Fill(b.probe_corr_p);
-                            stage1.denom_theta->Fill(b.probe_corr_theta);
-                            stage1.denom_phi->Fill(wrap_phi(b.probe_corr_phi));
-
-                            if (in_fd(b)) stage1.cutflow.fd++;
-                            if (ft_angular_stage1) {
-                                stage1.cutflow.ft++;
-                                if (ft_projection_stage1.valid) {
-                                    stage1.cutflow.ft_projectable++;
-                                    stage1.ft_xy_projected->Fill(
-                                        ft_projection_stage1.x,
-                                        ft_projection_stage1.y);
-                                    if (ft_projection_stage1.fiducial)
-                                        stage1.cutflow.ft_projected_fid++;
-                                } // endif
-                            } // endif
-
-                            fill_region_residual(stage1.fd,b);
-                            fill_region_residual(stage1.ft_all,b,&ft_projection_stage1);
-                            fill_region_residual(stage1.ft_low,b,&ft_projection_stage1);
-                            fill_region_residual(stage1.ft_high,b,&ft_projection_stage1);
-                        } // endif
-                    } // endif
-                } // endif
-            } // endif
-        } // endif
-
-        // ------------------------------------------------------------------
-        // Valerii FD workflow.
-        // ------------------------------------------------------------------
-
         // Match the FD/PCAL workflow: the observed tag photon must itself be FD.
         // The mixed ep-gamma-X denominator is NOT restricted by the stage-1 pi0
         // parent window.
@@ -2715,12 +2576,8 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         // every exclusivity cut is active except a cut directly on that plotted
         // observable.  This prevents a hard cut from manufacturing agreement in
         // the very distribution used to determine a normalization factor.
-        std::array<double,NORM_NOBS> norm_x;
-        for (int io=0;io<NORM_NOBS;io++)
-            norm_x[io]=norm_observable_value(b,io);
-
-        const double Eg=norm_x[NORM_EGAMMA];
-        const NormCutFlags ncf=norm_cut_flags_from_values(norm_x);
+        const double Eg=b.have_tag_corr_kin?b.tag_corr_p:std::numeric_limits<double>::quiet_NaN();
+        const NormCutFlags ncf=norm_cut_flags(b);
         norm_cutflow[0]++;
         if (ncf.mx2_ep) {
             norm_cutflow[1]++;
@@ -2735,7 +2592,7 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         if (ncf.all) norm_cutflow[5]++;
 
         for (int io=0;io<NORM_NOBS;io++) {
-            const double x=norm_x[io];
+            const double x=norm_observable_value(b,io);
             if (!std::isfinite(x)) continue;
             norm_pre[io]->Fill(x);
             if (ncf.mx2_ep) norm_after_mx2ep[io]->Fill(x);
@@ -2756,6 +2613,50 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         // photon was reconstructed.
         if (!ncf.all) continue;
 
+        // ------------------------------------------------------------------
+        // Coarse fully-integrated photon-efficiency regions.
+        // Same exclusivity selection as the normalization stage; only detector
+        // geometry and the E_gamma=2 GeV split remain.
+        // ------------------------------------------------------------------
+        int cr=-1;
+        int probe_detector=-1;
+
+        const bool probe_fd=(b.probe_corr_theta>=FD_THETA_MIN &&
+                             b.probe_corr_theta<=FD_THETA_MAX &&
+                             b.probe_corr_p>=PROBE_P_MIN);
+        FTProjection ftp;
+        bool probe_ft=false;
+        if (b.probe_corr_theta>=FT_THETA_MIN &&
+            b.probe_corr_theta<=FT_THETA_MAX &&
+            b.probe_corr_p>=PROBE_P_MIN) {
+            ftp=project_ft(b,ft_plane);
+            probe_ft=ftp.valid && ftp.fiducial;
+        } // endif
+
+        if (probe_fd) {
+            cr=(b.probe_corr_p<2.0 ? CR_FD_LOW : CR_FD_HIGH);
+            probe_detector=1;
+        } else if (probe_ft) {
+            cr=(b.probe_corr_p<2.0 ? CR_FT_LOW : CR_FT_HIGH);
+            probe_detector=0;
+        } // endif
+
+        if (cr>=0) {
+            coarse_rows[cr]++;
+
+            if (spec.is_mc && b.have_truth) {
+                coarse_truth_rows[cr]++;
+                if (b.truth_probe_pid==22 && b.truth_probe_parent==111)
+                    coarse_truth_pi0[cr]++;
+            } // endif
+
+            const int kc=best_probe_candidate(b,probe_detector);
+            if (kc>=0) {
+                const double dpc=b.neutral_p[kc]-b.probe_corr_p;
+                if (std::isfinite(dpc)) coarse_h[cr]->Fill(dpc);
+            } // endif
+        } // endif
+
         // Valerii FD reproduction: use UNIT event weights inside each MC sample.
         // The AAO/CLASDIS/DVCS relative normalizations are applied only when the
         // component histograms are combined below.  In particular, do not use
@@ -2767,11 +2668,6 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         rows[ib]++;
         sumw[ib]+=tw;
         sumw2[ib]+=tw*tw;
-        if (spec.is_mc && b.have_truth) {
-            truth_rows[ib]++;
-            if (b.truth_probe_pid==22 && b.truth_probe_parent==111)
-                truth_pi0_rows[ib]++;
-        }
         selected++;
 
         const int k=best_probe_candidate(b,1);
@@ -2795,20 +2691,32 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
 
     TTree denominators("denominators","Valerii FD denominator sums by analysis bin");
     Int_t dbin=-1;
-    Long64_t drows=0,dtruth=0,dtruth_pi0=0;
+    Long64_t drows=0;
     Double_t dsumw=0,dsumw2=0;
     denominators.Branch("bin",&dbin,"bin/I");
     denominators.Branch("rows",&drows,"rows/L");
     denominators.Branch("sumw",&dsumw,"sumw/D");
     denominators.Branch("sumw2",&dsumw2,"sumw2/D");
-    denominators.Branch("truth_rows",&dtruth,"truth_rows/L");
-    denominators.Branch("truth_pi0_rows",&dtruth_pi0,"truth_pi0_rows/L");
     for (dbin=0;dbin<VAL_NBIN;dbin++) {
         drows=rows[dbin]; dsumw=sumw[dbin]; dsumw2=sumw2[dbin];
-        dtruth=truth_rows[dbin]; dtruth_pi0=truth_pi0_rows[dbin];
         denominators.Fill();
     } // endfor
     denominators.Write();
+
+    TDirectory* cd=f.mkdir("coarse");
+    if (cd) {
+        cd->cd();
+        for (int ir=0;ir<CR_N;ir++) {
+            TDirectory* d=cd->mkdir(CR_KEY[ir]);
+            d->cd();
+            put_param<Long64_t>(d,"denom_rows",coarse_rows[ir]);
+            put_param<Long64_t>(d,"truth_rows",coarse_truth_rows[ir]);
+            put_param<Long64_t>(d,"truth_pi0_rows",coarse_truth_pi0[ir]);
+            coarse_h[ir]->Write("residual");
+            cd->cd();
+        } // endfor
+        f.cd();
+    } // endif
 
     TDirectory* rd=f.mkdir("residuals");
     if (!rd) { f.Close(); return false; }
@@ -2857,26 +2765,36 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
 
     auto* den=dynamic_cast<TTree*>(f.Get("denominators"));
     if (!den) return nullptr;
-    Int_t ib=-1;
-    Long64_t rows=0,truthrows=0,truthpi0=0;
-    Double_t sw=0,sw2=0;
+    Int_t ib=-1; Long64_t rows=0; Double_t sw=0,sw2=0;
     den->SetBranchAddress("bin",&ib);
     den->SetBranchAddress("rows",&rows);
     den->SetBranchAddress("sumw",&sw);
     den->SetBranchAddress("sumw2",&sw2);
-    const bool have_truthrows=(den->GetBranch("truth_rows")!=nullptr);
-    const bool have_truthpi0=(den->GetBranch("truth_pi0_rows")!=nullptr);
-    if (have_truthrows) den->SetBranchAddress("truth_rows",&truthrows);
-    if (have_truthpi0) den->SetBranchAddress("truth_pi0_rows",&truthpi0);
     for (Long64_t i=0;i<den->GetEntries();i++) {
         den->GetEntry(i);
         if (ib<0 || ib>=VAL_NBIN) continue;
         v->bins[ib].denom_rows=rows;
         v->bins[ib].denom_w=sw;
         v->bins[ib].denom_w2=sw2;
-        v->bins[ib].truth_rows=have_truthrows?truthrows:0;
-        v->bins[ib].truth_pi0_rows=have_truthpi0?truthpi0:0;
     } // endfor
+
+    auto* cd=dynamic_cast<TDirectory*>(f.Get("coarse"));
+    if (cd) {
+        for (int ir=0;ir<CR_N;ir++) {
+            TDirectory* d=dynamic_cast<TDirectory*>(cd->Get(CR_KEY[ir]));
+            if (!d) continue;
+            Long64_t q=0;
+            get_param<Long64_t>(d,"denom_rows",q); v->coarse[ir].denom_rows=q;
+            get_param<Long64_t>(d,"truth_rows",q); v->coarse[ir].truth_rows=q;
+            get_param<Long64_t>(d,"truth_pi0_rows",q); v->coarse[ir].truth_pi0_rows=q;
+            if (auto* h=dynamic_cast<TH1D*>(d->Get("residual"))) {
+                v->coarse[ir].residual.reset(
+                    dynamic_cast<TH1D*>(h->Clone(Form("%s_%s_residual",
+                        v->name.c_str(),CR_KEY[ir]))));
+                if (v->coarse[ir].residual) v->coarse[ir].residual->SetDirectory(nullptr);
+            } // endif
+        } // endfor
+    } // endif
 
     auto* rd=dynamic_cast<TDirectory*>(f.Get("residuals"));
     if (!rd) return nullptr;
@@ -2918,67 +2836,64 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
     f.Close();
     return v;
 }
-std::vector<std::unique_ptr<ValComponent>> build_val_components_parallel(const std::string& out) {
+std::vector<std::unique_ptr<ValComponent>> build_val_components_parallel(const std::string&) {
     const SampleSpec all_specs[] = {
         {"data",DATA_DIR,false},
         {"aaogen",AAOGEN_DIR,true},
         {"clasdis",CLASDIS_DIR,true},
         {"dvcsgen",DVCSGEN_DIR,true}
     };
-    struct VChild { pid_t pid; SampleSpec spec; std::string path; std::string stage1_path; };
-    std::vector<VChild> children;
-    std::vector<SampleSpec> specs;
-    std::cout.flush(); std::cerr.flush();
 
-    std::map<std::string,std::string> cache_paths;
+    struct Child { pid_t pid; SampleSpec spec; std::string path; };
+    std::vector<Child> children;
+    std::vector<SampleSpec> specs;
+    std::map<std::string,std::string> paths;
 
     for (const auto& spec:all_specs) {
         if (!has_root_files(spec.dir)) continue;
         specs.push_back(spec);
+        const std::string path=concise_cache_path(spec);
+        paths[spec.name]=path;
 
-        const std::string path=worker_cache_path("valerii",spec);
-        const std::string stage1_path=worker_cache_path("stage1",spec);
-        cache_paths[spec.name]=path;
-
-        if (valid_root_file(path) && valid_root_file(stage1_path)) {
-            std::cout << "[CACHE] unified " << spec.name
-                      << " -> reuse Valerii + stage-1 products\n";
+        if (concise_valid_root(path)) {
+            std::cout << "[CACHE] " << spec.name << " -> " << path << "\n";
             continue;
         } // endif
 
         const pid_t pid=fork();
         if (pid==0) {
-            const bool ok=analyze_val_component_worker(spec,path,stage1_path);
-            std::cout.flush(); std::cerr.flush();
+            const bool ok=analyze_val_component_worker(spec,path);
+            std::cout.flush();
+            std::cerr.flush();
             _exit(ok?0:2);
         } else if (pid>0) {
-            children.push_back({pid,spec,path,stage1_path});
-            std::cout << "[UNIFIED] launched " << spec.name
-                      << " worker pid=" << pid << "\n";
+            children.push_back({pid,spec,path});
+            std::cout << "[SCAN] launched " << spec.name << " pid=" << pid << "\n";
         } else {
-            std::cerr << "WARNING: unified worker fork failed for " << spec.name
-                      << "; running sequentially.\n";
-            analyze_val_component_worker(spec,path,stage1_path);
+            std::cerr << "WARNING: fork failed for " << spec.name << "; running sequentially\n";
+            analyze_val_component_worker(spec,path);
         } // endif
     } // endfor
 
     for (const auto& ch:children) {
-        int status=0; waitpid(ch.pid,&status,0);
+        int status=0;
+        waitpid(ch.pid,&status,0);
         if (!WIFEXITED(status) || WEXITSTATUS(status)!=0)
-            std::cerr << "WARNING: unified worker failed for " << ch.spec.name << "\n";
+            std::cerr << "WARNING: worker failed for " << ch.spec.name << "\n";
         else
-            std::cout << "[UNIFIED] finished " << ch.spec.name << "\n";
+            std::cout << "[SCAN] finished " << ch.spec.name << "\n";
     } // endfor
 
-    std::vector<std::unique_ptr<ValComponent>> outv;
+    std::vector<std::unique_ptr<ValComponent>> out;
     for (const auto& spec:specs) {
-        const std::string path=cache_paths[spec.name];
-        if (!valid_root_file(path)) continue;
-        auto p=load_val_component(path);
-        if (p) outv.push_back(std::move(p));
+        const std::string path=paths[spec.name];
+        if (!concise_valid_root(path)) continue;
+        auto v=load_val_component(path);
+        if (v) out.push_back(std::move(v));
     } // endfor
-    return outv;
+    return out;
 }
+
 
 const ValComponent* find_val_component(const std::vector<std::unique_ptr<ValComponent>>& vv,
                                        const std::string& name) {
@@ -3059,336 +2974,6 @@ std::unique_ptr<TH1D> val_make_mc_hist(const std::vector<std::unique_ptr<ValComp
     } // endfor
     return h;
 }
-
-
-struct Pi0TruthSummary {
-    long long truth_rows=0;
-    long long pi0_rows=0;
-    double fraction=-1.0;
-    bool from_truth=false;
-    bool from_generator_definition=false;
-};
-
-Pi0TruthSummary component_pi0_truth(const ValComponent* v) {
-    Pi0TruthSummary r;
-    if (!v || !v->is_mc) return r;
-
-    for (int ib=0;ib<VAL_NBIN;ib++) {
-        r.truth_rows += v->bins[ib].truth_rows;
-        r.pi0_rows += v->bins[ib].truth_pi0_rows;
-    } // endfor
-
-    if (r.truth_rows>0) {
-        r.fraction=double(r.pi0_rows)/double(r.truth_rows);
-        r.from_truth=true;
-        return r;
-    } // endif
-
-    // Some generator HIPO samples do not contain the truth-parent information
-    // needed by the skim.  Their physics content is nevertheless known:
-    // AAOgen is exclusive ep-pi0 and DVCSgen is ep-gamma.
-    if (v->name=="aaogen") {
-        r.fraction=1.0;
-        r.from_generator_definition=true;
-    } else if (v->name=="dvcsgen") {
-        r.fraction=0.0;
-        r.from_generator_definition=true;
-    } // endif
-
-    return r;
-}
-
-double component_pi0_fraction_in_bin(const ValComponent* v,int ib,double fallback) {
-    if (!v || ib<0 || ib>=VAL_NBIN) return fallback;
-
-    if (v->name=="aaogen") return 1.0;
-    if (v->name=="dvcsgen") return 0.0;
-
-    const auto& b=v->bins[ib];
-    if (b.truth_rows>0)
-        return double(b.truth_pi0_rows)/double(b.truth_rows);
-
-    return fallback;
-}
-
-void write_pi0_truth_composition(const std::vector<std::unique_ptr<ValComponent>>& vv,
-                                 const NormDerivation& nd,
-                                 const std::string& dir) {
-    gSystem->mkdir(dir.c_str(),true);
-
-    const ValComponent* aao=find_val_component(vv,"aaogen");
-    const ValComponent* cls=find_val_component(vv,"clasdis");
-    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
-
-    const Pi0TruthSummary aao_summary=component_pi0_truth(aao);
-    const Pi0TruthSummary cls_summary=component_pi0_truth(cls);
-    const Pi0TruthSummary dvc_summary=component_pi0_truth(dvc);
-
-    struct C {
-        const char* name;
-        const ValComponent* v;
-        double scale;
-        Pi0TruthSummary truth;
-    };
-    const C cc[]={
-        {"aaogen",aao,nd.nominal.aao,aao_summary},
-        {"clasdis",cls,nd.nominal.clasdis,cls_summary},
-        {"dvcsgen",dvc,nd.nominal.dvcs,dvc_summary}
-    };
-
-    std::ofstream comp(dir+"/mc_component_pi0_truth.csv");
-    comp << "component,selected_rows,truth_classified_rows,truth_pi0_rows,"
-            "pi0_fraction,source,nominal_scale,normalized_selected_yield,"
-            "normalized_pi0_yield\n";
-
-    double model_total=0.0;
-    double model_pi0=0.0;
-
-    for (const auto& c:cc) {
-        long long selected_rows=0;
-        if (c.v) {
-            for (int ib=0;ib<VAL_NBIN;ib++)
-                selected_rows += c.v->bins[ib].denom_rows;
-        } // endif
-
-        const double ytot=c.scale*double(selected_rows);
-        const double ypi0=(c.truth.fraction>=0 ? ytot*c.truth.fraction : 0.0);
-
-        model_total += ytot;
-        model_pi0 += ypi0;
-
-        std::string src="unavailable";
-        if (c.truth.from_truth) src="MC_truth";
-        else if (c.truth.from_generator_definition) src="generator_definition";
-
-        comp << c.name << ","
-             << selected_rows << ","
-             << c.truth.truth_rows << ","
-             << c.truth.pi0_rows << ","
-             << c.truth.fraction << ","
-             << src << ","
-             << c.scale << ","
-             << ytot << ","
-             << ypi0 << "\n";
-    } // endfor
-    comp.close();
-
-    const double integrated_fraction=(model_total>0 ? model_pi0/model_total : -1.0);
-
-    // CLASDIS integrated truth fraction is the fallback for a sparse bin with
-    // no truth-classified rows.  AAOgen and DVCSgen use known generator content.
-    const double clasdis_fallback=(cls_summary.fraction>=0 ? cls_summary.fraction : 0.0);
-
-    std::ofstream bins(dir+"/normalized_epgamma_pi0_fraction_by_bin.csv");
-    bins << "bin,ip,itheta,iphi,p_lo,p_hi,theta_lo,theta_hi,phi_lo,phi_hi,"
-            "normalized_total,normalized_pi0,pi0_fraction,"
-            "aao_fraction,clasdis_fraction,dvcs_fraction,"
-            "aao_rows,clasdis_rows,dvcs_rows\n";
-
-    TH2D hmap("h_pi0_fraction_ptheta",
-              ";Missing-probe p (GeV);Missing-probe #theta (deg)",
-              VAL_NP,VAL_P_EDGES,VAL_NT,VAL_T_EDGES);
-    hmap.SetStats(0);
-
-    for (int ip=0;ip<VAL_NP;ip++) {
-        for (int it=0;it<VAL_NT;it++) {
-            double totpt=0.0;
-            double pi0pt=0.0;
-
-            for (int iph=0;iph<VAL_NPH;iph++) {
-                const int ib=(ip*VAL_NT+it)*VAL_NPH+iph;
-
-                const double fa=component_pi0_fraction_in_bin(aao,ib,1.0);
-                const double fc=component_pi0_fraction_in_bin(cls,ib,clasdis_fallback);
-                const double fd=component_pi0_fraction_in_bin(dvc,ib,0.0);
-
-                const long long na=aao ? aao->bins[ib].denom_rows : 0;
-                const long long nc=cls ? cls->bins[ib].denom_rows : 0;
-                const long long ndv=dvc ? dvc->bins[ib].denom_rows : 0;
-
-                const double ya=nd.nominal.aao*double(na);
-                const double yc=nd.nominal.clasdis*double(nc);
-                const double yd=nd.nominal.dvcs*double(ndv);
-
-                const double tot=ya+yc+yd;
-                const double pi0=ya*fa+yc*fc+yd*fd;
-                const double frac=(tot>0 ? pi0/tot : -1.0);
-
-                bins << ib << "," << ip << "," << it << "," << iph << ","
-                     << VAL_P_EDGES[ip] << "," << VAL_P_EDGES[ip+1] << ","
-                     << VAL_T_EDGES[it] << "," << VAL_T_EDGES[it+1] << ","
-                     << VAL_PH_EDGES[iph] << "," << VAL_PH_EDGES[iph+1] << ","
-                     << tot << "," << pi0 << "," << frac << ","
-                     << fa << "," << fc << "," << fd << ","
-                     << na << "," << nc << "," << ndv << "\n";
-
-                totpt += tot;
-                pi0pt += pi0;
-            } // endfor
-
-            if (totpt>0)
-                hmap.SetBinContent(ip+1,it+1,pi0pt/totpt);
-        } // endfor
-    } // endfor
-    bins.close();
-
-    TCanvas c("c_pi0_truth_summary","",1500,650);
-    c.Divide(2,1);
-
-    c.cd(1);
-    gPad->SetLeftMargin(0.14);
-    TH1D hcomp("h_component_pi0_truth",
-               ";MC component;#pi^{0}-bearing fraction",3,0,3);
-    hcomp.SetStats(0);
-    hcomp.SetMinimum(-0.05);
-    hcomp.SetMaximum(1.05);
-    hcomp.SetMarkerStyle(20);
-    hcomp.SetMarkerSize(1.4);
-
-    const Pi0TruthSummary ss[]={aao_summary,cls_summary,dvc_summary};
-    const char* ll[]={"AAOgen","CLASDIS","DVCSgen"};
-    for (int i=0;i<3;i++) {
-        hcomp.GetXaxis()->SetBinLabel(i+1,ll[i]);
-        if (ss[i].fraction>=0) hcomp.SetBinContent(i+1,ss[i].fraction);
-    } // endfor
-    hcomp.Draw("P");
-
-    TLine one(0,1.0,3,1.0);
-    one.SetLineStyle(3);
-    one.Draw();
-
-    TLatex t1;
-    t1.SetNDC();
-    t1.SetTextFont(42);
-    t1.SetTextSize(0.050);
-    t1.DrawLatex(0.16,0.91,"(a) #pi^{0}-bearing fraction after selection");
-
-    c.cd(2);
-    gPad->SetLeftMargin(0.15);
-    gPad->SetRightMargin(0.16);
-    hmap.SetMinimum(0.0);
-    hmap.SetMaximum(1.0);
-    hmap.GetZaxis()->SetTitle("Normalized-model #pi^{0} fraction");
-    hmap.Draw("COLZ TEXT");
-
-    TLatex t2;
-    t2.SetNDC();
-    t2.SetTextFont(42);
-    t2.SetTextSize(0.050);
-    t2.DrawLatex(0.16,0.91,"(b) Selected ep#gammaX #pi^{0} fraction");
-
-    c.SaveAs((dir+"/epgamma_pi0_fraction_summary.png").c_str());
-
-    // Physics-class presentation used by the efficiency discussion:
-    // pi0-bearing versus genuine single-photon content.
-    {
-        std::array<double,VAL_NP> p_tot{};
-        std::array<double,VAL_NP> p_pi0{};
-
-        for (int ip=0;ip<VAL_NP;ip++) {
-            for (int it=0;it<VAL_NT;it++) {
-                for (int iph=0;iph<VAL_NPH;iph++) {
-                    const int ib=(ip*VAL_NT+it)*VAL_NPH+iph;
-                    const long long na=aao ? aao->bins[ib].denom_rows : 0;
-                    const long long nc=cls ? cls->bins[ib].denom_rows : 0;
-                    const long long ndv=dvc ? dvc->bins[ib].denom_rows : 0;
-
-                    const double fa=1.0;
-                    const double fc=component_pi0_fraction_in_bin(
-                        cls,ib,(cls_summary.fraction>=0?cls_summary.fraction:0.0));
-                    const double fd=0.0;
-
-                    const double ya=nd.nominal.aao*double(na);
-                    const double yc=nd.nominal.clasdis*double(nc);
-                    const double yd=nd.nominal.dvcs*double(ndv);
-
-                    p_tot[ip] += ya+yc+yd;
-                    p_pi0[ip] += ya*fa+yc*fc+yd*fd;
-                } // endfor
-            } // endfor
-        } // endfor
-
-        TCanvas cp("c_physics_class","",1450,620);
-        cp.Divide(2,1);
-
-        cp.cd(1);
-        gPad->SetLeftMargin(0.14);
-        TH1D hclass("h_physics_class",
-                    ";Selected-event physics class;Fraction of normalized model",
-                    2,0,2);
-        hclass.SetStats(0);
-        hclass.GetXaxis()->SetBinLabel(1,"#pi^{0}-bearing");
-        hclass.GetXaxis()->SetBinLabel(2,"single-#gamma");
-        hclass.SetMinimum(0.0);
-        hclass.SetMaximum(1.0);
-        hclass.SetBinContent(1,integrated_fraction);
-        hclass.SetBinContent(2,integrated_fraction>=0?1.0-integrated_fraction:0.0);
-        hclass.SetMarkerStyle(20);
-        hclass.SetMarkerSize(1.5);
-        hclass.Draw("P");
-        TLatex tc1;
-        tc1.SetNDC();
-        tc1.SetTextFont(42);
-        tc1.SetTextSize(0.050);
-        tc1.DrawLatex(0.16,0.91,"(a) Integrated selected-event composition");
-
-        cp.cd(2);
-        gPad->SetLeftMargin(0.14);
-        TGraphErrors gp;
-        gp.SetName("g_pi0_fraction_vs_p");
-        gp.SetMarkerStyle(20);
-        gp.SetMarkerSize(1.15);
-        for (int ip=0;ip<VAL_NP;ip++) {
-            if (p_tot[ip]<=0) continue;
-            const double x=0.5*(VAL_P_EDGES[ip]+VAL_P_EDGES[ip+1]);
-            const double ex=0.5*(VAL_P_EDGES[ip+1]-VAL_P_EDGES[ip]);
-            const double y=p_pi0[ip]/p_tot[ip];
-            const int n=gp.GetN();
-            gp.SetPoint(n,x,y);
-            gp.SetPointError(n,ex,0.0);
-        } // endfor
-        gp.SetTitle(";Missing-probe p (GeV);#pi^{0}-bearing fraction");
-        gp.SetMinimum(0.0);
-        gp.SetMaximum(1.0);
-        gp.Draw("AP");
-        TLatex tc2;
-        tc2.SetNDC();
-        tc2.SetTextFont(42);
-        tc2.SetTextSize(0.050);
-        tc2.DrawLatex(0.16,0.91,"(b) Kinematic dependence");
-
-        cp.SaveAs((dir+"/physics_class_composition.png").c_str());
-    }
-
-    std::ofstream txt(dir+"/epgamma_pi0_fraction_summary.txt");
-    txt << "Pi0 composition of selected ep-gamma-X candidates\n"
-        << "===============================================\n"
-        << "AAOgen: pi0 fraction fixed to 1 by generator definition when truth-parent\n"
-        << "information is unavailable.\n"
-        << "CLASDIS: pi0 fraction measured from MC truth using truth_probe_pid==22\n"
-        << "and truth_probe_parent==111.\n"
-        << "DVCSgen: pi0 fraction fixed to 0 by generator definition when truth-parent\n"
-        << "information is unavailable.\n\n";
-
-    for (const auto& c0:cc) {
-        std::string src="unavailable";
-        if (c0.truth.from_truth) src="MC truth";
-        else if (c0.truth.from_generator_definition) src="generator definition";
-
-        txt << c0.name
-            << ": pi0 fraction=" << c0.truth.fraction
-            << " (" << src << ")"
-            << ", normalization scale=" << c0.scale << "\n";
-    } // endfor
-
-    txt << "\nIntegrated normalized-model pi0 fraction = "
-        << integrated_fraction << "\n"
-        << "Normalized total yield = " << model_total << "\n"
-        << "Normalized pi0-bearing yield = " << model_pi0 << "\n";
-    txt.close();
-}
-
-
 std::array<ValBinResult,VAL_NBIN> evaluate_valerii_fd(
         const std::vector<std::unique_ptr<ValComponent>>& vv,
         const ValNormSet& norm,
@@ -4277,130 +3862,52 @@ void write_lowE_pi0_balance_diagnostics(const std::vector<std::unique_ptr<ValCom
 
     if (rows.empty()) return;
 
-    // Compact 1x2 summary.  Extend the right-panel range slightly beyond
-    // [0,1] so solutions pinned exactly to 0 or 1 remain visible.
+    // Plot 1: does the total fitted AAO+CLASDIS yield remain stable even when
+    // their individual coefficients trade against one another?
     {
-        TCanvas c("c_lowE_pi0_balance_summary","",1500,650);
-        c.Divide(2,1);
-
-        c.cd(1);
-        gPad->SetLeftMargin(0.14);
-        gPad->SetBottomMargin(0.25);
-        TH1D htot("h_lowE_pi0_total_closure",
-                  ";Normalization observable;(AAO+CLASDIS fitted yield) / data yield",
-                  (int)rows.size(),0,(int)rows.size());
-        htot.SetStats(0); htot.SetMarkerStyle(20); htot.SetMarkerSize(1.30);
+        TCanvas c("c_lowE_pi0_total_closure","",1100,720);
+        TH1D h("h_lowE_pi0_total_closure",
+               "Low-E fitted AAO+CLASDIS total;Normalization observable;(AAO+CLASDIS fitted yield) / data yield",
+               (int)rows.size(),0,(int)rows.size());
+        h.SetStats(0);
+        h.SetMarkerStyle(20);
+        h.SetMarkerSize(1.1);
         for (int i=0;i<(int)rows.size();i++) {
-            htot.GetXaxis()->SetBinLabel(i+1,rows[i].obs.c_str());
-            htot.SetBinContent(i+1,rows[i].model_over_data);
+            h.GetXaxis()->SetBinLabel(i+1,rows[i].obs.c_str());
+            h.SetBinContent(i+1,rows[i].model_over_data);
         }
-        htot.SetMinimum(0.78); htot.SetMaximum(1.08);
-        htot.GetXaxis()->LabelsOption("v");
-        htot.Draw("P");
+        h.SetMinimum(0.0);
+        h.SetMaximum(std::max(1.5,1.20*h.GetMaximum()));
+        h.Draw("P");
         TLine one(0,1.0,rows.size(),1.0);
-        one.SetLineStyle(2); one.SetLineWidth(2); one.Draw();
-        TLatex ta; ta.SetNDC(); ta.SetTextFont(42); ta.SetTextSize(0.050);
-        ta.DrawLatex(0.17,0.91,"(a) Combined low-E normalization");
+        one.SetLineStyle(2);
+        one.SetLineWidth(2);
+        one.Draw();
+        c.SetBottomMargin(0.22);
+        h.GetXaxis()->LabelsOption("v");
+        c.SaveAs((dir+"/lowE_pi0_total_closure.png").c_str());
+    }
 
-        c.cd(2);
-        gPad->SetLeftMargin(0.14);
-        gPad->SetBottomMargin(0.25);
-        TH1D hfrac("h_lowE_pi0_balance",
-                   ";Normalization observable;AAO fraction of fitted AAO+CLASDIS yield",
-                   (int)rows.size(),0,(int)rows.size());
-        hfrac.SetStats(0); hfrac.SetMarkerStyle(20); hfrac.SetMarkerSize(1.30);
+    // Plot 2: show the generator tradeoff directly.
+    {
+        TCanvas c("c_lowE_pi0_balance","",1100,720);
+        TH1D h("h_lowE_pi0_balance",
+               "Low-E AAO share of fitted AAO+CLASDIS yield;Normalization observable;AAO / (AAO+CLASDIS)",
+               (int)rows.size(),0,(int)rows.size());
+        h.SetStats(0);
+        h.SetMarkerStyle(20);
+        h.SetMarkerSize(1.1);
         for (int i=0;i<(int)rows.size();i++) {
-            hfrac.GetXaxis()->SetBinLabel(i+1,rows[i].obs.c_str());
-            hfrac.SetBinContent(i+1,rows[i].aao_fraction);
+            h.GetXaxis()->SetBinLabel(i+1,rows[i].obs.c_str());
+            h.SetBinContent(i+1,rows[i].aao_fraction);
         }
-        hfrac.SetMinimum(-0.08); hfrac.SetMaximum(1.08);
-        hfrac.GetXaxis()->LabelsOption("v");
-        hfrac.Draw("P");
-        TLine zero(0,0.0,rows.size(),0.0), unity(0,1.0,rows.size(),1.0);
-        zero.SetLineStyle(3); unity.SetLineStyle(3);
-        zero.Draw(); unity.Draw();
-        TLatex tb; tb.SetNDC(); tb.SetTextFont(42); tb.SetTextSize(0.050);
-        tb.DrawLatex(0.17,0.91,"(b) AAO/CLASDIS tradeoff");
-
-        c.SaveAs((dir+"/lowE_pi0_balance_summary.png").c_str());
+        h.SetMinimum(0.0);
+        h.SetMaximum(1.0);
+        h.Draw("P");
+        c.SetBottomMargin(0.22);
+        h.GetXaxis()->LabelsOption("v");
+        c.SaveAs((dir+"/lowE_aao_fraction_of_pi0_model.png").c_str());
     }
-}
-
-
-
-void draw_compact_step1_selection_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
-                                          const std::string& file) {
-    const ValComponent* data=find_val_component(vv,"data");
-    const ValComponent* aao=find_val_component(vv,"aaogen");
-    const ValComponent* cls=find_val_component(vv,"clasdis");
-    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
-    if (!data || !aao || !cls || !dvc) return;
-
-    struct P { int obs,stage; double c1,c2; bool two; const char* lab; };
-    const P pp[]={
-        {NORM_MX2_EP,0,NORM_MX2_EP_MIN,NORM_MX2_EP_MAX,true,"(a) M_{X}^{2}(ep)"},
-        {NORM_MX2_EG,1,NORM_MX2_EG_MIN,0,false,"(b) M_{X}^{2}(e#gamma)"},
-        {NORM_DPHI_TRENTO_SHIFT180,2,-NORM_DPHI_TRENTO_MAX,NORM_DPHI_TRENTO_MAX,true,"(c) Trento coplanarity"},
-        {NORM_ANGLE_GX,3,NORM_ANGLE_GX_MAX,0,false,"(d) angle(#gamma,X)"}
-    };
-    auto geth=[](const ValComponent* v,int st,int io)->const TH1D* {
-        if (!v) return nullptr;
-        if (st==0 && io<(int)v->norm_pre.size()) return v->norm_pre[io].get();
-        if (st==1 && io<(int)v->norm_after_mx2ep.size()) return v->norm_after_mx2ep[io].get();
-        if (st==2 && io<(int)v->norm_after_mx2ep_mx2eg.size()) return v->norm_after_mx2ep_mx2eg[io].get();
-        if (st==3 && io<(int)v->norm_after_mx2ep_mx2eg_dphi.size()) return v->norm_after_mx2ep_mx2eg_dphi[io].get();
-        return nullptr;
-    };
-
-    TCanvas c("c_step1_compact","",1500,1100);
-    c.Divide(2,2);
-    std::vector<std::unique_ptr<TH1D>> keep;
-    const ValComponent* vv4[]={data,aao,cls,dvc};
-    const int cols[]={kBlack,kRed+1,kOrange+7,kGreen+2};
-    const char* labs[]={"Data","AAOgen","CLASDIS","DVCSgen"};
-
-    for (int ip=0;ip<4;ip++) {
-        c.cd(ip+1); gPad->SetLeftMargin(0.13); gPad->SetBottomMargin(0.12);
-        std::vector<TH1D*> hs;
-        double ymax=0;
-        for (int j=0;j<4;j++) {
-            const TH1D* h0=geth(vv4[j],pp[ip].stage,pp[ip].obs);
-            if (!h0) { hs.push_back(nullptr); continue; }
-            std::unique_ptr<TH1D> h((TH1D*)h0->Clone(Form("compact_%d_%d",ip,j)));
-            h->SetDirectory(nullptr);
-            const double q=h->Integral(); if (q>0) h->Scale(1.0/q);
-            h->SetStats(0);
-            if (j==0) {
-                h->SetMarkerStyle(20); h->SetMarkerSize(0.55);
-                h->SetLineColor(kBlack); h->SetMarkerColor(kBlack);
-            } else { h->SetLineColor(cols[j]); h->SetLineWidth(2); }
-            ymax=std::max(ymax,h->GetMaximum());
-            hs.push_back(h.get()); keep.push_back(std::move(h));
-        }
-        if (!hs[0]) continue;
-        hs[0]->SetTitle(""); hs[0]->GetYaxis()->SetTitle("Unit-area candidates");
-        hs[0]->SetMaximum(1.28*ymax);
-        hs[0]->Draw("E1");
-        for (int j=1;j<4;j++) if (hs[j]) hs[j]->Draw("HIST SAME");
-        hs[0]->Draw("E1 SAME");
-
-        const double yy=1.20*ymax;
-        TLine* l1=new TLine(pp[ip].c1,0,pp[ip].c1,yy);
-        l1->SetLineStyle(2); l1->SetLineWidth(2); l1->Draw();
-        if (pp[ip].two) {
-            TLine* l2=new TLine(pp[ip].c2,0,pp[ip].c2,yy);
-            l2->SetLineStyle(2); l2->SetLineWidth(2); l2->Draw();
-        }
-        TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.047);
-        tx.DrawLatex(0.16,0.91,pp[ip].lab);
-        if (ip==0) {
-            TLegend* leg=new TLegend(0.58,0.64,0.88,0.88);
-            leg->SetBorderSize(0); leg->SetFillStyle(0);
-            for (int j=0;j<4;j++) if (hs[j]) leg->AddEntry(hs[j],labs[j],j==0?"lep":"l");
-            leg->Draw();
-        }
-    }
-    c.SaveAs(file.c_str());
 }
 
 
@@ -4458,7 +3965,6 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     // Step 1E diagnostics: inspect angle(gamma,X) sequentially after all
     // preceding Step-1 exclusivity requirements and before its own cut.
     write_step1e_angle_gX_summary(vv,od+"/step1e_angle_gX");
-    draw_compact_step1_selection_summary(vv,od+"/step1_selection_summary.png");
 
     // Step 2A: reproduce Valerii's energy-region logic before fitting any
     // component normalization.  The 2-3 GeV transition region is explicitly
@@ -4666,7 +4172,6 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
     // Derive the component normalizations from the actual files in this run
     // before constructing the weighted-total MC used for the efficiency maps.
     NormDerivation norm=derive_normalization(vv,out);
-    write_pi0_truth_composition(vv,norm,out+"/normalization/pi0_truth_composition");
     std::vector<std::unique_ptr<TH1D>> hd_nom,hm_nom;
     auto nominal=evaluate_valerii_fd(vv,norm.nominal,&hd_nom,&hm_nom);
     auto set1=evaluate_valerii_fd(vv,norm.low);
@@ -4791,6 +4296,617 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
     summary.close();
 }
 
+double rms_spread(const std::vector<double>& x,double mean) {
+    if (x.size()<2) return 0.0;
+    double s=0.0;
+    for (double v:x) s+=(v-mean)*(v-mean);
+    return std::sqrt(s/double(x.size()-1));
+}
+
+NormDerivation derive_normalization_concise(
+        const std::vector<std::unique_ptr<ValComponent>>& vv) {
+    NormDerivation R;
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* aao=find_val_component(vv,"aaogen");
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
+
+    if (!data || !aao || !cls || !dvc) {
+        R.used_fallback=true;
+        R.nominal=VAL_HISTORICAL_NOMINAL;
+        R.low=R.nominal;
+        R.high=R.nominal;
+        return R;
+    } // endif
+
+    for (int io=0;io<NORM_NOBS;io++) {
+        if (!NORM_OBS[io].use_low) continue;
+        auto q=fit_two_templates_morphed(
+            data->norm_lowE[io].get(),
+            aao->norm_lowE[io].get(),
+            cls->norm_lowE[io].get(),
+            NORM_OBS[io].key);
+        if (q.valid) R.low_points.push_back(q);
+    } // endfor
+
+    const double A=mean_valid(R.low_points,0);
+    const double B=mean_valid(R.low_points,1);
+
+    for (int io=0;io<NORM_NOBS;io++) {
+        if (!NORM_OBS[io].use_high) continue;
+        auto q=fit_dvcs_template_morphed(
+            data->norm_highE[io].get(),
+            aao->norm_highE[io].get(),
+            cls->norm_highE[io].get(),
+            dvc->norm_highE[io].get(),
+            A,B,NORM_OBS[io].key);
+        if (q.valid) R.high_points.push_back(q);
+    } // endfor
+
+    const double C=mean_valid(R.high_points,2);
+    R.valid=(A>0 && B>0 && C>=0 &&
+             R.low_points.size()>=2 && R.high_points.size()>=2);
+
+    if (!R.valid) {
+        R.used_fallback=true;
+        R.nominal=VAL_HISTORICAL_NOMINAL;
+        R.low=R.nominal;
+        R.high=R.nominal;
+        return R;
+    } // endif
+
+    R.nominal={"derived_mean",A,B,C};
+
+    // "low/high" are mean +/- one-observable spread, clipped non-negative.
+    std::vector<double> av,bv,cv;
+    for (const auto& q:R.low_points) {
+        av.push_back(q.aao);
+        bv.push_back(q.clasdis);
+    } // endfor
+    for (const auto& q:R.high_points) cv.push_back(q.dvcs);
+
+    const double sa=rms_spread(av,A);
+    const double sb=rms_spread(bv,B);
+    const double sc=rms_spread(cv,C);
+
+    R.low={"mean_minus_spread",std::max(0.0,A-sa),std::max(0.0,B-sb),std::max(0.0,C-sc)};
+    R.high={"mean_plus_spread",A+sa,B+sb,C+sc};
+    return R;
+}
+
+const CoarseValRegion* coarse_region(const ValComponent* v,int ir) {
+    if (!v || ir<0 || ir>=CR_N) return nullptr;
+    return &v->coarse[ir];
+}
+
+double coarse_clasdis_pi0_fraction(const ValComponent* cls,int ir,double fallback=0.9877) {
+    if (!cls || ir<0 || ir>=CR_N) return fallback;
+    const auto& r=cls->coarse[ir];
+    if (r.truth_rows>0)
+        return double(r.truth_pi0_rows)/double(r.truth_rows);
+    return fallback;
+}
+
+struct CoarseComposition {
+    double f_pi0=-1;
+    double ya=0,yc=0,yd=0;
+    double f_clasdis_pi0=0;
+};
+
+CoarseComposition coarse_composition(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                     const ValNormSet& n,int ir) {
+    CoarseComposition r;
+    const ValComponent* a=find_val_component(vv,"aaogen");
+    const ValComponent* c=find_val_component(vv,"clasdis");
+    const ValComponent* d=find_val_component(vv,"dvcsgen");
+    if (!a || !c || !d) return r;
+
+    const double fc=coarse_clasdis_pi0_fraction(c,ir);
+    r.f_clasdis_pi0=fc;
+    r.ya=n.aao*double(a->coarse[ir].denom_rows);
+    r.yc=n.clasdis*double(c->coarse[ir].denom_rows);
+    r.yd=n.dvcs*double(d->coarse[ir].denom_rows);
+
+    const double total=r.ya+r.yc+r.yd;
+    const double pi0=r.ya+fc*r.yc;
+    if (total>0) r.f_pi0=pi0/total;
+    return r;
+}
+
+void concise_make_dirs(const std::string& out) {
+    reset_output(out);
+    gSystem->mkdir((out+"/1_exclusivity").c_str(),true);
+    gSystem->mkdir((out+"/2_normalization").c_str(),true);
+    gSystem->mkdir((out+"/3_pi0_fraction").c_str(),true);
+    gSystem->mkdir((out+"/4_efficiency").c_str(),true);
+}
+
+void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                              const std::string& dir) {
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* aao=find_val_component(vv,"aaogen");
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
+    if (!data || !aao || !cls || !dvc) return;
+
+    struct P { int obs,stage; double c1,c2; bool two; const char* label; };
+    const P pp[]={
+        {NORM_MX2_EP,0,NORM_MX2_EP_MIN,NORM_MX2_EP_MAX,true,"(a) M_{X}^{2}(ep)"},
+        {NORM_MX2_EG,1,NORM_MX2_EG_MIN,0,false,"(b) M_{X}^{2}(e#gamma)"},
+        {NORM_DPHI_TRENTO_SHIFT180,2,-NORM_DPHI_TRENTO_MAX,NORM_DPHI_TRENTO_MAX,true,"(c) Trento coplanarity"},
+        {NORM_ANGLE_GX,3,NORM_ANGLE_GX_MAX,0,false,"(d) angle(#gamma,X)"}
+    };
+
+    auto geth=[](const ValComponent* v,int stage,int io)->const TH1D* {
+        if (stage==0) return v->norm_pre[io].get();
+        if (stage==1) return v->norm_after_mx2ep[io].get();
+        if (stage==2) return v->norm_after_mx2ep_mx2eg[io].get();
+        return v->norm_after_mx2ep_mx2eg_dphi[io].get();
+    };
+
+    const ValComponent* ss[]={data,aao,cls,dvc};
+    const int col[]={kBlack,kRed+1,kOrange+7,kGreen+2};
+    const char* lab[]={"Data","AAOgen","CLASDIS","DVCSgen"};
+    std::vector<std::unique_ptr<TH1D>> keep;
+
+    TCanvas c("c_exclusivity_summary","",1500,1100);
+    c.Divide(2,2);
+
+    for (int ip=0;ip<4;ip++) {
+        c.cd(ip+1);
+        gPad->SetLeftMargin(0.13);
+        gPad->SetRightMargin(0.04);
+        gPad->SetBottomMargin(0.12);
+        gPad->SetTopMargin(0.10);
+
+        std::vector<TH1D*> hh;
+        double ymax=0;
+        for (int is=0;is<4;is++) {
+            const TH1D* h0=geth(ss[is],pp[ip].stage,pp[ip].obs);
+            std::unique_ptr<TH1D> h((TH1D*)h0->Clone(Form("exc_%d_%d",ip,is)));
+            h->SetDirectory(nullptr);
+            const double q=h->Integral();
+            if (q>0) h->Scale(1.0/q);
+            h->SetStats(0);
+            if (is==0) {
+                h->SetMarkerStyle(20);
+                h->SetMarkerSize(0.45);
+                h->SetLineColor(kBlack);
+            } else {
+                h->SetLineColor(col[is]);
+                h->SetLineWidth(2);
+            } // endif
+            ymax=std::max(ymax,h->GetMaximum());
+            hh.push_back(h.get());
+            keep.push_back(std::move(h));
+        } // endfor
+
+        hh[0]->SetTitle("");
+        hh[0]->GetYaxis()->SetTitle("Unit-area candidates");
+        hh[0]->SetMaximum(1.27*ymax);
+        hh[0]->Draw("E1");
+        for (int is=1;is<4;is++) hh[is]->Draw("HIST SAME");
+        hh[0]->Draw("E1 SAME");
+
+        const double yy=1.18*ymax;
+        TLine* l1=new TLine(pp[ip].c1,0,pp[ip].c1,yy);
+        l1->SetLineStyle(2); l1->SetLineWidth(2); l1->Draw();
+        if (pp[ip].two) {
+            TLine* l2=new TLine(pp[ip].c2,0,pp[ip].c2,yy);
+            l2->SetLineStyle(2); l2->SetLineWidth(2); l2->Draw();
+        } // endif
+
+        TLatex tx;
+        tx.SetNDC();
+        tx.SetTextFont(42);
+        tx.SetTextSize(0.050);
+        tx.DrawLatex(0.15,0.92,pp[ip].label);
+
+        if (ip==0) {
+            TLegend* leg=new TLegend(0.62,0.66,0.94,0.88);
+            leg->SetBorderSize(0);
+            leg->SetFillStyle(0);
+            for (int is=0;is<4;is++)
+                leg->AddEntry(hh[is],lab[is],is==0?"lep":"l");
+            leg->Draw();
+        } // endif
+    } // endfor
+
+    c.SaveAs((dir+"/exclusivity_summary.png").c_str());
+
+    std::ofstream csv(dir+"/summary.csv");
+    csv << "sample,baseline,mx2_ep,mx2_eg,coplanarity,angle_gX,all_cuts\n";
+    for (const auto& v:vv) {
+        csv << v->name;
+        for (int i=0;i<6;i++) csv << "," << v->norm_cutflow[i];
+        csv << "\n";
+    } // endfor
+}
+
+void draw_norm_panel(TH1D* frame,const TH1D* hd,const TH1D* ha,const TH1D* hc,const TH1D* hv,
+                     double A,double B,double C,const NormFitPoint& q,const char* panel) {
+    std::unique_ptr<TH1D> d((TH1D*)hd->Clone(Form("d_%s",panel))); d->SetDirectory(nullptr);
+    auto a=morph_norm_hist(ha,q.morph_shift,q.morph_sigma,Form("a_%s",panel)); a->Scale(A);
+    auto c=morph_norm_hist(hc,q.morph_shift,q.morph_sigma,Form("c_%s",panel)); c->Scale(B);
+    auto v=morph_norm_hist(hv,q.morph_shift,q.morph_sigma,Form("v_%s",panel)); v->Scale(C);
+    std::unique_ptr<TH1D> t((TH1D*)a->Clone(Form("t_%s",panel))); t->Add(c.get()); t->Add(v.get());
+
+    d->SetStats(0);
+    d->SetMarkerStyle(20);
+    d->SetMarkerSize(0.45);
+    d->SetLineColor(kBlack);
+    style_norm_component(a.get(),kRed+1);
+    style_norm_component(c.get(),kOrange+7);
+    style_norm_component(v.get(),kGreen+2);
+    style_norm_component(t.get(),kBlue+1,3);
+
+    d->SetTitle("");
+    d->SetMaximum(1.30*std::max(d->GetMaximum(),t->GetMaximum()));
+    d->Draw("E1");
+    a->Draw("HIST SAME"); c->Draw("HIST SAME"); v->Draw("HIST SAME");
+    t->Draw("HIST SAME"); d->Draw("E1 SAME");
+
+    TLatex tx;
+    tx.SetNDC();
+    tx.SetTextFont(42);
+    tx.SetTextSize(0.045);
+    tx.DrawLatex(0.15,0.92,panel);
+}
+
+void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                const NormDerivation& R,const std::string& dir) {
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* aao=find_val_component(vv,"aaogen");
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    const ValComponent* dvc=find_val_component(vv,"dvcsgen");
+    if (!data || !aao || !cls || !dvc) return;
+
+    // Energy-region overview.
+    {
+        const int io=NORM_EGAMMA;
+        std::unique_ptr<TH1D> d((TH1D*)data->norm_full[io]->Clone("normE_d"));
+        std::unique_ptr<TH1D> a((TH1D*)aao->norm_full[io]->Clone("normE_a"));
+        std::unique_ptr<TH1D> c((TH1D*)cls->norm_full[io]->Clone("normE_c"));
+        std::unique_ptr<TH1D> v((TH1D*)dvc->norm_full[io]->Clone("normE_v"));
+        d->SetDirectory(nullptr); a->SetDirectory(nullptr); c->SetDirectory(nullptr); v->SetDirectory(nullptr);
+        a->Scale(R.nominal.aao); c->Scale(R.nominal.clasdis); v->Scale(R.nominal.dvcs);
+        std::unique_ptr<TH1D> t((TH1D*)a->Clone("normE_t")); t->Add(c.get()); t->Add(v.get());
+        d->SetStats(0); d->SetMarkerStyle(20); d->SetMarkerSize(0.55); d->SetLineColor(kBlack);
+        style_norm_component(a.get(),kRed+1); style_norm_component(c.get(),kOrange+7);
+        style_norm_component(v.get(),kGreen+2); style_norm_component(t.get(),kBlue+1,3);
+
+        TCanvas ce("c_norm_energy","",1150,760);
+        ce.SetLeftMargin(0.12); ce.SetRightMargin(0.04); ce.SetTopMargin(0.08);
+        d->SetMaximum(1.28*std::max(d->GetMaximum(),t->GetMaximum()));
+        d->GetXaxis()->SetTitle("E_{#gamma} (GeV)");
+        d->GetYaxis()->SetTitle("Candidates");
+        d->Draw("E1"); a->Draw("HIST SAME"); c->Draw("HIST SAME"); v->Draw("HIST SAME");
+        t->Draw("HIST SAME"); d->Draw("E1 SAME");
+        TLine l2(2.0,0,2.0,d->GetMaximum()); l2.SetLineStyle(2); l2.Draw();
+        TLine l3(3.0,0,3.0,d->GetMaximum()); l3.SetLineStyle(2); l3.Draw();
+        TLegend leg(0.64,0.63,0.94,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0);
+        leg.AddEntry(d.get(),"Data","lep"); leg.AddEntry(a.get(),"AAOgen","l");
+        leg.AddEntry(c.get(),"CLASDIS","l"); leg.AddEntry(v.get(),"DVCSgen","l");
+        leg.AddEntry(t.get(),"Total MC","l"); leg.Draw();
+        TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.040);
+        tx.DrawLatex(0.14,0.91,"Low E: AAOgen + CLASDIS fit; high E: DVCSgen fit");
+        ce.SaveAs((dir+"/energy_regions.png").c_str());
+    }
+
+    // Low-E fit canvas.
+    {
+        TCanvas c("c_low_norm","",1500,980);
+        c.Divide(3,2);
+        int pad=0;
+        for (const auto& q:R.low_points) {
+            int io=-1;
+            for (int j=0;j<NORM_NOBS;j++) if (q.observable==NORM_OBS[j].key) io=j;
+            if (io<0 || pad>=6) continue;
+            c.cd(++pad);
+            gPad->SetLeftMargin(0.13); gPad->SetRightMargin(0.04); gPad->SetTopMargin(0.10);
+            draw_norm_panel(nullptr,data->norm_lowE[io].get(),aao->norm_lowE[io].get(),
+                            cls->norm_lowE[io].get(),dvc->norm_lowE[io].get(),
+                            q.aao,q.clasdis,0.0,q,Form("(%c) %s",'a'+pad-1,q.observable.c_str()));
+            if (pad==1) {
+                TLegend* leg=new TLegend(0.57,0.58,0.94,0.86);
+                leg->SetBorderSize(0); leg->SetFillStyle(0);
+                leg->AddEntry((TObject*)nullptr,Form("AAO = %.3f",q.aao),"");
+                leg->AddEntry((TObject*)nullptr,Form("CLASDIS = %.3f",q.clasdis),"");
+                leg->Draw();
+            } // endif
+        } // endfor
+        c.SaveAs((dir+"/lowE_fits.png").c_str());
+    }
+
+    // High-E fit canvas.
+    {
+        TCanvas c("c_high_norm","",1500,980);
+        c.Divide(3,2);
+        int pad=0;
+        for (const auto& q:R.high_points) {
+            int io=-1;
+            for (int j=0;j<NORM_NOBS;j++) if (q.observable==NORM_OBS[j].key) io=j;
+            if (io<0 || pad>=6) continue;
+            c.cd(++pad);
+            gPad->SetLeftMargin(0.13); gPad->SetRightMargin(0.04); gPad->SetTopMargin(0.10);
+            draw_norm_panel(nullptr,data->norm_highE[io].get(),aao->norm_highE[io].get(),
+                            cls->norm_highE[io].get(),dvc->norm_highE[io].get(),
+                            R.nominal.aao,R.nominal.clasdis,q.dvcs,q,
+                            Form("(%c) %s",'a'+pad-1,q.observable.c_str()));
+        } // endfor
+        c.SaveAs((dir+"/highE_fits.png").c_str());
+    }
+
+    std::ofstream csv(dir+"/summary.csv");
+    csv << "stage,observable,aao,clasdis,dvcs,chi2_ndf,morph_shift,morph_sigma\n";
+    for (const auto& q:R.low_points)
+        csv << "lowE,"<<q.observable<<","<<q.aao<<","<<q.clasdis<<",0,"
+            <<(q.ndf?q.chi2/q.ndf:0)<<","<<q.morph_shift<<","<<q.morph_sigma<<"\n";
+    for (const auto& q:R.high_points)
+        csv << "highE,"<<q.observable<<","<<R.nominal.aao<<","<<R.nominal.clasdis<<","<<q.dvcs<<","
+            <<(q.ndf?q.chi2/q.ndf:0)<<","<<q.morph_shift<<","<<q.morph_sigma<<"\n";
+
+    std::vector<double> av,bv,cv;
+    for (const auto& q:R.low_points) { av.push_back(q.aao); bv.push_back(q.clasdis); }
+    for (const auto& q:R.high_points) cv.push_back(q.dvcs);
+    csv << "nominal_mean,ALL,"<<R.nominal.aao<<","<<R.nominal.clasdis<<","<<R.nominal.dvcs<<",0,0,0\n";
+    csv << "spread_1sigma,ALL,"
+        <<rms_spread(av,R.nominal.aao)<<","<<rms_spread(bv,R.nominal.clasdis)<<","
+        <<rms_spread(cv,R.nominal.dvcs)<<",0,0,0\n";
+}
+
+void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                      const NormDerivation& R,const std::string& dir) {
+    const ValComponent* cls=find_val_component(vv,"clasdis");
+    TCanvas c("c_pi0_summary","",1450,650);
+    c.Divide(2,1);
+
+    c.cd(1);
+    gPad->SetLeftMargin(0.14); gPad->SetTopMargin(0.10);
+    TH1D hcomp("h_pi0_components",";MC component;#pi^{0}-bearing fraction",3,0,3);
+    hcomp.SetStats(0); hcomp.SetMinimum(0); hcomp.SetMaximum(1.05);
+    hcomp.GetXaxis()->SetBinLabel(1,"AAOgen");
+    hcomp.GetXaxis()->SetBinLabel(2,"CLASDIS");
+    hcomp.GetXaxis()->SetBinLabel(3,"DVCSgen");
+    hcomp.SetBinContent(1,1.0);
+    double fc=0;
+    long long tr=0,tp=0;
+    if (cls) for (int ir=0;ir<CR_N;ir++) { tr+=cls->coarse[ir].truth_rows; tp+=cls->coarse[ir].truth_pi0_rows; }
+    if (tr>0) fc=double(tp)/double(tr); else fc=0.9877;
+    hcomp.SetBinContent(2,fc);
+    hcomp.SetBinContent(3,0.0);
+    hcomp.SetMarkerStyle(20); hcomp.SetMarkerSize(1.5); hcomp.Draw("P");
+    TLatex tx1; tx1.SetNDC(); tx1.SetTextFont(42); tx1.SetTextSize(0.050);
+    tx1.DrawLatex(0.16,0.91,"(a) Component #pi^{0} content");
+
+    c.cd(2);
+    gPad->SetLeftMargin(0.14); gPad->SetTopMargin(0.10);
+    TH1D hreg("h_pi0_regions",";Region;#pi^{0} fraction of selected ep#gammaX",CR_N,0,CR_N);
+    hreg.SetStats(0); hreg.SetMinimum(0); hreg.SetMaximum(1.05);
+    for (int ir=0;ir<CR_N;ir++) {
+        hreg.GetXaxis()->SetBinLabel(ir+1,CR_KEY[ir]);
+        const auto q=coarse_composition(vv,R.nominal,ir);
+        hreg.SetBinContent(ir+1,q.f_pi0);
+    } // endfor
+    hreg.SetMarkerStyle(20); hreg.SetMarkerSize(1.5); hreg.Draw("P");
+    TLatex tx2; tx2.SetNDC(); tx2.SetTextFont(42); tx2.SetTextSize(0.050);
+    tx2.DrawLatex(0.16,0.91,"(b) Data-model composition by detector and energy");
+
+    c.SaveAs((dir+"/pi0_fraction.png").c_str());
+
+    std::ofstream csv(dir+"/summary.csv");
+    csv << "region,aao_yield,clasdis_yield,dvcs_yield,clasdis_pi0_fraction,pi0_fraction\n";
+    for (int ir=0;ir<CR_N;ir++) {
+        const auto q=coarse_composition(vv,R.nominal,ir);
+        csv << CR_KEY[ir]<<","<<q.ya<<","<<q.yc<<","<<q.yd<<","
+            <<q.f_clasdis_pi0<<","<<q.f_pi0<<"\n";
+    } // endfor
+}
+
+struct IntegratedEfficiencyResult {
+    bool valid=false;
+    double f_pi0=0;
+    double data_denom=0,data_num_raw=0,data_num_bg=0,data_num_pi0=0;
+    double eff_data=0,eff_mc=0,ratio=0;
+    double mu_data=0,sigma_data=0,mu_mc=0,sigma_mc=0;
+};
+
+double hist_integral_window(const TH1D* h,double lo,double hi) {
+    if (!h) return 0.0;
+    double s=0;
+    for (int i=1;i<=h->GetNbinsX();i++) {
+        const double x=h->GetBinCenter(i);
+        if (x>lo && x<hi) s+=h->GetBinContent(i);
+    } // endfor
+    return s;
+}
+
+IntegratedEfficiencyResult integrated_efficiency(
+        const std::vector<std::unique_ptr<ValComponent>>& vv,
+        const NormDerivation& R,int ir,
+        std::unique_ptr<TH1D>* data_out=nullptr,
+        std::unique_ptr<TH1D>* pi0mc_out=nullptr) {
+    IntegratedEfficiencyResult out;
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* a=find_val_component(vv,"aaogen");
+    const ValComponent* c=find_val_component(vv,"clasdis");
+    const ValComponent* d=find_val_component(vv,"dvcsgen");
+    if (!data || !a || !c || !d) return out;
+
+    const auto comp=coarse_composition(vv,R.nominal,ir);
+    if (!(comp.f_pi0>0)) return out;
+    const double fc=comp.f_clasdis_pi0;
+
+    const auto& rd=data->coarse[ir];
+    const auto& ra=a->coarse[ir];
+    const auto& rc=c->coarse[ir];
+    const auto& rv=d->coarse[ir];
+    if (!rd.residual || !ra.residual || !rc.residual || !rv.residual || rd.denom_rows<=0) return out;
+
+    std::unique_ptr<TH1D> hpi0((TH1D*)ra.residual->Clone(Form("pi0mc_%d",ir)));
+    hpi0->SetDirectory(nullptr);
+    hpi0->Scale(R.nominal.aao);
+    std::unique_ptr<TH1D> hcpi((TH1D*)rc.residual->Clone(Form("cpi_%d",ir)));
+    hcpi->SetDirectory(nullptr); hcpi->Scale(R.nominal.clasdis*fc);
+    hpi0->Add(hcpi.get());
+
+    std::unique_ptr<TH1D> hbg((TH1D*)rv.residual->Clone(Form("bgmc_%d",ir)));
+    hbg->SetDirectory(nullptr); hbg->Scale(R.nominal.dvcs);
+    std::unique_ptr<TH1D> hcback((TH1D*)rc.residual->Clone(Form("cbg_%d",ir)));
+    hcback->SetDirectory(nullptr); hcback->Scale(R.nominal.clasdis*(1.0-fc));
+    hbg->Add(hcback.get());
+
+    std::unique_ptr<TH1D> hd((TH1D*)rd.residual->Clone(Form("dataeff_%d",ir)));
+    hd->SetDirectory(nullptr);
+
+    FitResult fd=fit_valerii_residual(hd.get());
+    FitResult fm=fit_valerii_residual(hpi0.get());
+    if (!fd.valid || !fm.valid) return out;
+
+    const double data_num=hist_integral_window(hd.get(),fd.mean-2*fd.sigma,fd.mean+2*fd.sigma);
+    const double bg_denom=R.nominal.dvcs*rv.denom_rows +
+                          R.nominal.clasdis*(1.0-fc)*rc.denom_rows;
+    const double bg_num=hist_integral_window(hbg.get(),fd.mean-2*fd.sigma,fd.mean+2*fd.sigma);
+    const double bg_eff=(bg_denom>0 ? bg_num/bg_denom : 0.0);
+
+    const double data_pi0_denom=comp.f_pi0*double(rd.denom_rows);
+    const double predicted_bg_in_data=(1.0-comp.f_pi0)*double(rd.denom_rows)*bg_eff;
+    const double data_pi0_num=data_num-predicted_bg_in_data;
+
+    const double mc_pi0_denom=R.nominal.aao*ra.denom_rows +
+                              R.nominal.clasdis*fc*rc.denom_rows;
+    const double mc_pi0_num=hist_integral_window(hpi0.get(),fm.mean-2*fm.sigma,fm.mean+2*fm.sigma);
+
+    if (!(data_pi0_denom>0 && mc_pi0_denom>0 && mc_pi0_num>0)) return out;
+
+    out.valid=true;
+    out.f_pi0=comp.f_pi0;
+    out.data_denom=rd.denom_rows;
+    out.data_num_raw=data_num;
+    out.data_num_bg=predicted_bg_in_data;
+    out.data_num_pi0=data_pi0_num;
+    out.eff_data=data_pi0_num/data_pi0_denom;
+    out.eff_mc=mc_pi0_num/mc_pi0_denom;
+    out.ratio=(out.eff_mc>0 ? out.eff_data/out.eff_mc : 0);
+    out.mu_data=fd.mean; out.sigma_data=fd.sigma;
+    out.mu_mc=fm.mean; out.sigma_mc=fm.sigma;
+
+    if (data_out) *data_out=std::move(hd);
+    if (pi0mc_out) *pi0mc_out=std::move(hpi0);
+    return out;
+}
+
+void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                             const NormDerivation& R,const std::string& dir) {
+    std::array<IntegratedEfficiencyResult,CR_N> rr;
+    std::array<std::unique_ptr<TH1D>,CR_N> hd,hm;
+
+    for (int ir=0;ir<CR_N;ir++)
+        rr[ir]=integrated_efficiency(vv,R,ir,&hd[ir],&hm[ir]);
+
+    // Residuals.
+    {
+        TCanvas c("c_eff_residuals","",1450,1050);
+        c.Divide(2,2);
+        for (int ir=0;ir<CR_N;ir++) {
+            c.cd(ir+1);
+            gPad->SetLeftMargin(0.13); gPad->SetTopMargin(0.11);
+            if (!rr[ir].valid || !hd[ir] || !hm[ir]) continue;
+            hd[ir]->SetStats(0); hd[ir]->SetMarkerStyle(20); hd[ir]->SetMarkerSize(0.55); hd[ir]->SetLineColor(kBlack);
+            hm[ir]->SetLineColor(kBlue+1); hm[ir]->SetLineWidth(2);
+            hd[ir]->SetMaximum(1.25*std::max(hd[ir]->GetMaximum(),hm[ir]->GetMaximum()));
+            hd[ir]->GetXaxis()->SetTitle("#Delta p_{#gamma2} (GeV)");
+            hd[ir]->GetYaxis()->SetTitle("Candidates");
+            hd[ir]->Draw("E1"); hm[ir]->Draw("HIST SAME"); hd[ir]->Draw("E1 SAME");
+            TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.048);
+            tx.DrawLatex(0.16,0.92,Form("(%c) %s",'a'+ir,CR_LABEL[ir]));
+            if (ir==0) {
+                TLegend* leg=new TLegend(0.63,0.72,0.93,0.88);
+                leg->SetBorderSize(0); leg->SetFillStyle(0);
+                leg->AddEntry(hd[ir].get(),"Data","lep");
+                leg->AddEntry(hm[ir].get(),"Normalized #pi^{0} MC","l");
+                leg->Draw();
+            } // endif
+        } // endfor
+        c.SaveAs((dir+"/residuals.png").c_str());
+    }
+
+    // Summary.
+    {
+        TCanvas c("c_eff_summary","",1450,650);
+        c.Divide(2,1);
+
+        c.cd(1);
+        gPad->SetLeftMargin(0.14); gPad->SetTopMargin(0.10);
+        TGraph gd,gm;
+        gd.SetMarkerStyle(20); gd.SetMarkerSize(1.25);
+        gm.SetMarkerStyle(24); gm.SetMarkerSize(1.25);
+        for (int ir=0;ir<CR_N;ir++) if (rr[ir].valid) {
+            gd.SetPoint(gd.GetN(),ir+0.5,rr[ir].eff_data);
+            gm.SetPoint(gm.GetN(),ir+0.5,rr[ir].eff_mc);
+        } // endfor
+        TH1D axis("axis_eff",";Region;Photon efficiency",CR_N,0,CR_N);
+        axis.SetStats(0); axis.SetMinimum(0); axis.SetMaximum(1.05);
+        for (int ir=0;ir<CR_N;ir++) axis.GetXaxis()->SetBinLabel(ir+1,CR_KEY[ir]);
+        axis.Draw();
+        gd.Draw("P SAME"); gm.Draw("P SAME");
+        TLegend leg(0.60,0.74,0.92,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0);
+        leg.AddEntry(&gd,"Data (#pi^{0}-corrected)","p");
+        leg.AddEntry(&gm,"#pi^{0} MC","p"); leg.Draw();
+        TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.050);
+        tx.DrawLatex(0.16,0.91,"(a) Integrated 2#sigma efficiencies");
+
+        c.cd(2);
+        gPad->SetLeftMargin(0.14); gPad->SetTopMargin(0.10);
+        TH1D hr("h_ratio",";Region;#epsilon_{data}/#epsilon_{MC}",CR_N,0,CR_N);
+        hr.SetStats(0); hr.SetMinimum(0.5); hr.SetMaximum(1.5); hr.SetMarkerStyle(20); hr.SetMarkerSize(1.4);
+        for (int ir=0;ir<CR_N;ir++) {
+            hr.GetXaxis()->SetBinLabel(ir+1,CR_KEY[ir]);
+            if (rr[ir].valid) hr.SetBinContent(ir+1,rr[ir].ratio);
+        } // endfor
+        hr.Draw("P");
+        TLine one(0,1.0,CR_N,1.0); one.SetLineStyle(2); one.Draw();
+        TLatex tx2; tx2.SetNDC(); tx2.SetTextFont(42); tx2.SetTextSize(0.050);
+        tx2.DrawLatex(0.16,0.91,"(b) Data / MC correction ratio");
+        c.SaveAs((dir+"/efficiency_summary.png").c_str());
+    }
+
+    std::ofstream csv(dir+"/summary.csv");
+    csv << "region,valid,pi0_fraction,data_denom,data_num_raw,predicted_background_num,"
+           "data_pi0_num,eff_data,eff_mc,data_over_mc,mu_data,sigma_data,mu_mc,sigma_mc\n";
+    for (int ir=0;ir<CR_N;ir++) {
+        const auto& q=rr[ir];
+        csv << CR_KEY[ir]<<","<<q.valid<<","<<q.f_pi0<<","<<q.data_denom<<","
+            <<q.data_num_raw<<","<<q.data_num_bg<<","<<q.data_num_pi0<<","
+            <<q.eff_data<<","<<q.eff_mc<<","<<q.ratio<<","
+            <<q.mu_data<<","<<q.sigma_data<<","<<q.mu_mc<<","<<q.sigma_mc<<"\n";
+    } // endfor
+}
+
+void run_concise_analysis(const std::string& out) {
+    concise_make_dirs(out);
+
+    auto vv=build_val_components_parallel(out);
+    if (vv.empty()) {
+        std::cerr << "ERROR: no samples available\n";
+        return;
+    } // endif
+
+    const NormDerivation norm=derive_normalization_concise(vv);
+
+    draw_exclusivity_summary(vv,out+"/1_exclusivity");
+    draw_normalization_summary(vv,norm,out+"/2_normalization");
+    draw_pi0_summary(vv,norm,out+"/3_pi0_fraction");
+    draw_efficiency_summary(vv,norm,out+"/4_efficiency");
+
+    std::cout << "\nConcise output written to:\n"
+              << "  " << out << "/1_exclusivity/\n"
+              << "  " << out << "/2_normalization/\n"
+              << "  " << out << "/3_pi0_fraction/\n"
+              << "  " << out << "/4_efficiency/\n";
+}
+
+
 void run_valerii_fd_reproduction(const std::string& out) {
     std::cout << "\n============================================================\n"
               << " Valerii-style FD 7x3x6 reproduction\n"
@@ -4820,99 +4936,20 @@ void photon_efficiency_valerii_reproduction() {
     using namespace pe;
 
     gROOT->SetBatch(kTRUE);
-    set_publication_style();
-
-    const std::string out="output";
-    reset_output(out);
+    concise_publication_style();
 
     std::cout
         << "\n============================================================\n"
-        << " Photon tag-and-probe stage-1 diagnostics\n"
+        << " Concise photon-efficiency analysis\n"
         << "============================================================\n"
-        << "FD: fully integrated\n"
-        << "FT: projected-fiducial integrated + 0.4-2 GeV + >=2 GeV\n"
-        << "Matching: Delta p_gamma2 = p_rec - p_miss\n"
-        << "Primary numbers: unweighted RAW RECOVERY FRACTIONS (not efficiencies)\n"
-        << "Stage-1 MC::Event.weight: QA only; Valerii FD path uses unit MC events x component normalization\n"
-        << "Execution: one unified TChain scan per sample, parallel across samples\n"
-        << "The unified scan fills stage-1 + Valerii sufficient statistics together.\n"
-        << "Heavy worker products are cached persistently and invalidated when ROOT inputs change.\n"
-        << "Presentation outputs are rebuilt in ./output each invocation.\n"
+        << "1) exclusivity selection\n"
+        << "2) Valerii-style data-driven normalization\n"
+        << "3) pi0 fraction of selected ep-gamma-X events\n"
+        << "4) integrated FD/FT photon efficiency, split at 2 GeV\n"
+        << "One parallel tree scan per sample; persistent cache on reruns.\n"
         << "============================================================\n";
 
-    // The unified per-sample workers fill BOTH the Valerii sufficient
-    // statistics and the original stage-1 diagnostics in one TChain traversal.
-    // run_valerii_fd_reproduction() therefore populates both persistent caches.
-    run_valerii_fd_reproduction(out);
-
-    // This now loads the stage-1 cache produced above; it does not rescan the
-    // input trees unless the unified worker failed or the cache is invalid.
-    std::vector<std::unique_ptr<SampleResult>> samples=analyze_samples_parallel(out);
-
-    std::ofstream csv(out+"/integrated_results.csv");
-    write_region_csv_header(csv);
-    for (const auto& sp : samples) {
-        append_region_csv(csv,*sp,sp->fd);
-        append_region_csv(csv,*sp,sp->ft_all);
-        append_region_csv(csv,*sp,sp->ft_low);
-        append_region_csv(csv,*sp,sp->ft_high);
-    } // endfor
-    csv.close();
-
-    save_combined_residuals(samples,out);
-    save_combined_kinematics(samples,out);
-    save_combined_ft_projection(samples,out);
-    write_window_scan_all(samples,out);
-    write_all_summary(samples,out);
-    write_root(samples,out);
-
-    // Heavy per-sample worker products live in a persistent cache outside
-    // ./output.  Repeated plotting/fit iterations therefore avoid rescanning
-    // millions of ROOT-tree entries unless the input file list changes.
-
-    std::cout << "\nFinished. Output products actually present on disk:\n";
-    const char* expected[] = {
-        "analysis_summary.txt",
-        "integrated_results.csv",
-        "parent_window_scan.csv",
-        "delta_p_residuals.png",
-        "denominator_kinematics.png",
-        "FT_projected_xy.png",
-        "analysis_histograms.root",
-        "valerii_fd_summary.txt",
-        "valerii_fd_results.csv",
-        "valerii_fd_component_weight_qa.csv",
-        "valerii_fd_data_efficiency_2sigma.png",
-        "valerii_fd_weighted_mc_efficiency_2sigma.png",
-        "valerii_fd_data_over_mc_correction_2sigma.png",
-        "valerii_fd_data_sigma.png",
-        "valerii_fd_weighted_mc_sigma.png",
-        "valerii_fd_histograms.root",
-        "normalization/normalization_summary.txt",
-        "normalization/normalization_fit_results.csv",
-        "normalization/normalization_factors.csv",
-        "normalization/normalization_factor_summary.png",
-        "normalization/normalization_cutflow.csv",
-        "normalization/normalization_cutflow.png",
-        "normalization/component_fractions.csv",
-        "normalization/normalization_energy_regions.png",
-        "normalization/normalization_histograms.root",
-        "normalization/step1b_mx2_ep/mx2_ep_summary.txt",
-        "normalization/step1b_mx2_ep/mx2_ep_survival.csv",
-        "normalization/step1b_mx2_ep/mx2_ep_unit_area_with_cut.png",
-        "normalization/step1b_mx2_ep/mx2_ep_counts_with_cut.png",
-        "normalization/step1c_mx2_eg/mx2_eg_summary.txt",
-        "normalization/step1c_mx2_eg/mx2_eg_survival.csv",
-        "normalization/step1c_mx2_eg/mx2_eg_unit_area_after_mx2_ep.png",
-        "normalization/step1c_mx2_eg/mx2_eg_counts_after_mx2_ep.png"
-    };
-    for (const char* fn:expected) {
-        const std::string full=out+"/"+fn;
-        if (!gSystem->AccessPathName(full.c_str()))
-            std::cout << "  " << full << "\n";
-    } // endfor
-    if (gSystem->AccessPathName((out+"/valerii_fd_results.csv").c_str())) {
-        std::cerr << "WARNING: Valerii FD products were not completed. Check worker errors above.\n";
-    }
+    pe::run_concise_analysis("output");
 }
+
 
