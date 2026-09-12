@@ -1730,18 +1730,19 @@ enum NormObs {
     NORM_MX2_EP=0,
     NORM_MX2_EPG=1,
     NORM_ANGLE_GX=2,
-    NORM_EGAMMA=3,
-    NORM_MX2_EG=4,
+    NORM_ANGLE_EX=3,
+    NORM_EGAMMA=4,
+    NORM_MX2_EG=5,
 
     // Azimuthal QA plus the active zero-centered Trento coplanarity residual.
     // Raw lab phi and the individual/unshifted Trento quantities remain QA-only.
-    NORM_DPHI_PG_RAW=5,
-    NORM_PHI_P_TRENTO=6,
-    NORM_PHI_G_TRENTO=7,
-    NORM_DPHI_TRENTO=8,
-    NORM_DPHI_TRENTO_SHIFT180=9,
+    NORM_DPHI_PG_RAW=6,
+    NORM_PHI_P_TRENTO=7,
+    NORM_PHI_G_TRENTO=8,
+    NORM_DPHI_TRENTO=9,
+    NORM_DPHI_TRENTO_SHIFT180=10,
 
-    NORM_NOBS=10
+    NORM_NOBS=11
 };
 
 struct NormObsDef {
@@ -1755,8 +1756,12 @@ struct NormObsDef {
 static const NormObsDef NORM_OBS[NORM_NOBS] = {
     {"Mx2_ep",     "M_{X}^{2}(ep);M_{X}^{2}(ep) (GeV^{2});Candidates",          90,-0.50,1.30,true, false},
     {"Mx2_epg",    "M_{X}^{2}(ep#gamma);M_{X}^{2}(ep#gamma) (GeV^{2});Candidates",80,-0.25,0.25,true, true},
+    // Valerii slide 11 normalization observable.
     {"angle_gX",   "#angle(#gamma,X);#angle(#gamma,X) (deg);Candidates",       75,0.0,30.0,true, true},
-    {"Egamma",     "Tag-photon energy;E_{#gamma} (GeV);Candidates",             95,0.4,8.0,true, true},
+    // Valerii slide 9 exclusivity cut.  This is intentionally NOT used as a
+    // normalization-fit observable.
+    {"angle_eX",   "#angle(e,X);#angle(e,X) (deg);Candidates",                 75,0.0,30.0,false,false},
+    {"Egamma",     "Tag-photon energy;E_{#gamma} (GeV);Candidates",             95,0.4,8.0,true, false},
     {"Mx2_eg",     "M_{X}^{2}(e#gamma);M_{X}^{2}(e#gamma) (GeV^{2});Candidates",100,0.0,6.0,true, true},
 
     // Raw lab and individual/unshifted Trento quantities are QA-only.
@@ -1774,9 +1779,11 @@ static const NormObsDef NORM_OBS[NORM_NOBS] = {
                      120,-30.0,30.0,false,true}
 };
 
-// June-2026 Valerii normalization/exclusivity selection.  The presentation
-// labels the angular quantity as the gamma-X opening angle in the normalization
-// plots; here X is the inferred missing probe already stored in the skim.
+// June-2026 Valerii normalization/exclusivity selection.
+// IMPORTANT distinction from the presentation:
+//   * slide 9 exclusivity cut: angle(e,X) < 9.2 deg;
+//   * slide 11 normalization observable: angle(gamma,X).
+// X is the inferred missing probe already stored in the skim.
 static const double NORM_MX2_EP_MIN=-0.231;
 static const double NORM_MX2_EP_MAX= 0.309;
 static const double NORM_MX2_EG_MIN= 1.4;
@@ -1785,7 +1792,7 @@ static const double NORM_MX2_EG_MIN= 1.4;
 // Use Valerii's quoted |Delta phi(p,gamma)| < 5.7 deg requirement on that
 // zero-centered coplanarity residual.
 static const double NORM_DPHI_TRENTO_MAX=5.7;
-static const double NORM_ANGLE_GX_MAX=9.2;
+static const double NORM_ANGLE_EX_MAX=9.2;
 
 // Template morphing deliberately follows the philosophy used in the DVCS
 // exclusivity-selection suite: allow the reconstructed-MC template to shift and
@@ -2019,6 +2026,10 @@ double norm_observable_value(const Branches& b,int io) {
         if (!b.have_tag_corr_kin) return std::numeric_limits<double>::quiet_NaN();
         return opening_angle_deg(b.tag_corr_theta,b.tag_corr_phi,b.probe_corr_theta,b.probe_corr_phi);
     }
+    if (io==NORM_ANGLE_EX) {
+        if (!b.have_e_kin) return std::numeric_limits<double>::quiet_NaN();
+        return opening_angle_deg(b.e_theta,b.e_phi,b.probe_corr_theta,b.probe_corr_phi);
+    }
     if (io==NORM_EGAMMA) return b.have_tag_corr_kin?b.tag_corr_p:std::numeric_limits<double>::quiet_NaN();
     if (io==NORM_MX2_EG) return invariant_m2_from_epg(b);
     if (io==NORM_DPHI_PG_RAW) {
@@ -2059,7 +2070,7 @@ struct NormCutFlags {
     bool mx2_ep=false;
     bool mx2_eg=false;
     bool dphi_trento=false;
-    bool angle_gX=false;
+    bool angle_eX=false;
     bool all=false;
 };
 
@@ -2068,7 +2079,7 @@ NormCutFlags norm_cut_flags(const Branches& b) {
     const double mx2ep=norm_observable_value(b,NORM_MX2_EP);
     const double mx2eg=norm_observable_value(b,NORM_MX2_EG);
     const double dphi =norm_observable_value(b,NORM_DPHI_TRENTO_SHIFT180);
-    const double ang  =norm_observable_value(b,NORM_ANGLE_GX);
+    const double ang  =norm_observable_value(b,NORM_ANGLE_EX);
 
     f.finite=std::isfinite(mx2ep) && std::isfinite(mx2eg) &&
              std::isfinite(dphi) && std::isfinite(ang);
@@ -2077,9 +2088,9 @@ NormCutFlags norm_cut_flags(const Branches& b) {
     f.mx2_ep=(mx2ep>NORM_MX2_EP_MIN && mx2ep<NORM_MX2_EP_MAX);
     f.mx2_eg=(mx2eg>NORM_MX2_EG_MIN);
     f.dphi_trento=(std::fabs(dphi)<NORM_DPHI_TRENTO_MAX);
-    f.angle_gX=(ang<NORM_ANGLE_GX_MAX);
+    f.angle_eX=(ang<NORM_ANGLE_EX_MAX);
 
-    f.all=f.mx2_ep && f.mx2_eg && f.dphi_trento && f.angle_gX;
+    f.all=f.mx2_ep && f.mx2_eg && f.dphi_trento && f.angle_eX;
     return f;
 }
 
@@ -2092,7 +2103,7 @@ bool norm_pass_nminus1(const NormCutFlags& f,int io) {
     // cut.  All other observables see the active |delta phi_copl| < 5.7 deg cut.
     if (io!=NORM_DPHI_TRENTO_SHIFT180 && !f.dphi_trento) return false;
 
-    if (io!=NORM_ANGLE_GX && !f.angle_gX) return false;
+    if (io!=NORM_ANGLE_EX && !f.angle_eX) return false;
     return true;
 }
 
@@ -2316,7 +2327,7 @@ void draw_norm_shape_overlay(const TH1D* hd,const TH1D* ha,const TH1D* hc,const 
 }
 
 void draw_norm_cutflow(const std::vector<std::unique_ptr<ValComponent>>& vv,const std::string& file) {
-    const char* labs[6]={"baseline","Mx2(ep)","Mx2(e#gamma)","|#delta#phi_{copl}|<5.7^{#circ}","angle(#gamma,X)","all cuts"};
+    const char* labs[6]={"baseline","Mx2(ep)","Mx2(e#gamma)","|#delta#phi_{copl}|<5.7^{#circ}","angle(e,X)","all cuts"};
     TCanvas c("c_norm_cutflow","",1150,760);
     TLegend leg(0.68,0.68,0.90,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0);
     std::vector<std::unique_ptr<TH1D>> keep;
@@ -2413,7 +2424,7 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
                 norm_cutflow[2]++;
                 if (ncf.dphi_trento) {
                     norm_cutflow[3]++;
-                    if (ncf.angle_gX) norm_cutflow[4]++;
+                    if (ncf.angle_eX) norm_cutflow[4]++;
                 }
             }
         }
@@ -3228,7 +3239,7 @@ void write_step1d_coplanarity_summary(const std::vector<std::unique_ptr<ValCompo
 
 
 
-void draw_step1e_angle_gX_overlay(const std::vector<std::unique_ptr<ValComponent>>& vv,
+void draw_step1e_angle_eX_overlay(const std::vector<std::unique_ptr<ValComponent>>& vv,
                                   const std::string& file) {
     const ValComponent* data=find_val_component(vv,"data");
     const ValComponent* aao=find_val_component(vv,"aaogen");
@@ -3237,8 +3248,8 @@ void draw_step1e_angle_gX_overlay(const std::vector<std::unique_ptr<ValComponent
     if (!data || !aao || !cls || !dvc) return;
 
     auto geth=[](const ValComponent* v)->const TH1D* {
-        if (!v || v->norm_after_mx2ep_mx2eg_dphi.size()<=NORM_ANGLE_GX) return nullptr;
-        return v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_GX].get();
+        if (!v || v->norm_after_mx2ep_mx2eg_dphi.size()<=NORM_ANGLE_EX) return nullptr;
+        return v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_EX].get();
     };
     const TH1D *hd0=geth(data), *ha0=geth(aao), *hc0=geth(cls), *hv0=geth(dvc);
     if (!hd0 || !ha0 || !hc0 || !hv0) return;
@@ -3266,8 +3277,8 @@ void draw_step1e_angle_gX_overlay(const std::vector<std::unique_ptr<ValComponent
     style_norm_component(hv.get(),kGreen+2);
 
     TCanvas can("c_step1e_anglegX_overlay","",1100,780);
-    hd->SetTitle("Step 1E: angle(#gamma,X) after Steps 1B+1C+1D");
-    hd->GetXaxis()->SetTitle("angle(#gamma,X) (deg)");
+    hd->SetTitle("Step 1E: angle(e,X) after Steps 1B+1C+1D");
+    hd->GetXaxis()->SetTitle("angle(e,X) (deg)");
     hd->GetYaxis()->SetTitle("Unit-area candidates");
     hd->SetMaximum(1.30*std::max({hd->GetMaximum(),ha->GetMaximum(),hc->GetMaximum(),hv->GetMaximum()}));
 
@@ -3278,7 +3289,7 @@ void draw_step1e_angle_gX_overlay(const std::vector<std::unique_ptr<ValComponent
     hd->Draw("E1 SAME");
 
     const double ymax=hd->GetMaximum()*1.24;
-    TLine cut(NORM_ANGLE_GX_MAX,0.0,NORM_ANGLE_GX_MAX,ymax);
+    TLine cut(NORM_ANGLE_EX_MAX,0.0,NORM_ANGLE_EX_MAX,ymax);
     cut.SetLineStyle(2);
     cut.SetLineWidth(2);
     cut.Draw();
@@ -3290,7 +3301,7 @@ void draw_step1e_angle_gX_overlay(const std::vector<std::unique_ptr<ValComponent
     leg.AddEntry(ha.get(),"AAO (unit area)","l");
     leg.AddEntry(hc.get(),"CLASDIS (unit area)","l");
     leg.AddEntry(hv.get(),"DVCSgen (unit area)","l");
-    leg.AddEntry(&cut,Form("angle(#gamma,X) < %.1f deg",NORM_ANGLE_GX_MAX),"l");
+    leg.AddEntry(&cut,Form("angle(e,X) < %.1f deg",NORM_ANGLE_EX_MAX),"l");
     leg.Draw();
 
     TLatex tx;
@@ -3301,7 +3312,7 @@ void draw_step1e_angle_gX_overlay(const std::vector<std::unique_ptr<ValComponent
     can.SaveAs(file.c_str());
 }
 
-void draw_step1e_angle_gX_individual(const std::vector<std::unique_ptr<ValComponent>>& vv,
+void draw_step1e_angle_eX_individual(const std::vector<std::unique_ptr<ValComponent>>& vv,
                                      const std::string& file) {
     TCanvas can("c_step1e_anglegX_individual","",1350,950);
     can.Divide(2,2);
@@ -3313,11 +3324,11 @@ void draw_step1e_angle_gX_individual(const std::vector<std::unique_ptr<ValCompon
 
     for (int is=0;is<4;is++) {
         const ValComponent* v=find_val_component(vv,names[is]);
-        if (!v || v->norm_after_mx2ep_mx2eg_dphi.size()<=NORM_ANGLE_GX ||
-            !v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_GX]) continue;
+        if (!v || v->norm_after_mx2ep_mx2eg_dphi.size()<=NORM_ANGLE_EX ||
+            !v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_EX]) continue;
 
         std::unique_ptr<TH1D> h(
-            (TH1D*)v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_GX]->
+            (TH1D*)v->norm_after_mx2ep_mx2eg_dphi[NORM_ANGLE_EX]->
                 Clone(Form("step1e_%s_counts",names[is]))
         );
         h->SetDirectory(nullptr);
@@ -3325,15 +3336,15 @@ void draw_step1e_angle_gX_individual(const std::vector<std::unique_ptr<ValCompon
         h->SetLineColor(colors[is]);
         h->SetMarkerColor(colors[is]);
         h->SetLineWidth(2);
-        h->SetTitle(Form("%s: angle(#gamma,X) after Steps 1B+1C+1D",labels[is]));
-        h->GetXaxis()->SetTitle("angle(#gamma,X) (deg)");
+        h->SetTitle(Form("%s: angle(e,X) after Steps 1B+1C+1D",labels[is]));
+        h->GetXaxis()->SetTitle("angle(e,X) (deg)");
         h->GetYaxis()->SetTitle("Candidates");
 
         can.cd(is+1);
         h->Draw("HIST");
 
         const double ymax=std::max(1.0,1.05*h->GetMaximum());
-        TLine* cut=new TLine(NORM_ANGLE_GX_MAX,0.0,NORM_ANGLE_GX_MAX,ymax);
+        TLine* cut=new TLine(NORM_ANGLE_EX_MAX,0.0,NORM_ANGLE_EX_MAX,ymax);
         cut->SetLineStyle(2);
         cut->SetLineWidth(2);
         cut->Draw();
@@ -3353,21 +3364,21 @@ void draw_step1e_angle_gX_individual(const std::vector<std::unique_ptr<ValCompon
     can.SaveAs(file.c_str());
 }
 
-void write_step1e_angle_gX_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
+void write_step1e_angle_eX_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
                                    const std::string& dir) {
     gSystem->mkdir(dir.c_str(),true);
 
-    std::ofstream csv(dir+"/angle_gX_survival.csv");
+    std::ofstream csv(dir+"/angle_eX_survival.csv");
     csv << "sample,input_after_steps_1B_1C_1D,pass_angle_gX,fail_angle_gX,survival_fraction\n";
 
-    std::ofstream txt(dir+"/angle_gX_summary.txt");
-    txt << "Step 1E: angle(gamma,X) requirement\n"
+    std::ofstream txt(dir+"/angle_eX_summary.txt");
+    txt << "Step 1E: angle(e,X) requirement\n"
         << "===================================\n"
         << "Input sample: events already passing M_X^2(ep), M_X^2(e gamma), and\n"
         << "the Trento coplanarity requirement.\n"
         << "Definition used by the macro: opening angle between the reconstructed\n"
         << "tag-photon direction and the inferred missing-object direction X.\n"
-        << "Active requirement: angle(gamma,X) < " << NORM_ANGLE_GX_MAX << " deg.\n"
+        << "Active requirement: angle(e,X) < " << NORM_ANGLE_EX_MAX << " deg.\n"
         << "This is the final sequential exclusivity requirement in Step 1.\n\n";
 
     for (const auto& vp:vv) {
@@ -3386,8 +3397,137 @@ void write_step1e_angle_gX_summary(const std::vector<std::unique_ptr<ValComponen
     csv.close();
     txt.close();
 
-    draw_step1e_angle_gX_overlay(vv,dir+"/angle_gX_unit_area_after_steps_1B_1C_1D.png");
-    draw_step1e_angle_gX_individual(vv,dir+"/angle_gX_counts_after_steps_1B_1C_1D.png");
+    draw_step1e_angle_eX_overlay(vv,dir+"/angle_eX_unit_area_after_steps_1B_1C_1D.png");
+    draw_step1e_angle_eX_individual(vv,dir+"/angle_eX_counts_after_steps_1B_1C_1D.png");
+}
+
+
+
+void write_step2a_energy_region_diagnostics(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                                            const std::string& dir) {
+    gSystem->mkdir(dir.c_str(),true);
+
+    const int io=NORM_EGAMMA;
+    const char* names[4]={"data","aaogen","clasdis","dvcsgen"};
+    const char* labels[4]={"Data","AAOgen","CLASDIS","DVCSgen"};
+    const int colors[4]={kBlack,kRed+1,kOrange+7,kGreen+2};
+
+    std::ofstream csv(dir+"/energy_region_counts.csv");
+    csv << "sample,total_selected,Egamma_lt2,Egamma_2to3,Egamma_gt3,"
+           "frac_lt2,frac_2to3,frac_gt3\n";
+
+    std::vector<std::unique_ptr<TH1D>> hu;
+    std::vector<std::unique_ptr<TH1D>> hc;
+    hu.reserve(4); hc.reserve(4);
+
+    for (int is=0;is<4;is++) {
+        const ValComponent* v=find_val_component(vv,names[is]);
+        if (!v || v->norm_full.size()<=io || !v->norm_full[io]) continue;
+
+        std::unique_ptr<TH1D> counts((TH1D*)v->norm_full[io]->Clone(Form("step2a_counts_%s",names[is])));
+        counts->SetDirectory(nullptr);
+        counts->SetStats(0);
+
+        const int b04=counts->GetXaxis()->FindBin(0.4+1e-9);
+        const int b2m=counts->GetXaxis()->FindBin(2.0-1e-9);
+        const int b2p=counts->GetXaxis()->FindBin(2.0+1e-9);
+        const int b3m=counts->GetXaxis()->FindBin(3.0-1e-9);
+        const int b3p=counts->GetXaxis()->FindBin(3.0+1e-9);
+        const int b8 =counts->GetXaxis()->FindBin(8.0-1e-9);
+
+        const double nlo=counts->Integral(b04,b2m);
+        const double nmid=counts->Integral(b2p,b3m);
+        const double nhi=counts->Integral(b3p,b8);
+        const double nt=nlo+nmid+nhi;
+
+        csv << names[is] << "," << nt << "," << nlo << "," << nmid << "," << nhi << ","
+            << (nt>0?nlo/nt:0) << "," << (nt>0?nmid/nt:0) << "," << (nt>0?nhi/nt:0) << "\n";
+
+        std::unique_ptr<TH1D> unit((TH1D*)counts->Clone(Form("step2a_unit_%s",names[is])));
+        unit->SetDirectory(nullptr);
+        const double q=unit->Integral();
+        if (q>0) unit->Scale(1.0/q);
+
+        if (is==0) {
+            counts->SetMarkerStyle(20); counts->SetMarkerSize(0.65);
+            counts->SetLineColor(kBlack); counts->SetMarkerColor(kBlack);
+            unit->SetMarkerStyle(20); unit->SetMarkerSize(0.65);
+            unit->SetLineColor(kBlack); unit->SetMarkerColor(kBlack);
+        } else {
+            style_norm_component(counts.get(),colors[is]);
+            style_norm_component(unit.get(),colors[is]);
+        }
+
+        hc.push_back(std::move(counts));
+        hu.push_back(std::move(unit));
+    }
+    csv.close();
+
+    if (hu.size()==4) {
+        TCanvas c("c_step2a_energy_unit","",1150,800);
+        hu[0]->SetTitle("Step 2A: Valerii photon-energy normalization regions");
+        hu[0]->GetXaxis()->SetTitle("E_{#gamma} (GeV)");
+        hu[0]->GetYaxis()->SetTitle("Unit-area selected candidates");
+        hu[0]->SetMaximum(1.28*std::max({hu[0]->GetMaximum(),hu[1]->GetMaximum(),
+                                         hu[2]->GetMaximum(),hu[3]->GetMaximum()}));
+        hu[0]->Draw("E1");
+        hu[1]->Draw("HIST SAME"); hu[2]->Draw("HIST SAME"); hu[3]->Draw("HIST SAME");
+        hu[0]->Draw("E1 SAME");
+
+        const double ymax=hu[0]->GetMaximum()*1.22;
+        TLine l2(2.0,0,2.0,ymax), l3(3.0,0,3.0,ymax);
+        l2.SetLineStyle(2); l3.SetLineStyle(2); l2.SetLineWidth(2); l3.SetLineWidth(2);
+        l2.Draw(); l3.Draw();
+
+        TLegend leg(0.60,0.62,0.89,0.89);
+        leg.SetBorderSize(0); leg.SetFillStyle(0);
+        leg.AddEntry(hu[0].get(),"Data","lep");
+        leg.AddEntry(hu[1].get(),"AAOgen","l");
+        leg.AddEntry(hu[2].get(),"CLASDIS","l");
+        leg.AddEntry(hu[3].get(),"DVCSgen","l");
+        leg.AddEntry(&l2,"E_{#gamma}=2 GeV","l");
+        leg.AddEntry(&l3,"E_{#gamma}=3 GeV","l");
+        leg.Draw();
+
+        TLatex tx; tx.SetNDC(); tx.SetTextSize(0.033);
+        tx.DrawLatex(0.14,0.86,"<2 GeV: fit AAO+CLASDIS only; 2-3 GeV: transition/closure only");
+        tx.DrawLatex(0.14,0.81,">3 GeV: hold AAO+CLASDIS fixed and fit DVCS");
+        c.SaveAs((dir+"/photon_energy_regions_unit_area.png").c_str());
+    }
+
+    if (hc.size()==4) {
+        TCanvas c("c_step2a_energy_counts","",1350,950);
+        c.Divide(2,2);
+        for (int is=0;is<4;is++) {
+            c.cd(is+1);
+            hc[is]->SetTitle(Form("%s selected tag-photon energy",labels[is]));
+            hc[is]->GetXaxis()->SetTitle("E_{#gamma} (GeV)");
+            hc[is]->GetYaxis()->SetTitle("Candidates");
+            hc[is]->Draw(is==0?"E1":"HIST");
+            const double ymax=std::max(1.0,1.05*hc[is]->GetMaximum());
+            TLine* l2=new TLine(2.0,0,2.0,ymax);
+            TLine* l3=new TLine(3.0,0,3.0,ymax);
+            l2->SetLineStyle(2); l3->SetLineStyle(2);
+            l2->SetLineWidth(2); l3->SetLineWidth(2);
+            l2->Draw(); l3->Draw();
+        }
+        c.SaveAs((dir+"/photon_energy_regions_counts.png").c_str());
+    }
+
+    std::ofstream txt(dir+"/energy_region_definition.txt");
+    txt << "Valerii sequential normalization regions\n"
+        << "=======================================\n"
+        << "The input is the fully selected ep-gamma-X sample after the Step-1 exclusivity cuts.\n\n"
+        << "Low-energy region: E_gamma < 2 GeV\n"
+        << "  * determine AAO and CLASDIS normalization factors;\n"
+        << "  * DVCS is deliberately excluded from the fit, following Valerii's procedure.\n\n"
+        << "Transition region: 2 <= E_gamma <= 3 GeV\n"
+        << "  * do not derive any normalization factor here;\n"
+        << "  * retain only as a closure/cross-check region.\n\n"
+        << "High-energy region: E_gamma > 3 GeV\n"
+        << "  * hold the low-E AAO and CLASDIS factors fixed;\n"
+        << "  * determine the DVCS normalization factor.\n";
+    txt.close();
 }
 
 
@@ -3406,7 +3546,8 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     gSystem->mkdir((od+"/step1b_mx2_ep").c_str(),true);
     gSystem->mkdir((od+"/step1c_mx2_eg").c_str(),true);
     gSystem->mkdir((od+"/step1d_coplanarity").c_str(),true);
-    gSystem->mkdir((od+"/step1e_angle_gX").c_str(),true);
+    gSystem->mkdir((od+"/step1e_angle_eX").c_str(),true);
+    gSystem->mkdir((od+"/step2a_energy_regions").c_str(),true);
 
     if (!data || !aao || !cls || !dvc ||
         data->norm_lowE.size()!=NORM_NOBS || aao->norm_lowE.size()!=NORM_NOBS ||
@@ -3442,9 +3583,15 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
 
     // Step 1E diagnostics: inspect angle(gamma,X) sequentially after all
     // preceding Step-1 exclusivity requirements and before its own cut.
-    write_step1e_angle_gX_summary(vv,od+"/step1e_angle_gX");
+    write_step1e_angle_eX_summary(vv,od+"/step1e_angle_eX");
 
-    // Stage A: low-E AAO + CLASDIS.  For each observable scan one common
+    // Step 2A: reproduce Valerii's energy-region logic before fitting any
+    // component normalization.  The 2-3 GeV transition region is explicitly
+    // excluded from normalization derivation.
+    write_step2a_energy_region_diagnostics(vv,od+"/step2a_energy_regions");
+
+    // Stage A: low-E AAO + CLASDIS.  DVCS is intentionally absent from the fit,
+    // exactly following Valerii's E_gamma<2 GeV normalization procedure.  For each observable scan one common
     // reconstructed-MC shift and extra Gaussian resolution.  The same morph is
     // applied to AAO and CLASDIS, then their non-negative scale factors are
     // solved analytically.  This mirrors the template-morph philosophy already
@@ -3466,6 +3613,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     const double A=mean_valid(R.low_points,0), B=mean_valid(R.low_points,1);
 
     // Stage B: with A/B fixed to the low-E means, determine DVCS above 3 GeV.
+    // The 2-3 GeV transition region is NOT used to derive any scale factor.
     // Again one common morph is scanned for all three reconstructed-MC pieces.
     for (int io=0;io<NORM_NOBS;io++) if (NORM_OBS[io].use_high) {
         auto raw=fit_dvcs_fixed_shapes(data->norm_highE[io].get(),aao->norm_highE[io].get(),cls->norm_highE[io].get(),dvc->norm_highE[io].get(),A,B,NORM_OBS[io].key);
@@ -3532,7 +3680,7 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     // Cut-flow CSV and component-fraction diagnostics.
     {
         std::ofstream cf(od+"/normalization_cutflow.csv");
-        cf << "sample,baseline,mx2_ep,mx2_eg,dphi_pg,angle_gX,all_cuts,all_over_baseline\n";
+        cf << "sample,baseline,mx2_ep,mx2_eg,dphi_pg,angle_eX,all_cuts,all_over_baseline\n";
         for (const auto& vp:vv) if (vp) {
             const double f=vp->norm_cutflow[0]>0?double(vp->norm_cutflow[5])/vp->norm_cutflow[0]:0;
             cf << vp->name; for (int i=0;i<6;i++) cf << ","<<vp->norm_cutflow[i]; cf << ","<<f<<"\n";
@@ -3766,7 +3914,8 @@ void run_valerii_fd_reproduction(const std::string& out) {
               << "AAO/CLASDIS/DVCS normalization factors are derived from this run's template fits.\n"
               << "June normalization cuts are applied to the ep-gamma-X denominator.\n"
               << "Template fits use N-1 cuts and a common MC shift + extra Gaussian smearing nuisance.\n"
-              << "Low E_gamma<2 GeV determines AAO+CLASDIS; high E_gamma>3 GeV determines DVCS.\n"
+              << "Low E_gamma<2 GeV determines AAO+CLASDIS with DVCS excluded from the fit.\n"
+              << "The 2-3 GeV transition region is closure-only; high E_gamma>3 GeV determines DVCS with AAO/CLASDIS fixed.\n"
               << "Template morphing is normalization-only; event-level MC remains unsmeared.\n"
               << "The skim MC::Event.weight branch is NOT used in this path.\n"
               << "Data/MC fits are independent in every p/theta/phi bin.\n"
