@@ -1779,10 +1779,10 @@ enum CoarseRegionIndex {
 
 static const char* CR_KEY[CR_N]={"FD_lowE","FD_highE","FT_lowE","FT_highE"};
 static const char* CR_LABEL[CR_N]={
-    "#splitline{FD}{E_{#gamma}<2 GeV}",
-    "#splitline{FD}{E_{#gamma}#geq2 GeV}",
-    "#splitline{FT}{E_{#gamma}<2 GeV}",
-    "#splitline{FT}{E_{#gamma}#geq2 GeV}"
+    "#splitline{FD}{E_{#gamma,probe}<2 GeV}",
+    "#splitline{FD}{E_{#gamma,probe}#geq2 GeV}",
+    "#splitline{FT}{E_{#gamma,probe}<2 GeV}",
+    "#splitline{FT}{E_{#gamma,probe}#geq2 GeV}"
 };
 
 struct CoarseValRegion {
@@ -4521,7 +4521,7 @@ void draw_exclusivity_summary(const std::vector<std::unique_ptr<ValComponent>>& 
         tx.DrawLatex(0.15,0.94,pp[ip].label);
 
         if (ip==0) {
-            TLegend* leg=new TLegend(0.62,0.66,0.94,0.88);
+            TLegend* leg=new TLegend(0.64,0.54,0.94,0.79);
             leg->SetBorderSize(0);
             leg->SetFillStyle(0);
             for (int is=0;is<4;is++)
@@ -4569,8 +4569,14 @@ void draw_norm_panel(TH1D* frame,const TH1D* hd,const TH1D* ha,const TH1D* hc,co
     style_norm_component(c.get(),kOrange+7);
     style_norm_component(v.get(),kGreen+2);
     style_norm_component(t.get(),kBlue+1,3);
+    a->SetLineStyle(2);
+    c->SetLineStyle(3);
+    v->SetLineStyle(4);
+    t->SetLineStyle(1);
 
     d->SetTitle("");
+    d->GetYaxis()->SetTitleOffset(1.55);
+    d->GetXaxis()->SetTitleOffset(1.12);
 
     // Compact display ranges only.  The template fits themselves use the
     // original full histogram ranges defined above.
@@ -4598,18 +4604,37 @@ void draw_norm_panel(TH1D* frame,const TH1D* hd,const TH1D* ha,const TH1D* hc,co
     }
 
     d->SetMaximum(1.30*std::max(d->GetMaximum(),t->GetMaximum()));
-    d->DrawCopy("E1");
-    a->DrawCopy("HIST SAME");
-    c->DrawCopy("HIST SAME");
-    v->DrawCopy("HIST SAME");
-    t->DrawCopy("HIST SAME");
+    TH1* dcopy=d->DrawCopy("E1");
+    TH1* tcopy=t->DrawCopy("HIST SAME");
+    TH1* acopy=a->DrawCopy("HIST SAME");
+    TH1* ccopy=c->DrawCopy("HIST SAME");
+    TH1* vcopy=v->DrawCopy("HIST SAME");
     d->DrawCopy("E1 SAME");
+
+    if (std::string(panel).rfind("(a)",0)==0) {
+        TLegend* leg=new TLegend(0.52,0.55,0.93,0.79);
+        leg->SetNColumns(2);
+        leg->SetBorderSize(0);
+        leg->SetFillStyle(0);
+        leg->SetTextSize(0.030);
+        leg->AddEntry(dcopy,"Data","lep");
+        leg->AddEntry(acopy,"AAOgen","l");
+        leg->AddEntry(ccopy,"CLASDIS","l");
+        leg->AddEntry(vcopy,"DVCSgen","l");
+        leg->AddEntry(tcopy,"Total MC","l");
+        leg->Draw();
+    }
 
     TLatex tx;
     tx.SetNDC();
     tx.SetTextFont(42);
     tx.SetTextSize(0.045);
     tx.DrawLatex(0.15,0.92,panel);
+    tx.SetTextSize(0.032);
+    if (C==0.0)
+        tx.DrawLatex(0.54,0.84,Form("AAO %.3f, CLASDIS %.3f",A,B));
+    else
+        tx.DrawLatex(0.64,0.84,Form("DVCS %.3f",C));
 }
 
 void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
@@ -4670,7 +4695,7 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
             for (int j=0;j<NORM_NOBS;j++) if (q.observable==NORM_OBS[j].key) io=j;
             if (io<0 || pad>=6) continue;
             c.cd(++pad);
-            gPad->SetLeftMargin(0.17); gPad->SetRightMargin(0.04); gPad->SetBottomMargin(0.18); gPad->SetTopMargin(0.12);
+            gPad->SetLeftMargin(0.20); gPad->SetRightMargin(0.04); gPad->SetBottomMargin(0.21); gPad->SetTopMargin(0.12);
             draw_norm_panel(nullptr,data->norm_lowE[io].get(),aao->norm_lowE[io].get(),
                             cls->norm_lowE[io].get(),dvc->norm_lowE[io].get(),
                             q.aao,q.clasdis,0.0,q,Form("(%c) %s",'a'+pad-1,pretty_norm_observable(q.observable).c_str()));
@@ -4727,7 +4752,7 @@ void draw_normalization_summary(const std::vector<std::unique_ptr<ValComponent>>
             for (int j=0;j<NORM_NOBS;j++) if (q.observable==NORM_OBS[j].key) io=j;
             if (io<0 || pad>=6) continue;
             c.cd(++pad);
-            gPad->SetLeftMargin(0.17); gPad->SetRightMargin(0.04); gPad->SetBottomMargin(0.18); gPad->SetTopMargin(0.12);
+            gPad->SetLeftMargin(0.20); gPad->SetRightMargin(0.04); gPad->SetBottomMargin(0.21); gPad->SetTopMargin(0.12);
             draw_norm_panel(nullptr,data->norm_highE[io].get(),aao->norm_highE[io].get(),
                             cls->norm_highE[io].get(),dvc->norm_highE[io].get(),
                             R.nominal.aao,R.nominal.clasdis,q.dvcs,q,
@@ -4830,6 +4855,48 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
 
     c.SaveAs((dir+"/pi0_fraction.png").c_str());
 
+    {
+        TH1D hA("h_comp_aao",";Detector / probe-energy region;Normalized component fraction",CR_N,0,CR_N);
+        TH1D hC("h_comp_cls","",CR_N,0,CR_N);
+        TH1D hD("h_comp_dvcs","",CR_N,0,CR_N);
+        TH1D hP("h_comp_pi0","",CR_N,0,CR_N);
+
+        hA.SetStats(0); hA.SetMinimum(0.0); hA.SetMaximum(1.05);
+        hA.SetLineColor(kRed+1); hA.SetLineStyle(2); hA.SetLineWidth(3);
+        hC.SetLineColor(kOrange+7); hC.SetLineStyle(3); hC.SetLineWidth(3);
+        hD.SetLineColor(kGreen+2); hD.SetLineStyle(4); hD.SetLineWidth(3);
+        hP.SetMarkerColor(kBlack); hP.SetMarkerStyle(20); hP.SetMarkerSize(1.2);
+
+        for (int ir=0;ir<CR_N;ir++) {
+            hA.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
+            const auto q=coarse_composition(vv,R.nominal,ir);
+            const double s=q.ya+q.yc+q.yd;
+            if (s>0) {
+                hA.SetBinContent(ir+1,q.ya/s);
+                hC.SetBinContent(ir+1,q.yc/s);
+                hD.SetBinContent(ir+1,q.yd/s);
+            }
+            if (q.f_pi0>=0) hP.SetBinContent(ir+1,q.f_pi0);
+        }
+
+        TCanvas cc("c_pi0_components","",1150,760);
+        cc.SetLeftMargin(0.13); cc.SetRightMargin(0.04);
+        cc.SetBottomMargin(0.25); cc.SetTopMargin(0.12);
+        hA.Draw("HIST"); hC.Draw("HIST SAME"); hD.Draw("HIST SAME"); hP.Draw("P SAME");
+
+        TLegend leg(0.58,0.60,0.93,0.86);
+        leg.SetBorderSize(0); leg.SetFillStyle(0);
+        leg.AddEntry(&hA,"AAOgen","l");
+        leg.AddEntry(&hC,"CLASDIS","l");
+        leg.AddEntry(&hD,"DVCSgen","l");
+        leg.AddEntry(&hP,"#pi^{0}-bearing fraction","p");
+        leg.Draw();
+
+        TLatex txc; txc.SetNDC(); txc.SetTextFont(42); txc.SetTextSize(0.040);
+        txc.DrawLatex(0.15,0.93,"Normalized MC composition behind the #pi^{0}-fraction estimate");
+        cc.SaveAs((dir+"/composition_by_region.png").c_str());
+    }
+
     std::ofstream csv(dir+"/summary.csv");
     csv << "region,aao_yield,clasdis_yield,dvcs_yield,clasdis_pi0_fraction,pi0_fraction\n";
     for (int ir=0;ir<CR_N;ir++) {
@@ -4842,8 +4909,12 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
 
 struct IntegratedEfficiencyResult {
     bool valid=false;
+    bool data_fit_valid=false,mc_fit_valid=false;
+    std::string data_fit_reason="not attempted";
+    std::string mc_fit_reason="not attempted";
     double f_pi0=0;
-    double data_denom=0,data_num_raw=0,data_num_bg=0,data_num_pi0=0;
+    double data_denom=0,mc_pi0_denom=0;
+    double data_num_raw=0,data_num_bg=0,data_num_pi0=0;
     double eff_data=0,eff_data_err=0;
     double eff_mc=0,eff_mc_err=0;
     double ratio=0,ratio_err=0;
@@ -4875,12 +4946,18 @@ IntegratedEfficiencyResult integrated_efficiency(
     const auto comp=coarse_composition(vv,R.nominal,ir);
     if (!(comp.f_pi0>0)) return out;
     const double fc=comp.f_clasdis_pi0;
+    out.f_pi0=comp.f_pi0;
 
     const auto& rd=data->coarse[ir];
     const auto& ra=a->coarse[ir];
     const auto& rc=c->coarse[ir];
     const auto& rv=d->coarse[ir];
-    if (!rd.residual || !ra.residual || !rc.residual || !rv.residual || rd.denom_rows<=0) return out;
+    out.data_denom=rd.denom_rows;
+    out.mc_pi0_denom=R.nominal.aao*ra.denom_rows +
+                     R.nominal.clasdis*fc*rc.denom_rows;
+
+    if (!rd.residual || !ra.residual || !rc.residual || !rv.residual || rd.denom_rows<=0)
+        return out;
 
     std::unique_ptr<TH1D> hpi0((TH1D*)ra.residual->Clone(Form("pi0mc_%d",ir)));
     hpi0->SetDirectory(nullptr);
@@ -4900,6 +4977,20 @@ IntegratedEfficiencyResult integrated_efficiency(
 
     FitResult fd=fit_valerii_residual(hd.get());
     FitResult fm=fit_valerii_residual(hpi0.get());
+    out.data_fit_valid=fd.valid;
+    out.mc_fit_valid=fm.valid;
+    out.data_fit_reason=fd.reason;
+    out.mc_fit_reason=fm.reason;
+
+    if (data_out) {
+        data_out->reset((TH1D*)hd->Clone(Form("display_data_%d",ir)));
+        (*data_out)->SetDirectory(nullptr);
+    }
+    if (pi0mc_out) {
+        pi0mc_out->reset((TH1D*)hpi0->Clone(Form("display_pi0mc_%d",ir)));
+        (*pi0mc_out)->SetDirectory(nullptr);
+    }
+
     if (!fd.valid || !fm.valid) return out;
 
     const double data_num=hist_integral_window(hd.get(),fd.mean-3*fd.sigma,fd.mean+3*fd.sigma);
@@ -4952,8 +5043,6 @@ IntegratedEfficiencyResult integrated_efficiency(
     out.mu_data=fd.mean; out.sigma_data=fd.sigma;
     out.mu_mc=fm.mean; out.sigma_mc=fm.sigma;
 
-    if (data_out) *data_out=std::move(hd);
-    if (pi0mc_out) *pi0mc_out=std::move(hpi0);
     return out;
 }
 
@@ -4971,8 +5060,12 @@ void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& v
         c.Divide(2,2);
         for (int ir=0;ir<CR_N;ir++) {
             c.cd(ir+1);
-            gPad->SetLeftMargin(0.13); gPad->SetTopMargin(0.11);
-            if (!rr[ir].valid || !hd[ir] || !hm[ir]) continue;
+            gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.04); gPad->SetBottomMargin(0.18); gPad->SetTopMargin(0.13);
+            if (!hd[ir] || !hm[ir]) {
+                TLatex t0; t0.SetNDC(); t0.SetTextFont(42); t0.SetTextSize(0.050);
+                t0.DrawLatex(0.18,0.55,"No residual histogram available");
+                continue;
+            }
             // Rebin display copies only; fitting/counting above uses the native binning.
             hd[ir]->Rebin(4);
             hm[ir]->Rebin(4);
@@ -4989,7 +5082,13 @@ void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& v
             hm[ir]->Draw("HIST SAME");
             hd[ir]->Draw("E1 SAME");
             TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.048);
-            tx.DrawLatex(0.16,0.92,Form("(%c) %s",'a'+ir,CR_LABEL[ir]));
+            tx.DrawLatex(0.16,0.93,Form("(%c) %s",'a'+ir,CR_LABEL[ir]));
+            if (!rr[ir].valid) {
+                tx.SetTextSize(0.030);
+                tx.DrawLatex(0.16,0.84,Form("Data fit: %s",rr[ir].data_fit_reason.c_str()));
+                tx.DrawLatex(0.16,0.78,Form("MC fit: %s",rr[ir].mc_fit_reason.c_str()));
+                tx.DrawLatex(0.16,0.72,Form("Data denominator: %.0f",rr[ir].data_denom));
+            }
             if (ir==0) {
                 TLegend* leg=new TLegend(0.63,0.72,0.93,0.88);
                 leg->SetBorderSize(0); leg->SetFillStyle(0);
@@ -5088,12 +5187,16 @@ void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& v
     }
 
     std::ofstream csv(dir+"/summary.csv");
-    csv << "region,valid,pi0_fraction,data_denom,data_num_raw,predicted_background_num,"
+    csv << "region,valid,data_fit_valid,data_fit_reason,mc_fit_valid,mc_fit_reason,"
+           "pi0_fraction,data_denom,mc_pi0_denom,data_num_raw,predicted_background_num,"
            "data_pi0_num,eff_data,eff_data_stat,eff_mc,eff_mc_stat,"
            "data_over_mc,data_over_mc_stat,mu_data,sigma_data,mu_mc,sigma_mc\n";
     for (int ir=0;ir<CR_N;ir++) {
         const auto& q=rr[ir];
-        csv << CR_KEY[ir]<<","<<q.valid<<","<<q.f_pi0<<","<<q.data_denom<<","
+        csv << CR_KEY[ir]<<","<<q.valid<<","
+            <<q.data_fit_valid<<",\""<<q.data_fit_reason<<"\","
+            <<q.mc_fit_valid<<",\""<<q.mc_fit_reason<<"\","
+            <<q.f_pi0<<","<<q.data_denom<<","<<q.mc_pi0_denom<<","
             <<q.data_num_raw<<","<<q.data_num_bg<<","<<q.data_num_pi0<<","
             <<q.eff_data<<","<<q.eff_data_err<<","
             <<q.eff_mc<<","<<q.eff_mc_err<<","
