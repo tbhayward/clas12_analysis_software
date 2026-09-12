@@ -5432,16 +5432,16 @@ void draw_eprobe_cut_survival(const std::vector<std::unique_ptr<ValComponent>>& 
         gPad->SetTopMargin(0.14);
         gPad->SetTicks(1,1);
 
-        TH1D frame(Form("surv_frame_%d",isamp),
+        TH1D* frame=new TH1D(Form("surv_frame_%d",isamp),
                    ";E_{#gamma,probe} (GeV);Cumulative survival",
                    EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX);
-        frame.SetStats(0);
-        frame.SetMinimum(0);
-        frame.SetMaximum(1.05);
-        frame.GetXaxis()->SetTitleSize(0.050);
-        frame.GetYaxis()->SetTitleSize(0.050);
-        frame.GetYaxis()->SetTitleOffset(isamp==0?1.35:1.0);
-        frame.Draw("AXIS");
+        frame->SetStats(0);
+        frame->SetMinimum(0);
+        frame->SetMaximum(1.05);
+        frame->GetXaxis()->SetTitleSize(0.050);
+        frame->GetYaxis()->SetTitleSize(0.050);
+        frame->GetYaxis()->SetTitleOffset(isamp==0?1.35:1.0);
+        frame->Draw("AXIS");
 
         std::vector<TH1D*> cumulative;
         for (int ist=0;ist<EPROBE_NSTAGE;ist++) {
@@ -5483,16 +5483,16 @@ void draw_eprobe_cut_survival(const std::vector<std::unique_ptr<ValComponent>>& 
         gPad->SetTopMargin(0.10);
         gPad->SetTicks(1,1);
 
-        TH1D iframe(Form("surv_iframe_%d",isamp),
+        TH1D* iframe=new TH1D(Form("surv_iframe_%d",isamp),
                     ";E_{#gamma,probe} (GeV);Incremental cut efficiency",
                     EPROBE_NBIN,EPROBE_MIN,EPROBE_MAX);
-        iframe.SetStats(0);
-        iframe.SetMinimum(0);
-        iframe.SetMaximum(1.05);
-        iframe.GetXaxis()->SetTitleSize(0.050);
-        iframe.GetYaxis()->SetTitleSize(0.050);
-        iframe.GetYaxis()->SetTitleOffset(isamp==0?1.35:1.0);
-        iframe.Draw("AXIS");
+        iframe->SetStats(0);
+        iframe->SetMinimum(0);
+        iframe->SetMaximum(1.05);
+        iframe->GetXaxis()->SetTitleSize(0.050);
+        iframe->GetYaxis()->SetTitleSize(0.050);
+        iframe->GetYaxis()->SetTitleOffset(isamp==0?1.35:1.0);
+        iframe->Draw("AXIS");
 
         std::vector<TH1D*> incremental;
         for (int ist=1;ist<EPROBE_NSTAGE;ist++) {
@@ -5729,7 +5729,10 @@ void draw_ft_cut_optimization(const std::vector<std::unique_ptr<ValComponent>>& 
             gPad->SetTopMargin(iv==0?0.18:0.08);
             gPad->SetTicks(1,1);
 
-            std::unique_ptr<TGraph> g(new TGraph());
+            // Allocate on the heap and leave the graph owned by the canvas/pad
+            // until SaveAs().  The previous local unique_ptr destroyed the graph
+            // before the canvas rendered, which produced blank pads.
+            TGraph* g=new TGraph();
             int ipt=0;
             for (const auto& q:byvar[iv]) {
                 double y=0;
@@ -5823,10 +5826,13 @@ struct FTFitQualityPoint {
     double clasdis=0;
     double dvcs=0;
     double low_chi2ndf=0;
-    double high_chi2ndf=0;
-    double data_low=0;
-    double data_high=0;
+    double high_mean_chi2ndf=0;
+    double high_max_chi2ndf=0;
+    int nhigh=0;
+    double low_data_events=0;
+    double high_data_events=0;
     double aao_highE_probe=0;
+    std::array<double,NORM_NOBS> high_obs_chi2ndf{};
 };
 
 void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& vv,
@@ -5837,20 +5843,14 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
     const ValComponent* dvc=find_val_component(vv,"dvcsgen");
     if (!data || !aao || !cls || !dvc) return;
 
-    // Use the same low-E simultaneous observable set as the nominal fit:
-    // Mx2(ep), Mx2(epgamma), tag E, Mx2(egamma).  angle(gamma,X) remains validation-only.
-    const std::vector<int> low_obs={
+    // EXACTLY the same low-E observable set used by derive_normalization_concise().
+    // angle(gamma,X) remains a validation observable and is not allowed to
+    // determine the low-E AAO/CLASDIS mixture.
+    const std::vector<int> low_global_obs = {
         NORM_MX2_EP,
         NORM_MX2_EPG,
         NORM_EGAMMA,
         NORM_MX2_EG
-    };
-    const std::vector<int> high_obs={
-        NORM_MX2_EPG,
-        NORM_ANGLE_GX,
-        NORM_MX2_EG,
-        NORM_DPHI_TRENTO_SHIFT180,
-        NORM_DELTA_T_PG
     };
 
     std::vector<FTFitQualityPoint> pts;
@@ -5858,170 +5858,124 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
     for (int ic=0;ic<FT_COPL_SCAN_N;ic++) {
         FTFitQualityPoint q;
         q.copl=FT_COPL_SCAN_VALUES[ic];
+        q.high_obs_chi2ndf.fill(-1.0);
 
-        // Build temporary ValComponent-like normalization hist collections by
-        // replacing the FT low/high 1D histograms with projections from this scan.
-        std::vector<std::unique_ptr<TH1D>> dl,al,cl,vl;
-        std::vector<std::unique_ptr<TH1D>> dh,ah,ch,vh;
-        dl.resize(NORM_NOBS); al.resize(NORM_NOBS); cl.resize(NORM_NOBS); vl.resize(NORM_NOBS);
-        dh.resize(NORM_NOBS); ah.resize(NORM_NOBS); ch.resize(NORM_NOBS); vh.resize(NORM_NOBS);
+        std::vector<std::unique_ptr<TH1D>> dl(NORM_NOBS),al(NORM_NOBS),
+                                           cl(NORM_NOBS),vl(NORM_NOBS);
+        std::vector<std::unique_ptr<TH1D>> dh(NORM_NOBS),ah(NORM_NOBS),
+                                           ch(NORM_NOBS),vh(NORM_NOBS);
 
         for (int io=0;io<NORM_NOBS;io++) {
-            dl[io]=project_fitqual_observable(data,false,ic,io,Form("dl_%d_%d",ic,io));
-            al[io]=project_fitqual_observable(aao,false,ic,io,Form("al_%d_%d",ic,io));
-            cl[io]=project_fitqual_observable(cls,false,ic,io,Form("cl_%d_%d",ic,io));
-            vl[io]=project_fitqual_observable(dvc,false,ic,io,Form("vl_%d_%d",ic,io));
+            dl[io]=project_fitqual_observable(data,false,ic,io,Form("prod_dl_%d_%d",ic,io));
+            al[io]=project_fitqual_observable(aao,false,ic,io,Form("prod_al_%d_%d",ic,io));
+            cl[io]=project_fitqual_observable(cls,false,ic,io,Form("prod_cl_%d_%d",ic,io));
+            vl[io]=project_fitqual_observable(dvc,false,ic,io,Form("prod_vl_%d_%d",ic,io));
 
-            dh[io]=project_fitqual_observable(data,true,ic,io,Form("dh_%d_%d",ic,io));
-            ah[io]=project_fitqual_observable(aao,true,ic,io,Form("ah_%d_%d",ic,io));
-            ch[io]=project_fitqual_observable(cls,true,ic,io,Form("ch_%d_%d",ic,io));
-            vh[io]=project_fitqual_observable(dvc,true,ic,io,Form("vh_%d_%d",ic,io));
+            dh[io]=project_fitqual_observable(data,true,ic,io,Form("prod_dh_%d_%d",ic,io));
+            ah[io]=project_fitqual_observable(aao,true,ic,io,Form("prod_ah_%d_%d",ic,io));
+            ch[io]=project_fitqual_observable(cls,true,ic,io,Form("prod_ch_%d_%d",ic,io));
+            vh[io]=project_fitqual_observable(dvc,true,ic,io,Form("prod_vh_%d_%d",ic,io));
         } // endfor
 
-        // Low-E simultaneous AAO+CLASDIS fit with common coefficients.
-        // Start from a small grid and then coordinate-refine.  This mirrors the
-        // nominal philosophy while remaining self-contained for the scan.
-        double bestA=0,bestC=0,bestChi=1e300;
-        int lowNdf=0;
+        // Production low-E fit: common AAO + CLASDIS scales, with the same
+        // observable-specific common template morph iteration used nominally.
+        NormFitPoint low=fit_two_templates_simultaneous_morphed(
+            dl,al,cl,low_global_obs);
+        if (!low.valid) {
+            pts.push_back(q);
+            continue;
+        } // endif
 
-        auto eval_low=[&](double A,double C)->std::pair<double,int> {
-            double chi=0; int nbin=0;
-            for (int io:low_obs) {
-                if (!dl[io] || !al[io] || !cl[io]) continue;
-                const int nb=dl[io]->GetNbinsX();
-                for (int ib=1;ib<=nb;ib++) {
-                    const double d=dl[io]->GetBinContent(ib);
-                    const double ea=al[io]->GetBinError(ib);
-                    const double ec=cl[io]->GetBinError(ib);
-                    const double m=A*al[io]->GetBinContent(ib)+C*cl[io]->GetBinContent(ib);
-                    const double ed=dl[io]->GetBinError(ib);
-                    const double var=ed*ed+A*A*ea*ea+C*C*ec*ec;
-                    if (!(var>0)) continue;
-                    chi+=(d-m)*(d-m)/var;
-                    nbin++;
-                } // endfor
-            } // endfor
-            return {chi,nbin};
-        };
+        q.aao=low.aao;
+        q.clasdis=low.clasdis;
+        q.low_chi2ndf=(low.ndf>0)?low.chi2/low.ndf:0.0;
 
-        for (double A=0;A<=1.5;A+=0.05) {
-            for (double C=0;C<=4.0;C+=0.10) {
-                auto z=eval_low(A,C);
-                if (z.first<bestChi) {
-                    bestChi=z.first; bestA=A; bestC=C; lowNdf=z.second-2;
-                } // endif
-            } // endfor
-        } // endfor
-        for (double step: {0.02,0.01,0.005}) {
-            double a0=bestA,c0=bestC;
-            for (int ia=-5;ia<=5;ia++) {
-                for (int icc=-5;icc<=5;icc++) {
-                    double A=std::max(0.0,a0+ia*step);
-                    double C=std::max(0.0,c0+icc*step*2.0);
-                    auto z=eval_low(A,C);
-                    if (z.first<bestChi) {
-                        bestChi=z.first; bestA=A; bestC=C; lowNdf=z.second-2;
-                    } // endif
-                } // endfor
-            } // endfor
+        // Production high-E step: fix low-E AAO/CLASDIS scales and perform
+        // the SAME one-observable morphed DVCS fits used nominally.
+        std::vector<NormFitPoint> high_points;
+        double sum_chi2ndf=0;
+        double max_chi2ndf=0;
+
+        for (int io=0;io<NORM_NOBS;io++) {
+            if (!NORM_OBS[io].use_high) continue;
+            if (!dh[io] || !ah[io] || !ch[io] || !vh[io]) continue;
+
+            auto hp=fit_dvcs_template_morphed(
+                dh[io].get(),ah[io].get(),ch[io].get(),vh[io].get(),
+                q.aao,q.clasdis,NORM_OBS[io].key);
+
+            if (!hp.valid) continue;
+            high_points.push_back(hp);
+
+            const double c2n=(hp.ndf>0)?hp.chi2/hp.ndf:0.0;
+            q.high_obs_chi2ndf[io]=c2n;
+            sum_chi2ndf+=c2n;
+            max_chi2ndf=std::max(max_chi2ndf,c2n);
         } // endfor
 
-        q.aao=bestA;
-        q.clasdis=bestC;
-        q.low_chi2ndf=(lowNdf>0)?bestChi/lowNdf:0;
+        q.nhigh=int(high_points.size());
+        if (q.nhigh>0) {
+            q.dvcs=mean_valid(high_points,2);
+            q.high_mean_chi2ndf=sum_chi2ndf/double(q.nhigh);
+            q.high_max_chi2ndf=max_chi2ndf;
+        } // endif
 
-        // High-E DVCS-only scale with AAO/CLASDIS fixed to low-E values.
-        double bestD=0,bestHChi=1e300;
-        int highNdf=0;
-        auto eval_high=[&](double D)->std::pair<double,int> {
-            double chi=0; int nbin=0;
-            for (int io:high_obs) {
-                if (!dh[io] || !ah[io] || !ch[io] || !vh[io]) continue;
-                const int nb=dh[io]->GetNbinsX();
-                for (int ib=1;ib<=nb;ib++) {
-                    const double d=dh[io]->GetBinContent(ib);
-                    const double m=
-                        bestA*ah[io]->GetBinContent(ib)+
-                        bestC*ch[io]->GetBinContent(ib)+
-                        D*vh[io]->GetBinContent(ib);
-                    const double ed=dh[io]->GetBinError(ib);
-                    const double ea=ah[io]->GetBinError(ib);
-                    const double ec=ch[io]->GetBinError(ib);
-                    const double ev=vh[io]->GetBinError(ib);
-                    const double var=ed*ed+bestA*bestA*ea*ea+
-                                     bestC*bestC*ec*ec+D*D*ev*ev;
-                    if (!(var>0)) continue;
-                    chi+=(d-m)*(d-m)/var;
-                    nbin++;
-                } // endfor
-            } // endfor
-            return {chi,nbin};
-        };
+        // Simple event-count diagnostics.  Use tag-energy histograms because
+        // these are the same low/high control samples being normalized.
+        if (dl[NORM_EGAMMA]) q.low_data_events=dl[NORM_EGAMMA]->Integral();
+        if (dh[NORM_EGAMMA]) q.high_data_events=dh[NORM_EGAMMA]->Integral();
 
-        for (double D=0;D<=1.0;D+=0.01) {
-            auto z=eval_high(D);
-            if (z.first<bestHChi) {
-                bestHChi=z.first; bestD=D; highNdf=z.second-1;
-            } // endif
-        } // endfor
-        for (double step: {0.005,0.002}) {
-            double d0=bestD;
-            for (int id=-5;id<=5;id++) {
-                double D=std::max(0.0,d0+id*step);
-                auto z=eval_high(D);
-                if (z.first<bestHChi) {
-                    bestHChi=z.first; bestD=D; highNdf=z.second-1;
-                } // endif
-            } // endfor
-        } // endfor
-
-        q.dvcs=bestD;
-        q.high_chi2ndf=(highNdf>0)?bestHChi/highNdf:0;
-
-        if (dl[NORM_EGAMMA]) q.data_low=dl[NORM_EGAMMA]->Integral();
-        if (dh[NORM_EGAMMA]) q.data_high=dh[NORM_EGAMMA]->Integral();
-
-        // High-Eprobe AAO statistics after this coplanarity cut.
+        // High-Eprobe AAO statistics after this coplanarity cut, independent
+        // of the tag-energy normalization split.
         auto ha=cutscan_project_eprobe(aao->cutscan_ft[1].get(),1,q.copl,
-                                       Form("aao_probe_copl_%d",ic));
-        if (ha) q.aao_highE_probe=hist_integral_range(ha.get(),2.0,EPROBE_MAX+1e-6);
+                                       Form("prod_aao_probe_copl_%d",ic));
+        if (ha)
+            q.aao_highE_probe=
+                hist_integral_range(ha.get(),2.0,EPROBE_MAX+1e-6);
 
         pts.push_back(q);
     } // endfor
 
-    TCanvas c("c_ft_fitquality_scan","",1900,1050);
+    // -------------------------------
+    // Main decision canvas
+    // -------------------------------
+    TCanvas c("c_ft_production_fit_scan","",2100,1250);
     c.Divide(3,2,0.001,0.001);
 
-    auto make_graph=[&](int metric,const char* ytitle,double ymin,double ymax,int pad) {
+    auto draw_metric=[&](int pad,const char* ytitle,
+                         std::function<double(const FTFitQualityPoint&)> gety,
+                         double fixed_min,double fixed_max) {
         c.cd(pad);
-        gPad->SetLeftMargin(0.15);
+        gPad->SetLeftMargin(0.16);
         gPad->SetRightMargin(0.04);
-        gPad->SetBottomMargin(0.15);
+        gPad->SetBottomMargin(0.16);
         gPad->SetTopMargin(0.10);
         gPad->SetTicks(1,1);
 
         TGraph* g=new TGraph();
+        double ymax=0;
         int ip=0;
         for (const auto& q:pts) {
-            double y=0;
-            if (metric==0) y=q.low_chi2ndf;
-            if (metric==1) y=q.high_chi2ndf;
-            if (metric==2) y=q.aao;
-            if (metric==3) y=q.clasdis;
-            if (metric==4) y=q.dvcs;
-            if (metric==5) y=q.aao_highE_probe;
+            const double y=gety(q);
             g->SetPoint(ip++,q.copl,y);
+            ymax=std::max(ymax,y);
         } // endfor
+
         g->SetLineWidth(3);
         g->SetMarkerStyle(20);
-        g->SetMarkerSize(0.8);
+        g->SetMarkerSize(0.85);
         g->SetTitle(Form(";|#Delta#phi_{copl}| maximum (deg);%s",ytitle));
         g->GetXaxis()->SetTitleSize(0.050);
-        g->GetYaxis()->SetTitleSize(0.050);
-        g->GetYaxis()->SetTitleOffset(1.35);
-        if (ymax>ymin) {
-            g->SetMinimum(ymin);
-            g->SetMaximum(ymax);
+        g->GetYaxis()->SetTitleSize(0.048);
+        g->GetXaxis()->SetLabelSize(0.042);
+        g->GetYaxis()->SetLabelSize(0.042);
+        g->GetYaxis()->SetTitleOffset(1.45);
+        if (fixed_max>fixed_min) {
+            g->SetMinimum(fixed_min);
+            g->SetMaximum(fixed_max);
+        } else {
+            g->SetMinimum(0);
+            g->SetMaximum(std::max(1e-6,1.18*ymax));
         } // endif
         g->Draw("ALP");
 
@@ -6033,32 +5987,112 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
         l->Draw();
     };
 
-    double maxLow=2.0,maxHigh=2.0,maxHighStat=1.0;
-    for (const auto& q:pts) {
-        maxLow=std::max(maxLow,q.low_chi2ndf*1.2);
-        maxHigh=std::max(maxHigh,q.high_chi2ndf*1.2);
-        maxHighStat=std::max(maxHighStat,q.aao_highE_probe*1.15);
+    draw_metric(1,"Low-E production #chi^{2}/ndf",
+                [](const FTFitQualityPoint& q){return q.low_chi2ndf;},0,0);
+    draw_metric(2,"High-E mean #chi^{2}/ndf",
+                [](const FTFitQualityPoint& q){return q.high_mean_chi2ndf;},0,0);
+    draw_metric(3,"AAO normalization",
+                [](const FTFitQualityPoint& q){return q.aao;},0,0);
+    draw_metric(4,"CLASDIS normalization",
+                [](const FTFitQualityPoint& q){return q.clasdis;},0,0);
+    draw_metric(5,"DVCS normalization",
+                [](const FTFitQualityPoint& q){return q.dvcs;},0,0);
+    draw_metric(6,"AAO E_{probe}#geq2 raw events",
+                [](const FTFitQualityPoint& q){return q.aao_highE_probe;},0,0);
+
+    c.SaveAs((dir+"/FT_coplanarity_production_fit_scan.png").c_str());
+
+    // -------------------------------
+    // High-E observable-by-observable fit-quality canvas
+    // -------------------------------
+    const std::vector<int> high_obs={
+        NORM_MX2_EPG,
+        NORM_ANGLE_GX,
+        NORM_MX2_EG,
+        NORM_DPHI_TRENTO_SHIFT180,
+        NORM_DELTA_T_PG
+    };
+
+    TCanvas chigh("c_ft_highE_fit_scan","",1800,1050);
+    chigh.Divide(3,2,0.001,0.001);
+
+    for (int j=0;j<int(high_obs.size());j++) {
+        const int io=high_obs[j];
+        chigh.cd(j+1);
+        gPad->SetLeftMargin(0.16);
+        gPad->SetRightMargin(0.04);
+        gPad->SetBottomMargin(0.16);
+        gPad->SetTopMargin(0.12);
+        gPad->SetTicks(1,1);
+
+        TGraph* g=new TGraph();
+        double ymax=0;
+        int ip=0;
+        for (const auto& q:pts) {
+            const double y=q.high_obs_chi2ndf[io];
+            if (!(y>=0)) continue;
+            g->SetPoint(ip++,q.copl,y);
+            ymax=std::max(ymax,y);
+        } // endfor
+
+        g->SetLineWidth(3);
+        g->SetMarkerStyle(20);
+        g->SetMarkerSize(0.85);
+        g->SetTitle(Form("%s;|#Delta#phi_{copl}| maximum (deg);#chi^{2}/ndf",
+                         NORM_OBS[io].key));
+        g->GetXaxis()->SetTitleSize(0.050);
+        g->GetYaxis()->SetTitleSize(0.050);
+        g->GetYaxis()->SetTitleOffset(1.35);
+        g->SetMinimum(0);
+        g->SetMaximum(std::max(1.0,1.20*ymax));
+        g->Draw("ALP");
+
+        TLine* l=new TLine(NORM_DPHI_TRENTO_MAX,0,
+                           NORM_DPHI_TRENTO_MAX,std::max(1.0,1.20*ymax));
+        l->SetLineStyle(2);
+        l->SetLineWidth(2);
+        l->Draw();
     } // endfor
 
-    make_graph(0,"Low-E simultaneous #chi^{2}/ndf",0,maxLow,1);
-    make_graph(1,"High-E DVCS #chi^{2}/ndf",0,maxHigh,2);
-    make_graph(2,"AAO normalization",0,0,3);
-    make_graph(3,"CLASDIS normalization",0,0,4);
-    make_graph(4,"DVCS normalization",0,0,5);
-    make_graph(5,"AAO E_{probe}#geq2 raw events",0,maxHighStat,6);
+    chigh.cd(6);
+    gPad->SetLeftMargin(0.14);
+    gPad->SetBottomMargin(0.14);
+    TLatex tx;
+    tx.SetNDC();
+    tx.SetTextFont(42);
+    tx.SetTextSize(0.045);
+    tx.DrawLatex(0.08,0.82,"FT high-E production fit QA");
+    tx.SetTextSize(0.035);
+    tx.DrawLatex(0.08,0.70,"Dashed line: nominal 5.7^{#circ}");
+    tx.DrawLatex(0.08,0.61,"Each panel uses the same morphed");
+    tx.DrawLatex(0.08,0.54,"DVCS fit as the production result.");
+    tx.DrawLatex(0.08,0.43,"Prefer a looser cut only if these");
+    tx.DrawLatex(0.08,0.36,"remain stable while statistics rise.");
 
-    c.SaveAs((dir+"/FT_coplanarity_fit_quality_scan.png").c_str());
+    chigh.SaveAs((dir+"/FT_coplanarity_highE_fit_quality.png").c_str());
 
+    // Append exact-production scan values to the existing FT exclusivity CSV.
     std::ofstream csv(dir+"/summary.csv",std::ios::app);
-    csv << "\n# FT coplanarity normalization-fit quality scan\n";
+    csv << "\n# FT coplanarity EXACT production-normalization scan\n";
     csv << "coplanarity_absmax_deg,AAO_scale,CLASDIS_scale,DVCS_scale,"
-           "lowE_chi2_ndf,highE_chi2_ndf,lowE_data_events,highE_data_events,"
-           "AAO_highEprobe_raw_events\n";
+           "lowE_production_chi2_ndf,highE_mean_chi2_ndf,highE_max_chi2_ndf,"
+           "n_highE_fit_observables,lowE_data_events,highE_data_events,"
+           "AAO_highEprobe_raw_events";
+    for (int io:high_obs)
+        csv << "," << NORM_OBS[io].key << "_chi2_ndf";
+    csv << "\n";
+
     csv << std::setprecision(10);
-    for (const auto& q:pts)
+    for (const auto& q:pts) {
         csv << q.copl << "," << q.aao << "," << q.clasdis << "," << q.dvcs << ","
-            << q.low_chi2ndf << "," << q.high_chi2ndf << ","
-            << q.data_low << "," << q.data_high << "," << q.aao_highE_probe << "\n";
+            << q.low_chi2ndf << "," << q.high_mean_chi2ndf << ","
+            << q.high_max_chi2ndf << "," << q.nhigh << ","
+            << q.low_data_events << "," << q.high_data_events << ","
+            << q.aao_highE_probe;
+        for (int io:high_obs)
+            csv << "," << q.high_obs_chi2ndf[io];
+        csv << "\n";
+    } // endfor
     csv.close();
 }
 
