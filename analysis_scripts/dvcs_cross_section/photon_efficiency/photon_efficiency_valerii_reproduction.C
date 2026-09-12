@@ -5833,8 +5833,10 @@ struct FTFitQualityPoint {
     double dvcs=0;
     double low_chi2ndf=0;
     double high_mean_chi2ndf=0;
+    double high_mean_no_angle_chi2ndf=0;
     double high_max_chi2ndf=0;
     int nhigh=0;
+    int nhigh_no_angle=0;
     double low_data_events=0;
     double high_data_events=0;
     double aao_highE_probe=0;
@@ -5900,6 +5902,8 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
         // the SAME one-observable morphed DVCS fits used nominally.
         std::vector<NormFitPoint> high_points;
         double sum_chi2ndf=0;
+        double sum_no_angle_chi2ndf=0;
+        int n_no_angle=0;
         double max_chi2ndf=0;
 
         for (int io=0;io<NORM_NOBS;io++) {
@@ -5916,6 +5920,10 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
             const double c2n=(hp.ndf>0)?hp.chi2/hp.ndf:0.0;
             q.high_obs_chi2ndf[io]=c2n;
             sum_chi2ndf+=c2n;
+            if (io!=NORM_ANGLE_GX) {
+                sum_no_angle_chi2ndf+=c2n;
+                n_no_angle++;
+            } // endif
             max_chi2ndf=std::max(max_chi2ndf,c2n);
         } // endfor
 
@@ -5923,6 +5931,9 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
         if (q.nhigh>0) {
             q.dvcs=mean_valid(high_points,2);
             q.high_mean_chi2ndf=sum_chi2ndf/double(q.nhigh);
+            q.nhigh_no_angle=n_no_angle;
+            if (n_no_angle>0)
+                q.high_mean_no_angle_chi2ndf=sum_no_angle_chi2ndf/double(n_no_angle);
             q.high_max_chi2ndf=max_chi2ndf;
         } // endif
 
@@ -5945,8 +5956,8 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
     // -------------------------------
     // Main decision canvas
     // -------------------------------
-    TCanvas c("c_ft_production_fit_scan","",2100,1250);
-    c.Divide(3,2,0.001,0.001);
+    TCanvas c("c_ft_production_fit_scan","",2100,1750);
+    c.Divide(3,3,0.001,0.001);
 
     auto draw_metric=[&](int pad,const char* ytitle,
                          std::function<double(const FTFitQualityPoint&)> gety,
@@ -5995,16 +6006,42 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
 
     draw_metric(1,"Low-E simultaneous fit #chi^{2}/ndf",
                 [](const FTFitQualityPoint& q){return q.low_chi2ndf;},0,0);
-    draw_metric(2,"Mean high-E fit #chi^{2}/ndf",
+    draw_metric(2,"Mean high-E #chi^{2}/ndf (all)",
                 [](const FTFitQualityPoint& q){return q.high_mean_chi2ndf;},0,0);
-    draw_metric(3,"AAO normalization",
+    draw_metric(3,"Mean high-E #chi^{2}/ndf (without angle(#gamma,X))",
+                [](const FTFitQualityPoint& q){return q.high_mean_no_angle_chi2ndf;},0,0);
+    draw_metric(4,"AAO normalization",
                 [](const FTFitQualityPoint& q){return q.aao;},0,0);
-    draw_metric(4,"CLASDIS normalization",
+    draw_metric(5,"CLASDIS normalization",
                 [](const FTFitQualityPoint& q){return q.clasdis;},0,0);
-    draw_metric(5,"DVCS normalization",
+    draw_metric(6,"DVCS normalization",
                 [](const FTFitQualityPoint& q){return q.dvcs;},0,0);
-    draw_metric(6,"AAO E_{probe}#geq2 raw events",
+    draw_metric(7,"AAO E_{probe}#geq2 raw events",
                 [](const FTFitQualityPoint& q){return q.aao_highE_probe;},0,0);
+
+    c.cd(8);
+    gPad->SetLeftMargin(0.12); gPad->SetBottomMargin(0.12);
+    {
+        TLatex t; t.SetNDC(); t.SetTextFont(42);
+        t.SetTextSize(0.052); t.DrawLatex(0.08,0.84,"Coplanarity scan decision");
+        t.SetTextSize(0.036);
+        t.DrawLatex(0.08,0.70,"Compare fit quality, normalization stability,");
+        t.DrawLatex(0.08,0.63,"and high-E_{probe} AAO statistics.");
+        t.DrawLatex(0.08,0.51,"Panel 2 includes angle(#gamma,X);");
+        t.DrawLatex(0.08,0.44,"panel 3 removes only that observable.");
+        t.DrawLatex(0.08,0.32,"Dashed line: nominal 5.7^{#circ}.");
+    }
+
+    c.cd(9);
+    gPad->SetLeftMargin(0.12); gPad->SetBottomMargin(0.12);
+    {
+        TLatex t; t.SetNDC(); t.SetTextFont(42);
+        t.SetTextSize(0.044); t.DrawLatex(0.08,0.82,"No nominal cut is changed here.");
+        t.SetTextSize(0.034);
+        t.DrawLatex(0.08,0.68,"This canvas is QA for selecting the");
+        t.DrawLatex(0.08,0.61,"largest statistically useful FT sample");
+        t.DrawLatex(0.08,0.54,"with a stable component decomposition.");
+    }
 
     c.SaveAs((dir+"/FT_coplanarity_production_fit_scan.png").c_str());
 
@@ -6069,8 +6106,10 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
         TLatex note;
         note.SetNDC();
         note.SetTextFont(42);
-        note.SetTextSize(0.030);
-        note.DrawLatex(0.18,0.86,"production morphed DVCS fit");
+        note.SetTextSize(0.047);
+        note.DrawLatex(0.18,0.86,Form("(%c) %s",'a'+j,pretty));
+        note.SetTextSize(0.028);
+        note.DrawLatex(0.18,0.79,"production morphed DVCS fit");
     } // endfor
 
     chigh.cd(6);
@@ -6094,8 +6133,9 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
     std::ofstream csv(dir+"/summary.csv",std::ios::app);
     csv << "\n# FT coplanarity EXACT production-normalization scan\n";
     csv << "coplanarity_absmax_deg,AAO_scale,CLASDIS_scale,DVCS_scale,"
-           "lowE_production_chi2_ndf,highE_mean_chi2_ndf,highE_max_chi2_ndf,"
-           "n_highE_fit_observables,lowE_data_events,highE_data_events,"
+           "lowE_production_chi2_ndf,highE_mean_chi2_ndf,highE_mean_no_angle_chi2_ndf,"
+           "highE_max_chi2_ndf,n_highE_fit_observables,n_highE_fit_observables_no_angle,"
+           "lowE_data_events,highE_data_events,"
            "AAO_highEprobe_raw_events";
     for (int io:high_obs)
         csv << "," << NORM_OBS[io].key << "_chi2_ndf";
@@ -6105,7 +6145,8 @@ void draw_ft_fitquality_scan(const std::vector<std::unique_ptr<ValComponent>>& v
     for (const auto& q:pts) {
         csv << q.copl << "," << q.aao << "," << q.clasdis << "," << q.dvcs << ","
             << q.low_chi2ndf << "," << q.high_mean_chi2ndf << ","
-            << q.high_max_chi2ndf << "," << q.nhigh << ","
+            << q.high_mean_no_angle_chi2ndf << ","
+            << q.high_max_chi2ndf << "," << q.nhigh << "," << q.nhigh_no_angle << ","
             << q.low_data_events << "," << q.high_data_events << ","
             << q.aao_highE_probe;
         for (int io:high_obs)
@@ -6843,6 +6884,308 @@ IntegratedEfficiencyResult integrated_efficiency(
     return out;
 }
 
+struct ResidualTemplateResult {
+    bool valid=false;
+    double signal_yield=0;
+    double background_yield=0;
+    double signal_err=0;
+    double background_err=0;
+    double shift=0;
+    double smear=0;
+    double chi2=0;
+    int ndf=0;
+    double data_eff=0;
+    double mc_eff=0;
+    double ratio=0;
+};
+
+ResidualTemplateResult fit_residual_templates_fullshape(
+        const TH1D* data,const TH1D* signal,const TH1D* background,
+        double data_pi0_denom,double mc_pi0_denom) {
+    ResidualTemplateResult best;
+    if (!data || !signal || !background ||
+        !(data_pi0_denom>0) || !(mc_pi0_denom>0)) return best;
+
+    const double sig0=signal->Integral();
+    const double bg0=background->Integral();
+    if (!(sig0>0)) return best;
+
+    const double bw=data->GetXaxis()->GetBinWidth(1);
+    double bestchi=std::numeric_limits<double>::infinity();
+
+    // Residual template morph: allow the pi0 MC signal response to acquire a
+    // data-specific shift and extra Gaussian resolution. Background shape is
+    // not morphed; its normalization is free.
+    const double max_shift=0.40;
+    const double max_smear=0.35;
+    const double shift_step=std::max(bw,0.025);
+    const double smear_step=std::max(bw,0.025);
+
+    for (double sh=-max_shift;sh<=max_shift+1e-12;sh+=shift_step) {
+        for (double sm=0;sm<=max_smear+1e-12;sm+=smear_step) {
+            auto hs=morph_norm_hist(signal,sh,sm,"tmp_eff_sig_morph");
+            if (!hs || !(hs->Integral()>0)) continue;
+
+            // Unit-area shapes; fitted coefficients are candidate yields.
+            hs->Scale(1.0/hs->Integral());
+            std::unique_ptr<TH1D> hb((TH1D*)background->Clone("tmp_eff_bg_shape"));
+            hb->SetDirectory(nullptr);
+            if (hb->Integral()>0) hb->Scale(1.0/hb->Integral());
+
+            double ss=0,bb=0,sb=0,sd=0,bd=0;
+            int used=0;
+            for (int ib=1;ib<=data->GetNbinsX();ib++) {
+                const double d=data->GetBinContent(ib);
+                const double s=hs->GetBinContent(ib);
+                const double b=(bg0>0)?hb->GetBinContent(ib):0.0;
+                if (d<=0 && s<=0 && b<=0) continue;
+                const double var=std::max(1.0,d);
+                const double w=1.0/var;
+                ss+=w*s*s; bb+=w*b*b; sb+=w*s*b;
+                sd+=w*s*d; bd+=w*b*d; used++;
+            } // endfor
+
+            if (used<8 || !(ss>0)) continue;
+
+            double S=0,B=0;
+            double varS=0,varB=0;
+            if (bg0>0) {
+                const double det=ss*bb-sb*sb;
+                if (!(det>0)) continue;
+                S=(sd*bb-bd*sb)/det;
+                B=(bd*ss-sd*sb)/det;
+                if (S<0) { S=0; B=(bb>0)?bd/bb:0; }
+                if (B<0) { B=0; S=(ss>0)?sd/ss:0; }
+                varS=bb/det;
+                varB=ss/det;
+            } else {
+                S=sd/ss;
+                if (S<0) S=0;
+                B=0;
+                varS=1.0/ss;
+                varB=0;
+            } // endif
+
+            double chi2=0;
+            int n=0;
+            for (int ib=1;ib<=data->GetNbinsX();ib++) {
+                const double d=data->GetBinContent(ib);
+                const double m=S*hs->GetBinContent(ib) +
+                               B*((bg0>0)?hb->GetBinContent(ib):0.0);
+                if (d<=0 && m<=0) continue;
+                const double q=d-m;
+                chi2+=q*q/std::max(1.0,d);
+                n++;
+            } // endfor
+            const int ndf=std::max(0,n-(bg0>0?4:3)); // S,(B),shift,smear
+            if (ndf<=0 || !(chi2<bestchi)) continue;
+
+            bestchi=chi2;
+            best.valid=true;
+            best.signal_yield=S;
+            best.background_yield=B;
+            best.signal_err=std::sqrt(std::max(0.0,varS));
+            best.background_err=std::sqrt(std::max(0.0,varB));
+            best.shift=sh;
+            best.smear=sm;
+            best.chi2=chi2;
+            best.ndf=ndf;
+        } // endfor
+    } // endfor
+
+    if (!best.valid) return best;
+
+    // MC signal efficiency uses all reconstructed pi0-template candidates in
+    // the persisted residual range.  The data numerator is the fitted pi0-like
+    // candidate yield from the full residual shape.
+    best.data_eff=best.signal_yield/data_pi0_denom;
+    best.mc_eff=sig0/mc_pi0_denom;
+    if (best.mc_eff>0) best.ratio=best.data_eff/best.mc_eff;
+    return best;
+}
+
+void draw_efficiency_prefinal_diagnostics(
+        const std::vector<std::unique_ptr<ValComponent>>& vv,
+        const NormDerivation& Rfd,const NormDerivation& Rft,
+        const std::string& dir) {
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* a=find_val_component(vv,"aaogen");
+    const ValComponent* c=find_val_component(vv,"clasdis");
+    const ValComponent* d=find_val_component(vv,"dvcsgen");
+    if (!data || !a || !c || !d) return;
+
+    std::array<ResidualTemplateResult,CR_N> tr;
+    std::array<std::unique_ptr<TH1D>,CR_N> hdata,hsig,hbg;
+
+    for (int ir=0;ir<CR_N;ir++) {
+        const NormDerivation& R=(ir<2?Rfd:Rft);
+        const auto comp=coarse_composition(vv,R.nominal,ir);
+        if (!(comp.f_pi0>0)) continue;
+        const double fc=comp.f_clasdis_pi0;
+
+        const auto& rd=data->coarse[ir];
+        const auto& ra=a->coarse[ir];
+        const auto& rc=c->coarse[ir];
+        const auto& rv=d->coarse[ir];
+        if (!rd.residual || !ra.residual || !rc.residual || !rv.residual) continue;
+
+        hdata[ir].reset((TH1D*)rd.residual->Clone(Form("prefinal_data_%d",ir)));
+        hdata[ir]->SetDirectory(nullptr);
+
+        hsig[ir].reset((TH1D*)ra.residual->Clone(Form("prefinal_sig_%d",ir)));
+        hsig[ir]->SetDirectory(nullptr);
+        hsig[ir]->Scale(R.nominal.aao);
+        std::unique_ptr<TH1D> hcpi((TH1D*)rc.residual->Clone(Form("prefinal_cpi_%d",ir)));
+        hcpi->SetDirectory(nullptr);
+        hcpi->Scale(R.nominal.clasdis*fc);
+        hsig[ir]->Add(hcpi.get());
+
+        hbg[ir].reset((TH1D*)rv.residual->Clone(Form("prefinal_bg_%d",ir)));
+        hbg[ir]->SetDirectory(nullptr);
+        hbg[ir]->Scale(R.nominal.dvcs);
+        std::unique_ptr<TH1D> hcb((TH1D*)rc.residual->Clone(Form("prefinal_cbg_%d",ir)));
+        hcb->SetDirectory(nullptr);
+        hcb->Scale(R.nominal.clasdis*(1.0-fc));
+        hbg[ir]->Add(hcb.get());
+
+        const double data_pi0_denom=comp.f_pi0*double(rd.denom_rows);
+        const double mc_pi0_denom=R.nominal.aao*ra.denom_rows +
+                                  R.nominal.clasdis*fc*rc.denom_rows;
+
+        tr[ir]=fit_residual_templates_fullshape(
+            hdata[ir].get(),hsig[ir].get(),hbg[ir].get(),
+            data_pi0_denom,mc_pi0_denom);
+    } // endfor
+
+    // Full-shape fit QA canvas.
+    TCanvas cfit("c_prefinal_residual_template","",1550,1100);
+    cfit.Divide(2,2,0.001,0.001);
+    for (int ir=0;ir<CR_N;ir++) {
+        cfit.cd(ir+1);
+        gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.04);
+        gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.13);
+        gPad->SetTicks(1,1);
+
+        if (!hdata[ir] || !hsig[ir] || !hbg[ir] || !tr[ir].valid) {
+            TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.05);
+            tx.DrawLatex(0.18,0.55,Form("%s: template fit unavailable",CR_LABEL[ir]));
+            continue;
+        } // endif
+
+        // Build the best-fit morphed signal + background model.
+        auto ms=morph_norm_hist(hsig[ir].get(),tr[ir].shift,tr[ir].smear,
+                                Form("prefinal_ms_%d",ir));
+        ms->Scale(tr[ir].signal_yield/ms->Integral());
+        std::unique_ptr<TH1D> mb((TH1D*)hbg[ir]->Clone(Form("prefinal_mb_%d",ir)));
+        mb->SetDirectory(nullptr);
+        if (mb->Integral()>0) mb->Scale(tr[ir].background_yield/mb->Integral());
+        std::unique_ptr<TH1D> mt((TH1D*)ms->Clone(Form("prefinal_mt_%d",ir)));
+        mt->SetDirectory(nullptr); mt->Add(mb.get());
+
+        hdata[ir]->SetStats(0);
+        hdata[ir]->SetMarkerStyle(20); hdata[ir]->SetMarkerSize(0.45);
+        hdata[ir]->SetLineColor(kBlack);
+        ms->SetLineColor(kBlue+1); ms->SetLineWidth(2);
+        mb->SetLineColor(kGreen+2); mb->SetLineWidth(2); mb->SetLineStyle(2);
+        mt->SetLineColor(kRed+1); mt->SetLineWidth(3);
+
+        const double ymax=1.25*std::max(hdata[ir]->GetMaximum(),mt->GetMaximum());
+        hdata[ir]->SetMaximum(ymax);
+        hdata[ir]->GetXaxis()->SetTitle("#Delta p_{#gamma2} (GeV)");
+        hdata[ir]->GetYaxis()->SetTitle("Candidates");
+        hdata[ir]->Draw("E1");
+        mt->Draw("HIST SAME");
+        ms->Draw("HIST SAME");
+        mb->Draw("HIST SAME");
+        hdata[ir]->Draw("E1 SAME");
+
+        TLatex tx; tx.SetNDC(); tx.SetTextFont(42);
+        tx.SetTextSize(0.047);
+        tx.DrawLatex(0.17,0.92,Form("(%c) %s",'a'+ir,CR_LABEL[ir]));
+        tx.SetTextSize(0.030);
+        tx.DrawLatex(0.17,0.84,Form("#chi^{2}/ndf = %.2f",
+                                   tr[ir].ndf>0?tr[ir].chi2/tr[ir].ndf:0));
+        tx.DrawLatex(0.17,0.79,Form("shift = %.3f GeV, extra #sigma = %.3f GeV",
+                                   tr[ir].shift,tr[ir].smear));
+
+        if (ir==0) {
+            TLegend* leg=new TLegend(0.60,0.66,0.94,0.86);
+            leg->SetBorderSize(0); leg->SetFillStyle(0); leg->SetTextSize(0.030);
+            leg->AddEntry(hdata[ir].get(),"Data","lep");
+            leg->AddEntry(mt.get(),"Total template fit","l");
+            leg->AddEntry(ms.get(),"#pi^{0} signal template","l");
+            leg->AddEntry(mb.get(),"Background template","l");
+            leg->Draw();
+        } // endif
+    } // endfor
+    cfit.SaveAs((dir+"/residual_template_fit_diagnostic.png").c_str());
+
+    // Compare current 3-sigma Gaussian result with the full-shape result.
+    std::array<IntegratedEfficiencyResult,CR_N> gr;
+    for (int ir=0;ir<CR_N;ir++) {
+        const NormDerivation& R=(ir<2?Rfd:Rft);
+        gr[ir]=integrated_efficiency(vv,R,ir,nullptr,nullptr);
+    } // endfor
+
+    TCanvas cr("c_prefinal_ratio_compare","",1450,700);
+    cr.SetLeftMargin(0.10); cr.SetRightMargin(0.04);
+    cr.SetBottomMargin(0.22); cr.SetTopMargin(0.13);
+    TH1D axis("axis_prefinal_ratio",
+              ";Detector / probe-energy region;#epsilon_{data}/#epsilon_{MC}",
+              CR_N,0,CR_N);
+    axis.SetStats(0); axis.SetMinimum(0.35); axis.SetMaximum(1.65);
+    for (int ir=0;ir<CR_N;ir++) axis.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
+    axis.GetXaxis()->SetLabelSize(0.040);
+    axis.Draw();
+
+    TGraphErrors gg;
+    gg.SetMarkerStyle(20); gg.SetMarkerSize(1.20);
+    TGraph gt;
+    gt.SetMarkerStyle(24); gt.SetMarkerSize(1.25);
+    for (int ir=0;ir<CR_N;ir++) {
+        if (gr[ir].valid) {
+            const int n=gg.GetN();
+            gg.SetPoint(n,ir+0.42,gr[ir].ratio);
+            gg.SetPointError(n,0,gr[ir].ratio_err);
+        } // endif
+        if (tr[ir].valid) {
+            const int n=gt.GetN();
+            gt.SetPoint(n,ir+0.58,tr[ir].ratio);
+        } // endif
+    } // endfor
+    gg.Draw("P SAME"); gt.Draw("P SAME");
+    TLine one(0,1,CR_N,1); one.SetLineStyle(2); one.Draw();
+
+    TLegend leg(0.50,0.72,0.91,0.87);
+    leg.SetBorderSize(0); leg.SetFillStyle(0);
+    leg.AddEntry(&gg,"Current Gaussian 3#sigma method","p");
+    leg.AddEntry(&gt,"Full-shape template diagnostic","p");
+    leg.Draw();
+
+    TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.045);
+    tx.DrawLatex(0.12,0.93,"Pre-final integrated-efficiency method comparison");
+    cr.SaveAs((dir+"/efficiency_method_comparison.png").c_str());
+
+    // Append diagnostics to the single existing efficiency CSV.
+    std::ofstream csv(dir+"/summary.csv",std::ios::app);
+    csv << "\n# Full-shape residual-template diagnostic\n";
+    csv << "region,valid,signal_yield,background_yield,signal_yield_fiterr,"
+           "background_yield_fiterr,morph_shift_GeV,morph_extra_sigma_GeV,"
+           "chi2_ndf,eff_data_fullshape,eff_mc_fullshape,data_over_mc_fullshape,"
+           "gaussian_method_valid,data_over_mc_gaussian\n";
+    csv << std::setprecision(10);
+    for (int ir=0;ir<CR_N;ir++) {
+        const double c2n=(tr[ir].ndf>0)?tr[ir].chi2/tr[ir].ndf:0;
+        csv << CR_KEY[ir] << "," << tr[ir].valid << ","
+            << tr[ir].signal_yield << "," << tr[ir].background_yield << ","
+            << tr[ir].signal_err << "," << tr[ir].background_err << ","
+            << tr[ir].shift << "," << tr[ir].smear << "," << c2n << ","
+            << tr[ir].data_eff << "," << tr[ir].mc_eff << "," << tr[ir].ratio << ","
+            << gr[ir].valid << "," << gr[ir].ratio << "\n";
+    } // endfor
+    csv.close();
+}
+
 void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
                              const NormDerivation& Rfd,
                              const NormDerivation& Rft,
@@ -7043,6 +7386,8 @@ void run_concise_analysis(const std::string& out) {
 
     draw_pi0_summary(vv,norm_fd,norm_ft,out+"/3_pi0_fraction");
     draw_efficiency_summary(vv,norm_fd,norm_ft,out+"/4_efficiency");
+    draw_efficiency_prefinal_diagnostics(
+        vv,norm_fd,norm_ft,out+"/4_efficiency");
 
     std::cout << "\nConcise output written to:\n"
               << "  " << out << "/1_exclusivity/FD and FT/\n"
