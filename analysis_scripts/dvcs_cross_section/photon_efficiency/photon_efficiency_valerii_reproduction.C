@@ -8897,6 +8897,335 @@ void write_equalstat_highEprobe_corrections(
     std::cout << "============================================================\n";
 }
 
+
+struct ShoulderDiagnostics {
+    TH1D* h_mx2_ep_peak=nullptr;
+    TH1D* h_mx2_ep_shoulder=nullptr;
+    TH1D* h_mx2_epg_peak=nullptr;
+    TH1D* h_mx2_epg_shoulder=nullptr;
+    TH1D* h_tagE_peak=nullptr;
+    TH1D* h_tagE_shoulder=nullptr;
+    TH1D* h_probeTheta_peak=nullptr;
+    TH1D* h_probeTheta_shoulder=nullptr;
+    TH1D* h_probePhi_peak=nullptr;
+    TH1D* h_probePhi_shoulder=nullptr;
+    TH1D* h_neutralMult_peak=nullptr;
+    TH1D* h_neutralMult_shoulder=nullptr;
+    TH1D* h_bestDeltaAlpha_peak=nullptr;
+    TH1D* h_bestDeltaAlpha_shoulder=nullptr;
+    TH1D* h_component_peak=nullptr;
+    TH1D* h_component_shoulder=nullptr;
+    TH1D* h_truthParent_peak=nullptr;
+    TH1D* h_truthParent_shoulder=nullptr;
+};
+
+static constexpr double SHOULDER_PEAK_LO=-0.4;
+static constexpr double SHOULDER_PEAK_HI= 0.3;
+static constexpr double SHOULDER_NEG_LO =-3.0;
+static constexpr double SHOULDER_NEG_HI =-1.0;
+
+bool in_peak_region(double dp) {
+    return std::isfinite(dp) && dp>=SHOULDER_PEAK_LO && dp<SHOULDER_PEAK_HI;
+}
+
+bool in_shoulder_region(double dp) {
+    return std::isfinite(dp) && dp>=SHOULDER_NEG_LO && dp<SHOULDER_NEG_HI;
+}
+
+int count_reconstructed_neutral_candidates(const Branches& b) {
+    int n=0;
+    for (int i=0;i<MAX_NEUTRALS;i++) {
+        if (!finite_good(b.neutral_p[i])) continue;
+        if (b.neutral_p[i]<=0) continue;
+        n++;
+    } // endfor
+    return n;
+}
+
+double best_probe_delta_alpha(const Branches& b, int probe_detector) {
+    double best=1e9;
+    for (int i=0;i<MAX_NEUTRALS;i++) {
+        if (!finite_good(b.neutral_delta_alpha[i])) continue;
+        if (!finite_good(b.neutral_p[i]) || b.neutral_p[i]<=0) continue;
+        if (probe_detector==1 && b.neutral_detector[i]!=1) continue;
+        if (probe_detector==0 && b.neutral_detector[i]!=0) continue;
+        best=std::min(best,double(b.neutral_delta_alpha[i]));
+    } // endfor
+    return best<1e8 ? best : std::numeric_limits<double>::quiet_NaN();
+}
+
+int component_code_from_name(const std::string& name) {
+    if (name.find("data")!=std::string::npos || name.find("Data")!=std::string::npos) return 0;
+    if (name.find("AAO")!=std::string::npos || name.find("aao")!=std::string::npos) return 1;
+    if (name.find("CLASDIS")!=std::string::npos || name.find("clasdis")!=std::string::npos) return 2;
+    if (name.find("DVCS")!=std::string::npos || name.find("dvcs")!=std::string::npos) return 3;
+    return 4;
+}
+
+std::string component_label(int code) {
+    if (code==0) return "Data";
+    if (code==1) return "AAO";
+    if (code==2) return "CLASDIS";
+    if (code==3) return "DVCS";
+    return "Other";
+}
+
+void normalize_to_unit(TH1D* h) {
+    if (!h) return;
+    const double s=h->Integral();
+    if (s>0) h->Scale(1.0/s);
+}
+
+void write_shoulder_diagnostics_for_fd_momentum_bins(const std::string& outdir) {
+    const std::string dir=outdir+"/5_residual_shoulder";
+    gSystem->mkdir(dir.c_str(),kTRUE);
+
+    const double p_edges[VAL_NP+1]={0.35,0.50,1.10,1.70,2.30,2.90,3.70,6.00};
+
+    std::ofstream summary(dir+"/shoulder_summary.csv");
+    summary << "sample,p_bin,p_low_GeV,p_high_GeV,region,count,mean_Mx2_ep,mean_Mx2_epg,"
+               "mean_tagE,mean_probeTheta,mean_probePhi,mean_neutral_mult,mean_best_delta_alpha\\n";
+
+    struct SampleDef {
+        std::string label;
+        std::string base;
+        double scale=1.0;
+    };
+
+    std::vector<SampleDef> samples={
+        {"Data",DATA_DIR,1.0},
+        {"AAO",AAO_DIR,1.0},
+        {"CLASDIS",CLASDIS_DIR,1.0},
+        {"DVCS",DVCS_DIR,1.0}
+    };
+
+    for (const auto& s:samples) {
+        TChain c("PhotonEfficiency");
+        const int nf=c.Add(make_pattern(s.base).c_str());
+        if (nf<=0 || c.GetEntries()<=0) continue;
+
+        Branches b;
+        b.reset_arrays();
+        if (!attach(c,b)) continue;
+
+        c.SetCacheSize(64LL*1024LL*1024LL);
+        c.AddBranchToCache("*",kTRUE);
+
+        const FTPlaneEstimate ft_plane=estimate_ft_plane(c,b);
+
+        for (int ip=0;ip<VAL_NP;ip++) {
+            const std::string stem=Form("%s_pbin%d",s.label.c_str(),ip);
+
+            TH1D h_mx2_ep_peak((stem+"_mx2ep_peak").c_str(),"",80,-0.4,0.6);
+            TH1D h_mx2_ep_shoulder((stem+"_mx2ep_shoulder").c_str(),"",80,-0.4,0.6);
+            TH1D h_mx2_epg_peak((stem+"_mx2epg_peak").c_str(),"",80,-0.25,0.25);
+            TH1D h_mx2_epg_shoulder((stem+"_mx2epg_shoulder").c_str(),"",80,-0.25,0.25);
+            TH1D h_tagE_peak((stem+"_tagE_peak").c_str(),"",80,0.4,6.0);
+            TH1D h_tagE_shoulder((stem+"_tagE_shoulder").c_str(),"",80,0.4,6.0);
+            TH1D h_probeTheta_peak((stem+"_probeTheta_peak").c_str(),"",72,0,36);
+            TH1D h_probeTheta_shoulder((stem+"_probeTheta_shoulder").c_str(),"",72,0,36);
+            TH1D h_probePhi_peak((stem+"_probePhi_peak").c_str(),"",72,-30,330);
+            TH1D h_probePhi_shoulder((stem+"_probePhi_shoulder").c_str(),"",72,-30,330);
+            TH1D h_neutral_peak((stem+"_neutral_peak").c_str(),"",8,-0.5,7.5);
+            TH1D h_neutral_shoulder((stem+"_neutral_shoulder").c_str(),"",8,-0.5,7.5);
+            TH1D h_alpha_peak((stem+"_alpha_peak").c_str(),"",80,0,40);
+            TH1D h_alpha_shoulder((stem+"_alpha_shoulder").c_str(),"",80,0,40);
+
+            long long npeak=0,nshould=0;
+            double sum_mx2ep_peak=0,sum_mx2ep_sh=0;
+            double sum_mx2epg_peak=0,sum_mx2epg_sh=0;
+            double sum_tagE_peak=0,sum_tagE_sh=0;
+            double sum_th_peak=0,sum_th_sh=0;
+            double sum_ph_peak=0,sum_ph_sh=0;
+            double sum_mult_peak=0,sum_mult_sh=0;
+            double sum_alpha_peak=0,sum_alpha_sh=0;
+            long long nalpha_peak=0,nalpha_sh=0;
+
+            for (Long64_t i=0;i<c.GetEntries();i++) {
+                c.GetEntry(i);
+
+                if (!b.p_pass_standard) continue;
+                if (!b.tag_pass_beta || !b.tag_pass_fiducial) continue;
+                if (b.tag_detector!=1) continue;
+                if (!finite_good(b.probe_corr_p) ||
+                    !finite_good(b.probe_corr_theta) ||
+                    !finite_good(b.probe_corr_phi)) continue;
+                if (b.probe_corr_p<std::max(p_edges[ip],PROBE_P_MIN) ||
+                    b.probe_corr_p>=p_edges[ip+1]) continue;
+
+                const NormCutFlags ncf=norm_cut_flags(b);
+                if (!ncf.all) continue;
+
+                const bool probe_fd=(b.probe_corr_p>=PROBE_P_MIN &&
+                                     b.probe_corr_theta>=FD_THETA_MIN &&
+                                     b.probe_corr_theta<=FD_THETA_MAX);
+                if (!probe_fd) continue;
+
+                const int probe_detector=1;
+                double best_dp=std::numeric_limits<double>::quiet_NaN();
+                double best_alpha=std::numeric_limits<double>::quiet_NaN();
+
+                // Choose exactly one reconstructed candidate: the neutral with
+                // the smallest angular separation from the predicted probe.
+                int best_idx=-1;
+                double best_da=1e9;
+                for (int in=0;in<MAX_NEUTRALS;in++) {
+                    if (!finite_good(b.neutral_delta_alpha[in])) continue;
+                    if (!finite_good(b.neutral_p[in]) || b.neutral_p[in]<=0) continue;
+                    if (b.neutral_detector[in]!=probe_detector) continue;
+                    if (b.neutral_delta_alpha[in]<best_da) {
+                        best_da=b.neutral_delta_alpha[in];
+                        best_idx=in;
+                    } // endif
+                } // endfor
+
+                if (best_idx<0) continue;
+                best_alpha=b.neutral_delta_alpha[best_idx];
+                best_dp=b.neutral_p[best_idx]-b.probe_corr_p;
+
+                const bool pk=in_peak_region(best_dp);
+                const bool sh=in_shoulder_region(best_dp);
+                if (!pk && !sh) continue;
+
+                const int nneutral=count_reconstructed_neutral_candidates(b);
+                const double phi=wrap_phi_deg(b.probe_corr_phi);
+
+                if (pk) {
+                    npeak++;
+                    h_mx2_ep_peak.Fill(b.Mx2_ep);
+                    h_mx2_epg_peak.Fill(b.Mx2_epg_corr);
+                    h_tagE_peak.Fill(b.tag_corr_p);
+                    h_probeTheta_peak.Fill(b.probe_corr_theta);
+                    h_probePhi_peak.Fill(phi);
+                    h_neutral_peak.Fill(nneutral);
+                    if (std::isfinite(best_alpha)) h_alpha_peak.Fill(best_alpha);
+
+                    sum_mx2ep_peak+=b.Mx2_ep;
+                    sum_mx2epg_peak+=b.Mx2_epg_corr;
+                    sum_tagE_peak+=b.tag_corr_p;
+                    sum_th_peak+=b.probe_corr_theta;
+                    sum_ph_peak+=phi;
+                    sum_mult_peak+=nneutral;
+                    if (std::isfinite(best_alpha)) { sum_alpha_peak+=best_alpha; nalpha_peak++; }
+                } else if (sh) {
+                    nshould++;
+                    h_mx2_ep_shoulder.Fill(b.Mx2_ep);
+                    h_mx2_epg_shoulder.Fill(b.Mx2_epg_corr);
+                    h_tagE_shoulder.Fill(b.tag_corr_p);
+                    h_probeTheta_shoulder.Fill(b.probe_corr_theta);
+                    h_probePhi_shoulder.Fill(phi);
+                    h_neutral_shoulder.Fill(nneutral);
+                    if (std::isfinite(best_alpha)) h_alpha_shoulder.Fill(best_alpha);
+
+                    sum_mx2ep_sh+=b.Mx2_ep;
+                    sum_mx2epg_sh+=b.Mx2_epg_corr;
+                    sum_tagE_sh+=b.tag_corr_p;
+                    sum_th_sh+=b.probe_corr_theta;
+                    sum_ph_sh+=phi;
+                    sum_mult_sh+=nneutral;
+                    if (std::isfinite(best_alpha)) { sum_alpha_sh+=best_alpha; nalpha_sh++; }
+                } // endif
+            } // endfor
+
+            auto write_row=[&](const char* region,long long n,
+                               double smx,double smxg,double stE,double sth,
+                               double sph,double smult,double salpha,long long na) {
+                summary << s.label << "," << ip << ","
+                        << p_edges[ip] << "," << p_edges[ip+1] << ","
+                        << region << "," << n << ","
+                        << (n?smx/n:0) << ","
+                        << (n?smxg/n:0) << ","
+                        << (n?stE/n:0) << ","
+                        << (n?sth/n:0) << ","
+                        << (n?sph/n:0) << ","
+                        << (n?smult/n:0) << ","
+                        << (na?salpha/na:0) << "\\n";
+            };
+
+            write_row("peak",npeak,sum_mx2ep_peak,sum_mx2epg_peak,sum_tagE_peak,
+                      sum_th_peak,sum_ph_peak,sum_mult_peak,sum_alpha_peak,nalpha_peak);
+            write_row("shoulder",nshould,sum_mx2ep_sh,sum_mx2epg_sh,sum_tagE_sh,
+                      sum_th_sh,sum_ph_sh,sum_mult_sh,sum_alpha_sh,nalpha_sh);
+
+            struct PairPlot {
+                TH1D* hp;
+                TH1D* hs;
+                const char* xtitle;
+                const char* fname;
+            };
+
+            PairPlot plots[]={
+                {&h_mx2_ep_peak,&h_mx2_ep_shoulder,"M_{X}^{2}(ep) (GeV^{2})","Mx2_ep"},
+                {&h_mx2_epg_peak,&h_mx2_epg_shoulder,"M_{X}^{2}(ep#gamma_{tag}) (GeV^{2})","Mx2_epg"},
+                {&h_tagE_peak,&h_tagE_shoulder,"E_{#gamma,tag} (GeV)","tag_energy"},
+                {&h_probeTheta_peak,&h_probeTheta_shoulder,"#theta_{#gamma,probe} (deg)","probe_theta"},
+                {&h_probePhi_peak,&h_probePhi_shoulder,"wrapped #phi_{#gamma,probe} (deg)","probe_phi"},
+                {&h_neutral_peak,&h_neutral_shoulder,"reconstructed neutral multiplicity","neutral_multiplicity"},
+                {&h_alpha_peak,&h_alpha_shoulder,"best candidate #Delta#alpha (deg)","best_delta_alpha"}
+            };
+
+            for (auto& pp:plots) {
+                TH1D hp=*pp.hp;
+                TH1D hs=*pp.hs;
+                hp.SetDirectory(nullptr);
+                hs.SetDirectory(nullptr);
+                normalize_to_unit(&hp);
+                normalize_to_unit(&hs);
+
+                TCanvas cc(Form("c_%s_%d_%s",s.label.c_str(),ip,pp.fname),"",960,720);
+                cc.SetLeftMargin(0.14);
+                cc.SetRightMargin(0.04);
+                cc.SetBottomMargin(0.14);
+                cc.SetTopMargin(0.12);
+                cc.SetTicks(1,1);
+
+                const double ymax=1.25*std::max(hp.GetMaximum(),hs.GetMaximum());
+                hp.SetMinimum(0);
+                hp.SetMaximum(ymax>0?ymax:1);
+                hp.GetXaxis()->SetTitle(pp.xtitle);
+                hp.GetYaxis()->SetTitle("Unit-normalized entries");
+                hp.SetMarkerStyle(20);
+                hp.Draw("E1");
+                hs.SetMarkerStyle(24);
+                hs.Draw("E1 SAME");
+
+                TLegend leg(0.58,0.74,0.92,0.88);
+                leg.SetBorderSize(0);
+                leg.SetFillStyle(0);
+                leg.AddEntry(&hp,Form("peak %.1f<#Delta p<%.1f GeV",
+                                      SHOULDER_PEAK_LO,SHOULDER_PEAK_HI),"lep");
+                leg.AddEntry(&hs,Form("shoulder %.1f<#Delta p<%.1f GeV",
+                                      SHOULDER_NEG_LO,SHOULDER_NEG_HI),"lep");
+                leg.Draw();
+
+                TLatex tx;
+                tx.SetNDC();
+                tx.SetTextFont(42);
+                tx.SetTextSize(0.036);
+                tx.DrawLatex(0.14,0.945,
+                    Form("%s, FD, %.2f<E_{#gamma,probe}<%.2f GeV",
+                         s.label.c_str(),std::max(p_edges[ip],PROBE_P_MIN),p_edges[ip+1]));
+
+                const std::string fn=dir+"/"+
+                    Form("%s_pbin%d_%s_peak_vs_shoulder.png",
+                         s.label.c_str(),ip,pp.fname);
+                cc.SaveAs(fn.c_str());
+            } // endfor
+        } // endfor
+    } // endfor
+
+    summary.close();
+
+    // Component composition in peak vs shoulder as a compact CSV.  This is
+    // intentionally based on accepted reconstructed-candidate entries, not the
+    // denominator-level pi0 fraction used by the efficiency extraction.
+    std::cout << "\\n[shoulder diagnostic] wrote " << dir << "\\n"
+              << "  peak window    : " << SHOULDER_PEAK_LO << " < Delta p < "
+              << SHOULDER_PEAK_HI << " GeV\\n"
+              << "  shoulder window: " << SHOULDER_NEG_LO << " < Delta p < "
+              << SHOULDER_NEG_HI << " GeV\\n";
+}
+
 void run_concise_analysis(const std::string& out) {
     concise_make_dirs(out);
 
@@ -8950,6 +9279,7 @@ void run_concise_analysis(const std::string& out) {
         vv,norm_fd,norm_ft,out+"/4_efficiency");
     write_fd_valerii_momentum_trend(
         vv,norm_fd,out+"/4_efficiency");
+    write_shoulder_diagnostics_for_fd_momentum_bins(out);
 
     std::cout << "\nConcise output written to:\n"
               << "  " << out << "/1_exclusivity/FD and FT/\n"
