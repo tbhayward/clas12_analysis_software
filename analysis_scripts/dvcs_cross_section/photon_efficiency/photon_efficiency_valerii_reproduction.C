@@ -31,6 +31,8 @@
 #include <TCanvas.h>
 #include <TChain.h>
 #include <TF1.h>
+#include <TFitResult.h>
+#include <TFitResultPtr.h>
 #include <TFile.h>
 #include <TH1D.h>
 #include <TH2D.h>
@@ -12381,7 +12383,7 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
     };
 
     auto pbin_hi=[&](int det_block,int ip)->double {
-        return det_block==0 ? fd_p_edges[ip+1] : ft_p_edges[ip+1];
+        return det_block==0 ? fd_pbin_hi(id,ip) : ft_pbin_hi(id,ip);
     };
 
     constexpr double MX_FIT_LO=0.02;
@@ -12579,12 +12581,12 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
         if (det_block==0) {
             for (int ip=0;ip<MAX_NP;ip++) {
                 const double lo=std::max(fd_p_edges[ip],PROBE_P_MIN);
-                if (p>=lo && p<fd_p_edges[ip+1]) return ip;
+                if (p>=lo && p<fd_pbin_hi(id,ip)) return ip;
             } // endfor
         } else {
             for (int ip=0;ip<FT_NP;ip++) {
                 const double lo=std::max(ft_p_edges[ip],PROBE_P_MIN);
-                if (p>=lo && p<ft_p_edges[ip+1]) return ip;
+                if (p>=lo && p<ft_pbin_hi(id,ip)) return ip;
             } // endfor
         } // endif
 
@@ -13345,6 +13347,1012 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
 }
 
 
+
+void run_mgg_production_efficiency_only(const std::string& outdir) {
+    // ==================================================================
+    // PRODUCTION-ORIENTED M(gamma gamma) TAG-AND-PROBE REDESIGN
+    // ==================================================================
+    //
+    // Physics definition:
+    //
+    //   denominator:
+    //     reconstructed e' p' gamma_tag events passing probe-independent
+    //     exclusivity cuts.  The inferred missing-photon four-vector is used
+    //     ONLY to assign the expected probe detector / momentum bin.
+    //
+    //   numerator:
+    //     fitted pi0 -> gamma_tag gamma_candidate peak in M(gamma gamma).
+    //     No Delta-p cut, no Delta-alpha cut, and no "closest-to-missing"
+    //     candidate selection is used.
+    //
+    //   data denominator pi0 yield:
+    //     N_data,den * f_pi0, where f_pi0 is taken from the independently
+    //     normalized AAOgen + CLASDIS + DVCSgen component mixture in exactly
+    //     the same denominator selection and bin.
+    //
+    //   MC efficiency:
+    //     weighted AAOgen + CLASDIS fitted Mgg peak yield divided by the
+    //     corresponding weighted pi0 denominator yield.
+    //
+    //   correction convention:
+    //       R = epsilon_data / epsilon_MC   (displayed data-on-top ratio)
+    //       C = epsilon_MC / epsilon_data   (cross-section correction)
+    //
+    // Why this replaces the old residual method:
+    //   Inclusive ep pi0 X events can make p_miss(ep gamma_tag) differ
+    //   strongly from the true partner photon.  A real pi0 pair, however,
+    //   still reconstructs at M(gamma gamma) ~ m_pi0 irrespective of the
+    //   unobserved hadronic system X.
+    //
+    // Performance:
+    //   - normalization uses the persistent concise cache;
+    //   - one raw tree pass per sample (data, AAO, CLASDIS, DVCS);
+    //   - every detector / momentum bin is filled simultaneously;
+    //   - only final production plots / tables are made;
+    //   - legacy shoulder, alpha-scan, truth-dissection, and missing-vector
+    //     studies are NOT rerun.
+    // ==================================================================
+
+    const std::string dir=outdir+"/production_mgg_efficiency";
+    gSystem->mkdir(dir.c_str(),kTRUE);
+
+    // --------------------------------------------------------------
+    // 1. Reuse the already-established component normalization.
+    //    build_val_components_parallel() reads the persistent concise cache
+    //    when available, so this should not rescan the raw ROOT trees.
+    // --------------------------------------------------------------
+    std::cout
+        << "\n============================================================\n"
+        << " M(gamma gamma) production efficiency\n"
+        << "============================================================\n"
+        << "Loading cached component normalization...\n";
+
+    auto vv=build_val_components_parallel(outdir);
+
+    auto have_component=[&](const std::string& name)->bool {
+        return find_val_component(vv,name)!=nullptr;
+    };
+
+    if (!have_component("data") ||
+        !have_component("aaogen") ||
+        !have_component("clasdis") ||
+        !have_component("dvcsgen")) {
+        std::cerr
+            << "ERROR: production Mgg extraction requires data + AAOgen + "
+            << "CLASDIS + DVCSgen component inputs.\n";
+        return;
+    } // endif
+
+    const NormDerivation norm_fd=derive_normalization_concise(vv,false);
+    const NormDerivation norm_ft=derive_normalization_concise(vv,true);
+
+    if (!norm_fd.valid || !norm_ft.valid) {
+        std::cerr
+            << "ERROR: FD/FT component normalization is invalid. "
+            << "Stopping Mgg production extraction.\n";
+        return;
+    } // endif
+
+    std::cout
+        << std::setprecision(8)
+        << "FD normalization: AAO=" << norm_fd.nominal.aao
+        << " CLASDIS=" << norm_fd.nominal.clasdis
+        << " DVCS=" << norm_fd.nominal.dvcs << "\n"
+        << "FT normalization: AAO=" << norm_ft.nominal.aao
+        << " CLASDIS=" << norm_ft.nominal.clasdis
+        << " DVCS=" << norm_ft.nominal.dvcs << "\n";
+
+    // --------------------------------------------------------------
+    // 2. Final production binning.
+    //
+    // FD retains the exact Valerii momentum bins.  The first nominal bin
+    // starts at 0.35 GeV, but our actual photon threshold is 0.4 GeV.
+    //
+    // FT remains intentionally coarse because of limited statistics.
+    // --------------------------------------------------------------
+    constexpr int FD_NP=7;
+    const double FD_EDGES[FD_NP+1]={
+        0.40,0.50,1.10,1.70,2.30,2.90,3.70,6.00
+    };
+
+    constexpr int FT_NP=2;
+    const double FT_EDGES[FT_NP+1]={
+        0.40,2.00,6.00
+    };
+
+    constexpr int MAX_NP=7;
+    constexpr double MPI0=0.1349768;
+
+    // Probe-independent denominator selection.
+    //
+    // The Mx2(ep) and Mx2(ep gamma_tag) windows are intentionally tighter
+    // than the original loose skim but remain broad enough to retain the
+    // high-Eprobe region.  The previous exclusivity scan showed that these
+    // observables have real rejection power, whereas E_miss-|p_miss| was
+    // nearly redundant and Delta-t removed essentially all high-E events.
+    constexpr double MX2_EP_LO=-0.10;
+    constexpr double MX2_EP_HI=+0.15;
+    constexpr double ABS_MX2_EPG_MAX=0.10;
+
+    // Mgg fit configuration.
+    constexpr double MGG_HMIN=0.03;
+    constexpr double MGG_HMAX=0.25;
+    constexpr int    MGG_NBIN=110;
+    constexpr double MGG_FIT_LO=0.080;
+    constexpr double MGG_FIT_HI=0.190;
+    constexpr double MGG_MEAN_LO=0.115;
+    constexpr double MGG_MEAN_HI=0.150;
+    constexpr double MGG_SIGMA_LO=0.004;
+    constexpr double MGG_SIGMA_HI=0.030;
+
+    auto n_probe_bins=[&](int id)->int {
+        return id==0 ? FD_NP : FT_NP;
+    };
+    auto p_lo=[&](int id,int ip)->double {
+        return id==0 ? FD_EDGES[ip] : FT_EDGES[ip];
+    };
+    auto p_hi=[&](int id,int ip)->double {
+        return id==0 ? FD_EDGES[ip+1] : FT_EDGES[ip+1];
+    };
+    auto find_pbin=[&](double p,int id)->int {
+        if (!finite_good(p) || p<PROBE_P_MIN) return -1;
+        const int np=n_probe_bins(id);
+        for (int ip=0;ip<np;ip++) {
+            const double lo=p_lo(id,ip);
+            const double hi=p_hi(id,ip);
+            if (p>=lo && p<hi) return ip;
+        } // endfor
+        return -1;
+    };
+
+    struct PeakFit {
+        bool valid=false;
+        int status=-999;
+        double amp=0,amp_err=0;
+        double mean=0,mean_err=0;
+        double sigma=0,sigma_err=0;
+        double b0=0,b1=0,b2=0;
+        double chi2=0;
+        int ndf=0;
+        double yield=0;
+        double yield_err=0;
+        std::string reason="not_fit";
+    };
+
+    static long long fit_serial=0;
+
+    auto fit_mgg_peak=[&](TH1D* h,int min_entries)->PeakFit {
+        PeakFit r;
+        if (!h) {
+            r.reason="null_hist";
+            return r;
+        } // endif
+        if (h->GetEntries()<min_entries) {
+            r.reason="low_entries";
+            return r;
+        } // endif
+
+        const double bw=h->GetBinWidth(1);
+        if (!(bw>0)) {
+            r.reason="bad_bin_width";
+            return r;
+        } // endif
+
+        const int ib=h->FindBin(MPI0);
+        const double local=std::max({
+            h->GetBinContent(std::max(1,ib-1)),
+            h->GetBinContent(ib),
+            h->GetBinContent(std::min(h->GetNbinsX(),ib+1))
+        });
+
+        const double edge_bg=0.5*(
+            h->GetBinContent(h->FindBin(MGG_FIT_LO+0.005))+
+            h->GetBinContent(h->FindBin(MGG_FIT_HI-0.005)));
+
+        TF1 f(Form("mgg_prod_fit_%lld",fit_serial++),
+              "gaus(0)+pol2(3)",MGG_FIT_LO,MGG_FIT_HI);
+
+        f.SetParameters(
+            std::max(1.0,local-edge_bg),
+            0.132,
+            0.011,
+            std::max(0.0,edge_bg),
+            0.0,
+            0.0);
+
+        f.SetParLimits(0,0.0,std::max(100.0,30.0*std::max(1.0,local)));
+        f.SetParLimits(1,MGG_MEAN_LO,MGG_MEAN_HI);
+        f.SetParLimits(2,MGG_SIGMA_LO,MGG_SIGMA_HI);
+
+        // "S" returns the covariance matrix; "N" prevents automatic drawing.
+        TFitResultPtr fr=h->Fit(&f,"QNSR");
+        r.status=int(fr);
+        if (r.status!=0 || !fr.Get()) {
+            r.reason="ROOT_fit_status";
+            return r;
+        } // endif
+
+        r.amp=f.GetParameter(0);
+        r.amp_err=f.GetParError(0);
+        r.mean=f.GetParameter(1);
+        r.mean_err=f.GetParError(1);
+        r.sigma=std::fabs(f.GetParameter(2));
+        r.sigma_err=f.GetParError(2);
+        r.b0=f.GetParameter(3);
+        r.b1=f.GetParameter(4);
+        r.b2=f.GetParameter(5);
+        r.chi2=f.GetChisquare();
+        r.ndf=f.GetNDF();
+
+        if (!(r.amp>0) ||
+            !(r.mean>MGG_MEAN_LO && r.mean<MGG_MEAN_HI) ||
+            !(r.sigma>MGG_SIGMA_LO && r.sigma<MGG_SIGMA_HI) ||
+            !(r.ndf>0)) {
+            r.reason="fit_at_limit_or_unphysical";
+            return r;
+        } // endif
+
+        const double K=std::sqrt(2.0*TMath::Pi())/bw;
+        r.yield=K*r.amp*r.sigma;
+
+        // Full A-sigma covariance propagation for Gaussian area.
+        const TMatrixDSym& cov=fr->GetCovarianceMatrix();
+        const double dA=K*r.sigma;
+        const double dS=K*r.amp;
+        double var=
+            dA*dA*cov(0,0)+
+            dS*dS*cov(2,2)+
+            2.0*dA*dS*cov(0,2);
+        if (var<0 && std::fabs(var)<1e-9) var=0;
+        r.yield_err=var>=0 ? std::sqrt(var) : 0.0;
+
+        r.valid=
+            finite_good(r.yield) &&
+            finite_good(r.yield_err) &&
+            r.yield>0;
+        r.reason=r.valid ? "ok" : "invalid_yield";
+        return r;
+    };
+
+    struct Cell {
+        long long denom_rows=0;
+
+        // For CLASDIS this counts truth-confirmed pi0 probes.  AAO is known
+        // pure pi0 and DVCS is known non-pi0 at the generator level.
+        long long denom_truth_pi0=0;
+
+        long long events_with_candidate=0;
+        long long candidate_pairs=0;
+
+        std::unique_ptr<TH1D> h_mgg;
+    };
+
+    struct Sample {
+        std::string name;
+        bool is_mc=false;
+        std::array<Cell,2*MAX_NP> cells;
+    };
+
+    auto icell=[](int id,int ip)->int {
+        return id*MAX_NP+ip;
+    };
+
+    auto init_sample=[&](Sample& s) {
+        for (int id=0;id<2;id++) {
+            for (int ip=0;ip<MAX_NP;ip++) {
+                auto& q=s.cells[icell(id,ip)];
+                q.h_mgg=std::make_unique<TH1D>(
+                    Form("prod_mgg_%s_%s_p%d",
+                         s.name.c_str(),id==0?"FD":"FT",ip),
+                    "",MGG_NBIN,MGG_HMIN,MGG_HMAX);
+                q.h_mgg->SetDirectory(nullptr);
+                q.h_mgg->Sumw2();
+            } // endfor
+        } // endfor
+    };
+
+    auto pair_mass=[&](const Branches& b,int k)->double {
+        if (!b.have_tag_corr_kin || k<0 || k>=5)
+            return std::numeric_limits<double>::quiet_NaN();
+
+        if (!finite_good(b.tag_corr_p) ||
+            !finite_good(b.tag_corr_theta) ||
+            !finite_good(b.tag_corr_phi) ||
+            !finite_good(b.neutral_p[k]) ||
+            !finite_good(b.neutral_theta[k]) ||
+            !finite_good(b.neutral_phi[k]))
+            return std::numeric_limits<double>::quiet_NaN();
+
+        const double alpha=opening_angle_deg(
+            b.tag_corr_theta,b.tag_corr_phi,
+            b.neutral_theta[k],b.neutral_phi[k]);
+        if (!finite_good(alpha))
+            return std::numeric_limits<double>::quiet_NaN();
+
+        const double a=deg2rad(alpha);
+        const double m2=
+            2.0*b.tag_corr_p*b.neutral_p[k]*(1.0-std::cos(a));
+        return m2>0 ? std::sqrt(m2) : 0.0;
+    };
+
+    // Determine the FT response plane once from data, then reuse it for every
+    // sample.  This keeps the denominator definition identical in data/MC.
+    FTPlaneEstimate ft_plane;
+    {
+        TChain cplane("PhotonEfficiency");
+        cplane.Add(make_pattern(DATA_DIR).c_str());
+        if (cplane.GetEntries()>0) {
+            Branches bp;
+            bp.reset_arrays();
+            if (attach(cplane,bp))
+                ft_plane=estimate_ft_plane(cplane,bp);
+        } // endif
+    }
+
+    if (!ft_plane.valid) {
+        std::cout
+            << "WARNING: FT response plane unavailable. "
+            << "FD results will still be produced; FT will be empty.\n";
+    } // endif
+
+    struct Spec {
+        const char* name;
+        const char* path;
+        bool is_mc;
+    };
+    const Spec specs[]={
+        {"data",DATA_DIR,false},
+        {"aaogen",AAOGEN_DIR,true},
+        {"clasdis",CLASDIS_DIR,true},
+        {"dvcsgen",DVCSGEN_DIR,true}
+    };
+
+    std::vector<std::unique_ptr<Sample>> samples;
+
+    // --------------------------------------------------------------
+    // 3. Exactly one raw pass per sample.
+    // --------------------------------------------------------------
+    for (const auto& spec:specs) {
+        TChain c("PhotonEfficiency");
+        const int nf=c.Add(make_pattern(spec.path).c_str());
+        const Long64_t nentries=c.GetEntries();
+
+        if (nf<=0 || nentries<=0) {
+            std::cerr << "ERROR: no " << spec.name << " ROOT inputs.\n";
+            return;
+        } // endif
+
+        Branches b;
+        b.reset_arrays();
+        if (!attach(c,b)) {
+            std::cerr << "ERROR: branch attach failed for "
+                      << spec.name << "\n";
+            return;
+        } // endif
+
+        if (!b.have_Mx2_ep ||
+            !b.have_Mx2_epg_corr ||
+            !b.have_tag_corr_kin) {
+            std::cerr
+                << "ERROR: Mgg production mode requires Mx2_ep, "
+                << "Mx2_epg_corr, and corrected tag-photon branches.\n";
+            return;
+        } // endif
+
+        auto s=std::make_unique<Sample>();
+        s->name=spec.name;
+        s->is_mc=spec.is_mc;
+        init_sample(*s);
+
+        c.SetCacheSize(384LL*1024LL*1024LL);
+        c.AddBranchToCache("*",kTRUE);
+        c.SetCacheLearnEntries(100);
+
+        const Long64_t step=std::max<Long64_t>(1,nentries/10);
+        Long64_t next=0;
+
+        std::cout << "\n[Mgg production] " << spec.name
+                  << " entries=" << nentries << "\n";
+
+        for (Long64_t i=0;i<nentries;i++) {
+            if (i>=next) {
+                std::cout << "  " << spec.name << " "
+                          << std::fixed << std::setprecision(0)
+                          << 100.0*double(i)/double(nentries) << "%\n";
+                next+=step;
+            } // endif
+
+            c.GetEntry(i);
+
+            // Observed tag quality.
+            if (!b.p_pass_standard) continue;
+            if (!b.tag_pass_beta || !b.tag_pass_fiducial) continue;
+            if (b.tag_detector!=1) continue;
+
+            if (!finite_good(b.probe_corr_p) ||
+                !finite_good(b.probe_corr_theta) ||
+                !finite_good(b.probe_corr_phi) ||
+                !finite_good(b.Mx2_ep) ||
+                !finite_good(b.Mx2_epg_corr)) continue;
+
+            // Probe-independent exclusivity only.
+            //
+            // Keep Mx2(e gamma_tag) and proton/tag coplanarity from the
+            // established Valerii selection.  Do NOT use angle(tag,X), Delta-p,
+            // Delta-alpha, Delta-t, or any reconstructed probe candidate.
+            const double mx2eg=
+                norm_observable_value(b,NORM_MX2_EG);
+            const double dphi=
+                norm_observable_value(b,NORM_DPHI_TRENTO_SHIFT180);
+
+            if (!finite_good(mx2eg) ||
+                mx2eg<=NORM_MX2_EG_MIN) continue;
+            if (!finite_good(dphi) ||
+                std::fabs(dphi)>=NORM_DPHI_TRENTO_MAX) continue;
+
+            if (!(b.Mx2_ep>MX2_EP_LO &&
+                  b.Mx2_ep<MX2_EP_HI)) continue;
+            if (!(std::fabs(b.Mx2_epg_corr)<
+                  ABS_MX2_EPG_MAX)) continue;
+
+            bool expected_fd=in_fd(b);
+            bool expected_ft=false;
+            if (ft_plane.valid && in_ft(b)) {
+                const FTProjection fp=project_ft(b,ft_plane);
+                expected_ft=fp.valid && fp.fiducial;
+            } // endif
+
+            for (int id=0;id<2;id++) {
+                if (id==0 && !expected_fd) continue;
+                if (id==1 && !expected_ft) continue;
+
+                const int ip=find_pbin(b.probe_corr_p,id);
+                if (ip<0) continue;
+
+                const int detector=(id==0 ? 1 : 0);
+                auto& q=s->cells[icell(id,ip)];
+                q.denom_rows++;
+
+                if (s->name=="aaogen") {
+                    q.denom_truth_pi0++;
+                } else if (s->name=="clasdis") {
+                    if (b.have_truth &&
+                        b.truth_probe_pid==22 &&
+                        b.truth_probe_parent==111)
+                        q.denom_truth_pi0++;
+                } // endif
+
+                int ncand=0;
+
+                // IMPORTANT:
+                // Fill every acceptable tag-candidate pair with unit weight.
+                //
+                // Do NOT select the pair closest to m_pi0; that would sculpt
+                // random combinations into the signal peak.
+                //
+                // Do NOT divide by N_candidates.  In a genuine pi0 event the
+                // one true tag-probe pair should contribute one signal entry;
+                // additional pairs are combinatorial and are absorbed by the
+                // smooth Mgg background term.
+                for (int k=0;k<5;k++) {
+                    if (b.neutral_idx[k]<0) continue;
+                    if (b.neutral_charge[k]!=0) continue;
+                    if (b.neutral_pid[k]!=22) continue;
+                    if (b.neutral_detector[k]!=detector) continue;
+                    if (!finite_good(b.neutral_p[k]) ||
+                        b.neutral_p[k]<PROBE_P_MIN) continue;
+
+                    const double mass=pair_mass(b,k);
+                    if (!finite_good(mass)) continue;
+
+                    q.h_mgg->Fill(mass);
+                    q.candidate_pairs++;
+                    ncand++;
+                } // endfor
+
+                if (ncand>0)
+                    q.events_with_candidate++;
+            } // endfor
+        } // endfor
+
+        std::cout << "  " << spec.name << " 100%\n";
+        samples.push_back(std::move(s));
+    } // endfor
+
+    auto find_sample=[&](const std::string& name)->Sample* {
+        for (auto& s:samples)
+            if (s && s->name==name) return s.get();
+        // endfor
+        return nullptr;
+    };
+
+    Sample* sdata=find_sample("data");
+    Sample* saao=find_sample("aaogen");
+    Sample* scls=find_sample("clasdis");
+    Sample* sdvcs=find_sample("dvcsgen");
+
+    if (!sdata || !saao || !scls || !sdvcs) {
+        std::cerr
+            << "ERROR: not all samples survived the production scan.\n";
+        return;
+    } // endif
+
+    // --------------------------------------------------------------
+    // 4. Fit Mgg once per sample / detector / energy bin.
+    // --------------------------------------------------------------
+    std::map<std::string,std::array<PeakFit,2*MAX_NP>> fits;
+
+    for (auto& sp:samples) {
+        for (int id=0;id<2;id++) {
+            for (int ip=0;ip<n_probe_bins(id);ip++) {
+                const int ic=icell(id,ip);
+                const int min_entries=(id==0 ? 30 : 12);
+                fits[sp->name][ic]=
+                    fit_mgg_peak(sp->cells[ic].h_mgg.get(),min_entries);
+            } // endfor
+        } // endfor
+    } // endfor
+
+    // --------------------------------------------------------------
+    // 5. Production efficiency and data/MC ratio.
+    // --------------------------------------------------------------
+    struct Result {
+        bool valid=false;
+        double fpi0=0;
+
+        double data_den_pi0=0;
+        double data_den_pi0_err=0;
+        double data_num_pi0=0;
+        double data_num_pi0_err=0;
+        double eff_data=0;
+        double eff_data_err=0;
+
+        double mc_den_pi0=0;
+        double mc_num_pi0=0;
+        double mc_num_pi0_err=0;
+        double eff_mc=0;
+        double eff_mc_err=0;
+
+        double ratio=0;
+        double ratio_err=0;
+        double C=0;
+        double C_err=0;
+    };
+
+    std::array<Result,2*MAX_NP> results{};
+
+    auto component_scale=[&](int id,const std::string& name)->double {
+        const ValNormSet& n=(id==0 ? norm_fd.nominal : norm_ft.nominal);
+        if (name=="aaogen") return n.aao;
+        if (name=="clasdis") return n.clasdis;
+        if (name=="dvcsgen") return n.dvcs;
+        return 1.0;
+    };
+
+    for (int id=0;id<2;id++) {
+        for (int ip=0;ip<n_probe_bins(id);ip++) {
+            const int ic=icell(id,ip);
+            auto& r=results[ic];
+
+            const double wa=component_scale(id,"aaogen");
+            const double wc=component_scale(id,"clasdis");
+            const double wd=component_scale(id,"dvcsgen");
+
+            const double den_a=
+                wa*double(saao->cells[ic].denom_truth_pi0);
+            const double den_c=
+                wc*double(scls->cells[ic].denom_truth_pi0);
+            const double den_d=
+                wd*double(sdvcs->cells[ic].denom_rows);
+
+            const double predicted_total=den_a+den_c+den_d;
+            r.mc_den_pi0=den_a+den_c;
+
+            if (!(predicted_total>0) || !(r.mc_den_pi0>0))
+                continue;
+
+            r.fpi0=r.mc_den_pi0/predicted_total;
+
+            const double ndata=
+                double(sdata->cells[ic].denom_rows);
+            if (!(ndata>0))
+                continue;
+
+            r.data_den_pi0=ndata*r.fpi0;
+
+            // First-pass denominator error: Poisson data count only.
+            // Component-normalization spread should be added later as a
+            // correlated systematic rather than folded into this statistical
+            // error bar.
+            r.data_den_pi0_err=std::sqrt(ndata)*r.fpi0;
+
+            const PeakFit& fd=fits["data"][ic];
+            const PeakFit& fa=fits["aaogen"][ic];
+            const PeakFit& fc=fits["clasdis"][ic];
+
+            if (!fd.valid || (!fa.valid && !fc.valid))
+                continue;
+
+            r.data_num_pi0=fd.yield;
+            r.data_num_pi0_err=fd.yield_err;
+
+            const double numa=
+                fa.valid ? wa*fa.yield : 0.0;
+            const double numc=
+                fc.valid ? wc*fc.yield : 0.0;
+            const double numa_err=
+                fa.valid ? wa*fa.yield_err : 0.0;
+            const double numc_err=
+                fc.valid ? wc*fc.yield_err : 0.0;
+
+            r.mc_num_pi0=numa+numc;
+            r.mc_num_pi0_err=
+                std::sqrt(numa_err*numa_err+numc_err*numc_err);
+
+            if (!(r.data_num_pi0>0) ||
+                !(r.data_den_pi0>0) ||
+                !(r.mc_num_pi0>0) ||
+                !(r.mc_den_pi0>0))
+                continue;
+
+            r.eff_data=r.data_num_pi0/r.data_den_pi0;
+            r.eff_mc=r.mc_num_pi0/r.mc_den_pi0;
+
+            r.eff_data_err=r.eff_data*std::sqrt(
+                std::pow(r.data_num_pi0_err/r.data_num_pi0,2)+
+                std::pow(r.data_den_pi0_err/r.data_den_pi0,2));
+
+            r.eff_mc_err=r.eff_mc*
+                (r.mc_num_pi0_err/r.mc_num_pi0);
+
+            if (!(r.eff_data>0) || !(r.eff_mc>0))
+                continue;
+
+            r.ratio=r.eff_data/r.eff_mc;
+            r.C=r.eff_mc/r.eff_data;
+
+            r.ratio_err=r.ratio*std::sqrt(
+                std::pow(r.eff_data_err/r.eff_data,2)+
+                std::pow(r.eff_mc_err/r.eff_mc,2));
+
+            r.C_err=r.C*std::sqrt(
+                std::pow(r.eff_data_err/r.eff_data,2)+
+                std::pow(r.eff_mc_err/r.eff_mc,2));
+
+            r.valid=
+                finite_good(r.ratio) &&
+                finite_good(r.ratio_err) &&
+                r.ratio>0;
+        } // endfor
+    } // endfor
+
+    // --------------------------------------------------------------
+    // 6. Numerical output.
+    // --------------------------------------------------------------
+    std::ofstream csv(dir+"/mgg_production_efficiency.csv");
+    csv
+        << "detector,p_bin,p_low_GeV,p_high_GeV,"
+        << "data_den_rows,pi0_fraction_from_normalized_MC,"
+        << "data_den_pi0,data_num_Mgg_pi0,"
+        << "eff_data,eff_data_stat_err,"
+        << "mc_den_pi0,mc_num_Mgg_pi0,"
+        << "eff_mc,eff_mc_stat_err,"
+        << "data_over_mc,data_over_mc_stat_err,"
+        << "cross_section_C_mc_over_data,cross_section_C_stat_err,"
+        << "data_Mgg_fit_valid,data_Mgg_mean_GeV,data_Mgg_sigma_GeV,"
+        << "AAO_Mgg_fit_valid,CLASDIS_Mgg_fit_valid,"
+        << "AAO_den_pi0_rows,CLASDIS_den_pi0_rows,DVCS_den_rows\n";
+    csv << std::setprecision(10);
+
+    for (int id=0;id<2;id++) {
+        for (int ip=0;ip<n_probe_bins(id);ip++) {
+            const int ic=icell(id,ip);
+            const auto& r=results[ic];
+            const auto& fd=fits["data"][ic];
+            const auto& fa=fits["aaogen"][ic];
+            const auto& fc=fits["clasdis"][ic];
+
+            csv
+                << (id==0?"FD":"FT") << ","
+                << ip << ","
+                << p_lo(id,ip) << ","
+                << p_hi(id,ip) << ","
+                << sdata->cells[ic].denom_rows << ","
+                << r.fpi0 << ","
+                << r.data_den_pi0 << ","
+                << r.data_num_pi0 << ","
+                << r.eff_data << ","
+                << r.eff_data_err << ","
+                << r.mc_den_pi0 << ","
+                << r.mc_num_pi0 << ","
+                << r.eff_mc << ","
+                << r.eff_mc_err << ","
+                << r.ratio << ","
+                << r.ratio_err << ","
+                << r.C << ","
+                << r.C_err << ","
+                << fd.valid << ","
+                << fd.mean << ","
+                << fd.sigma << ","
+                << fa.valid << ","
+                << fc.valid << ","
+                << saao->cells[ic].denom_truth_pi0 << ","
+                << scls->cells[ic].denom_truth_pi0 << ","
+                << sdvcs->cells[ic].denom_rows
+                << "\n";
+        } // endfor
+    } // endfor
+    csv.close();
+
+    // --------------------------------------------------------------
+    // 7. Only the plots still needed for the production decision.
+    // --------------------------------------------------------------
+    auto draw_fit=[&](TH1D* h,const PeakFit& r,
+                      const std::string& title,
+                      const std::string& path) {
+        if (!h) return;
+
+        TCanvas c(Form("c_prod_mgg_%lld",fit_serial++),"",1000,760);
+        c.SetLeftMargin(0.14);
+        c.SetRightMargin(0.04);
+        c.SetBottomMargin(0.14);
+        c.SetTopMargin(0.12);
+        c.SetTicks(1,1);
+
+        h->SetStats(0);
+        h->SetMarkerStyle(20);
+        h->SetMarkerSize(0.8);
+        h->SetMarkerColor(kBlack);
+        h->SetLineColor(kBlack);
+        h->GetXaxis()->SetTitle(
+            "M(#gamma_{tag}#gamma_{cand}) (GeV)");
+        h->GetYaxis()->SetTitle("Tag-candidate pairs");
+        h->Draw("E1");
+
+        if (r.valid) {
+            TF1 f(Form("draw_prod_mgg_%lld",fit_serial++),
+                  "gaus(0)+pol2(3)",MGG_FIT_LO,MGG_FIT_HI);
+            f.SetParameters(
+                r.amp,r.mean,r.sigma,r.b0,r.b1,r.b2);
+            f.SetLineColor(kRed+1);
+            f.SetLineWidth(3);
+            f.SetNpx(800);
+            f.DrawCopy("L SAME");
+
+            TF1 bg(Form("draw_prod_bg_%lld",fit_serial++),
+                   "pol2",MGG_FIT_LO,MGG_FIT_HI);
+            bg.SetParameters(r.b0,r.b1,r.b2);
+            bg.SetLineColor(kBlue+1);
+            bg.SetLineStyle(2);
+            bg.SetLineWidth(2);
+            bg.DrawCopy("L SAME");
+        } // endif
+
+        TLatex tx;
+        tx.SetNDC();
+        tx.SetTextFont(42);
+        tx.SetTextSize(0.036);
+        tx.DrawLatex(0.14,0.945,title.c_str());
+
+        if (r.valid) {
+            tx.SetTextSize(0.031);
+            tx.DrawLatex(0.62,0.86,
+                Form("#mu = %.4f GeV",r.mean));
+            tx.DrawLatex(0.62,0.82,
+                Form("#sigma = %.4f GeV",r.sigma));
+            tx.DrawLatex(0.62,0.78,
+                Form("#chi^{2}/ndf = %.2f",
+                     r.ndf>0?r.chi2/r.ndf:0.0));
+        } // endif
+
+        c.SaveAs(path.c_str());
+    };
+
+    for (const auto& sample_name:
+         std::vector<std::string>{"data","aaogen","clasdis"}) {
+        Sample* s=find_sample(sample_name);
+        if (!s) continue;
+
+        const std::string sdir=dir+"/"+sample_name;
+        gSystem->mkdir(sdir.c_str(),kTRUE);
+
+        for (int id=0;id<2;id++) {
+            const std::string det=(id==0?"FD":"FT");
+            const std::string ddir=sdir+"/"+det;
+            gSystem->mkdir(ddir.c_str(),kTRUE);
+
+            for (int ip=0;ip<n_probe_bins(id);ip++) {
+                const int ic=icell(id,ip);
+                draw_fit(
+                    s->cells[ic].h_mgg.get(),
+                    fits[sample_name][ic],
+                    Form("%s %s, %.2f<E_{#gamma,probe}^{pred}<%.2f GeV",
+                         sample_name.c_str(),det.c_str(),
+                         p_lo(id,ip),p_hi(id,ip)),
+                    ddir+Form("/pbin%d_Mgg_fit.png",ip));
+            } // endfor
+        } // endfor
+    } // endfor
+
+    for (int id=0;id<2;id++) {
+        const std::string det=(id==0?"FD":"FT");
+
+        TGraphErrors gd,gm,gr;
+        gd.SetMarkerStyle(20);
+        gd.SetMarkerColor(kBlack);
+        gd.SetLineColor(kBlack);
+
+        gm.SetMarkerStyle(24);
+        gm.SetMarkerColor(kRed+1);
+        gm.SetLineColor(kRed+1);
+
+        gr.SetMarkerStyle(20);
+        gr.SetMarkerColor(kBlack);
+        gr.SetLineColor(kBlack);
+
+        for (int ip=0;ip<n_probe_bins(id);ip++) {
+            const int ic=icell(id,ip);
+            const auto& r=results[ic];
+            if (!r.valid) continue;
+
+            const double x=0.5*(p_lo(id,ip)+p_hi(id,ip));
+            const double ex=0.5*(p_hi(id,ip)-p_lo(id,ip));
+
+            int n=gd.GetN();
+            gd.SetPoint(n,x,r.eff_data);
+            gd.SetPointError(n,ex,r.eff_data_err);
+
+            n=gm.GetN();
+            gm.SetPoint(n,x,r.eff_mc);
+            gm.SetPointError(n,ex,r.eff_mc_err);
+
+            n=gr.GetN();
+            gr.SetPoint(n,x,r.ratio);
+            gr.SetPointError(n,ex,r.ratio_err);
+        } // endfor
+
+        {
+            TCanvas c(Form("c_prod_eff_%s",det.c_str()),"",1050,780);
+            c.SetLeftMargin(0.14);
+            c.SetRightMargin(0.04);
+            c.SetBottomMargin(0.14);
+            c.SetTopMargin(0.12);
+            c.SetTicks(1,1);
+
+            TH1D axis(Form("h_prod_eff_axis_%s",det.c_str()),
+                ";E_{#gamma,probe}^{pred} (GeV);Photon efficiency",
+                100,0.35,6.0);
+            axis.SetDirectory(nullptr);
+            axis.SetStats(0);
+            axis.SetMinimum(0.0);
+            axis.SetMaximum(1.05);
+            axis.Draw("AXIS");
+
+            gd.Draw("P SAME");
+            gm.Draw("P SAME");
+
+            TLegend leg(0.66,0.76,0.92,0.88);
+            leg.SetBorderSize(0);
+            leg.SetFillStyle(0);
+            leg.AddEntry(&gd,"Data","lp");
+            leg.AddEntry(&gm,"MC #pi^{0}","lp");
+            leg.Draw();
+
+            TLatex tx;
+            tx.SetNDC();
+            tx.SetTextFont(42);
+            tx.SetTextSize(0.038);
+            tx.DrawLatex(0.14,0.945,
+                Form("%s: M(#gamma#gamma) tag-and-probe",det.c_str()));
+
+            c.SaveAs(
+                (dir+"/"+det+"_Mgg_efficiency_data_mc.png").c_str());
+        }
+
+        {
+            TCanvas c(Form("c_prod_ratio_%s",det.c_str()),"",1050,780);
+            c.SetLeftMargin(0.14);
+            c.SetRightMargin(0.04);
+            c.SetBottomMargin(0.14);
+            c.SetTopMargin(0.12);
+            c.SetTicks(1,1);
+
+            TH1D axis(Form("h_prod_ratio_axis_%s",det.c_str()),
+                ";E_{#gamma,probe}^{pred} (GeV);"
+                "#epsilon_{data}/#epsilon_{MC}",
+                100,0.35,6.0);
+            axis.SetDirectory(nullptr);
+            axis.SetStats(0);
+            axis.SetMinimum(0.0);
+            axis.SetMaximum(1.6);
+            axis.Draw("AXIS");
+
+            TLine unity(0.35,1.0,6.0,1.0);
+            unity.SetLineStyle(2);
+            unity.Draw();
+
+            gr.Draw("P SAME");
+
+            // Existing Hayward/Lee pure-FD direct pointwise reference.
+            if (id==0) {
+                TLine ref(0.35,1.0/1.1370,6.0,1.0/1.1370);
+                ref.SetLineStyle(3);
+                ref.SetLineWidth(2);
+                ref.Draw();
+            } // endif
+
+            TLatex tx;
+            tx.SetNDC();
+            tx.SetTextFont(42);
+            tx.SetTextSize(0.038);
+            tx.DrawLatex(0.14,0.945,
+                Form("%s: M(#gamma#gamma) data/MC efficiency ratio",
+                     det.c_str()));
+
+            c.SaveAs(
+                (dir+"/"+det+"_Mgg_data_over_mc.png").c_str());
+        }
+    } // endfor
+
+    // Cache ONLY the histograms needed for fit-model iterations.
+    {
+        TFile fout((dir+"/mgg_production_histograms.root").c_str(),
+                   "RECREATE");
+        if (!fout.IsZombie()) {
+            for (auto& sp:samples) {
+                fout.mkdir(sp->name.c_str());
+                fout.cd(sp->name.c_str());
+                for (int id=0;id<2;id++) {
+                    for (int ip=0;ip<n_probe_bins(id);ip++) {
+                        auto& q=sp->cells[icell(id,ip)];
+                        if (q.h_mgg) q.h_mgg->Write();
+                    } // endfor
+                } // endfor
+                fout.cd();
+            } // endfor
+            fout.Close();
+        } // endif
+    }
+
+    std::ofstream readme(dir+"/README.txt");
+    readme
+        << "Production M(gamma gamma) photon-efficiency redesign\n"
+        << "==================================================\n\n"
+        << "Numerator:\n"
+        << "  fitted pi0 peak in M(gamma_tag gamma_candidate).\n"
+        << "  Every acceptable candidate pair is filled once.\n"
+        << "  No Delta-p, Delta-alpha, or nearest-missing-vector matching.\n\n"
+        << "Denominator:\n"
+        << "  tag events passing probe-independent reconstructed exclusivity.\n"
+        << "  Mx2(ep) in [-0.10,0.15] GeV^2;\n"
+        << "  |Mx2(ep gamma_tag)| < 0.10 GeV^2;\n"
+        << "  Mx2(e gamma_tag) > 1.4 GeV^2;\n"
+        << "  |Delta phi_copl| < 5.7 deg.\n"
+        << "  No angle(tag,X), Delta-t, Delta-p, or Delta-alpha cut.\n\n"
+        << "Data denominator pi0 fraction:\n"
+        << "  normalized AAOgen + CLASDIS / "
+        << "(AAOgen + CLASDIS + DVCSgen) in the same bin.\n\n"
+        << "MC efficiency:\n"
+        << "  normalized fitted Mgg signal from AAOgen + CLASDIS divided "
+        << "by their normalized pi0 denominator yield.\n\n"
+        << "Primary displayed convention:\n"
+        << "  epsilon_data/epsilon_MC.\n"
+        << "Cross-section correction:\n"
+        << "  C = epsilon_MC/epsilon_data.\n";
+    readme.close();
+
+    std::cout
+        << "\n============================================================\n"
+        << " M(gamma gamma) production extraction complete\n"
+        << "============================================================\n"
+        << "[wrote] " << dir << "/mgg_production_efficiency.csv\n"
+        << "[wrote] " << dir << "/FD_Mgg_data_over_mc.png\n"
+        << "[wrote] " << dir << "/FT_Mgg_data_over_mc.png\n"
+        << "[wrote] " << dir << "/mgg_production_histograms.root\n"
+        << "============================================================\n";
+}
+
+
 void run_concise_analysis(const std::string& out) {
     concise_make_dirs(out);
 
@@ -13438,17 +14446,23 @@ void run_valerii_fd_reproduction(const std::string& out) {
 
 } // namespace pe
 
-void photon_efficiency_valerii_reproduction(int run_mode=0) {
+void photon_efficiency_valerii_reproduction(int run_mode=5) {
     using namespace pe;
 
     gROOT->SetBatch(kTRUE);
     concise_publication_style();
 
-    // run_mode = 0 : full analysis
+    // run_mode = 5 : DEFAULT production M(gamma gamma) extraction only
+    // run_mode = 0 : legacy full analysis (not recommended for routine reruns)
     // run_mode = 1 : CLASDIS truth-category dissection only
     // run_mode = 2 : missing-vector audit only
     // run_mode = 3 : reconstructed-exclusivity denominator scan only
     // run_mode = 4 : NEW pi0-mass-fit tag-and-probe efficiency only
+    if (run_mode==5) {
+        pe::run_mgg_production_efficiency_only("output");
+        return;
+    } // endif
+
     if (run_mode==1) {
         pe::run_clasdis_truth_dissection_only("output");
         return;
