@@ -9464,10 +9464,67 @@ void run_targeted_alpha_mx2_scan(
         long long reco_truth_lt1=0;
         long long reco_truth_lt2=0;
         long long reco_truth_lt3=0;
+
+        // Detailed truth classification at a 1-degree reco-to-truth criterion.
+        // "correct_selected": the candidate chosen by best_probe_candidate()
+        // is the generated pi0-daughter probe.
+        // "wrong_selected_truth_exists": another acceptable reconstructed
+        // photon is truth-matched, but the predicted-direction selector chose
+        // a different photon.
+        // "wrong_selected_probe_missing": a reconstructed candidate exists,
+        // but no acceptable reconstructed photon is within 1 degree of truth.
+        // "no_candidate": no acceptable reconstructed FD photon candidate.
+        long long correct_selected=0;
+        long long wrong_selected_truth_exists=0;
+        long long wrong_selected_probe_missing=0;
+        long long no_candidate=0;
+
+        long long shoulder_correct=0;
+        long long shoulder_wrong=0;
+        long long peak_correct=0;
+        long long peak_wrong=0;
+
         double sum_pred_truth_da=0;
         long long n_pred_truth_da=0;
+        double sum_pmiss_minus_ptrue=0;
+        long long n_pmiss_minus_ptrue=0;
+
+        std::unique_ptr<TH1D> h_dp_correct;
+        std::unique_ptr<TH1D> h_dp_wrong_truth_exists;
+        std::unique_ptr<TH1D> h_dp_wrong_probe_missing;
+        std::unique_ptr<TH1D> h_pmiss_minus_ptrue;
+        std::unique_ptr<TH1D> h_pred_truth_angle;
+        std::unique_ptr<TH1D> h_selected_truth_angle;
+        std::unique_ptr<TH1D> h_best_any_truth_angle;
     };
     std::array<TruthAlphaSummary,NP> truth_summary{};
+
+    // Initialize all detailed truth histograms once. They are filled during
+    // the SAME CLASDIS pass as the alpha/Mx2 scan.
+    for (int ip=0;ip<NP;ip++) {
+        auto& q=truth_summary[ip];
+
+        auto make_truth_hist=[&](const std::string& name,int nb,double lo,double hi) {
+            auto h=std::make_unique<TH1D>(name.c_str(),"",nb,lo,hi);
+            h->SetDirectory(nullptr);
+            h->Sumw2();
+            return h;
+        };
+
+        q.h_dp_correct=make_truth_hist(Form("truth_dp_correct_p%d",ip),160,-4.0,4.0);
+        q.h_dp_wrong_truth_exists=make_truth_hist(
+            Form("truth_dp_wrong_truth_exists_p%d",ip),160,-4.0,4.0);
+        q.h_dp_wrong_probe_missing=make_truth_hist(
+            Form("truth_dp_wrong_probe_missing_p%d",ip),160,-4.0,4.0);
+        q.h_pmiss_minus_ptrue=make_truth_hist(
+            Form("truth_pmiss_minus_ptrue_p%d",ip),160,-4.0,4.0);
+        q.h_pred_truth_angle=make_truth_hist(
+            Form("truth_pred_truth_angle_p%d",ip),120,0.0,30.0);
+        q.h_selected_truth_angle=make_truth_hist(
+            Form("truth_selected_truth_angle_p%d",ip),120,0.0,30.0);
+        q.h_best_any_truth_angle=make_truth_hist(
+            Form("truth_best_any_truth_angle_p%d",ip),120,0.0,30.0);
+    } // endfor
 
     for (const auto& s:samples) {
         TChain c("PhotonEfficiency");
@@ -9543,25 +9600,124 @@ void run_targeted_alpha_mx2_scan(
                 b.truth_probe_pid==22 &&
                 b.truth_probe_parent==111;
 
-            // Truth association calibration from CLASDIS.
+            // ---------------------------------------------------------
+            // CLASDIS truth dissection of the residual shoulder.
+            //
+            // This runs inside the already-existing single CLASDIS pass.
+            // No extra tree scan is introduced.
+            //
+            // Classification uses 1 degree between reconstructed and true
+            // generated probe directions as the truth-match criterion.
+            // ---------------------------------------------------------
             if (s.key=="clasdis" && truth_pi0 &&
                 b.Mx2_ep<NORM_MX2_EP_MAX) {
+
+                constexpr double TRUTH_MATCH_DEG=1.0;
                 auto& tq=truth_summary[ip];
                 tq.truth_pi0++;
-                if (finite_good(b.truth_probe_delta_alpha)) {
-                    tq.sum_pred_truth_da+=b.truth_probe_delta_alpha;
+
+                // Direct quality of the missing-photon prediction itself.
+                const double pred_truth_da=opening_angle_deg(
+                    b.probe_corr_theta,b.probe_corr_phi,
+                    b.truth_probe_theta,b.truth_probe_phi);
+                if (finite_good(pred_truth_da)) {
+                    tq.sum_pred_truth_da+=pred_truth_da;
                     tq.n_pred_truth_da++;
+                    tq.h_pred_truth_angle->Fill(pred_truth_da);
                 } // endif
-                if (k>=0) {
+
+                if (finite_good(b.truth_probe_p)) {
+                    const double dpmiss_truth=b.probe_corr_p-b.truth_probe_p;
+                    tq.sum_pmiss_minus_ptrue+=dpmiss_truth;
+                    tq.n_pmiss_minus_ptrue++;
+                    tq.h_pmiss_minus_ptrue->Fill(dpmiss_truth);
+                } // endif
+
+                // Find whether ANY acceptable reconstructed FD photon is
+                // actually the generated probe. This distinguishes a selector
+                // mistake from a genuinely missed probe.
+                int truth_best_idx=-1;
+                double truth_best_da=1e9;
+
+                for (int in=0;in<5;in++) {
+                    if (b.neutral_idx[in]<0) continue;
+                    if (b.neutral_charge[in]!=0) continue;
+                    if (b.neutral_pid[in]!=22) continue;
+                    if (b.neutral_detector[in]!=1) continue;
+                    if (!finite_good(b.neutral_p[in]) ||
+                        b.neutral_p[in]<PROBE_P_MIN) continue;
+
+                    const double da_true=opening_angle_deg(
+                        b.neutral_theta[in],b.neutral_phi[in],
+                        b.truth_probe_theta,b.truth_probe_phi);
+                    if (!finite_good(da_true)) continue;
+
+                    if (da_true<truth_best_da) {
+                        truth_best_da=da_true;
+                        truth_best_idx=in;
+                    } // endif
+                } // endfor
+
+                if (truth_best_idx>=0 && truth_best_da<1e8)
+                    tq.h_best_any_truth_angle->Fill(truth_best_da);
+
+                if (k<0) {
+                    tq.no_candidate++;
+                } else {
                     tq.have_reco++;
-                    const double da_truth=opening_angle_deg(
+
+                    const double selected_truth_da=opening_angle_deg(
                         b.neutral_theta[k],b.neutral_phi[k],
                         b.truth_probe_theta,b.truth_probe_phi);
-                    if (finite_good(da_truth)) {
-                        if (da_truth<0.5) tq.reco_truth_lt05++;
-                        if (da_truth<1.0) tq.reco_truth_lt1++;
-                        if (da_truth<2.0) tq.reco_truth_lt2++;
-                        if (da_truth<3.0) tq.reco_truth_lt3++;
+
+                    if (finite_good(selected_truth_da)) {
+                        tq.h_selected_truth_angle->Fill(selected_truth_da);
+                        if (selected_truth_da<0.5) tq.reco_truth_lt05++;
+                        if (selected_truth_da<1.0) tq.reco_truth_lt1++;
+                        if (selected_truth_da<2.0) tq.reco_truth_lt2++;
+                        if (selected_truth_da<3.0) tq.reco_truth_lt3++;
+                    } // endif
+
+                    const bool selected_is_true=
+                        finite_good(selected_truth_da) &&
+                        selected_truth_da<TRUTH_MATCH_DEG;
+                    const bool some_true_candidate=
+                        truth_best_idx>=0 &&
+                        truth_best_da<TRUTH_MATCH_DEG;
+
+                    if (finite_good(dp)) {
+                        const bool in_peak=
+                            dp>=SHOULDER_PEAK_LO && dp<SHOULDER_PEAK_HI;
+                        const bool in_shoulder=
+                            dp>=SHOULDER_NEG_LO && dp<SHOULDER_NEG_HI;
+
+                        if (selected_is_true) {
+                            tq.correct_selected++;
+                            tq.h_dp_correct->Fill(dp);
+                            if (in_peak) tq.peak_correct++;
+                            if (in_shoulder) tq.shoulder_correct++;
+                        } else {
+                            if (some_true_candidate) {
+                                tq.wrong_selected_truth_exists++;
+                                tq.h_dp_wrong_truth_exists->Fill(dp);
+                            } else {
+                                tq.wrong_selected_probe_missing++;
+                                tq.h_dp_wrong_probe_missing->Fill(dp);
+                            } // endif
+                            if (in_peak) tq.peak_wrong++;
+                            if (in_shoulder) tq.shoulder_wrong++;
+                        } // endif
+                    } else {
+                        // A selected candidate with unusable Delta-p still
+                        // belongs to the truth category, even though it cannot
+                        // populate the residual histogram.
+                        if (selected_is_true)
+                            tq.correct_selected++;
+                        else if (some_true_candidate)
+                            tq.wrong_selected_truth_exists++;
+                        else
+                            tq.wrong_selected_probe_missing++;
+                        // endif
                     } // endif
                 } // endif
             } // endif
@@ -9796,6 +9952,316 @@ void run_targeted_alpha_mx2_scan(
     } // endfor
     tcsv.close();
 
+    // ------------------------------------------------------------------
+    // Detailed CLASDIS truth dissection of the high-energy shoulder.
+    // ------------------------------------------------------------------
+    const std::string truth_dir=dir+"/clasdis_truth_dissection";
+    gSystem->mkdir(truth_dir.c_str(),kTRUE);
+
+    std::ofstream dcsv(truth_dir+"/truth_category_summary.csv");
+    dcsv << "p_bin,p_low_GeV,p_high_GeV,truth_pi0,"
+            "correct_selected,wrong_selected_truth_exists,"
+            "wrong_selected_probe_missing,no_candidate,"
+            "fraction_correct_selected,fraction_wrong_selected_truth_exists,"
+            "fraction_wrong_selected_probe_missing,fraction_no_candidate,"
+            "mean_pmiss_minus_ptrue_GeV,mean_predicted_to_true_angle_deg,"
+            "peak_correct,shoulder_correct,shoulder_to_peak_correct,"
+            "peak_wrong,shoulder_wrong,shoulder_to_peak_wrong\n";
+    dcsv << std::setprecision(10);
+
+    std::cout << "\n============================================================\n"
+              << " CLASDIS truth dissection of Delta-p shoulder\n"
+              << "============================================================\n"
+              << "Truth match: reconstructed photon within 1 degree of generated probe.\n"
+              << "Categories:\n"
+              << "  correct        = selected candidate is generated probe\n"
+              << "  selector wrong = generated probe is reconstructed, but another photon was selected\n"
+              << "  probe missed   = other photon selected; no reconstructed candidate matches generated probe\n"
+              << "  no candidate   = no acceptable reconstructed FD photon candidate\n";
+
+    for (int ip=0;ip<NP;ip++) {
+        auto& q=truth_summary[ip];
+        const double den=(q.truth_pi0>0)?double(q.truth_pi0):1.0;
+
+        const double fcorrect=double(q.correct_selected)/den;
+        const double fselector=double(q.wrong_selected_truth_exists)/den;
+        const double fmissed=double(q.wrong_selected_probe_missing)/den;
+        const double fnone=double(q.no_candidate)/den;
+
+        const double mean_dp_truth=q.n_pmiss_minus_ptrue>0 ?
+            q.sum_pmiss_minus_ptrue/double(q.n_pmiss_minus_ptrue) : 0.0;
+        const double mean_ang=q.n_pred_truth_da>0 ?
+            q.sum_pred_truth_da/double(q.n_pred_truth_da) : 0.0;
+
+        const double shoulder_peak_correct=q.peak_correct>0 ?
+            double(q.shoulder_correct)/double(q.peak_correct) : 0.0;
+        const double shoulder_peak_wrong=q.peak_wrong>0 ?
+            double(q.shoulder_wrong)/double(q.peak_wrong) : 0.0;
+
+        dcsv << ip << "," << p_edges[ip] << "," << p_edges[ip+1] << ","
+             << q.truth_pi0 << ","
+             << q.correct_selected << ","
+             << q.wrong_selected_truth_exists << ","
+             << q.wrong_selected_probe_missing << ","
+             << q.no_candidate << ","
+             << fcorrect << "," << fselector << "," << fmissed << "," << fnone << ","
+             << mean_dp_truth << "," << mean_ang << ","
+             << q.peak_correct << "," << q.shoulder_correct << ","
+             << shoulder_peak_correct << ","
+             << q.peak_wrong << "," << q.shoulder_wrong << ","
+             << shoulder_peak_wrong << "\n";
+
+        std::cout << Form(
+            "  %.2f-%.2f GeV: correct=%.3f, selector-wrong=%.3f, "
+            "probe-missed+other=%.3f, no-candidate=%.3f; "
+            "<pmiss-ptrue>=%.3f GeV, <angle(miss,true)>=%.3f deg; "
+            "shoulder/peak correct=%.3f, wrong=%.3f\n",
+            std::max(p_edges[ip],PROBE_P_MIN),p_edges[ip+1],
+            fcorrect,fselector,fmissed,fnone,
+            mean_dp_truth,mean_ang,
+            shoulder_peak_correct,shoulder_peak_wrong);
+
+        // Figure 1: Delta-p for truth-correct and wrong selected candidates.
+        {
+            TH1D hc=*q.h_dp_correct;
+            TH1D hws=*q.h_dp_wrong_truth_exists;
+            TH1D hwm=*q.h_dp_wrong_probe_missing;
+            hc.SetDirectory(nullptr);
+            hws.SetDirectory(nullptr);
+            hwm.SetDirectory(nullptr);
+
+            normalize_to_unit(&hc);
+            normalize_to_unit(&hws);
+            normalize_to_unit(&hwm);
+
+            TCanvas c(Form("c_truth_dp_%d",ip),"",1000,760);
+            c.SetLeftMargin(0.14);
+            c.SetRightMargin(0.04);
+            c.SetBottomMargin(0.14);
+            c.SetTopMargin(0.12);
+            c.SetTicks(1,1);
+
+            const double ymax=1.25*std::max(
+                hc.GetMaximum(),std::max(hws.GetMaximum(),hwm.GetMaximum()));
+            hc.SetMinimum(0);
+            hc.SetMaximum(ymax>0?ymax:1);
+            hc.GetXaxis()->SetTitle("#Delta p = p_{rec}-p_{miss} (GeV)");
+            hc.GetYaxis()->SetTitle("Unit-normalized entries");
+
+            hc.SetMarkerStyle(20);
+            hc.SetMarkerColor(kBlack);
+            hc.SetLineColor(kBlack);
+            hc.SetLineWidth(2);
+            hc.Draw("E1");
+
+            hws.SetMarkerStyle(24);
+            hws.SetMarkerColor(kRed+1);
+            hws.SetLineColor(kRed+1);
+            hws.SetLineWidth(2);
+            hws.Draw("E1 SAME");
+
+            hwm.SetMarkerStyle(25);
+            hwm.SetMarkerColor(kBlue+1);
+            hwm.SetLineColor(kBlue+1);
+            hwm.SetLineWidth(2);
+            hwm.Draw("E1 SAME");
+
+            TLegend leg(0.50,0.68,0.92,0.88);
+            leg.SetBorderSize(0);
+            leg.SetFillStyle(0);
+            leg.AddEntry(&hc,"selected photon truth-matched","lep");
+            leg.AddEntry(&hws,"wrong selected; true probe also reconstructed","lep");
+            leg.AddEntry(&hwm,"wrong selected; true probe not reconstructed","lep");
+            leg.Draw();
+
+            TLatex tx;
+            tx.SetNDC();
+            tx.SetTextFont(42);
+            tx.SetTextSize(0.037);
+            tx.DrawLatex(0.14,0.945,
+                Form("CLASDIS truth, FD, %.2f<E_{#gamma,probe}<%.2f GeV",
+                     std::max(p_edges[ip],PROBE_P_MIN),p_edges[ip+1]));
+
+            c.SaveAs((truth_dir+Form("/pbin%d_delta_p_by_truth_category.png",ip)).c_str());
+        }
+
+        // Figure 2: prediction error alone, independent of reconstructed probe.
+        {
+            TCanvas c(Form("c_truth_prediction_%d",ip),"",1000,760);
+            c.Divide(1,2);
+
+            c.cd(1);
+            gPad->SetLeftMargin(0.14);
+            gPad->SetRightMargin(0.04);
+            gPad->SetBottomMargin(0.14);
+            gPad->SetTopMargin(0.10);
+            q.h_pmiss_minus_ptrue->SetLineColor(kBlack);
+            q.h_pmiss_minus_ptrue->SetLineWidth(2);
+            q.h_pmiss_minus_ptrue->GetXaxis()->SetTitle("p_{miss}-p_{true} (GeV)");
+            q.h_pmiss_minus_ptrue->GetYaxis()->SetTitle("Entries");
+            q.h_pmiss_minus_ptrue->Draw("HIST");
+
+            c.cd(2);
+            gPad->SetLeftMargin(0.14);
+            gPad->SetRightMargin(0.04);
+            gPad->SetBottomMargin(0.14);
+            gPad->SetTopMargin(0.10);
+            q.h_pred_truth_angle->SetLineColor(kBlack);
+            q.h_pred_truth_angle->SetLineWidth(2);
+            q.h_pred_truth_angle->GetXaxis()->SetTitle(
+                "angle(#gamma_{miss},#gamma_{true}) (deg)");
+            q.h_pred_truth_angle->GetYaxis()->SetTitle("Entries");
+            q.h_pred_truth_angle->Draw("HIST");
+
+            c.SaveAs((truth_dir+Form("/pbin%d_missing_prediction_vs_truth.png",ip)).c_str());
+        }
+
+        // Figure 3: how the selected candidate compares with the closest
+        // acceptable reconstructed photon to truth.
+        {
+            TH1D hs=*q.h_selected_truth_angle;
+            TH1D hb=*q.h_best_any_truth_angle;
+            hs.SetDirectory(nullptr);
+            hb.SetDirectory(nullptr);
+            normalize_to_unit(&hs);
+            normalize_to_unit(&hb);
+
+            TCanvas c(Form("c_truth_angle_%d",ip),"",1000,760);
+            c.SetLeftMargin(0.14);
+            c.SetRightMargin(0.04);
+            c.SetBottomMargin(0.14);
+            c.SetTopMargin(0.12);
+            c.SetTicks(1,1);
+
+            const double ymax=1.25*std::max(hs.GetMaximum(),hb.GetMaximum());
+            hs.SetMinimum(0);
+            hs.SetMaximum(ymax>0?ymax:1);
+            hs.GetXaxis()->SetTitle(
+                "angle(reconstructed candidate,#gamma_{true}) (deg)");
+            hs.GetYaxis()->SetTitle("Unit-normalized entries");
+
+            hs.SetMarkerStyle(20);
+            hs.SetMarkerColor(kRed+1);
+            hs.SetLineColor(kRed+1);
+            hs.Draw("E1");
+
+            hb.SetMarkerStyle(24);
+            hb.SetMarkerColor(kBlack);
+            hb.SetLineColor(kBlack);
+            hb.Draw("E1 SAME");
+
+            TLegend leg(0.53,0.74,0.92,0.88);
+            leg.SetBorderSize(0);
+            leg.SetFillStyle(0);
+            leg.AddEntry(&hs,"candidate selected by predicted direction","lep");
+            leg.AddEntry(&hb,"closest acceptable candidate to truth","lep");
+            leg.Draw();
+
+            TLatex tx;
+            tx.SetNDC();
+            tx.SetTextFont(42);
+            tx.SetTextSize(0.037);
+            tx.DrawLatex(0.14,0.945,
+                Form("CLASDIS truth, FD, %.2f<E_{#gamma,probe}<%.2f GeV",
+                     std::max(p_edges[ip],PROBE_P_MIN),p_edges[ip+1]));
+
+            c.SaveAs((truth_dir+Form("/pbin%d_selected_vs_best_truth_angle.png",ip)).c_str());
+        }
+    } // endfor
+    dcsv.close();
+
+    // Save the truth histograms so later plotting changes require no tree scan.
+    {
+        TFile fout((truth_dir+"/clasdis_truth_dissection_histograms.root").c_str(),
+                   "RECREATE");
+        if (!fout.IsZombie()) {
+            for (int ip=0;ip<NP;ip++) {
+                auto& q=truth_summary[ip];
+                TH1D* hs[]={
+                    q.h_dp_correct.get(),
+                    q.h_dp_wrong_truth_exists.get(),
+                    q.h_dp_wrong_probe_missing.get(),
+                    q.h_pmiss_minus_ptrue.get(),
+                    q.h_pred_truth_angle.get(),
+                    q.h_selected_truth_angle.get(),
+                    q.h_best_any_truth_angle.get()
+                };
+                for (TH1D* h:hs) if (h) h->Write();
+            } // endfor
+            fout.Close();
+        } // endif
+    }
+
+    // One compact category-fraction summary versus Eprobe.
+    {
+        TGraphErrors gcorrect,gselector,gmissed,gnone;
+        gcorrect.SetMarkerStyle(20); gcorrect.SetMarkerColor(kBlack); gcorrect.SetLineColor(kBlack);
+        gselector.SetMarkerStyle(24); gselector.SetMarkerColor(kRed+1); gselector.SetLineColor(kRed+1);
+        gmissed.SetMarkerStyle(25); gmissed.SetMarkerColor(kBlue+1); gmissed.SetLineColor(kBlue+1);
+        gnone.SetMarkerStyle(26); gnone.SetMarkerColor(kGreen+2); gnone.SetLineColor(kGreen+2);
+
+        for (int ip=0;ip<NP;ip++) {
+            const auto& q=truth_summary[ip];
+            if (q.truth_pi0<=0) continue;
+            const double d=double(q.truth_pi0);
+            const double x=0.5*(p_edges[ip]+p_edges[ip+1]);
+            const double ex=0.5*(p_edges[ip+1]-p_edges[ip]);
+
+            auto add=[&](TGraphErrors& g,double y) {
+                const int n=g.GetN();
+                g.SetPoint(n,x,y);
+                g.SetPointError(n,ex,0);
+            };
+            add(gcorrect,double(q.correct_selected)/d);
+            add(gselector,double(q.wrong_selected_truth_exists)/d);
+            add(gmissed,double(q.wrong_selected_probe_missing)/d);
+            add(gnone,double(q.no_candidate)/d);
+        } // endfor
+
+        TCanvas c("c_truth_categories","",1050,780);
+        c.SetLeftMargin(0.14);
+        c.SetRightMargin(0.04);
+        c.SetBottomMargin(0.14);
+        c.SetTopMargin(0.12);
+        c.SetTicks(1,1);
+
+        TH1D axis("h_truth_categories_axis",
+                  ";E_{#gamma,probe} (GeV);Fraction of true #pi^{0} probes",
+                  100,0.35,6.0);
+        axis.SetDirectory(nullptr);
+        axis.SetStats(0);
+        axis.SetMinimum(0);
+        axis.SetMaximum(1.0);
+        axis.Draw("AXIS");
+
+        gcorrect.Draw("PL SAME");
+        gselector.Draw("PL SAME");
+        gmissed.Draw("PL SAME");
+        gnone.Draw("PL SAME");
+
+        TLegend leg(0.49,0.63,0.92,0.88);
+        leg.SetBorderSize(0);
+        leg.SetFillStyle(0);
+        leg.AddEntry(&gcorrect,"correct probe selected","lp");
+        leg.AddEntry(&gselector,"wrong selected; true probe reconstructed","lp");
+        leg.AddEntry(&gmissed,"wrong selected; true probe missed","lp");
+        leg.AddEntry(&gnone,"no reconstructed candidate","lp");
+        leg.Draw();
+
+        TLatex tx;
+        tx.SetNDC();
+        tx.SetTextFont(42);
+        tx.SetTextSize(0.038);
+        tx.DrawLatex(0.14,0.945,
+            "CLASDIS truth classification of FD probe reconstruction");
+
+        c.SaveAs((truth_dir+"/truth_category_fractions_vs_Eprobe.png").c_str());
+    }
+
+    std::cout << "[wrote] " << truth_dir << "/truth_category_summary.csv\n"
+              << "[wrote] " << truth_dir << "/clasdis_truth_dissection_histograms.root\n"
+              << "============================================================\n";
+
     // Compact diagnostic plots: correction versus momentum for each alpha cut,
     // one canvas per Mx2 upper edge.
     for (int im=0;im<NM;im++) {
@@ -9986,6 +10452,7 @@ void photon_efficiency_valerii_reproduction() {
         << "3) pi0 fraction of selected ep-gamma-X events\n"
         << "4) FD/FT photon efficiency: existing equal-statistics study + exact Valerii FD momentum bins\n"
         << "5) residual-shoulder diagnosis: ONE tree pass per sample, all p bins filled simultaneously\n"
+        << "6) CLASDIS truth dissection: correct/wrong/missed probe categories in the SAME CLASDIS pass\n"
         << "One parallel tree scan per sample; persistent cache on reruns.\n"
         << "Cache: /work/clas12/thayward/photon_efficiency/cache/concise\n"
         << "============================================================\n";
