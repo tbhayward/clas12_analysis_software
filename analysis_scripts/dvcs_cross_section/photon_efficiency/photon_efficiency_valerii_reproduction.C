@@ -8934,9 +8934,11 @@ bool in_shoulder_region(double dp) {
 
 int count_reconstructed_neutral_candidates(const Branches& b) {
     int n=0;
-    for (int i=0;i<MAX_NEUTRALS;i++) {
-        if (!finite_good(b.neutral_p[i])) continue;
-        if (b.neutral_p[i]<=0) continue;
+    for (int i=0;i<5;i++) {
+        if (b.neutral_idx[i]<0) continue;
+        if (b.neutral_charge[i]!=0) continue;
+        if (b.neutral_pid[i]!=22) continue;
+        if (!finite_good(b.neutral_p[i]) || b.neutral_p[i]<PROBE_P_MIN) continue;
         n++;
     } // endfor
     return n;
@@ -8944,7 +8946,7 @@ int count_reconstructed_neutral_candidates(const Branches& b) {
 
 double best_probe_delta_alpha(const Branches& b, int probe_detector) {
     double best=1e9;
-    for (int i=0;i<MAX_NEUTRALS;i++) {
+    for (int i=0;i<5;i++) {
         if (!finite_good(b.neutral_delta_alpha[i])) continue;
         if (!finite_good(b.neutral_p[i]) || b.neutral_p[i]<=0) continue;
         if (probe_detector==1 && b.neutral_detector[i]!=1) continue;
@@ -8994,9 +8996,9 @@ void write_shoulder_diagnostics_for_fd_momentum_bins(const std::string& outdir) 
 
     std::vector<SampleDef> samples={
         {"Data",DATA_DIR,1.0},
-        {"AAO",AAO_DIR,1.0},
+        {"AAO",AAOGEN_DIR,1.0},
         {"CLASDIS",CLASDIS_DIR,1.0},
-        {"DVCS",DVCS_DIR,1.0}
+        {"DVCS",DVCSGEN_DIR,1.0}
     };
 
     for (const auto& s:samples) {
@@ -9065,20 +9067,10 @@ void write_shoulder_diagnostics_for_fd_momentum_bins(const std::string& outdir) 
                 double best_dp=std::numeric_limits<double>::quiet_NaN();
                 double best_alpha=std::numeric_limits<double>::quiet_NaN();
 
-                // Choose exactly one reconstructed candidate: the neutral with
-                // the smallest angular separation from the predicted probe.
-                int best_idx=-1;
-                double best_da=1e9;
-                for (int in=0;in<MAX_NEUTRALS;in++) {
-                    if (!finite_good(b.neutral_delta_alpha[in])) continue;
-                    if (!finite_good(b.neutral_p[in]) || b.neutral_p[in]<=0) continue;
-                    if (b.neutral_detector[in]!=probe_detector) continue;
-                    if (b.neutral_delta_alpha[in]<best_da) {
-                        best_da=b.neutral_delta_alpha[in];
-                        best_idx=in;
-                    } // endif
-                } // endfor
-
+                // Choose exactly one reconstructed probe candidate using the
+                // macro's existing selection: neutral, pid=22, correct detector,
+                // p >= PROBE_P_MIN, and smallest angular separation.
+                const int best_idx=best_probe_candidate(b,probe_detector);
                 if (best_idx<0) continue;
                 best_alpha=b.neutral_delta_alpha[best_idx];
                 best_dp=b.neutral_p[best_idx]-b.probe_corr_p;
@@ -9088,7 +9080,7 @@ void write_shoulder_diagnostics_for_fd_momentum_bins(const std::string& outdir) 
                 if (!pk && !sh) continue;
 
                 const int nneutral=count_reconstructed_neutral_candidates(b);
-                const double phi=wrap_phi_deg(b.probe_corr_phi);
+                const double phi=wrap_phi(b.probe_corr_phi);
 
                 if (pk) {
                     npeak++;
