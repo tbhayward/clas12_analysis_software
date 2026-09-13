@@ -8979,145 +8979,255 @@ void normalize_to_unit(TH1D* h) {
 }
 
 void write_shoulder_diagnostics_for_fd_momentum_bins(const std::string& outdir) {
+    // ------------------------------------------------------------------
+    // Fast shoulder diagnostic.
+    //
+    // IMPORTANT PERFORMANCE DESIGN:
+    //   * exactly ONE TChain pass per sample;
+    //   * the event is assigned to one Valerii momentum bin on the fly;
+    //   * all peak/shoulder histograms for all 7 p bins are filled during
+    //     that same pass;
+    //   * no FT-plane estimation is performed here because this diagnostic
+    //     is FD-only;
+    //   * plotting happens only after the scan is complete.
+    //
+    // The previous implementation reread each complete sample separately
+    // for every momentum bin (and also ran an unnecessary FT-plane scan),
+    // i.e. roughly eight full passes per sample.  This version needs one.
+    // ------------------------------------------------------------------
+
     const std::string dir=outdir+"/5_residual_shoulder";
     gSystem->mkdir(dir.c_str(),kTRUE);
 
     const double p_edges[VAL_NP+1]={0.35,0.50,1.10,1.70,2.30,2.90,3.70,6.00};
 
-    std::ofstream summary(dir+"/shoulder_summary.csv");
-    summary << "sample,p_bin,p_low_GeV,p_high_GeV,region,count,mean_Mx2_ep,mean_Mx2_epg,"
-               "mean_tagE,mean_probeTheta,mean_probePhi,mean_neutral_mult,mean_best_delta_alpha\\n";
-
     struct SampleDef {
         std::string label;
         std::string base;
-        double scale=1.0;
     };
 
-    std::vector<SampleDef> samples={
-        {"Data",DATA_DIR,1.0},
-        {"AAO",AAOGEN_DIR,1.0},
-        {"CLASDIS",CLASDIS_DIR,1.0},
-        {"DVCS",DVCSGEN_DIR,1.0}
+    const std::vector<SampleDef> samples={
+        {"Data",DATA_DIR},
+        {"AAO",AAOGEN_DIR},
+        {"CLASDIS",CLASDIS_DIR},
+        {"DVCS",DVCSGEN_DIR}
     };
+
+    struct BinAccum {
+        std::unique_ptr<TH1D> mx2ep_peak, mx2ep_shoulder;
+        std::unique_ptr<TH1D> mx2epg_peak, mx2epg_shoulder;
+        std::unique_ptr<TH1D> tagE_peak, tagE_shoulder;
+        std::unique_ptr<TH1D> probeTheta_peak, probeTheta_shoulder;
+        std::unique_ptr<TH1D> probePhi_peak, probePhi_shoulder;
+        std::unique_ptr<TH1D> neutral_peak, neutral_shoulder;
+        std::unique_ptr<TH1D> alpha_peak, alpha_shoulder;
+
+        long long npeak=0;
+        long long nshould=0;
+        double sum_mx2ep_peak=0, sum_mx2ep_sh=0;
+        double sum_mx2epg_peak=0, sum_mx2epg_sh=0;
+        double sum_tagE_peak=0, sum_tagE_sh=0;
+        double sum_th_peak=0, sum_th_sh=0;
+        double sum_ph_peak=0, sum_ph_sh=0;
+        double sum_mult_peak=0, sum_mult_sh=0;
+        double sum_alpha_peak=0, sum_alpha_sh=0;
+        long long nalpha_peak=0, nalpha_sh=0;
+    };
+
+    auto make_hist=[](const std::string& name,int nb,double lo,double hi) {
+        auto h=std::make_unique<TH1D>(name.c_str(),"",nb,lo,hi);
+        h->SetDirectory(nullptr);
+        h->Sumw2();
+        return h;
+    };
+
+    auto find_pbin=[&](double p) -> int {
+        if (!std::isfinite(p) || p<PROBE_P_MIN) return -1;
+        for (int ip=0;ip<VAL_NP;ip++) {
+            const double lo=std::max(p_edges[ip],PROBE_P_MIN);
+            const double hi=p_edges[ip+1];
+            if (p>=lo && p<hi) return ip;
+        } // endfor
+        return -1;
+    };
+
+    std::ofstream summary(dir+"/shoulder_summary.csv");
+    summary << "sample,p_bin,p_low_GeV,p_high_GeV,region,count,"
+               "shoulder_to_peak_count_ratio,mean_Mx2_ep,mean_Mx2_epg,"
+               "mean_tagE,mean_probeTheta,mean_probePhi,mean_neutral_mult,"
+               "mean_best_delta_alpha\n";
+    summary << std::setprecision(10);
 
     for (const auto& s:samples) {
         TChain c("PhotonEfficiency");
         const int nf=c.Add(make_pattern(s.base).c_str());
-        if (nf<=0 || c.GetEntries()<=0) continue;
+        const Long64_t nentries=c.GetEntries();
+        if (nf<=0 || nentries<=0) {
+            std::cout << "[shoulder diagnostic] " << s.label
+                      << ": no input trees; skipping.\n";
+            continue;
+        } // endif
 
         Branches b;
         b.reset_arrays();
-        if (!attach(c,b)) continue;
+        if (!attach(c,b)) {
+            std::cerr << "[shoulder diagnostic] " << s.label
+                      << ": could not attach branches; skipping.\n";
+            continue;
+        } // endif
 
-        c.SetCacheSize(64LL*1024LL*1024LL);
+        // Large sequential reads benefit from a larger ROOT cache.  Do not
+        // perform estimate_ft_plane(): this study only uses FD probes.
+        c.SetCacheSize(256LL*1024LL*1024LL);
         c.AddBranchToCache("*",kTRUE);
+        c.SetCacheLearnEntries(100);
 
-        const FTPlaneEstimate ft_plane=estimate_ft_plane(c,b);
-
+        std::array<BinAccum,VAL_NP> bins;
         for (int ip=0;ip<VAL_NP;ip++) {
             const std::string stem=Form("%s_pbin%d",s.label.c_str(),ip);
+            auto& q=bins[ip];
 
-            TH1D h_mx2_ep_peak((stem+"_mx2ep_peak").c_str(),"",80,-0.4,0.6);
-            TH1D h_mx2_ep_shoulder((stem+"_mx2ep_shoulder").c_str(),"",80,-0.4,0.6);
-            TH1D h_mx2_epg_peak((stem+"_mx2epg_peak").c_str(),"",80,-0.25,0.25);
-            TH1D h_mx2_epg_shoulder((stem+"_mx2epg_shoulder").c_str(),"",80,-0.25,0.25);
-            TH1D h_tagE_peak((stem+"_tagE_peak").c_str(),"",80,0.4,6.0);
-            TH1D h_tagE_shoulder((stem+"_tagE_shoulder").c_str(),"",80,0.4,6.0);
-            TH1D h_probeTheta_peak((stem+"_probeTheta_peak").c_str(),"",72,0,36);
-            TH1D h_probeTheta_shoulder((stem+"_probeTheta_shoulder").c_str(),"",72,0,36);
-            TH1D h_probePhi_peak((stem+"_probePhi_peak").c_str(),"",72,-30,330);
-            TH1D h_probePhi_shoulder((stem+"_probePhi_shoulder").c_str(),"",72,-30,330);
-            TH1D h_neutral_peak((stem+"_neutral_peak").c_str(),"",8,-0.5,7.5);
-            TH1D h_neutral_shoulder((stem+"_neutral_shoulder").c_str(),"",8,-0.5,7.5);
-            TH1D h_alpha_peak((stem+"_alpha_peak").c_str(),"",80,0,40);
-            TH1D h_alpha_shoulder((stem+"_alpha_shoulder").c_str(),"",80,0,40);
+            q.mx2ep_peak       =make_hist(stem+"_mx2ep_peak",80,-0.4,0.6);
+            q.mx2ep_shoulder   =make_hist(stem+"_mx2ep_shoulder",80,-0.4,0.6);
+            q.mx2epg_peak      =make_hist(stem+"_mx2epg_peak",80,-0.25,0.25);
+            q.mx2epg_shoulder  =make_hist(stem+"_mx2epg_shoulder",80,-0.25,0.25);
+            q.tagE_peak        =make_hist(stem+"_tagE_peak",80,0.4,6.0);
+            q.tagE_shoulder    =make_hist(stem+"_tagE_shoulder",80,0.4,6.0);
+            q.probeTheta_peak  =make_hist(stem+"_probeTheta_peak",72,0,36);
+            q.probeTheta_shoulder=make_hist(stem+"_probeTheta_shoulder",72,0,36);
+            q.probePhi_peak    =make_hist(stem+"_probePhi_peak",72,-30,330);
+            q.probePhi_shoulder=make_hist(stem+"_probePhi_shoulder",72,-30,330);
+            q.neutral_peak     =make_hist(stem+"_neutral_peak",8,-0.5,7.5);
+            q.neutral_shoulder =make_hist(stem+"_neutral_shoulder",8,-0.5,7.5);
+            q.alpha_peak       =make_hist(stem+"_alpha_peak",80,0,40);
+            q.alpha_shoulder   =make_hist(stem+"_alpha_shoulder",80,0,40);
+        } // endfor
 
-            long long npeak=0,nshould=0;
-            double sum_mx2ep_peak=0,sum_mx2ep_sh=0;
-            double sum_mx2epg_peak=0,sum_mx2epg_sh=0;
-            double sum_tagE_peak=0,sum_tagE_sh=0;
-            double sum_th_peak=0,sum_th_sh=0;
-            double sum_ph_peak=0,sum_ph_sh=0;
-            double sum_mult_peak=0,sum_mult_sh=0;
-            double sum_alpha_peak=0,sum_alpha_sh=0;
-            long long nalpha_peak=0,nalpha_sh=0;
+        std::cout << "\n[shoulder diagnostic] " << s.label
+                  << ": ONE-PASS scan of " << nentries << " rows\n";
 
-            for (Long64_t i=0;i<c.GetEntries();i++) {
-                c.GetEntry(i);
+        Long64_t next_report=0;
+        const Long64_t report_step=std::max<Long64_t>(1,nentries/10);
 
-                if (!b.p_pass_standard) continue;
-                if (!b.tag_pass_beta || !b.tag_pass_fiducial) continue;
-                if (b.tag_detector!=1) continue;
-                if (!finite_good(b.probe_corr_p) ||
-                    !finite_good(b.probe_corr_theta) ||
-                    !finite_good(b.probe_corr_phi)) continue;
-                if (b.probe_corr_p<std::max(p_edges[ip],PROBE_P_MIN) ||
-                    b.probe_corr_p>=p_edges[ip+1]) continue;
+        for (Long64_t i=0;i<nentries;i++) {
+            if (i>=next_report) {
+                const double pct=(nentries>0) ? 100.0*double(i)/double(nentries) : 100.0;
+                std::cout << "  " << s.label << " " << std::fixed
+                          << std::setprecision(0) << pct << "%\n";
+                next_report+=report_step;
+            } // endif
 
-                const NormCutFlags ncf=norm_cut_flags(b);
-                if (!ncf.all) continue;
+            c.GetEntry(i);
 
-                const bool probe_fd=(b.probe_corr_p>=PROBE_P_MIN &&
-                                     b.probe_corr_theta>=FD_THETA_MIN &&
-                                     b.probe_corr_theta<=FD_THETA_MAX);
-                if (!probe_fd) continue;
+            if (!b.p_pass_standard) continue;
+            if (!b.tag_pass_beta || !b.tag_pass_fiducial) continue;
+            if (b.tag_detector!=1) continue;
+            if (!finite_good(b.probe_corr_p) ||
+                !finite_good(b.probe_corr_theta) ||
+                !finite_good(b.probe_corr_phi)) continue;
 
-                const int probe_detector=1;
-                double best_dp=std::numeric_limits<double>::quiet_NaN();
-                double best_alpha=std::numeric_limits<double>::quiet_NaN();
+            const int ip=find_pbin(b.probe_corr_p);
+            if (ip<0) continue;
 
-                // Choose exactly one reconstructed probe candidate using the
-                // macro's existing selection: neutral, pid=22, correct detector,
-                // p >= PROBE_P_MIN, and smallest angular separation.
-                const int best_idx=best_probe_candidate(b,probe_detector);
-                if (best_idx<0) continue;
-                best_alpha=b.neutral_delta_alpha[best_idx];
-                best_dp=b.neutral_p[best_idx]-b.probe_corr_p;
+            const NormCutFlags ncf=norm_cut_flags(b);
+            if (!ncf.all) continue;
 
-                const bool pk=in_peak_region(best_dp);
-                const bool sh=in_shoulder_region(best_dp);
-                if (!pk && !sh) continue;
+            const bool probe_fd=(b.probe_corr_p>=PROBE_P_MIN &&
+                                 b.probe_corr_theta>=FD_THETA_MIN &&
+                                 b.probe_corr_theta<=FD_THETA_MAX);
+            if (!probe_fd) continue;
 
-                const int nneutral=count_reconstructed_neutral_candidates(b);
-                const double phi=wrap_phi(b.probe_corr_phi);
+            // Exactly the same probe-candidate choice as the established
+            // efficiency analysis.
+            const int best_idx=best_probe_candidate(b,1);
+            if (best_idx<0) continue;
 
-                if (pk) {
-                    npeak++;
-                    h_mx2_ep_peak.Fill(b.Mx2_ep);
-                    h_mx2_epg_peak.Fill(b.Mx2_epg_corr);
-                    h_tagE_peak.Fill(b.tag_corr_p);
-                    h_probeTheta_peak.Fill(b.probe_corr_theta);
-                    h_probePhi_peak.Fill(phi);
-                    h_neutral_peak.Fill(nneutral);
-                    if (std::isfinite(best_alpha)) h_alpha_peak.Fill(best_alpha);
+            const double best_alpha=b.neutral_delta_alpha[best_idx];
+            const double best_dp=b.neutral_p[best_idx]-b.probe_corr_p;
 
-                    sum_mx2ep_peak+=b.Mx2_ep;
-                    sum_mx2epg_peak+=b.Mx2_epg_corr;
-                    sum_tagE_peak+=b.tag_corr_p;
-                    sum_th_peak+=b.probe_corr_theta;
-                    sum_ph_peak+=phi;
-                    sum_mult_peak+=nneutral;
-                    if (std::isfinite(best_alpha)) { sum_alpha_peak+=best_alpha; nalpha_peak++; }
-                } else if (sh) {
-                    nshould++;
-                    h_mx2_ep_shoulder.Fill(b.Mx2_ep);
-                    h_mx2_epg_shoulder.Fill(b.Mx2_epg_corr);
-                    h_tagE_shoulder.Fill(b.tag_corr_p);
-                    h_probeTheta_shoulder.Fill(b.probe_corr_theta);
-                    h_probePhi_shoulder.Fill(phi);
-                    h_neutral_shoulder.Fill(nneutral);
-                    if (std::isfinite(best_alpha)) h_alpha_shoulder.Fill(best_alpha);
+            const bool pk=in_peak_region(best_dp);
+            const bool sh=in_shoulder_region(best_dp);
+            if (!pk && !sh) continue;
 
-                    sum_mx2ep_sh+=b.Mx2_ep;
-                    sum_mx2epg_sh+=b.Mx2_epg_corr;
-                    sum_tagE_sh+=b.tag_corr_p;
-                    sum_th_sh+=b.probe_corr_theta;
-                    sum_ph_sh+=phi;
-                    sum_mult_sh+=nneutral;
-                    if (std::isfinite(best_alpha)) { sum_alpha_sh+=best_alpha; nalpha_sh++; }
+            auto& q=bins[ip];
+            const int nneutral=count_reconstructed_neutral_candidates(b);
+            const double phi=wrap_phi(b.probe_corr_phi);
+
+            if (pk) {
+                q.npeak++;
+                q.mx2ep_peak->Fill(b.Mx2_ep);
+                q.mx2epg_peak->Fill(b.Mx2_epg_corr);
+                q.tagE_peak->Fill(b.tag_corr_p);
+                q.probeTheta_peak->Fill(b.probe_corr_theta);
+                q.probePhi_peak->Fill(phi);
+                q.neutral_peak->Fill(nneutral);
+                if (std::isfinite(best_alpha)) q.alpha_peak->Fill(best_alpha);
+
+                q.sum_mx2ep_peak+=b.Mx2_ep;
+                q.sum_mx2epg_peak+=b.Mx2_epg_corr;
+                q.sum_tagE_peak+=b.tag_corr_p;
+                q.sum_th_peak+=b.probe_corr_theta;
+                q.sum_ph_peak+=phi;
+                q.sum_mult_peak+=nneutral;
+                if (std::isfinite(best_alpha)) {
+                    q.sum_alpha_peak+=best_alpha;
+                    q.nalpha_peak++;
                 } // endif
-            } // endfor
+            } else {
+                q.nshould++;
+                q.mx2ep_shoulder->Fill(b.Mx2_ep);
+                q.mx2epg_shoulder->Fill(b.Mx2_epg_corr);
+                q.tagE_shoulder->Fill(b.tag_corr_p);
+                q.probeTheta_shoulder->Fill(b.probe_corr_theta);
+                q.probePhi_shoulder->Fill(phi);
+                q.neutral_shoulder->Fill(nneutral);
+                if (std::isfinite(best_alpha)) q.alpha_shoulder->Fill(best_alpha);
+
+                q.sum_mx2ep_sh+=b.Mx2_ep;
+                q.sum_mx2epg_sh+=b.Mx2_epg_corr;
+                q.sum_tagE_sh+=b.tag_corr_p;
+                q.sum_th_sh+=b.probe_corr_theta;
+                q.sum_ph_sh+=phi;
+                q.sum_mult_sh+=nneutral;
+                if (std::isfinite(best_alpha)) {
+                    q.sum_alpha_sh+=best_alpha;
+                    q.nalpha_sh++;
+                } // endif
+            } // endif
+        } // endfor
+
+        std::cout << "  " << s.label << " 100%\n";
+
+        // Write one compact sample cache containing all histograms.  This is
+        // deliberately saved in the output tree as well as plotted, so future
+        // follow-up plots can be made without rescanning the ROOT trees.
+        {
+            const std::string rootname=dir+"/shoulder_histograms_"+s.label+".root";
+            TFile fout(rootname.c_str(),"RECREATE");
+            if (!fout.IsZombie()) {
+                for (int ip=0;ip<VAL_NP;ip++) {
+                    auto& q=bins[ip];
+                    TH1D* hs[]={
+                        q.mx2ep_peak.get(),q.mx2ep_shoulder.get(),
+                        q.mx2epg_peak.get(),q.mx2epg_shoulder.get(),
+                        q.tagE_peak.get(),q.tagE_shoulder.get(),
+                        q.probeTheta_peak.get(),q.probeTheta_shoulder.get(),
+                        q.probePhi_peak.get(),q.probePhi_shoulder.get(),
+                        q.neutral_peak.get(),q.neutral_shoulder.get(),
+                        q.alpha_peak.get(),q.alpha_shoulder.get()
+                    };
+                    for (TH1D* h:hs) if (h) h->Write();
+                } // endfor
+                fout.Close();
+            } // endif
+        }
+
+        // Numerical summaries.
+        for (int ip=0;ip<VAL_NP;ip++) {
+            const auto& q=bins[ip];
+            const double shoulder_peak_ratio=(q.npeak>0)
+                ? double(q.nshould)/double(q.npeak)
+                : 0.0;
 
             auto write_row=[&](const char* region,long long n,
                                double smx,double smxg,double stE,double sth,
@@ -9125,19 +9235,34 @@ void write_shoulder_diagnostics_for_fd_momentum_bins(const std::string& outdir) 
                 summary << s.label << "," << ip << ","
                         << p_edges[ip] << "," << p_edges[ip+1] << ","
                         << region << "," << n << ","
+                        << shoulder_peak_ratio << ","
                         << (n?smx/n:0) << ","
                         << (n?smxg/n:0) << ","
                         << (n?stE/n:0) << ","
                         << (n?sth/n:0) << ","
                         << (n?sph/n:0) << ","
                         << (n?smult/n:0) << ","
-                        << (na?salpha/na:0) << "\\n";
+                        << (na?salpha/na:0) << "\n";
             };
 
-            write_row("peak",npeak,sum_mx2ep_peak,sum_mx2epg_peak,sum_tagE_peak,
-                      sum_th_peak,sum_ph_peak,sum_mult_peak,sum_alpha_peak,nalpha_peak);
-            write_row("shoulder",nshould,sum_mx2ep_sh,sum_mx2epg_sh,sum_tagE_sh,
-                      sum_th_sh,sum_ph_sh,sum_mult_sh,sum_alpha_sh,nalpha_sh);
+            write_row("peak",q.npeak,
+                      q.sum_mx2ep_peak,q.sum_mx2epg_peak,q.sum_tagE_peak,
+                      q.sum_th_peak,q.sum_ph_peak,q.sum_mult_peak,
+                      q.sum_alpha_peak,q.nalpha_peak);
+            write_row("shoulder",q.nshould,
+                      q.sum_mx2ep_sh,q.sum_mx2epg_sh,q.sum_tagE_sh,
+                      q.sum_th_sh,q.sum_ph_sh,q.sum_mult_sh,
+                      q.sum_alpha_sh,q.nalpha_sh);
+
+            std::cout << Form(
+                "  %s p=%.2f-%.2f GeV: peak=%lld, shoulder=%lld, shoulder/peak=%.3f\n",
+                s.label.c_str(),std::max(p_edges[ip],PROBE_P_MIN),p_edges[ip+1],
+                q.npeak,q.nshould,shoulder_peak_ratio);
+        } // endfor
+
+        // Plot only after the single tree scan is finished.
+        for (int ip=0;ip<VAL_NP;ip++) {
+            auto& q=bins[ip];
 
             struct PairPlot {
                 TH1D* hp;
@@ -9147,13 +9272,20 @@ void write_shoulder_diagnostics_for_fd_momentum_bins(const std::string& outdir) 
             };
 
             PairPlot plots[]={
-                {&h_mx2_ep_peak,&h_mx2_ep_shoulder,"M_{X}^{2}(ep) (GeV^{2})","Mx2_ep"},
-                {&h_mx2_epg_peak,&h_mx2_epg_shoulder,"M_{X}^{2}(ep#gamma_{tag}) (GeV^{2})","Mx2_epg"},
-                {&h_tagE_peak,&h_tagE_shoulder,"E_{#gamma,tag} (GeV)","tag_energy"},
-                {&h_probeTheta_peak,&h_probeTheta_shoulder,"#theta_{#gamma,probe} (deg)","probe_theta"},
-                {&h_probePhi_peak,&h_probePhi_shoulder,"wrapped #phi_{#gamma,probe} (deg)","probe_phi"},
-                {&h_neutral_peak,&h_neutral_shoulder,"reconstructed neutral multiplicity","neutral_multiplicity"},
-                {&h_alpha_peak,&h_alpha_shoulder,"best candidate #Delta#alpha (deg)","best_delta_alpha"}
+                {q.mx2ep_peak.get(),q.mx2ep_shoulder.get(),
+                 "M_{X}^{2}(ep) (GeV^{2})","Mx2_ep"},
+                {q.mx2epg_peak.get(),q.mx2epg_shoulder.get(),
+                 "M_{X}^{2}(ep#gamma_{tag}) (GeV^{2})","Mx2_epg"},
+                {q.tagE_peak.get(),q.tagE_shoulder.get(),
+                 "E_{#gamma,tag} (GeV)","tag_energy"},
+                {q.probeTheta_peak.get(),q.probeTheta_shoulder.get(),
+                 "#theta_{#gamma,probe} (deg)","probe_theta"},
+                {q.probePhi_peak.get(),q.probePhi_shoulder.get(),
+                 "wrapped #phi_{#gamma,probe} (deg)","probe_phi"},
+                {q.neutral_peak.get(),q.neutral_shoulder.get(),
+                 "reconstructed photon-candidate multiplicity","neutral_multiplicity"},
+                {q.alpha_peak.get(),q.alpha_shoulder.get(),
+                 "best candidate #Delta#alpha (deg)","best_delta_alpha"}
             };
 
             for (auto& pp:plots) {
@@ -9181,7 +9313,7 @@ void write_shoulder_diagnostics_for_fd_momentum_bins(const std::string& outdir) 
                 hs.SetMarkerStyle(24);
                 hs.Draw("E1 SAME");
 
-                TLegend leg(0.58,0.74,0.92,0.88);
+                TLegend leg(0.56,0.73,0.92,0.88);
                 leg.SetBorderSize(0);
                 leg.SetFillStyle(0);
                 leg.AddEntry(&hp,Form("peak %.1f<#Delta p<%.1f GeV",
@@ -9208,15 +9340,15 @@ void write_shoulder_diagnostics_for_fd_momentum_bins(const std::string& outdir) 
 
     summary.close();
 
-    // Component composition in peak vs shoulder as a compact CSV.  This is
-    // intentionally based on accepted reconstructed-candidate entries, not the
-    // denominator-level pi0 fraction used by the efficiency extraction.
-    std::cout << "\\n[shoulder diagnostic] wrote " << dir << "\\n"
-              << "  peak window    : " << SHOULDER_PEAK_LO << " < Delta p < "
-              << SHOULDER_PEAK_HI << " GeV\\n"
-              << "  shoulder window: " << SHOULDER_NEG_LO << " < Delta p < "
-              << SHOULDER_NEG_HI << " GeV\\n";
+    std::cout << "\n[shoulder diagnostic] FAST one-pass study written to " << dir << "\n"
+              << "  peak window     : " << SHOULDER_PEAK_LO << " < Delta p < "
+              << SHOULDER_PEAK_HI << " GeV\n"
+              << "  shoulder window : " << SHOULDER_NEG_LO << " < Delta p < "
+              << SHOULDER_NEG_HI << " GeV\n"
+              << "  tree I/O        : one pass per sample (4 passes maximum)\n"
+              << "  saved ROOT histograms allow later plotting without another tree scan\n";
 }
+
 
 void run_concise_analysis(const std::string& out) {
     concise_make_dirs(out);
@@ -9324,6 +9456,7 @@ void photon_efficiency_valerii_reproduction() {
         << "2) independent FD-probe and FT-probe Valerii-style normalization\n"
         << "3) pi0 fraction of selected ep-gamma-X events\n"
         << "4) FD/FT photon efficiency: existing equal-statistics study + exact Valerii FD momentum bins\n"
+        << "5) residual-shoulder diagnosis: ONE tree pass per sample, all p bins filled simultaneously\n"
         << "One parallel tree scan per sample; persistent cache on reruns.\n"
         << "Cache: /work/clas12/thayward/photon_efficiency/cache/concise\n"
         << "============================================================\n";
