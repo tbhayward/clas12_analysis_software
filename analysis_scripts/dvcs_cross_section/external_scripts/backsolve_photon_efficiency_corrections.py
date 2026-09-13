@@ -13,10 +13,14 @@ The fitted model is
     sigma_i(corrected)
       = sigma_i(raw) * [ f_FD,i * C_FD + f_FT,i * C_FT ],
 
-where
+where the topology yields are formed from the four unpolarized 10.6-GeV
+periods (Fa18 Inb/Out and Sp18 Inb/Out):
 
     f_FD,i = (Y_FD,FD + Y_CD,FD) / (Y_FD,FD + Y_CD,FD + Y_CD,FT)
     f_FT,i = Y_CD,FT             / (Y_FD,FD + Y_CD,FD + Y_CD,FT).
+
+Sp19 Inb is not included in these mixture weights because it is the
+10.2-GeV period.
 
 C_FD and C_FT are CROSS-SECTION multipliers = epsilon_MC / epsilon_data.
 
@@ -173,84 +177,67 @@ def norm_name(s):
     return re.sub(r"\s+", " ", str(s).strip().lower())
 
 
+
+TENP6_PERIODS = ("Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out")
+
+
 def find_topology_yield_columns(df):
     """
-    Locate normalized raw-yield columns for:
+    Locate the UNPOLARIZED normalized raw-yield columns for the four 10.6-GeV
+    periods separately, for:
       (FD, FD), (CD, FD), (CD, FT)
 
-    Matching is intentionally tolerant of spacing/capitalization.
+    The CSV does not contain a single "10.6 GeV" topology-yield column.  The
+    combined 10.6-GeV cross section is built from Fa18 Inb, Fa18 Out,
+    Sp18 Inb, and Sp18 Out, while Sp19 Inb is the 10.2-GeV period.
+
+    For the sole purpose of constructing the FD/FT topology MIXTURE, this
+    script sums the normalized raw yields over the four 10.6-GeV periods.
+    A common factor of four would cancel in the topology fractions, so this is
+    equivalent to taking the four-period mean normalized raw yield.
+
+    This is a diagnostic mixture estimate, not a redefinition of the published
+    10.6-GeV cross-section combination.
     """
     candidates = [
         c for c in df.columns
         if "normalized raw yield" in norm_name(c)
         and "ep->epg" in norm_name(c)
+        and norm_name(c).endswith(", unpol")
     ]
 
-    def choose(tokens):
-        hits = []
-        for c in candidates:
-            n = norm_name(c).replace(" ", "")
-            if all(t.replace(" ", "").lower() in n for t in tokens):
-                hits.append(c)
-            #endif
-        #endfor
-        if len(hits) == 1:
-            return hits[0]
-        if len(hits) > 1:
-            # Prefer 10.6 GeV unpolarized column if duplicates exist.
-            preferred = [
-                c for c in hits
-                if "10.6gev" in norm_name(c).replace(" ", "")
-                and "unpol" in norm_name(c)
-            ]
-            if len(preferred) == 1:
-                return preferred[0]
-            #endif
-        #endif
-        return None
-    #enddef
-
-    patterns = {
-        "FD_FD": ["(fd,fd)"],
-        "CD_FD": ["(cd,fd)"],
-        "CD_FT": ["(cd,ft)"],
+    topology_text = {
+        "FD_FD": "(fd,fd)",
+        "CD_FD": "(cd,fd)",
+        "CD_FT": "(cd,ft)",
     }
 
-    out = {}
-    for key, tok in patterns.items():
-        c = choose(tok)
-        if c is None:
-            # More permissive fallback for odd punctuation.
-            target = tok[0].strip("()")
-            a, b = target.split(",")
-            hits = []
-            for col in candidates:
-                n = norm_name(col).replace(" ", "")
-                if f"({a},{b})" in n or f"{a},{b}" in n:
-                    hits.append(col)
+    out = {key: [] for key in topology_text}
+
+    for key, topo in topology_text.items():
+        for period in TENP6_PERIODS:
+            period_norm = norm_name(period).replace(" ", "")
+            matches = []
+
+            for c in candidates:
+                n = norm_name(c).replace(" ", "")
+                if topo in n and period_norm in n:
+                    matches.append(c)
                 #endif
             #endfor
-            if len(hits) == 1:
-                c = hits[0]
-            elif len(hits) > 1:
-                preferred = [
-                    q for q in hits
-                    if "10.6gev" in norm_name(q).replace(" ", "")
-                    and "unpol" in norm_name(q)
-                ]
-                if len(preferred) == 1:
-                    c = preferred[0]
-                #endif
-            #endif
-        #endif
 
-        if c is None:
-            raise RuntimeError(
-                f"Could not uniquely locate normalized raw-yield column for {key}.\n"
-                f"Candidate columns were:\n  " + "\n  ".join(candidates)
-            )
-        #endif
-        out[key] = c
+            if len(matches) != 1:
+                raise RuntimeError(
+                    "Could not uniquely locate the requested normalized raw-yield "
+                    f"column for topology {key}, period '{period}'.\n"
+                    f"Matches: {matches}\n"
+                    "Available unpolarized normalized raw-yield columns were:\n  "
+                    + "\n  ".join(candidates)
+                )
+            #endif
+
+            out[key].append(matches[0])
+        #endfor
     #endfor
 
     return out
@@ -268,24 +255,66 @@ def build_pass2_dataframe(path):
     df["_xs_raw"] = df[XS_COL].map(parse_tuple_first)
     df["_xs_stat_raw"] = df[XS_COL].map(parse_tuple_second)
 
-    for key, col in ycols.items():
-        df[f"_yield_{key}"] = df[col].map(parse_tuple_first)
+    # Build each topology's effective 10.6-GeV normalized raw yield by summing
+    # the four same-energy periods.  Using the mean instead would give exactly
+    # the same FD/FT fractions.
+    for key, cols in ycols.items():
+        pieces = []
+        for col in cols:
+            pieces.append(df[col].map(parse_tuple_first))
+        #endfor
+
+        tmp = pd.concat(pieces, axis=1)
+        n_valid = tmp.notna().sum(axis=1)
+
+        # min_count=1 prevents "all missing" from silently becoming zero.
+        summed = tmp.sum(axis=1, min_count=1)
+
+        # Require at least one contributing 10.6-GeV period.  Normally all four
+        # are present for populated bins; sparse bins can legitimately have fewer.
+        df[f"_yield_{key}"] = np.where(n_valid > 0, summed, np.nan)
+        df[f"_nperiod_{key}"] = n_valid
     #endfor
 
-    df["_yield_FD"] = df["_yield_FD_FD"].fillna(0.0) + df["_yield_CD_FD"].fillna(0.0)
+    df["_yield_FD"] = (
+        df["_yield_FD_FD"].fillna(0.0)
+        + df["_yield_CD_FD"].fillna(0.0)
+    )
     df["_yield_FT"] = df["_yield_CD_FT"].fillna(0.0)
     df["_yield_total"] = df["_yield_FD"] + df["_yield_FT"]
 
     good_y = np.isfinite(df["_yield_total"]) & (df["_yield_total"] > 0.0)
-    df["_f_FD"] = np.where(good_y, df["_yield_FD"] / df["_yield_total"], np.nan)
-    df["_f_FT"] = np.where(good_y, df["_yield_FT"] / df["_yield_total"], np.nan)
+    df["_f_FD"] = np.where(
+        good_y,
+        df["_yield_FD"] / df["_yield_total"],
+        np.nan,
+    )
+    df["_f_FT"] = np.where(
+        good_y,
+        df["_yield_FT"] / df["_yield_total"],
+        np.nan,
+    )
 
-    print("[columns] topology yields:")
-    for key, col in ycols.items():
-        print(f"  {key:5s}: {col}")
+    print("[columns] 10.6-GeV unpolarized topology yields:")
+    for key, cols in ycols.items():
+        print(f"  {key}:")
+        for period, col in zip(TENP6_PERIODS, cols):
+            print(f"    {period:9s}: {col}")
+        #endfor
     #endfor
 
+    finite_mix = np.isfinite(df["_f_FT"])
+    if finite_mix.any():
+        print(
+            "[topology mixture] FT fraction: "
+            f"min={df.loc[finite_mix, '_f_FT'].min():.4f}, "
+            f"median={df.loc[finite_mix, '_f_FT'].median():.4f}, "
+            f"max={df.loc[finite_mix, '_f_FT'].max():.4f}"
+        )
+    #endif
+
     return df
+
 
 
 def solve_linear(df, target_col, unc_col, use_weights=True):
@@ -497,108 +526,105 @@ def make_km15_fit(pass2, comparison_dir, args):
     return label, work
 
 
+
 def make_lee_fit(pass2, comparison_dir):
     lee_file = comparison_dir / "tables" / "lee_hayward_exact_same_bin_points.csv"
+    canonical_file = comparison_dir / "tables" / "canonical_world_data_with_models.csv"
+
     if not lee_file.exists():
         raise FileNotFoundError(lee_file)
     #endif
+    if not canonical_file.exists():
+        raise FileNotFoundError(canonical_file)
+    #endif
 
     ref = pd.read_csv(lee_file, low_memory=False).copy()
-
-    # hayward_point_id is of the form "pass2:<point-id>", where the numeric
-    # suffix in current comparison output is NOT guaranteed to equal the raw
-    # CSV row index.  The safest join is therefore on the Hayward cross-section
-    # value and saved mean kinematics only if source-row information is absent.
-    #
-    # Fortunately the corrected comparison file also stores the Hayward
-    # cross section.  We match it back to the current CSV by the unique
-    # combination of xB/Q2/t/phi means when those columns are available.
-    #
-    # First create a direct map from corrected Hayward value to candidate rows
-    # only as a fallback; we prefer kinematic columns discovered below.
-
-    # Discover mean-kinematic columns in the pass-2 file.
-    def find_col(needles):
-        for c in pass2.columns:
-            n = norm_name(c)
-            if all(k.lower() in n for k in needles):
-                return c
-            #endif
-        #endfor
-        return None
-    #enddef
-
-    xcol = find_col(["x", "mean"])
-    qcol = find_col(["q2", "mean"])
-    tcol = find_col(["t", "mean"])
-    phicol = find_col(["phi", "mean"])
-
-    # If exact mean-column discovery fails, use nearest matching to the
-    # canonical pass-2 model table instead, which already has source_row.
-    canonical = pd.read_csv(
-        comparison_dir / "tables" / "canonical_world_data_with_models.csv",
-        low_memory=False,
-    )
+    canonical = pd.read_csv(canonical_file, low_memory=False)
     canonical = canonical[canonical["dataset"].astype(str).eq("pass2")].copy()
-    canonical["_source_row_int"] = pd.to_numeric(canonical["source_row"], errors="coerce")
+
+    # The exact-same-bin table identifies the Hayward point by point_id
+    # (for example "pass2:5").  canonical_world_data_with_models.csv contains
+    # both point_id and source_row, so use that explicit mapping rather than
+    # trying to recover the row by floating-point kinematic matching.
+    canonical["_source_row_int"] = pd.to_numeric(
+        canonical["source_row"],
+        errors="coerce",
+    )
     canonical = canonical[np.isfinite(canonical["_source_row_int"])].copy()
     canonical["_source_row_int"] = canonical["_source_row_int"].astype(int)
 
-    # Link exact-match rows to canonical pass2 rows using the Hayward mean
-    # kinematics saved in both files.
-    can = canonical[
-        ["_source_row_int", "xB", "Q2", "t_abs", "phi_deg", "point_unc_abs"]
-    ].copy()
+    point_map = canonical[
+        [
+            "point_id",
+            "_source_row_int",
+            "xB",
+            "Q2",
+            "t_abs",
+            "phi_deg",
+            "point_unc_abs",
+        ]
+    ].drop_duplicates("point_id")
 
-    rows = []
-    for _, r in ref.iterrows():
-        vals = np.array(
-            [
-                float(r["hayward_xB"]),
-                float(r["hayward_Q2"]),
-                float(r["hayward_t_abs"]),
-                float(r["hayward_phi"]),
-            ]
+    work_ref = ref.merge(
+        point_map,
+        left_on="hayward_point_id",
+        right_on="point_id",
+        how="inner",
+        validate="many_to_one",
+    )
+
+    if len(work_ref) == 0:
+        raise RuntimeError(
+            "Could not map Lee exact-same-bin points onto pass-2 source rows."
         )
-        C = can[["xB", "Q2", "t_abs", "phi_deg"]].to_numpy(float)
+    #endif
 
-        # Dimensionless near-exact distance. Exact same-bin table should make
-        # this essentially zero for the correct point.
-        scales = np.array([0.01, 0.05, 0.01, 1.0])
-        d2 = np.sum(((C - vals) / scales) ** 2, axis=1)
-        j = int(np.nanargmin(d2))
-
-        if not np.isfinite(d2[j]) or d2[j] > 1.0e-6:
-            continue
-        #endif
-
-        source_row = int(can.iloc[j]["_source_row_int"])
-
-        # Transport Lee measurement from Lee mean kinematics to Hayward means.
-        transport = float(r["km15_lee_to_hayward_mean_transport_factor"])
-        target = float(r["lee_xs"]) * transport
-
-        # Transport Lee point uncertainty by the same multiplicative factor.
-        target_unc = float(r["lee_point_unc"]) * abs(transport)
-
-        rows.append(
-            {
-                "_source_row_int": source_row,
-                "_target": target,
-                "_target_unc": target_unc,
-                "_lee_xs": float(r["lee_xs"]),
-                "_lee_transport": transport,
-                "_lee_point_unc": float(r["lee_point_unc"]),
-                "_angle_region_2d": r.get("angle_region_2d", ""),
-                "_photon_angle_region": r.get("photon_angle_region", ""),
-            }
+    # Transport the Lee measurement from the Lee mean kinematics to the
+    # Hayward mean kinematics with the already-saved KM15 transport factor.
+    work_ref["_target"] = (
+        pd.to_numeric(work_ref["lee_xs"], errors="coerce")
+        * pd.to_numeric(
+            work_ref["km15_lee_to_hayward_mean_transport_factor"],
+            errors="coerce",
         )
-    #endfor
+    )
 
-    mapdf = pd.DataFrame(rows).drop_duplicates("_source_row_int")
+    # Apply the same multiplicative transport to Lee's point uncertainty.
+    work_ref["_target_unc"] = (
+        pd.to_numeric(work_ref["lee_point_unc"], errors="coerce")
+        * np.abs(
+            pd.to_numeric(
+                work_ref["km15_lee_to_hayward_mean_transport_factor"],
+                errors="coerce",
+            )
+        )
+    )
+
+    keep_cols = [
+        "_source_row_int",
+        "_target",
+        "_target_unc",
+        "lee_xs",
+        "lee_point_unc",
+        "km15_lee_to_hayward_mean_transport_factor",
+        "angle_region_2d",
+        "photon_angle_region",
+        "proton_angle_region",
+        "hayward_point_id",
+        "lee_point_id",
+    ]
+    keep_cols = [c for c in keep_cols if c in work_ref.columns]
+
+    mapdf = work_ref[keep_cols].drop_duplicates("_source_row_int")
+
     work = pass2.copy()
     work["_source_row_int"] = np.arange(len(work), dtype=int)
     work = work.merge(mapdf, on="_source_row_int", how="inner")
+
+    print(
+        f"[Lee mapping] exact same-bin rows mapped to original pass-2 CSV: "
+        f"{len(work)}"
+    )
 
     return "Lee2026_exact_same_bin_transported", work
 
