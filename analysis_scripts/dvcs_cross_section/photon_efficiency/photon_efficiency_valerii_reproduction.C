@@ -11726,6 +11726,586 @@ void run_clasdis_missing_vector_audit_only(const std::string& outdir) {
 }
 
 
+
+void run_exclusive_denominator_scan_only(const std::string& outdir) {
+    // ------------------------------------------------------------------
+    // FAST MODE 3: reconstructed-exclusivity scan using the EXISTING skim.
+    //
+    // Purpose:
+    //   Find a denominator definition that suppresses the CLASDIS population
+    //   for which p_miss(ep gamma_tag) is not the generated pi0 partner photon,
+    //   while retaining the high-Eprobe region.
+    //
+    // Critical methodological point:
+    //   Every scanned requirement is constructed only from the electron,
+    //   proton, tag photon, and inferred missing four-vector.  No requirement
+    //   is imposed on successful reconstruction of the probe photon, so this
+    //   scan does NOT condition the efficiency denominator on the quantity
+    //   whose efficiency we are measuring.
+    //
+    // Exactly ONE CLASDIS tree pass is used.  All scan points are accumulated
+    // simultaneously.
+    // ------------------------------------------------------------------
+
+    constexpr int NP=VAL_NP;
+    const double p_edges[NP+1]={0.35,0.50,1.10,1.70,2.30,2.90,3.70,6.00};
+
+    const std::string dir=outdir+"/8_exclusive_denominator_scan";
+    gSystem->mkdir(dir.c_str(),kTRUE);
+
+    struct EpWindow {
+        double lo,hi;
+        const char* label;
+    };
+    const std::vector<EpWindow> ep_windows={
+        {NORM_MX2_EP_MIN,NORM_MX2_EP_MAX,"nominal"},
+        {-0.10,0.15,"mx2ep_m0p10_p0p15"},
+        {-0.05,0.10,"mx2ep_m0p05_p0p10"},
+        {-0.03,0.07,"mx2ep_m0p03_p0p07"}
+    };
+
+    const std::vector<double> epg_abs_cuts={
+        0.25,0.15,0.10,0.05,0.025
+    };
+
+    // Delta E_gamma = E_miss - |p_miss|.  For one missing real photon it
+    // should be approximately zero.
+    const std::vector<double> missE_abs_cuts={
+        1.00,0.50,0.30,0.20,0.15,0.10
+    };
+
+    // Momentum-transfer consistency.  This is diagnostic rather than assumed
+    // a priori; the scan will tell us whether it buys meaningful purity.
+    const std::vector<double> dt_abs_cuts={
+        1.00,0.75,0.50,0.35,0.25,0.15
+    };
+
+    struct Stats {
+        long long n=0;
+        long long n_bad1=0;      // p_miss-p_true > +1 GeV
+        long long n_bad2=0;      // p_miss-p_true > +2 GeV
+        long long n_close03=0;   // |p_miss-p_true| < 0.3 GeV
+        std::vector<double> dp;
+        std::array<long long,NP> n_p{};
+        std::array<long long,NP> bad1_p{};
+        std::array<long long,NP> close03_p{};
+    };
+
+    auto fill_stats=[&](Stats& s,int ip,double dp) {
+        s.n++;
+        s.n_p[ip]++;
+        if (finite_good(dp)) {
+            s.dp.push_back(dp);
+            if (dp>1.0) {
+                s.n_bad1++;
+                s.bad1_p[ip]++;
+            } // endif
+            if (dp>2.0) s.n_bad2++;
+            if (std::fabs(dp)<0.30) {
+                s.n_close03++;
+                s.close03_p[ip]++;
+            } // endif
+        } // endif
+    };
+
+    auto median=[](std::vector<double> v)->double {
+        if (v.empty()) return std::numeric_limits<double>::quiet_NaN();
+        std::sort(v.begin(),v.end());
+        const size_t n=v.size();
+        if (n%2) return v[n/2];
+        return 0.5*(v[n/2-1]+v[n/2]);
+    };
+
+    auto qtile=[](std::vector<double> v,double q)->double {
+        if (v.empty()) return std::numeric_limits<double>::quiet_NaN();
+        std::sort(v.begin(),v.end());
+        const double u=q*double(v.size()-1);
+        const size_t i0=static_cast<size_t>(std::floor(u));
+        const size_t i1=std::min(i0+1,v.size()-1);
+        const double f=u-double(i0);
+        return v[i0]*(1.0-f)+v[i1]*f;
+    };
+
+    auto find_pbin=[&](double p)->int {
+        if (!finite_good(p) || p<PROBE_P_MIN) return -1;
+        for (int ip=0;ip<NP;ip++) {
+            const double lo=std::max(p_edges[ip],PROBE_P_MIN);
+            if (p>=lo && p<p_edges[ip+1]) return ip;
+        } // endfor
+        return -1;
+    };
+
+    // Baseline is the current denominator selection except for the Mx2(ep)
+    // window, which is scanned explicitly.
+    Stats baseline;
+
+    std::vector<Stats> ep_stats(ep_windows.size());
+    std::vector<Stats> epg_stats(epg_abs_cuts.size());
+    std::vector<Stats> missE_stats(missE_abs_cuts.size());
+    std::vector<Stats> dt_stats(dt_abs_cuts.size());
+
+    // Combined scan.  We keep this deliberately modest rather than exploding
+    // into every possible Cartesian product.
+    struct ComboDef {
+        double ep_lo,ep_hi;
+        double epg_abs;
+        double missE_abs;
+        double dt_abs;
+        const char* label;
+    };
+    const std::vector<ComboDef> combos={
+        {NORM_MX2_EP_MIN,NORM_MX2_EP_MAX,0.25,1.00,1.00,"nominal_like"},
+        {-0.10,0.15,0.15,0.50,0.75,"loose_exclusive"},
+        {-0.05,0.10,0.10,0.30,0.50,"medium_exclusive"},
+        {-0.03,0.07,0.05,0.20,0.35,"tight_exclusive"},
+        {-0.03,0.07,0.05,0.15,0.25,"very_tight_exclusive"}
+    };
+    std::vector<Stats> combo_stats(combos.size());
+
+    auto make_h2=[](const std::string& name,
+                    int nx,double xlo,double xhi,
+                    int ny,double ylo,double yhi) {
+        auto h=std::make_unique<TH2D>(
+            name.c_str(),"",nx,xlo,xhi,ny,ylo,yhi);
+        h->SetDirectory(nullptr);
+        return h;
+    };
+
+    auto h_dp_missE=make_h2("exclusive_scan_dp_vs_missingE",
+                            160,-2.0,2.0,180,-5.0,8.0);
+    auto h_dp_dt=make_h2("exclusive_scan_dp_vs_deltaT",
+                         160,-2.0,2.0,180,-5.0,8.0);
+    auto h_dp_mx2ep=make_h2("exclusive_scan_dp_vs_Mx2ep",
+                            160,-0.25,0.60,180,-5.0,8.0);
+    auto h_dp_mx2epg=make_h2("exclusive_scan_dp_vs_Mx2epg",
+                             160,-0.25,0.25,180,-5.0,8.0);
+
+    TChain c("PhotonEfficiency");
+    const int nf=c.Add(make_pattern(CLASDIS_DIR).c_str());
+    const Long64_t nentries=c.GetEntries();
+
+    if (nf<=0 || nentries<=0) {
+        std::cerr << "ERROR: exclusive-denominator scan found no CLASDIS input files.\n";
+        return;
+    } // endif
+
+    Branches b;
+    b.reset_arrays();
+    if (!attach(c,b)) {
+        std::cerr << "ERROR: exclusive-denominator scan could not attach branches.\n";
+        return;
+    } // endif
+
+    const bool have_needed=
+        b.have_beam_energy &&
+        b.have_e_kin &&
+        b.have_p_corr_kin &&
+        b.have_tag_corr_kin &&
+        b.have_Mx2_ep &&
+        b.have_Mx2_epg_corr;
+
+    if (!have_needed) {
+        std::cerr
+            << "ERROR: this scan requires beam/e/p/tag kinematics, Mx2_ep, "
+            << "and Mx2_epg_corr from the existing skim.\n";
+        return;
+    } // endif
+
+    c.SetCacheSize(256LL*1024LL*1024LL);
+    c.AddBranchToCache("*",kTRUE);
+    c.SetCacheLearnEntries(100);
+
+    std::cout
+        << "\n============================================================\n"
+        << " FAST MODE 3: exclusive denominator scan\n"
+        << "============================================================\n"
+        << "One CLASDIS pass. No data/AAO/DVCS scan and no old analysis stages.\n"
+        << "All cuts are probe-reconstruction-independent denominator cuts.\n"
+        << "Entries: " << nentries << "\n"
+        << "============================================================\n";
+
+    Long64_t report_step=std::max<Long64_t>(1,nentries/10);
+    Long64_t next_report=0;
+
+    constexpr double mp=0.9382720813;
+    constexpr double me=0.00051099895;
+
+    for (Long64_t i=0;i<nentries;i++) {
+        if (i>=next_report) {
+            std::cout << "  CLASDIS "
+                      << std::fixed << std::setprecision(0)
+                      << 100.0*double(i)/double(nentries) << "%\n";
+            next_report+=report_step;
+        } // endif
+
+        c.GetEntry(i);
+
+        if (!b.p_pass_standard) continue;
+        if (!b.tag_pass_beta || !b.tag_pass_fiducial) continue;
+        if (b.tag_detector!=1) continue;
+
+        if (!finite_good(b.probe_corr_p) ||
+            !finite_good(b.probe_corr_theta) ||
+            !finite_good(b.probe_corr_phi)) continue;
+
+        const int ip=find_pbin(b.probe_corr_p);
+        if (ip<0) continue;
+
+        const bool probe_fd=
+            b.probe_corr_p>=PROBE_P_MIN &&
+            b.probe_corr_theta>=FD_THETA_MIN &&
+            b.probe_corr_theta<=FD_THETA_MAX;
+        if (!probe_fd) continue;
+
+        const bool truth_pi0=
+            b.have_truth &&
+            b.truth_probe_pid==22 &&
+            b.truth_probe_parent==111 &&
+            finite_good(b.truth_probe_p);
+        if (!truth_pi0) continue;
+
+        // Keep the existing non-Mx2(ep) denominator requirements fixed.
+        const NormCutFlags ncf=norm_cut_flags(b);
+        if (!ncf.mx2_eg || !ncf.dphi_trento || !ncf.angle_gX) continue;
+
+        const double mx2ep=b.Mx2_ep;
+        const double mx2epg=b.Mx2_epg_corr;
+        const double dt=norm_delta_t_pg(b);
+
+        // Missing-system energy reconstructed from the same e,p,tag objects
+        // used to construct the missing momentum.
+        const double Ee=std::sqrt(b.e_p*b.e_p+me*me);
+        const double Ep=std::sqrt(b.p_corr_p*b.p_corr_p+mp*mp);
+        const double Etag=b.tag_corr_p;
+        const double Emiss=b.beam_energy+mp-Ee-Ep-Etag;
+        const double missingE=Emiss-b.probe_corr_p;
+
+        const double dp=b.probe_corr_p-b.truth_probe_p;
+
+        if (!finite_good(mx2ep) ||
+            !finite_good(mx2epg) ||
+            !finite_good(dt) ||
+            !finite_good(missingE) ||
+            !finite_good(dp)) continue;
+
+        // Baseline: retain the entire loose skim Mx2(ep) range.
+        fill_stats(baseline,ip,dp);
+
+        h_dp_missE->Fill(missingE,dp);
+        h_dp_dt->Fill(dt,dp);
+        h_dp_mx2ep->Fill(mx2ep,dp);
+        h_dp_mx2epg->Fill(mx2epg,dp);
+
+        // One-dimensional scans.  These tell us which reconstructed
+        // exclusivity quantity has genuine rejection power by itself.
+        for (size_t j=0;j<ep_windows.size();j++) {
+            if (mx2ep>ep_windows[j].lo && mx2ep<ep_windows[j].hi)
+                fill_stats(ep_stats[j],ip,dp);
+        } // endfor
+
+        for (size_t j=0;j<epg_abs_cuts.size();j++) {
+            if (std::fabs(mx2epg)<epg_abs_cuts[j])
+                fill_stats(epg_stats[j],ip,dp);
+        } // endfor
+
+        for (size_t j=0;j<missE_abs_cuts.size();j++) {
+            if (std::fabs(missingE)<missE_abs_cuts[j])
+                fill_stats(missE_stats[j],ip,dp);
+        } // endfor
+
+        for (size_t j=0;j<dt_abs_cuts.size();j++) {
+            if (std::fabs(dt)<dt_abs_cuts[j])
+                fill_stats(dt_stats[j],ip,dp);
+        } // endfor
+
+        for (size_t j=0;j<combos.size();j++) {
+            const auto& d=combos[j];
+            const bool pass=
+                mx2ep>d.ep_lo && mx2ep<d.ep_hi &&
+                std::fabs(mx2epg)<d.epg_abs &&
+                std::fabs(missingE)<d.missE_abs &&
+                std::fabs(dt)<d.dt_abs;
+            if (pass) fill_stats(combo_stats[j],ip,dp);
+        } // endfor
+    } // endfor
+
+    std::cout << "  CLASDIS 100%\n";
+
+    auto retention=[&](const Stats& s)->double {
+        return baseline.n>0 ? double(s.n)/double(baseline.n) : 0.0;
+    };
+    auto bad1frac=[](const Stats& s)->double {
+        return s.n>0 ? double(s.n_bad1)/double(s.n) : 0.0;
+    };
+    auto bad2frac=[](const Stats& s)->double {
+        return s.n>0 ? double(s.n_bad2)/double(s.n) : 0.0;
+    };
+    auto closefrac=[](const Stats& s)->double {
+        return s.n>0 ? double(s.n_close03)/double(s.n) : 0.0;
+    };
+    auto p_retention=[&](const Stats& s,int ip)->double {
+        return baseline.n_p[ip]>0 ?
+            double(s.n_p[ip])/double(baseline.n_p[ip]) : 0.0;
+    };
+    auto p_bad1=[](const Stats& s,int ip)->double {
+        return s.n_p[ip]>0 ?
+            double(s.bad1_p[ip])/double(s.n_p[ip]) : 0.0;
+    };
+    auto p_close=[](const Stats& s,int ip)->double {
+        return s.n_p[ip]>0 ?
+            double(s.close03_p[ip])/double(s.n_p[ip]) : 0.0;
+    };
+
+    // ------------------------------------------------------------------
+    // All scan points in one machine-readable table.
+    // ------------------------------------------------------------------
+    std::ofstream csv(dir+"/exclusive_denominator_scan.csv");
+    csv << "scan_type,label,param1,param2,param3,param4,"
+           "n,retention_all,bad_gt1_fraction,bad_gt2_fraction,"
+           "close_absdp_lt0p3_fraction,median_dp_GeV,q16_dp_GeV,q84_dp_GeV";
+    for (int ip=0;ip<NP;ip++) {
+        csv << ",retention_p" << ip
+            << ",bad_gt1_fraction_p" << ip
+            << ",close_fraction_p" << ip;
+    } // endfor
+    csv << "\n";
+    csv << std::setprecision(10);
+
+    auto write_row=[&](const std::string& type,
+                       const std::string& label,
+                       double p1,double p2,double p3,double p4,
+                       const Stats& s) {
+        csv << type << "," << label << ","
+            << p1 << "," << p2 << "," << p3 << "," << p4 << ","
+            << s.n << "," << retention(s) << ","
+            << bad1frac(s) << "," << bad2frac(s) << ","
+            << closefrac(s) << ","
+            << median(s.dp) << ","
+            << qtile(s.dp,0.16) << ","
+            << qtile(s.dp,0.84);
+        for (int ip=0;ip<NP;ip++) {
+            csv << "," << p_retention(s,ip)
+                << "," << p_bad1(s,ip)
+                << "," << p_close(s,ip);
+        } // endfor
+        csv << "\n";
+    };
+
+    write_row("baseline","loose_skim_baseline",
+              NORM_MX2_EP_MIN,NORM_MX2_EP_MAX,0,0,baseline);
+
+    for (size_t j=0;j<ep_windows.size();j++) {
+        write_row("mx2ep",ep_windows[j].label,
+                  ep_windows[j].lo,ep_windows[j].hi,0,0,ep_stats[j]);
+    } // endfor
+
+    for (size_t j=0;j<epg_abs_cuts.size();j++) {
+        write_row("mx2epg_abs",
+                  Form("abs_mx2epg_lt_%0.3f",epg_abs_cuts[j]),
+                  epg_abs_cuts[j],0,0,0,epg_stats[j]);
+    } // endfor
+
+    for (size_t j=0;j<missE_abs_cuts.size();j++) {
+        write_row("missingE_abs",
+                  Form("abs_Emiss_minus_pmiss_lt_%0.2f",missE_abs_cuts[j]),
+                  missE_abs_cuts[j],0,0,0,missE_stats[j]);
+    } // endfor
+
+    for (size_t j=0;j<dt_abs_cuts.size();j++) {
+        write_row("deltaT_abs",
+                  Form("abs_deltaT_lt_%0.2f",dt_abs_cuts[j]),
+                  dt_abs_cuts[j],0,0,0,dt_stats[j]);
+    } // endfor
+
+    for (size_t j=0;j<combos.size();j++) {
+        const auto& d=combos[j];
+        write_row("combined",d.label,
+                  d.ep_lo,d.ep_hi,d.epg_abs,d.missE_abs,combo_stats[j]);
+    } // endfor
+    csv.close();
+
+    // Separate compact table for the high-E bins, where the problem matters.
+    std::ofstream highcsv(dir+"/highE_exclusivity_summary.csv");
+    highcsv << "label,n_all,retention_all,bad_gt1_all,close_all,"
+               "retention_2p9_3p7,bad_gt1_2p9_3p7,close_2p9_3p7,"
+               "retention_3p7_6p0,bad_gt1_3p7_6p0,close_3p7_6p0,"
+               "median_dp_all_GeV\n";
+    highcsv << std::setprecision(10);
+
+    auto highrow=[&](const std::string& label,const Stats& s) {
+        highcsv << label << ","
+                << s.n << "," << retention(s) << ","
+                << bad1frac(s) << "," << closefrac(s) << ","
+                << p_retention(s,5) << "," << p_bad1(s,5) << "," << p_close(s,5) << ","
+                << p_retention(s,6) << "," << p_bad1(s,6) << "," << p_close(s,6) << ","
+                << median(s.dp) << "\n";
+    };
+
+    highrow("baseline",baseline);
+    for (size_t j=0;j<ep_windows.size();j++)
+        highrow(ep_windows[j].label,ep_stats[j]);
+    for (size_t j=0;j<epg_abs_cuts.size();j++)
+        highrow(Form("abs_Mx2epg<%.3f",epg_abs_cuts[j]),epg_stats[j]);
+    for (size_t j=0;j<missE_abs_cuts.size();j++)
+        highrow(Form("abs_missingE<%.2f",missE_abs_cuts[j]),missE_stats[j]);
+    for (size_t j=0;j<dt_abs_cuts.size();j++)
+        highrow(Form("abs_deltaT<%.2f",dt_abs_cuts[j]),dt_stats[j]);
+    for (size_t j=0;j<combos.size();j++)
+        highrow(combos[j].label,combo_stats[j]);
+    highcsv.close();
+
+    // ------------------------------------------------------------------
+    // Human-readable ranking of the combined definitions.
+    // ------------------------------------------------------------------
+    std::cout
+        << "\n============================================================\n"
+        << " HIGH-E EXCLUSIVITY PERFORMANCE\n"
+        << "============================================================\n"
+        << "Bad = p_miss-p_true > +1 GeV.\n"
+        << "Close = |p_miss-p_true| < 0.3 GeV.\n\n";
+
+    std::cout << Form(
+        "Baseline: N=%lld, bad=%.3f, close=%.3f; "
+        "retention high bins by definition = 1.000\n",
+        baseline.n,bad1frac(baseline),closefrac(baseline));
+
+    for (size_t j=0;j<combos.size();j++) {
+        const auto& s=combo_stats[j];
+        std::cout << Form(
+            "%-22s all-ret=%.3f bad=%.3f close=%.3f | "
+            "2.9-3.7 ret=%.3f bad=%.3f close=%.3f | "
+            "3.7-6.0 ret=%.3f bad=%.3f close=%.3f\n",
+            combos[j].label,
+            retention(s),bad1frac(s),closefrac(s),
+            p_retention(s,5),p_bad1(s,5),p_close(s,5),
+            p_retention(s,6),p_bad1(s,6),p_close(s,6));
+    } // endfor
+
+    // ------------------------------------------------------------------
+    // Plot: high-E retention versus bad-population fraction.  The desired
+    // region is upper-left: retain many high-E events while rejecting the
+    // pathological p_miss population.
+    // ------------------------------------------------------------------
+    {
+        TGraph g29,g37;
+        g29.SetMarkerStyle(20);
+        g29.SetMarkerColor(kBlack);
+        g29.SetLineColor(kBlack);
+        g37.SetMarkerStyle(24);
+        g37.SetMarkerColor(kRed+1);
+        g37.SetLineColor(kRed+1);
+
+        for (size_t j=0;j<combos.size();j++) {
+            int n=g29.GetN();
+            g29.SetPoint(n,p_bad1(combo_stats[j],5),p_retention(combo_stats[j],5));
+            n=g37.GetN();
+            g37.SetPoint(n,p_bad1(combo_stats[j],6),p_retention(combo_stats[j],6));
+        } // endfor
+
+        TCanvas cc("c_exclusive_tradeoff","",1050,780);
+        cc.SetLeftMargin(0.14);
+        cc.SetRightMargin(0.04);
+        cc.SetBottomMargin(0.14);
+        cc.SetTopMargin(0.12);
+        cc.SetTicks(1,1);
+
+        TH1D axis("h_exclusive_tradeoff_axis",
+                  ";Fraction with p_{miss}-p_{true}>1 GeV;"
+                  "High-E_{#gamma,probe} event retention",
+                  100,0.0,1.0);
+        axis.SetDirectory(nullptr);
+        axis.SetStats(0);
+        axis.SetMinimum(0.0);
+        axis.SetMaximum(1.05);
+        axis.Draw("AXIS");
+
+        g29.Draw("PL SAME");
+        g37.Draw("PL SAME");
+
+        TLegend leg(0.58,0.75,0.92,0.88);
+        leg.SetBorderSize(0);
+        leg.SetFillStyle(0);
+        leg.AddEntry(&g29,"2.9-3.7 GeV","lp");
+        leg.AddEntry(&g37,"3.7-6.0 GeV","lp");
+        leg.Draw();
+
+        TLatex tx;
+        tx.SetNDC();
+        tx.SetTextFont(42);
+        tx.SetTextSize(0.038);
+        tx.DrawLatex(0.14,0.945,
+            "CLASDIS exclusivity scan: retention vs pathological population");
+
+        cc.SaveAs((dir+"/highE_retention_vs_bad_fraction.png").c_str());
+    }
+
+    // Diagnostic correlations from the same pass.
+    auto draw_h2=[&](TH2D* h,const char* xtitle,const char* filename) {
+        if (!h || h->GetEntries()<=0) return;
+        TCanvas cc(Form("c_%s",h->GetName()),"",1000,780);
+        cc.SetLeftMargin(0.14);
+        cc.SetRightMargin(0.14);
+        cc.SetBottomMargin(0.14);
+        cc.SetTopMargin(0.12);
+        cc.SetTicks(1,1);
+        h->SetStats(0);
+        h->GetXaxis()->SetTitle(xtitle);
+        h->GetYaxis()->SetTitle("p_{miss}-p_{#gamma,true} (GeV)");
+        h->Draw("COLZ");
+        cc.SaveAs((dir+"/"+filename).c_str());
+    };
+
+    draw_h2(h_dp_missE.get(),
+            "E_{miss}-|p_{miss}| (GeV)",
+            "dp_vs_missing_energy.png");
+    draw_h2(h_dp_dt.get(),
+            "#Delta t = t_{p}-t_{#gamma} (GeV^{2})",
+            "dp_vs_delta_t.png");
+    draw_h2(h_dp_mx2ep.get(),
+            "M_{X}^{2}(ep) (GeV^{2})",
+            "dp_vs_Mx2ep.png");
+    draw_h2(h_dp_mx2epg.get(),
+            "M_{X}^{2}(ep#gamma_{tag}) (GeV^{2})",
+            "dp_vs_Mx2epg.png");
+
+    {
+        TFile fout((dir+"/exclusive_denominator_scan_histograms.root").c_str(),
+                   "RECREATE");
+        if (!fout.IsZombie()) {
+            h_dp_missE->Write();
+            h_dp_dt->Write();
+            h_dp_mx2ep->Write();
+            h_dp_mx2epg->Write();
+            fout.Close();
+        } // endif
+    }
+
+    std::ofstream note(dir+"/README.txt");
+    note
+        << "FAST MODE 3 scans reconstructed exclusivity requirements using one "
+        << "CLASDIS pass.\n"
+        << "No scanned requirement depends on finding/reconstructing the probe "
+        << "photon candidate.\n"
+        << "Therefore these requirements may be considered for the efficiency "
+        << "denominator without directly conditioning on numerator success.\n\n"
+        << "Definitions:\n"
+        << "  missingE = E_miss - |p_miss|\n"
+        << "  deltaT   = t_p - t_gamma\n"
+        << "  bad      = p_miss - p_true > +1 GeV\n"
+        << "  close    = |p_miss - p_true| < 0.3 GeV\n\n"
+        << "Use highE_exclusivity_summary.csv first. A useful cut should reduce "
+        << "the bad fraction strongly while retaining a substantial fraction of "
+        << "the 2.9-3.7 and 3.7-6.0 GeV samples.\n";
+    note.close();
+
+    std::cout
+        << "\n[wrote] " << dir << "/exclusive_denominator_scan.csv\n"
+        << "[wrote] " << dir << "/highE_exclusivity_summary.csv\n"
+        << "[wrote] " << dir << "/highE_retention_vs_bad_fraction.png\n"
+        << "\nFAST exclusive-denominator scan complete.\n";
+}
+
+
 void run_concise_analysis(const std::string& out) {
     concise_make_dirs(out);
 
@@ -11826,8 +12406,9 @@ void photon_efficiency_valerii_reproduction(int run_mode=0) {
     concise_publication_style();
 
     // run_mode = 0 : full analysis
-    // run_mode = 1 : previous CLASDIS truth-category dissection only
-    // run_mode = 2 : NEW missing-vector audit only
+    // run_mode = 1 : CLASDIS truth-category dissection only
+    // run_mode = 2 : missing-vector audit only
+    // run_mode = 3 : NEW reconstructed-exclusivity denominator scan only
     if (run_mode==1) {
         pe::run_clasdis_truth_dissection_only("output");
         return;
@@ -11838,10 +12419,16 @@ void photon_efficiency_valerii_reproduction(int run_mode=0) {
         return;
     } // endif
 
+    if (run_mode==3) {
+        pe::run_exclusive_denominator_scan_only("output");
+        return;
+    } // endif
+
     if (run_mode!=0) {
         std::cerr << "ERROR: unknown run_mode=" << run_mode
-                  << ". Use 0 (full), 1 (truth dissection), or 2 "
-                  << "(missing-vector audit).\n";
+                  << ". Use 0 (full), 1 (truth dissection), 2 "
+                  << "(missing-vector audit), or 3 "
+                  << "(exclusive-denominator scan).\n";
         return;
     } // endif
 
