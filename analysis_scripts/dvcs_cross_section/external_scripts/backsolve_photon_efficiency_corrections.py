@@ -41,6 +41,17 @@ Two reference modes are supported:
 This is NOT a production efficiency extraction.  It is deliberately a
 "what correction would the cross sections prefer?" diagnostic.
 
+In addition to the two-parameter global fit, the script now reports the direct
+pointwise correction
+
+    C_i = sigma_reference / sigma_Hayward_raw
+
+for FD-pure (default f_FT <= 0.05), FT-pure (default f_FT >= 0.95), mixed,
+and all points.  The median and central 68% interval are unweighted so that a
+few tiny-error points cannot dictate the answer.  Where both measurements have
+point uncertainties (notably Lee), a one-parameter weighted scale using the
+combined Hayward+reference uncertainty is also reported.
+
 Example:
 
   python external_scripts/backsolve_photon_efficiency_corrections.py \
@@ -112,6 +123,15 @@ def parse_args():
         "--no-point-weights",
         action="store_true",
         help="Fit all points with equal weight instead of point-by-point uncertainties.",
+    )
+    p.add_argument(
+        "--pure-threshold",
+        type=float,
+        default=0.05,
+        help=(
+            "Topology-purity threshold. FD-pure means f_FT <= threshold and "
+            "FT-pure means f_FT >= 1-threshold. Default: 0.05."
+        ),
     )
     p.add_argument(
         "--bootstrap",
@@ -461,6 +481,405 @@ def solve_linear(df, target_col, unc_col, use_weights=True):
     return result, idx, pred, resid
 
 
+
+def solve_linear_combined_uncertainty(
+    df,
+    target_col,
+    target_unc_col,
+    hayward_unc_col,
+    max_iter=100,
+    tol=1.0e-10,
+):
+    """
+    Two-parameter FD/FT fit using BOTH reference and Hayward point uncertainties.
+
+    The model is
+        target_i = xs_i * (fFD_i*C_FD + fFT_i*C_FT)
+
+    and the variance used at each iteration is
+        var_i = target_unc_i^2 + (Ceff_i * hayward_unc_i)^2.
+
+    Because Ceff depends on the fitted parameters, the weights are updated
+    iteratively until the two correction factors stop changing.
+    """
+    xraw = df["_xs_raw"].to_numpy(float)
+    ffd = df["_f_FD"].to_numpy(float)
+    fft = df["_f_FT"].to_numpy(float)
+    y = df[target_col].to_numpy(float)
+    uy = df[target_unc_col].to_numpy(float)
+    ux = df[hayward_unc_col].to_numpy(float)
+
+    good = (
+        np.isfinite(xraw)
+        & np.isfinite(ffd)
+        & np.isfinite(fft)
+        & np.isfinite(y)
+        & np.isfinite(uy)
+        & np.isfinite(ux)
+        & (xraw > 0)
+        & (y > 0)
+        & (uy > 0)
+        & (ux >= 0)
+    )
+
+    X = np.column_stack(
+        [
+            xraw[good] * ffd[good],
+            xraw[good] * fft[good],
+        ]
+    )
+    yy = y[good]
+    uyy = uy[good]
+    uxx = ux[good]
+    ffd_g = ffd[good]
+    fft_g = fft[good]
+
+    if X.shape[0] < 3:
+        raise RuntimeError(
+            "Too few valid points for combined-uncertainty FD/FT fit."
+        )
+    #endif
+
+    # Start from the reference-only weighted solution.
+    start_df = df.loc[df.index.to_numpy()[good]].copy()
+    start, _, _, _ = solve_linear(
+        start_df,
+        target_col,
+        target_unc_col,
+        use_weights=True,
+    )
+    beta = np.array([start["C_FD"], start["C_FT"]], dtype=float)
+
+    converged = False
+    niter = 0
+    for niter in range(1, max_iter + 1):
+        ceff = ffd_g * beta[0] + fft_g * beta[1]
+        var = uyy**2 + (ceff * uxx)**2
+        valid_var = np.isfinite(var) & (var > 0)
+
+        Xv = X[valid_var]
+        yv = yy[valid_var]
+        vv = var[valid_var]
+
+        sw = 1.0 / np.sqrt(vv)
+        Xw = Xv * sw[:, None]
+        yw = yv * sw
+
+        beta_new, _, _, _ = np.linalg.lstsq(Xw, yw, rcond=None)
+
+        if np.max(np.abs(beta_new - beta)) < tol:
+            beta = beta_new
+            converged = True
+            break
+        #endif
+
+        beta = beta_new
+    #endfor
+
+    ceff = ffd_g * beta[0] + fft_g * beta[1]
+    var = uyy**2 + (ceff * uxx)**2
+    valid_var = np.isfinite(var) & (var > 0)
+
+    Xv = X[valid_var]
+    yv = yy[valid_var]
+    vv = var[valid_var]
+    pred = Xv @ beta
+    resid = yv - pred
+
+    chi2 = float(np.sum(resid**2 / vv))
+    n = len(yv)
+    ndof = max(n - 2, 1)
+
+    sw = 1.0 / np.sqrt(vv)
+    Xw = Xv * sw[:, None]
+    cov = np.linalg.pinv(Xw.T @ Xw)
+
+    c_fd, c_ft = map(float, beta)
+    efd = float(math.sqrt(max(cov[0, 0], 0.0)))
+    eft = float(math.sqrt(max(cov[1, 1], 0.0)))
+    corr = (
+        float(cov[0, 1] / math.sqrt(cov[0, 0] * cov[1, 1]))
+        if cov[0, 0] > 0 and cov[1, 1] > 0
+        else np.nan
+    )
+
+    original_idx = df.index.to_numpy()[good][valid_var]
+
+    return {
+        "N": n,
+        "C_FD": c_fd,
+        "C_FT": c_ft,
+        "formal_err_C_FD": efd,
+        "formal_err_C_FT": eft,
+        "corr_CFD_CFT": corr,
+        "eps_data_over_mc_FD": 1.0 / c_fd if c_fd > 0 else np.nan,
+        "eps_data_over_mc_FT": 1.0 / c_ft if c_ft > 0 else np.nan,
+        "chi2": chi2,
+        "ndof": ndof,
+        "chi2_per_dof": chi2 / ndof,
+        "iterations": niter,
+        "converged": converged,
+    }, original_idx, pred, resid
+
+
+def solve_one_scale_combined_uncertainty(
+    x,
+    y,
+    ux,
+    uy,
+    max_iter=100,
+    tol=1.0e-12,
+):
+    """
+    Fit y = C*x using uncertainties on BOTH x and y.
+
+    The effective variance is
+        uy^2 + (C*ux)^2,
+    so the weight is updated iteratively.
+    """
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+    ux = np.asarray(ux, float)
+    uy = np.asarray(uy, float)
+
+    good = (
+        np.isfinite(x)
+        & np.isfinite(y)
+        & np.isfinite(ux)
+        & np.isfinite(uy)
+        & (x > 0)
+        & (y > 0)
+        & (ux >= 0)
+        & (uy > 0)
+    )
+    x = x[good]
+    y = y[good]
+    ux = ux[good]
+    uy = uy[good]
+
+    if len(x) < 2:
+        return {
+            "weighted_C": np.nan,
+            "weighted_C_err": np.nan,
+            "weighted_chi2_per_dof": np.nan,
+            "weighted_N": len(x),
+        }
+    #endif
+
+    # Median ratio is a stable initial value.
+    C = float(np.median(y / x))
+
+    for _ in range(max_iter):
+        var = uy**2 + (C * ux)**2
+        w = 1.0 / var
+        denom = float(np.sum(w * x * x))
+        if denom <= 0:
+            break
+        #endif
+        Cnew = float(np.sum(w * x * y) / denom)
+        if abs(Cnew - C) < tol:
+            C = Cnew
+            break
+        #endif
+        C = Cnew
+    #endfor
+
+    var = uy**2 + (C * ux)**2
+    w = 1.0 / var
+    denom = float(np.sum(w * x * x))
+    Cerr = math.sqrt(1.0 / denom) if denom > 0 else np.nan
+    chi2 = float(np.sum((y - C * x) ** 2 / var))
+    ndof = max(len(x) - 1, 1)
+
+    return {
+        "weighted_C": C,
+        "weighted_C_err": Cerr,
+        "weighted_chi2_per_dof": chi2 / ndof,
+        "weighted_N": len(x),
+    }
+
+
+def summarize_pointwise_corrections(
+    work,
+    label,
+    pure_threshold,
+    outdir,
+):
+    """
+    Report the direct pointwise correction distribution
+
+        C_i = sigma_reference / sigma_Hayward_raw
+
+    separately for FD-pure, FT-pure, and mixed topology populations.
+
+    The median and central 68% interval are intentionally unweighted: they
+    answer the simple diagnostic question "what scale does a typical point
+    prefer?" without allowing a small number of tiny-error points to dominate.
+    """
+    if not (0.0 <= pure_threshold < 0.5):
+        raise ValueError("--pure-threshold must satisfy 0 <= threshold < 0.5")
+    #endif
+
+    d = work.copy()
+
+    d["_C_point"] = d["_target"] / d["_xs_raw"]
+    d["_eps_data_over_mc_point"] = np.where(
+        d["_C_point"] > 0,
+        1.0 / d["_C_point"],
+        np.nan,
+    )
+
+    d["_topology_class"] = "mixed"
+    d.loc[d["_f_FT"] <= pure_threshold, "_topology_class"] = "FD-pure"
+    d.loc[d["_f_FT"] >= 1.0 - pure_threshold, "_topology_class"] = "FT-pure"
+
+    rows = []
+
+    for cls in ("FD-pure", "FT-pure", "mixed", "all"):
+        if cls == "all":
+            q = d.copy()
+        else:
+            q = d[d["_topology_class"] == cls].copy()
+        #endif
+
+        good = (
+            np.isfinite(q["_C_point"])
+            & (q["_C_point"] > 0)
+            & np.isfinite(q["_xs_raw"])
+            & (q["_xs_raw"] > 0)
+            & np.isfinite(q["_target"])
+            & (q["_target"] > 0)
+        )
+        q = q[good].copy()
+
+        if len(q) == 0:
+            continue
+        #endif
+
+        c = q["_C_point"].to_numpy(float)
+        eps = 1.0 / c
+
+        c16, c50, c84 = np.percentile(c, [16, 50, 84])
+        e16, e50, e84 = np.percentile(eps, [16, 50, 84])
+
+        row = {
+            "reference": label,
+            "topology_class": cls,
+            "pure_threshold": pure_threshold,
+            "N": len(q),
+            "C_median": float(c50),
+            "C_mean": float(np.mean(c)),
+            "C_p16": float(c16),
+            "C_p84": float(c84),
+            "eps_data_over_mc_median": float(e50),
+            "eps_data_over_mc_mean": float(np.mean(eps)),
+            "eps_data_over_mc_p16": float(e16),
+            "eps_data_over_mc_p84": float(e84),
+            "median_f_FT": float(np.median(q["_f_FT"])),
+        }
+
+        # If both Hayward and reference uncertainties are present, also report
+        # a one-parameter weighted scale using BOTH. This is particularly useful
+        # for the Lee exact-same-bin comparison.
+        if "_hayward_unc" in q.columns and "_target_unc" in q.columns:
+            weighted = solve_one_scale_combined_uncertainty(
+                q["_xs_raw"].to_numpy(float),
+                q["_target"].to_numpy(float),
+                q["_hayward_unc"].to_numpy(float),
+                q["_target_unc"].to_numpy(float),
+            )
+            row.update(weighted)
+
+            wc = weighted["weighted_C"]
+            wce = weighted["weighted_C_err"]
+            if np.isfinite(wc) and wc > 0:
+                row["weighted_eps_data_over_mc"] = 1.0 / wc
+                row["weighted_eps_data_over_mc_err"] = (
+                    wce / (wc * wc) if np.isfinite(wce) else np.nan
+                )
+            else:
+                row["weighted_eps_data_over_mc"] = np.nan
+                row["weighted_eps_data_over_mc_err"] = np.nan
+            #endif
+        #endif
+
+        rows.append(row)
+    #endfor
+
+    summary = pd.DataFrame(rows)
+    summary.to_csv(
+        outdir / f"{label}_pointwise_correction_summary.csv",
+        index=False,
+    )
+
+    keep = [
+        c for c in [
+            "_source_row_int",
+            "_xs_raw",
+            "_hayward_unc",
+            "_target",
+            "_target_unc",
+            "_f_FD",
+            "_f_FT",
+            "_topology_class",
+            "_C_point",
+            "_eps_data_over_mc_point",
+            "xB",
+            "Q2",
+            "t_abs",
+            "phi_deg",
+            "g_theta",
+            "p_theta",
+            "angle_region_2d",
+            "photon_angle_region",
+            "proton_angle_region",
+            "hayward_point_id",
+            "lee_point_id",
+        ]
+        if c in d.columns
+    ]
+    d[keep].to_csv(
+        outdir / f"{label}_pointwise_corrections.csv",
+        index=False,
+    )
+
+    return summary
+
+
+def pretty_print_pointwise(summary):
+    print("")
+    print("Direct pointwise correction distributions:")
+    print("  C_i = sigma_reference / sigma_Hayward_raw")
+    print("  (median and central 68% interval are unweighted)")
+    print("")
+
+    for _, r in summary.iterrows():
+        cls = str(r["topology_class"])
+        print(
+            f"  {cls:7s} N={int(r['N']):4d}: "
+            f"C median={r['C_median']:.4f} "
+            f"[{r['C_p16']:.4f}, {r['C_p84']:.4f}]"
+        )
+        print(
+            " " * 20
+            + f"eps_data/eps_MC median={r['eps_data_over_mc_median']:.4f} "
+            f"[{r['eps_data_over_mc_p16']:.4f}, "
+            f"{r['eps_data_over_mc_p84']:.4f}]"
+        )
+        if "weighted_C" in r.index and np.isfinite(r.get("weighted_C", np.nan)):
+            print(
+                " " * 20
+                + f"combined-unc weighted C={r['weighted_C']:.4f}"
+                + (
+                    f" +/- {r['weighted_C_err']:.4f}"
+                    if np.isfinite(r.get("weighted_C_err", np.nan))
+                    else ""
+                )
+                + f", chi2/dof={r['weighted_chi2_per_dof']:.3f}"
+            )
+        #endif
+    #endfor
+
 def bootstrap_factors(df, target_col, unc_col, use_weights, nrep, seed):
     if nrep <= 0:
         return {}
@@ -561,7 +980,15 @@ def make_km15_fit(pass2, comparison_dir, args):
     work = work.merge(ref[keep_cols], on="_source_row_int", how="inner")
 
     work["_target"] = pd.to_numeric(work["km15_native"], errors="coerce")
-    work["_target_unc"] = pd.to_numeric(work["point_unc_abs"], errors="coerce")
+
+    # KM15 is treated as the reference curve without an assigned model error.
+    # point_unc_abs is the Hayward point uncertainty saved in the canonical
+    # comparison table, so use it as the measurement uncertainty.
+    work["_hayward_unc"] = pd.to_numeric(
+        work["point_unc_abs"],
+        errors="coerce",
+    )
+    work["_target_unc"] = work["_hayward_unc"]
 
     # The uncertainty to minimize should track the measured point uncertainty.
     # Because sigma_corrected = C_eff * sigma_raw, the exact uncertainty would
@@ -635,6 +1062,11 @@ def make_lee_fit(pass2, comparison_dir):
         validate="many_to_one",
     )
 
+    work_ref["_hayward_unc"] = pd.to_numeric(
+        work_ref["point_unc_abs"],
+        errors="coerce",
+    )
+
     if len(work_ref) == 0:
         raise RuntimeError(
             "Could not map Lee exact-same-bin points onto pass-2 source rows."
@@ -666,6 +1098,7 @@ def make_lee_fit(pass2, comparison_dir):
         "_source_row_int",
         "_target",
         "_target_unc",
+        "_hayward_unc",
         "lee_xs",
         "lee_point_unc",
         "km15_lee_to_hayward_mean_transport_factor",
@@ -712,26 +1145,74 @@ def run_one_fit(label, work, args, outdir):
     result.update(boot)
     result["reference"] = label
     result["weighted"] = use_weights
+    result["fit_type"] = "original_global"
 
-    # Save per-point diagnostic table.
+    # Save per-point diagnostic table for the original global fit.
     detail = work.loc[idx].copy()
     detail["_fit_target"] = detail["_target"]
     detail["_fit_prediction"] = pred
     detail["_fit_residual"] = resid
     detail["_fit_Ceff"] = (
-        detail["_f_FD"] * result["C_FD"] + detail["_f_FT"] * result["C_FT"]
+        detail["_f_FD"] * result["C_FD"]
+        + detail["_f_FT"] * result["C_FT"]
     )
     detail["_fit_eps_data_over_mc_eff"] = np.where(
-        detail["_fit_Ceff"] > 0, 1.0 / detail["_fit_Ceff"], np.nan
+        detail["_fit_Ceff"] > 0,
+        1.0 / detail["_fit_Ceff"],
+        np.nan,
     )
     detail.to_csv(outdir / f"{label}_points.csv", index=False)
 
-    return result
+    extra_results = []
+
+    # For Lee, perform a second global fit with BOTH Hayward and Lee point
+    # uncertainties. The original result is retained for backward comparison.
+    if (
+        label.startswith("Lee")
+        and "_hayward_unc" in work.columns
+        and not args.no_point_weights
+    ):
+        comb, cidx, cpred, cresid = solve_linear_combined_uncertainty(
+            work,
+            target_col="_target",
+            target_unc_col="_target_unc",
+            hayward_unc_col="_hayward_unc",
+        )
+        comb["reference"] = label
+        comb["weighted"] = True
+        comb["fit_type"] = "global_combined_hayward_plus_reference_unc"
+        extra_results.append(comb)
+
+        cdetail = work.loc[cidx].copy()
+        cdetail["_fit_target"] = cdetail["_target"]
+        cdetail["_fit_prediction"] = cpred
+        cdetail["_fit_residual"] = cresid
+        cdetail["_fit_Ceff"] = (
+            cdetail["_f_FD"] * comb["C_FD"]
+            + cdetail["_f_FT"] * comb["C_FT"]
+        )
+        cdetail.to_csv(
+            outdir / f"{label}_combined_uncertainty_points.csv",
+            index=False,
+        )
+    #endif
+
+    pointwise = summarize_pointwise_corrections(
+        work,
+        label,
+        args.pure_threshold,
+        outdir,
+    )
+
+    return result, extra_results, pointwise
 
 
 def pretty_print(r):
     print("\n" + "=" * 78)
     print(f"Reference: {r['reference']}")
+    if "fit_type" in r:
+        print(f"Fit type : {r['fit_type']}")
+    #endif
     print(f"N points : {r['N']}")
     print("-" * 78)
     print("Cross-section multipliers C = epsilon_MC / epsilon_data")
@@ -776,6 +1257,12 @@ def pretty_print(r):
     print("")
     print(f"FD/FT factor correlation = {r['corr_CFD_CFT']:.4f}")
     print(f"chi2/ndof = {r['chi2']:.2f}/{r['ndof']} = {r['chi2_per_dof']:.3f}")
+    if "iterations" in r:
+        print(
+            f"combined-uncertainty iterations = {r['iterations']}, "
+            f"converged = {r['converged']}"
+        )
+    #endif
     print("=" * 78)
 
 
@@ -797,16 +1284,26 @@ def main():
 
     if args.reference in ("both", "km15"):
         label, work = make_km15_fit(pass2, comparison_dir, args)
-        r = run_one_fit(label, work, args, outdir)
+        r, extras, pointwise = run_one_fit(label, work, args, outdir)
         results.append(r)
+        results.extend(extras)
         pretty_print(r)
+        for er in extras:
+            pretty_print(er)
+        #endfor
+        pretty_print_pointwise(pointwise)
     #endif
 
     if args.reference in ("both", "lee"):
         label, work = make_lee_fit(pass2, comparison_dir)
-        r = run_one_fit(label, work, args, outdir)
+        r, extras, pointwise = run_one_fit(label, work, args, outdir)
         results.append(r)
+        results.extend(extras)
         pretty_print(r)
+        for er in extras:
+            pretty_print(er)
+        #endfor
+        pretty_print_pointwise(pointwise)
     #endif
 
     summary = pd.DataFrame(results)
@@ -821,6 +1318,8 @@ def main():
     print("IMPORTANT: these fitted factors are reference-dependent cross-section")
     print("diagnostics, not independent detector-efficiency measurements.")
     print(f"\n[wrote] {outdir / 'backsolved_fd_ft_corrections.csv'}")
+    print("[wrote] per-reference *_pointwise_correction_summary.csv")
+    print("[wrote] per-reference *_pointwise_corrections.csv")
 
 
 if __name__ == "__main__":
