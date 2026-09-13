@@ -12383,7 +12383,7 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
     };
 
     auto pbin_hi=[&](int det_block,int ip)->double {
-        return det_block==0 ? fd_pbin_hi(id,ip) : ft_pbin_hi(id,ip);
+        return det_block==0 ? fd_p_edges[ip+1] : ft_p_edges[ip+1];
     };
 
     constexpr double MX_FIT_LO=0.02;
@@ -12581,12 +12581,12 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
         if (det_block==0) {
             for (int ip=0;ip<MAX_NP;ip++) {
                 const double lo=std::max(fd_p_edges[ip],PROBE_P_MIN);
-                if (p>=lo && p<fd_pbin_hi(id,ip)) return ip;
+                if (p>=lo && p<fd_p_edges[ip+1]) return ip;
             } // endfor
         } else {
             for (int ip=0;ip<FT_NP;ip++) {
                 const double lo=std::max(ft_p_edges[ip],PROBE_P_MIN);
-                if (p>=lo && p<ft_pbin_hi(id,ip)) return ip;
+                if (p>=lo && p<ft_p_edges[ip+1]) return ip;
             } // endfor
         } // endif
 
