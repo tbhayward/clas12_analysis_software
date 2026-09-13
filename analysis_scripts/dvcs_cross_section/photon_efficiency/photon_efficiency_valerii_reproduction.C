@@ -3748,6 +3748,307 @@ std::array<ValBinResult,VAL_NBIN> evaluate_valerii_fd(
     return rr;
 }
 
+
+struct FDMomentumIntegratedResult {
+    bool valid=false;
+    int valid_angular_bins=0;
+    double data_denom=0;
+    double data_denom_w2=0;
+    double data_num=0;
+    double data_num_w2=0;
+    double mc_denom=0;
+    double mc_denom_w2=0;
+    double mc_num=0;
+    double mc_num_w2=0;
+    double eff_data=0;
+    double eff_data_err=0;
+    double eff_mc=0;
+    double eff_mc_err=0;
+    double ratio_data_over_mc=0;
+    double ratio_err=0;
+    double correction_mc_over_data=0;
+    double correction_err=0;
+};
+
+double val_efficiency_error_from_sums(double denom,double denom_w2,
+                                      double num,double num_w2) {
+    if (!(denom>0)) return 0;
+    const double eff=num/denom;
+    const double fail_w2=std::max(0.0,denom_w2-num_w2);
+    const double var=((1.0-eff)*(1.0-eff)*num_w2 +
+                      eff*eff*fail_w2)/(denom*denom);
+    return std::sqrt(std::max(0.0,var));
+}
+
+FDMomentumIntegratedResult integrate_valerii_fd_momentum_bin(
+        const std::array<ValBinResult,VAL_NBIN>& rr,
+        int ip,int nsigma) {
+    FDMomentumIntegratedResult out;
+    if (ip<0 || ip>=VAL_NP || nsigma<1 || nsigma>3) return out;
+    const int is=nsigma-1;
+
+    // Require both data and MC to be valid in a given (theta,phi) cell so
+    // numerator and denominator are integrated over exactly the same accepted
+    // phase-space cells.
+    for (int it=0;it<VAL_NT;it++) {
+        for (int iph=0;iph<VAL_NPH;iph++) {
+            const int ib=(ip*VAL_NT+it)*VAL_NPH+iph;
+            const auto& ed=rr[ib].data[is];
+            const auto& em=rr[ib].mc[is];
+            if (!rr[ib].data_fit.valid || !rr[ib].mc_fit.valid) continue;
+            if (!ed.valid || !em.valid) continue;
+            if (!(ed.denom>0) || !(em.denom>0)) continue;
+
+            out.valid_angular_bins++;
+            out.data_denom += ed.denom;
+            out.data_denom_w2 += ed.denom_w2;
+            out.data_num += ed.num;
+            out.data_num_w2 += ed.num_w2;
+
+            out.mc_denom += em.denom;
+            out.mc_denom_w2 += em.denom_w2;
+            out.mc_num += em.num;
+            out.mc_num_w2 += em.num_w2;
+        } // endfor
+    } // endfor
+
+    if (!(out.data_denom>0) || !(out.mc_denom>0) ||
+        out.valid_angular_bins<=0) return out;
+
+    out.eff_data=out.data_num/out.data_denom;
+    out.eff_mc=out.mc_num/out.mc_denom;
+    out.eff_data_err=val_efficiency_error_from_sums(
+        out.data_denom,out.data_denom_w2,out.data_num,out.data_num_w2);
+    out.eff_mc_err=val_efficiency_error_from_sums(
+        out.mc_denom,out.mc_denom_w2,out.mc_num,out.mc_num_w2);
+
+    if (!(out.eff_mc>0) || !(out.eff_data>0)) return out;
+
+    out.ratio_data_over_mc=out.eff_data/out.eff_mc;
+    double rel2=0;
+    if (out.eff_data>0)
+        rel2+=std::pow(out.eff_data_err/out.eff_data,2);
+    if (out.eff_mc>0)
+        rel2+=std::pow(out.eff_mc_err/out.eff_mc,2);
+    out.ratio_err=std::fabs(out.ratio_data_over_mc)*std::sqrt(rel2);
+
+    out.correction_mc_over_data=1.0/out.ratio_data_over_mc;
+    out.correction_err=out.ratio_err/
+        (out.ratio_data_over_mc*out.ratio_data_over_mc);
+    out.valid=true;
+    return out;
+}
+
+void write_fd_valerii_momentum_trend(
+        const std::vector<std::unique_ptr<ValComponent>>& vv,
+        const NormDerivation& Rfd,
+        const std::string& dir) {
+    // Reuse the exact detailed Valerii binning already filled by the worker:
+    // p edges 0.35,0.50,1.10,1.70,2.30,2.90,3.70,6.00 GeV,
+    // 3 theta bins, and 6 wrapped-phi sectors.
+    //
+    // The active skim threshold remains PROBE_P_MIN = 0.4 GeV, so the first
+    // nominal Valerii bin (0.35--0.50) is populated only above 0.4 GeV.
+    auto rr=evaluate_valerii_fd(vv,Rfd.nominal);
+
+    std::array<std::array<FDMomentumIntegratedResult,3>,VAL_NP> q;
+    for (int ip=0;ip<VAL_NP;ip++)
+        for (int ns=1;ns<=3;ns++)
+            q[ip][ns-1]=integrate_valerii_fd_momentum_bin(rr,ip,ns);
+    // endfor
+
+    std::ofstream csv(dir+"/FD_valerii_momentum_trend.csv");
+    csv << "p_bin,p_low_GeV,p_high_GeV,active_p_low_GeV,nsigma,"
+           "valid_theta_phi_bins,total_theta_phi_bins,"
+           "data_denom,data_num,data_eff,data_eff_stat,"
+           "mc_denom,mc_num,mc_eff,mc_eff_stat,"
+           "epsilon_data_over_epsilon_MC,ratio_stat,"
+           "cross_section_multiplier_epsilon_MC_over_epsilon_data,"
+           "correction_stat\n";
+    csv << std::setprecision(10);
+
+    for (int ip=0;ip<VAL_NP;ip++) {
+        for (int ns=1;ns<=3;ns++) {
+            const auto& r=q[ip][ns-1];
+            csv << ip << ","
+                << VAL_P_EDGES[ip] << "," << VAL_P_EDGES[ip+1] << ","
+                << std::max(VAL_P_EDGES[ip],PROBE_P_MIN) << ","
+                << ns << ","
+                << r.valid_angular_bins << "," << VAL_NT*VAL_NPH << ","
+                << r.data_denom << "," << r.data_num << ","
+                << r.eff_data << "," << r.eff_data_err << ","
+                << r.mc_denom << "," << r.mc_num << ","
+                << r.eff_mc << "," << r.eff_mc_err << ","
+                << r.ratio_data_over_mc << "," << r.ratio_err << ","
+                << r.correction_mc_over_data << "," << r.correction_err
+                << "\n";
+        } // endfor
+    } // endfor
+    csv.close();
+
+    // Valerii's supplied August note displays the nominal maps for 2-sigma
+    // momentum matching.  Make the direct momentum-trend comparison at 2 sigma.
+    const int nominal_is=1;
+
+    TGraphErrors gdata, gmc, gratio, gcorr;
+    gdata.SetMarkerStyle(20); gdata.SetMarkerSize(1.2);
+    gmc.SetMarkerStyle(24); gmc.SetMarkerSize(1.2);
+    gratio.SetMarkerStyle(20); gratio.SetMarkerSize(1.2);
+    gcorr.SetMarkerStyle(24); gcorr.SetMarkerSize(1.2);
+
+    for (int ip=0;ip<VAL_NP;ip++) {
+        const auto& r=q[ip][nominal_is];
+        if (!r.valid) continue;
+        const double x=0.5*(VAL_P_EDGES[ip]+VAL_P_EDGES[ip+1]);
+        const double ex=0.5*(VAL_P_EDGES[ip+1]-VAL_P_EDGES[ip]);
+
+        int n=gdata.GetN();
+        gdata.SetPoint(n,x,r.eff_data);
+        gdata.SetPointError(n,ex,r.eff_data_err);
+
+        n=gmc.GetN();
+        gmc.SetPoint(n,x,r.eff_mc);
+        gmc.SetPointError(n,ex,r.eff_mc_err);
+
+        n=gratio.GetN();
+        gratio.SetPoint(n,x,r.ratio_data_over_mc);
+        gratio.SetPointError(n,ex,r.ratio_err);
+
+        n=gcorr.GetN();
+        gcorr.SetPoint(n,x,r.correction_mc_over_data);
+        gcorr.SetPointError(n,ex,r.correction_err);
+    } // endfor
+
+    {
+        TCanvas c("c_fd_val_p_eff","",1000,760);
+        c.SetLeftMargin(0.14);
+        c.SetRightMargin(0.04);
+        c.SetBottomMargin(0.14);
+        c.SetTopMargin(0.10);
+        c.SetTicks(1,1);
+
+        TH1D axis("h_fd_val_p_eff_axis",
+                  ";E_{#gamma,probe} (GeV);Photon reconstruction efficiency",
+                  100,0.35,6.0);
+        axis.SetDirectory(nullptr);
+        axis.SetStats(0);
+        axis.SetMinimum(0);
+        axis.SetMaximum(1.05);
+        axis.Draw("AXIS");
+
+        gdata.Draw("P SAME");
+        gmc.Draw("P SAME");
+
+        TLegend leg(0.63,0.74,0.91,0.88);
+        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.035);
+        leg.AddEntry(&gdata,"Data","lep");
+        leg.AddEntry(&gmc,"Weighted total MC","lep");
+        leg.Draw();
+
+        TLatex t;
+        t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.042);
+        t.DrawLatex(0.14,0.93,
+            "FD, Valerii momentum bins, 2#sigma matching, integrated over #theta and #phi");
+        t.SetTextSize(0.028);
+        t.DrawLatex(0.14,0.885,
+            "First nominal 0.35-0.50 GeV bin is populated only for E_{#gamma,probe}#geq0.4 GeV");
+        c.SaveAs((dir+"/FD_valerii_momentum_efficiencies_2sigma.png").c_str());
+    }
+
+    {
+        TCanvas c("c_fd_val_p_ratio","",1000,760);
+        c.SetLeftMargin(0.14);
+        c.SetRightMargin(0.04);
+        c.SetBottomMargin(0.14);
+        c.SetTopMargin(0.10);
+        c.SetTicks(1,1);
+
+        TH1D axis("h_fd_val_p_ratio_axis",
+                  ";E_{#gamma,probe} (GeV);#epsilon_{data}/#epsilon_{MC}",
+                  100,0.35,6.0);
+        axis.SetDirectory(nullptr);
+        axis.SetStats(0);
+        axis.SetMinimum(0);
+        axis.SetMaximum(1.6);
+        axis.Draw("AXIS");
+
+        gratio.Draw("P SAME");
+        TLine one(0.35,1.0,6.0,1.0);
+        one.SetLineStyle(2);
+        one.Draw();
+
+        TLatex t;
+        t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.042);
+        t.DrawLatex(0.14,0.93,
+            "FD data/MC efficiency ratio in Valerii momentum bins, 2#sigma matching");
+        c.SaveAs((dir+"/FD_valerii_momentum_ratio_2sigma.png").c_str());
+    }
+
+    {
+        TCanvas c("c_fd_val_p_corr","",1000,760);
+        c.SetLeftMargin(0.14);
+        c.SetRightMargin(0.04);
+        c.SetBottomMargin(0.14);
+        c.SetTopMargin(0.10);
+        c.SetTicks(1,1);
+
+        TH1D axis("h_fd_val_p_corr_axis",
+                  ";E_{#gamma,probe} (GeV);Cross-section multiplier #epsilon_{MC}/#epsilon_{data}",
+                  100,0.35,6.0);
+        axis.SetDirectory(nullptr);
+        axis.SetStats(0);
+        axis.SetMinimum(0);
+        axis.SetMaximum(4.0);
+        axis.Draw("AXIS");
+
+        gcorr.Draw("P SAME");
+        TLine one(0.35,1.0,6.0,1.0);
+        one.SetLineStyle(2);
+        one.Draw();
+
+        TLatex t;
+        t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.042);
+        t.DrawLatex(0.14,0.93,
+            "FD inverse efficiency correction in Valerii momentum bins, 2#sigma matching");
+        c.SaveAs((dir+"/FD_valerii_momentum_correction_2sigma.png").c_str());
+    }
+
+    std::cout << "\n============================================================\n"
+              << " FD momentum dependence in exact Valerii p bins\n"
+              << "============================================================\n"
+              << "Nominal comparison below uses 2-sigma matching to match the\n"
+              << "supplied August Valerii note.  CSV also contains 1, 2, and 3 sigma.\n";
+
+    for (int ip=0;ip<VAL_NP;ip++) {
+        const auto& r2=q[ip][1];
+        const auto& r3=q[ip][2];
+        std::cout << Form(
+            "%.2f-%.2f GeV (active low edge %.2f): valid cells %d/%d\n",
+            VAL_P_EDGES[ip],VAL_P_EDGES[ip+1],
+            std::max(VAL_P_EDGES[ip],PROBE_P_MIN),
+            r2.valid_angular_bins,VAL_NT*VAL_NPH);
+        if (r2.valid) {
+            std::cout << Form(
+                "  2sigma: data=%.5f +/- %.5f, MC=%.5f +/- %.5f, "
+                "data/MC=%.5f +/- %.5f, C=%.5f\n",
+                r2.eff_data,r2.eff_data_err,
+                r2.eff_mc,r2.eff_mc_err,
+                r2.ratio_data_over_mc,r2.ratio_err,
+                r2.correction_mc_over_data);
+        } // endif
+        if (r3.valid) {
+            std::cout << Form(
+                "  3sigma: data=%.5f +/- %.5f, MC=%.5f +/- %.5f, "
+                "data/MC=%.5f +/- %.5f, C=%.5f\n",
+                r3.eff_data,r3.eff_data_err,
+                r3.eff_mc,r3.eff_mc_err,
+                r3.ratio_data_over_mc,r3.ratio_err,
+                r3.correction_mc_over_data);
+        } // endif
+    } // endfor
+    std::cout << "============================================================\n";
+}
+
 void val_draw_map(const std::array<ValBinResult,VAL_NBIN>& rr,
                   const std::string& what,const std::string& outfile) {
     // Match Valerii's note display convention: show the first six momentum bins;
@@ -8560,6 +8861,8 @@ void run_concise_analysis(const std::string& out) {
         vv,norm_fd,norm_ft,out+"/4_efficiency");
     write_equalstat_highEprobe_corrections(
         vv,norm_fd,norm_ft,out+"/4_efficiency");
+    write_fd_valerii_momentum_trend(
+        vv,norm_fd,out+"/4_efficiency");
 
     std::cout << "\nConcise output written to:\n"
               << "  " << out << "/1_exclusivity/FD and FT/\n"
@@ -8611,7 +8914,7 @@ void photon_efficiency_valerii_reproduction() {
         << "1) independent FD-probe and FT-probe exclusivity selection\n"
         << "2) independent FD-probe and FT-probe Valerii-style normalization\n"
         << "3) pi0 fraction of selected ep-gamma-X events\n"
-        << "4) FD/FT photon efficiency: <2 GeV plus two data-equal-statistics bins above 2 GeV\n"
+        << "4) FD/FT photon efficiency: existing equal-statistics study + exact Valerii FD momentum bins\n"
         << "One parallel tree scan per sample; persistent cache on reruns.\n"
         << "Cache: /work/clas12/thayward/photon_efficiency/cache/concise\n"
         << "============================================================\n";
