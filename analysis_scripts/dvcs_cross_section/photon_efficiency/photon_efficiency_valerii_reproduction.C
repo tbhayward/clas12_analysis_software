@@ -3851,6 +3851,93 @@ void write_fd_valerii_momentum_trend(
     // nominal Valerii bin (0.35--0.50) is populated only above 0.4 GeV.
     auto rr=evaluate_valerii_fd(vv,Rfd.nominal);
 
+    // Detailed cell-by-cell validity audit for the nominal 2-sigma comparison.
+    // This makes explicit which theta/phi cells are being removed from each
+    // momentum-integrated point and why.
+    {
+        std::ofstream vcsv(dir+"/FD_valerii_momentum_cell_validity_2sigma.csv");
+        vcsv << "p_bin,p_low_GeV,p_high_GeV,theta_bin,theta_low_deg,theta_high_deg,"
+                "phi_bin,phi_low_deg,phi_high_deg,"
+                "data_fit_valid,data_fit_reason,data_fit_candidates,data_fit_mean,data_fit_sigma,"
+                "mc_fit_valid,mc_fit_reason,mc_fit_candidates,mc_fit_mean,mc_fit_sigma,"
+                "data_eval_valid,data_denom,data_num,data_eff,"
+                "mc_eval_valid,mc_denom,mc_num,mc_eff,"
+                "joint_valid,invalid_reason\n";
+        vcsv << std::setprecision(10);
+
+        std::cout << "\n============================================================\n"
+                  << " FD Valerii-bin cell validity audit (nominal 2sigma)\n"
+                  << "============================================================\n"
+                  << "Legend: O=joint valid, D=data invalid, M=MC invalid, B=both invalid\n"
+                  << "Rows are theta bins; columns are wrapped-phi sectors.\n";
+
+        for (int ip=0;ip<VAL_NP;ip++) {
+            std::cout << Form("\np = %.2f-%.2f GeV\n",VAL_P_EDGES[ip],VAL_P_EDGES[ip+1]);
+            std::cout << "                 S1      S2      S3      S4      S5      S6\n";
+
+            for (int it=0;it<VAL_NT;it++) {
+                std::cout << Form("theta %4.0f-%-4.0f : ",
+                                  VAL_T_EDGES[it],VAL_T_EDGES[it+1]);
+
+                for (int iph=0;iph<VAL_NPH;iph++) {
+                    const int ib=(ip*VAL_NT+it)*VAL_NPH+iph;
+                    const auto& r=rr[ib];
+                    const auto& ed=r.data[1];
+                    const auto& em=r.mc[1];
+
+                    const bool dfit=r.data_fit.valid;
+                    const bool mfit=r.mc_fit.valid;
+                    const bool deval=ed.valid && ed.denom>0;
+                    const bool meval=em.valid && em.denom>0;
+                    const bool dvalid=dfit && deval;
+                    const bool mvalid=mfit && meval;
+                    const bool joint=dvalid && mvalid;
+
+                    const char code=joint ? 'O' :
+                                    (!dvalid && !mvalid) ? 'B' :
+                                    (!dvalid) ? 'D' : 'M';
+                    std::cout << Form("   %c    ",code);
+
+                    std::string why="valid";
+                    if (!joint) {
+                        std::ostringstream os;
+                        if (!dfit) os << "data fit: " << r.data_fit.reason;
+                        else if (!deval) os << "data eval invalid/zero denominator";
+                        if (!mfit) {
+                            if (os.tellp()>0) os << "; ";
+                            os << "MC fit: " << r.mc_fit.reason;
+                        } else if (!meval) {
+                            if (os.tellp()>0) os << "; ";
+                            os << "MC eval invalid/zero denominator";
+                        }
+                        why=os.str();
+                    } // endif
+
+                    auto clean_csv=[](std::string s) {
+                        for (char& ch:s) if (ch==',') ch=';';
+                        return s;
+                    };
+
+                    vcsv << ip << "," << VAL_P_EDGES[ip] << "," << VAL_P_EDGES[ip+1] << ","
+                         << it << "," << VAL_T_EDGES[it] << "," << VAL_T_EDGES[it+1] << ","
+                         << iph << "," << VAL_PH_EDGES[iph] << "," << VAL_PH_EDGES[iph+1] << ","
+                         << int(dfit) << "," << clean_csv(r.data_fit.reason) << ","
+                         << r.data_fit.candidates << "," << r.data_fit.mean << "," << r.data_fit.sigma << ","
+                         << int(mfit) << "," << clean_csv(r.mc_fit.reason) << ","
+                         << r.mc_fit.candidates << "," << r.mc_fit.mean << "," << r.mc_fit.sigma << ","
+                         << int(deval) << "," << ed.denom << "," << ed.num << "," << ed.efficiency << ","
+                         << int(meval) << "," << em.denom << "," << em.num << "," << em.efficiency << ","
+                         << int(joint) << "," << clean_csv(why) << "\n";
+                } // endfor
+                std::cout << "\n";
+            } // endfor
+        } // endfor
+        vcsv.close();
+        std::cout << "\n[wrote] " << dir
+                  << "/FD_valerii_momentum_cell_validity_2sigma.csv\n"
+                  << "============================================================\n";
+    }
+
     std::array<std::array<FDMomentumIntegratedResult,3>,VAL_NP> q;
     for (int ip=0;ip<VAL_NP;ip++)
         for (int ns=1;ns<=3;ns++)
@@ -3924,7 +4011,7 @@ void write_fd_valerii_momentum_trend(
         c.SetLeftMargin(0.14);
         c.SetRightMargin(0.04);
         c.SetBottomMargin(0.14);
-        c.SetTopMargin(0.10);
+        c.SetTopMargin(0.16);
         c.SetTicks(1,1);
 
         TH1D axis("h_fd_val_p_eff_axis",
@@ -3939,19 +4026,19 @@ void write_fd_valerii_momentum_trend(
         gdata.Draw("P SAME");
         gmc.Draw("P SAME");
 
-        TLegend leg(0.63,0.74,0.91,0.88);
+        TLegend leg(0.62,0.69,0.91,0.83);
         leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.035);
         leg.AddEntry(&gdata,"Data","lep");
         leg.AddEntry(&gmc,"Weighted total MC","lep");
         leg.Draw();
 
         TLatex t;
-        t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.042);
-        t.DrawLatex(0.14,0.93,
-            "FD, Valerii momentum bins, 2#sigma matching, integrated over #theta and #phi");
-        t.SetTextSize(0.028);
-        t.DrawLatex(0.14,0.885,
-            "First nominal 0.35-0.50 GeV bin is populated only for E_{#gamma,probe}#geq0.4 GeV");
+        t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.038);
+        t.DrawLatex(0.14,0.955,
+            "FD photon efficiency vs E_{#gamma,probe} — Valerii bins, 2#sigma");
+        t.SetTextSize(0.026);
+        t.DrawLatex(0.14,0.910,
+            "Integrated over #theta and #phi; first nominal 0.35-0.50 GeV bin is populated only above 0.4 GeV");
         c.SaveAs((dir+"/FD_valerii_momentum_efficiencies_2sigma.png").c_str());
     }
 
@@ -3960,7 +4047,7 @@ void write_fd_valerii_momentum_trend(
         c.SetLeftMargin(0.14);
         c.SetRightMargin(0.04);
         c.SetBottomMargin(0.14);
-        c.SetTopMargin(0.10);
+        c.SetTopMargin(0.16);
         c.SetTicks(1,1);
 
         TH1D axis("h_fd_val_p_ratio_axis",
@@ -3978,9 +4065,9 @@ void write_fd_valerii_momentum_trend(
         one.Draw();
 
         TLatex t;
-        t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.042);
-        t.DrawLatex(0.14,0.93,
-            "FD data/MC efficiency ratio in Valerii momentum bins, 2#sigma matching");
+        t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.038);
+        t.DrawLatex(0.14,0.955,
+            "FD data/MC photon-efficiency ratio — Valerii bins, 2#sigma");
         c.SaveAs((dir+"/FD_valerii_momentum_ratio_2sigma.png").c_str());
     }
 
@@ -3989,7 +4076,7 @@ void write_fd_valerii_momentum_trend(
         c.SetLeftMargin(0.14);
         c.SetRightMargin(0.04);
         c.SetBottomMargin(0.14);
-        c.SetTopMargin(0.10);
+        c.SetTopMargin(0.16);
         c.SetTicks(1,1);
 
         TH1D axis("h_fd_val_p_corr_axis",
@@ -4007,9 +4094,9 @@ void write_fd_valerii_momentum_trend(
         one.Draw();
 
         TLatex t;
-        t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.042);
-        t.DrawLatex(0.14,0.93,
-            "FD inverse efficiency correction in Valerii momentum bins, 2#sigma matching");
+        t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.038);
+        t.DrawLatex(0.14,0.955,
+            "FD photon-efficiency cross-section correction — Valerii bins, 2#sigma");
         c.SaveAs((dir+"/FD_valerii_momentum_correction_2sigma.png").c_str());
     }
 
