@@ -177,6 +177,69 @@ def norm_name(s):
     return re.sub(r"\s+", " ", str(s).strip().lower())
 
 
+def resolve_comparison_file(comparison_dir, filename):
+    """
+    Find a named comparison-output file robustly.
+
+    Normally files live in:
+        <comparison_dir>/tables/<filename>
+
+    But earlier runs in this analysis accidentally used a nested cache/
+    directory as --outdir.  To make this diagnostic insensitive to that
+    bookkeeping, first try the canonical location and then search recursively.
+    """
+    comparison_dir = Path(comparison_dir)
+
+    preferred = comparison_dir / "tables" / filename
+    if preferred.exists():
+        return preferred
+    #endif
+
+    matches = list(comparison_dir.rglob(filename))
+    if len(matches) == 1:
+        print(f"[comparison file] using nested path: {matches[0]}")
+        return matches[0]
+    #endif
+
+    if len(matches) > 1:
+        # Prefer the shallowest path, then newest modification time.
+        matches = sorted(
+            matches,
+            key=lambda p: (len(p.relative_to(comparison_dir).parts), -p.stat().st_mtime),
+        )
+        print("[comparison file] multiple matches found:")
+        for p in matches:
+            print(f"  {p}")
+        #endfor
+        print(f"[comparison file] choosing: {matches[0]}")
+        return matches[0]
+    #endif
+
+    # Give a useful directory diagnostic before failing.
+    nearby = []
+    if comparison_dir.exists():
+        for p in comparison_dir.rglob("*.csv"):
+            nearby.append(p)
+            if len(nearby) >= 40:
+                break
+            #endif
+        #endfor
+    #endif
+
+    msg = [
+        f"Could not find '{filename}' beneath comparison directory:",
+        f"  {comparison_dir}",
+    ]
+    if nearby:
+        msg.append("CSV files found beneath that directory:")
+        msg.extend(f"  {p}" for p in nearby)
+    else:
+        msg.append("No CSV files were found beneath that directory.")
+    #endif
+
+    raise FileNotFoundError("\n".join(msg))
+
+
 
 TENP6_PERIODS = ("Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out")
 
@@ -465,10 +528,10 @@ def bootstrap_factors(df, target_col, unc_col, use_weights, nrep, seed):
 
 
 def make_km15_fit(pass2, comparison_dir, args):
-    model_file = comparison_dir / "tables" / "canonical_world_data_with_models.csv"
-    if not model_file.exists():
-        raise FileNotFoundError(model_file)
-    #endif
+    model_file = resolve_comparison_file(
+        comparison_dir,
+        "canonical_world_data_with_models.csv",
+    )
 
     ref = pd.read_csv(model_file, low_memory=False)
     ref = ref[ref["dataset"].astype(str).eq("pass2")].copy()
@@ -528,15 +591,14 @@ def make_km15_fit(pass2, comparison_dir, args):
 
 
 def make_lee_fit(pass2, comparison_dir):
-    lee_file = comparison_dir / "tables" / "lee_hayward_exact_same_bin_points.csv"
-    canonical_file = comparison_dir / "tables" / "canonical_world_data_with_models.csv"
-
-    if not lee_file.exists():
-        raise FileNotFoundError(lee_file)
-    #endif
-    if not canonical_file.exists():
-        raise FileNotFoundError(canonical_file)
-    #endif
+    lee_file = resolve_comparison_file(
+        comparison_dir,
+        "lee_hayward_exact_same_bin_points.csv",
+    )
+    canonical_file = resolve_comparison_file(
+        comparison_dir,
+        "canonical_world_data_with_models.csv",
+    )
 
     ref = pd.read_csv(lee_file, low_memory=False).copy()
     canonical = pd.read_csv(canonical_file, low_memory=False)
