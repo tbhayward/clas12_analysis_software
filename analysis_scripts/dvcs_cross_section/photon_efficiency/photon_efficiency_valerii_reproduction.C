@@ -1826,32 +1826,6 @@ struct ValComponent {
     std::vector<std::unique_ptr<TH1D>> norm_full;
     std::vector<std::unique_ptr<TH1D>> norm_lowE;
     std::vector<std::unique_ptr<TH1D>> norm_highE;
-    std::unique_ptr<TH2D> post_tag_probe_fd(new TH2D(
-        Form("post_tag_probe_fd_%s",spec.name.c_str()),
-        ";E_{#gamma,tag} (GeV);E_{#gamma,probe} (GeV)",
-        40,0,8,40,0,8));
-    std::unique_ptr<TH2D> post_tag_probe_ft(new TH2D(
-        Form("post_tag_probe_ft_%s",spec.name.c_str()),
-        ";E_{#gamma,tag} (GeV);E_{#gamma,probe} (GeV)",
-        40,0,8,40,0,8));
-    post_tag_probe_fd->Sumw2(); post_tag_probe_ft->Sumw2();
-    post_tag_probe_fd->SetDirectory(nullptr); post_tag_probe_ft->SetDirectory(nullptr);
-
-    std::array<std::unique_ptr<TH1D>,CR_N> eta_mx2_denom;
-    std::array<std::unique_ptr<TH2D>,CR_N> eta_dp_vs_mx2;
-    for (int ir=0;ir<CR_N;ir++) {
-        eta_mx2_denom[ir].reset(new TH1D(
-            Form("eta_mx2_denom_%s_%s",CR_KEY[ir],spec.name.c_str()),
-            ";M_{X}^{2}(ep) (GeV^{2});Candidates",90,-0.30,0.60));
-        eta_dp_vs_mx2[ir].reset(new TH2D(
-            Form("eta_dp_vs_mx2_%s_%s",CR_KEY[ir],spec.name.c_str()),
-            ";M_{X}^{2}(ep) (GeV^{2});#Delta p_{#gamma2} (GeV)",
-            90,-0.30,0.60,160,-4,4));
-        eta_mx2_denom[ir]->Sumw2(); eta_dp_vs_mx2[ir]->Sumw2();
-        eta_mx2_denom[ir]->SetDirectory(nullptr);
-        eta_dp_vs_mx2[ir]->SetDirectory(nullptr);
-    } // endfor
-
     std::array<long long,6> norm_cutflow{{0,0,0,0,0,0}};
 
     // Independent FT-probe exclusivity/normalization sample.  The observed tag
@@ -2762,6 +2736,35 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
             fitqual_ft_low[ic].back()->SetDirectory(nullptr);
             fitqual_ft_high[ic].back()->SetDirectory(nullptr);
         } // endfor
+    } // endfor
+
+    std::unique_ptr<TH2D> post_tag_probe_fd(new TH2D(
+        Form("post_tag_probe_fd_%s",spec.name.c_str()),
+        ";E_{#gamma,tag} (GeV);E_{#gamma,probe} (GeV)",
+        40,0,8,40,0,8));
+    std::unique_ptr<TH2D> post_tag_probe_ft(new TH2D(
+        Form("post_tag_probe_ft_%s",spec.name.c_str()),
+        ";E_{#gamma,tag} (GeV);E_{#gamma,probe} (GeV)",
+        40,0,8,40,0,8));
+    post_tag_probe_fd->Sumw2();
+    post_tag_probe_ft->Sumw2();
+    post_tag_probe_fd->SetDirectory(nullptr);
+    post_tag_probe_ft->SetDirectory(nullptr);
+
+    std::array<std::unique_ptr<TH1D>,CR_N> eta_mx2_denom;
+    std::array<std::unique_ptr<TH2D>,CR_N> eta_dp_vs_mx2;
+    for (int ir=0;ir<CR_N;ir++) {
+        eta_mx2_denom[ir].reset(new TH1D(
+            Form("eta_mx2_denom_%s_%s",CR_KEY[ir],spec.name.c_str()),
+            ";M_{X}^{2}(ep) (GeV^{2});Candidates",90,-0.30,0.60));
+        eta_dp_vs_mx2[ir].reset(new TH2D(
+            Form("eta_dp_vs_mx2_%s_%s",CR_KEY[ir],spec.name.c_str()),
+            ";M_{X}^{2}(ep) (GeV^{2});#Delta p_{#gamma2} (GeV)",
+            90,-0.30,0.60,160,-4,4));
+        eta_mx2_denom[ir]->Sumw2();
+        eta_dp_vs_mx2[ir]->Sumw2();
+        eta_mx2_denom[ir]->SetDirectory(nullptr);
+        eta_dp_vs_mx2[ir]->SetDirectory(nullptr);
     } // endfor
 
     std::array<long long,6> norm_cutflow{{0,0,0,0,0,0}};
