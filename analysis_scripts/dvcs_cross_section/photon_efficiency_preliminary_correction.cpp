@@ -211,16 +211,34 @@ bool scale_tuple_cell(std::string& cell, double factor) {
         return false;
 
     s = s.substr(1, s.size() - 2);
-    const auto comma = s.find(',');
-    if (comma == std::string::npos) return false;
 
-    const double v = parse_double(s.substr(0, comma), NAN);
-    const double e = parse_double(s.substr(comma + 1), NAN);
+    std::vector<std::string> fields;
+    std::stringstream ss(s);
+    std::string tok;
+    while (std::getline(ss, tok, ','))
+        fields.push_back(tok);
+
+    if (fields.size() < 2) return false;
+
+    const double v = parse_double(fields[0], NAN);
+    const double e = parse_double(fields[1], NAN);
     if (!std::isfinite(v) || !std::isfinite(e)) return false;
 
     std::ostringstream out;
     out << "(" << std::setprecision(12) << factor * v
-        << ", " << std::setprecision(12) << std::fabs(factor) * e << ")";
+        << ", " << std::setprecision(12) << std::fabs(factor) * e;
+
+    // Preserve and scale any additional absolute uncertainty-like tuple
+    // components.  The current analysis CSV usually carries a third field.
+    for (std::size_t i = 2; i < fields.size(); ++i) {
+        const double x = parse_double(fields[i], NAN);
+        if (std::isfinite(x))
+            out << ", " << std::setprecision(12) << std::fabs(factor) * x;
+        else
+            out << ", " << fields[i];
+    }
+
+    out << ")";
     cell = out.str();
     return true;
 }
@@ -230,13 +248,44 @@ bool has_col(const std::map<std::string, std::size_t>& H,
     return H.find(name) != H.end();
 }
 
+double first_numeric_component(const std::string& cell,
+                               double fallback = 0.0) {
+    if (cell.empty()) return fallback;
+
+    // Plain scalar cell.
+    const double scalar = parse_double(cell, NAN);
+    if (std::isfinite(scalar)) return scalar;
+
+    // Analysis CSV tuple cells are commonly stored as
+    //   "(value,error,systematic)"
+    // or
+    //   "(value,error)"
+    // For yield weighting we need the central value only.
+    std::string s = cell;
+    s.erase(std::remove_if(s.begin(), s.end(),
+                           [](unsigned char c){ return std::isspace(c); }),
+            s.end());
+
+    if (s.size() >= 3 && s.front() == '(' && s.back() == ')') {
+        s = s.substr(1, s.size() - 2);
+        const auto comma = s.find(',');
+        const std::string first =
+            (comma == std::string::npos) ? s : s.substr(0, comma);
+
+        const double x = parse_double(first, NAN);
+        if (std::isfinite(x)) return x;
+    }
+
+    return fallback;
+}
+
 double getd(const std::vector<std::string>& row,
             const std::map<std::string, std::size_t>& H,
             const std::string& name,
             double fallback = 0.0) {
     auto it = H.find(name);
     if (it == H.end() || it->second >= row.size()) return fallback;
-    return parse_double(row[it->second], fallback);
+    return first_numeric_component(row[it->second], fallback);
 }
 
 // -----------------------------------------------------------------------------
@@ -583,10 +632,25 @@ int main(int argc, char** argv) {
     std::cout << "[photon-eff-prelim] input rows: " << nrow << "\n";
 
     if (ncorr > 0) {
+        const double mean_corr = sum_corr / double(ncorr);
         std::cout
             << "[photon-eff-prelim] effective correction range = "
             << min_corr << " .. " << max_corr
-            << ", mean = " << sum_corr / double(ncorr) << "\n";
+            << ", mean = " << mean_corr << "\n";
+
+        if (std::fabs(min_corr - 1.0) < 1e-12 &&
+            std::fabs(max_corr - 1.0) < 1e-12) {
+            std::cerr
+                << "[photon-eff-prelim] ERROR: every effective correction is 1. "
+                << "This indicates the topology-yield weights were not parsed. "
+                << "Refusing to present this as a corrected result.\n";
+            return 4;
+        }
+    } else {
+        std::cerr
+            << "[photon-eff-prelim] ERROR: no valid effective corrections were "
+            << "constructed. Check topology-yield parsing.\n";
+        return 4;
     }
 
     std::cout << "\nCurrent exploratory epsilon_data/epsilon_MC constants:\n";
