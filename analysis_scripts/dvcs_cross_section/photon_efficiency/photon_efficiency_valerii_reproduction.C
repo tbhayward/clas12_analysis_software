@@ -9308,9 +9308,19 @@ void write_shoulder_diagnostics_for_fd_momentum_bins(const std::string& outdir) 
                 hp.SetMaximum(ymax>0?ymax:1);
                 hp.GetXaxis()->SetTitle(pp.xtitle);
                 hp.GetYaxis()->SetTitle("Unit-normalized entries");
+                // Peak: black filled circles. Shoulder: red open circles.
+                // Keep both marker shape and color different so the comparison
+                // remains immediately legible in dense bins and in print.
                 hp.SetMarkerStyle(20);
+                hp.SetMarkerColor(kBlack);
+                hp.SetLineColor(kBlack);
+                hp.SetLineWidth(2);
                 hp.Draw("E1");
+
                 hs.SetMarkerStyle(24);
+                hs.SetMarkerColor(kRed+1);
+                hs.SetLineColor(kRed+1);
+                hs.SetLineWidth(2);
                 hs.Draw("E1 SAME");
 
                 TLegend leg(0.56,0.73,0.92,0.88);
@@ -9347,6 +9357,524 @@ void write_shoulder_diagnostics_for_fd_momentum_bins(const std::string& outdir) 
               << SHOULDER_NEG_HI << " GeV\n"
               << "  tree I/O        : one pass per sample (4 passes maximum)\n"
               << "  saved ROOT histograms allow later plotting without another tree scan\n";
+}
+
+
+
+struct AlphaMxScanCell {
+    long long denom_rows=0;
+    long long truth_rows=0;
+    long long truth_pi0_rows=0;
+    std::unique_ptr<TH1D> residual;
+};
+
+struct AlphaMxScanResult {
+    bool valid=false;
+    double f_pi0=0;
+    double eff_data=0,eff_mc=0;
+    double ratio=0,correction=0;
+    double data_mu=0,data_sigma=0,mc_mu=0,mc_sigma=0;
+    std::string data_fit_reason,mc_fit_reason;
+};
+
+void run_targeted_alpha_mx2_scan(
+        const std::vector<std::unique_ptr<ValComponent>>& vv,
+        const NormDerivation& Rfd,
+        const std::string& outdir) {
+
+    // Targeted diagnostic requested after identifying the growing negative
+    // Delta-p shoulder.  Everything is filled in ONE pass per sample.
+    //
+    // Scan dimensions:
+    //   p_probe : exact Valerii momentum bins
+    //   Delta-alpha(best reconstructed candidate, predicted probe):
+    //              no cut, <1, <2, <3, <5 deg
+    //   Mx2(ep) upper edge: 0.309 (nominal), 0.20, 0.15 GeV^2
+    //
+    // The alpha requirement is a matching/numerator requirement; it is NOT
+    // imposed on the denominator, because events without a reconstructed
+    // probe must remain efficiency failures.
+    //
+    // For every scan point we rebuild the same data/pi0-MC/background logic
+    // used by integrated_efficiency(), then fit the residual peak and use a
+    // 3-sigma Delta-p window.
+
+    const std::string dir=outdir+"/6_alpha_mx2_scan";
+    gSystem->mkdir(dir.c_str(),kTRUE);
+
+    constexpr int NP=VAL_NP;
+    constexpr int NA=5;
+    constexpr int NM=3;
+    const double p_edges[NP+1]={0.35,0.50,1.10,1.70,2.30,2.90,3.70,6.00};
+    const double alpha_max[NA]={
+        std::numeric_limits<double>::infinity(),1.0,2.0,3.0,5.0
+    };
+    const char* alpha_key[NA]={"none","lt1","lt2","lt3","lt5"};
+    const double mx2_hi[NM]={NORM_MX2_EP_MAX,0.20,0.15};
+
+    struct SampleDef {
+        std::string key;
+        std::string base;
+    };
+    const std::vector<SampleDef> samples={
+        {"data",DATA_DIR},
+        {"aaogen",AAOGEN_DIR},
+        {"clasdis",CLASDIS_DIR},
+        {"dvcsgen",DVCSGEN_DIR}
+    };
+
+    // sample -> p -> alpha -> Mx2
+    std::map<std::string,
+        std::array<std::array<std::array<AlphaMxScanCell,NM>,NA>,NP>> cells;
+
+    auto make_residual=[&](const std::string& name) {
+        auto h=std::make_unique<TH1D>(name.c_str(),"",160,-4.0,4.0);
+        h->SetDirectory(nullptr);
+        h->Sumw2();
+        return h;
+    };
+
+    for (const auto& s:samples) {
+        auto& a=cells[s.key];
+        for (int ip=0;ip<NP;ip++)
+            for (int ia=0;ia<NA;ia++)
+                for (int im=0;im<NM;im++)
+                    a[ip][ia][im].residual=make_residual(
+                        Form("scan_%s_p%d_a%d_m%d",
+                             s.key.c_str(),ip,ia,im));
+        // endfor
+    } // endfor
+
+    auto find_pbin=[&](double p)->int {
+        if (!std::isfinite(p) || p<PROBE_P_MIN) return -1;
+        for (int ip=0;ip<NP;ip++) {
+            const double lo=std::max(p_edges[ip],PROBE_P_MIN);
+            if (p>=lo && p<p_edges[ip+1]) return ip;
+        } // endfor
+        return -1;
+    };
+
+    // CLASDIS truth study: unlike the current AAO trees, CLASDIS carries the
+    // MC truth branches needed to test whether the chosen reconstructed
+    // candidate is actually the generated pi0 daughter.
+    struct TruthAlphaSummary {
+        long long truth_pi0=0;
+        long long have_reco=0;
+        long long reco_truth_lt05=0;
+        long long reco_truth_lt1=0;
+        long long reco_truth_lt2=0;
+        long long reco_truth_lt3=0;
+        double sum_pred_truth_da=0;
+        long long n_pred_truth_da=0;
+    };
+    std::array<TruthAlphaSummary,NP> truth_summary{};
+
+    for (const auto& s:samples) {
+        TChain c("PhotonEfficiency");
+        const int nf=c.Add(make_pattern(s.base).c_str());
+        const Long64_t nentries=c.GetEntries();
+        if (nf<=0 || nentries<=0) {
+            std::cout << "[alpha/Mx2 scan] " << s.key
+                      << ": no input; skipping\n";
+            continue;
+        } // endif
+
+        Branches b;
+        b.reset_arrays();
+        if (!attach(c,b)) {
+            std::cerr << "[alpha/Mx2 scan] " << s.key
+                      << ": attach failed; skipping\n";
+            continue;
+        } // endif
+
+        c.SetCacheSize(256LL*1024LL*1024LL);
+        c.AddBranchToCache("*",kTRUE);
+        c.SetCacheLearnEntries(100);
+
+        std::cout << "\n[alpha/Mx2 scan] " << s.key
+                  << ": ONE-PASS scan of " << nentries << " rows\n";
+
+        Long64_t report_step=std::max<Long64_t>(1,nentries/10);
+        Long64_t next_report=0;
+
+        for (Long64_t i=0;i<nentries;i++) {
+            if (i>=next_report) {
+                std::cout << "  " << s.key << " "
+                          << std::fixed << std::setprecision(0)
+                          << (100.0*double(i)/double(nentries)) << "%\n";
+                next_report+=report_step;
+            } // endif
+
+            c.GetEntry(i);
+
+            if (!b.p_pass_standard) continue;
+            if (!b.tag_pass_beta || !b.tag_pass_fiducial) continue;
+            if (b.tag_detector!=1) continue;
+            if (!finite_good(b.probe_corr_p) ||
+                !finite_good(b.probe_corr_theta) ||
+                !finite_good(b.probe_corr_phi)) continue;
+
+            const int ip=find_pbin(b.probe_corr_p);
+            if (ip<0) continue;
+
+            const bool probe_fd=
+                b.probe_corr_p>=PROBE_P_MIN &&
+                b.probe_corr_theta>=FD_THETA_MIN &&
+                b.probe_corr_theta<=FD_THETA_MAX;
+            if (!probe_fd) continue;
+
+            const NormCutFlags ncf=norm_cut_flags(b);
+
+            // Leave only the Mx2(ep) upper edge variable.  Keep the nominal
+            // lower edge and every other exclusivity requirement.
+            if (!finite_good(b.Mx2_ep) || b.Mx2_ep<NORM_MX2_EP_MIN) continue;
+            if (!ncf.mx2_eg || !ncf.dphi_trento || !ncf.angle_gX) continue;
+
+            const int k=best_probe_candidate(b,1);
+            double alpha=std::numeric_limits<double>::quiet_NaN();
+            double dp=std::numeric_limits<double>::quiet_NaN();
+            if (k>=0) {
+                alpha=b.neutral_delta_alpha[k];
+                dp=b.neutral_p[k]-b.probe_corr_p;
+            } // endif
+
+            const bool truth_pi0=
+                b.have_truth &&
+                b.truth_probe_pid==22 &&
+                b.truth_probe_parent==111;
+
+            // Truth association calibration from CLASDIS.
+            if (s.key=="clasdis" && truth_pi0 &&
+                b.Mx2_ep<NORM_MX2_EP_MAX) {
+                auto& tq=truth_summary[ip];
+                tq.truth_pi0++;
+                if (finite_good(b.truth_probe_delta_alpha)) {
+                    tq.sum_pred_truth_da+=b.truth_probe_delta_alpha;
+                    tq.n_pred_truth_da++;
+                } // endif
+                if (k>=0) {
+                    tq.have_reco++;
+                    const double da_truth=opening_angle_deg(
+                        b.neutral_theta[k],b.neutral_phi[k],
+                        b.truth_probe_theta,b.truth_probe_phi);
+                    if (finite_good(da_truth)) {
+                        if (da_truth<0.5) tq.reco_truth_lt05++;
+                        if (da_truth<1.0) tq.reco_truth_lt1++;
+                        if (da_truth<2.0) tq.reco_truth_lt2++;
+                        if (da_truth<3.0) tq.reco_truth_lt3++;
+                    } // endif
+                } // endif
+            } // endif
+
+            for (int im=0;im<NM;im++) {
+                if (!(b.Mx2_ep<mx2_hi[im])) continue;
+
+                // The denominator is independent of the candidate-angle cut.
+                // Store it redundantly in ia for simple downstream bookkeeping.
+                for (int ia=0;ia<NA;ia++) {
+                    auto& q=cells[s.key][ip][ia][im];
+                    q.denom_rows++;
+                    if (b.have_truth) {
+                        q.truth_rows++;
+                        if (truth_pi0) q.truth_pi0_rows++;
+                    } // endif
+
+                    if (k<0 || !finite_good(dp) || !finite_good(alpha)) continue;
+                    if (std::isfinite(alpha_max[ia]) && !(alpha<alpha_max[ia]))
+                        continue;
+                    q.residual->Fill(dp);
+                } // endfor
+            } // endfor
+        } // endfor
+
+        std::cout << "  " << s.key << " 100%\n";
+    } // endfor
+
+    auto clasdis_pi0_frac=[&](int ip,int ia,int im) {
+        const auto& q=cells["clasdis"][ip][ia][im];
+        if (q.truth_rows>0)
+            return double(q.truth_pi0_rows)/double(q.truth_rows);
+        return 0.9877;
+    };
+
+    auto evaluate=[&](int ip,int ia,int im)->AlphaMxScanResult {
+        AlphaMxScanResult out;
+
+        const auto& rd=cells["data"][ip][ia][im];
+        const auto& ra=cells["aaogen"][ip][ia][im];
+        const auto& rc=cells["clasdis"][ip][ia][im];
+        const auto& rv=cells["dvcsgen"][ip][ia][im];
+
+        if (!rd.residual || !ra.residual || !rc.residual || !rv.residual)
+            return out;
+        if (rd.denom_rows<=0) return out;
+
+        const double fc=clasdis_pi0_frac(ip,ia,im);
+
+        const double ya=Rfd.nominal.aao*double(ra.denom_rows);
+        const double yc=Rfd.nominal.clasdis*double(rc.denom_rows);
+        const double yd=Rfd.nominal.dvcs*double(rv.denom_rows);
+        const double total=ya+yc+yd;
+        const double pi0den=ya+fc*yc;
+        if (!(total>0) || !(pi0den>0)) return out;
+
+        out.f_pi0=pi0den/total;
+
+        std::unique_ptr<TH1D> hpi0(
+            (TH1D*)ra.residual->Clone(Form("scan_pi0_%d_%d_%d",ip,ia,im)));
+        hpi0->SetDirectory(nullptr);
+        hpi0->Scale(Rfd.nominal.aao);
+        std::unique_ptr<TH1D> hcpi(
+            (TH1D*)rc.residual->Clone(Form("scan_cpi_%d_%d_%d",ip,ia,im)));
+        hcpi->SetDirectory(nullptr);
+        hcpi->Scale(Rfd.nominal.clasdis*fc);
+        hpi0->Add(hcpi.get());
+
+        std::unique_ptr<TH1D> hbg(
+            (TH1D*)rv.residual->Clone(Form("scan_bg_%d_%d_%d",ip,ia,im)));
+        hbg->SetDirectory(nullptr);
+        hbg->Scale(Rfd.nominal.dvcs);
+        std::unique_ptr<TH1D> hcbg(
+            (TH1D*)rc.residual->Clone(Form("scan_cbg_%d_%d_%d",ip,ia,im)));
+        hcbg->SetDirectory(nullptr);
+        hcbg->Scale(Rfd.nominal.clasdis*(1.0-fc));
+        hbg->Add(hcbg.get());
+
+        std::unique_ptr<TH1D> hd(
+            (TH1D*)rd.residual->Clone(Form("scan_data_%d_%d_%d",ip,ia,im)));
+        hd->SetDirectory(nullptr);
+
+        const FitResult fd=fit_valerii_residual(hd.get());
+        const FitResult fm=fit_valerii_residual(hpi0.get());
+        out.data_fit_reason=fd.reason;
+        out.mc_fit_reason=fm.reason;
+        if (!fd.valid || !fm.valid) return out;
+
+        out.data_mu=fd.mean;
+        out.data_sigma=fd.sigma;
+        out.mc_mu=fm.mean;
+        out.mc_sigma=fm.sigma;
+
+        const double data_num=
+            hist_integral_window(hd.get(),
+                                 fd.mean-3*fd.sigma,
+                                 fd.mean+3*fd.sigma);
+
+        const double bg_denom=
+            Rfd.nominal.dvcs*double(rv.denom_rows) +
+            Rfd.nominal.clasdis*(1.0-fc)*double(rc.denom_rows);
+        const double bg_num=
+            hist_integral_window(hbg.get(),
+                                 fd.mean-3*fd.sigma,
+                                 fd.mean+3*fd.sigma);
+        const double bg_eff=(bg_denom>0 ? bg_num/bg_denom : 0.0);
+
+        const double data_pi0_denom=
+            out.f_pi0*double(rd.denom_rows);
+        const double predicted_bg_in_data=
+            (1.0-out.f_pi0)*double(rd.denom_rows)*bg_eff;
+        const double data_pi0_num=data_num-predicted_bg_in_data;
+
+        const double mc_pi0_denom=
+            Rfd.nominal.aao*double(ra.denom_rows) +
+            Rfd.nominal.clasdis*fc*double(rc.denom_rows);
+        const double mc_pi0_num=
+            hist_integral_window(hpi0.get(),
+                                 fm.mean-3*fm.sigma,
+                                 fm.mean+3*fm.sigma);
+
+        if (!(data_pi0_denom>0) || !(mc_pi0_denom>0) ||
+            !(mc_pi0_num>0) || !(data_pi0_num>0))
+            return out;
+
+        out.eff_data=data_pi0_num/data_pi0_denom;
+        out.eff_mc=mc_pi0_num/mc_pi0_denom;
+        if (!(out.eff_data>0) || !(out.eff_mc>0)) return out;
+
+        out.ratio=out.eff_data/out.eff_mc;
+        out.correction=1.0/out.ratio;
+        out.valid=true;
+        return out;
+    };
+
+    std::ofstream csv(dir+"/alpha_mx2_efficiency_scan.csv");
+    csv << "p_bin,p_low_GeV,p_high_GeV,alpha_key,alpha_max_deg,"
+           "Mx2_ep_upper_GeV2,valid,f_pi0,eff_data,eff_mc,"
+           "epsilon_data_over_epsilon_MC,"
+           "cross_section_multiplier_epsilon_MC_over_epsilon_data,"
+           "data_mu,data_sigma,mc_mu,mc_sigma,data_fit_reason,mc_fit_reason\n";
+    csv << std::setprecision(10);
+
+    std::cout << "\n============================================================\n"
+              << " Targeted FD Delta-alpha / Mx2(ep) efficiency scan\n"
+              << "============================================================\n";
+
+    for (int ip=0;ip<NP;ip++) {
+        std::cout << Form("\np = %.2f-%.2f GeV\n",
+                         std::max(p_edges[ip],PROBE_P_MIN),p_edges[ip+1]);
+
+        for (int im=0;im<NM;im++) {
+            std::cout << Form("  Mx2(ep) < %.3f GeV^2\n",mx2_hi[im]);
+
+            for (int ia=0;ia<NA;ia++) {
+                const auto r=evaluate(ip,ia,im);
+                const double aprint=std::isfinite(alpha_max[ia]) ?
+                                    alpha_max[ia] : -1.0;
+
+                csv << ip << "," << p_edges[ip] << "," << p_edges[ip+1] << ","
+                    << alpha_key[ia] << ",";
+                if (std::isfinite(alpha_max[ia])) csv << alpha_max[ia];
+                csv << "," << mx2_hi[im] << "," << int(r.valid) << ","
+                    << r.f_pi0 << "," << r.eff_data << "," << r.eff_mc << ","
+                    << r.ratio << "," << r.correction << ","
+                    << r.data_mu << "," << r.data_sigma << ","
+                    << r.mc_mu << "," << r.mc_sigma << ","
+                    << r.data_fit_reason << "," << r.mc_fit_reason << "\n";
+
+                if (r.valid) {
+                    if (std::isfinite(alpha_max[ia]))
+                        std::cout << Form(
+                            "    alpha<%.1f deg: data=%.4f MC=%.4f "
+                            "data/MC=%.4f C=%.4f\n",
+                            alpha_max[ia],r.eff_data,r.eff_mc,
+                            r.ratio,r.correction);
+                    else
+                        std::cout << Form(
+                            "    alpha=no cut: data=%.4f MC=%.4f "
+                            "data/MC=%.4f C=%.4f\n",
+                            r.eff_data,r.eff_mc,r.ratio,r.correction);
+                } else {
+                    if (std::isfinite(alpha_max[ia]))
+                        std::cout << Form("    alpha<%.1f deg: INVALID\n",
+                                         alpha_max[ia]);
+                    else
+                        std::cout << "    alpha=no cut: INVALID\n";
+                } // endif
+            } // endfor
+        } // endfor
+    } // endfor
+
+    csv.close();
+
+    // CLASDIS truth-based calibration of candidate association.
+    std::ofstream tcsv(dir+"/clasdis_truth_candidate_matching.csv");
+    tcsv << "p_bin,p_low_GeV,p_high_GeV,truth_pi0,have_reco,"
+            "fraction_reco_of_truth_pi0,"
+            "fraction_best_candidate_within_0p5deg_of_truth,"
+            "fraction_best_candidate_within_1deg_of_truth,"
+            "fraction_best_candidate_within_2deg_of_truth,"
+            "fraction_best_candidate_within_3deg_of_truth,"
+            "mean_predicted_probe_to_truth_angle_deg\n";
+
+    std::cout << "\nCLASDIS truth association baseline:\n";
+    for (int ip=0;ip<NP;ip++) {
+        const auto& q=truth_summary[ip];
+        const double freco=q.truth_pi0>0 ?
+            double(q.have_reco)/double(q.truth_pi0) : 0;
+        const double f05=q.have_reco>0 ?
+            double(q.reco_truth_lt05)/double(q.have_reco) : 0;
+        const double f1=q.have_reco>0 ?
+            double(q.reco_truth_lt1)/double(q.have_reco) : 0;
+        const double f2=q.have_reco>0 ?
+            double(q.reco_truth_lt2)/double(q.have_reco) : 0;
+        const double f3=q.have_reco>0 ?
+            double(q.reco_truth_lt3)/double(q.have_reco) : 0;
+        const double predtruth=q.n_pred_truth_da>0 ?
+            q.sum_pred_truth_da/double(q.n_pred_truth_da) : 0;
+
+        tcsv << ip << "," << p_edges[ip] << "," << p_edges[ip+1] << ","
+             << q.truth_pi0 << "," << q.have_reco << ","
+             << freco << "," << f05 << "," << f1 << "," << f2 << "," << f3
+             << "," << predtruth << "\n";
+
+        std::cout << Form(
+            "  %.2f-%.2f GeV: reco/truth=%.3f; among selected best candidates "
+            "truth-match <0.5/1/2/3 deg = %.3f / %.3f / %.3f / %.3f; "
+            "<predicted,true>=%.3f deg\n",
+            std::max(p_edges[ip],PROBE_P_MIN),p_edges[ip+1],
+            freco,f05,f1,f2,f3,predtruth);
+    } // endfor
+    tcsv.close();
+
+    // Compact diagnostic plots: correction versus momentum for each alpha cut,
+    // one canvas per Mx2 upper edge.
+    for (int im=0;im<NM;im++) {
+        TCanvas c(Form("c_alpha_mx_%d",im),"",1050,780);
+        c.SetLeftMargin(0.14);
+        c.SetRightMargin(0.04);
+        c.SetBottomMargin(0.14);
+        c.SetTopMargin(0.12);
+        c.SetTicks(1,1);
+
+        TH1D axis(Form("h_alpha_mx_axis_%d",im),
+                  ";E_{#gamma,probe} (GeV);#epsilon_{MC}/#epsilon_{data}",
+                  100,0.35,6.0);
+        axis.SetDirectory(nullptr);
+        axis.SetStats(0);
+        axis.SetMinimum(0.5);
+        axis.SetMaximum(4.5);
+        axis.Draw("AXIS");
+
+        std::vector<std::unique_ptr<TGraphErrors>> gs;
+        const int styles[NA]={20,21,22,23,24};
+        const int colors[NA]={kBlack,kRed+1,kBlue+1,kGreen+2,kMagenta+1};
+
+        TLegend leg(0.61,0.62,0.92,0.88);
+        leg.SetBorderSize(0);
+        leg.SetFillStyle(0);
+
+        for (int ia=0;ia<NA;ia++) {
+            auto g=std::make_unique<TGraphErrors>();
+            g->SetMarkerStyle(styles[ia]);
+            g->SetMarkerColor(colors[ia]);
+            g->SetLineColor(colors[ia]);
+            g->SetLineWidth(2);
+
+            for (int ip=0;ip<NP;ip++) {
+                const auto r=evaluate(ip,ia,im);
+                if (!r.valid) continue;
+                const double x=0.5*(p_edges[ip]+p_edges[ip+1]);
+                const double ex=0.5*(p_edges[ip+1]-p_edges[ip]);
+                const int n=g->GetN();
+                g->SetPoint(n,x,r.correction);
+                g->SetPointError(n,ex,0);
+            } // endfor
+
+            g->Draw("PL SAME");
+            const char* lab=(ia==0) ? "no #Delta#alpha cut" :
+                Form("#Delta#alpha<%.0f^{#circ}",alpha_max[ia]);
+            leg.AddEntry(g.get(),lab,"lp");
+            gs.push_back(std::move(g));
+        } // endfor
+
+        TLine one(0.35,1.0,6.0,1.0);
+        one.SetLineStyle(2);
+        one.Draw();
+
+        // Cross-section diagnostic reference values.
+        TLine lee_fd(0.35,1.137,6.0,1.137);
+        lee_fd.SetLineStyle(3);
+        lee_fd.SetLineWidth(2);
+        lee_fd.Draw();
+
+        TLatex tx;
+        tx.SetNDC();
+        tx.SetTextFont(42);
+        tx.SetTextSize(0.038);
+        tx.DrawLatex(0.14,0.945,
+            Form("FD matching-cut scan, M_{X}^{2}(ep)<%.3f GeV^{2}",mx2_hi[im]));
+        tx.SetTextSize(0.027);
+        tx.DrawLatex(0.14,0.905,
+            "Dashed: C=1; dotted: Hayward/Lee pure-FD diagnostic C=1.137");
+
+        leg.Draw();
+        c.SaveAs((dir+Form("/correction_vs_Eprobe_Mx2lt%.3f.png",mx2_hi[im])).c_str());
+    } // endfor
+
+    std::cout << "============================================================\n"
+              << "[wrote] " << dir << "/alpha_mx2_efficiency_scan.csv\n"
+              << "[wrote] " << dir << "/clasdis_truth_candidate_matching.csv\n"
+              << "============================================================\n";
 }
 
 
@@ -9404,6 +9932,7 @@ void run_concise_analysis(const std::string& out) {
     write_fd_valerii_momentum_trend(
         vv,norm_fd,out+"/4_efficiency");
     write_shoulder_diagnostics_for_fd_momentum_bins(out);
+    run_targeted_alpha_mx2_scan(vv,norm_fd,out);
 
     std::cout << "\nConcise output written to:\n"
               << "  " << out << "/1_exclusivity/FD and FT/\n"
