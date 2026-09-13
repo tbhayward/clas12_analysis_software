@@ -7730,7 +7730,7 @@ RobustEfficiencySummary robust_efficiency_ensemble(
         const NormDerivation& R,int ir) {
     RobustEfficiencySummary s;
 
-    const int rebins[]={1,2,3,4};
+    const int rebins[]={1,2,4,5};
     const double fit_halves[]={0.55,0.75,0.95};
     const double nsigmas[]={2.5,3.0,3.5};
 
