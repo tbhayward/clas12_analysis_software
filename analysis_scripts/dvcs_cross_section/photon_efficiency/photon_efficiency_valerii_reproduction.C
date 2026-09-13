@@ -71,6 +71,13 @@
 
 namespace pe {
 
+// Data-derived equal-statistics split points for the Eprobe >= 2 GeV
+// denominator population.  They are determined once, independently for FD
+// and FT, before the cached component scans are launched.
+static double HIGH_E_SPLIT_FD=std::numeric_limits<double>::quiet_NaN();
+static double HIGH_E_SPLIT_FT=std::numeric_limits<double>::quiet_NaN();
+
+
 void concise_publication_style() {
     gStyle->SetOptStat(0);
     gStyle->SetOptTitle(0);
@@ -1778,12 +1785,6 @@ struct ValComponentBin {
     std::unique_ptr<TH1D> residual_fit;
     std::unique_ptr<TH1D> residual_count;
 };
-
-// Data-derived equal-statistics split points for the Eprobe >= 2 GeV
-// denominator population.  They are determined once, independently for FD
-// and FT, before the cached component scans are launched.
-static double HIGH_E_SPLIT_FD=std::numeric_limits<double>::quiet_NaN();
-static double HIGH_E_SPLIT_FT=std::numeric_limits<double>::quiet_NaN();
 
 enum CoarseRegionIndex {
     CR_FD_LOW=0,
