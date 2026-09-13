@@ -12343,14 +12343,46 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
     //   event to expected probe p/theta/phi acceptance, as required by any
     //   tag-and-probe efficiency measurement.
     //
+    // Probe-energy binning:
+    //   FD: 0.4-0.5, 0.5-1.1, 1.1-1.7, 1.7-2.3, 2.3-2.9,
+    //       2.9-3.7, 3.7-9.0 GeV.
+    //   FT: 0.4-2.0 and 2.0-9.0 GeV only.  The >2 GeV bin is the main
+    //       FT result because the fine-bin FT statistics are insufficient.
+    //
     // Runtime:
     //   Only DATA, AAOgen, and CLASDIS are scanned.  DVCSgen is unnecessary
     //   for the pi0 peak itself.  Each sample is scanned once after a single
     //   FT-plane estimate from data.
     // ------------------------------------------------------------------
 
-    constexpr int NP=VAL_NP;
-    const double p_edges[NP+1]={0.35,0.50,1.10,1.70,2.30,2.90,3.70,6.00};
+    constexpr int MAX_NP=VAL_NP;
+
+    // Detector-specific probe-energy binning.
+    //
+    // FD keeps the detailed Valerii-style momentum structure, but the final
+    // bin now extends to 9 GeV.
+    //
+    // FT statistics are too limited for the fine binning, so FT is treated
+    // only as below/above 2 GeV.  The >2 GeV bin is the primary physics bin.
+    const double fd_p_edges[MAX_NP+1]={
+        0.35,0.50,1.10,1.70,2.30,2.90,3.70,9.00
+    };
+    constexpr int FT_NP=2;
+    const double ft_p_edges[FT_NP+1]={0.40,2.00,9.00};
+
+    auto n_probe_bins=[](int det_block)->int {
+        return det_block==0 ? MAX_NP : FT_NP;
+    };
+
+    auto pbin_lo=[&](int det_block,int ip)->double {
+        return det_block==0 ?
+            std::max(fd_p_edges[ip],PROBE_P_MIN) :
+            std::max(ft_p_edges[ip],PROBE_P_MIN);
+    };
+
+    auto pbin_hi=[&](int det_block,int ip)->double {
+        return det_block==0 ? fd_pbin_hi(id,ip) : ft_pbin_hi(id,ip);
+    };
 
     constexpr double MX_FIT_LO=0.02;
     constexpr double MX_FIT_HI=0.30;
@@ -12504,16 +12536,16 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
     struct Sample {
         std::string name;
         bool is_mc=false;
-        std::array<Cell,2*NP> cells; // detector 0=FD block, 1=FT block
+        std::array<Cell,2*MAX_NP> cells; // MAX_NP storage per detector block
     };
 
     auto cell_index=[](int det_block,int ip) {
-        return det_block*NP+ip;
+        return det_block*MAX_NP+ip;
     };
 
     auto init_sample=[&](Sample& s) {
         for (int id=0;id<2;id++) {
-            for (int ip=0;ip<NP;ip++) {
+            for (int ip=0;ip<MAX_NP;ip++) {
                 const int ic=cell_index(id,ip);
                 auto& q=s.cells[ic];
 
@@ -12541,12 +12573,21 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
         } // endfor
     };
 
-    auto find_pbin=[&](double p)->int {
+    auto find_pbin=[&](double p,int det_block)->int {
         if (!finite_good(p) || p<PROBE_P_MIN) return -1;
-        for (int ip=0;ip<NP;ip++) {
-            const double lo=std::max(p_edges[ip],PROBE_P_MIN);
-            if (p>=lo && p<p_edges[ip+1]) return ip;
-        } // endfor
+
+        if (det_block==0) {
+            for (int ip=0;ip<MAX_NP;ip++) {
+                const double lo=std::max(fd_p_edges[ip],PROBE_P_MIN);
+                if (p>=lo && p<fd_pbin_hi(id,ip)) return ip;
+            } // endfor
+        } else {
+            for (int ip=0;ip<FT_NP;ip++) {
+                const double lo=std::max(ft_p_edges[ip],PROBE_P_MIN);
+                if (p>=lo && p<ft_pbin_hi(id,ip)) return ip;
+            } // endfor
+        } // endif
+
         return -1;
     };
 
@@ -12672,9 +12713,6 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
             if (!finite_good(dphi) ||
                 std::fabs(dphi)>=NORM_DPHI_TRENTO_MAX) continue;
 
-            const int ip=find_pbin(b.probe_corr_p);
-            if (ip<0) continue;
-
             bool expected_fd=in_fd(b);
             bool expected_ft=false;
             if (common_ft_plane.valid && in_ft(b)) {
@@ -12685,6 +12723,9 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
             for (int id=0;id<2;id++) {
                 if (id==0 && !expected_fd) continue;
                 if (id==1 && !expected_ft) continue;
+
+                const int ip=find_pbin(b.probe_corr_p,id);
+                if (ip<0) continue;
 
                 const int detector=(id==0 ? 1 : 0);
                 auto& q=s->cells[cell_index(id,ip)];
@@ -12860,12 +12901,12 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
         return r;
     };
 
-    std::map<std::string,std::array<EffResult,2*NP>> results;
+    std::map<std::string,std::array<EffResult,2*MAX_NP>> results;
 
     for (auto& sp:samples) {
         auto& arr=results[sp->name];
         for (int id=0;id<2;id++) {
-            for (int ip=0;ip<NP;ip++) {
+            for (int ip=0;ip<n_probe_bins(id);ip++) {
                 arr[cell_index(id,ip)]=
                     evaluate(sp->cells[cell_index(id,ip)]);
             } // endfor
@@ -12903,7 +12944,7 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
 
     for (auto& sp:samples) {
         for (int id=0;id<2;id++) {
-            for (int ip=0;ip<NP;ip++) {
+            for (int ip=0;ip<n_probe_bins(id);ip++) {
                 const int ic=cell_index(id,ip);
                 auto& q=sp->cells[ic];
                 auto& r=results[sp->name][ic];
@@ -12911,8 +12952,8 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
                 csv << sp->name << ","
                     << (id==0?"FD":"FT") << ","
                     << ip << ","
-                    << std::max(p_edges[ip],PROBE_P_MIN) << ","
-                    << p_edges[ip+1] << ","
+                    << pbin_lo(id,ip) << ","
+                    << pbin_hi(id,ip) << ","
                     << q.denom_rows << ","
                     << r.mx.valid << ","
                     << r.mx.mean << "," << r.mx.sigma << ","
@@ -12960,7 +13001,7 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
     Sample* scls=find_sample("clasdis");
 
     for (int id=0;id<2;id++) {
-        for (int ip=0;ip<NP;ip++) {
+        for (int ip=0;ip<n_probe_bins(id);ip++) {
             const int ic=cell_index(id,ip);
 
             const EffResult rd=
@@ -12994,8 +13035,8 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
 
             ccsv << (id==0?"FD":"FT") << ","
                  << ip << ","
-                 << std::max(p_edges[ip],PROBE_P_MIN) << ","
-                 << p_edges[ip+1] << ","
+                 << pbin_lo(id,ip) << ","
+                 << pbin_hi(id,ip) << ","
                  << rd.eff << "," << rd.eff_err << ","
                  << ra.eff << "," << ra.eff_err << ","
                  << ratio << "," << ratio_err << ","
@@ -13038,8 +13079,10 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
                    "gaus(0)+pol2(3)",flo,fhi);
             ff.SetParameters(r.amp,r.mean,r.sigma,r.b0,r.b1,r.b2);
             ff.SetLineColor(kRed+1);
-            ff.SetLineWidth(2);
-            ff.Draw("SAME");
+            ff.SetLineStyle(1);
+            ff.SetLineWidth(3);
+            ff.SetNpx(800);
+            ff.DrawCopy("L SAME");
 
             TF1 bg(Form("draw_massbg_%lld",fit_serial++),
                    "pol2",flo,fhi);
@@ -13067,6 +13110,8 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
                      r.ndf>0?r.chi2/r.ndf:0.0));
         } // endif
 
+        c.Modified();
+        c.Update();
         c.SaveAs(path.c_str());
     };
 
@@ -13079,7 +13124,7 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
             const std::string ddir=sdir+"/"+det;
             gSystem->mkdir(ddir.c_str(),kTRUE);
 
-            for (int ip=0;ip<NP;ip++) {
+            for (int ip=0;ip<n_probe_bins(id);ip++) {
                 const int ic=cell_index(id,ip);
                 auto& q=sp->cells[ic];
                 auto& r=results[sp->name][ic];
@@ -13087,8 +13132,8 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
                 const std::string head=Form(
                     "%s %s, %.2f<E_{#gamma,probe}^{pred}<%.2f GeV",
                     sp->name.c_str(),det.c_str(),
-                    std::max(p_edges[ip],PROBE_P_MIN),
-                    p_edges[ip+1]);
+                    pbin_lo(id,ip),
+                    pbin_hi(id,ip));
 
                 draw_peak(
                     q.h_mx.get(),r.mx,
@@ -13136,10 +13181,10 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
         gratio.SetMarkerColor(kBlack);
         gratio.SetLineColor(kBlack);
 
-        for (int ip=0;ip<NP;ip++) {
+        for (int ip=0;ip<n_probe_bins(id);ip++) {
             const int ic=cell_index(id,ip);
-            const double x=0.5*(std::max(p_edges[ip],PROBE_P_MIN)+p_edges[ip+1]);
-            const double ex=0.5*(p_edges[ip+1]-std::max(p_edges[ip],PROBE_P_MIN));
+            const double x=0.5*(pbin_lo(id,ip)+pbin_hi(id,ip));
+            const double ex=0.5*(pbin_hi(id,ip)-pbin_lo(id,ip));
 
             auto add_eff=[&](TGraphErrors& g,const std::string& key) {
                 if (!results.count(key)) return;
@@ -13180,7 +13225,7 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
             TH1D axis(Form("h_mass_eff_axis_%s",det.c_str()),
                       ";E_{#gamma,probe}^{pred} (GeV);"
                       "#pi^{0}-mass-fit photon efficiency",
-                      100,0.35,6.0);
+                      100,0.35,9.0);
             axis.SetDirectory(nullptr);
             axis.SetStats(0);
             axis.SetMinimum(0.0);
@@ -13221,14 +13266,14 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
             TH1D axis(Form("h_mass_ratio_axis_%s",det.c_str()),
                       ";E_{#gamma,probe}^{pred} (GeV);"
                       "#epsilon_{data}/#epsilon_{AAO}",
-                      100,0.35,6.0);
+                      100,0.35,9.0);
             axis.SetDirectory(nullptr);
             axis.SetStats(0);
             axis.SetMinimum(0.0);
             axis.SetMaximum(1.6);
             axis.Draw("AXIS");
 
-            TLine unity(0.35,1.0,6.0,1.0);
+            TLine unity(0.35,1.0,9.0,1.0);
             unity.SetLineStyle(2);
             unity.Draw();
 
@@ -13255,7 +13300,7 @@ void run_pi0_massfit_efficiency_only(const std::string& outdir) {
                 fout.mkdir(sp->name.c_str());
                 fout.cd(sp->name.c_str());
                 for (int id=0;id<2;id++) {
-                    for (int ip=0;ip<NP;ip++) {
+                    for (int ip=0;ip<n_probe_bins(id);ip++) {
                         auto& q=sp->cells[cell_index(id,ip)];
                         if (q.h_mx) q.h_mx->Write();
                         if (q.h_mgg_sigmx) q.h_mgg_sigmx->Write();
