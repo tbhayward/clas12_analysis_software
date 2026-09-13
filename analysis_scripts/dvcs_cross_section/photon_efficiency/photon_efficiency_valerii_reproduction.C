@@ -595,7 +595,7 @@ FitResult fit_residual(TH1D* h, int min_entries) {
     TF1 seed("seed_tmp","gaus",seed_lo,seed_hi);
     seed.SetParameters(h->GetMaximum(),peak,0.10);
     seed.SetParLimits(2,SIGMA_MIN,SIGMA_MAX);
-    const int seed_status=h->Fit(&seed,"QNR");
+    const int seed_status=h->Fit(&seed,"LQNR");
 
     double mu=peak;
     double sg=0.10;
@@ -1585,7 +1585,7 @@ struct SampleSpec {
     bool is_mc=false;
 };
 
-static const char* CONCISE_CACHE_VERSION="20260912_concise_v9_ft_fitquality_scan";
+static const char* CONCISE_CACHE_VERSION="20260912_concise_v10_sparseFT_eta_comp";
 
 std::uint64_t concise_hash(const std::string& s,std::uint64_t h=1469598103934665603ULL) {
     for (unsigned char c:s) {
@@ -1763,7 +1763,7 @@ struct ValNormSet {
 // only; the active factors are derived from this run's data and MC templates.
 static const ValNormSet VAL_HISTORICAL_NOMINAL = {"Valerii_June_nominal",0.307,0.315,1.10};
 
-static const int VAL_COUNT_NBIN=4000;
+static const int VAL_COUNT_NBIN=160;
 static const double VAL_COUNT_MIN=-4.0;
 static const double VAL_COUNT_MAX= 4.0;
 
@@ -1826,6 +1826,32 @@ struct ValComponent {
     std::vector<std::unique_ptr<TH1D>> norm_full;
     std::vector<std::unique_ptr<TH1D>> norm_lowE;
     std::vector<std::unique_ptr<TH1D>> norm_highE;
+    std::unique_ptr<TH2D> post_tag_probe_fd(new TH2D(
+        Form("post_tag_probe_fd_%s",spec.name.c_str()),
+        ";E_{#gamma,tag} (GeV);E_{#gamma,probe} (GeV)",
+        40,0,8,40,0,8));
+    std::unique_ptr<TH2D> post_tag_probe_ft(new TH2D(
+        Form("post_tag_probe_ft_%s",spec.name.c_str()),
+        ";E_{#gamma,tag} (GeV);E_{#gamma,probe} (GeV)",
+        40,0,8,40,0,8));
+    post_tag_probe_fd->Sumw2(); post_tag_probe_ft->Sumw2();
+    post_tag_probe_fd->SetDirectory(nullptr); post_tag_probe_ft->SetDirectory(nullptr);
+
+    std::array<std::unique_ptr<TH1D>,CR_N> eta_mx2_denom;
+    std::array<std::unique_ptr<TH2D>,CR_N> eta_dp_vs_mx2;
+    for (int ir=0;ir<CR_N;ir++) {
+        eta_mx2_denom[ir].reset(new TH1D(
+            Form("eta_mx2_denom_%s_%s",CR_KEY[ir],spec.name.c_str()),
+            ";M_{X}^{2}(ep) (GeV^{2});Candidates",90,-0.30,0.60));
+        eta_dp_vs_mx2[ir].reset(new TH2D(
+            Form("eta_dp_vs_mx2_%s_%s",CR_KEY[ir],spec.name.c_str()),
+            ";M_{X}^{2}(ep) (GeV^{2});#Delta p_{#gamma2} (GeV)",
+            90,-0.30,0.60,160,-4,4));
+        eta_mx2_denom[ir]->Sumw2(); eta_dp_vs_mx2[ir]->Sumw2();
+        eta_mx2_denom[ir]->SetDirectory(nullptr);
+        eta_dp_vs_mx2[ir]->SetDirectory(nullptr);
+    } // endfor
+
     std::array<long long,6> norm_cutflow{{0,0,0,0,0,0}};
 
     // Independent FT-probe exclusivity/normalization sample.  The observed tag
@@ -1857,6 +1883,12 @@ struct ValComponent {
     // after all nominal FT cuts except that coplanarity is allowed to vary.
     std::vector<std::vector<std::unique_ptr<TH2D>>> fitqual_ft_low;
     std::vector<std::vector<std::unique_ptr<TH2D>>> fitqual_ft_high;
+
+    std::unique_ptr<TH2D> post_tag_probe_fd;
+    std::unique_ptr<TH2D> post_tag_probe_ft;
+
+    std::array<std::unique_ptr<TH1D>,CR_N> eta_mx2_denom;
+    std::array<std::unique_ptr<TH2D>,CR_N> eta_dp_vs_mx2;
 
     bool normalization_branches_complete=false;
 };
@@ -2916,30 +2948,43 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
 
         // Coarse integrated efficiency regions use the corresponding detector
         // acceptance and the PROBE-energy split requested for the final result.
-        if (ncf.all) {
-            int cr=-1;
-            int probe_detector=-1;
-            if (probe_fd) {
-                cr=(b.probe_corr_p<2.0 ? CR_FD_LOW : CR_FD_HIGH);
-                probe_detector=1;
-            } else if (probe_ft) {
-                cr=(b.probe_corr_p<2.0 ? CR_FT_LOW : CR_FT_HIGH);
-                probe_detector=0;
+        int cr=-1;
+        int probe_detector=-1;
+        if (probe_fd) {
+            cr=(b.probe_corr_p<2.0 ? CR_FD_LOW : CR_FD_HIGH);
+            probe_detector=1;
+        } else if (probe_ft) {
+            cr=(b.probe_corr_p<2.0 ? CR_FT_LOW : CR_FT_HIGH);
+            probe_detector=0;
+        } // endif
+
+        // Eta/Mx2(ep) diagnostic: impose every other exclusivity requirement,
+        // but leave Mx2(ep) free so we can scan its upper edge.
+        if (cr>=0 && ncf.mx2_eg && ncf.dphi_trento && ncf.angle_gX) {
+            eta_mx2_denom[cr]->Fill(b.Mx2_ep);
+            const int ket=best_probe_candidate(b,probe_detector);
+            if (ket>=0) {
+                const double dpet=b.neutral_p[ket]-b.probe_corr_p;
+                if (std::isfinite(dpet))
+                    eta_dp_vs_mx2[cr]->Fill(b.Mx2_ep,dpet);
+            } // endif
+        } // endif
+
+        if (cr>=0 && ncf.all) {
+            coarse_rows[cr]++;
+            if (probe_fd) post_tag_probe_fd->Fill(b.tag_corr_p,b.probe_corr_p);
+            if (probe_ft) post_tag_probe_ft->Fill(b.tag_corr_p,b.probe_corr_p);
+
+            if (spec.is_mc && b.have_truth) {
+                coarse_truth_rows[cr]++;
+                if (b.truth_probe_pid==22 && b.truth_probe_parent==111)
+                    coarse_truth_pi0[cr]++;
             } // endif
 
-            if (cr>=0) {
-                coarse_rows[cr]++;
-                if (spec.is_mc && b.have_truth) {
-                    coarse_truth_rows[cr]++;
-                    if (b.truth_probe_pid==22 && b.truth_probe_parent==111)
-                        coarse_truth_pi0[cr]++;
-                } // endif
-
-                const int kc=best_probe_candidate(b,probe_detector);
-                if (kc>=0) {
-                    const double dpc=b.neutral_p[kc]-b.probe_corr_p;
-                    if (std::isfinite(dpc)) coarse_h[cr]->Fill(dpc);
-                } // endif
+            const int kc=best_probe_candidate(b,probe_detector);
+            if (kc>=0) {
+                const double dpc=b.neutral_p[kc]-b.probe_corr_p;
+                if (std::isfinite(dpc)) coarse_h[cr]->Fill(dpc);
             } // endif
         } // endif
 
@@ -3058,6 +3103,28 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
                 } // endif
                 f.cd();
             } // endfor
+        } // endif
+    }
+
+    {
+        TDirectory* pd=f.mkdir("postselection_energy");
+        if (pd) {
+            pd->cd();
+            post_tag_probe_fd->Write("tag_vs_probe_FD");
+            post_tag_probe_ft->Write("tag_vs_probe_FT");
+            f.cd();
+        } // endif
+    }
+
+    {
+        TDirectory* ed=f.mkdir("eta_diagnostic");
+        if (ed) {
+            ed->cd();
+            for (int ir=0;ir<CR_N;ir++) {
+                eta_mx2_denom[ir]->Write(Form("%s_mx2_denom",CR_KEY[ir]));
+                eta_dp_vs_mx2[ir]->Write(Form("%s_dp_vs_mx2",CR_KEY[ir]));
+            } // endfor
+            f.cd();
         } // endif
     }
 
@@ -3327,6 +3394,38 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
                 v->fitqual_ft_high[ic].push_back(std::move(hi));
             } // endfor
         } // endfor
+    }
+
+    {
+        auto* pd=dynamic_cast<TDirectory*>(f.Get("postselection_energy"));
+        if (pd) {
+            if (auto* h=dynamic_cast<TH2D*>(pd->Get("tag_vs_probe_FD"))) {
+                v->post_tag_probe_fd.reset((TH2D*)h->Clone(Form("%s_tag_probe_FD",v->name.c_str())));
+                v->post_tag_probe_fd->SetDirectory(nullptr);
+            } // endif
+            if (auto* h=dynamic_cast<TH2D*>(pd->Get("tag_vs_probe_FT"))) {
+                v->post_tag_probe_ft.reset((TH2D*)h->Clone(Form("%s_tag_probe_FT",v->name.c_str())));
+                v->post_tag_probe_ft->SetDirectory(nullptr);
+            } // endif
+        } // endif
+    }
+
+    {
+        auto* ed=dynamic_cast<TDirectory*>(f.Get("eta_diagnostic"));
+        if (ed) {
+            for (int ir=0;ir<CR_N;ir++) {
+                if (auto* h=dynamic_cast<TH1D*>(ed->Get(Form("%s_mx2_denom",CR_KEY[ir])))) {
+                    v->eta_mx2_denom[ir].reset((TH1D*)h->Clone(
+                        Form("%s_%s_eta_mx2",v->name.c_str(),CR_KEY[ir])));
+                    v->eta_mx2_denom[ir]->SetDirectory(nullptr);
+                } // endif
+                if (auto* h=dynamic_cast<TH2D*>(ed->Get(Form("%s_dp_vs_mx2",CR_KEY[ir])))) {
+                    v->eta_dp_vs_mx2[ir].reset((TH2D*)h->Clone(
+                        Form("%s_%s_eta_dp",v->name.c_str(),CR_KEY[ir])));
+                    v->eta_dp_vs_mx2[ir]->SetDirectory(nullptr);
+                } // endif
+            } // endfor
+        } // endif
     }
 
     f.Close();
@@ -7331,7 +7430,7 @@ RobustCoreFit fit_rebinned_residual_core(const TH1D* src,
     f.SetParLimits(1,std::max(-0.70,peak-0.35),std::min(0.55,peak+0.35));
     f.SetParLimits(2,0.035,0.55);
 
-    const int status=h->Fit(&f,"QNR");
+    const int status=h->Fit(&f,"LQNR");
     out.mean=f.GetParameter(1);
     out.sigma=std::fabs(f.GetParameter(2));
     out.mean_err=f.GetParError(1);
@@ -7483,7 +7582,7 @@ RobustEfficiencySummary robust_efficiency_ensemble(
         const NormDerivation& R,int ir) {
     RobustEfficiencySummary s;
 
-    const int rebins[]={2,4,5,8};
+    const int rebins[]={1,2,3,4};
     const double fit_halves[]={0.55,0.75,0.95};
     const double nsigmas[]={2.5,3.0,3.5};
 
@@ -7833,6 +7932,183 @@ void draw_best_current_efficiency(
 }
 
 
+void draw_ft_composition_audit(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                               const NormDerivation& Rft,
+                               const std::string& dir) {
+    const ValComponent* a=find_val_component(vv,"aaogen");
+    const ValComponent* c=find_val_component(vv,"clasdis");
+    const ValComponent* d=find_val_component(vv,"dvcsgen");
+    if (!a || !c || !d || !a->post_tag_probe_ft || !c->post_tag_probe_ft || !d->post_tag_probe_ft)
+        return;
+
+    auto proj_probe=[&](const ValComponent* v,const char* n)->std::unique_ptr<TH1D>{
+        std::unique_ptr<TH1D> h(v->post_tag_probe_ft->ProjectionY(
+            n,1,v->post_tag_probe_ft->GetNbinsX(),"e"));
+        h->SetDirectory(nullptr);
+        return h;
+    };
+
+    auto ha=proj_probe(a,"ftcomp_a");
+    auto hc=proj_probe(c,"ftcomp_c");
+    auto hd=proj_probe(d,"ftcomp_d");
+    ha->Scale(Rft.nominal.aao);
+    hc->Scale(Rft.nominal.clasdis);
+    hd->Scale(Rft.nominal.dvcs);
+
+    TCanvas can("c_ft_comp_audit","",1500,650);
+    can.Divide(2,1);
+
+    can.cd(1);
+    gPad->SetLeftMargin(0.14); gPad->SetBottomMargin(0.15); gPad->SetTopMargin(0.12);
+    ha->SetStats(0); ha->SetLineColor(kRed+1); ha->SetLineWidth(3);
+    hc->SetLineColor(kOrange+7); hc->SetLineWidth(3);
+    hd->SetLineColor(kGreen+2); hd->SetLineWidth(3);
+    ha->SetTitle("(a) Fully selected FT yield vs probe energy");
+    ha->GetXaxis()->SetTitle("E_{#gamma,probe} (GeV)");
+    ha->GetYaxis()->SetTitle("Normalized candidate yield");
+    ha->SetMaximum(1.20*std::max({ha->GetMaximum(),hc->GetMaximum(),hd->GetMaximum()}));
+    ha->Draw("HIST"); hc->Draw("HIST SAME"); hd->Draw("HIST SAME");
+    TLine split(2.0,0,2.0,ha->GetMaximum()); split.SetLineStyle(2); split.Draw();
+    TLegend leg(0.60,0.68,0.91,0.88);
+    leg.SetBorderSize(0); leg.SetFillStyle(0);
+    leg.AddEntry(ha.get(),"AAOgen","l"); leg.AddEntry(hc.get(),"CLASDIS","l");
+    leg.AddEntry(hd.get(),"DVCSgen","l"); leg.Draw();
+
+    can.cd(2);
+    gPad->SetLeftMargin(0.14); gPad->SetBottomMargin(0.15); gPad->SetTopMargin(0.12);
+    TH1D* axis=new TH1D("ftcomp_axis",
+              "(b) Fully selected FT composition;E_{#gamma,probe} (GeV);Fraction of normalized MC mixture",
+              40,0,8);
+    axis->SetDirectory(nullptr); axis->SetStats(0); axis->SetMinimum(0); axis->SetMaximum(1.05);
+    axis->Draw("AXIS");
+
+    TGraph* ga=new TGraph(); TGraph* gc=new TGraph(); TGraph* gd=new TGraph();
+    int np=0;
+    for (int ib=1;ib<=ha->GetNbinsX();ib++) {
+        const double ya=ha->GetBinContent(ib),yc=hc->GetBinContent(ib),yd=hd->GetBinContent(ib);
+        const double s=ya+yc+yd;
+        if (!(s>0)) continue;
+        const double x=ha->GetBinCenter(ib);
+        ga->SetPoint(np,x,ya/s); gc->SetPoint(np,x,yc/s); gd->SetPoint(np,x,yd/s); np++;
+    } // endfor
+    ga->SetLineColor(kRed+1); ga->SetMarkerColor(kRed+1); ga->SetLineWidth(3); ga->SetMarkerStyle(20);
+    gc->SetLineColor(kOrange+7); gc->SetMarkerColor(kOrange+7); gc->SetLineWidth(3); gc->SetMarkerStyle(24);
+    gd->SetLineColor(kGreen+2); gd->SetMarkerColor(kGreen+2); gd->SetLineWidth(3); gd->SetMarkerStyle(25);
+    ga->Draw("LP SAME"); gc->Draw("LP SAME"); gd->Draw("LP SAME");
+    TLine* split2=new TLine(2.0,0,2.0,1.05); split2->SetLineStyle(2); split2->Draw();
+    can.SaveAs((dir+"/FT_composition_vs_Eprobe.png").c_str());
+
+    const int ylo=a->post_tag_probe_ft->GetYaxis()->FindBin(2.0+1e-9);
+    const int yhi=a->post_tag_probe_ft->GetNbinsY();
+    std::unique_ptr<TH1D> hat(a->post_tag_probe_ft->ProjectionX("fttag_a",ylo,yhi,"e"));
+    std::unique_ptr<TH1D> hct(c->post_tag_probe_ft->ProjectionX("fttag_c",ylo,yhi,"e"));
+    std::unique_ptr<TH1D> hdt(d->post_tag_probe_ft->ProjectionX("fttag_d",ylo,yhi,"e"));
+    hat->SetDirectory(nullptr); hct->SetDirectory(nullptr); hdt->SetDirectory(nullptr);
+    hat->Scale(Rft.nominal.aao); hct->Scale(Rft.nominal.clasdis); hdt->Scale(Rft.nominal.dvcs);
+
+    TCanvas ctag("c_ft_highprobe_tag","",950,700);
+    ctag.SetLeftMargin(0.14); ctag.SetBottomMargin(0.14); ctag.SetTopMargin(0.12);
+    hat->SetStats(0); hat->SetLineColor(kRed+1); hat->SetLineWidth(3);
+    hct->SetLineColor(kOrange+7); hct->SetLineWidth(3);
+    hdt->SetLineColor(kGreen+2); hdt->SetLineWidth(3);
+    hat->SetTitle("FT events with E_{#gamma,probe}#geq2 GeV;E_{#gamma,tag} (GeV);Normalized candidate yield");
+    hat->SetMaximum(1.20*std::max({hat->GetMaximum(),hct->GetMaximum(),hdt->GetMaximum()}));
+    hat->Draw("HIST"); hct->Draw("HIST SAME"); hdt->Draw("HIST SAME");
+    TLine* l2=new TLine(2,0,2,hat->GetMaximum());
+    TLine* l3=new TLine(3,0,3,hat->GetMaximum());
+    l2->SetLineStyle(2); l3->SetLineStyle(2); l2->Draw(); l3->Draw();
+    TLegend lt(0.62,0.69,0.91,0.88); lt.SetBorderSize(0); lt.SetFillStyle(0);
+    lt.AddEntry(hat.get(),"AAOgen","l"); lt.AddEntry(hct.get(),"CLASDIS","l");
+    lt.AddEntry(hdt.get(),"DVCSgen","l"); lt.Draw();
+    ctag.SaveAs((dir+"/FT_highEprobe_tag_energy_composition.png").c_str());
+
+    std::ofstream csv(dir+"/FT_composition_audit.csv");
+    csv << "probe_E_low,probe_E_high,AAO_yield,CLASDIS_yield,DVCS_yield,AAO_fraction,CLASDIS_fraction,DVCS_fraction\n";
+    for (int ib=1;ib<=ha->GetNbinsX();ib++) {
+        const double ya=ha->GetBinContent(ib),yc=hc->GetBinContent(ib),yd=hd->GetBinContent(ib);
+        const double s=ya+yc+yd;
+        csv << ha->GetXaxis()->GetBinLowEdge(ib) << "," << ha->GetXaxis()->GetBinUpEdge(ib) << ","
+            << ya << "," << yc << "," << yd << ","
+            << (s>0?ya/s:0) << "," << (s>0?yc/s:0) << "," << (s>0?yd/s:0) << "\n";
+    } // endfor
+    csv.close();
+}
+
+void draw_eta_residual_scan(const std::vector<std::unique_ptr<ValComponent>>& vv,
+                            const NormDerivation& Rfd,const NormDerivation& Rft,
+                            const std::string& dir) {
+    const ValComponent* data=find_val_component(vv,"data");
+    const ValComponent* a=find_val_component(vv,"aaogen");
+    const ValComponent* c=find_val_component(vv,"clasdis");
+    const ValComponent* d=find_val_component(vv,"dvcsgen");
+    if (!data || !a || !c || !d) return;
+
+    const double uppers[]={0.15,0.20,0.25,0.309};
+    TCanvas can("c_eta_residual_scan","",1550,1100);
+    can.Divide(2,2,0.001,0.001);
+    std::ofstream csv(dir+"/Mx2ep_upper_cut_residual_scan.csv");
+    csv << "region,Mx2ep_upper,data_core_fraction,data_negative_tail_fraction,totalMC_core_fraction,totalMC_negative_tail_fraction\n";
+
+    for (int ir=0;ir<CR_N;ir++) {
+        can.cd(ir+1);
+        gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.04);
+        gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.13);
+        const NormDerivation& R=(ir<2)?Rfd:Rft;
+        if (!data->eta_dp_vs_mx2[ir] || !a->eta_dp_vs_mx2[ir] ||
+            !c->eta_dp_vs_mx2[ir] || !d->eta_dp_vs_mx2[ir]) continue;
+
+        std::vector<TH1D*> drawn;
+        for (int iu=0;iu<4;iu++) {
+            const int xlo=data->eta_dp_vs_mx2[ir]->GetXaxis()->FindBin(NORM_MX2_EP_MIN+1e-9);
+            const int xhi=data->eta_dp_vs_mx2[ir]->GetXaxis()->FindBin(uppers[iu]-1e-9);
+            TH1D* hd=(TH1D*)data->eta_dp_vs_mx2[ir]->ProjectionY(
+                Form("eta_data_%d_%d",ir,iu),xlo,xhi,"e");
+            TH1D* hm=(TH1D*)a->eta_dp_vs_mx2[ir]->ProjectionY(
+                Form("eta_mc_%d_%d",ir,iu),xlo,xhi,"e");
+            TH1D* hc=(TH1D*)c->eta_dp_vs_mx2[ir]->ProjectionY(
+                Form("eta_mc_c_%d_%d",ir,iu),xlo,xhi,"e");
+            TH1D* hv=(TH1D*)d->eta_dp_vs_mx2[ir]->ProjectionY(
+                Form("eta_mc_d_%d_%d",ir,iu),xlo,xhi,"e");
+            hd->SetDirectory(nullptr); hm->SetDirectory(nullptr); hc->SetDirectory(nullptr); hv->SetDirectory(nullptr);
+            hm->Scale(R.nominal.aao); hc->Scale(R.nominal.clasdis); hv->Scale(R.nominal.dvcs);
+            hm->Add(hc); hm->Add(hv);
+
+            const double nd=hd->Integral(),nm=hm->Integral();
+            if (nd>0) hd->Scale(1.0/nd);
+            if (nm>0) hm->Scale(1.0/nm);
+            hd->Rebin(2); hm->Rebin(2);
+
+            const int colors[]={kBlue+1,kMagenta+1,kOrange+7,kRed+1};
+            hd->SetStats(0); hd->SetLineColor(colors[iu]); hd->SetMarkerColor(colors[iu]);
+            hd->SetLineWidth(2); hd->SetMarkerStyle(20+iu); hd->SetMarkerSize(0.45);
+            if (iu==0) {
+                hd->SetTitle(Form("%s: data residual vs M_{X}^{2}(ep) upper edge",CR_LABEL[ir]));
+                hd->GetXaxis()->SetTitle("#Delta p_{#gamma2} (GeV)");
+                hd->GetYaxis()->SetTitle("Unit-area reconstructed candidates");
+                hd->SetMaximum(1.25*hd->GetMaximum());
+                hd->Draw("E1");
+            } else hd->Draw("E1 SAME");
+
+            csv << CR_KEY[ir] << "," << uppers[iu] << ","
+                << hist_integral_window(hd,-0.5,0.5) << ","
+                << hist_integral_window(hd,-4.0,-0.5) << ","
+                << hist_integral_window(hm,-0.5,0.5) << ","
+                << hist_integral_window(hm,-4.0,-0.5) << "\n";
+
+            delete hc; delete hv; delete hm;
+            drawn.push_back(hd);
+        } // endfor
+
+        TLegend* leg=new TLegend(0.57,0.67,0.93,0.89);
+        leg->SetBorderSize(0); leg->SetFillStyle(0); leg->SetTextSize(0.028);
+        for (int iu=0;iu<4;iu++)
+            leg->AddEntry(drawn[iu],Form("M_{X}^{2}(ep)<%.3f",uppers[iu]),"lep");
+        leg->Draw();
+    } // endfor
+    can.SaveAs((dir+"/Mx2ep_upper_cut_residual_scan.png").c_str());
+    csv.close();
+}
+
 void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
                              const NormDerivation& Rfd,
                              const NormDerivation& Rft,
@@ -7857,14 +8133,15 @@ void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& v
                 t0.DrawLatex(0.18,0.55,"No residual histogram available");
                 continue;
             }
-            // Rebin display copies only; fitting/counting above uses the native binning.
-            hd[ir]->Rebin(4);
-            hm[ir]->Rebin(4);
+            // Native coarse residuals are now 160 bins on [-4,4].
+            // Display 80 bins total (0.10 GeV/bin).
+            hd[ir]->Rebin(2);
+            hm[ir]->Rebin(2);
             hd[ir]->SetStats(0);
             hd[ir]->SetMarkerStyle(20);
             hd[ir]->SetMarkerSize(0.45);
             hd[ir]->SetLineColor(kBlack);
-            hm[ir]->SetLineColor(kBlue+1);
+            hm[ir]->SetLineColor(kRed+1);
             hm[ir]->SetLineWidth(2);
             hd[ir]->SetMaximum(1.25*std::max(hd[ir]->GetMaximum(),hm[ir]->GetMaximum()));
             hd[ir]->GetXaxis()->SetTitle("#Delta p_{#gamma2} (GeV)");
@@ -8032,7 +8309,9 @@ void run_concise_analysis(const std::string& out) {
     draw_normalization_summary(vv,norm_ft,out+"/2_normalization/FT",true);
 
     draw_pi0_summary(vv,norm_fd,norm_ft,out+"/3_pi0_fraction");
+    draw_ft_composition_audit(vv,norm_ft,out+"/3_pi0_fraction");
     draw_efficiency_summary(vv,norm_fd,norm_ft,out+"/4_efficiency");
+    draw_eta_residual_scan(vv,norm_fd,norm_ft,out+"/4_efficiency");
     draw_efficiency_prefinal_diagnostics(
         vv,norm_fd,norm_ft,out+"/4_efficiency");
     draw_best_current_efficiency(
