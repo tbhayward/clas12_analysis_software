@@ -1585,7 +1585,7 @@ struct SampleSpec {
     bool is_mc=false;
 };
 
-static const char* CONCISE_CACHE_VERSION="20260912_concise_v10_sparseFT_eta_comp";
+static const char* CONCISE_CACHE_VERSION="20260913_concise_v11_equalstat_highEprobe";
 
 std::uint64_t concise_hash(const std::string& s,std::uint64_t h=1469598103934665603ULL) {
     for (unsigned char c:s) {
@@ -1609,7 +1609,11 @@ std::string concise_input_signature(const std::string& dir) {
     gSystem->FreeDirectory(dp);
     std::sort(files.begin(),files.end());
 
-    std::uint64_t h=concise_hash(CONCISE_CACHE_VERSION);
+    std::ostringstream split_signature;
+    split_signature << CONCISE_CACHE_VERSION
+                    << ":FDsplit=" << std::setprecision(12) << HIGH_E_SPLIT_FD
+                    << ":FTsplit=" << std::setprecision(12) << HIGH_E_SPLIT_FT;
+    std::uint64_t h=concise_hash(split_signature.str());
     for (const auto& n:files) {
         const std::string p=dir + (dir.empty() || dir.back()=='/' ? "" : "/") + n;
         Long_t id=0,size=0,flags=0,mtime=0;
@@ -1775,21 +1779,42 @@ struct ValComponentBin {
     std::unique_ptr<TH1D> residual_count;
 };
 
+// Data-derived equal-statistics split points for the Eprobe >= 2 GeV
+// denominator population.  They are determined once, independently for FD
+// and FT, before the cached component scans are launched.
+static double HIGH_E_SPLIT_FD=std::numeric_limits<double>::quiet_NaN();
+static double HIGH_E_SPLIT_FT=std::numeric_limits<double>::quiet_NaN();
+
 enum CoarseRegionIndex {
     CR_FD_LOW=0,
-    CR_FD_HIGH=1,
-    CR_FT_LOW=2,
-    CR_FT_HIGH=3,
-    CR_N=4
+    CR_FD_HIGH1=1,
+    CR_FD_HIGH2=2,
+    CR_FT_LOW=3,
+    CR_FT_HIGH1=4,
+    CR_FT_HIGH2=5,
+    CR_N=6
 };
 
-static const char* CR_KEY[CR_N]={"FD_lowE","FD_highE","FT_lowE","FT_highE"};
-static const char* CR_LABEL[CR_N]={
-    "#splitline{FD}{E_{#gamma,probe}<2 GeV}",
-    "#splitline{FD}{E_{#gamma,probe}#geq2 GeV}",
-    "#splitline{FT}{E_{#gamma,probe}<2 GeV}",
-    "#splitline{FT}{E_{#gamma,probe}#geq2 GeV}"
+static const char* CR_KEY[CR_N]={
+    "FD_lowE","FD_highE_1","FD_highE_2",
+    "FT_lowE","FT_highE_1","FT_highE_2"
 };
+
+std::string coarse_region_label(int ir) {
+    if (ir==CR_FD_LOW)
+        return "#splitline{FD}{E_{#gamma,probe}<2 GeV}";
+    if (ir==CR_FD_HIGH1)
+        return Form("#splitline{FD}{2#leqE_{#gamma,probe}<%.2f GeV}",HIGH_E_SPLIT_FD);
+    if (ir==CR_FD_HIGH2)
+        return Form("#splitline{FD}{E_{#gamma,probe}#geq%.2f GeV}",HIGH_E_SPLIT_FD);
+    if (ir==CR_FT_LOW)
+        return "#splitline{FT}{E_{#gamma,probe}<2 GeV}";
+    if (ir==CR_FT_HIGH1)
+        return Form("#splitline{FT}{2#leqE_{#gamma,probe}<%.2f GeV}",HIGH_E_SPLIT_FT);
+    if (ir==CR_FT_HIGH2)
+        return Form("#splitline{FT}{E_{#gamma,probe}#geq%.2f GeV}",HIGH_E_SPLIT_FT);
+    return "unknown";
+}
 
 struct CoarseValRegion {
     long long denom_rows=0;
@@ -2654,9 +2679,9 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     std::array<double,VAL_NBIN> sumw{};
     std::array<double,VAL_NBIN> sumw2{};
 
-    std::array<long long,CR_N> coarse_rows{{0,0,0,0}};
-    std::array<long long,CR_N> coarse_truth_rows{{0,0,0,0}};
-    std::array<long long,CR_N> coarse_truth_pi0{{0,0,0,0}};
+    std::array<long long,CR_N> coarse_rows{};
+    std::array<long long,CR_N> coarse_truth_rows{};
+    std::array<long long,CR_N> coarse_truth_pi0{};
     std::array<std::unique_ptr<TH1D>,CR_N> coarse_h;
     for (int ir=0;ir<CR_N;ir++) {
         coarse_h[ir].reset(new TH1D(
@@ -2954,10 +2979,20 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         int cr=-1;
         int probe_detector=-1;
         if (probe_fd) {
-            cr=(b.probe_corr_p<2.0 ? CR_FD_LOW : CR_FD_HIGH);
+            if (b.probe_corr_p<2.0)
+                cr=CR_FD_LOW;
+            else if (b.probe_corr_p<HIGH_E_SPLIT_FD)
+                cr=CR_FD_HIGH1;
+            else
+                cr=CR_FD_HIGH2;
             probe_detector=1;
         } else if (probe_ft) {
-            cr=(b.probe_corr_p<2.0 ? CR_FT_LOW : CR_FT_HIGH);
+            if (b.probe_corr_p<2.0)
+                cr=CR_FT_LOW;
+            else if (b.probe_corr_p<HIGH_E_SPLIT_FT)
+                cr=CR_FT_HIGH1;
+            else
+                cr=CR_FT_HIGH2;
             probe_detector=0;
         } // endif
 
@@ -3434,6 +3469,108 @@ std::unique_ptr<ValComponent> load_val_component(const std::string& path) {
     f.Close();
     return v;
 }
+
+double median_in_place(std::vector<double>& v) {
+    if (v.empty()) return std::numeric_limits<double>::quiet_NaN();
+    const size_t n=v.size();
+    const size_t k=n/2;
+    std::nth_element(v.begin(),v.begin()+k,v.end());
+    const double upper=v[k];
+    if (n%2==1) return upper;
+
+    const double lower=*std::max_element(v.begin(),v.begin()+k);
+    return 0.5*(lower+upper);
+}
+
+bool determine_high_eprobe_equalstat_splits() {
+    const std::string pattern=make_pattern(DATA_DIR);
+    TChain c("PhotonEfficiency");
+    const int nf=c.Add(pattern.c_str());
+    if (nf<=0 || c.GetEntries()<=0) {
+        std::cerr << "ERROR: cannot determine Eprobe equal-statistics splits: "
+                  << "no data PhotonEfficiency tree found in " << DATA_DIR << "\n";
+        return false;
+    } // endif
+
+    Branches b;
+    b.reset_arrays();
+    if (!attach(c,b)) {
+        std::cerr << "ERROR: cannot attach data branches for Eprobe split prepass.\n";
+        return false;
+    } // endif
+
+    c.SetCacheSize(64LL*1024LL*1024LL);
+    c.AddBranchToCache("*",kTRUE);
+
+    // Use exactly the same FT response-plane estimate and denominator
+    // selection as the production worker.
+    const FTPlaneEstimate ft_plane=estimate_ft_plane(c,b);
+
+    std::vector<double> fd_high;
+    std::vector<double> ft_high;
+    fd_high.reserve(250000);
+    ft_high.reserve(100000);
+
+    for (Long64_t i=0;i<c.GetEntries();i++) {
+        c.GetEntry(i);
+
+        if (!b.p_pass_standard) continue;
+        if (!b.tag_pass_beta || !b.tag_pass_fiducial) continue;
+        if (b.tag_detector!=1) continue;
+        if (!finite_good(b.probe_corr_p) ||
+            !finite_good(b.probe_corr_theta) ||
+            !finite_good(b.probe_corr_phi)) continue;
+        if (b.probe_corr_p<2.0) continue;
+
+        const NormCutFlags ncf=norm_cut_flags(b);
+        if (!ncf.all) continue;
+
+        const bool probe_fd=(b.probe_corr_p>=PROBE_P_MIN &&
+                             b.probe_corr_theta>=FD_THETA_MIN &&
+                             b.probe_corr_theta<=FD_THETA_MAX);
+
+        bool probe_ft=false;
+        if (b.probe_corr_p>=PROBE_P_MIN &&
+            b.probe_corr_theta>=FT_THETA_MIN &&
+            b.probe_corr_theta<=FT_THETA_MAX) {
+            const FTProjection ftp=project_ft(b,ft_plane);
+            probe_ft=ftp.valid && ftp.fiducial;
+        } // endif
+
+        // Match the production assignment order exactly: an event satisfying
+        // FD is classified FD before FT is considered.
+        if (probe_fd)
+            fd_high.push_back(b.probe_corr_p);
+        else if (probe_ft)
+            ft_high.push_back(b.probe_corr_p);
+        // endif
+    } // endfor
+
+    HIGH_E_SPLIT_FD=median_in_place(fd_high);
+    HIGH_E_SPLIT_FT=median_in_place(ft_high);
+
+    if (!std::isfinite(HIGH_E_SPLIT_FD) || HIGH_E_SPLIT_FD<=2.0 ||
+        !std::isfinite(HIGH_E_SPLIT_FT) || HIGH_E_SPLIT_FT<=2.0) {
+        std::cerr << "ERROR: invalid data-derived high-Eprobe split(s): "
+                  << "FD=" << HIGH_E_SPLIT_FD
+                  << ", FT=" << HIGH_E_SPLIT_FT << "\n";
+        return false;
+    } // endif
+
+    std::cout << "\n============================================================\n"
+              << " Data-derived Eprobe >= 2 GeV equal-statistics split\n"
+              << "============================================================\n"
+              << "FD high-E denominator rows: " << fd_high.size() << "\n"
+              << "FD split: 2 <= Eprobe < " << HIGH_E_SPLIT_FD
+              << " and Eprobe >= " << HIGH_E_SPLIT_FD << " GeV\n"
+              << "FT high-E denominator rows: " << ft_high.size() << "\n"
+              << "FT split: 2 <= Eprobe < " << HIGH_E_SPLIT_FT
+              << " and Eprobe >= " << HIGH_E_SPLIT_FT << " GeV\n"
+              << "============================================================\n";
+
+    return true;
+}
+
 std::vector<std::unique_ptr<ValComponent>> build_val_components_parallel(const std::string&) {
     const SampleSpec all_specs[] = {
         {"data",DATA_DIR,false},
@@ -5729,7 +5866,14 @@ double selected_clasdis_pi0_fraction(const TH1D* selected,const ValComponent* cl
     const double nt=nl+nh;
     if (!(nt>0)) return 1.0;
     const double fl=coarse_clasdis_pi0_fraction(cls,CR_FT_LOW);
-    const double fh=coarse_clasdis_pi0_fraction(cls,CR_FT_HIGH);
+    const double f1=coarse_clasdis_pi0_fraction(cls,CR_FT_HIGH1);
+    const double f2=coarse_clasdis_pi0_fraction(cls,CR_FT_HIGH2);
+    const auto& r1=cls->coarse[CR_FT_HIGH1];
+    const auto& r2=cls->coarse[CR_FT_HIGH2];
+    const double nhden=double(r1.denom_rows+r2.denom_rows);
+    const double fh=(nhden>0)
+        ? (double(r1.denom_rows)*f1+double(r2.denom_rows)*f2)/nhden
+        : 0.5*(f1+f2);
     return (nl*fl+nh*fh)/nt;
 }
 
@@ -6729,8 +6873,8 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
     h.SetMarkerSize(1.45);
 
     for (int ir=0;ir<CR_N;ir++) {
-        h.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
-        const auto q=coarse_composition(vv,(ir<2?Rfd.nominal:Rft.nominal),ir);
+        h.GetXaxis()->SetBinLabel(ir+1,coarse_region_label(ir).c_str());
+        const auto q=coarse_composition(vv,(ir<CR_FT_LOW?Rfd.nominal:Rft.nominal),ir);
         if (q.f_pi0>=0) h.SetBinContent(ir+1,q.f_pi0);
     } // endfor
 
@@ -6739,7 +6883,7 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
     TGraphErrors gAlt;
     if (Rft.no_clasdis_valid) {
         int ip=0;
-        for (int ir=CR_FT_LOW;ir<=CR_FT_HIGH;ir++) {
+        for (int ir=CR_FT_LOW;ir<=CR_FT_HIGH2;ir++) {
             const auto qa=coarse_composition(vv,Rft.no_clasdis,ir);
             if (qa.f_pi0<0) continue;
             gAlt.SetPoint(ip,ir+0.5,qa.f_pi0);
@@ -6782,8 +6926,8 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
         hP.SetMarkerColor(kBlack); hP.SetMarkerStyle(20); hP.SetMarkerSize(1.2);
 
         for (int ir=0;ir<CR_N;ir++) {
-            hA.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
-            const auto q=coarse_composition(vv,(ir<2?Rfd.nominal:Rft.nominal),ir);
+            hA.GetXaxis()->SetBinLabel(ir+1,coarse_region_label(ir).c_str());
+            const auto q=coarse_composition(vv,(ir<CR_FT_LOW?Rfd.nominal:Rft.nominal),ir);
             const double s=q.ya+q.yc+q.yd;
             if (s>0) {
                 hA.SetBinContent(ir+1,q.ya/s);
@@ -6801,7 +6945,7 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
         TGraphErrors gAltComp;
         if (Rft.no_clasdis_valid) {
             int ip=0;
-            for (int ir=CR_FT_LOW;ir<=CR_FT_HIGH;ir++) {
+            for (int ir=CR_FT_LOW;ir<=CR_FT_HIGH2;ir++) {
                 const auto qa=coarse_composition(vv,Rft.no_clasdis,ir);
                 if (qa.f_pi0<0) continue;
                 gAltComp.SetPoint(ip,ir+0.5,qa.f_pi0);
@@ -6832,7 +6976,7 @@ void draw_pi0_summary(const std::vector<std::unique_ptr<ValComponent>>& vv,
     csv << "region,aao_yield,clasdis_yield,dvcs_yield,clasdis_pi0_fraction,pi0_fraction,"
            "alt_no_clasdis_aao_yield,alt_no_clasdis_dvcs_yield,alt_no_clasdis_pi0_fraction\n";
     for (int ir=0;ir<CR_N;ir++) {
-        const auto q=coarse_composition(vv,(ir<2?Rfd.nominal:Rft.nominal),ir);
+        const auto q=coarse_composition(vv,(ir<CR_FT_LOW?Rfd.nominal:Rft.nominal),ir);
         double aya=0,ayd=0,af=-1;
         if (ir>=CR_FT_LOW && Rft.no_clasdis_valid) {
             const auto qa=coarse_composition(vv,Rft.no_clasdis,ir);
@@ -7120,7 +7264,7 @@ void draw_efficiency_prefinal_diagnostics(
     std::array<std::unique_ptr<TH1D>,CR_N> hdata,hsig,hbg;
 
     for (int ir=0;ir<CR_N;ir++) {
-        const NormDerivation& R=(ir<2?Rfd:Rft);
+        const NormDerivation& R=(ir<CR_FT_LOW?Rfd:Rft);
         const auto comp=coarse_composition(vv,R.nominal,ir);
         if (!(comp.f_pi0>0)) continue;
         const double fc=comp.f_clasdis_pi0;
@@ -7170,7 +7314,7 @@ void draw_efficiency_prefinal_diagnostics(
 
         if (!hdata[ir] || !hsig[ir] || !hbg[ir] || !tr[ir].valid) {
             TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.05);
-            tx.DrawLatex(0.18,0.55,Form("%s: template fit unavailable",CR_LABEL[ir]));
+            tx.DrawLatex(0.18,0.55,Form("%s: template fit unavailable",coarse_region_label(ir).c_str()));
             continue;
         } // endif
 
@@ -7203,7 +7347,7 @@ void draw_efficiency_prefinal_diagnostics(
 
         TLatex tx; tx.SetNDC(); tx.SetTextFont(42);
         tx.SetTextSize(0.047);
-        tx.DrawLatex(0.17,0.92,Form("(%c) %s",'a'+ir,CR_LABEL[ir]));
+        tx.DrawLatex(0.17,0.92,Form("(%c) %s",'a'+ir,coarse_region_label(ir).c_str()));
         tx.SetTextSize(0.030);
         tx.DrawLatex(0.17,0.84,Form("#chi^{2}/ndf = %.2f",
                                    tr[ir].ndf>0?tr[ir].chi2/tr[ir].ndf:0));
@@ -7225,7 +7369,7 @@ void draw_efficiency_prefinal_diagnostics(
     // Compare current 3-sigma Gaussian result with the full-shape result.
     std::array<IntegratedEfficiencyResult,CR_N> gr;
     for (int ir=0;ir<CR_N;ir++) {
-        const NormDerivation& R=(ir<2?Rfd:Rft);
+        const NormDerivation& R=(ir<CR_FT_LOW?Rfd:Rft);
         gr[ir]=integrated_efficiency(vv,R,ir,nullptr,nullptr);
     } // endfor
 
@@ -7236,7 +7380,7 @@ void draw_efficiency_prefinal_diagnostics(
               ";Detector / probe-energy region;#epsilon_{data}/#epsilon_{MC}",
               CR_N,0,CR_N);
     axis.SetStats(0); axis.SetMinimum(0.35); axis.SetMaximum(1.65);
-    for (int ir=0;ir<CR_N;ir++) axis.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
+    for (int ir=0;ir<CR_N;ir++) axis.GetXaxis()->SetBinLabel(ir+1,coarse_region_label(ir).c_str());
     axis.GetXaxis()->SetLabelSize(0.040);
     axis.Draw();
 
@@ -7652,7 +7796,7 @@ void draw_best_current_efficiency(
     std::array<RobustEfficiencySummary,CR_N> robust;
 
     for (int ir=0;ir<CR_N;ir++) {
-        const NormDerivation& R=(ir<2)?Rfd:Rft;
+        const NormDerivation& R=(ir<CR_FT_LOW)?Rfd:Rft;
         standard[ir]=integrated_efficiency(vv,R,ir,nullptr,nullptr);
         robust[ir]=robust_efficiency_ensemble(vv,R,ir);
     } // endfor
@@ -7663,7 +7807,7 @@ void draw_best_current_efficiency(
     std::array<double,CR_N> best{},stat{},meth{};
     std::array<int,CR_N> best_valid{};
     for (int ir=0;ir<CR_N;ir++) {
-        if (ir<2 && standard[ir].valid) {
+        if (ir<CR_FT_LOW && standard[ir].valid) {
             best_valid[ir]=1;
             best[ir]=standard[ir].ratio;
             stat[ir]=standard[ir].ratio_err;
@@ -7676,7 +7820,7 @@ void draw_best_current_efficiency(
                     robust[ir].method_half68,
                     std::fabs(robust[ir].ratio-standard[ir].ratio));
             }
-        } else if (ir>=2 && robust[ir].valid) {
+        } else if (ir>=CR_FT_LOW && robust[ir].valid) {
             best_valid[ir]=1;
             best[ir]=robust[ir].ratio;
             stat[ir]=robust[ir].ratio_stat;
@@ -7699,7 +7843,7 @@ void draw_best_current_efficiency(
     axis.SetMinimum(0.0);
     axis.SetMaximum(1.45);
     for (int ir=0;ir<CR_N;ir++)
-        axis.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
+        axis.GetXaxis()->SetBinLabel(ir+1,coarse_region_label(ir).c_str());
     axis.GetXaxis()->SetLabelSize(0.042);
     axis.GetYaxis()->SetTitleSize(0.050);
     axis.GetYaxis()->SetTitleOffset(1.05);
@@ -7767,7 +7911,7 @@ void draw_best_current_efficiency(
     ax2.SetMinimum(0.0);
     ax2.SetMaximum(1.55);
     for (int ir=0;ir<CR_N;ir++)
-        ax2.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
+        ax2.GetXaxis()->SetBinLabel(ir+1,coarse_region_label(ir).c_str());
     ax2.GetXaxis()->SetLabelSize(0.042);
     ax2.Draw("AXIS");
 
@@ -7821,11 +7965,11 @@ void draw_best_current_efficiency(
 
         if (!robust[ir].valid || !data || !a || !c) {
             TLatex t; t.SetNDC(); t.SetTextFont(42); t.SetTextSize(0.05);
-            t.DrawLatex(0.18,0.55,Form("%s: no robust solution",CR_LABEL[ir]));
+            t.DrawLatex(0.18,0.55,Form("%s: no robust solution",coarse_region_label(ir).c_str()));
             continue;
         } // endif
 
-        const NormDerivation& R=(ir<2)?Rfd:Rft;
+        const NormDerivation& R=(ir<CR_FT_LOW)?Rfd:Rft;
         const auto comp=coarse_composition(vv,R.nominal,ir);
         const double fc=comp.f_clasdis_pi0;
         const auto& v=robust[ir].representative;
@@ -7877,7 +8021,7 @@ void draw_best_current_efficiency(
         TLatex t;
         t.SetNDC(); t.SetTextFont(42);
         t.SetTextSize(0.046);
-        t.DrawLatex(0.17,0.92,Form("(%c) %s",'a'+ir,CR_LABEL[ir]));
+        t.DrawLatex(0.17,0.92,Form("(%c) %s",'a'+ir,coarse_region_label(ir).c_str()));
         t.SetTextSize(0.029);
         t.DrawLatex(0.17,0.84,
             Form("representative: rebin=%d, fit half-width=%.2f GeV, %.1f#sigma",
@@ -7903,7 +8047,7 @@ void draw_best_current_efficiency(
     csv << std::setprecision(10);
 
     for (int ir=0;ir<CR_N;ir++) {
-        const char* method=(ir<2)?"Valerii_Gaussian_3sigma":"robust_core_ensemble";
+        const char* method=(ir<CR_FT_LOW)?"Valerii_Gaussian_3sigma":"robust_core_ensemble";
         csv << CR_KEY[ir] << "," << best_valid[ir] << "," << method << ","
             << best[ir] << "," << stat[ir] << "," << meth[ir] << ","
             << ((best[ir]>0)?1.0/best[ir]:0.0) << ","
@@ -8056,7 +8200,7 @@ void draw_eta_residual_scan(const std::vector<std::unique_ptr<ValComponent>>& vv
         can.cd(ir+1);
         gPad->SetLeftMargin(0.15); gPad->SetRightMargin(0.04);
         gPad->SetBottomMargin(0.16); gPad->SetTopMargin(0.13);
-        const NormDerivation& R=(ir<2)?Rfd:Rft;
+        const NormDerivation& R=(ir<CR_FT_LOW)?Rfd:Rft;
         if (!data->eta_dp_vs_mx2[ir] || !a->eta_dp_vs_mx2[ir] ||
             !c->eta_dp_vs_mx2[ir] || !d->eta_dp_vs_mx2[ir]) continue;
 
@@ -8085,7 +8229,7 @@ void draw_eta_residual_scan(const std::vector<std::unique_ptr<ValComponent>>& vv
             hd->SetStats(0); hd->SetLineColor(colors[iu]); hd->SetMarkerColor(colors[iu]);
             hd->SetLineWidth(2); hd->SetMarkerStyle(20+iu); hd->SetMarkerSize(0.45);
             if (iu==0) {
-                hd->SetTitle(Form("%s: data residual vs M_{X}^{2}(ep) upper edge",CR_LABEL[ir]));
+                hd->SetTitle(Form("%s: data residual vs M_{X}^{2}(ep) upper edge",coarse_region_label(ir).c_str()));
                 hd->GetXaxis()->SetTitle("#Delta p_{#gamma2} (GeV)");
                 hd->GetYaxis()->SetTitle("Unit-area reconstructed candidates");
                 hd->SetMaximum(1.25*hd->GetMaximum());
@@ -8120,7 +8264,7 @@ void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& v
     std::array<std::unique_ptr<TH1D>,CR_N> hd,hm;
 
     for (int ir=0;ir<CR_N;ir++) {
-        const NormDerivation& R=(ir<2 ? Rfd : Rft);
+        const NormDerivation& R=(ir<CR_FT_LOW ? Rfd : Rft);
         rr[ir]=integrated_efficiency(vv,R,ir,&hd[ir],&hm[ir]);
     } // endfor
 
@@ -8153,7 +8297,7 @@ void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& v
             hm[ir]->Draw("HIST SAME");
             hd[ir]->Draw("E1 SAME");
             TLatex tx; tx.SetNDC(); tx.SetTextFont(42); tx.SetTextSize(0.048);
-            tx.DrawLatex(0.16,0.93,Form("(%c) %s",'a'+ir,CR_LABEL[ir]));
+            tx.DrawLatex(0.16,0.93,Form("(%c) %s",'a'+ir,coarse_region_label(ir).c_str()));
             if (!rr[ir].valid) {
                 tx.SetTextSize(0.030);
                 tx.DrawLatex(0.16,0.84,Form("Data fit: %s",rr[ir].data_fit_reason.c_str()));
@@ -8200,7 +8344,7 @@ void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& v
         axis.SetStats(0);
         axis.SetMinimum(0.0);
         axis.SetMaximum(1.05);
-        for (int ir=0;ir<CR_N;ir++) axis.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
+        for (int ir=0;ir<CR_N;ir++) axis.GetXaxis()->SetBinLabel(ir+1,coarse_region_label(ir).c_str());
         axis.GetXaxis()->SetLabelSize(0.040);
         axis.Draw();
         gd.Draw("P SAME");
@@ -8230,7 +8374,7 @@ void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& v
         axisr.SetStats(0);
         axisr.SetMinimum(0.45);
         axisr.SetMaximum(1.55);
-        for (int ir=0;ir<CR_N;ir++) axisr.GetXaxis()->SetBinLabel(ir+1,CR_LABEL[ir]);
+        for (int ir=0;ir<CR_N;ir++) axisr.GetXaxis()->SetBinLabel(ir+1,coarse_region_label(ir).c_str());
         axisr.GetXaxis()->SetLabelSize(0.040);
         axisr.Draw();
 
@@ -8276,8 +8420,102 @@ void draw_efficiency_summary(const std::vector<std::unique_ptr<ValComponent>>& v
     } // endfor
 }
 
+
+void write_equalstat_highEprobe_corrections(
+        const std::vector<std::unique_ptr<ValComponent>>& vv,
+        const NormDerivation& Rfd,
+        const NormDerivation& Rft,
+        const std::string& dir) {
+    std::ofstream csv(dir+"/equalstat_highEprobe_corrections.csv");
+    csv << "detector,Eprobe_low_GeV,Eprobe_high_GeV,method,"
+           "epsilon_data_over_epsilon_MC,stat_unc,method_unc,"
+           "cross_section_multiplier_epsilon_MC_over_epsilon_data\n";
+
+    const int regions[4]={
+        CR_FD_HIGH1,CR_FD_HIGH2,CR_FT_HIGH1,CR_FT_HIGH2
+    };
+
+    std::cout << "\n============================================================\n"
+              << " Equal-statistics high-Eprobe photon-efficiency corrections\n"
+              << "============================================================\n";
+
+    for (int j=0;j<4;j++) {
+        const int ir=regions[j];
+        const bool is_fd=(ir<CR_FT_LOW);
+        const NormDerivation& R=is_fd?Rfd:Rft;
+
+        const auto standard=integrated_efficiency(vv,R,ir);
+        const auto robust=robust_efficiency_ensemble(vv,R,ir);
+
+        bool valid=false;
+        double ratio=0,stat=0,method=0;
+        std::string method_name;
+
+        if (is_fd && standard.valid) {
+            valid=true;
+            ratio=standard.ratio;
+            stat=standard.ratio_err;
+            method_name="Valerii_Gaussian_3sigma";
+            if (robust.valid) {
+                method=std::max(
+                    robust.method_half68,
+                    std::fabs(robust.ratio-standard.ratio));
+            } // endif
+        } else if (!is_fd && robust.valid) {
+            valid=true;
+            ratio=robust.ratio;
+            stat=robust.ratio_stat;
+            method=robust.method_half68;
+            method_name="robust_core_ensemble";
+        } // endif
+
+        const double lo =
+            (ir==CR_FD_HIGH1 || ir==CR_FT_HIGH1) ? 2.0 :
+            (is_fd ? HIGH_E_SPLIT_FD : HIGH_E_SPLIT_FT);
+        const double hi =
+            (ir==CR_FD_HIGH1) ? HIGH_E_SPLIT_FD :
+            (ir==CR_FT_HIGH1) ? HIGH_E_SPLIT_FT :
+            std::numeric_limits<double>::infinity();
+
+        if (!valid || !(ratio>0)) {
+            std::cout << (is_fd?"FD":"FT") << " "
+                      << coarse_region_label(ir)
+                      << ": no valid best-current solution\n";
+            continue;
+        } // endif
+
+        const double correction=1.0/ratio;
+
+        std::cout << (is_fd?"FD":"FT") << "  "
+                  << (std::isfinite(hi)
+                      ? Form("%.3f <= Eprobe < %.3f GeV",lo,hi)
+                      : Form("Eprobe >= %.3f GeV",lo))
+                  << "\n"
+                  << "  epsilon_data/epsilon_MC = " << ratio
+                  << " +/- " << stat << " (stat)"
+                  << " +/- " << method << " (method)\n"
+                  << "  cross-section multiplier epsilon_MC/epsilon_data = "
+                  << correction << "\n";
+
+        csv << (is_fd?"FD":"FT") << ","
+            << lo << ",";
+        if (std::isfinite(hi)) csv << hi;
+        csv << "," << method_name << ","
+            << ratio << "," << stat << "," << method << ","
+            << correction << "\n";
+    } // endfor
+
+    std::cout << "============================================================\n";
+}
+
 void run_concise_analysis(const std::string& out) {
     concise_make_dirs(out);
+
+    if (!determine_high_eprobe_equalstat_splits()) {
+        std::cerr << "ERROR: stopping because the data-derived high-Eprobe "
+                  << "bin boundaries could not be determined.\n";
+        return;
+    } // endif
 
     auto vv=build_val_components_parallel(out);
 
@@ -8319,6 +8557,8 @@ void run_concise_analysis(const std::string& out) {
         vv,norm_fd,norm_ft,out+"/4_efficiency");
     draw_best_current_efficiency(
         vv,norm_fd,norm_ft,out+"/4_efficiency");
+    write_equalstat_highEprobe_corrections(
+        vv,norm_fd,norm_ft,out+"/4_efficiency");
 
     std::cout << "\nConcise output written to:\n"
               << "  " << out << "/1_exclusivity/FD and FT/\n"
@@ -8346,6 +8586,10 @@ void run_valerii_fd_reproduction(const std::string& out) {
               << "Raw lab dphi and the underlying Trento-angle quantities remain QA diagnostics.\n"
               << "High-E DVCS normalization diagnostics include Delta t = t_p - t_gamma.\n"
               << "============================================================\n";
+    if (!determine_high_eprobe_equalstat_splits()) {
+        std::cerr << "ERROR: cannot run Valerii reproduction without Eprobe splits.\n";
+        return;
+    } // endif
     auto vv=build_val_components_parallel(out);
     write_valerii_outputs(vv,out);
     gSystem->Exec(("rm -rf "+out+"/.valerii_workers").c_str());
@@ -8366,7 +8610,7 @@ void photon_efficiency_valerii_reproduction() {
         << "1) independent FD-probe and FT-probe exclusivity selection\n"
         << "2) independent FD-probe and FT-probe Valerii-style normalization\n"
         << "3) pi0 fraction of selected ep-gamma-X events\n"
-        << "4) integrated FD/FT photon efficiency, split at 2 GeV\n"
+        << "4) FD/FT photon efficiency: <2 GeV plus two data-equal-statistics bins above 2 GeV\n"
         << "One parallel tree scan per sample; persistent cache on reruns.\n"
         << "Cache: /work/clas12/thayward/photon_efficiency/cache/concise\n"
         << "============================================================\n";
