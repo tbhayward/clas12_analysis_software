@@ -10921,6 +10921,811 @@ void run_clasdis_truth_dissection_only(const std::string& outdir) {
 }
 
 
+
+void run_clasdis_missing_vector_audit_only(const std::string& outdir) {
+    // ------------------------------------------------------------------
+    // FAST diagnostic of the large high-Eprobe missing-vector error.
+    //
+    // This path makes exactly ONE pass over CLASDIS and uses only branches
+    // already present in the current photon-efficiency ROOT skim.
+    //
+    // IMPORTANT:
+    // The present skim stores generated truth for the probe photon only.
+    // It does NOT store generated e', p', tag-gamma, or the complete MC final
+    // state.  Therefore truth-hybrid substitutions
+    //   e_rec -> e_true, p_rec -> p_true, tag_rec -> tag_true
+    // and a truth-level unobserved-system X cannot be constructed honestly
+    // from this ROOT file.  This function deliberately does not invent them.
+    //
+    // What CAN be established now:
+    //   1) distribution/median/68% interval of p_miss-p_true;
+    //   2) angle(gamma_miss,gamma_true);
+    //   3) whether the effect is bulk or tail-driven;
+    //   4) dependence on Mx2(ep), Mx2(epgamma), e, p, and tag kinematics;
+    //   5) dependence on correct/wrong/missing reconstructed-probe category;
+    //   6) an independent recomputation of p_miss from stored reconstructed
+    //      e', p', and tag-gamma four-vectors as a bookkeeping cross-check.
+    // ------------------------------------------------------------------
+
+    constexpr int NP=VAL_NP;
+    const double p_edges[NP+1]={0.35,0.50,1.10,1.70,2.30,2.90,3.70,6.00};
+    constexpr double TRUTH_MATCH_DEG=1.0;
+
+    const std::string dir=
+        outdir+"/7_missing_vector_audit";
+    gSystem->mkdir(dir.c_str(),kTRUE);
+
+    auto make_hist=[&](const std::string& name,int nb,double lo,double hi) {
+        auto h=std::make_unique<TH1D>(name.c_str(),"",nb,lo,hi);
+        h->SetDirectory(nullptr);
+        h->Sumw2();
+        return h;
+    };
+
+    auto make_h2=[&](const std::string& name,
+                     int nx,double xlo,double xhi,
+                     int ny,double ylo,double yhi) {
+        auto h=std::make_unique<TH2D>(
+            name.c_str(),"",nx,xlo,xhi,ny,ylo,yhi);
+        h->SetDirectory(nullptr);
+        return h;
+    };
+
+    struct Bin {
+        long long n_truth_pi0=0;
+        long long n_bookkeeping=0;
+        long long n_correct=0;
+        long long n_wrong=0;
+        long long n_no_candidate=0;
+
+        std::vector<double> dp;
+        std::vector<double> da;
+        std::vector<double> dp_correct;
+        std::vector<double> dp_wrong;
+        std::vector<double> dp_no_candidate;
+
+        std::unique_ptr<TH1D> h_dp;
+        std::unique_ptr<TH1D> h_da;
+        std::unique_ptr<TH1D> h_dp_correct;
+        std::unique_ptr<TH1D> h_dp_wrong;
+        std::unique_ptr<TH1D> h_dp_no_candidate;
+        std::unique_ptr<TH1D> h_bookkeeping_dp;
+        std::unique_ptr<TH1D> h_bookkeeping_da;
+
+        std::unique_ptr<TH2D> h_dp_mx2ep;
+        std::unique_ptr<TH2D> h_dp_mx2epg;
+        std::unique_ptr<TH2D> h_dp_tagE;
+        std::unique_ptr<TH2D> h_dp_tagTheta;
+        std::unique_ptr<TH2D> h_dp_protonP;
+        std::unique_ptr<TH2D> h_dp_protonTheta;
+        std::unique_ptr<TH2D> h_dp_eP;
+        std::unique_ptr<TH2D> h_dp_eTheta;
+
+        std::unique_ptr<TH2D> h_da_mx2ep;
+        std::unique_ptr<TH2D> h_da_tagE;
+        std::unique_ptr<TH2D> h_dp_da;
+    };
+    std::array<Bin,NP> bins{};
+
+    for (int ip=0;ip<NP;ip++) {
+        auto& q=bins[ip];
+
+        q.h_dp=make_hist(Form("mva_dp_p%d",ip),200,-5.0,8.0);
+        q.h_da=make_hist(Form("mva_da_p%d",ip),180,0.0,30.0);
+        q.h_dp_correct=make_hist(Form("mva_dp_correct_p%d",ip),200,-5.0,8.0);
+        q.h_dp_wrong=make_hist(Form("mva_dp_wrong_p%d",ip),200,-5.0,8.0);
+        q.h_dp_no_candidate=make_hist(Form("mva_dp_none_p%d",ip),200,-5.0,8.0);
+
+        q.h_bookkeeping_dp=make_hist(
+            Form("mva_bookkeeping_dp_p%d",ip),160,-0.08,0.08);
+        q.h_bookkeeping_da=make_hist(
+            Form("mva_bookkeeping_da_p%d",ip),160,0.0,0.20);
+
+        q.h_dp_mx2ep=make_h2(
+            Form("mva_dp_mx2ep_p%d",ip),120,-0.25,0.60,160,-5.0,8.0);
+        q.h_dp_mx2epg=make_h2(
+            Form("mva_dp_mx2epg_p%d",ip),120,-0.25,0.25,160,-5.0,8.0);
+        q.h_dp_tagE=make_h2(
+            Form("mva_dp_tagE_p%d",ip),120,0.4,6.5,160,-5.0,8.0);
+        q.h_dp_tagTheta=make_h2(
+            Form("mva_dp_tagTheta_p%d",ip),120,0.0,40.0,160,-5.0,8.0);
+        q.h_dp_protonP=make_h2(
+            Form("mva_dp_protonP_p%d",ip),120,0.0,4.0,160,-5.0,8.0);
+        q.h_dp_protonTheta=make_h2(
+            Form("mva_dp_protonTheta_p%d",ip),120,0.0,80.0,160,-5.0,8.0);
+        q.h_dp_eP=make_h2(
+            Form("mva_dp_eP_p%d",ip),120,0.0,11.0,160,-5.0,8.0);
+        q.h_dp_eTheta=make_h2(
+            Form("mva_dp_eTheta_p%d",ip),120,0.0,40.0,160,-5.0,8.0);
+
+        q.h_da_mx2ep=make_h2(
+            Form("mva_da_mx2ep_p%d",ip),120,-0.25,0.60,150,0.0,30.0);
+        q.h_da_tagE=make_h2(
+            Form("mva_da_tagE_p%d",ip),120,0.4,6.5,150,0.0,30.0);
+        q.h_dp_da=make_h2(
+            Form("mva_dp_da_p%d",ip),150,0.0,30.0,160,-5.0,8.0);
+    } // endfor
+
+    auto find_pbin=[&](double p)->int {
+        if (!std::isfinite(p) || p<PROBE_P_MIN) return -1;
+        for (int ip=0;ip<NP;ip++) {
+            const double lo=std::max(p_edges[ip],PROBE_P_MIN);
+            if (p>=lo && p<p_edges[ip+1]) return ip;
+        } // endfor
+        return -1;
+    };
+
+    auto quantile_sorted=[](const std::vector<double>& s,double prob)->double {
+        if (s.empty()) return std::numeric_limits<double>::quiet_NaN();
+        if (prob<=0) return s.front();
+        if (prob>=1) return s.back();
+
+        const double u=prob*double(s.size()-1);
+        const size_t i0=static_cast<size_t>(std::floor(u));
+        const size_t i1=std::min(i0+1,s.size()-1);
+        const double f=u-double(i0);
+        return s[i0]*(1.0-f)+s[i1]*f;
+    };
+
+    struct Robust {
+        double mean=std::numeric_limits<double>::quiet_NaN();
+        double median=std::numeric_limits<double>::quiet_NaN();
+        double q16=std::numeric_limits<double>::quiet_NaN();
+        double q84=std::numeric_limits<double>::quiet_NaN();
+        double q05=std::numeric_limits<double>::quiet_NaN();
+        double q95=std::numeric_limits<double>::quiet_NaN();
+        long long n=0;
+    };
+
+    auto robust=[&](const std::vector<double>& v)->Robust {
+        Robust r;
+        if (v.empty()) return r;
+
+        std::vector<double> s;
+        s.reserve(v.size());
+        double sum=0;
+        for (double x:v) {
+            if (!finite_good(x)) continue;
+            s.push_back(x);
+            sum+=x;
+        } // endfor
+        if (s.empty()) return r;
+
+        std::sort(s.begin(),s.end());
+        r.n=static_cast<long long>(s.size());
+        r.mean=sum/double(s.size());
+        r.median=quantile_sorted(s,0.50);
+        r.q16=quantile_sorted(s,0.16);
+        r.q84=quantile_sorted(s,0.84);
+        r.q05=quantile_sorted(s,0.05);
+        r.q95=quantile_sorted(s,0.95);
+        return r;
+    };
+
+    auto unit_vec=[](double theta_deg,double phi_deg,
+                     double& x,double& y,double& z) {
+        const double th=theta_deg*TMath::DegToRad();
+        const double ph=phi_deg*TMath::DegToRad();
+        x=std::sin(th)*std::cos(ph);
+        y=std::sin(th)*std::sin(ph);
+        z=std::cos(th);
+    };
+
+    auto vec_mag=[](double x,double y,double z) {
+        return std::sqrt(x*x+y*y+z*z);
+    };
+
+    auto vec_angle_deg=[&](double ax,double ay,double az,
+                           double bx,double by,double bz)->double {
+        const double am=vec_mag(ax,ay,az);
+        const double bm=vec_mag(bx,by,bz);
+        if (!(am>0) || !(bm>0))
+            return std::numeric_limits<double>::quiet_NaN();
+
+        double c=(ax*bx+ay*by+az*bz)/(am*bm);
+        c=std::max(-1.0,std::min(1.0,c));
+        return std::acos(c)*TMath::RadToDeg();
+    };
+
+    TChain c("PhotonEfficiency");
+    const int nf=c.Add(make_pattern(CLASDIS_DIR).c_str());
+    const Long64_t nentries=c.GetEntries();
+
+    if (nf<=0 || nentries<=0) {
+        std::cerr << "ERROR: missing-vector audit found no CLASDIS input files.\n";
+        return;
+    } // endif
+
+    Branches b;
+    b.reset_arrays();
+    if (!attach(c,b)) {
+        std::cerr << "ERROR: missing-vector audit could not attach CLASDIS branches.\n";
+        return;
+    } // endif
+
+    const bool have_reco_inputs=
+        b.have_beam_energy &&
+        b.have_e_kin &&
+        b.have_p_corr_kin &&
+        b.have_tag_corr_kin;
+
+    std::cout
+        << "\n============================================================\n"
+        << " FAST MODE 2: CLASDIS missing-vector audit only\n"
+        << "============================================================\n"
+        << "Exactly one CLASDIS tree pass.\n"
+        << "Entries: " << nentries << "\n"
+        << "Stored reco four-vector inputs for independent p_miss check: "
+        << (have_reco_inputs ? "YES" : "NO") << "\n"
+        << "\nCURRENT SKIM TRUTH AVAILABILITY:\n"
+        << "  generated probe gamma: YES\n"
+        << "  generated electron:    NO\n"
+        << "  generated proton:      NO\n"
+        << "  generated tag gamma:   NO\n"
+        << "  complete MC final state: NO\n"
+        << "\nTherefore e/p/tag truth substitutions and truth-X closure require\n"
+        << "additional branches from the HIPO->ROOT processing stage; they are\n"
+        << "not fabricated in this macro.\n"
+        << "============================================================\n";
+
+    c.SetCacheSize(256LL*1024LL*1024LL);
+    c.AddBranchToCache("*",kTRUE);
+    c.SetCacheLearnEntries(100);
+
+    Long64_t report_step=std::max<Long64_t>(1,nentries/10);
+    Long64_t next_report=0;
+
+    for (Long64_t i=0;i<nentries;i++) {
+        if (i>=next_report) {
+            std::cout << "  CLASDIS "
+                      << std::fixed << std::setprecision(0)
+                      << 100.0*double(i)/double(nentries) << "%\n";
+            next_report+=report_step;
+        } // endif
+
+        c.GetEntry(i);
+
+        if (!b.p_pass_standard) continue;
+        if (!b.tag_pass_beta || !b.tag_pass_fiducial) continue;
+        if (b.tag_detector!=1) continue;
+
+        if (!finite_good(b.probe_corr_p) ||
+            !finite_good(b.probe_corr_theta) ||
+            !finite_good(b.probe_corr_phi)) continue;
+
+        const int ip=find_pbin(b.probe_corr_p);
+        if (ip<0) continue;
+
+        const bool probe_fd=
+            b.probe_corr_p>=PROBE_P_MIN &&
+            b.probe_corr_theta>=FD_THETA_MIN &&
+            b.probe_corr_theta<=FD_THETA_MAX;
+        if (!probe_fd) continue;
+
+        const NormCutFlags ncf=norm_cut_flags(b);
+        if (!finite_good(b.Mx2_ep) ||
+            b.Mx2_ep<NORM_MX2_EP_MIN ||
+            b.Mx2_ep>=NORM_MX2_EP_MAX) continue;
+        if (!ncf.mx2_eg || !ncf.dphi_trento || !ncf.angle_gX) continue;
+
+        const bool truth_pi0=
+            b.have_truth &&
+            b.truth_probe_pid==22 &&
+            b.truth_probe_parent==111;
+        if (!truth_pi0) continue;
+        if (!finite_good(b.truth_probe_p) ||
+            !finite_good(b.truth_probe_theta) ||
+            !finite_good(b.truth_probe_phi)) continue;
+
+        auto& q=bins[ip];
+        q.n_truth_pi0++;
+
+        const double dpmiss=b.probe_corr_p-b.truth_probe_p;
+        const double da=opening_angle_deg(
+            b.probe_corr_theta,b.probe_corr_phi,
+            b.truth_probe_theta,b.truth_probe_phi);
+
+        if (finite_good(dpmiss)) {
+            q.dp.push_back(dpmiss);
+            q.h_dp->Fill(dpmiss);
+        } // endif
+        if (finite_good(da)) {
+            q.da.push_back(da);
+            q.h_da->Fill(da);
+        } // endif
+
+        // Candidate category relative to generated probe.
+        const int k=best_probe_candidate(b,1);
+        bool selected_is_true=false;
+
+        if (k<0) {
+            q.n_no_candidate++;
+            if (finite_good(dpmiss)) {
+                q.dp_no_candidate.push_back(dpmiss);
+                q.h_dp_no_candidate->Fill(dpmiss);
+            } // endif
+        } else {
+            const double selected_truth_da=opening_angle_deg(
+                b.neutral_theta[k],b.neutral_phi[k],
+                b.truth_probe_theta,b.truth_probe_phi);
+            selected_is_true=
+                finite_good(selected_truth_da) &&
+                selected_truth_da<TRUTH_MATCH_DEG;
+
+            if (selected_is_true) {
+                q.n_correct++;
+                if (finite_good(dpmiss)) {
+                    q.dp_correct.push_back(dpmiss);
+                    q.h_dp_correct->Fill(dpmiss);
+                } // endif
+            } else {
+                q.n_wrong++;
+                if (finite_good(dpmiss)) {
+                    q.dp_wrong.push_back(dpmiss);
+                    q.h_dp_wrong->Fill(dpmiss);
+                } // endif
+            } // endif
+        } // endif
+
+        // Correlation diagnostics.  These do not prove causality; their
+        // purpose is to localize the reconstructed phase-space region in which
+        // the missing-vector prediction becomes pathological.
+        if (finite_good(dpmiss)) {
+            if (finite_good(b.Mx2_ep))
+                q.h_dp_mx2ep->Fill(b.Mx2_ep,dpmiss);
+
+            if (b.have_Mx2_epg_corr && finite_good(b.Mx2_epg_corr))
+                q.h_dp_mx2epg->Fill(b.Mx2_epg_corr,dpmiss);
+
+            if (b.have_tag_corr_kin) {
+                if (finite_good(b.tag_corr_p))
+                    q.h_dp_tagE->Fill(b.tag_corr_p,dpmiss);
+                if (finite_good(b.tag_corr_theta))
+                    q.h_dp_tagTheta->Fill(b.tag_corr_theta,dpmiss);
+            } // endif
+
+            if (b.have_p_corr_kin) {
+                if (finite_good(b.p_corr_p))
+                    q.h_dp_protonP->Fill(b.p_corr_p,dpmiss);
+                if (finite_good(b.p_corr_theta))
+                    q.h_dp_protonTheta->Fill(b.p_corr_theta,dpmiss);
+            } // endif
+
+            if (b.have_e_kin) {
+                if (finite_good(b.e_p))
+                    q.h_dp_eP->Fill(b.e_p,dpmiss);
+                if (finite_good(b.e_theta))
+                    q.h_dp_eTheta->Fill(b.e_theta,dpmiss);
+            } // endif
+        } // endif
+
+        if (finite_good(da)) {
+            if (finite_good(b.Mx2_ep))
+                q.h_da_mx2ep->Fill(b.Mx2_ep,da);
+            if (b.have_tag_corr_kin && finite_good(b.tag_corr_p))
+                q.h_da_tagE->Fill(b.tag_corr_p,da);
+        } // endif
+
+        if (finite_good(da) && finite_good(dpmiss))
+            q.h_dp_da->Fill(da,dpmiss);
+
+        // --------------------------------------------------------------
+        // Independent p_miss bookkeeping check from stored reconstructed
+        // electron, proton, and tag-photon vectors.
+        // --------------------------------------------------------------
+        if (have_reco_inputs &&
+            finite_good(b.beam_energy) &&
+            finite_good(b.e_p) &&
+            finite_good(b.e_theta) &&
+            finite_good(b.e_phi) &&
+            finite_good(b.p_corr_p) &&
+            finite_good(b.p_corr_theta) &&
+            finite_good(b.p_corr_phi) &&
+            finite_good(b.tag_corr_p) &&
+            finite_good(b.tag_corr_theta) &&
+            finite_good(b.tag_corr_phi)) {
+
+            double ex,ey,ez,px,py,pz,gx,gy,gz;
+            unit_vec(b.e_theta,b.e_phi,ex,ey,ez);
+            unit_vec(b.p_corr_theta,b.p_corr_phi,px,py,pz);
+            unit_vec(b.tag_corr_theta,b.tag_corr_phi,gx,gy,gz);
+
+            ex*=b.e_p; ey*=b.e_p; ez*=b.e_p;
+            px*=b.p_corr_p; py*=b.p_corr_p; pz*=b.p_corr_p;
+            gx*=b.tag_corr_p; gy*=b.tag_corr_p; gz*=b.tag_corr_p;
+
+            const double mx=-(ex+px+gx);
+            const double my=-(ey+py+gy);
+            const double mz=b.beam_energy-(ez+pz+gz);
+            const double mp=vec_mag(mx,my,mz);
+
+            double sx,sy,sz;
+            unit_vec(b.probe_corr_theta,b.probe_corr_phi,sx,sy,sz);
+            sx*=b.probe_corr_p; sy*=b.probe_corr_p; sz*=b.probe_corr_p;
+
+            const double dp_book=mp-b.probe_corr_p;
+            const double da_book=vec_angle_deg(mx,my,mz,sx,sy,sz);
+
+            if (finite_good(dp_book)) q.h_bookkeeping_dp->Fill(dp_book);
+            if (finite_good(da_book)) q.h_bookkeeping_da->Fill(da_book);
+            q.n_bookkeeping++;
+        } // endif
+    } // endfor
+
+    std::cout << "  CLASDIS 100%\n";
+
+    // ------------------------------------------------------------------
+    // Robust numerical summary: mean, median, and central 68% are all
+    // reported explicitly so a pathological tail cannot masquerade as a
+    // bulk shift.
+    // ------------------------------------------------------------------
+    std::ofstream csv(dir+"/missing_vector_robust_summary.csv");
+    csv << "p_bin,p_low_GeV,p_high_GeV,n_truth_pi0,"
+           "dp_mean_GeV,dp_median_GeV,dp_q16_GeV,dp_q84_GeV,"
+           "dp_q05_GeV,dp_q95_GeV,"
+           "angle_mean_deg,angle_median_deg,angle_q16_deg,angle_q84_deg,"
+           "correct_fraction,wrong_fraction,no_candidate_fraction,"
+           "correct_dp_median_GeV,wrong_dp_median_GeV,"
+           "no_candidate_dp_median_GeV,"
+           "bookkeeping_dp_mean_GeV,bookkeeping_angle_mean_deg\n";
+    csv << std::setprecision(10);
+
+    std::cout
+        << "\n============================================================\n"
+        << " MISSING-VECTOR ROBUST SUMMARY\n"
+        << "============================================================\n";
+
+    for (int ip=0;ip<NP;ip++) {
+        auto& q=bins[ip];
+        const Robust rdp=robust(q.dp);
+        const Robust rda=robust(q.da);
+        const Robust rc=robust(q.dp_correct);
+        const Robust rw=robust(q.dp_wrong);
+        const Robust rn=robust(q.dp_no_candidate);
+
+        const double den=(q.n_truth_pi0>0)?double(q.n_truth_pi0):1.0;
+        const double fc=double(q.n_correct)/den;
+        const double fw=double(q.n_wrong)/den;
+        const double fn=double(q.n_no_candidate)/den;
+
+        const double bkdp=q.h_bookkeeping_dp->GetEntries()>0 ?
+            q.h_bookkeeping_dp->GetMean() :
+            std::numeric_limits<double>::quiet_NaN();
+        const double bkda=q.h_bookkeeping_da->GetEntries()>0 ?
+            q.h_bookkeeping_da->GetMean() :
+            std::numeric_limits<double>::quiet_NaN();
+
+        csv << ip << ","
+            << std::max(p_edges[ip],PROBE_P_MIN) << ","
+            << p_edges[ip+1] << ","
+            << q.n_truth_pi0 << ","
+            << rdp.mean << "," << rdp.median << ","
+            << rdp.q16 << "," << rdp.q84 << ","
+            << rdp.q05 << "," << rdp.q95 << ","
+            << rda.mean << "," << rda.median << ","
+            << rda.q16 << "," << rda.q84 << ","
+            << fc << "," << fw << "," << fn << ","
+            << rc.median << "," << rw.median << "," << rn.median << ","
+            << bkdp << "," << bkda << "\n";
+
+        std::cout
+            << Form("  %.2f-%.2f GeV  N=%lld\n",
+                    std::max(p_edges[ip],PROBE_P_MIN),p_edges[ip+1],
+                    q.n_truth_pi0)
+            << Form("    p_miss-p_true: mean=%+.3f, median=%+.3f, "
+                    "central68=[%+.3f,%+.3f] GeV\n",
+                    rdp.mean,rdp.median,rdp.q16,rdp.q84)
+            << Form("    angle(miss,true): mean=%.3f, median=%.3f, "
+                    "central68=[%.3f,%.3f] deg\n",
+                    rda.mean,rda.median,rda.q16,rda.q84)
+            << Form("    categories: correct=%.3f wrong=%.3f "
+                    "no-candidate=%.3f\n",fc,fw,fn)
+            << Form("    median dp by category: correct=%+.3f, "
+                    "wrong=%+.3f, no-candidate=%+.3f GeV\n",
+                    rc.median,rw.median,rn.median)
+            << Form("    independent reco bookkeeping: <Delta p>=%.6f GeV, "
+                    "<Delta alpha>=%.6f deg\n",bkdp,bkda);
+    } // endfor
+    csv.close();
+
+    // ------------------------------------------------------------------
+    // Summary plots versus Eprobe.
+    // ------------------------------------------------------------------
+    {
+        TGraphErrors gmean,gmedian;
+        gmean.SetMarkerStyle(24);
+        gmean.SetMarkerColor(kRed+1);
+        gmean.SetLineColor(kRed+1);
+        gmedian.SetMarkerStyle(20);
+        gmedian.SetMarkerColor(kBlack);
+        gmedian.SetLineColor(kBlack);
+
+        for (int ip=0;ip<NP;ip++) {
+            const Robust r=robust(bins[ip].dp);
+            if (r.n<=0) continue;
+
+            const double x=0.5*(p_edges[ip]+p_edges[ip+1]);
+            const double ex=0.5*(p_edges[ip+1]-p_edges[ip]);
+
+            int n=gmean.GetN();
+            gmean.SetPoint(n,x,r.mean);
+            gmean.SetPointError(n,ex,0);
+
+            n=gmedian.GetN();
+            gmedian.SetPoint(n,x,r.median);
+            gmedian.SetPointError(n,ex,0.5*(r.q84-r.q16));
+        } // endfor
+
+        TCanvas cc("c_mva_dp_summary","",1050,780);
+        cc.SetLeftMargin(0.14);
+        cc.SetRightMargin(0.04);
+        cc.SetBottomMargin(0.14);
+        cc.SetTopMargin(0.12);
+        cc.SetTicks(1,1);
+
+        TH1D axis("h_mva_dp_summary_axis",
+                  ";E_{#gamma,probe}^{true} / p_{miss} bin (GeV);"
+                  "p_{miss}-p_{#gamma,true} (GeV)",
+                  100,0.35,6.0);
+        axis.SetDirectory(nullptr);
+        axis.SetStats(0);
+        axis.SetMinimum(-2.0);
+        axis.SetMaximum(5.0);
+        axis.Draw("AXIS");
+
+        TLine zero(0.35,0.0,6.0,0.0);
+        zero.SetLineStyle(2);
+        zero.Draw();
+
+        gmedian.Draw("P SAME");
+        gmean.Draw("P SAME");
+
+        TLegend leg(0.58,0.75,0.92,0.88);
+        leg.SetBorderSize(0);
+        leg.SetFillStyle(0);
+        leg.AddEntry(&gmedian,"median #pm central 68%/2","lep");
+        leg.AddEntry(&gmean,"mean","lep");
+        leg.Draw();
+
+        TLatex tx;
+        tx.SetNDC();
+        tx.SetTextFont(42);
+        tx.SetTextSize(0.038);
+        tx.DrawLatex(0.14,0.945,
+            "CLASDIS FD #pi^{0}: missing-vector momentum bias");
+
+        cc.SaveAs((dir+"/pmiss_minus_ptrue_vs_Eprobe.png").c_str());
+    }
+
+    {
+        TGraphErrors gmedian;
+        gmedian.SetMarkerStyle(20);
+        gmedian.SetMarkerColor(kBlack);
+        gmedian.SetLineColor(kBlack);
+
+        for (int ip=0;ip<NP;ip++) {
+            const Robust r=robust(bins[ip].da);
+            if (r.n<=0) continue;
+
+            const double x=0.5*(p_edges[ip]+p_edges[ip+1]);
+            const double ex=0.5*(p_edges[ip+1]-p_edges[ip]);
+            const int n=gmedian.GetN();
+            gmedian.SetPoint(n,x,r.median);
+            gmedian.SetPointError(n,ex,0.5*(r.q84-r.q16));
+        } // endfor
+
+        TCanvas cc("c_mva_da_summary","",1050,780);
+        cc.SetLeftMargin(0.14);
+        cc.SetRightMargin(0.04);
+        cc.SetBottomMargin(0.14);
+        cc.SetTopMargin(0.12);
+        cc.SetTicks(1,1);
+
+        TH1D axis("h_mva_da_summary_axis",
+                  ";E_{#gamma,probe}^{true} / p_{miss} bin (GeV);"
+                  "angle(#gamma_{miss},#gamma_{true}) (deg)",
+                  100,0.35,6.0);
+        axis.SetDirectory(nullptr);
+        axis.SetStats(0);
+        axis.SetMinimum(0.0);
+        axis.SetMaximum(15.0);
+        axis.Draw("AXIS");
+        gmedian.Draw("P SAME");
+
+        TLatex tx;
+        tx.SetNDC();
+        tx.SetTextFont(42);
+        tx.SetTextSize(0.038);
+        tx.DrawLatex(0.14,0.945,
+            "CLASDIS FD #pi^{0}: missing-vector angular error");
+
+        cc.SaveAs((dir+"/missing_to_truth_angle_vs_Eprobe.png").c_str());
+    }
+
+    // ------------------------------------------------------------------
+    // Per-bin diagnostic canvases.
+    // ------------------------------------------------------------------
+    for (int ip=0;ip<NP;ip++) {
+        auto& q=bins[ip];
+
+        {
+            TH1D hc=*q.h_dp_correct;
+            TH1D hw=*q.h_dp_wrong;
+            TH1D hn=*q.h_dp_no_candidate;
+            hc.SetDirectory(nullptr);
+            hw.SetDirectory(nullptr);
+            hn.SetDirectory(nullptr);
+
+            normalize_to_unit(&hc);
+            normalize_to_unit(&hw);
+            normalize_to_unit(&hn);
+
+            TCanvas cc(Form("c_mva_cat_%d",ip),"",1000,760);
+            cc.SetLeftMargin(0.14);
+            cc.SetRightMargin(0.04);
+            cc.SetBottomMargin(0.14);
+            cc.SetTopMargin(0.12);
+            cc.SetTicks(1,1);
+
+            const double ymax=1.25*std::max(
+                hc.GetMaximum(),std::max(hw.GetMaximum(),hn.GetMaximum()));
+            hc.SetMinimum(0);
+            hc.SetMaximum(ymax>0?ymax:1);
+            hc.GetXaxis()->SetTitle("p_{miss}-p_{#gamma,true} (GeV)");
+            hc.GetYaxis()->SetTitle("Unit-normalized entries");
+
+            hc.SetMarkerStyle(20);
+            hc.SetMarkerColor(kBlack);
+            hc.SetLineColor(kBlack);
+            hc.Draw("E1");
+
+            hw.SetMarkerStyle(24);
+            hw.SetMarkerColor(kRed+1);
+            hw.SetLineColor(kRed+1);
+            hw.Draw("E1 SAME");
+
+            hn.SetMarkerStyle(25);
+            hn.SetMarkerColor(kBlue+1);
+            hn.SetLineColor(kBlue+1);
+            hn.Draw("E1 SAME");
+
+            TLegend leg(0.54,0.70,0.93,0.88);
+            leg.SetBorderSize(0);
+            leg.SetFillStyle(0);
+            leg.AddEntry(&hc,"correct probe selected","lep");
+            leg.AddEntry(&hw,"wrong probe selected","lep");
+            leg.AddEntry(&hn,"no reconstructed candidate","lep");
+            leg.Draw();
+
+            TLatex tx;
+            tx.SetNDC();
+            tx.SetTextFont(42);
+            tx.SetTextSize(0.037);
+            tx.DrawLatex(0.14,0.945,
+                Form("CLASDIS truth, %.2f<E_{#gamma,probe}<%.2f GeV",
+                     std::max(p_edges[ip],PROBE_P_MIN),p_edges[ip+1]));
+
+            cc.SaveAs(
+                (dir+Form("/pbin%d_pmiss_minus_ptrue_by_category.png",ip)).c_str());
+        }
+
+        auto draw_corr=[&](TH2D* h,const std::string& x_title,
+                           const std::string& filename,
+                           const std::string& y_title) {
+            if (!h || h->GetEntries()<=0) return;
+
+            TCanvas cc(Form("c_%s",h->GetName()),"",1000,780);
+            cc.SetLeftMargin(0.14);
+            cc.SetRightMargin(0.14);
+            cc.SetBottomMargin(0.14);
+            cc.SetTopMargin(0.12);
+            cc.SetTicks(1,1);
+
+            h->SetStats(0);
+            h->GetXaxis()->SetTitle(x_title.c_str());
+            h->GetYaxis()->SetTitle(y_title.c_str());
+            h->Draw("COLZ");
+
+            TLatex tx;
+            tx.SetNDC();
+            tx.SetTextFont(42);
+            tx.SetTextSize(0.036);
+            tx.DrawLatex(0.14,0.945,
+                Form("CLASDIS truth, %.2f<E_{#gamma,probe}<%.2f GeV",
+                     std::max(p_edges[ip],PROBE_P_MIN),p_edges[ip+1]));
+
+            cc.SaveAs((dir+"/"+filename).c_str());
+        };
+
+        draw_corr(q.h_dp_mx2ep.get(),"M_{X}^{2}(ep) (GeV^{2})",
+                  Form("pbin%d_dp_vs_Mx2ep.png",ip),
+                  "p_{miss}-p_{#gamma,true} (GeV)");
+        draw_corr(q.h_dp_mx2epg.get(),"M_{X}^{2}(ep#gamma_{tag}) (GeV^{2})",
+                  Form("pbin%d_dp_vs_Mx2epg.png",ip),
+                  "p_{miss}-p_{#gamma,true} (GeV)");
+        draw_corr(q.h_dp_tagE.get(),"E_{#gamma,tag} (GeV)",
+                  Form("pbin%d_dp_vs_tagE.png",ip),
+                  "p_{miss}-p_{#gamma,true} (GeV)");
+        draw_corr(q.h_dp_tagTheta.get(),"#theta_{#gamma,tag} (deg)",
+                  Form("pbin%d_dp_vs_tagTheta.png",ip),
+                  "p_{miss}-p_{#gamma,true} (GeV)");
+        draw_corr(q.h_dp_protonP.get(),"p_{p} (GeV)",
+                  Form("pbin%d_dp_vs_protonP.png",ip),
+                  "p_{miss}-p_{#gamma,true} (GeV)");
+        draw_corr(q.h_dp_protonTheta.get(),"#theta_{p} (deg)",
+                  Form("pbin%d_dp_vs_protonTheta.png",ip),
+                  "p_{miss}-p_{#gamma,true} (GeV)");
+        draw_corr(q.h_dp_eP.get(),"p_{e} (GeV)",
+                  Form("pbin%d_dp_vs_eP.png",ip),
+                  "p_{miss}-p_{#gamma,true} (GeV)");
+        draw_corr(q.h_dp_eTheta.get(),"#theta_{e} (deg)",
+                  Form("pbin%d_dp_vs_eTheta.png",ip),
+                  "p_{miss}-p_{#gamma,true} (GeV)");
+        draw_corr(q.h_da_mx2ep.get(),"M_{X}^{2}(ep) (GeV^{2})",
+                  Form("pbin%d_angle_vs_Mx2ep.png",ip),
+                  "angle(#gamma_{miss},#gamma_{true}) (deg)");
+        draw_corr(q.h_da_tagE.get(),"E_{#gamma,tag} (GeV)",
+                  Form("pbin%d_angle_vs_tagE.png",ip),
+                  "angle(#gamma_{miss},#gamma_{true}) (deg)");
+        draw_corr(q.h_dp_da.get(),
+                  "angle(#gamma_{miss},#gamma_{true}) (deg)",
+                  Form("pbin%d_dp_vs_angle.png",ip),
+                  "p_{miss}-p_{#gamma,true} (GeV)");
+    } // endfor
+
+    // ------------------------------------------------------------------
+    // Save all histograms so follow-up plotting does not need another scan.
+    // ------------------------------------------------------------------
+    {
+        TFile fout((dir+"/missing_vector_audit_histograms.root").c_str(),
+                   "RECREATE");
+        if (!fout.IsZombie()) {
+            for (int ip=0;ip<NP;ip++) {
+                auto& q=bins[ip];
+
+                TH1* hs[]={
+                    q.h_dp.get(),q.h_da.get(),
+                    q.h_dp_correct.get(),q.h_dp_wrong.get(),
+                    q.h_dp_no_candidate.get(),
+                    q.h_bookkeeping_dp.get(),q.h_bookkeeping_da.get(),
+                    q.h_dp_mx2ep.get(),q.h_dp_mx2epg.get(),
+                    q.h_dp_tagE.get(),q.h_dp_tagTheta.get(),
+                    q.h_dp_protonP.get(),q.h_dp_protonTheta.get(),
+                    q.h_dp_eP.get(),q.h_dp_eTheta.get(),
+                    q.h_da_mx2ep.get(),q.h_da_tagE.get(),
+                    q.h_dp_da.get()
+                };
+
+                for (TH1* h:hs) {
+                    if (h) h->Write();
+                } // endfor
+            } // endfor
+            fout.Close();
+        } // endif
+    }
+
+    std::ofstream readme(dir+"/README_truth_limitations.txt");
+    readme
+        << "This diagnostic used the current PhotonEfficiency ROOT skim.\n"
+        << "The skim contains generated truth only for the probe photon.\n"
+        << "It does not currently contain truth e', truth p', truth tag gamma,\n"
+        << "or the full generated final state. Therefore the requested hybrid\n"
+        << "one-particle-at-a-time truth substitutions and truth-level X-system\n"
+        << "closure cannot yet be computed from this file alone.\n\n"
+        << "The present output establishes the size/shape of p_miss-p_true and\n"
+        << "angle(gamma_miss,gamma_true), robust median/68% intervals, candidate\n"
+        << "category dependence, correlations with reconstructed kinematics,\n"
+        << "and an independent reconstructed-vector bookkeeping cross-check.\n";
+    readme.close();
+
+    std::cout
+        << "\n[wrote] " << dir << "/missing_vector_robust_summary.csv\n"
+        << "[wrote] " << dir << "/missing_vector_audit_histograms.root\n"
+        << "[wrote] " << dir << "/README_truth_limitations.txt\n"
+        << "\nFAST missing-vector audit complete.\n";
+}
+
+
 void run_concise_analysis(const std::string& out) {
     concise_make_dirs(out);
 
@@ -11014,14 +11819,29 @@ void run_valerii_fd_reproduction(const std::string& out) {
 
 } // namespace pe
 
-void photon_efficiency_valerii_reproduction(bool new_truth_only=false) {
+void photon_efficiency_valerii_reproduction(int run_mode=0) {
     using namespace pe;
 
     gROOT->SetBatch(kTRUE);
     concise_publication_style();
 
-    if (new_truth_only) {
+    // run_mode = 0 : full analysis
+    // run_mode = 1 : previous CLASDIS truth-category dissection only
+    // run_mode = 2 : NEW missing-vector audit only
+    if (run_mode==1) {
         pe::run_clasdis_truth_dissection_only("output");
+        return;
+    } // endif
+
+    if (run_mode==2) {
+        pe::run_clasdis_missing_vector_audit_only("output");
+        return;
+    } // endif
+
+    if (run_mode!=0) {
+        std::cerr << "ERROR: unknown run_mode=" << run_mode
+                  << ". Use 0 (full), 1 (truth dissection), or 2 "
+                  << "(missing-vector audit).\n";
         return;
     } // endif
 
