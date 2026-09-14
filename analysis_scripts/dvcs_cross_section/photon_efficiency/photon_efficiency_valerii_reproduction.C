@@ -9309,7 +9309,7 @@ void write_shoulder_diagnostics_for_fd_momentum_bins(const std::string& outdir) 
                 hp.SetMinimum(0);
                 hp.SetMaximum(ymax>0?ymax:1);
                 hp.GetXaxis()->SetTitle(pp.xtitle);
-                hp.GetYaxis()->SetTitle("Unit-normalized entries");
+                hp.GetYaxis()->SetTitle("Tag-candidate pairs");
                 // Peak: black filled circles. Shoulder: red open circles.
                 // Keep both marker shape and color different so the comparison
                 // remains immediately legible in dense bins and in print.
@@ -13680,6 +13680,15 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
         // requirement and therefore tests only whether data and pi0 MC sample
         // the same predicted radial phase space on the FT face.
         std::array<std::unique_ptr<TH1D>,FT_NP> h_predft_radius;
+
+        // Focused FT candidate-identification diagnostic.  The normal
+        // production numerator requires neutral_pid==22.  These histograms
+        // use the identical nominal predicted-FT denominator but accept ANY
+        // reconstructed neutral FT candidate (charge==0, detector==FT), while
+        // retaining the same candidate momentum threshold and M(gamma gamma)
+        // construction.  A recovered pi0 peak therefore tests whether photons
+        // are present as FT neutral clusters but fail the pid==22 assignment.
+        std::array<std::unique_ptr<TH1D>,FT_NP> h_predft_anyneutral_mgg;
     };
 
     auto icell=[](int id,int ip)->int {
@@ -13742,6 +13751,12 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
                 28,FT_R_MIN,FT_R_MAX);
             s.h_predft_radius[ip]->SetDirectory(nullptr);
             s.h_predft_radius[ip]->Sumw2();
+
+            s.h_predft_anyneutral_mgg[ip]=std::make_unique<TH1D>(
+                Form("predFT_anyNeutral_mgg_%s_p%d",s.name.c_str(),ip),
+                "",MGG_NBIN,MGG_HMIN,MGG_HMAX);
+            s.h_predft_anyneutral_mgg[ip]->SetDirectory(nullptr);
+            s.h_predft_anyneutral_mgg[ip]->Sumw2();
         } // endfor
     };
 
@@ -13999,6 +14014,32 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
                             } // endfor
                         } // endif
                     } // endif
+                } // endif
+            } // endif
+
+            // ----------------------------------------------------------
+            // Focused QA: FT neutral-cluster reconstruction versus photon PID.
+            //
+            // The denominator and every event-level production cut are
+            // unchanged.  The ONLY change relative to the normal FT numerator
+            // is that neutral_pid==22 is NOT required here.  All neutral FT
+            // candidates above the same momentum threshold are paired with the
+            // tag photon and the pi0 peak is extracted from M(gamma gamma).
+            // ----------------------------------------------------------
+            if (expected_ft) {
+                const int ipft=find_pbin(b.probe_corr_p,1);
+                if (ipft>=0) {
+                    for (int k=0;k<5;k++) {
+                        if (b.neutral_idx[k]<0) continue;
+                        if (b.neutral_charge[k]!=0) continue;
+                        if (b.neutral_detector[k]!=0) continue;
+                        if (!finite_good(b.neutral_p[k]) ||
+                            b.neutral_p[k]<PROBE_P_MIN) continue;
+
+                        const double mass=pair_mass(b,k);
+                        if (!finite_good(mass)) continue;
+                        s->h_predft_anyneutral_mgg[ipft]->Fill(mass);
+                    } // endfor
                 } // endif
             } // endif
 
@@ -14914,6 +14955,288 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
             } // endfor
         } // endfor
     } // endfor
+
+    // ===============================================================
+    // Focused predicted-FT neutral-cluster versus photon-PID diagnostic.
+    // ===============================================================
+    // Question being tested:
+    //   Does the large FT data/MC efficiency deficit persist when the
+    //   reconstructed probe is allowed to be ANY neutral FT candidate rather
+    //   than requiring the standard photon assignment neutral_pid==22?
+    //
+    // Denominators, event cuts, component normalizations, energy bins, Mgg fit
+    // model, and candidate momentum threshold are identical.  Only the PID
+    // requirement on the reconstructed FT candidate is removed.
+    {
+        const std::string ndir=dir+"/predicted_FT_neutral_vs_photon_ID";
+        gSystem->mkdir(ndir.c_str(),kTRUE);
+
+        struct IdResult {
+            bool valid=false;
+            PeakFit fit_data,fit_aao,fit_cls;
+            double data_den_pi0=0,data_den_pi0_err=0;
+            double mc_den_pi0=0;
+            double data_num=0,data_num_err=0;
+            double mc_num=0,mc_num_err=0;
+            double eff_data=0,eff_data_err=0;
+            double eff_mc=0,eff_mc_err=0;
+            double ratio=0,ratio_err=0;
+        };
+
+        std::array<IdResult,FT_NP> any{};
+
+        const double wa=norm_ft.nominal.aao;
+        const double wc=norm_ft.nominal.clasdis;
+        const double wd=norm_ft.nominal.dvcs;
+
+        for (int ip=0;ip<FT_NP;ip++) {
+            auto& r=any[ip];
+            r.fit_data=fit_mgg_peak(sdata->h_predft_anyneutral_mgg[ip].get(),12);
+            r.fit_aao =fit_mgg_peak(saao->h_predft_anyneutral_mgg[ip].get(),12);
+            r.fit_cls =fit_mgg_peak(scls->h_predft_anyneutral_mgg[ip].get(),12);
+
+            const int ic=icell(1,ip);
+            const double den_a=wa*double(saao->cells[ic].denom_truth_pi0);
+            const double den_c=wc*double(scls->cells[ic].denom_truth_pi0);
+            const double den_d=wd*double(sdvcs->cells[ic].denom_rows);
+            const double pred_total=den_a+den_c+den_d;
+            r.mc_den_pi0=den_a+den_c;
+
+            const double ndata=double(sdata->cells[ic].denom_rows);
+            if (pred_total>0 && r.mc_den_pi0>0 && ndata>0) {
+                const double fpi0=r.mc_den_pi0/pred_total;
+                r.data_den_pi0=ndata*fpi0;
+                r.data_den_pi0_err=std::sqrt(ndata)*fpi0;
+            } // endif
+
+            if (r.fit_data.valid && (r.fit_aao.valid || r.fit_cls.valid)) {
+                r.data_num=r.fit_data.yield;
+                r.data_num_err=r.fit_data.yield_err;
+
+                const double numa=r.fit_aao.valid ? wa*r.fit_aao.yield : 0.0;
+                const double numc=r.fit_cls.valid ? wc*r.fit_cls.yield : 0.0;
+                const double numa_err=r.fit_aao.valid ? wa*r.fit_aao.yield_err : 0.0;
+                const double numc_err=r.fit_cls.valid ? wc*r.fit_cls.yield_err : 0.0;
+                r.mc_num=numa+numc;
+                r.mc_num_err=std::sqrt(numa_err*numa_err+numc_err*numc_err);
+            } // endif
+
+            if (r.data_den_pi0>0 && r.data_num>0 &&
+                r.mc_den_pi0>0 && r.mc_num>0) {
+                r.eff_data=r.data_num/r.data_den_pi0;
+                r.eff_mc=r.mc_num/r.mc_den_pi0;
+                r.eff_data_err=r.eff_data*std::sqrt(
+                    std::pow(r.data_num_err/r.data_num,2)+
+                    std::pow(r.data_den_pi0_err/r.data_den_pi0,2));
+                r.eff_mc_err=r.eff_mc*(r.mc_num_err/r.mc_num);
+
+                if (r.eff_data>0 && r.eff_mc>0) {
+                    r.ratio=r.eff_data/r.eff_mc;
+                    r.ratio_err=r.ratio*std::sqrt(
+                        std::pow(r.eff_data_err/r.eff_data,2)+
+                        std::pow(r.eff_mc_err/r.eff_mc,2));
+                    r.valid=finite_good(r.ratio) &&
+                            finite_good(r.ratio_err) && r.ratio>0;
+                } // endif
+            } // endif
+        } // endfor
+
+        std::ofstream ncsv(ndir+"/predicted_FT_neutral_vs_photon_ID.csv");
+        ncsv
+            << "Epred_low_GeV,Epred_high_GeV,"
+            << "data_den_rows,pi0_fraction_from_normalized_MC,"
+            << "photon_data_num,photon_eff_data,photon_eff_data_err,"
+            << "photon_mc_num,photon_eff_mc,photon_eff_mc_err,"
+            << "photon_data_over_mc,photon_data_over_mc_err,"
+            << "anyneutral_data_num,anyneutral_data_num_err,"
+            << "anyneutral_eff_data,anyneutral_eff_data_err,"
+            << "anyneutral_mc_num,anyneutral_mc_num_err,"
+            << "anyneutral_eff_mc,anyneutral_eff_mc_err,"
+            << "anyneutral_data_over_mc,anyneutral_data_over_mc_err,"
+            << "data_num_recovery_anyneutral_over_photon,"
+            << "mc_num_recovery_anyneutral_over_photon,"
+            << "ratio_change_anyneutral_over_photon,"
+            << "data_anyneutral_fit_valid,AAO_anyneutral_fit_valid,CLASDIS_anyneutral_fit_valid\n";
+        ncsv << std::setprecision(10);
+
+        TFile nroot((ndir+"/predicted_FT_neutral_vs_photon_ID_histograms.root").c_str(),
+                    "RECREATE");
+
+        for (int ip=0;ip<FT_NP;ip++) {
+            const int ic=icell(1,ip);
+            const PeakFit& pd=fits["data"][ic];
+            const PeakFit& pa=fits["aaogen"][ic];
+            const PeakFit& pc=fits["clasdis"][ic];
+            const auto& nr=any[ip];
+
+            const double den_a=wa*double(saao->cells[ic].denom_truth_pi0);
+            const double den_c=wc*double(scls->cells[ic].denom_truth_pi0);
+            const double den_d=wd*double(sdvcs->cells[ic].denom_rows);
+            const double pred_total=den_a+den_c+den_d;
+            const double mc_den=den_a+den_c;
+            const double ndata=double(sdata->cells[ic].denom_rows);
+            const double fpi0=(pred_total>0 ? mc_den/pred_total : 0.0);
+            const double data_den=ndata*fpi0;
+            const double data_den_err=(ndata>0 ? std::sqrt(ndata)*fpi0 : 0.0);
+
+            double p_data_num=0,p_data_num_err=0,p_eff_data=0,p_eff_data_err=0;
+            double p_mc_num=0,p_mc_num_err=0,p_eff_mc=0,p_eff_mc_err=0;
+            double p_ratio=0,p_ratio_err=0;
+
+            if (pd.valid) {
+                p_data_num=pd.yield;
+                p_data_num_err=pd.yield_err;
+            } // endif
+            const double pnuma=pa.valid ? wa*pa.yield : 0.0;
+            const double pnumc=pc.valid ? wc*pc.yield : 0.0;
+            const double pnuma_err=pa.valid ? wa*pa.yield_err : 0.0;
+            const double pnumc_err=pc.valid ? wc*pc.yield_err : 0.0;
+            p_mc_num=pnuma+pnumc;
+            p_mc_num_err=std::sqrt(pnuma_err*pnuma_err+pnumc_err*pnumc_err);
+
+            if (data_den>0 && p_data_num>0) {
+                p_eff_data=p_data_num/data_den;
+                p_eff_data_err=p_eff_data*std::sqrt(
+                    std::pow(p_data_num_err/p_data_num,2)+
+                    std::pow(data_den_err/data_den,2));
+            } // endif
+            if (mc_den>0 && p_mc_num>0) {
+                p_eff_mc=p_mc_num/mc_den;
+                p_eff_mc_err=p_eff_mc*(p_mc_num_err/p_mc_num);
+            } // endif
+            if (p_eff_data>0 && p_eff_mc>0) {
+                p_ratio=p_eff_data/p_eff_mc;
+                p_ratio_err=p_ratio*std::sqrt(
+                    std::pow(p_eff_data_err/p_eff_data,2)+
+                    std::pow(p_eff_mc_err/p_eff_mc,2));
+            } // endif
+
+            const double data_recovery=(p_data_num>0 ? nr.data_num/p_data_num : 0.0);
+            const double mc_recovery=(p_mc_num>0 ? nr.mc_num/p_mc_num : 0.0);
+            const double ratio_change=(p_ratio>0 ? nr.ratio/p_ratio : 0.0);
+
+            ncsv
+                << FT_EDGES[ip] << "," << FT_EDGES[ip+1] << ","
+                << ndata << "," << fpi0 << ","
+                << p_data_num << "," << p_eff_data << "," << p_eff_data_err << ","
+                << p_mc_num << "," << p_eff_mc << "," << p_eff_mc_err << ","
+                << p_ratio << "," << p_ratio_err << ","
+                << nr.data_num << "," << nr.data_num_err << ","
+                << nr.eff_data << "," << nr.eff_data_err << ","
+                << nr.mc_num << "," << nr.mc_num_err << ","
+                << nr.eff_mc << "," << nr.eff_mc_err << ","
+                << nr.ratio << "," << nr.ratio_err << ","
+                << data_recovery << "," << mc_recovery << "," << ratio_change << ","
+                << nr.fit_data.valid << "," << nr.fit_aao.valid << ","
+                << nr.fit_cls.valid << "\n";
+
+            // Visual diagnostic: compare the fitted Mgg spectra for the normal
+            // photon-PID candidate definition and the any-neutral definition.
+            TCanvas c(Form("c_predft_neutralid_p%d",ip),"",1000,820);
+            c.Divide(1,2,0.0,0.0);
+
+            auto draw_pair=[&](int ipad,TH1D* hph,TH1D* hneu,
+                               const char* sample_label) {
+                c.cd(ipad);
+                gPad->SetLeftMargin(0.13);
+                gPad->SetRightMargin(0.04);
+                gPad->SetBottomMargin(ipad==2 ? 0.14 : 0.08);
+                gPad->SetTopMargin(0.10);
+                gPad->SetTicks(1,1);
+
+                TH1D p=*hph;
+                TH1D n=*hneu;
+                p.SetDirectory(nullptr);
+                n.SetDirectory(nullptr);
+                p.SetStats(0);
+                p.SetMarkerStyle(20);
+                p.SetMarkerSize(0.8);
+                p.SetLineWidth(2);
+                p.SetTitle("");
+                p.GetXaxis()->SetTitle("M(#gamma_{tag} neutral_{cand}) (GeV)");
+                p.GetYaxis()->SetTitle("Tag-candidate pairs");
+                const double ymax=1.25*std::max(p.GetMaximum(),n.GetMaximum());
+                p.SetMaximum(ymax>0 ? ymax : 1.0);
+                p.SetMinimum(0.0);
+                TH1D* pdraw=static_cast<TH1D*>(p.DrawCopy("E1"));
+
+                n.SetLineColor(kRed+1);
+                n.SetLineWidth(2);
+                TH1D* ndraw=static_cast<TH1D*>(n.DrawCopy("HIST SAME"));
+
+                TLegend leg(0.60,0.69,0.92,0.87);
+                leg.SetBorderSize(0);
+                leg.SetFillStyle(0);
+                leg.AddEntry(pdraw,"PID==22 candidates","lep");
+                leg.AddEntry(ndraw,"any neutral FT candidate","l");
+                leg.DrawClone();
+
+                TLatex tx;
+                tx.SetNDC();
+                tx.SetTextFont(42);
+                tx.SetTextSize(0.036);
+                tx.DrawLatex(0.13,0.94,
+                    Form("%s: predicted FT, %.1f<E_{#gamma,pred}<%.1f GeV",
+                         sample_label,FT_EDGES[ip],FT_EDGES[ip+1]));
+            };
+
+            // Weighted pi0 MC histograms for the lower panel.
+            auto hmc_ph=std::unique_ptr<TH1D>(dynamic_cast<TH1D*>(
+                saao->cells[ic].h_mgg->Clone(Form("hmc_ph_p%d",ip))));
+            auto hmc_neu=std::unique_ptr<TH1D>(dynamic_cast<TH1D*>(
+                saao->h_predft_anyneutral_mgg[ip]->Clone(Form("hmc_neu_p%d",ip))));
+            hmc_ph->SetDirectory(nullptr);
+            hmc_neu->SetDirectory(nullptr);
+            hmc_ph->Reset("ICES");
+            hmc_neu->Reset("ICES");
+            hmc_ph->Add(saao->cells[ic].h_mgg.get(),wa);
+            hmc_ph->Add(scls->cells[ic].h_mgg.get(),wc);
+            hmc_neu->Add(saao->h_predft_anyneutral_mgg[ip].get(),wa);
+            hmc_neu->Add(scls->h_predft_anyneutral_mgg[ip].get(),wc);
+
+            draw_pair(1,sdata->cells[ic].h_mgg.get(),
+                      sdata->h_predft_anyneutral_mgg[ip].get(),"data");
+            draw_pair(2,hmc_ph.get(),hmc_neu.get(),"weighted #pi^{0} MC");
+            c.SaveAs((ndir+Form(
+                "/FT_Epred_%.1f_%.1f_photonPID_vs_anyNeutral_Mgg.png",
+                FT_EDGES[ip],FT_EDGES[ip+1])).c_str());
+
+            nroot.cd();
+            sdata->cells[ic].h_mgg->Write(Form("data_photonPID_p%d",ip));
+            sdata->h_predft_anyneutral_mgg[ip]->Write(Form("data_anyNeutral_p%d",ip));
+            hmc_ph->Write(Form("weightedPi0MC_photonPID_p%d",ip));
+            hmc_neu->Write(Form("weightedPi0MC_anyNeutral_p%d",ip));
+
+            std::cout
+                << "[predFT neutral-vs-photon] "
+                << FT_EDGES[ip] << " < Epred < " << FT_EDGES[ip+1]
+                << " GeV: photon R=" << p_ratio << " +/- " << p_ratio_err
+                << ", any-neutral R=" << nr.ratio << " +/- " << nr.ratio_err
+                << ", data yield recovery=" << data_recovery
+                << ", MC yield recovery=" << mc_recovery
+                << (nr.valid?"":"  [INVALID ANY-NEUTRAL FIT]") << "\n";
+        } // endfor
+
+        nroot.Close();
+        ncsv.close();
+
+        std::ofstream note(ndir+"/README.txt");
+        note
+            << "Focused predicted-FT neutral-cluster versus photon-PID diagnostic\n"
+            << "================================================================\n\n"
+            << "The nominal production predicted-FT denominator is unchanged.\n"
+            << "The standard numerator requires a reconstructed neutral FT candidate\n"
+            << "with neutral_pid==22.  The alternate numerator removes ONLY that PID\n"
+            << "requirement: neutral_idx>=0, charge==0, detector==FT, and the same\n"
+            << "candidate momentum threshold are retained.\n\n"
+            << "Both definitions use the same M(gamma gamma) peak fit, data pi0\n"
+            << "denominator fraction, weighted AAOgen+CLASDIS pi0 denominator, and\n"
+            << "FT energy bins.  If epsilon_data/epsilon_MC rises strongly when PID\n"
+            << "is removed, the deficit is associated with photon identification.\n"
+            << "If it remains unchanged, the deficit is already present at the level\n"
+            << "of finding a neutral FT cluster.\n";
+        note.close();
+    }
 
     // --------------------------------------------------------------
     // 5. Production efficiency and data/MC ratio.
