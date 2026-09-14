@@ -13631,6 +13631,13 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
         std::string name;
         bool is_mc=false;
         std::array<Cell,2*MAX_NP> cells;
+
+        // Focused QA diagnostic: only for events whose inferred probe is
+        // predicted to land in FT.  Store M(gamma gamma) separately by the
+        // detector in which the reconstructed second-photon candidate appears.
+        // These histograms do NOT alter the production efficiency extraction.
+        std::array<std::unique_ptr<TH1D>,FT_NP> h_predft_recofd;
+        std::array<std::unique_ptr<TH1D>,FT_NP> h_predft_recoft;
     };
 
     auto icell=[](int id,int ip)->int {
@@ -13648,6 +13655,20 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
                 q.h_mgg->SetDirectory(nullptr);
                 q.h_mgg->Sumw2();
             } // endfor
+        } // endfor
+
+        for (int ip=0;ip<FT_NP;ip++) {
+            s.h_predft_recofd[ip]=std::make_unique<TH1D>(
+                Form("predFT_recoFD_mgg_%s_p%d",s.name.c_str(),ip),
+                "",MGG_NBIN,MGG_HMIN,MGG_HMAX);
+            s.h_predft_recofd[ip]->SetDirectory(nullptr);
+            s.h_predft_recofd[ip]->Sumw2();
+
+            s.h_predft_recoft[ip]=std::make_unique<TH1D>(
+                Form("predFT_recoFT_mgg_%s_p%d",s.name.c_str(),ip),
+                "",MGG_NBIN,MGG_HMIN,MGG_HMAX);
+            s.h_predft_recoft[ip]->SetDirectory(nullptr);
+            s.h_predft_recoft[ip]->Sumw2();
         } // endfor
     };
 
@@ -13802,6 +13823,36 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
                 expected_ft=fp.valid && fp.fiducial;
             } // endif
 
+            // ----------------------------------------------------------
+            // Focused QA: predicted FT -> reconstructed FD versus FT.
+            // Keep the production selection completely unchanged.  For each
+            // event whose inferred probe is predicted to land in FT, form
+            // M(gamma_tag gamma_candidate) with every acceptable photon and
+            // split only by the detector in which that candidate appears.
+            // No Delta-p, Delta-alpha, or closest-to-missing-vector choice is
+            // introduced here.
+            // ----------------------------------------------------------
+            if (expected_ft) {
+                const int ipft=find_pbin(b.probe_corr_p,1);
+                if (ipft>=0) {
+                    for (int k=0;k<5;k++) {
+                        if (b.neutral_idx[k]<0) continue;
+                        if (b.neutral_charge[k]!=0) continue;
+                        if (b.neutral_pid[k]!=22) continue;
+                        if (!finite_good(b.neutral_p[k]) ||
+                            b.neutral_p[k]<PROBE_P_MIN) continue;
+
+                        const double mass=pair_mass(b,k);
+                        if (!finite_good(mass)) continue;
+
+                        if (b.neutral_detector[k]==1)
+                            s->h_predft_recofd[ipft]->Fill(mass);
+                        else if (b.neutral_detector[k]==0)
+                            s->h_predft_recoft[ipft]->Fill(mass);
+                    } // endfor
+                } // endif
+            } // endif
+
             for (int id=0;id<2;id++) {
                 if (id==0 && !expected_fd) continue;
                 if (id==1 && !expected_ft) continue;
@@ -13876,6 +13927,173 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
             << "ERROR: not all samples survived the production scan.\n";
         return;
     } // endif
+
+    // ===============================================================
+    // Focused QA: predicted FT -> reconstructed FD versus FT.
+    // ===============================================================
+    // This is deliberately diagnostic only.  It does not change any cut,
+    // denominator, numerator, normalization, or production correction.
+    {
+        const std::string qdir=dir+"/predicted_FT_detector_migration";
+        gSystem->mkdir(qdir.c_str(),kTRUE);
+
+        std::ofstream qcsv(qdir+"/predicted_FT_detector_migration.csv");
+        qcsv << "sample,Epred_low_GeV,Epred_high_GeV,"
+                "yield_recoFD,yield_recoFD_err,yield_recoFT,yield_recoFT_err,"
+                "migration_fraction_FD,migration_fraction_FD_err,"
+                "fit_mean_recoFD_GeV,fit_sigma_recoFD_GeV,"
+                "fit_mean_recoFT_GeV,fit_sigma_recoFT_GeV\n";
+        qcsv << std::setprecision(10);
+
+        auto frac_and_err=[](double a,double ea,double b,double eb) {
+            std::pair<double,double> out{0.0,0.0};
+            const double den=a+b;
+            if (!(den>0)) return out;
+            out.first=a/den;
+            const double dfa=b/(den*den);
+            const double dfb=-a/(den*den);
+            out.second=std::sqrt(dfa*dfa*ea*ea + dfb*dfb*eb*eb);
+            return out;
+        };
+
+        auto write_one=[&](const std::string& label,int ip,
+                           TH1D* hfd,TH1D* hft) {
+            const PeakFit ffd=fit_mgg_peak(hfd,12);
+            const PeakFit fft=fit_mgg_peak(hft,12);
+            const double yfd=ffd.valid ? ffd.yield : 0.0;
+            const double efd=ffd.valid ? ffd.yield_err : 0.0;
+            const double yft=fft.valid ? fft.yield : 0.0;
+            const double eft=fft.valid ? fft.yield_err : 0.0;
+            const auto fr=frac_and_err(yfd,efd,yft,eft);
+
+            qcsv << label << "," << FT_EDGES[ip] << ","
+                 << FT_EDGES[ip+1] << ","
+                 << yfd << "," << efd << ","
+                 << yft << "," << eft << ","
+                 << fr.first << "," << fr.second << ","
+                 << (ffd.valid?ffd.mean:0.0) << ","
+                 << (ffd.valid?ffd.sigma:0.0) << ","
+                 << (fft.valid?fft.mean:0.0) << ","
+                 << (fft.valid?fft.sigma:0.0) << "\n";
+
+            std::cout << Form(
+                "[predFT migration] %-15s %.1f-%.1f GeV: "
+                "pi0 recoFD=%.1f +/- %.1f, recoFT=%.1f +/- %.1f, "
+                "f_FD=%.4f +/- %.4f\n",
+                label.c_str(),FT_EDGES[ip],FT_EDGES[ip+1],
+                yfd,efd,yft,eft,fr.first,fr.second);
+        };
+
+        for (int ip=0;ip<FT_NP;ip++) {
+            write_one("data",ip,
+                      sdata->h_predft_recofd[ip].get(),
+                      sdata->h_predft_recoft[ip].get());
+            write_one("aaogen",ip,
+                      saao->h_predft_recofd[ip].get(),
+                      saao->h_predft_recoft[ip].get());
+            write_one("clasdis",ip,
+                      scls->h_predft_recofd[ip].get(),
+                      scls->h_predft_recoft[ip].get());
+            write_one("dvcsgen",ip,
+                      sdvcs->h_predft_recofd[ip].get(),
+                      sdvcs->h_predft_recoft[ip].get());
+
+            TH1D hmc_fd=*saao->h_predft_recofd[ip];
+            TH1D hmc_ft=*saao->h_predft_recoft[ip];
+            hmc_fd.SetDirectory(nullptr);
+            hmc_ft.SetDirectory(nullptr);
+            hmc_fd.Scale(norm_ft.nominal.aao);
+            hmc_ft.Scale(norm_ft.nominal.aao);
+            hmc_fd.Add(scls->h_predft_recofd[ip].get(),
+                       norm_ft.nominal.clasdis);
+            hmc_ft.Add(scls->h_predft_recoft[ip].get(),
+                       norm_ft.nominal.clasdis);
+            write_one("weighted_pi0_mc",ip,&hmc_fd,&hmc_ft);
+
+            TCanvas c(Form("c_predft_migration_%d",ip),"",1000,900);
+            c.Divide(1,2);
+
+            auto draw_panel=[&](int ipad,TH1D* hd,TH1D* hm,
+                                const char* detlabel) {
+                c.cd(ipad);
+                gPad->SetLeftMargin(0.14);
+                gPad->SetRightMargin(0.04);
+                gPad->SetBottomMargin(0.14);
+                gPad->SetTopMargin(0.12);
+                gPad->SetTicks(1,1);
+
+                TH1D d=*hd;
+                TH1D m=*hm;
+                d.SetDirectory(nullptr);
+                m.SetDirectory(nullptr);
+                if (d.Integral()>0) d.Scale(1.0/d.Integral());
+                if (m.Integral()>0) m.Scale(1.0/m.Integral());
+
+                const double ymax=1.25*std::max(d.GetMaximum(),m.GetMaximum());
+                d.SetMinimum(0.0);
+                d.SetMaximum(ymax>0?ymax:1.0);
+                d.GetXaxis()->SetTitle("M(#gamma_{tag}#gamma_{cand}) (GeV)");
+                d.GetYaxis()->SetTitle("Unit-normalized entries");
+                d.SetMarkerStyle(20);
+                d.SetMarkerColor(kBlack);
+                d.SetLineColor(kBlack);
+                d.Draw("E1");
+                m.SetLineColor(kRed+1);
+                m.SetLineWidth(2);
+                m.Draw("HIST SAME");
+
+                TLegend leg(0.64,0.70,0.92,0.87);
+                leg.SetBorderSize(0);
+                leg.SetFillStyle(0);
+                leg.AddEntry(&d,"data","lep");
+                leg.AddEntry(&m,"weighted #pi^{0} MC","l");
+                leg.Draw();
+
+                TLatex tx;
+                tx.SetNDC();
+                tx.SetTextFont(42);
+                tx.SetTextSize(0.038);
+                tx.DrawLatex(0.14,0.94,
+                    Form("Predicted FT, reconstructed %s: %.1f<E_{#gamma,pred}<%.1f GeV",
+                         detlabel,FT_EDGES[ip],FT_EDGES[ip+1]));
+            };
+
+            draw_panel(1,sdata->h_predft_recofd[ip].get(),&hmc_fd,"FD");
+            draw_panel(2,sdata->h_predft_recoft[ip].get(),&hmc_ft,"FT");
+            c.SaveAs((qdir+Form(
+                "/predFT_%.1f_%.1f_recoFD_vs_recoFT.png",
+                FT_EDGES[ip],FT_EDGES[ip+1])).c_str());
+        } // endfor
+
+        qcsv.close();
+
+        TFile qroot((qdir+"/predicted_FT_detector_migration_histograms.root").c_str(),
+                    "RECREATE");
+        if (!qroot.IsZombie()) {
+            for (auto& sp:samples) {
+                qroot.mkdir(sp->name.c_str());
+                qroot.cd(sp->name.c_str());
+                for (int ip=0;ip<FT_NP;ip++) {
+                    sp->h_predft_recofd[ip]->Write();
+                    sp->h_predft_recoft[ip]->Write();
+                } // endfor
+                qroot.cd();
+            } // endfor
+            qroot.Close();
+        } // endif
+
+        std::ofstream qnote(qdir+"/README.txt");
+        qnote
+            << "Focused predicted-FT detector-migration diagnostic\n"
+            << "================================================\n\n"
+            << "Production cuts and efficiency extraction are unchanged.\n"
+            << "Only predicted-FT events are examined.  Their reconstructed photon candidates\n"
+            << "are split into FD and FT M(gamma gamma) spectra with no matching cut.\n"
+            << "A pi0 peak in predicted-FT -> reconstructed-FD directly measures detector\n"
+            << "misassignment/migration of the inferred probe.\n"
+            << "No tighter exclusivity selection is introduced in this iteration.\n";
+        qnote.close();
+    }
 
     // --------------------------------------------------------------
     // 4. Fit Mgg once per sample / detector / energy bin.
