@@ -76,21 +76,30 @@ hipo="$1"
 base=$(basename "$hipo" .hipo)
 txt="$OUTDIR/${base}_photon_efficiency.txt"
 root="$OUTDIR/${base}_photon_efficiency.root"
+tmp_root="${root}.tmp.$$"
 
 if [[ -s "$root" ]]; then
   echo "[SKIP ] $root already exists"
   exit 0
 fi
 
+rm -f "$tmp_root"
 echo "[START] $hipo"
 
-coatjava/bin/run-groovy -cp "$JAR" "$SCRIPT" \
+if coatjava/bin/run-groovy -cp "$JAR" "$SCRIPT" \
   "$hipo" "$txt" "$BEAM" "$RUN_OVERRIDE" "$QADB_OVERRIDE" "$IS_MC" \
   "$MX2_MIN" "$MX2_MAX" "$MX2_EPG_MIN" "$MX2_EPG_MAX" "$SAMPLE_KIND" && \
-"$CONVERTER" "$txt" "$root" && \
-{ if [[ "$KEEP_TXT" == "0" ]]; then rm -f "$txt"; fi; } && \
-echo "[DONE ] $root"
-'
+  "$CONVERTER" "$txt" "$tmp_root"; then
+  mv -f "$tmp_root" "$root"
+  if [[ "$KEEP_TXT" == "0" ]]; then rm -f "$txt" "$txt.events"; fi
+  echo "[DONE ] $root"
+else
+  status=$?
+  rm -f "$tmp_root"
+  echo "[FAIL ] $hipo" >&2
+  exit "$status"
+fi
+' 
 
 xargs -d '\n' -n 1 -P "$NWORKERS" bash -c "$worker" _ < "$listfile"
 
