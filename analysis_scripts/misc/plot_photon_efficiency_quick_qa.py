@@ -37,7 +37,7 @@ EXPECTED_SKIM_VERSION = 4
 
 SAMPLES = [
     ("data",    "Data"),
-    ("clasdis", "CLASDIS (exclusive ep#pi^{0} removed)"),
+    ("clasdis", "CLASDIS incl."),
     ("aaogen",  "AAOgen"),
     ("dvcsgen", "DVCSgen"),
 ]
@@ -54,32 +54,32 @@ COLORS = {
 PLOTS = [
     (
         "Mx2_ep",
-        "M^{2}_{X}(e'p') wide;M^{2}_{X}(e'p') [GeV^{2}];Unit-normalized entries",
+        "M^{2}_{X}(e'p') wide;M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries",
         140, -1.0, 2.0, [-0.10, 0.15],
     ),
     (
         "Mx2_ep",
-        "M^{2}_{X}(e'p') near photon peak;M^{2}_{X}(e'p') [GeV^{2}];Unit-normalized entries",
+        "M^{2}_{X}(e'p') near photon peak;M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries",
         140, -0.30, 0.45, [-0.10, 0.15],
     ),
     (
         "Mx2_epg_raw",
-        "Raw M^{2}_{X}(e'p'#gamma_{tag});M^{2}_{X}(e'p'#gamma_{tag}) [GeV^{2}];Unit-normalized entries",
+        "Raw M^{2}_{X}(e'p'#gamma_{tag});M^{2}_{X}(e'p'#gamma_{tag}) (GeV^{2});Unit-normalized entries",
         140, -0.25, 0.25, [-0.10, 0.10],
     ),
     (
         "Mx2_epg_corr",
-        "Analysis M^{2}_{X}(e'p'#gamma_{tag});M^{2}_{X}(e'p'#gamma_{tag}) [GeV^{2}];Unit-normalized entries",
+        "Analysis M^{2}_{X}(e'p'#gamma_{tag});M^{2}_{X}(e'p'#gamma_{tag}) (GeV^{2});Unit-normalized entries",
         140, -0.25, 0.25, [-0.10, 0.10],
     ),
     (
         "W",
-        "DIS invariant mass W;W [GeV];Unit-normalized entries",
+        "DIS invariant mass W;W (GeV);Unit-normalized entries",
         120, 1.5, 4.5, [2.0],
     ),
     (
         "minus_t",
-        "-t distribution;-t [GeV^{2}];Unit-normalized entries",
+        "-t distribution;-t (GeV^{2});Unit-normalized entries",
         120, 0.0, 2.5, [],
     ),
 ]
@@ -225,10 +225,10 @@ def main():
         pad.SetBottomMargin(0.12)
         pad.SetTopMargin(0.10)
 
-        legend = ROOT.TLegend(0.48, 0.68, 0.94, 0.89)
+        legend = ROOT.TLegend(0.50, 0.72, 0.93, 0.89)
         legend.SetBorderSize(0)
         legend.SetFillStyle(0)
-        legend.SetTextSize(0.028)
+        legend.SetTextSize(0.026)
         legends.append(legend)
 
         panel_hists = []
