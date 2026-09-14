@@ -13655,6 +13655,15 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
         std::unique_ptr<TH1D> h_mgg;
     };
 
+    // MC-truth closure for genuine pi0 probe photons whose TRUE trajectory
+    // crosses the nominal FT fiducial area.  Matching is performed to the
+    // truth photon direction, not to the inferred missing-vector direction.
+    struct FTTruthClosureCell {
+        long long truth_den=0;
+        long long reco_anyneutral=0;
+        long long reco_pid22=0;
+    };
+
     struct Sample {
         std::string name;
         bool is_mc=false;
@@ -13689,6 +13698,10 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
         // construction.  A recovered pi0 peak therefore tests whether photons
         // are present as FT neutral clusters but fail the pid==22 assignment.
         std::array<std::unique_ptr<TH1D>,FT_NP> h_predft_anyneutral_mgg;
+
+        // Pure MC-truth FT reconstruction closure, binned in TRUE probe
+        // momentum using the same coarse FT energy edges as production.
+        std::array<FTTruthClosureCell,FT_NP> ft_truth_closure;
     };
 
     auto icell=[](int id,int ip)->int {
@@ -13782,6 +13795,35 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
         const double m2=
             2.0*b.tag_corr_p*b.neutral_p[k]*(1.0-std::cos(a));
         return m2>0 ? std::sqrt(m2) : 0.0;
+    };
+
+    // Project an arbitrary direction to the same FT response plane and apply
+    // the identical radial/hole fiducial used by the production denominator.
+    auto project_ft_direction=[&](double theta_deg,double phi_deg,double vz,
+                                  const FTPlaneEstimate& plane)->FTProjection {
+        FTProjection q;
+        if (!plane.valid || !finite_good(theta_deg) || !finite_good(phi_deg))
+            return q;
+        const double dz=plane.z-vz;
+        if (!(dz>0)) return q;
+        const double th=deg2rad(theta_deg);
+        const double ph=deg2rad(phi_deg);
+        const double rt=dz*std::tan(th);
+        q.x=rt*std::cos(ph);
+        q.y=rt*std::sin(ph);
+        q.r=std::hypot(q.x,q.y);
+        q.valid=std::isfinite(q.r);
+        if (!q.valid) return q;
+        q.radial=(q.r>FT_R_MIN && q.r<FT_R_MAX);
+        q.hole_clear=true;
+        for (const auto& h:FT_HOLES) {
+            if (std::hypot(q.x-h.x,q.y-h.y)<h.r) {
+                q.hole_clear=false;
+                break;
+            }
+        } // endfor
+        q.fiducial=q.radial && q.hole_clear;
+        return q;
     };
 
     // Determine the FT response plane once from data, then reuse it for every
@@ -13961,6 +14003,70 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
             // detector-migration diagnostic remain unchanged.
             if (!(b.Mx2_ep>MX2_EP_LO &&
                   b.Mx2_ep<MX2_EP_HI)) continue;
+
+            // ----------------------------------------------------------
+            // Pure MC-truth FT reconstruction closure.
+            //
+            // This uses the exact same observed-tag and probe-independent
+            // reconstructed exclusivity cuts as production, but the probe
+            // denominator is defined ONLY from generator truth:
+            //   truth photon from pi0, truth momentum in the FT bin, and
+            //   truth direction projected into the nominal FT fiducial area.
+            // A reconstructed candidate is then matched directly to the truth
+            // photon within 2 degrees.  No inferred missing-vector matching is
+            // involved in this diagnostic.
+            // ----------------------------------------------------------
+            if (spec.is_mc && b.have_truth &&
+                b.truth_probe_pid==22 && b.truth_probe_parent==111 &&
+                finite_good(b.truth_probe_p) &&
+                finite_good(b.truth_probe_theta) &&
+                finite_good(b.truth_probe_phi)) {
+
+                int iptruth=-1;
+                for (int jp=0;jp<FT_NP;jp++) {
+                    if (b.truth_probe_p>=FT_EDGES[jp] &&
+                        b.truth_probe_p<FT_EDGES[jp+1]) {
+                        iptruth=jp;
+                        break;
+                    }
+                } // endfor
+
+                if (iptruth>=0) {
+                    const double vz=b.have_e_vz ? b.e_vz : 0.0;
+                    const FTProjection tfp=project_ft_direction(
+                        b.truth_probe_theta,b.truth_probe_phi,vz,ft_plane);
+                    if (tfp.valid && tfp.fiducial) {
+                        auto& tq=s->ft_truth_closure[iptruth];
+                        tq.truth_den++;
+
+                        bool found_any=false;
+                        bool found_pid22=false;
+                        constexpr double TRUTH_MATCH_DA_MAX=2.0;
+
+                        for (int k=0;k<5;k++) {
+                            if (b.neutral_idx[k]<0) continue;
+                            if (b.neutral_charge[k]!=0) continue;
+                            if (b.neutral_detector[k]!=0) continue;
+                            if (!finite_good(b.neutral_p[k]) ||
+                                b.neutral_p[k]<PROBE_P_MIN) continue;
+                            if (!finite_good(b.neutral_theta[k]) ||
+                                !finite_good(b.neutral_phi[k])) continue;
+
+                            const double da=opening_angle_deg(
+                                b.neutral_theta[k],b.neutral_phi[k],
+                                b.truth_probe_theta,b.truth_probe_phi);
+                            if (!finite_good(da) || da>=TRUTH_MATCH_DA_MAX)
+                                continue;
+
+                            found_any=true;
+                            if (b.neutral_pid[k]==22) found_pid22=true;
+                        } // endfor
+
+                        if (found_any) tq.reco_anyneutral++;
+                        if (found_pid22) tq.reco_pid22++;
+                    } // endif truth fiducial
+                } // endif truth p bin
+            } // endif MC truth pi0
 
             // ----------------------------------------------------------
             // Focused predicted-FT efficiency versus predicted FT radius.
@@ -14955,6 +15061,222 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
             } // endfor
         } // endfor
     } // endfor
+
+    // ===============================================================
+    // Pure MC-truth FT reconstruction closure.
+    // ===============================================================
+    // This directly validates what "FT efficiency" means in simulation.
+    // The denominator consists of true pi0 daughter photons whose TRUE
+    // direction lands in the nominal FT fiducial region.  Numerators require
+    // a reconstructed FT neutral within 2 degrees of that truth photon, first
+    // with no PID requirement and then with neutral_pid==22.
+    {
+        const std::string tdir=dir+"/FT_truth_reconstruction_closure";
+        gSystem->mkdir(tdir.c_str(),kTRUE);
+
+        constexpr double TRUTH_MATCH_DA_MAX=2.0;
+        const double wa=norm_ft.nominal.aao;
+        const double wc=norm_ft.nominal.clasdis;
+
+        auto binom_err=[](long long n,long long d)->double {
+            if (d<=0) return 0.0;
+            const double e=double(n)/double(d);
+            return std::sqrt(std::max(0.0,e*(1.0-e)/double(d)));
+        };
+
+        struct MixVal {
+            double den=0,num_any=0,num_pid=0;
+            double eff_any=0,err_any=0;
+            double eff_pid=0,err_pid=0;
+        };
+
+        auto weighted_mix=[&](int ip)->MixVal {
+            MixVal m;
+            const auto& a=saao->ft_truth_closure[ip];
+            const auto& c=scls->ft_truth_closure[ip];
+            m.den=wa*double(a.truth_den)+wc*double(c.truth_den);
+            m.num_any=wa*double(a.reco_anyneutral)+wc*double(c.reco_anyneutral);
+            m.num_pid=wa*double(a.reco_pid22)+wc*double(c.reco_pid22);
+            if (m.den<=0) return m;
+            m.eff_any=m.num_any/m.den;
+            m.eff_pid=m.num_pid/m.den;
+
+            // Component-stratified binomial uncertainty.  The normalization
+            // coefficients are treated as fixed here because this is a detector
+            // closure diagnostic, not a normalization-systematic propagation.
+            double var_any=0.0,var_pid=0.0;
+            auto add_var=[&](const FTTruthClosureCell& q,double w) {
+                if (q.truth_den<=0 || w==0) return;
+                const double ea=double(q.reco_anyneutral)/double(q.truth_den);
+                const double ep=double(q.reco_pid22)/double(q.truth_den);
+                var_any += w*w*double(q.truth_den)*ea*(1.0-ea);
+                var_pid += w*w*double(q.truth_den)*ep*(1.0-ep);
+            };
+            add_var(a,wa);
+            add_var(c,wc);
+            m.err_any=std::sqrt(std::max(0.0,var_any))/m.den;
+            m.err_pid=std::sqrt(std::max(0.0,var_pid))/m.den;
+            return m;
+        };
+
+        std::ofstream tcsv(tdir+"/FT_truth_reconstruction_closure.csv");
+        tcsv << std::setprecision(10);
+        tcsv
+            << "sample,Etrue_low_GeV,Etrue_high_GeV,truth_FT_den,"
+            << "matched_anyneutral,eff_anyneutral,eff_anyneutral_err,"
+            << "matched_pid22,eff_pid22,eff_pid22_err,"
+            << "pid22_given_anyneutral,"
+            << "truth_match_DA_max_deg,"
+            << "production_tagprobe_mc_eff,production_tagprobe_mc_eff_err\n";
+
+        TGraphErrors g_any,g_pid,g_prod;
+        g_any.SetMarkerStyle(24);
+        g_any.SetMarkerSize(1.2);
+        g_any.SetLineWidth(2);
+        g_pid.SetMarkerStyle(20);
+        g_pid.SetMarkerSize(1.2);
+        g_pid.SetLineWidth(2);
+        g_prod.SetMarkerStyle(25);
+        g_prod.SetMarkerSize(1.2);
+        g_prod.SetLineWidth(2);
+
+        for (int ip=0;ip<FT_NP;ip++) {
+            const int ic=icell(1,ip);
+            const auto& qa=saao->ft_truth_closure[ip];
+            const auto& qc=scls->ft_truth_closure[ip];
+
+            auto write_sample=[&](const char* label,
+                                  const FTTruthClosureCell& q) {
+                const double eany=q.truth_den>0 ?
+                    double(q.reco_anyneutral)/double(q.truth_den) : 0.0;
+                const double epid=q.truth_den>0 ?
+                    double(q.reco_pid22)/double(q.truth_den) : 0.0;
+                const double epida=q.reco_anyneutral>0 ?
+                    double(q.reco_pid22)/double(q.reco_anyneutral) : 0.0;
+                tcsv << label << "," << FT_EDGES[ip] << ","
+                     << FT_EDGES[ip+1] << ","
+                     << q.truth_den << "," << q.reco_anyneutral << ","
+                     << eany << "," << binom_err(q.reco_anyneutral,q.truth_den) << ","
+                     << q.reco_pid22 << "," << epid << ","
+                     << binom_err(q.reco_pid22,q.truth_den) << ","
+                     << epida << "," << TRUTH_MATCH_DA_MAX << ",,,\n";
+            };
+            write_sample("aaogen",qa);
+            write_sample("clasdis",qc);
+
+            const MixVal mix=weighted_mix(ip);
+
+            // Existing production tag-and-probe MC efficiency for reference.
+            const PeakFit& pa=fits["aaogen"][ic];
+            const PeakFit& pc=fits["clasdis"][ic];
+            const double den_prod=
+                wa*double(saao->cells[ic].denom_truth_pi0)+
+                wc*double(scls->cells[ic].denom_truth_pi0);
+            const double num_a=pa.valid ? wa*pa.yield : 0.0;
+            const double num_c=pc.valid ? wc*pc.yield : 0.0;
+            const double num_prod=num_a+num_c;
+            const double num_prod_err=std::sqrt(
+                std::pow(pa.valid ? wa*pa.yield_err : 0.0,2)+
+                std::pow(pc.valid ? wc*pc.yield_err : 0.0,2));
+            const double eff_prod=(den_prod>0 ? num_prod/den_prod : 0.0);
+            const double eff_prod_err=(num_prod>0 ?
+                eff_prod*(num_prod_err/num_prod) : 0.0);
+
+            const double epida=(mix.num_any>0 ? mix.num_pid/mix.num_any : 0.0);
+            tcsv << "weighted_pi0_mc," << FT_EDGES[ip] << ","
+                 << FT_EDGES[ip+1] << ","
+                 << mix.den << "," << mix.num_any << ","
+                 << mix.eff_any << "," << mix.err_any << ","
+                 << mix.num_pid << "," << mix.eff_pid << ","
+                 << mix.err_pid << "," << epida << ","
+                 << TRUTH_MATCH_DA_MAX << ","
+                 << eff_prod << "," << eff_prod_err << "\n";
+
+            const double x=0.5*(FT_EDGES[ip]+FT_EDGES[ip+1]);
+            const double ex=0.5*(FT_EDGES[ip+1]-FT_EDGES[ip]);
+            int n=g_any.GetN();
+            g_any.SetPoint(n,x,mix.eff_any);
+            g_any.SetPointError(n,ex,mix.err_any);
+            n=g_pid.GetN();
+            g_pid.SetPoint(n,x,mix.eff_pid);
+            g_pid.SetPointError(n,ex,mix.err_pid);
+            n=g_prod.GetN();
+            g_prod.SetPoint(n,x,eff_prod);
+            g_prod.SetPointError(n,ex,eff_prod_err);
+
+            std::cout
+                << "[FT truth closure] " << FT_EDGES[ip] << " < Etrue < "
+                << FT_EDGES[ip+1] << " GeV: truth den=" << mix.den
+                << " any-neutral=" << mix.eff_any << " +/- " << mix.err_any
+                << " pid22=" << mix.eff_pid << " +/- " << mix.err_pid
+                << " tag-probe MC=" << eff_prod << " +/- " << eff_prod_err
+                << "\n";
+        } // endfor
+        tcsv.close();
+
+        TCanvas c("c_ft_truth_reco_closure","",1050,780);
+        c.SetLeftMargin(0.14);
+        c.SetRightMargin(0.04);
+        c.SetBottomMargin(0.14);
+        c.SetTopMargin(0.12);
+        c.SetTicks(1,1);
+
+        TH1D axis("h_ft_truth_reco_closure_axis",
+                  ";Photon energy (GeV);MC FT reconstruction efficiency",
+                  100,0.35,6.05);
+        axis.SetDirectory(nullptr);
+        axis.SetStats(0);
+        axis.SetMinimum(0.0);
+        axis.SetMaximum(1.08);
+        axis.Draw("AXIS");
+
+        g_any.Draw("P SAME");
+        g_pid.Draw("P SAME");
+        g_prod.Draw("P SAME");
+
+        TLegend leg(0.53,0.69,0.92,0.87);
+        leg.SetBorderSize(0);
+        leg.SetFillStyle(0);
+        leg.AddEntry(&g_any,"Truth FT #rightarrow any neutral","lep");
+        leg.AddEntry(&g_pid,"Truth FT #rightarrow PID==22","lep");
+        leg.AddEntry(&g_prod,"Production tag-and-probe MC","lep");
+        leg.Draw();
+
+        TLatex tx;
+        tx.SetNDC();
+        tx.SetTextFont(42);
+        tx.SetTextSize(0.038);
+        tx.DrawLatex(0.14,0.945,"FT MC truth reconstruction closure");
+        tx.SetTextSize(0.030);
+        tx.DrawLatex(0.14,0.900,"truth #pi^{0} photon in FT fiducial; #Delta#alpha_{truth}<2^{#circ}");
+
+        c.SaveAs((tdir+"/FT_truth_reconstruction_efficiency.png").c_str());
+
+        TFile tf((tdir+"/FT_truth_reconstruction_closure_histograms.root").c_str(),
+                 "RECREATE");
+        if (!tf.IsZombie()) {
+            g_any.Write("g_truth_anyneutral_eff");
+            g_pid.Write("g_truth_pid22_eff");
+            g_prod.Write("g_production_tagprobe_mc_eff");
+            tf.Close();
+        }
+
+        std::ofstream tr(tdir+"/README.txt");
+        tr
+            << "FT MC truth reconstruction closure\n"
+            << "==================================\n\n"
+            << "Data-side selections and production efficiencies are unchanged.\n"
+            << "This diagnostic is MC only.  It requires truth_probe_pid==22,\n"
+            << "truth_probe_parent==111, truth momentum in the production FT\n"
+            << "energy bin, and the TRUE photon direction to project into the\n"
+            << "same nominal FT fiducial annulus/hole mask.\n\n"
+            << "A reconstructed FT neutral is truth matched with Delta alpha < 2 deg.\n"
+            << "The same reconstructed-candidate momentum threshold (0.40 GeV) is\n"
+            << "retained.  Efficiencies are reported for any neutral FT candidate\n"
+            << "and for neutral_pid==22.  The existing production tag-and-probe\n"
+            << "MC efficiency is shown alongside them for closure comparison.\n";
+        tr.close();
+    }
 
     // ===============================================================
     // Focused predicted-FT neutral-cluster versus photon-PID diagnostic.
