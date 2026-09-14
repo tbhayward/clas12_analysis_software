@@ -238,50 +238,65 @@ static int sampleKindCode(String kind) {
     return 9
 }
 
-static int lundParentPid(HipoDataBank lund, int mcindex) {
-    if (lund==null || mcindex<0 || mcindex>=lund.rows()) return 0
-    int parent=lund.getInt("parent",mcindex)
-    if (parent<=0 || parent-1>=lund.rows()) return 0
+static int lundParentPid(HipoDataBank lund, int lundIndex) {
+    if (lund==null || lundIndex<0 || lundIndex>=lund.rows()) return ISENT
+    int parent=lund.getInt("parent",lundIndex)
+    if (parent<=0 || parent-1>=lund.rows()) return ISENT
     return lund.getInt("pid",parent-1)
 }
 
-// Generated final-state bookkeeping from MC::Particle.  MC::Lund is used only
-// to identify whether generated photons are pi0 daughters.  This avoids using
-// intermediate LUND resonances as if they were extra final-state hadrons.
+// CLASDIS generator-topology classification is done entirely in MC::Lund.
+// Do NOT assume that row i of MC::Particle corresponds to row i of MC::Lund:
+// they are different banks with different row numbering.
 //
-// topology: -1 = not classified, 0 = insufficient truth information,
+// In the CLASDIS LUND record, type==1 denotes a stable final-state particle.
+// The beam/target, virtual photon, resonances, and decayed pi0 therefore do not
+// enter the final-state multiplicity count.  A pure exclusive e p pi0 event is
+// identified after pi0 decay as exactly
+//
+//      e + p + gamma + gamma,
+//
+// where both final-state photons have a direct pi0 (pid 111) parent.
+// Any additional stable hadron or photon makes the event part of the
+// inclusive/extra-particle CLASDIS component.
+//
+// topology: -1 = not classified (non-CLASDIS sample),
+//            0 = insufficient truth information,
 //            1 = exclusive e p pi0 -> e p gamma gamma,
 //            2 = inclusive / extra-particle final state.
 static Map generatedTopology(HipoDataEvent event, boolean classifyClasdis) {
     Map out=[topology:(classifyClasdis?0:-1), ne:0, np:0, ngamma:0,
              npi0gamma:0, nother:0, hasParticle:0, hasRecMatch:0, hasLund:0]
+
+    if (event.hasBank("MC::Particle")) out.hasParticle=1
     if (event.hasBank("MC::RecMatch")) out.hasRecMatch=1
     if (event.hasBank("MC::Lund")) out.hasLund=1
-    if (!event.hasBank("MC::Particle")) return out
-    out.hasParticle=1
-    HipoDataBank mc=(HipoDataBank)event.getBank("MC::Particle")
-    HipoDataBank lund=event.hasBank("MC::Lund") ? (HipoDataBank)event.getBank("MC::Lund") : null
-    for (int i=0;i<mc.rows();i++) {
-        int pid=mc.getInt("pid",i)
-        if (pid==11) out.ne++
-        else if (pid==2212) out.np++
-        else if (pid==22) {
+
+    // The topology veto is only meaningful for explicitly declared CLASDIS.
+    if (!classifyClasdis) return out
+    if (!event.hasBank("MC::Lund")) return out
+
+    HipoDataBank lund=(HipoDataBank)event.getBank("MC::Lund")
+    for (int i=0;i<lund.rows();i++) {
+        int type=lund.getInt("type",i)
+        if (type!=1) continue
+
+        int pid=lund.getInt("pid",i)
+        if (pid==11) {
+            out.ne++
+        } else if (pid==2212) {
+            out.np++
+        } else if (pid==22) {
             out.ngamma++
             if (lundParentPid(lund,i)==111) out.npi0gamma++
         } else {
-            // Anything else in MC::Particle is an additional generated final-state
-            // particle for purposes of separating pure e p pi0 from CLASDIS.
             out.nother++
         }
     }
-    if (classifyClasdis) {
-        if (lund==null) out.topology=0
-        else {
-            boolean exclusive=(out.ne==1 && out.np==1 && out.ngamma==2 &&
-                               out.npi0gamma==2 && out.nother==0)
-            out.topology=exclusive?1:2
-        }
-    }
+
+    boolean exclusive=(out.ne==1 && out.np==1 && out.ngamma==2 &&
+                       out.npi0gamma==2 && out.nother==0)
+    out.topology=exclusive?1:2
     return out
 }
 
@@ -315,7 +330,6 @@ static Map mcParticleProbeMatch(HipoDataEvent event, HipoDataBank rec,
     if (!event.hasBank("MC::Particle")) return best
     HipoDataBank mc=(HipoDataBank)event.getBank("MC::Particle")
     HipoDataBank match=event.hasBank("MC::RecMatch") ? (HipoDataBank)event.getBank("MC::RecMatch") : null
-    HipoDataBank lund=event.hasBank("MC::Lund") ? (HipoDataBank)event.getBank("MC::Lund") : null
     int tagMc=recMatchMcIndex(match,tagRecIndex)
     double bestDa=1.0e99
     int bestIndex=ISENT
@@ -327,7 +341,7 @@ static Map mcParticleProbeMatch(HipoDataEvent event, HipoDataBank rec,
     }
     if (bestIndex==ISENT) return best
     double px=mc.getFloat("px",bestIndex),py=mc.getFloat("py",bestIndex),pz=mc.getFloat("pz",bestIndex)
-    best.index=bestIndex; best.pid=mc.getInt("pid",bestIndex); best.parent=lundParentPid(lund,bestIndex)
+    best.index=bestIndex; best.pid=mc.getInt("pid",bestIndex); best.parent=ISENT
     best.p=p3(px,py,pz); best.theta=thetaDeg(px,py,pz); best.phi=phiDeg(px,py); best.daPred=bestDa
     int ri=recIndexForMc(match,bestIndex)
     best.recIndex=ri
@@ -346,11 +360,10 @@ static Map mcParticleTagMatch(HipoDataEvent event, HipoDataBank rec, int tagRecI
     if (!event.hasBank("MC::Particle") || !event.hasBank("MC::RecMatch")) return out
     HipoDataBank mc=(HipoDataBank)event.getBank("MC::Particle")
     HipoDataBank match=(HipoDataBank)event.getBank("MC::RecMatch")
-    HipoDataBank lund=event.hasBank("MC::Lund") ? (HipoDataBank)event.getBank("MC::Lund") : null
     int mi=recMatchMcIndex(match,tagRecIndex)
     if (mi<0 || mi>=mc.rows()) return out
     double px=mc.getFloat("px",mi),py=mc.getFloat("py",mi),pz=mc.getFloat("pz",mi)
-    out.index=mi; out.pid=mc.getInt("pid",mi); out.parent=lundParentPid(lund,mi)
+    out.index=mi; out.pid=mc.getInt("pid",mi); out.parent=ISENT
     out.p=p3(px,py,pz); out.theta=thetaDeg(px,py,pz); out.phi=phiDeg(px,py)
     out.recIndex=tagRecIndex
     return out
