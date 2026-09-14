@@ -14153,7 +14153,7 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
                     r.data_den,data_ret,
                     r.eff_data,r.eff_data_err,r.eff_mc,r.eff_mc_err,
                     r.ratio,r.ratio_err,r.corr,r.corr_err,
-                    r.valid?"":"  [INVALID FIT]"));
+                    r.valid?"":"  [INVALID FIT]");
             } // endfor
         } // endfor
         scsv.close();
