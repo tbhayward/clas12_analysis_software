@@ -1,5 +1,6 @@
 #include <TFile.h>
 #include <TTree.h>
+#include <algorithm>
 #include <fstream>
 #include <iostream>
 #include <sstream>
@@ -1071,7 +1072,24 @@ int main(int argc,char** argv){
       ERD(ev_fd_pid2112_from_mc22);
       ERD(ev_gen_gamma_total);
       ERD(ev_gen_gamma_overflow);
+      // The .events intermediate is sparse: only min(gen_gamma_total,12)
+      // generated-photon records are written.  Initialize the fixed ROOT arrays
+      // here so the ROOT schema remains exactly 12 slots without forcing the
+      // Groovy producer to write hundreds of useless -999 tokens per event.
       for(int k=0;k<NGEN;k++){
+        gen_gamma_index[k]=-999; gen_gamma_p[k]=-999.; gen_gamma_theta[k]=-999.; gen_gamma_phi[k]=-999.;
+        gen_gamma_vx[k]=-999.; gen_gamma_vy[k]=-999.; gen_gamma_vz[k]=-999.;
+        gen_gamma_n_rec_matches[k]=-999; gen_gamma_n_rec_pid22[k]=-999; gen_gamma_n_rec_pid11[k]=-999; gen_gamma_n_rec_pid2112[k]=-999;
+        gen_gamma_n_rec_neutral[k]=-999; gen_gamma_n_rec_ft[k]=-999; gen_gamma_n_rec_fd[k]=-999;
+        gen_gamma_n_rec_pid22_ft[k]=-999; gen_gamma_n_rec_pid22_fd[k]=-999; gen_gamma_n_rec_pid11_ft[k]=-999; gen_gamma_n_rec_pid11_fd[k]=-999;
+        gen_gamma_best_rec_index[k]=-999; gen_gamma_best_rec_pid[k]=-999; gen_gamma_best_rec_charge[k]=-999; gen_gamma_best_rec_status[k]=-999; gen_gamma_best_rec_detector[k]=-999;
+        gen_gamma_best_rec_p[k]=-999.; gen_gamma_best_rec_theta[k]=-999.; gen_gamma_best_rec_phi[k]=-999.; gen_gamma_best_rec_delta_alpha[k]=-999.;
+        gen_gamma_best_rec_beta[k]=-999.; gen_gamma_best_rec_chi2pid[k]=-999.; gen_gamma_best_rec_x[k]=-999.; gen_gamma_best_rec_y[k]=-999.; gen_gamma_best_rec_z[k]=-999.;
+        gen_gamma_best_rec_response_energy[k]=-999.; gen_gamma_best_rec_pcal_energy[k]=-999.; gen_gamma_best_rec_ecin_energy[k]=-999.;
+        gen_gamma_best_rec_ecout_energy[k]=-999.; gen_gamma_best_rec_ecal_energy[k]=-999.; gen_gamma_best_rec_ft_energy[k]=-999.; gen_gamma_best_rec_ft_radius[k]=-999.;
+      }
+      const int nStoredGamma = std::max(0,std::min(NGEN,ev_gen_gamma_total));
+      for(int k=0;k<nStoredGamma;k++){
         ERD(gen_gamma_index[k]);
         ERD(gen_gamma_p[k]);
         ERD(gen_gamma_theta[k]);

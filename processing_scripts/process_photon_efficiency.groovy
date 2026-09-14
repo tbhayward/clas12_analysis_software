@@ -282,13 +282,11 @@ static Map generatedTopology(HipoDataEvent event, boolean classifyClasdis) {
     if (!event.hasBank("MC::Lund")) return out
 
     HipoDataBank lund=(HipoDataBank)event.getBank("MC::Lund")
-    // Count pi0 ancestors whether or not they are stable final-state rows.
-    for (int i=0;i<lund.rows();i++) if (lund.getInt("pid",i)==111) out.npi0++
-
     for (int i=0;i<lund.rows();i++) {
+        int pid=lund.getInt("pid",i)
+        if (pid==111) out.npi0++
         int type=lund.getInt("type",i)
         if (type!=1) continue
-        int pid=lund.getInt("pid",i)
         if (pid==11) out.ne++
         else if (pid==2212) out.np++
         else if (pid==22) { out.ngamma++; if (lundParentPid(lund,i)==111) out.npi0gamma++ }
@@ -422,28 +420,21 @@ static Map recResponseSummary(int pindex, HipoDataBank rec, HipoDataBank cal, Hi
     return out
 }
 
-static List<Integer> uniqueMcMatchesForRec(HipoDataBank match, int recIndex) {
-    List<Integer> out=[]
-    if (match==null || recIndex<0) return out
-    Set<Integer> seen=new LinkedHashSet<Integer>()
+static Map buildRecMatchIndex(HipoDataEvent event) {
+    Map<Integer,LinkedHashSet<Integer>> recToMc=[:]
+    Map<Integer,LinkedHashSet<Integer>> mcToRec=[:]
+    if (!event.hasBank("MC::RecMatch")) return [recToMc:recToMc,mcToRec:mcToRec]
+    HipoDataBank match=(HipoDataBank)event.getBank("MC::RecMatch")
     for (int r=0;r<match.rows();r++) {
-        if (match.getInt("pindex",r)!=recIndex) continue
-        int mi=match.getInt("mcindex",r)
-        if (mi>=0 && !seen.contains(mi)) { seen.add(mi); out.add(mi) }
-    }
-    return out
-}
-
-static List<Integer> uniqueRecMatchesForMc(HipoDataBank match, int mcIndex) {
-    List<Integer> out=[]
-    if (match==null || mcIndex<0) return out
-    Set<Integer> seen=new LinkedHashSet<Integer>()
-    for (int r=0;r<match.rows();r++) {
-        if (match.getInt("mcindex",r)!=mcIndex) continue
         int ri=match.getInt("pindex",r)
-        if (ri>=0 && !seen.contains(ri)) { seen.add(ri); out.add(ri) }
+        int mi=match.getInt("mcindex",r)
+        if (ri<0 || mi<0) continue
+        if (!recToMc.containsKey(ri)) recToMc[ri]=new LinkedHashSet<Integer>()
+        if (!mcToRec.containsKey(mi)) mcToRec[mi]=new LinkedHashSet<Integer>()
+        recToMc[ri].add(mi)
+        mcToRec[mi].add(ri)
     }
-    return out
+    return [recToMc:recToMc,mcToRec:mcToRec]
 }
 
 static Map emptyRecToMc() {
@@ -452,14 +443,12 @@ static Map emptyRecToMc() {
 
 // For one reconstructed object, select the angularly closest valid MC::Particle
 // association while retaining the total number of distinct MC associations.
-static Map bestMcForRec(HipoDataEvent event, HipoDataBank rec, HipoDataBank cal, HipoDataBank ft,
-                        int recIndex, double vxRef,double vyRef,double vzRef) {
+static Map bestMcForRec(HipoDataBank mc, HipoDataBank rec, HipoDataBank cal, HipoDataBank ft,
+                        int recIndex, double vxRef,double vyRef,double vzRef, Map matchIndex) {
     Map out=emptyRecToMc()
-    if (!event.hasBank("MC::Particle") || !event.hasBank("MC::RecMatch") ||
-        recIndex<0 || recIndex>=rec.rows()) return out
-    HipoDataBank mc=(HipoDataBank)event.getBank("MC::Particle")
-    HipoDataBank match=(HipoDataBank)event.getBank("MC::RecMatch")
-    List<Integer> mids=uniqueMcMatchesForRec(match,recIndex)
+    if (mc==null || recIndex<0 || recIndex>=rec.rows()) return out
+    Collection<Integer> mids=(matchIndex!=null && matchIndex.recToMc.containsKey(recIndex)) ?
+        (Collection<Integer>)matchIndex.recToMc[recIndex] : Collections.emptyList()
     out.matchCount=mids.size()
     double[] rdir=candidateDirection(recIndex,rec,cal,ft,vxRef,vyRef,vzRef)
     double bestDa=1.0e99
@@ -490,15 +479,14 @@ static Map emptyMcToRec() {
 // keep the angularly closest reconstructed object.  This avoids the old
 // arbitrary "first MC::RecMatch row" behavior while preserving enough counts to
 // test alternative definitions offline.
-static Map bestRecForMc(HipoDataEvent event, HipoDataBank rec, HipoDataBank cal, HipoDataBank ft,
-                        int mcIndex, double vxRef,double vyRef,double vzRef) {
+static Map bestRecForMc(HipoDataBank mc, HipoDataBank rec, HipoDataBank cal, HipoDataBank ft,
+                        int mcIndex, double vxRef,double vyRef,double vzRef, Map matchIndex) {
     Map out=emptyMcToRec()
-    if (!event.hasBank("MC::Particle") || !event.hasBank("MC::RecMatch") || mcIndex<0) return out
-    HipoDataBank mc=(HipoDataBank)event.getBank("MC::Particle")
-    HipoDataBank match=(HipoDataBank)event.getBank("MC::RecMatch")
+    if (mc==null || mcIndex<0) return out
     if (mcIndex>=mc.rows()) return out
     double mpx=mc.getFloat("px",mcIndex),mpy=mc.getFloat("py",mcIndex),mpz=mc.getFloat("pz",mcIndex)
-    List<Integer> rids=uniqueRecMatchesForMc(match,mcIndex)
+    Collection<Integer> rids=(matchIndex!=null && matchIndex.mcToRec.containsKey(mcIndex)) ?
+        (Collection<Integer>)matchIndex.mcToRec[mcIndex] : Collections.emptyList()
     out.matchCount=rids.size()
     double bestDa=1.0e99
     for (int ri : rids) {
@@ -576,18 +564,17 @@ static Map eventRecTruthCounts(HipoDataBank rec, Map<Integer,Map> recMcCache) {
 // Store a compact list of all generated MC::Particle photons once per event in
 // the companion PhotonEfficiencyEvents tree.  This makes a true generated-level
 // efficiency closure possible without relying on the missing-vector probe choice.
-static Map generatedPhotonRecords(HipoDataEvent event, HipoDataBank rec, HipoDataBank cal, HipoDataBank ft,
-                                  double vxRef,double vyRef,double vzRef) {
+static Map generatedPhotonRecords(HipoDataBank mc, HipoDataBank rec, HipoDataBank cal, HipoDataBank ft,
+                                  double vxRef,double vyRef,double vzRef, Map matchIndex) {
     List<Map> out=[]
     Map<Integer,Map> byIndex=[:]
     int total=0
-    if (!event.hasBank("MC::Particle")) return [total:0,overflow:0,records:out,byIndex:byIndex]
-    HipoDataBank mc=(HipoDataBank)event.getBank("MC::Particle")
+    if (mc==null) return [total:0,overflow:0,records:out,byIndex:byIndex]
     for (int i=0;i<mc.rows();i++) {
         if (mc.getInt("pid",i)!=22) continue
         total++
         double px=mc.getFloat("px",i),py=mc.getFloat("py",i),pz=mc.getFloat("pz",i)
-        Map mr=bestRecForMc(event,rec,cal,ft,i,vxRef,vyRef,vzRef)
+        Map mr=bestRecForMc(mc,rec,cal,ft,i,vxRef,vyRef,vzRef,matchIndex)
         byIndex[i]=mr
         if (out.size()<N_GEN_GAMMA_SAVE) {
             Map g=[index:i,p:p3(px,py,pz),theta:thetaDeg(px,py,pz),phi:phiDeg(px,py),
@@ -638,6 +625,270 @@ static void appendCandidateExtra(List vals, Map c, Map m, Map corr) {
     vals.add(corr!=null?corr.p:SENT); vals.add(corr!=null?corr.theta:SENT); vals.add(corr!=null?corr.phi:SENT)
     if (m==null) { vals.add(0); vals.add(ISENT); vals.add(ISENT); vals.add(SENT); vals.add(SENT); vals.add(SENT); vals.add(SENT) }
     else { vals.add(m.matchCount); vals.add(m.index); vals.add(m.pid); vals.add(m.p); vals.add(m.theta); vals.add(m.phi); vals.add(m.da) }
+}
+
+
+
+// -----------------------------------------------------------------------------
+// Fast event-local caches used by the final production skim.
+//
+// The earlier implementation repeatedly searched REC::Calorimeter and
+// REC::ForwardTagger while evaluating REC<->MC matches and nearest candidates.
+// That is needlessly expensive in Groovy.  Build every REC-particle response
+// summary once per accepted event, then reuse it everywhere below.
+// -----------------------------------------------------------------------------
+static List<Map> buildRecCache(HipoDataBank rec, HipoDataBank cal, HipoDataBank ft,
+                               double vxRef,double vyRef,double vzRef) {
+    int n=rec.rows()
+    List<Map> out=new ArrayList<Map>(n)
+    for (int i=0;i<n;i++) {
+        double px=rec.getFloat("px",i), py=rec.getFloat("py",i), pz=rec.getFloat("pz",i)
+        double pm=p3(px,py,pz)
+        int status=rec.getInt("status",i)
+        out.add([idx:i,pid:rec.getInt("pid",i),charge:(int)rec.getByte("charge",i),status:status,det:detectorFromStatus(status),
+                 px:px,py:py,pz:pz,p:pm,beta:(double)rec.getFloat("beta",i),chi2pid:(double)rec.getFloat("chi2pid",i),
+                 x:SENT,y:SENT,z:SENT,responseE:SENT,pcalE:0.0,ecinE:0.0,ecoutE:0.0,ecalE:0.0,
+                 pcalSector:ISENT,pcalLu:SENT,pcalLv:SENT,pcalLw:SENT,ftE:SENT,ftR:SENT,
+                 pcalX:SENT,pcalY:SENT,pcalZ:SENT,calX:SENT,calY:SENT,calZ:SENT,ftX:SENT,ftY:SENT,ftZ:SENT,
+                 dirx:px,diry:py,dirz:pz,dirmag:pm])
+    }
+    if (cal!=null) {
+        for (int r=0;r<cal.rows();r++) {
+            int i=cal.getInt("pindex",r)
+            if (i<0 || i>=n) continue
+            Map a=out[i]
+            double e=cal.getFloat("energy",r)
+            int layer=cal.getInt("layer",r)
+            a.ecalE=((double)a.ecalE)+e
+            if ((double)a.calX < -900) {
+                a.calX=(double)cal.getFloat("x",r); a.calY=(double)cal.getFloat("y",r); a.calZ=(double)cal.getFloat("z",r)
+            }
+            if (layer==1) {
+                a.pcalE=((double)a.pcalE)+e
+                a.pcalSector=cal.getInt("sector",r)
+                a.pcalLu=(double)cal.getFloat("lu",r); a.pcalLv=(double)cal.getFloat("lv",r); a.pcalLw=(double)cal.getFloat("lw",r)
+                if ((double)a.pcalX < -900) {
+                    a.pcalX=(double)cal.getFloat("x",r); a.pcalY=(double)cal.getFloat("y",r); a.pcalZ=(double)cal.getFloat("z",r)
+                }
+            } else if (layer==4) a.ecinE=((double)a.ecinE)+e
+            else if (layer==7) a.ecoutE=((double)a.ecoutE)+e
+        }
+    }
+    if (ft!=null) {
+        for (int r=0;r<ft.rows();r++) {
+            int i=ft.getInt("pindex",r)
+            if (i<0 || i>=n) continue
+            Map a=out[i]
+            // Preserve previous first-associated-row behavior.
+            if ((double)a.ftE < -900) {
+                a.ftE=(double)ft.getFloat("energy",r); a.ftR=(double)ft.getFloat("radius",r)
+                a.ftX=(double)ft.getFloat("x",r); a.ftY=(double)ft.getFloat("y",r); a.ftZ=(double)ft.getFloat("z",r)
+            }
+        }
+    }
+    for (int i=0;i<n;i++) {
+        Map a=out[i]
+        if ((int)a.det==0 && (double)a.ftX>-900) {
+            a.x=a.ftX; a.y=a.ftY; a.z=a.ftZ
+        } else if ((double)a.pcalX>-900) {
+            a.x=a.pcalX; a.y=a.pcalY; a.z=a.pcalZ
+        } else if ((double)a.calX>-900) {
+            a.x=a.calX; a.y=a.calY; a.z=a.calZ
+        }
+        if ((int)a.det==0 && (double)a.ftE>-900) a.responseE=a.ftE
+        else if ((int)a.det==1) a.responseE=a.ecalE
+        if ((double)a.p <= 1.0e-6) {
+            if ((double)a.x>-900) {
+                a.dirx=((double)a.x)-vxRef; a.diry=((double)a.y)-vyRef; a.dirz=((double)a.z)-vzRef
+                a.dirmag=p3((double)a.dirx,(double)a.diry,(double)a.dirz)
+            } else {
+                a.dirx=0.0; a.diry=0.0; a.dirz=0.0; a.dirmag=0.0
+            }
+        }
+        a.theta=thetaDeg((double)a.dirx,(double)a.diry,(double)a.dirz)
+        a.phi=phiDeg((double)a.dirx,(double)a.diry)
+    }
+    return out
+}
+
+static void insertTopCos(int[] idx,double[] score,int nsave,int cand,double c) {
+    int pos=0
+    while (pos<nsave && idx[pos]>=0 && score[pos]>=c) pos++
+    if (pos>=nsave) return
+    for (int j=nsave-1;j>pos;j--) { idx[j]=idx[j-1]; score[j]=score[j-1] }
+    idx[pos]=cand; score[pos]=c
+}
+
+// Same nearest-candidate definition as before, but rank with cos(delta-alpha)
+// and evaluate acos only for the retained candidates.  This removes thousands
+// of expensive transcendental calls and temporary Map allocations per event.
+static Map nearestCandidateSetsFast(List<Map> rc,double predx,double predy,double predz,
+                                    int electronIndex,int protonIndex,int tagIndex) {
+    int[] ni=new int[N_NEUTRAL_SAVE]; double[] ns=new double[N_NEUTRAL_SAVE]
+    int[] ai=new int[N_ANY_SAVE]; double[] as=new double[N_ANY_SAVE]
+    java.util.Arrays.fill(ni,-1); java.util.Arrays.fill(ai,-1)
+    java.util.Arrays.fill(ns,-2.0d); java.util.Arrays.fill(as,-2.0d)
+    double pm=p3(predx,predy,predz)
+    if (pm<=0) return [neutrals:[],any:[]]
+    for (int i=0;i<rc.size();i++) {
+        if (i==electronIndex || i==protonIndex || i==tagIndex) continue
+        Map a=rc[i]; double dm=(double)a.dirmag
+        if (dm<=0) continue
+        double c=clamp((predx*(double)a.dirx+predy*(double)a.diry+predz*(double)a.dirz)/(pm*dm),-1.0,1.0)
+        insertTopCos(ai,as,N_ANY_SAVE,i,c)
+        if ((int)a.charge==0) insertTopCos(ni,ns,N_NEUTRAL_SAVE,i,c)
+    }
+    List<Map> neutrals=[]; List<Map> any=[]
+    for (int k=0;k<N_NEUTRAL_SAVE;k++) if (ni[k]>=0) {
+        Map a=new LinkedHashMap(rc[ni[k]]); a.da=Math.acos(ns[k])*DEG; neutrals.add(a)
+    }
+    for (int k=0;k<N_ANY_SAVE;k++) if (ai[k]>=0) {
+        Map a=new LinkedHashMap(rc[ai[k]]); a.da=Math.acos(as[k])*DEG; any.add(a)
+    }
+    return [neutrals:neutrals,any:any]
+}
+
+static Map bestMcForRecFast(HipoDataBank mc,List<Map> rc,int recIndex,Map matchIndex) {
+    Map out=emptyRecToMc()
+    if (mc==null || recIndex<0 || recIndex>=rc.size()) return out
+    Collection<Integer> mids=(matchIndex!=null && matchIndex.recToMc.containsKey(recIndex)) ?
+        (Collection<Integer>)matchIndex.recToMc[recIndex] : Collections.emptyList()
+    out.matchCount=mids.size()
+    Map r=rc[recIndex]; double rm=(double)r.dirmag
+    double bestCos=-2.0; int best=ISENT
+    for (int mi : mids) {
+        if (mi<0 || mi>=mc.rows()) continue
+        double px=mc.getFloat("px",mi),py=mc.getFloat("py",mi),pz=mc.getFloat("pz",mi), mm=p3(px,py,pz)
+        double c=(rm>0 && mm>0)?clamp(((double)r.dirx*px+(double)r.diry*py+(double)r.dirz*pz)/(rm*mm),-1.0,1.0):-2.0
+        if (best==ISENT || c>bestCos) { bestCos=c; best=mi }
+    }
+    if (best!=ISENT) {
+        double px=mc.getFloat("px",best),py=mc.getFloat("py",best),pz=mc.getFloat("pz",best)
+        out.index=best; out.pid=mc.getInt("pid",best); out.p=p3(px,py,pz); out.theta=thetaDeg(px,py,pz); out.phi=phiDeg(px,py)
+        out.da=(bestCos>=-1.0?Math.acos(clamp(bestCos,-1.0,1.0))*DEG:SENT)
+    }
+    return out
+}
+
+static Map bestRecForMcFast(HipoDataBank mc,List<Map> rc,int mcIndex,Map matchIndex) {
+    Map out=emptyMcToRec()
+    if (mc==null || mcIndex<0 || mcIndex>=mc.rows()) return out
+    double mpx=mc.getFloat("px",mcIndex),mpy=mc.getFloat("py",mcIndex),mpz=mc.getFloat("pz",mcIndex), mm=p3(mpx,mpy,mpz)
+    Collection<Integer> rids=(matchIndex!=null && matchIndex.mcToRec.containsKey(mcIndex)) ?
+        (Collection<Integer>)matchIndex.mcToRec[mcIndex] : Collections.emptyList()
+    out.matchCount=rids.size(); double bestCos=-2.0; int best=ISENT
+    for (int ri : rids) {
+        if (ri<0 || ri>=rc.size()) continue
+        Map r=rc[ri]; int pid=(int)r.pid, charge=(int)r.charge, det=(int)r.det
+        if (pid==22) out.nPid22++; if (pid==11) out.nPid11++; if (pid==2112) out.nPid2112++
+        if (charge==0) out.nNeutral++; if (det==0) out.nFT++; if (det==1) out.nFD++
+        if (pid==22 && det==0) out.nPid22FT++; if (pid==22 && det==1) out.nPid22FD++
+        if (pid==11 && det==0) out.nPid11FT++; if (pid==11 && det==1) out.nPid11FD++
+        double rm=(double)r.dirmag
+        double c=(rm>0 && mm>0)?clamp((mpx*(double)r.dirx+mpy*(double)r.diry+mpz*(double)r.dirz)/(mm*rm),-1.0,1.0):-2.0
+        if (best==ISENT || c>bestCos) { bestCos=c; best=ri }
+    }
+    if (best!=ISENT) {
+        Map r=rc[best]
+        out.recIndex=best; out.recPid=r.pid; out.recCharge=r.charge; out.recStatus=r.status; out.recDetector=r.det
+        out.recP=r.p; out.recTheta=r.theta; out.recPhi=r.phi; out.recDaTruth=(bestCos>=-1.0?Math.acos(clamp(bestCos,-1.0,1.0))*DEG:SENT)
+        out.recBeta=r.beta; out.recChi2pid=r.chi2pid; out.recX=r.x; out.recY=r.y; out.recZ=r.z; out.recResponseE=r.responseE
+        out.recPcalE=r.pcalE; out.recEcinE=r.ecinE; out.recEcoutE=r.ecoutE; out.recEcalE=r.ecalE; out.recFtE=r.ftE; out.recFtR=r.ftR
+    }
+    return out
+}
+
+static Map eventRecTruthCountsFast(List<Map> rc,Map<Integer,Map> recMcCache) {
+    Map o=[pid22Total:0,pid22Unmatched:0,pid22Multi:0,pid22From22:0,pid22From11:0,pid22FromOther:0,
+           ftPid22:0,ftPid22From22:0,ftPid22From11:0,ftPid22Unmatched:0,
+           fdPid22:0,fdPid22From22:0,fdPid22From11:0,fdPid22Unmatched:0,
+           ftPid11:0,ftPid11From22:0,fdPid11:0,fdPid11From22:0,fdPid2112:0,fdPid2112From22:0]
+    for (int i=0;i<rc.size();i++) {
+        Map r=rc[i]; int pid=(int)r.pid, det=(int)r.det
+        if (!(pid==22 || pid==11 || pid==2112)) continue
+        Map m=recMcCache.containsKey(i)?recMcCache[i]:emptyRecToMc(); int mpid=(int)m.pid
+        if (pid==22) {
+            o.pid22Total++; if ((int)m.matchCount==0)o.pid22Unmatched++; if((int)m.matchCount>1)o.pid22Multi++
+            if(mpid==22)o.pid22From22++; else if(mpid==11)o.pid22From11++; else if(mpid!=ISENT)o.pid22FromOther++
+            if(det==0){o.ftPid22++; if(mpid==22)o.ftPid22From22++; else if(mpid==11)o.ftPid22From11++; else if((int)m.matchCount==0)o.ftPid22Unmatched++}
+            if(det==1){o.fdPid22++; if(mpid==22)o.fdPid22From22++; else if(mpid==11)o.fdPid22From11++; else if((int)m.matchCount==0)o.fdPid22Unmatched++}
+        }
+        if(pid==11&&det==0){o.ftPid11++; if(mpid==22)o.ftPid11From22++}
+        if(pid==11&&det==1){o.fdPid11++; if(mpid==22)o.fdPid11From22++}
+        if(pid==2112&&det==1){o.fdPid2112++; if(mpid==22)o.fdPid2112From22++}
+    }
+    return o
+}
+
+static Map generatedPhotonRecordsFast(HipoDataBank mc,List<Map> rc,Map matchIndex) {
+    List<Map> saved=[]; List<Map> all=[]; Map<Integer,Map> byIndex=[:]
+    if(mc==null)return [total:0,overflow:0,records:saved,all:all,byIndex:byIndex]
+    for(int i=0;i<mc.rows();i++) {
+        if(mc.getInt("pid",i)!=22)continue
+        double px=mc.getFloat("px",i),py=mc.getFloat("py",i),pz=mc.getFloat("pz",i)
+        Map mr=bestRecForMcFast(mc,rc,i,matchIndex)
+        Map g=[index:i,px:px,py:py,pz:pz,p:p3(px,py,pz),theta:thetaDeg(px,py,pz),phi:phiDeg(px,py),
+               vx:(double)mc.getFloat("vx",i),vy:(double)mc.getFloat("vy",i),vz:(double)mc.getFloat("vz",i),rec:mr]
+        all.add(g); byIndex[i]=mr; if(saved.size()<N_GEN_GAMMA_SAVE)saved.add(g)
+    }
+    return [total:all.size(),overflow:Math.max(0,all.size()-N_GEN_GAMMA_SAVE),records:saved,all:all,byIndex:byIndex]
+}
+
+static List<Map> buildLundTruthRows(HipoDataEvent event) {
+    List<Map> out=[]
+    if(!event.hasBank("MC::Lund"))return out
+    HipoDataBank l=(HipoDataBank)event.getBank("MC::Lund")
+    for(int i=0;i<l.rows();i++) {
+        int parentPid=0, parent=l.getInt("parent",i)
+        if(parent>0 && parent-1<l.rows())parentPid=l.getInt("pid",parent-1)
+        double px=l.getFloat("px",i),py=l.getFloat("py",i),pz=l.getFloat("pz",i)
+        out.add([index:i,pid:l.getInt("pid",i),parent:parentPid,px:px,py:py,pz:pz,p:p3(px,py,pz),theta:thetaDeg(px,py,pz),phi:phiDeg(px,py)])
+    }
+    return out
+}
+
+static Map truthMatchesCached(List<Map> rows,double predx,double predy,double predz,double tagx,double tagy,double tagz) {
+    Map bp=emptyTruth(),ba=emptyTruth(),bt=emptyTruth(); double cp=-2.0,ca=-2.0,ct=-2.0
+    double pm=p3(predx,predy,predz),tm=p3(tagx,tagy,tagz)
+    for(Map r:rows) {
+        double rm=(double)r.p; if(rm<=0)continue
+        if(tm>0) {
+            double tc=clamp((tagx*(double)r.px+tagy*(double)r.py+tagz*(double)r.pz)/(tm*rm),-1.0,1.0)
+            if((int)bt.index==ISENT||tc>ct){ct=tc;bt=[pid:r.pid,parent:r.parent,p:r.p,theta:r.theta,phi:r.phi,da:Math.acos(tc)*DEG,index:r.index]}
+        }
+        if((int)r.pid==22 && pm>0){
+            double pc=clamp((predx*(double)r.px+predy*(double)r.py+predz*(double)r.pz)/(pm*rm),-1.0,1.0)
+            if((int)ba.index==ISENT||pc>ca){ca=pc;ba=[pid:r.pid,parent:r.parent,p:r.p,theta:r.theta,phi:r.phi,da:Math.acos(pc)*DEG,index:r.index]}
+            if((int)r.parent==111 && ((int)bp.index==ISENT||pc>cp)){cp=pc;bp=[pid:r.pid,parent:r.parent,p:r.p,theta:r.theta,phi:r.phi,da:Math.acos(pc)*DEG,index:r.index]}
+        }
+    }
+    return [probe:((int)bp.pid!=ISENT?bp:ba),tag:bt]
+}
+
+static Map mcParticleProbeMatchFast(List<Map> allPhotons,double predx,double predy,double predz,int tagRecIndex,
+                                    Map<Integer,Map> recMcCache,Map<Integer,Map> mcRecCache) {
+    Map best=emptyMCTruth(); Map tagTruth=recMcCache.containsKey(tagRecIndex)?recMcCache[tagRecIndex]:emptyRecToMc()
+    int tagMc=(int)tagTruth.index; double pm=p3(predx,predy,predz),bc=-2.0; Map bg=null
+    for(Map g:allPhotons){ if((int)g.index==tagMc)continue; double gm=(double)g.p; if(pm<=0||gm<=0)continue
+        double c=clamp((predx*(double)g.px+predy*(double)g.py+predz*(double)g.pz)/(pm*gm),-1.0,1.0); if(bg==null||c>bc){bc=c;bg=g} }
+    if(bg==null)return best
+    int bi=(int)bg.index; best.index=bi; best.pid=22; best.parent=ISENT; best.p=bg.p; best.theta=bg.theta; best.phi=bg.phi; best.daPred=Math.acos(bc)*DEG
+    Map mr=mcRecCache.containsKey(bi)?mcRecCache[bi]:emptyMcToRec()
+    best.nRecMatches=mr.matchCount; best.nRecPid22=mr.nPid22; best.nRecPid11=mr.nPid11; best.nRecPid2112=mr.nPid2112
+    best.nRecNeutral=mr.nNeutral; best.nRecFT=mr.nFT; best.nRecFD=mr.nFD; best.nRecPid22FT=mr.nPid22FT; best.nRecPid22FD=mr.nPid22FD; best.nRecPid11FT=mr.nPid11FT; best.nRecPid11FD=mr.nPid11FD
+    best.recIndex=mr.recIndex; best.recPid=mr.recPid; best.recCharge=mr.recCharge; best.recStatus=mr.recStatus; best.recDetector=mr.recDetector; best.recP=mr.recP; best.recTheta=mr.recTheta; best.recPhi=mr.recPhi; best.recDaTruth=mr.recDaTruth
+    best.recBeta=mr.recBeta; best.recChi2pid=mr.recChi2pid; best.recX=mr.recX; best.recY=mr.recY; best.recZ=mr.recZ; best.recResponseE=mr.recResponseE; best.recPcalE=mr.recPcalE; best.recEcinE=mr.recEcinE; best.recEcoutE=mr.recEcoutE; best.recEcalE=mr.recEcalE; best.recFtE=mr.recFtE; best.recFtR=mr.recFtR
+    return best
+}
+
+static void appendFastValue(StringBuilder b,Object x) {
+    if(x instanceof Integer || x instanceof Long || x instanceof Short || x instanceof Byte)b.append(x.toString())
+    else if(x instanceof Float)b.append(Float.toString(((Float)x).floatValue()))
+    else b.append(Double.toString(((Number)x).doubleValue()))
+}
+static void appendFastLine(StringBuilder b,List vals) {
+    for(int i=0;i<vals.size();i++){if(i>0)b.append(' ');appendFastValue(b,vals[i])}
+    b.append('\n')
 }
 
 static void processPhotonEfficiency(String[] args) {
@@ -692,6 +943,7 @@ static void processPhotonEfficiency(String[] args) {
 
     for (File hf : hipos) {
         println "Opening ${hf.absolutePath}"
+        long sourceHash=sourceFileHash(hf.absolutePath)
         HipoDataSource reader=new HipoDataSource(); reader.open(hf)
         while (reader.hasEvent()) {
             HipoDataEvent event=(HipoDataEvent)reader.getNextEvent(); nevt++
@@ -706,16 +958,6 @@ static void processPhotonEfficiency(String[] args) {
             HipoDataBank evb=event.hasBank("REC::Event") ? (HipoDataBank)event.getBank("REC::Event") : null
             if (rec.rows()<1 || rec.getInt("pid",0)!=11) continue
 
-            // Explicit source selection is preferred.  `auto` never drops events:
-            // it only records generic truth-bank availability.
-            boolean classifyClasdis=(sampleKind=="clasdis")
-            Map genTopo=generatedTopology(event,classifyClasdis)
-            if (classifyClasdis) {
-                if ((genTopo.topology as int)==1) { nClasdisExclusiveSkipped++; continue }
-                if ((genTopo.topology as int)==2) nClasdisInclusiveKept++
-                else { nClasdisUnknownSkipped++; continue }
-            }
-
             int runnum=runOverride!=0 ? runOverride : run.getInt("run",0)
             int evnum=run.getInt("event",0)
             if (!(runnum==11 || qaOverride==1 || qa.pass(runnum,evnum))) continue
@@ -725,6 +967,17 @@ static void processPhotonEfficiency(String[] args) {
             double epx=rec.getFloat("px",0), epy=rec.getFloat("py",0), epz=rec.getFloat("pz",0)
             double ep=p3(epx,epy,epz), evz=rec.getFloat("vz",0)
             if (!fitter.electron_test(0,ep,rec,cal,traj,run,cc)) continue
+
+            // Truth/topology work is intentionally delayed until after QADB and the
+            // accepted-electron requirement.  Rejected events can never enter either
+            // output tree, so scanning MC::Lund earlier only burns CPU.
+            boolean classifyClasdis=(sampleKind=="clasdis")
+            Map genTopo=generatedTopology(event,classifyClasdis)
+            if (classifyClasdis) {
+                if ((genTopo.topology as int)==1) { nClasdisExclusiveSkipped++; continue }
+                if ((genTopo.topology as int)==2) nClasdisInclusiveKept++
+                else { nClasdisUnknownSkipped++; continue }
+            }
 
             LorentzVector beam=new LorentzVector(); beam.setPxPyPzM(0,0,Math.sqrt(Math.max(0,beamE*beamE-ME*ME)),ME)
             LorentzVector target=new LorentzVector(); target.setPxPyPzM(0,0,0,MP)
@@ -748,20 +1001,38 @@ static void processPhotonEfficiency(String[] args) {
 
             // Companion event-level record.  This is written exactly once per accepted
             // electron event and therefore avoids the hypothesis duplication of the main tree.
-            long sourceHash=sourceFileHash(hf.absolutePath)
             double evx=rec.getFloat("vx",0), evy=rec.getFloat("vy",0)
+            List<Map> recCache=buildRecCache(rec,cal,ft,evx,evy,evz)
+            Map matchIndex=buildRecMatchIndex(event)
+            HipoDataBank mcParticle=event.hasBank("MC::Particle") ? (HipoDataBank)event.getBank("MC::Particle") : null
             Map<Integer,Map> recMcCache=[:]
-            for (int ii=0;ii<rec.rows();ii++) recMcCache[ii]=bestMcForRec(event,rec,cal,ft,ii,evx,evy,evz)
+            // Only REC objects that actually appear in MC::RecMatch need a truth
+            // association object.  Unmatched REC particles are represented by the
+            // existing empty/sentinel fallback, avoiding pointless work (and all of
+            // it for real data, where this key set is empty).
+            if (mcParticle!=null) {
+                for (Object key : ((Map)matchIndex.recToMc).keySet()) {
+                    int ii=((Number)key).intValue()
+                    if (ii>=0 && ii<recCache.size()) recMcCache[ii]=bestMcForRecFast(mcParticle,recCache,ii,matchIndex)
+                }
+            }
             Map eTruthEvent=recMcCache.containsKey(0) ? recMcCache[0] : emptyRecToMc()
-            Map recTruthCounts=eventRecTruthCounts(rec,recMcCache)
-            Map genGammas=generatedPhotonRecords(event,rec,cal,ft,evx,evy,evz)
+            Map recTruthCounts=eventRecTruthCountsFast(recCache,recMcCache)
+            Map genGammas=generatedPhotonRecordsFast(mcParticle,recCache,matchIndex)
             Map<Integer,Map> mcRecCache=(Map<Integer,Map>)genGammas.byIndex
+            List<Map> allGenPhotons=(List<Map>)genGammas.all
+            // The legacy MC::Lund nearest-direction diagnostics are only needed if
+            // this event ultimately produces a tag-and-probe hypothesis.  Build
+            // that cache lazily on the first surviving tag instead of for every
+            // event-tree entry.
+            List<Map> lundTruthRows=null
+            double eventWeight=mcWeight(event)
             List evVals=[]
             evVals.add(SKIM_VERSION); evVals.add(sourceHash); evVals.add(runnum); evVals.add(evnum); evVals.add(helicity); evVals.add(isMC); evVals.add(sampleCode)
             evVals.add(genTopo.topology); evVals.add(genTopo.hasParticle); evVals.add(genTopo.hasRecMatch); evVals.add(genTopo.hasLund)
             evVals.add(genTopo.ne); evVals.add(genTopo.npositron); evVals.add(genTopo.np); evVals.add(genTopo.nantiproton); evVals.add(genTopo.nneutron)
             evVals.add(genTopo.ngamma); evVals.add(genTopo.npi0gamma); evVals.add(genTopo.npiplus); evVals.add(genTopo.npiminus); evVals.add(genTopo.nkplus); evVals.add(genTopo.nkminus); evVals.add(genTopo.npi0); evVals.add(genTopo.nother)
-            evVals.add(beamE); evVals.add(torus); evVals.add(solenoid); evVals.add(mcWeight(event))
+            evVals.add(beamE); evVals.add(torus); evVals.add(solenoid); evVals.add(eventWeight)
             evVals.add(Q2); evVals.add(W); evVals.add(xB); evVals.add(yy)
             evVals.add(ep); evVals.add(thetaDeg(epx,epy,epz)); evVals.add(phiDeg(epx,epy)); evVals.add(evx); evVals.add(evy); evVals.add(evz)
             evVals.add(rec.rows()); evVals.add(nNeutral); evVals.add(nPid22); evVals.add(nPid2112); evVals.add(nPid0Neutral)
@@ -772,22 +1043,36 @@ static void processPhotonEfficiency(String[] args) {
             evVals.add(recTruthCounts.ftPid11); evVals.add(recTruthCounts.ftPid11From22); evVals.add(recTruthCounts.fdPid11); evVals.add(recTruthCounts.fdPid11From22); evVals.add(recTruthCounts.fdPid2112); evVals.add(recTruthCounts.fdPid2112From22)
             evVals.add(genGammas.total); evVals.add(genGammas.overflow)
             List<Map> gg=(List<Map>)genGammas.records
-            for (int k=0;k<N_GEN_GAMMA_SAVE;k++) {
-                if (k<gg.size()) {
-                    Map g=gg[k]; Map mr=(Map)g.rec
-                    evVals.add(g.index); evVals.add(g.p); evVals.add(g.theta); evVals.add(g.phi); evVals.add(g.vx); evVals.add(g.vy); evVals.add(g.vz)
-                    evVals.add(mr.matchCount); evVals.add(mr.nPid22); evVals.add(mr.nPid11); evVals.add(mr.nPid2112); evVals.add(mr.nNeutral); evVals.add(mr.nFT); evVals.add(mr.nFD); evVals.add(mr.nPid22FT); evVals.add(mr.nPid22FD); evVals.add(mr.nPid11FT); evVals.add(mr.nPid11FD)
-                    evVals.add(mr.recIndex); evVals.add(mr.recPid); evVals.add(mr.recCharge); evVals.add(mr.recStatus); evVals.add(mr.recDetector); evVals.add(mr.recP); evVals.add(mr.recTheta); evVals.add(mr.recPhi); evVals.add(mr.recDaTruth); evVals.add(mr.recBeta); evVals.add(mr.recChi2pid); evVals.add(mr.recX); evVals.add(mr.recY); evVals.add(mr.recZ); evVals.add(mr.recResponseE); evVals.add(mr.recPcalE); evVals.add(mr.recEcinE); evVals.add(mr.recEcoutE); evVals.add(mr.recEcalE); evVals.add(mr.recFtE); evVals.add(mr.recFtR)
-                } else {
-                    // 39 fields per generated-photon slot: 7 truth + 11 association counts + 21 best-REC quantities.
-                    for (int j=0;j<39;j++) evVals.add(ISENT)
-                }
+            // Sparse intermediate format: write only the generated-photon slots that
+            // actually exist.  The converter restores the unused 12-slot ROOT arrays
+            // to sentinels.  This is especially important for DVCSGEN (normally one
+            // generated photon), where writing 11 x 39 useless sentinels per event
+            // dominated the text volume.
+            for (int k=0;k<gg.size();k++) {
+                Map g=gg[k]; Map mr=(Map)g.rec
+                evVals.add(g.index); evVals.add(g.p); evVals.add(g.theta); evVals.add(g.phi); evVals.add(g.vx); evVals.add(g.vy); evVals.add(g.vz)
+                evVals.add(mr.matchCount); evVals.add(mr.nPid22); evVals.add(mr.nPid11); evVals.add(mr.nPid2112); evVals.add(mr.nNeutral); evVals.add(mr.nFT); evVals.add(mr.nFD); evVals.add(mr.nPid22FT); evVals.add(mr.nPid22FD); evVals.add(mr.nPid11FT); evVals.add(mr.nPid11FD)
+                evVals.add(mr.recIndex); evVals.add(mr.recPid); evVals.add(mr.recCharge); evVals.add(mr.recStatus); evVals.add(mr.recDetector); evVals.add(mr.recP); evVals.add(mr.recTheta); evVals.add(mr.recPhi); evVals.add(mr.recDaTruth); evVals.add(mr.recBeta); evVals.add(mr.recChi2pid); evVals.add(mr.recX); evVals.add(mr.recY); evVals.add(mr.recZ); evVals.add(mr.recResponseE); evVals.add(mr.recPcalE); evVals.add(mr.recEcinE); evVals.add(mr.recEcoutE); evVals.add(mr.recEcalE); evVals.add(mr.recFtE); evVals.add(mr.recFtR)
             }
-            eventBatch.append(evVals.collect{fmt(it)}.join(' ')).append('\n'); eventLineCount++; neventRow++
+            appendFastLine(eventBatch,evVals); eventLineCount++; neventRow++
             if (eventLineCount>=500) { eventWriter.write(eventBatch.toString()); eventBatch.setLength(0); eventLineCount=0 }
 
-            for (int ip=0; ip<rec.rows(); ip++) {
-                if (rec.getInt("pid",ip)!=2212) continue
+            List<Integer> protonIndices=[]; List<Integer> tagPhotonIndices=[]
+            for (int ii=0;ii<recCache.size();ii++) {
+                int pid=(int)recCache[ii].pid
+                if (pid==2212) protonIndices.add(ii)
+                if (pid==22 && (double)recCache[ii].p>=0.4 && (((int)recCache[ii].det)==0 || ((int)recCache[ii].det)==1)) tagPhotonIndices.add(ii)
+            }
+            Map<Integer,Map> tagCutCache=[:]
+            for (int ig : tagPhotonIndices) {
+                int gd=(int)recCache[ig].det
+                boolean tb=pcuts.beta_cut(ig,rec)
+                boolean tf=(gd==1) ? fcuts.pcal_fiducial_cut(ig,2,run,rec,cal)
+                                      : (ft!=null && fcuts.forward_tagger_fiducial_cut(ig,rec,ft))
+                tagCutCache[ig]=[beta:tb,fid:tf]
+            }
+
+            for (int ip : protonIndices) {
                 float pprawx=rec.getFloat("px",ip), pprawy=rec.getFloat("py",ip), pprawz=rec.getFloat("pz",ip)
                 float pvz=rec.getFloat("vz",ip)
                 boolean pPassStandard=fitter.proton_test(ip,2212,pvz,evz,rec,cal,traj,run)
@@ -804,19 +1089,16 @@ static void processPhotonEfficiency(String[] args) {
                 LorentzVector tp=new LorentzVector(target); tp.sub(prot)
                 double minusT=-tp.mass2()
 
-                for (int ig=0; ig<rec.rows(); ig++) {
-                    if (ig==0 || ig==ip) continue
-                    if (rec.getInt("pid",ig)!=22) continue
-                    double gpx=rec.getFloat("px",ig), gpy=rec.getFloat("py",ig), gpz=rec.getFloat("pz",ig), gp=p3(gpx,gpy,gpz)
-                    if (gp<0.4) continue
-                    int gstatus=rec.getInt("status",ig), gdet=detectorFromStatus(gstatus)
-                    if (!(gdet==0 || gdet==1)) continue
+                for (int ig : tagPhotonIndices) {
+                    if (ig==ip) continue
+                    Map tagSummary=recCache[ig]
+                    double gpx=(double)tagSummary.px, gpy=(double)tagSummary.py, gpz=(double)tagSummary.pz, gp=(double)tagSummary.p
+                    int gstatus=(int)tagSummary.status, gdet=(int)tagSummary.det
 
-                    boolean tagBeta=pcuts.beta_cut(ig,rec)
-                    boolean tagFid=(gdet==1) ? fcuts.pcal_fiducial_cut(ig,2,run,rec,cal)
-                                                   : (ft!=null && fcuts.forward_tagger_fiducial_cut(ig,rec,ft))
-                    double[] tagXYZ=responseXYZ(ig,gdet,cal,ft)
-                    Map tagSummary=recResponseSummary(ig,rec,cal,ft)
+                    Map tc=tagCutCache[ig]
+                    boolean tagBeta=(boolean)tc.beta
+                    boolean tagFid=(boolean)tc.fid
+                    double[] tagXYZ=[(double)tagSummary.x,(double)tagSummary.y,(double)tagSummary.z] as double[]
 
                     LorentzVector tagRaw=new LorentzVector(); tagRaw.setPxPyPzM(gpx,gpy,gpz,0)
                     // Final-skim policy: do not apply Sebastian's photon-energy correction.
@@ -844,18 +1126,19 @@ static void processPhotonEfficiency(String[] args) {
                     LorentzVector probeCorr=new LorentzVector(beam); probeCorr.add(target); probeCorr.sub(ele); probeCorr.sub(prot); probeCorr.sub(tagCorr)
                     double predx=probeRaw.px(), predy=probeRaw.py(), predz=probeRaw.pz()
 
-                    Map candSets=nearestCandidateSets(rec,cal,ft,predx,predy,predz,0,0,evz,0,ip,ig)
+                    Map candSets=nearestCandidateSetsFast(recCache,predx,predy,predz,0,ip,ig)
                     List<Map> neutrals=(List<Map>)candSets.neutrals
                     List<Map> any=(List<Map>)candSets.any
 
-                    Map truth=truthMatches(event,predx,predy,predz,gpx,gpy,gpz)
+                    if (lundTruthRows==null) lundTruthRows=buildLundTruthRows(event)
+                    Map truth=truthMatchesCached(lundTruthRows,predx,predy,predz,gpx,gpy,gpz)
                     Map truthProbeAny=(Map)truth.probe
                     Map truthTag=(Map)truth.tag
 
                     // Uniform generator truth from MC::Particle plus the actual
                     // REC association from MC::RecMatch.  These are independent
                     // of the older MC::Lund-nearest-direction diagnostics above.
-                    Map mcProbe=mcParticleProbeMatch(event,rec,predx,predy,predz,ig,recMcCache,mcRecCache)
+                    Map mcProbe=mcParticleProbeMatchFast(allGenPhotons,predx,predy,predz,ig,recMcCache,mcRecCache)
                     Map mcTag=mcParticleTagMatch(event,rec,ig,recMcCache)
                     Map mcElectron=eTruthEvent
                     Map mcProton=recMcCache.containsKey(ip) ? recMcCache[ip] : emptyRecToMc()
@@ -864,7 +1147,7 @@ static void processPhotonEfficiency(String[] args) {
                     vals.add(runnum); vals.add(evnum); vals.add(helicity); vals.add(isMC)
                     vals.add(sampleCode); vals.add(genTopo.topology); vals.add(genTopo.hasParticle); vals.add(genTopo.hasRecMatch); vals.add(genTopo.hasLund)
                     vals.add(genTopo.ne); vals.add(genTopo.np); vals.add(genTopo.ngamma); vals.add(genTopo.npi0gamma); vals.add(genTopo.nother)
-                    vals.add(beamE); vals.add(torus); vals.add(solenoid); vals.add(mcWeight(event))
+                    vals.add(beamE); vals.add(torus); vals.add(solenoid); vals.add(eventWeight)
                     vals.add(rec.rows()); vals.add(nNeutral); vals.add(nPid22); vals.add(nPid2112); vals.add(nPid0Neutral)
                     vals.add(Q2); vals.add(W); vals.add(xB); vals.add(yy); vals.add(minusT)
 
@@ -909,17 +1192,17 @@ static void processPhotonEfficiency(String[] args) {
                     for (int k=0;k<N_NEUTRAL_SAVE;k++) {
                         Map c=(k<neutrals.size()?neutrals[k]:null)
                         Map m=(c!=null && recMcCache.containsKey((int)c.idx) ? recMcCache[(int)c.idx] : null)
-                        Map ck=correctedPhotonKinematics(c,rec,run,eloss)
+                        Map ck=(c!=null && (int)c.pid==22) ? [p:c.p,theta:c.theta,phi:c.phi] : [p:SENT,theta:SENT,phi:SENT]
                         appendCandidateExtra(vals,c,m,ck)
                     }
                     for (int k=0;k<N_ANY_SAVE;k++) {
                         Map c=(k<any.size()?any[k]:null)
                         Map m=(c!=null && recMcCache.containsKey((int)c.idx) ? recMcCache[(int)c.idx] : null)
-                        Map ck=correctedPhotonKinematics(c,rec,run,eloss)
+                        Map ck=(c!=null && (int)c.pid==22) ? [p:c.p,theta:c.theta,phi:c.phi] : [p:SENT,theta:SENT,phi:SENT]
                         appendCandidateExtra(vals,c,m,ck)
                     }
 
-                    batch.append(vals.collect{fmt(it)}.join(' ')).append('\n'); lineCount++; nrow++
+                    appendFastLine(batch,vals); lineCount++; nrow++
                     if (lineCount>=1000) { writer.write(batch.toString()); batch.setLength(0); lineCount=0 }
                 } // tag
             } // proton
