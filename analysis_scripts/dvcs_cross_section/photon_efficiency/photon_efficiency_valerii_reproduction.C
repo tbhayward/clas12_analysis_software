@@ -13460,6 +13460,14 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
         0.40,2.00,6.00
     };
 
+    // Focused predicted-FT radial efficiency test.  These bins span the
+    // same FT fiducial radius used by the production denominator.  Nothing
+    // else in the production selection is changed.
+    constexpr int FT_NR=4;
+    const double FT_R_EDGES[FT_NR+1]={
+        8.50,10.50,12.50,14.00,15.50
+    };
+
     constexpr int MAX_NP=7;
     constexpr double MPI0=0.1349768;
 
@@ -13641,6 +13649,12 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
         std::unique_ptr<TH1D> h_mgg;
     };
 
+    struct FTRadiusCell {
+        long long denom_rows=0;
+        long long denom_truth_pi0=0;
+        std::unique_ptr<TH1D> h_mgg;
+    };
+
     struct Sample {
         std::string name;
         bool is_mc=false;
@@ -13649,6 +13663,10 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
         // Focused one-variable Mx2(ep) exclusivity scan.  Indexing is
         // [scan-window * FT_NP + FT-energy-bin].
         std::array<FTScanCell,N_MX2_EP_SCAN*FT_NP> ft_mx2ep_scan;
+
+        // Focused predicted-FT radial efficiency test.  Indexing is
+        // [FT-energy-bin * FT_NR + radial-bin].
+        std::array<FTRadiusCell,FT_NP*FT_NR> ft_radius_eff;
 
         // Focused QA diagnostic: only for events whose inferred probe is
         // predicted to land in FT.  Store M(gamma gamma) separately by the
@@ -13687,6 +13705,18 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
                 q.h_mgg=std::make_unique<TH1D>(
                     Form("predFT_mx2epScan_mgg_%s_s%d_p%d",
                          s.name.c_str(),iscan,ip),
+                    "",MGG_NBIN,MGG_HMIN,MGG_HMAX);
+                q.h_mgg->SetDirectory(nullptr);
+                q.h_mgg->Sumw2();
+            } // endfor
+        } // endfor
+
+        for (int ip=0;ip<FT_NP;ip++) {
+            for (int ir=0;ir<FT_NR;ir++) {
+                auto& q=s.ft_radius_eff[ip*FT_NR+ir];
+                q.h_mgg=std::make_unique<TH1D>(
+                    Form("predFT_radiusEff_mgg_%s_p%d_r%d",
+                         s.name.c_str(),ip,ir),
                     "",MGG_NBIN,MGG_HMIN,MGG_HMAX);
                 q.h_mgg->SetDirectory(nullptr);
                 q.h_mgg->Sumw2();
@@ -13916,6 +13946,61 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
             // detector-migration diagnostic remain unchanged.
             if (!(b.Mx2_ep>MX2_EP_LO &&
                   b.Mx2_ep<MX2_EP_HI)) continue;
+
+            // ----------------------------------------------------------
+            // Focused predicted-FT efficiency versus predicted FT radius.
+            //
+            // This uses the exact nominal production denominator and the exact
+            // production M(gamma gamma) numerator definition.  The only new
+            // operation is to subdivide the already-selected predicted-FT
+            // sample by projected radius.
+            // ----------------------------------------------------------
+            if (expected_ft) {
+                const int ipft=find_pbin(b.probe_corr_p,1);
+                if (ipft>=0) {
+                    const FTProjection fp=project_ft(b,ft_plane);
+                    if (fp.valid && fp.fiducial && finite_good(fp.r)) {
+                        int ir=-1;
+                        for (int jr=0;jr<FT_NR;jr++) {
+                            if (fp.r>=FT_R_EDGES[jr] &&
+                                fp.r< FT_R_EDGES[jr+1]) {
+                                ir=jr;
+                                break;
+                            } // endif
+                        } // endfor
+
+                        if (ir>=0) {
+                            auto& qr=s->ft_radius_eff[ipft*FT_NR+ir];
+                            qr.denom_rows++;
+
+                            if (s->name=="aaogen") {
+                                qr.denom_truth_pi0++;
+                            } else if (s->name=="clasdis") {
+                                if (b.have_truth &&
+                                    b.truth_probe_pid==22 &&
+                                    b.truth_probe_parent==111)
+                                    qr.denom_truth_pi0++;
+                            } // endif
+
+                            // Exact production numerator definition for an FT
+                            // probe: all acceptable reconstructed FT photons,
+                            // with no residual matching to the inferred probe.
+                            for (int k=0;k<5;k++) {
+                                if (b.neutral_idx[k]<0) continue;
+                                if (b.neutral_charge[k]!=0) continue;
+                                if (b.neutral_pid[k]!=22) continue;
+                                if (b.neutral_detector[k]!=0) continue;
+                                if (!finite_good(b.neutral_p[k]) ||
+                                    b.neutral_p[k]<PROBE_P_MIN) continue;
+
+                                const double mass=pair_mass(b,k);
+                                if (!finite_good(mass)) continue;
+                                qr.h_mgg->Fill(mass);
+                            } // endfor
+                        } // endif
+                    } // endif
+                } // endif
+            } // endif
 
             // ----------------------------------------------------------
             // Focused QA: predicted FT radial phase space in the nominal
@@ -14183,6 +14268,217 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
             << "pi0 MC (AAOgen + truth-pi0 CLASDIS component).\n"
             << "No reconstructed probe photon is required.  The plotted comparison\n"
             << "is unit-normalized so it tests radial phase-space shape only.\n";
+        readme.close();
+    }
+
+    // ===============================================================
+    // Focused predicted-FT efficiency versus predicted FT radius.
+    // ===============================================================
+    // This answers one question only: is the FT data/MC efficiency deficit
+    // localized to a particular radial region, or is it approximately uniform
+    // across the FT face?  Production selections and normalization coefficients
+    // are unchanged.
+    {
+        const std::string edir=dir+"/predicted_FT_radius_efficiency";
+        gSystem->mkdir(edir.c_str(),kTRUE);
+
+        struct RadEffResult {
+            bool valid=false;
+            PeakFit fit_data,fit_aao,fit_cls;
+            double fpi0=0;
+            double data_den=0,data_den_pi0=0,data_den_pi0_err=0;
+            double data_num=0,data_num_err=0;
+            double eff_data=0,eff_data_err=0;
+            double mc_den_pi0=0,mc_num=0,mc_num_err=0;
+            double eff_mc=0,eff_mc_err=0;
+            double ratio=0,ratio_err=0;
+            double corr=0,corr_err=0;
+        };
+
+        std::array<RadEffResult,FT_NP*FT_NR> rr{};
+        const double wa=norm_ft.nominal.aao;
+        const double wc=norm_ft.nominal.clasdis;
+        const double wd=norm_ft.nominal.dvcs;
+
+        std::ofstream ecsv(edir+"/predicted_FT_radius_efficiency.csv");
+        ecsv
+            << "Epred_low_GeV,Epred_high_GeV,r_low_cm,r_high_cm,"
+            << "data_denom_rows,pi0_fraction_from_normalized_MC,"
+            << "data_den_pi0,data_num_Mgg_pi0,data_num_Mgg_pi0_err,"
+            << "eff_data,eff_data_stat_err,"
+            << "mc_den_pi0,mc_num_Mgg_pi0,mc_num_Mgg_pi0_err,"
+            << "eff_mc,eff_mc_stat_err,"
+            << "data_over_mc,data_over_mc_stat_err,"
+            << "cross_section_C_mc_over_data,cross_section_C_stat_err,"
+            << "data_fit_valid,AAO_fit_valid,CLASDIS_fit_valid,"
+            << "AAO_den_pi0_rows,CLASDIS_den_pi0_rows,DVCS_den_rows\n";
+        ecsv << std::setprecision(10);
+
+        TFile eroot((edir+"/predicted_FT_radius_efficiency_histograms.root").c_str(),
+                    "RECREATE");
+
+        for (int ip=0;ip<FT_NP;ip++) {
+            for (int ir=0;ir<FT_NR;ir++) {
+                const int ix=ip*FT_NR+ir;
+                auto& r=rr[ix];
+                auto& qd=sdata->ft_radius_eff[ix];
+                auto& qa=saao->ft_radius_eff[ix];
+                auto& qc=scls->ft_radius_eff[ix];
+                auto& qv=sdvcs->ft_radius_eff[ix];
+
+                // Use the same minimum-statistics threshold as the production
+                // FT M(gamma gamma) fits.  Invalid low-stat bins are reported
+                // rather than rescued with a different fit definition.
+                r.fit_data=fit_mgg_peak(qd.h_mgg.get(),12);
+                r.fit_aao =fit_mgg_peak(qa.h_mgg.get(),12);
+                r.fit_cls =fit_mgg_peak(qc.h_mgg.get(),12);
+
+                const double den_a=wa*double(qa.denom_truth_pi0);
+                const double den_c=wc*double(qc.denom_truth_pi0);
+                const double den_d=wd*double(qv.denom_rows);
+                const double pred_total=den_a+den_c+den_d;
+                r.mc_den_pi0=den_a+den_c;
+
+                r.data_den=double(qd.denom_rows);
+                if (pred_total>0 && r.mc_den_pi0>0 && r.data_den>0) {
+                    r.fpi0=r.mc_den_pi0/pred_total;
+                    r.data_den_pi0=r.data_den*r.fpi0;
+                    r.data_den_pi0_err=std::sqrt(r.data_den)*r.fpi0;
+                } // endif
+
+                if (r.fit_data.valid && (r.fit_aao.valid || r.fit_cls.valid)) {
+                    r.data_num=r.fit_data.yield;
+                    r.data_num_err=r.fit_data.yield_err;
+
+                    const double numa=r.fit_aao.valid ? wa*r.fit_aao.yield : 0.0;
+                    const double numc=r.fit_cls.valid ? wc*r.fit_cls.yield : 0.0;
+                    const double numa_err=r.fit_aao.valid ? wa*r.fit_aao.yield_err : 0.0;
+                    const double numc_err=r.fit_cls.valid ? wc*r.fit_cls.yield_err : 0.0;
+                    r.mc_num=numa+numc;
+                    r.mc_num_err=std::sqrt(numa_err*numa_err+numc_err*numc_err);
+                } // endif
+
+                if (r.data_den_pi0>0 && r.data_num>0 &&
+                    r.mc_den_pi0>0 && r.mc_num>0) {
+                    r.eff_data=r.data_num/r.data_den_pi0;
+                    r.eff_mc=r.mc_num/r.mc_den_pi0;
+
+                    r.eff_data_err=r.eff_data*std::sqrt(
+                        std::pow(r.data_num_err/r.data_num,2)+
+                        std::pow(r.data_den_pi0_err/r.data_den_pi0,2));
+                    r.eff_mc_err=r.eff_mc*(r.mc_num_err/r.mc_num);
+
+                    if (r.eff_data>0 && r.eff_mc>0) {
+                        r.ratio=r.eff_data/r.eff_mc;
+                        const double rel=std::sqrt(
+                            std::pow(r.eff_data_err/r.eff_data,2)+
+                            std::pow(r.eff_mc_err/r.eff_mc,2));
+                        r.ratio_err=r.ratio*rel;
+                        r.corr=r.eff_mc/r.eff_data;
+                        r.corr_err=r.corr*rel;
+                        r.valid=finite_good(r.ratio) &&
+                                finite_good(r.ratio_err) && r.ratio>0;
+                    } // endif
+                } // endif
+
+                ecsv
+                    << FT_EDGES[ip] << "," << FT_EDGES[ip+1] << ","
+                    << FT_R_EDGES[ir] << "," << FT_R_EDGES[ir+1] << ","
+                    << qd.denom_rows << "," << r.fpi0 << ","
+                    << r.data_den_pi0 << "," << r.data_num << ","
+                    << r.data_num_err << ","
+                    << r.eff_data << "," << r.eff_data_err << ","
+                    << r.mc_den_pi0 << "," << r.mc_num << ","
+                    << r.mc_num_err << ","
+                    << r.eff_mc << "," << r.eff_mc_err << ","
+                    << r.ratio << "," << r.ratio_err << ","
+                    << r.corr << "," << r.corr_err << ","
+                    << r.fit_data.valid << ","
+                    << r.fit_aao.valid << ","
+                    << r.fit_cls.valid << ","
+                    << qa.denom_truth_pi0 << ","
+                    << qc.denom_truth_pi0 << ","
+                    << qv.denom_rows << "\n";
+
+                eroot.cd();
+                qd.h_mgg->Write(Form("data_p%d_r%d",ip,ir));
+                qa.h_mgg->Write(Form("aaogen_p%d_r%d",ip,ir));
+                qc.h_mgg->Write(Form("clasdis_p%d_r%d",ip,ir));
+                qv.h_mgg->Write(Form("dvcsgen_p%d_r%d",ip,ir));
+
+                std::cout
+                    << "[predFT radial efficiency] "
+                    << FT_EDGES[ip] << " < Epred < " << FT_EDGES[ip+1]
+                    << " GeV, " << FT_R_EDGES[ir] << " < Rpred < "
+                    << FT_R_EDGES[ir+1] << " cm: R=data/MC="
+                    << r.ratio << " +/- " << r.ratio_err
+                    << (r.valid?"":"  [INVALID FIT]") << "\n";
+            } // endfor
+        } // endfor
+
+        // One ratio-versus-radius plot for each of the two existing FT
+        // energy bins.  Only statistically valid fitted points are drawn.
+        for (int ip=0;ip<FT_NP;ip++) {
+            TGraphErrors gr;
+            gr.SetMarkerStyle(20);
+            gr.SetMarkerSize(1.0);
+            gr.SetLineWidth(2);
+
+            for (int ir=0;ir<FT_NR;ir++) {
+                const auto& r=rr[ip*FT_NR+ir];
+                if (!r.valid) continue;
+                const double x=0.5*(FT_R_EDGES[ir]+FT_R_EDGES[ir+1]);
+                const double ex=0.5*(FT_R_EDGES[ir+1]-FT_R_EDGES[ir]);
+                const int n=gr.GetN();
+                gr.SetPoint(n,x,r.ratio);
+                gr.SetPointError(n,ex,r.ratio_err);
+            } // endfor
+
+            TCanvas c(Form("c_predft_radial_eff_p%d",ip),"",900,700);
+            c.SetLeftMargin(0.14);
+            c.SetRightMargin(0.04);
+            c.SetBottomMargin(0.14);
+            c.SetTopMargin(0.10);
+            c.SetTicks(1,1);
+
+            TH1D frame(Form("frame_predft_radial_eff_p%d",ip),
+                       Form("Predicted FT: %.1f<E_{#gamma,pred}<%.1f GeV;"
+                            "R_{FT}^{pred} (cm);#epsilon_{data}/#epsilon_{MC}",
+                            FT_EDGES[ip],FT_EDGES[ip+1]),
+                       100,FT_R_EDGES[0],FT_R_EDGES[FT_NR]);
+            frame.SetDirectory(nullptr);
+            frame.SetStats(0);
+            frame.SetMinimum(0.0);
+            frame.SetMaximum(1.5);
+            frame.Draw("AXIS");
+
+            TLine unity(FT_R_EDGES[0],1.0,FT_R_EDGES[FT_NR],1.0);
+            unity.SetLineStyle(2);
+            unity.DrawClone();
+            gr.DrawClone("P SAME");
+
+            c.SaveAs((edir+Form(
+                "/FT_Epred_%.1f_%.1f_data_over_mc_vs_predicted_radius.png",
+                FT_EDGES[ip],FT_EDGES[ip+1])).c_str());
+        } // endfor
+
+        eroot.Close();
+        ecsv.close();
+
+        std::ofstream readme(edir+"/README.txt");
+        readme
+            << "Focused predicted-FT efficiency versus predicted radius\n"
+            << "=======================================================\n\n"
+            << "Only the nominal predicted-FT production sample is used.\n"
+            << "The sample is subdivided into four projected-radius bins:\n"
+            << "  [8.5,10.5), [10.5,12.5), [12.5,14.0), [14.0,15.5) cm.\n\n"
+            << "All production cuts, FT fiducial/projection definitions, component\n"
+            << "normalization coefficients, two FT energy bins, M(gamma gamma)\n"
+            << "numerator definition, and fit settings are unchanged.\n"
+            << "The primary quantity is epsilon_data/epsilon_MC versus R_FT^pred.\n"
+            << "Bins failing the same minimum-statistics Mgg fit requirement used\n"
+            << "for the production FT extraction are reported as invalid rather\n"
+            << "than refit with a different model.\n";
         readme.close();
     }
 
