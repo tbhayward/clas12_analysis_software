@@ -14037,17 +14037,21 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
                 d.SetMarkerStyle(20);
                 d.SetMarkerColor(kBlack);
                 d.SetLineColor(kBlack);
-                d.Draw("E1");
+                // DrawCopy is intentional here: d and m are local temporaries.
+                // A plain Draw() leaves the pad holding pointers to objects that
+                // are destroyed when this lambda returns, producing blank PNGs
+                // when the canvas is finally painted by SaveAs().
+                TH1D* ddraw = static_cast<TH1D*>(d.DrawCopy("E1"));
                 m.SetLineColor(kRed+1);
                 m.SetLineWidth(2);
-                m.Draw("HIST SAME");
+                TH1D* mdraw = static_cast<TH1D*>(m.DrawCopy("HIST SAME"));
 
                 TLegend leg(0.64,0.70,0.92,0.87);
                 leg.SetBorderSize(0);
                 leg.SetFillStyle(0);
-                leg.AddEntry(&d,"data","lep");
-                leg.AddEntry(&m,"weighted #pi^{0} MC","l");
-                leg.Draw();
+                leg.AddEntry(ddraw,"data","lep");
+                leg.AddEntry(mdraw,"weighted #pi^{0} MC","l");
+                leg.DrawClone();
 
                 TLatex tx;
                 tx.SetNDC();
