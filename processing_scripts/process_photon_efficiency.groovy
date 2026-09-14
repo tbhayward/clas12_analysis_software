@@ -16,6 +16,11 @@
  *   7 loose Mx2(ep) maximum (default  2.0 GeV^2)
  *   8 loose Mx2(ep gamma_tag) minimum (default -0.25 GeV^2)
  *   9 loose Mx2(ep gamma_tag) maximum (default  0.25 GeV^2)
+ *  10 sample kind: data|aaogen|clasdis|dvcsgen|auto (default auto)
+ *
+ * For sample kind clasdis, generator-exclusive e p pi0 events are intentionally
+ * suppressed from the skim so the CLASDIS sample represents inclusive pi0 /
+ * extra-particle topologies while AAOgen supplies the pure exclusive pi0 sample.
  *
  * The tag photon is only required to be REC::Particle pid==22, p>=0.4 GeV,
  * and have FD/FT status.  beta/fiducial decisions are SAVED, not imposed.
@@ -221,6 +226,136 @@ static Map truthMatches(HipoDataEvent event,
     return [probe:probe, tag:bestTag]
 }
 
+
+// Integer code stored in the ROOT tree.  Keep the string at the command line so
+// production commands remain self-documenting.
+static int sampleKindCode(String kind) {
+    String k=(kind==null?"auto":kind.trim().toLowerCase())
+    if (k=="data") return 0
+    if (k=="aaogen") return 1
+    if (k=="clasdis") return 2
+    if (k=="dvcsgen") return 3
+    return 9
+}
+
+static int lundParentPid(HipoDataBank lund, int mcindex) {
+    if (lund==null || mcindex<0 || mcindex>=lund.rows()) return 0
+    int parent=lund.getInt("parent",mcindex)
+    if (parent<=0 || parent-1>=lund.rows()) return 0
+    return lund.getInt("pid",parent-1)
+}
+
+// Generated final-state bookkeeping from MC::Particle.  MC::Lund is used only
+// to identify whether generated photons are pi0 daughters.  This avoids using
+// intermediate LUND resonances as if they were extra final-state hadrons.
+//
+// topology: -1 = not classified, 0 = insufficient truth information,
+//            1 = exclusive e p pi0 -> e p gamma gamma,
+//            2 = inclusive / extra-particle final state.
+static Map generatedTopology(HipoDataEvent event, boolean classifyClasdis) {
+    Map out=[topology:(classifyClasdis?0:-1), ne:0, np:0, ngamma:0,
+             npi0gamma:0, nother:0, hasParticle:0, hasRecMatch:0, hasLund:0]
+    if (event.hasBank("MC::RecMatch")) out.hasRecMatch=1
+    if (event.hasBank("MC::Lund")) out.hasLund=1
+    if (!event.hasBank("MC::Particle")) return out
+    out.hasParticle=1
+    HipoDataBank mc=(HipoDataBank)event.getBank("MC::Particle")
+    HipoDataBank lund=event.hasBank("MC::Lund") ? (HipoDataBank)event.getBank("MC::Lund") : null
+    for (int i=0;i<mc.rows();i++) {
+        int pid=mc.getInt("pid",i)
+        if (pid==11) out.ne++
+        else if (pid==2212) out.np++
+        else if (pid==22) {
+            out.ngamma++
+            if (lundParentPid(lund,i)==111) out.npi0gamma++
+        } else {
+            // Anything else in MC::Particle is an additional generated final-state
+            // particle for purposes of separating pure e p pi0 from CLASDIS.
+            out.nother++
+        }
+    }
+    if (classifyClasdis) {
+        if (lund==null) out.topology=0
+        else {
+            boolean exclusive=(out.ne==1 && out.np==1 && out.ngamma==2 &&
+                               out.npi0gamma==2 && out.nother==0)
+            out.topology=exclusive?1:2
+        }
+    }
+    return out
+}
+
+static Map emptyMCTruth() {
+    return [index:ISENT,pid:ISENT,parent:ISENT,p:SENT,theta:SENT,phi:SENT,
+            daPred:SENT,recIndex:ISENT,recPid:ISENT,recCharge:ISENT,
+            recStatus:ISENT,recDetector:ISENT,recP:SENT,recTheta:SENT,
+            recPhi:SENT,recDaTruth:SENT]
+}
+
+static int recMatchMcIndex(HipoDataBank match, int recIndex) {
+    if (match==null || recIndex<0) return ISENT
+    for (int r=0;r<match.rows();r++) if (match.getInt("pindex",r)==recIndex) return match.getInt("mcindex",r)
+    return ISENT
+}
+
+static int recIndexForMc(HipoDataBank match, int mcIndex) {
+    if (match==null || mcIndex<0) return ISENT
+    for (int r=0;r<match.rows();r++) if (match.getInt("mcindex",r)==mcIndex) return match.getInt("pindex",r)
+    return ISENT
+}
+
+// MC::Particle-based truth, available uniformly across the MC generators.
+// The reconstructed tag is first associated to MC::Particle through MC::RecMatch.
+// The probe is then the non-tag generated photon nearest the missing-vector
+// prediction.  Its reconstructed counterpart is obtained from MC::RecMatch.
+static Map mcParticleProbeMatch(HipoDataEvent event, HipoDataBank rec,
+                                double predx,double predy,double predz,
+                                int tagRecIndex) {
+    Map best=emptyMCTruth()
+    if (!event.hasBank("MC::Particle")) return best
+    HipoDataBank mc=(HipoDataBank)event.getBank("MC::Particle")
+    HipoDataBank match=event.hasBank("MC::RecMatch") ? (HipoDataBank)event.getBank("MC::RecMatch") : null
+    HipoDataBank lund=event.hasBank("MC::Lund") ? (HipoDataBank)event.getBank("MC::Lund") : null
+    int tagMc=recMatchMcIndex(match,tagRecIndex)
+    double bestDa=1.0e99
+    int bestIndex=ISENT
+    for (int i=0;i<mc.rows();i++) {
+        if (i==tagMc || mc.getInt("pid",i)!=22) continue
+        double px=mc.getFloat("px",i),py=mc.getFloat("py",i),pz=mc.getFloat("pz",i)
+        double da=openingDeg(predx,predy,predz,px,py,pz)
+        if (da>=0 && da<bestDa) { bestDa=da; bestIndex=i }
+    }
+    if (bestIndex==ISENT) return best
+    double px=mc.getFloat("px",bestIndex),py=mc.getFloat("py",bestIndex),pz=mc.getFloat("pz",bestIndex)
+    best.index=bestIndex; best.pid=mc.getInt("pid",bestIndex); best.parent=lundParentPid(lund,bestIndex)
+    best.p=p3(px,py,pz); best.theta=thetaDeg(px,py,pz); best.phi=phiDeg(px,py); best.daPred=bestDa
+    int ri=recIndexForMc(match,bestIndex)
+    best.recIndex=ri
+    if (ri>=0 && ri<rec.rows()) {
+        double rpx=rec.getFloat("px",ri),rpy=rec.getFloat("py",ri),rpz=rec.getFloat("pz",ri)
+        best.recPid=rec.getInt("pid",ri); best.recCharge=rec.getByte("charge",ri)
+        best.recStatus=rec.getInt("status",ri); best.recDetector=detectorFromStatus(best.recStatus as int)
+        best.recP=p3(rpx,rpy,rpz); best.recTheta=thetaDeg(rpx,rpy,rpz); best.recPhi=phiDeg(rpx,rpy)
+        best.recDaTruth=openingDeg(px,py,pz,rpx,rpy,rpz)
+    }
+    return best
+}
+
+static Map mcParticleTagMatch(HipoDataEvent event, HipoDataBank rec, int tagRecIndex) {
+    Map out=emptyMCTruth()
+    if (!event.hasBank("MC::Particle") || !event.hasBank("MC::RecMatch")) return out
+    HipoDataBank mc=(HipoDataBank)event.getBank("MC::Particle")
+    HipoDataBank match=(HipoDataBank)event.getBank("MC::RecMatch")
+    HipoDataBank lund=event.hasBank("MC::Lund") ? (HipoDataBank)event.getBank("MC::Lund") : null
+    int mi=recMatchMcIndex(match,tagRecIndex)
+    if (mi<0 || mi>=mc.rows()) return out
+    double px=mc.getFloat("px",mi),py=mc.getFloat("py",mi),pz=mc.getFloat("pz",mi)
+    out.index=mi; out.pid=mc.getInt("pid",mi); out.parent=lundParentPid(lund,mi)
+    out.p=p3(px,py,pz); out.theta=thetaDeg(px,py,pz); out.phi=phiDeg(px,py)
+    out.recIndex=tagRecIndex
+    return out
+}
+
 static String fmt(Object x) {
     if (x instanceof Integer || x instanceof Long || x instanceof Short || x instanceof Byte) return x.toString()
     return String.format(java.util.Locale.US,"%.10g",((Number)x).doubleValue())
@@ -238,7 +373,7 @@ static void appendCandidate(List vals, Map c) {
 
 static void processPhotonEfficiency(String[] args) {
     if (args.length < 2) {
-        println "Usage: process_photon_efficiency.groovy <input.hipo|dir> <output.txt> [mc_beam] [run_override] [qadb_override] [is_mc] [mx2_min] [mx2_max] [mx2_epg_min] [mx2_epg_max]"
+        println "Usage: process_photon_efficiency.groovy <input.hipo|dir> <output.txt> [mc_beam] [run_override] [qadb_override] [is_mc] [mx2_min] [mx2_max] [mx2_epg_min] [mx2_epg_max] [sample_kind]"
         System.exit(1)
     }
     long start=System.currentTimeMillis()
@@ -252,6 +387,12 @@ static void processPhotonEfficiency(String[] args) {
     double mx2Max=args.length>7 ? Double.parseDouble(args[7]) : 2.0
     double mx2EpgMin=args.length>8 ? Double.parseDouble(args[8]) : -0.25
     double mx2EpgMax=args.length>9 ? Double.parseDouble(args[9]) : 0.25
+    String sampleKind=args.length>10 ? args[10].trim().toLowerCase() : "auto"
+    if (!(sampleKind in ["auto","data","aaogen","clasdis","dvcsgen"])) {
+        println "ERROR: sample_kind must be data|aaogen|clasdis|dvcsgen|auto"
+        System.exit(3)
+    }
+    int sampleCode=sampleKindCode(sampleKind)
 
     List<File> hipos=[]
     if (input.isFile() && input.name.endsWith('.hipo')) hipos << input
@@ -275,6 +416,7 @@ static void processPhotonEfficiency(String[] args) {
     BufferedWriter writer=new BufferedWriter(new FileWriter(outf))
     StringBuilder batch=new StringBuilder(); int lineCount=0
     long nevt=0, nrow=0, npair=0, ntag=0, nprobePositive=0, nprobeMx2=0
+    long nClasdisExclusiveSkipped=0, nClasdisInclusiveKept=0, nClasdisUnknownSkipped=0
 
     for (File hf : hipos) {
         println "Opening ${hf.absolutePath}"
@@ -291,6 +433,16 @@ static void processPhotonEfficiency(String[] args) {
             HipoDataBank ft=event.hasBank("REC::ForwardTagger") ? (HipoDataBank)event.getBank("REC::ForwardTagger") : null
             HipoDataBank evb=event.hasBank("REC::Event") ? (HipoDataBank)event.getBank("REC::Event") : null
             if (rec.rows()<1 || rec.getInt("pid",0)!=11) continue
+
+            // Explicit source selection is preferred.  `auto` never drops events:
+            // it only records generic truth-bank availability.
+            boolean classifyClasdis=(sampleKind=="clasdis")
+            Map genTopo=generatedTopology(event,classifyClasdis)
+            if (classifyClasdis) {
+                if ((genTopo.topology as int)==1) { nClasdisExclusiveSkipped++; continue }
+                if ((genTopo.topology as int)==2) nClasdisInclusiveKept++
+                else { nClasdisUnknownSkipped++; continue }
+            }
 
             int runnum=runOverride!=0 ? runOverride : run.getInt("run",0)
             int evnum=run.getInt("event",0)
@@ -384,8 +536,16 @@ static void processPhotonEfficiency(String[] args) {
                     Map truthProbeAny=(Map)truth.probe
                     Map truthTag=(Map)truth.tag
 
+                    // Uniform generator truth from MC::Particle plus the actual
+                    // REC association from MC::RecMatch.  These are independent
+                    // of the older MC::Lund-nearest-direction diagnostics above.
+                    Map mcProbe=mcParticleProbeMatch(event,rec,predx,predy,predz,ig)
+                    Map mcTag=mcParticleTagMatch(event,rec,ig)
+
                     List vals=[]
                     vals.add(runnum); vals.add(evnum); vals.add(helicity); vals.add(isMC)
+                    vals.add(sampleCode); vals.add(genTopo.topology); vals.add(genTopo.hasParticle); vals.add(genTopo.hasRecMatch); vals.add(genTopo.hasLund)
+                    vals.add(genTopo.ne); vals.add(genTopo.np); vals.add(genTopo.ngamma); vals.add(genTopo.npi0gamma); vals.add(genTopo.nother)
                     vals.add(beamE); vals.add(torus); vals.add(solenoid); vals.add(mcWeight(event))
                     vals.add(rec.rows()); vals.add(nNeutral); vals.add(nPid22); vals.add(nPid2112); vals.add(nPid0Neutral)
                     vals.add(Q2); vals.add(W); vals.add(xB); vals.add(yy); vals.add(minusT)
@@ -413,6 +573,12 @@ static void processPhotonEfficiency(String[] args) {
                     vals.add(truthProbeAny.index); vals.add(truthProbeAny.pid); vals.add(truthProbeAny.parent); vals.add(truthProbeAny.p); vals.add(truthProbeAny.theta); vals.add(truthProbeAny.phi); vals.add(truthProbeAny.da)
                     vals.add(truthTag.index); vals.add(truthTag.pid); vals.add(truthTag.parent); vals.add(truthTag.p); vals.add(truthTag.theta); vals.add(truthTag.phi); vals.add(truthTag.da)
 
+                    // MC::Particle / MC::RecMatch truth branches.
+                    vals.add(mcProbe.index); vals.add(mcProbe.pid); vals.add(mcProbe.parent); vals.add(mcProbe.p); vals.add(mcProbe.theta); vals.add(mcProbe.phi); vals.add(mcProbe.daPred)
+                    vals.add(mcProbe.recIndex); vals.add(mcProbe.recPid); vals.add(mcProbe.recCharge); vals.add(mcProbe.recStatus); vals.add(mcProbe.recDetector)
+                    vals.add(mcProbe.recP); vals.add(mcProbe.recTheta); vals.add(mcProbe.recPhi); vals.add(mcProbe.recDaTruth)
+                    vals.add(mcTag.index); vals.add(mcTag.pid); vals.add(mcTag.parent); vals.add(mcTag.p); vals.add(mcTag.theta); vals.add(mcTag.phi)
+
                     batch.append(vals.collect{fmt(it)}.join(' ')).append('\n'); lineCount++; nrow++
                     if (lineCount>=1000) { writer.write(batch.toString()); batch.setLength(0); lineCount=0 }
                 } // tag
@@ -425,6 +591,7 @@ static void processPhotonEfficiency(String[] args) {
     writer.close()
     double min=(System.currentTimeMillis()-start)/60000.0
     println String.format(java.util.Locale.US,"Done: events=%d accepted_ep_pairs=%d tag_candidates=%d positive_probe=%d loose_Mx2_epg=%d rows=%d time=%.2f min output=%s",nevt,npair,ntag,nprobePositive,nprobeMx2,nrow,min,output)
+    if (sampleKind=="clasdis") println String.format(java.util.Locale.US,"CLASDIS generator topology: exclusive_eppi0_skipped=%d inclusive_or_extra_kept=%d unknown_skipped=%d",nClasdisExclusiveSkipped,nClasdisInclusiveKept,nClasdisUnknownSkipped)
 }
 
 // Execute the processor from the Groovy script body.

@@ -9,7 +9,7 @@ source source_file.txt
 # below remain unchanged for all existing processing scripts.
 if ( $#argv >= 1 && "$1" == "processing_scripts/process_photon_efficiency.groovy" ) then
     if ( $#argv < 3 ) then
-        echo "Usage: ./processing_scripts/processing.csh processing_scripts/process_photon_efficiency.groovy INPUT_HIPO_OR_DIR OUTPUT_DIR [NFILES=0] [BEAM=10.6041] [RUN_OVERRIDE=0] [QADB_OVERRIDE=0] [IS_MC=0] [NWORKERS=1] [MX2_MIN=-1.0] [MX2_MAX=2.0] [KEEP_TXT=0] [MX2_EPG_MIN=-0.25] [MX2_EPG_MAX=0.25]"
+        echo "Usage: ./processing_scripts/processing.csh processing_scripts/process_photon_efficiency.groovy INPUT_HIPO_OR_DIR OUTPUT_DIR [NFILES=0] [BEAM=10.6041] [RUN_OVERRIDE=0] [QADB_OVERRIDE=0] [IS_MC=0] [NWORKERS=1] [MX2_MIN=-1.0] [MX2_MAX=2.0] [KEEP_TXT=0] [MX2_EPG_MIN=-0.25] [MX2_EPG_MAX=0.25] [SAMPLE_KIND=auto]"
         exit 1
     endif
 
@@ -26,6 +26,7 @@ if ( $#argv >= 1 && "$1" == "processing_scripts/process_photon_efficiency.groovy
     set pe_keep_txt = 0
     set pe_mx2epgmin = -0.25
     set pe_mx2epgmax = 0.25
+    set pe_sample_kind = auto
 
     # Use block-form conditionals here.  In csh, variable expansion happens before
     # a one-line `if (...) set ...` is evaluated, so referencing a missing
@@ -64,13 +65,16 @@ if ( $#argv >= 1 && "$1" == "processing_scripts/process_photon_efficiency.groovy
     if ( $#argv >= 14 ) then
         set pe_mx2epgmax = "$argv[14]"
     endif
+    if ( $#argv >= 15 ) then
+        set pe_sample_kind = "$argv[15]"
+    endif
 
     echo "Pulling the latest changes from the repository..."
     git pull
     echo "Sourcing qadb..."
     module load qadb/3.4.1
 
-    ./processing_scripts/run_photon_efficiency_parallel.sh "$pe_input" "$pe_outdir" "$pe_nfiles" "$pe_beam" "$pe_run" "$pe_qadb" "$pe_ismc" "$pe_workers" "$pe_mx2min" "$pe_mx2max" "$pe_keep_txt" "$pe_mx2epgmin" "$pe_mx2epgmax"
+    ./processing_scripts/run_photon_efficiency_parallel.sh "$pe_input" "$pe_outdir" "$pe_nfiles" "$pe_beam" "$pe_run" "$pe_qadb" "$pe_ismc" "$pe_workers" "$pe_mx2min" "$pe_mx2max" "$pe_keep_txt" "$pe_mx2epgmin" "$pe_mx2epgmax" "$pe_sample_kind"
     exit $status
 endif
 

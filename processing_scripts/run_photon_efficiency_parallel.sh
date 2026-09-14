@@ -3,7 +3,7 @@ set -euo pipefail
 
 # Called by processing.csh for process_photon_efficiency.groovy.
 # Usage:
-#   run_photon_efficiency_parallel.sh INPUT OUTPUT_DIR NFILES BEAM RUN_OVERRIDE QADB_OVERRIDE IS_MC NWORKERS MX2_MIN MX2_MAX KEEP_TXT MX2_EPG_MIN MX2_EPG_MAX
+#   run_photon_efficiency_parallel.sh INPUT OUTPUT_DIR NFILES BEAM RUN_OVERRIDE QADB_OVERRIDE IS_MC NWORKERS MX2_MIN MX2_MAX KEEP_TXT MX2_EPG_MIN MX2_EPG_MAX SAMPLE_KIND
 #
 # Existing non-empty ROOT outputs are skipped automatically.  This lets a full
 # production command be restarted safely and lets statistics accumulate run by
@@ -22,6 +22,7 @@ MX2_MAX=${10:-2.0}
 KEEP_TXT=${11:-0}
 MX2_EPG_MIN=${12:--0.25}
 MX2_EPG_MAX=${13:-0.25}
+SAMPLE_KIND=${14:-auto}
 
 SCRIPT="processing_scripts/process_photon_efficiency.groovy"
 JAR="processing_classes/dist/processing_classes.jar"
@@ -62,9 +63,13 @@ echo "Output directory: $OUTDIR"
 echo "Existing non-empty ROOT outputs: skipped"
 echo "Loose Mx2(ep) window: [$MX2_MIN, $MX2_MAX] GeV^2"
 echo "Loose Mx2(ep gamma_tag) window: [$MX2_EPG_MIN, $MX2_EPG_MAX] GeV^2"
+echo "Sample kind: $SAMPLE_KIND"
+if [[ "$SAMPLE_KIND" == "clasdis" ]]; then
+  echo "CLASDIS policy: generator-exclusive e p pi0 events will be suppressed"
+fi
 
 export OUTDIR BEAM RUN_OVERRIDE QADB_OVERRIDE IS_MC MX2_MIN MX2_MAX KEEP_TXT
-export MX2_EPG_MIN MX2_EPG_MAX SCRIPT JAR CONVERTER
+export MX2_EPG_MIN MX2_EPG_MAX SAMPLE_KIND SCRIPT JAR CONVERTER
 
 worker='
 hipo="$1"
@@ -81,7 +86,7 @@ echo "[START] $hipo"
 
 coatjava/bin/run-groovy -cp "$JAR" "$SCRIPT" \
   "$hipo" "$txt" "$BEAM" "$RUN_OVERRIDE" "$QADB_OVERRIDE" "$IS_MC" \
-  "$MX2_MIN" "$MX2_MAX" "$MX2_EPG_MIN" "$MX2_EPG_MAX" && \
+  "$MX2_MIN" "$MX2_MAX" "$MX2_EPG_MIN" "$MX2_EPG_MAX" "$SAMPLE_KIND" && \
 "$CONVERTER" "$txt" "$root" && \
 { if [[ "$KEEP_TXT" == "0" ]]; then rm -f "$txt"; fi; } && \
 echo "[DONE ] $root"
