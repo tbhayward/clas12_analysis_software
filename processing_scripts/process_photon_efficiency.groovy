@@ -619,8 +619,11 @@ static Map correctedPhotonKinematics(Map c, HipoDataBank rec, HipoDataBank run, 
     if (c==null || (int)c.pid!=22) return out
     int idx=(int)c.idx
     if (idx<0 || idx>=rec.rows()) return out
+    // Sebastian photon-energy corrections are intentionally NOT applied in the skim.
+    // Preserve the existing *_corr schema as a no-op copy of the raw REC::Particle
+    // photon kinematics so downstream code remains compatible without baking a
+    // particular photon correction into this final production.
     float[] v=[rec.getFloat("px",idx),rec.getFloat("py",idx),rec.getFloat("pz",idx)] as float[]
-    eloss.sebastian_photon_energy_loss_corrections(idx,v,rec,run)
     out.p=p3(v[0],v[1],v[2]); out.theta=thetaDeg(v[0],v[1],v[2]); out.phi=phiDeg(v[0],v[1])
     return out
 }
@@ -816,8 +819,11 @@ static void processPhotonEfficiency(String[] args) {
                     Map tagSummary=recResponseSummary(ig,rec,cal,ft)
 
                     LorentzVector tagRaw=new LorentzVector(); tagRaw.setPxPyPzM(gpx,gpy,gpz,0)
+                    // Final-skim policy: do not apply Sebastian's photon-energy correction.
+                    // Keep the legacy corrected-variable pathway as an identity transform
+                    // so tag_corr_* and Mx2_epg_corr remain schema-compatible but contain
+                    // the unmodified reconstructed photon kinematics.
                     float[] gcorr=[(float)gpx,(float)gpy,(float)gpz] as float[]
-                    eloss.sebastian_photon_energy_loss_corrections(ig,gcorr,rec,run)
                     LorentzVector tagCorr=new LorentzVector(); tagCorr.setPxPyPzM(gcorr[0],gcorr[1],gcorr[2],0)
 
                     ntag++
