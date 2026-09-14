@@ -13474,6 +13474,14 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
     constexpr double MX2_EP_HI=+0.15;
     constexpr double ABS_MX2_EPG_MAX=0.10;
 
+    // Focused one-variable exclusivity scan for predicted-FT probes.
+    // Everything except the Mx2(ep) window is held fixed.  The second
+    // window is exactly the current production choice, so this also gives
+    // an internal baseline cross-check.
+    constexpr int N_MX2_EP_SCAN=4;
+    const double MX2_EP_SCAN_LO[N_MX2_EP_SCAN]={-0.20,-0.10,-0.05,-0.03};
+    const double MX2_EP_SCAN_HI[N_MX2_EP_SCAN]={+0.25,+0.15,+0.10,+0.07};
+
     // Mgg fit configuration.
     constexpr double MGG_HMIN=0.03;
     constexpr double MGG_HMAX=0.25;
@@ -13627,10 +13635,20 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
         std::unique_ptr<TH1D> h_mgg;
     };
 
+    struct FTScanCell {
+        long long denom_rows=0;
+        long long denom_truth_pi0=0;
+        std::unique_ptr<TH1D> h_mgg;
+    };
+
     struct Sample {
         std::string name;
         bool is_mc=false;
         std::array<Cell,2*MAX_NP> cells;
+
+        // Focused one-variable Mx2(ep) exclusivity scan.  Indexing is
+        // [scan-window * FT_NP + FT-energy-bin].
+        std::array<FTScanCell,N_MX2_EP_SCAN*FT_NP> ft_mx2ep_scan;
 
         // Focused QA diagnostic: only for events whose inferred probe is
         // predicted to land in FT.  Store M(gamma gamma) separately by the
@@ -13651,6 +13669,18 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
                 q.h_mgg=std::make_unique<TH1D>(
                     Form("prod_mgg_%s_%s_p%d",
                          s.name.c_str(),id==0?"FD":"FT",ip),
+                    "",MGG_NBIN,MGG_HMIN,MGG_HMAX);
+                q.h_mgg->SetDirectory(nullptr);
+                q.h_mgg->Sumw2();
+            } // endfor
+        } // endfor
+
+        for (int iscan=0;iscan<N_MX2_EP_SCAN;iscan++) {
+            for (int ip=0;ip<FT_NP;ip++) {
+                auto& q=s.ft_mx2ep_scan[iscan*FT_NP+ip];
+                q.h_mgg=std::make_unique<TH1D>(
+                    Form("predFT_mx2epScan_mgg_%s_s%d_p%d",
+                         s.name.c_str(),iscan,ip),
                     "",MGG_NBIN,MGG_HMIN,MGG_HMAX);
                 q.h_mgg->SetDirectory(nullptr);
                 q.h_mgg->Sumw2();
@@ -13811,8 +13841,8 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
             if (!finite_good(dphi) ||
                 std::fabs(dphi)>=NORM_DPHI_TRENTO_MAX) continue;
 
-            if (!(b.Mx2_ep>MX2_EP_LO &&
-                  b.Mx2_ep<MX2_EP_HI)) continue;
+            // The Mx2(ep gamma_tag) requirement is fixed for the complete
+            // Mx2(ep) scan.  Only Mx2(ep) itself is varied below.
             if (!(std::fabs(b.Mx2_epg_corr)<
                   ABS_MX2_EPG_MAX)) continue;
 
@@ -13822,6 +13852,57 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
                 const FTProjection fp=project_ft(b,ft_plane);
                 expected_ft=fp.valid && fp.fiducial;
             } // endif
+
+            // ----------------------------------------------------------
+            // Focused Mx2(ep) exclusivity scan for predicted-FT probes.
+            //
+            // This is filled BEFORE the nominal production Mx2(ep) cut so
+            // the widest and tighter windows are all evaluated from the same
+            // parent sample.  Every other cut and definition is identical.
+            // ----------------------------------------------------------
+            if (expected_ft) {
+                const int ipft=find_pbin(b.probe_corr_p,1);
+                if (ipft>=0) {
+                    for (int iscan=0;iscan<N_MX2_EP_SCAN;iscan++) {
+                        if (!(b.Mx2_ep>MX2_EP_SCAN_LO[iscan] &&
+                              b.Mx2_ep<MX2_EP_SCAN_HI[iscan])) continue;
+
+                        auto& qs=s->ft_mx2ep_scan[iscan*FT_NP+ipft];
+                        qs.denom_rows++;
+
+                        if (s->name=="aaogen") {
+                            qs.denom_truth_pi0++;
+                        } else if (s->name=="clasdis") {
+                            if (b.have_truth &&
+                                b.truth_probe_pid==22 &&
+                                b.truth_probe_parent==111)
+                                qs.denom_truth_pi0++;
+                        } // endif
+
+                        // Same numerator definition as production: every
+                        // acceptable FT tag-candidate pair, with no matching
+                        // to the inferred missing-photon vector.
+                        for (int k=0;k<5;k++) {
+                            if (b.neutral_idx[k]<0) continue;
+                            if (b.neutral_charge[k]!=0) continue;
+                            if (b.neutral_pid[k]!=22) continue;
+                            if (b.neutral_detector[k]!=0) continue;
+                            if (!finite_good(b.neutral_p[k]) ||
+                                b.neutral_p[k]<PROBE_P_MIN) continue;
+
+                            const double mass=pair_mass(b,k);
+                            if (!finite_good(mass)) continue;
+                            qs.h_mgg->Fill(mass);
+                        } // endfor
+                    } // endfor
+                } // endif
+            } // endif
+
+            // From this point onward, retain the exact nominal production
+            // Mx2(ep) window.  Thus the existing production result and the
+            // detector-migration diagnostic remain unchanged.
+            if (!(b.Mx2_ep>MX2_EP_LO &&
+                  b.Mx2_ep<MX2_EP_HI)) continue;
 
             // ----------------------------------------------------------
             // Focused QA: predicted FT -> reconstructed FD versus FT.
@@ -13927,6 +14008,252 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
             << "ERROR: not all samples survived the production scan.\n";
         return;
     } // endif
+
+    // ===============================================================
+    // Focused one-variable Mx2(ep) exclusivity scan for predicted FT.
+    // ===============================================================
+    // Question being tested:
+    //   does epsilon_data / epsilon_MC move toward unity as the event sample
+    //   is made progressively more consistent with exclusive ep -> ep pi0?
+    //
+    // No other cut, normalization, detector definition, energy bin, or Mgg
+    // fit setting is varied in this block.
+    {
+        const std::string sdir=dir+"/predicted_FT_Mx2ep_exclusivity_scan";
+        gSystem->mkdir(sdir.c_str(),kTRUE);
+
+        std::ofstream scsv(sdir+"/predicted_FT_Mx2ep_exclusivity_scan.csv");
+        scsv << "scan_index,Mx2_ep_low_GeV2,Mx2_ep_high_GeV2,"
+                "Epred_low_GeV,Epred_high_GeV,"
+                "data_denom_rows,data_pi0_fraction,data_pi0_denom,"
+                "data_pi0_num,data_pi0_num_err,eff_data,eff_data_err,"
+                "mc_pi0_denom,mc_pi0_num,mc_pi0_num_err,eff_mc,eff_mc_err,"
+                "data_over_mc,data_over_mc_err,cross_section_factor,cross_section_factor_err,"
+                "data_retention_vs_widest,mc_pi0_retention_vs_widest\n";
+        scsv << std::setprecision(10);
+
+        struct ScanResult {
+            bool valid=false;
+            double fpi0=0;
+            double data_den=0,data_den_pi0=0,data_den_pi0_err=0;
+            double data_num=0,data_num_err=0;
+            double eff_data=0,eff_data_err=0;
+            double mc_den_pi0=0;
+            double mc_num=0,mc_num_err=0;
+            double eff_mc=0,eff_mc_err=0;
+            double ratio=0,ratio_err=0;
+            double corr=0,corr_err=0;
+        };
+
+        std::array<ScanResult,N_MX2_EP_SCAN*FT_NP> sr{};
+
+        const double wa=norm_ft.nominal.aao;
+        const double wc=norm_ft.nominal.clasdis;
+        const double wd=norm_ft.nominal.dvcs;
+
+        for (int iscan=0;iscan<N_MX2_EP_SCAN;iscan++) {
+            for (int ip=0;ip<FT_NP;ip++) {
+                const int ix=iscan*FT_NP+ip;
+                auto& r=sr[ix];
+
+                const auto& qd=sdata->ft_mx2ep_scan[ix];
+                const auto& qa=saao->ft_mx2ep_scan[ix];
+                const auto& qc=scls->ft_mx2ep_scan[ix];
+                const auto& qv=sdvcs->ft_mx2ep_scan[ix];
+
+                const double den_a=wa*double(qa.denom_truth_pi0);
+                const double den_c=wc*double(qc.denom_truth_pi0);
+                const double den_d=wd*double(qv.denom_rows);
+                const double pred_total=den_a+den_c+den_d;
+                r.mc_den_pi0=den_a+den_c;
+                r.data_den=double(qd.denom_rows);
+
+                if (!(pred_total>0) || !(r.mc_den_pi0>0) ||
+                    !(r.data_den>0)) continue;
+
+                r.fpi0=r.mc_den_pi0/pred_total;
+                r.data_den_pi0=r.data_den*r.fpi0;
+                r.data_den_pi0_err=std::sqrt(r.data_den)*r.fpi0;
+                if (!(r.data_den_pi0>0)) continue;
+
+                // Use exactly the production fit/weighting convention:
+                // fit data, AAOgen and CLASDIS separately, then combine the
+                // fitted MC signal yields with the fixed FT normalization.
+                const PeakFit fd=fit_mgg_peak(qd.h_mgg.get(),12);
+                const PeakFit fa=fit_mgg_peak(qa.h_mgg.get(),12);
+                const PeakFit fc=fit_mgg_peak(qc.h_mgg.get(),12);
+
+                if (!fd.valid || (!fa.valid && !fc.valid)) continue;
+
+                r.data_num=fd.yield;
+                r.data_num_err=fd.yield_err;
+
+                const double numa=fa.valid ? wa*fa.yield : 0.0;
+                const double numc=fc.valid ? wc*fc.yield : 0.0;
+                const double numa_err=fa.valid ? wa*fa.yield_err : 0.0;
+                const double numc_err=fc.valid ? wc*fc.yield_err : 0.0;
+                r.mc_num=numa+numc;
+                r.mc_num_err=std::sqrt(numa_err*numa_err+numc_err*numc_err);
+
+                if (!(r.data_num>0) || !(r.mc_num>0)) continue;
+
+                r.eff_data=r.data_num/r.data_den_pi0;
+                r.eff_data_err=r.eff_data*std::sqrt(
+                    std::pow(r.data_num_err/r.data_num,2)+
+                    std::pow(r.data_den_pi0_err/r.data_den_pi0,2));
+                r.eff_mc=r.mc_num/r.mc_den_pi0;
+                r.eff_mc_err=r.eff_mc*(r.mc_num_err/r.mc_num);
+
+                if (!(r.eff_data>0) || !(r.eff_mc>0)) continue;
+
+                r.ratio=r.eff_data/r.eff_mc;
+                r.ratio_err=r.ratio*std::sqrt(
+                    std::pow(r.eff_data_err/r.eff_data,2)+
+                    std::pow(r.eff_mc_err/r.eff_mc,2));
+                r.corr=1.0/r.ratio;
+                r.corr_err=r.ratio_err/(r.ratio*r.ratio);
+                r.valid=true;
+            } // endfor
+        } // endfor
+
+        // CSV and concise terminal summary.  Retention is referenced to the
+        // widest scan window independently in each FT energy bin.
+        for (int iscan=0;iscan<N_MX2_EP_SCAN;iscan++) {
+            for (int ip=0;ip<FT_NP;ip++) {
+                const int ix=iscan*FT_NP+ip;
+                const auto& r=sr[ix];
+                const auto& r0=sr[ip];
+                const double data_ret=(r0.data_den>0 ?
+                    r.data_den/r0.data_den : 0.0);
+                const double mc_ret=(r0.mc_den_pi0>0 ?
+                    r.mc_den_pi0/r0.mc_den_pi0 : 0.0);
+
+                scsv << iscan << ","
+                     << MX2_EP_SCAN_LO[iscan] << ","
+                     << MX2_EP_SCAN_HI[iscan] << ","
+                     << FT_EDGES[ip] << "," << FT_EDGES[ip+1] << ","
+                     << r.data_den << "," << r.fpi0 << ","
+                     << r.data_den_pi0 << ","
+                     << r.data_num << "," << r.data_num_err << ","
+                     << r.eff_data << "," << r.eff_data_err << ","
+                     << r.mc_den_pi0 << ","
+                     << r.mc_num << "," << r.mc_num_err << ","
+                     << r.eff_mc << "," << r.eff_mc_err << ","
+                     << r.ratio << "," << r.ratio_err << ","
+                     << r.corr << "," << r.corr_err << ","
+                     << data_ret << "," << mc_ret << "\n";
+
+                std::cout << Form(
+                    "[FT Mx2(ep) scan] %+.2f < Mx2(ep) < %+.2f, "
+                    "Epred %.1f-%.1f GeV: Ndata=%.0f, retain=%.3f, "
+                    "eff_data=%.4f +/- %.4f, eff_mc=%.4f +/- %.4f, "
+                    "data/MC=%.4f +/- %.4f, C=%.3f +/- %.3f%s\n",
+                    MX2_EP_SCAN_LO[iscan],MX2_EP_SCAN_HI[iscan],
+                    FT_EDGES[ip],FT_EDGES[ip+1],
+                    r.data_den,data_ret,
+                    r.eff_data,r.eff_data_err,r.eff_mc,r.eff_mc_err,
+                    r.ratio,r.ratio_err,r.corr,r.corr_err,
+                    r.valid?"":"  [INVALID FIT]"));
+            } // endfor
+        } // endfor
+        scsv.close();
+
+        // One plot per FT energy bin: the requested observable versus scan
+        // tightness.  X is simply scan index to avoid implying a one-sided
+        // cut; the actual windows are printed beneath each point.
+        for (int ip=0;ip<FT_NP;ip++) {
+            TGraphErrors gr(N_MX2_EP_SCAN);
+            for (int iscan=0;iscan<N_MX2_EP_SCAN;iscan++) {
+                const auto& r=sr[iscan*FT_NP+ip];
+                gr.SetPoint(iscan,iscan+1,r.valid?r.ratio:0.0);
+                gr.SetPointError(iscan,0.0,r.valid?r.ratio_err:0.0);
+            } // endfor
+
+            TCanvas c(Form("c_ft_mx2ep_scan_p%d",ip),"",900,700);
+            c.SetLeftMargin(0.14);
+            c.SetRightMargin(0.04);
+            c.SetBottomMargin(0.20);
+            c.SetTopMargin(0.10);
+            c.SetTicks(1,1);
+
+            gr.SetMarkerStyle(20);
+            gr.SetMarkerSize(1.25);
+            gr.SetTitle("");
+            gr.GetXaxis()->SetLimits(0.5,N_MX2_EP_SCAN+0.5);
+            gr.GetXaxis()->SetNdivisions(N_MX2_EP_SCAN,false);
+            gr.GetXaxis()->SetTitle("M_{X}^{2}(ep) exclusivity window (GeV^{2})");
+            gr.GetYaxis()->SetTitle("#epsilon_{data}/#epsilon_{MC}");
+            gr.SetMinimum(0.0);
+
+            double ymax=1.20;
+            for (int iscan=0;iscan<N_MX2_EP_SCAN;iscan++) {
+                const auto& r=sr[iscan*FT_NP+ip];
+                if (r.valid) ymax=std::max(ymax,1.25*(r.ratio+r.ratio_err));
+            } // endfor
+            gr.SetMaximum(ymax);
+            gr.Draw("AP");
+
+            TLine unity(0.5,1.0,N_MX2_EP_SCAN+0.5,1.0);
+            unity.SetLineStyle(2);
+            unity.Draw("SAME");
+            gr.Draw("P SAME");
+
+            TLatex tx;
+            tx.SetNDC();
+            tx.SetTextFont(42);
+            tx.SetTextSize(0.040);
+            tx.DrawLatex(0.14,0.93,
+                Form("Predicted FT: %.1f<E_{#gamma,pred}<%.1f GeV",
+                     FT_EDGES[ip],FT_EDGES[ip+1]));
+
+            tx.SetTextAlign(22);
+            tx.SetTextSize(0.027);
+            for (int iscan=0;iscan<N_MX2_EP_SCAN;iscan++) {
+                const double xndc=0.14 + (0.82/N_MX2_EP_SCAN)*(iscan+0.5);
+                tx.DrawLatex(xndc,0.105,
+                    Form("[%+.2f,%+.2f]",
+                         MX2_EP_SCAN_LO[iscan],MX2_EP_SCAN_HI[iscan]));
+            } // endfor
+
+            c.SaveAs((sdir+Form(
+                "/FT_Epred_%.1f_%.1f_data_over_mc_vs_Mx2ep_window.png",
+                FT_EDGES[ip],FT_EDGES[ip+1])).c_str());
+        } // endfor
+
+        // Cache the scan histograms so no raw-tree rerun is needed for fit QA.
+        TFile sroot((sdir+"/predicted_FT_Mx2ep_exclusivity_scan_histograms.root").c_str(),
+                    "RECREATE");
+        if (!sroot.IsZombie()) {
+            for (auto& sp:samples) {
+                sroot.mkdir(sp->name.c_str());
+                sroot.cd(sp->name.c_str());
+                for (int iscan=0;iscan<N_MX2_EP_SCAN;iscan++) {
+                    for (int ip=0;ip<FT_NP;ip++) {
+                        sp->ft_mx2ep_scan[iscan*FT_NP+ip].h_mgg->Write();
+                    } // endfor
+                } // endfor
+                sroot.cd();
+            } // endfor
+            sroot.Close();
+        } // endif
+
+        std::ofstream snote(sdir+"/README.txt");
+        snote
+            << "Focused predicted-FT Mx2(ep) exclusivity scan\n"
+            << "============================================\n\n"
+            << "Only the Mx2(ep) window is varied.  All other production cuts,\n"
+            << "component normalizations, FT fiducial/projection definitions,\n"
+            << "energy bins, and M(gamma gamma) fit settings are unchanged.\n\n"
+            << "Windows tested (GeV^2):\n"
+            << "  [-0.20,+0.25]\n"
+            << "  [-0.10,+0.15]  (current production baseline)\n"
+            << "  [-0.05,+0.10]\n"
+            << "  [-0.03,+0.07]\n\n"
+            << "The primary quantity is epsilon_data/epsilon_MC in each of the\n"
+            << "two predicted-FT energy bins.  Retention relative to the widest\n"
+            << "window is included to expose the statistics/exclusivity tradeoff.\n";
+        snote.close();
+    }
 
     // ===============================================================
     // Focused QA: predicted FT -> reconstructed FD versus FT.
