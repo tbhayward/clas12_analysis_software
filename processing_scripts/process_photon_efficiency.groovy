@@ -43,9 +43,8 @@ import java.util.zip.CRC32
 @Field static final double SENT = -999.0
 @Field static final int ISENT = -999
 @Field static final int N_NEUTRAL_SAVE = 5
-@Field static final int N_ANY_SAVE = 3
 @Field static final int N_GEN_GAMMA_SAVE = 12
-@Field static final int SKIM_VERSION = 3
+@Field static final int SKIM_VERSION = 4
 
 static double clamp(double x, double lo, double hi) { Math.max(lo, Math.min(hi, x)) }
 static double p3(double x, double y, double z) { Math.sqrt(x*x + y*y + z*z) }
@@ -147,43 +146,6 @@ static double[] candidateDirection(int i, HipoDataBank recBank, HipoDataBank cal
     double[] xyz = responseXYZ(i,det,calBank,ftBank)
     if (xyz[0] < -900) return [0.0,0.0,0.0] as double[]
     return [xyz[0]-vxRef, xyz[1]-vyRef, xyz[2]-vzRef] as double[]
-}
-
-static void insertNearest(List<Map> out, Map cand, int nsave) {
-    int pos=0
-    while (pos<out.size() && out[pos].da <= cand.da) pos++
-    out.add(pos,cand)
-    if (out.size()>nsave) out.remove(out.size()-1)
-}
-
-// Find the nearest neutral candidates and nearest candidates of any charge in
-// ONE REC::Particle scan.  Only the best N are retained as we go, so no large
-// temporary candidate lists or full-list sorts are created for each tag.
-static Map nearestCandidateSets(HipoDataBank recBank, HipoDataBank calBank, HipoDataBank ftBank,
-                                double predx, double predy, double predz,
-                                double vxRef, double vyRef, double vzRef,
-                                int electronIndex, int protonIndex, int tagIndex) {
-    List<Map> neutrals=[]
-    List<Map> any=[]
-    for (int i=0; i<recBank.rows(); i++) {
-        if (i==electronIndex || i==protonIndex || i==tagIndex) continue
-        int charge=recBank.getByte("charge",i)
-        double[] dir=candidateDirection(i,recBank,calBank,ftBank,vxRef,vyRef,vzRef)
-        double da=openingDeg(predx,predy,predz,dir[0],dir[1],dir[2])
-        if (da < -900) continue
-        double pmag=p3(recBank.getFloat("px",i),recBank.getFloat("py",i),recBank.getFloat("pz",i))
-        int status=recBank.getInt("status",i), det=detectorFromStatus(status)
-        double[] xyz=responseXYZ(i,det,calBank,ftBank)
-        Map rs=recResponseSummary(i,recBank,calBank,ftBank)
-        Map cand=[idx:i, pid:recBank.getInt("pid",i), charge:charge, status:status, det:det,
-                  p:pmag, theta:thetaDeg(dir[0],dir[1],dir[2]), phi:phiDeg(dir[0],dir[1]), da:da,
-                  x:xyz[0],y:xyz[1],z:xyz[2], beta:rs.beta,chi2pid:rs.chi2pid,responseE:rs.responseE,
-                  pcalE:rs.pcalE,ecinE:rs.ecinE,ecoutE:rs.ecoutE,ecalE:rs.ecalE,
-                  pcalSector:rs.pcalSector,pcalLu:rs.pcalLu,pcalLv:rs.pcalLv,pcalLw:rs.pcalLw,ftE:rs.ftE,ftR:rs.ftR]
-        insertNearest(any,cand,N_ANY_SAVE)
-        if (charge==0) insertNearest(neutrals,cand,N_NEUTRAL_SAVE)
-    }
-    return [neutrals:neutrals, any:any]
 }
 
 static Map emptyTruth() {
@@ -719,33 +681,32 @@ static void insertTopCos(int[] idx,double[] score,int nsave,int cand,double c) {
     idx[pos]=cand; score[pos]=c
 }
 
-// Same nearest-candidate definition as before, but rank with cos(delta-alpha)
-// and evaluate acos only for the retained candidates.  This removes thousands
-// of expensive transcendental calls and temporary Map allocations per event.
-static Map nearestCandidateSetsFast(List<Map> rc,double predx,double predy,double predz,
-                                    int electronIndex,int protonIndex,int tagIndex) {
+// Rank only neutral candidates by cos(delta-alpha) and evaluate acos only
+// for the retained candidates.  The former any-charge candidate survey was
+// removed from the production skim because it is not needed for the photon-
+// efficiency extraction.
+static List<Map> nearestNeutralCandidatesFast(List<Map> rc,double predx,double predy,double predz,
+                                              int electronIndex,int protonIndex,int tagIndex) {
     int[] ni=new int[N_NEUTRAL_SAVE]; double[] ns=new double[N_NEUTRAL_SAVE]
-    int[] ai=new int[N_ANY_SAVE]; double[] as=new double[N_ANY_SAVE]
-    java.util.Arrays.fill(ni,-1); java.util.Arrays.fill(ai,-1)
-    java.util.Arrays.fill(ns,-2.0d); java.util.Arrays.fill(as,-2.0d)
+    java.util.Arrays.fill(ni,-1); java.util.Arrays.fill(ns,-2.0d)
     double pm=p3(predx,predy,predz)
-    if (pm<=0) return [neutrals:[],any:[]]
+    if (pm<=0) return []
     for (int i=0;i<rc.size();i++) {
         if (i==electronIndex || i==protonIndex || i==tagIndex) continue
-        Map a=rc[i]; double dm=(double)a.dirmag
+        Map a=rc[i]
+        if ((int)a.charge!=0) continue
+        double dm=(double)a.dirmag
         if (dm<=0) continue
         double c=clamp((predx*(double)a.dirx+predy*(double)a.diry+predz*(double)a.dirz)/(pm*dm),-1.0,1.0)
-        insertTopCos(ai,as,N_ANY_SAVE,i,c)
-        if ((int)a.charge==0) insertTopCos(ni,ns,N_NEUTRAL_SAVE,i,c)
+        insertTopCos(ni,ns,N_NEUTRAL_SAVE,i,c)
     }
-    List<Map> neutrals=[]; List<Map> any=[]
+    List<Map> neutrals=[]
     for (int k=0;k<N_NEUTRAL_SAVE;k++) if (ni[k]>=0) {
-        Map a=new LinkedHashMap(rc[ni[k]]); a.da=Math.acos(ns[k])*DEG; neutrals.add(a)
+        Map a=new LinkedHashMap(rc[ni[k]])
+        a.da=Math.acos(ns[k])*DEG
+        neutrals.add(a)
     }
-    for (int k=0;k<N_ANY_SAVE;k++) if (ai[k]>=0) {
-        Map a=new LinkedHashMap(rc[ai[k]]); a.da=Math.acos(as[k])*DEG; any.add(a)
-    }
-    return [neutrals:neutrals,any:any]
+    return neutrals
 }
 
 static Map bestMcForRecFast(HipoDataBank mc,List<Map> rc,int recIndex,Map matchIndex) {
@@ -796,28 +757,6 @@ static Map bestRecForMcFast(HipoDataBank mc,List<Map> rc,int mcIndex,Map matchIn
         out.recPcalE=r.pcalE; out.recEcinE=r.ecinE; out.recEcoutE=r.ecoutE; out.recEcalE=r.ecalE; out.recFtE=r.ftE; out.recFtR=r.ftR
     }
     return out
-}
-
-static Map eventRecTruthCountsFast(List<Map> rc,Map<Integer,Map> recMcCache) {
-    Map o=[pid22Total:0,pid22Unmatched:0,pid22Multi:0,pid22From22:0,pid22From11:0,pid22FromOther:0,
-           ftPid22:0,ftPid22From22:0,ftPid22From11:0,ftPid22Unmatched:0,
-           fdPid22:0,fdPid22From22:0,fdPid22From11:0,fdPid22Unmatched:0,
-           ftPid11:0,ftPid11From22:0,fdPid11:0,fdPid11From22:0,fdPid2112:0,fdPid2112From22:0]
-    for (int i=0;i<rc.size();i++) {
-        Map r=rc[i]; int pid=(int)r.pid, det=(int)r.det
-        if (!(pid==22 || pid==11 || pid==2112)) continue
-        Map m=recMcCache.containsKey(i)?recMcCache[i]:emptyRecToMc(); int mpid=(int)m.pid
-        if (pid==22) {
-            o.pid22Total++; if ((int)m.matchCount==0)o.pid22Unmatched++; if((int)m.matchCount>1)o.pid22Multi++
-            if(mpid==22)o.pid22From22++; else if(mpid==11)o.pid22From11++; else if(mpid!=ISENT)o.pid22FromOther++
-            if(det==0){o.ftPid22++; if(mpid==22)o.ftPid22From22++; else if(mpid==11)o.ftPid22From11++; else if((int)m.matchCount==0)o.ftPid22Unmatched++}
-            if(det==1){o.fdPid22++; if(mpid==22)o.fdPid22From22++; else if(mpid==11)o.fdPid22From11++; else if((int)m.matchCount==0)o.fdPid22Unmatched++}
-        }
-        if(pid==11&&det==0){o.ftPid11++; if(mpid==22)o.ftPid11From22++}
-        if(pid==11&&det==1){o.fdPid11++; if(mpid==22)o.fdPid11From22++}
-        if(pid==2112&&det==1){o.fdPid2112++; if(mpid==22)o.fdPid2112From22++}
-    }
-    return o
 }
 
 static Map generatedPhotonRecordsFast(HipoDataBank mc,List<Map> rc,Map matchIndex) {
@@ -1005,19 +944,17 @@ static void processPhotonEfficiency(String[] args) {
             List<Map> recCache=buildRecCache(rec,cal,ft,evx,evy,evz)
             Map matchIndex=buildRecMatchIndex(event)
             HipoDataBank mcParticle=event.hasBank("MC::Particle") ? (HipoDataBank)event.getBank("MC::Particle") : null
+            // Reverse REC->MC truth is now built lazily only for objects that
+            // actually enter the photon-efficiency analysis (selected e/p/tag and
+            // retained neutral candidates).  The previous expansive event-wide
+            // particle-ID survey required matching every REC object and was both
+            // unnecessary for the efficiency measurement and expensive in Groovy.
             Map<Integer,Map> recMcCache=[:]
-            // Only REC objects that actually appear in MC::RecMatch need a truth
-            // association object.  Unmatched REC particles are represented by the
-            // existing empty/sentinel fallback, avoiding pointless work (and all of
-            // it for real data, where this key set is empty).
+            Map eTruthEvent=emptyRecToMc()
             if (mcParticle!=null) {
-                for (Object key : ((Map)matchIndex.recToMc).keySet()) {
-                    int ii=((Number)key).intValue()
-                    if (ii>=0 && ii<recCache.size()) recMcCache[ii]=bestMcForRecFast(mcParticle,recCache,ii,matchIndex)
-                }
+                eTruthEvent=bestMcForRecFast(mcParticle,recCache,0,matchIndex)
+                recMcCache[0]=eTruthEvent
             }
-            Map eTruthEvent=recMcCache.containsKey(0) ? recMcCache[0] : emptyRecToMc()
-            Map recTruthCounts=eventRecTruthCountsFast(recCache,recMcCache)
             Map genGammas=generatedPhotonRecordsFast(mcParticle,recCache,matchIndex)
             Map<Integer,Map> mcRecCache=(Map<Integer,Map>)genGammas.byIndex
             List<Map> allGenPhotons=(List<Map>)genGammas.all
@@ -1037,10 +974,6 @@ static void processPhotonEfficiency(String[] args) {
             evVals.add(ep); evVals.add(thetaDeg(epx,epy,epz)); evVals.add(phiDeg(epx,epy)); evVals.add(evx); evVals.add(evy); evVals.add(evz)
             evVals.add(rec.rows()); evVals.add(nNeutral); evVals.add(nPid22); evVals.add(nPid2112); evVals.add(nPid0Neutral)
             evVals.add(eTruthEvent.matchCount); evVals.add(eTruthEvent.index); evVals.add(eTruthEvent.pid); evVals.add(eTruthEvent.p); evVals.add(eTruthEvent.theta); evVals.add(eTruthEvent.phi); evVals.add(eTruthEvent.da)
-            evVals.add(recTruthCounts.pid22Total); evVals.add(recTruthCounts.pid22Unmatched); evVals.add(recTruthCounts.pid22Multi); evVals.add(recTruthCounts.pid22From22); evVals.add(recTruthCounts.pid22From11); evVals.add(recTruthCounts.pid22FromOther)
-            evVals.add(recTruthCounts.ftPid22); evVals.add(recTruthCounts.ftPid22From22); evVals.add(recTruthCounts.ftPid22From11); evVals.add(recTruthCounts.ftPid22Unmatched)
-            evVals.add(recTruthCounts.fdPid22); evVals.add(recTruthCounts.fdPid22From22); evVals.add(recTruthCounts.fdPid22From11); evVals.add(recTruthCounts.fdPid22Unmatched)
-            evVals.add(recTruthCounts.ftPid11); evVals.add(recTruthCounts.ftPid11From22); evVals.add(recTruthCounts.fdPid11); evVals.add(recTruthCounts.fdPid11From22); evVals.add(recTruthCounts.fdPid2112); evVals.add(recTruthCounts.fdPid2112From22)
             evVals.add(genGammas.total); evVals.add(genGammas.overflow)
             List<Map> gg=(List<Map>)genGammas.records
             // Sparse intermediate format: write only the generated-photon slots that
@@ -1126,9 +1059,7 @@ static void processPhotonEfficiency(String[] args) {
                     LorentzVector probeCorr=new LorentzVector(beam); probeCorr.add(target); probeCorr.sub(ele); probeCorr.sub(prot); probeCorr.sub(tagCorr)
                     double predx=probeRaw.px(), predy=probeRaw.py(), predz=probeRaw.pz()
 
-                    Map candSets=nearestCandidateSetsFast(recCache,predx,predy,predz,0,ip,ig)
-                    List<Map> neutrals=(List<Map>)candSets.neutrals
-                    List<Map> any=(List<Map>)candSets.any
+                    List<Map> neutrals=nearestNeutralCandidatesFast(recCache,predx,predy,predz,0,ip,ig)
 
                     if (lundTruthRows==null) lundTruthRows=buildLundTruthRows(event)
                     Map truth=truthMatchesCached(lundTruthRows,predx,predy,predz,gpx,gpy,gpz)
@@ -1136,8 +1067,12 @@ static void processPhotonEfficiency(String[] args) {
                     Map truthTag=(Map)truth.tag
 
                     // Uniform generator truth from MC::Particle plus the actual
-                    // REC association from MC::RecMatch.  These are independent
-                    // of the older MC::Lund-nearest-direction diagnostics above.
+                    // REC association from MC::RecMatch.  Reverse matches are made
+                    // only for the selected objects, not for every REC particle.
+                    if (mcParticle!=null && !recMcCache.containsKey(ig))
+                        recMcCache[ig]=bestMcForRecFast(mcParticle,recCache,ig,matchIndex)
+                    if (mcParticle!=null && !recMcCache.containsKey(ip))
+                        recMcCache[ip]=bestMcForRecFast(mcParticle,recCache,ip,matchIndex)
                     Map mcProbe=mcParticleProbeMatchFast(allGenPhotons,predx,predy,predz,ig,recMcCache,mcRecCache)
                     Map mcTag=mcParticleTagMatch(event,rec,ig,recMcCache)
                     Map mcElectron=eTruthEvent
@@ -1169,7 +1104,6 @@ static void processPhotonEfficiency(String[] args) {
                     vals.add(probeCorr.px()); vals.add(probeCorr.py()); vals.add(probeCorr.pz())
 
                     for (int k=0;k<N_NEUTRAL_SAVE;k++) appendCandidate(vals,k<neutrals.size()?neutrals[k]:null)
-                    for (int k=0;k<N_ANY_SAVE;k++) appendCandidate(vals,k<any.size()?any[k]:null)
 
                     vals.add(truthProbeAny.index); vals.add(truthProbeAny.pid); vals.add(truthProbeAny.parent); vals.add(truthProbeAny.p); vals.add(truthProbeAny.theta); vals.add(truthProbeAny.phi); vals.add(truthProbeAny.da)
                     vals.add(truthTag.index); vals.add(truthTag.pid); vals.add(truthTag.parent); vals.add(truthTag.p); vals.add(truthTag.theta); vals.add(truthTag.phi); vals.add(truthTag.da)
@@ -1191,12 +1125,8 @@ static void processPhotonEfficiency(String[] args) {
                     vals.add(tagSummary.chi2pid); vals.add(tagSummary.responseE); vals.add(tagSummary.pcalE); vals.add(tagSummary.ecinE); vals.add(tagSummary.ecoutE); vals.add(tagSummary.ecalE); vals.add(tagSummary.pcalSector); vals.add(tagSummary.pcalLu); vals.add(tagSummary.pcalLv); vals.add(tagSummary.pcalLw); vals.add(tagSummary.ftE); vals.add(tagSummary.ftR)
                     for (int k=0;k<N_NEUTRAL_SAVE;k++) {
                         Map c=(k<neutrals.size()?neutrals[k]:null)
-                        Map m=(c!=null && recMcCache.containsKey((int)c.idx) ? recMcCache[(int)c.idx] : null)
-                        Map ck=(c!=null && (int)c.pid==22) ? [p:c.p,theta:c.theta,phi:c.phi] : [p:SENT,theta:SENT,phi:SENT]
-                        appendCandidateExtra(vals,c,m,ck)
-                    }
-                    for (int k=0;k<N_ANY_SAVE;k++) {
-                        Map c=(k<any.size()?any[k]:null)
+                        if (c!=null && mcParticle!=null && !recMcCache.containsKey((int)c.idx))
+                            recMcCache[(int)c.idx]=bestMcForRecFast(mcParticle,recCache,(int)c.idx,matchIndex)
                         Map m=(c!=null && recMcCache.containsKey((int)c.idx) ? recMcCache[(int)c.idx] : null)
                         Map ck=(c!=null && (int)c.pid==22) ? [p:c.p,theta:c.theta,phi:c.phi] : [p:SENT,theta:SENT,phi:SENT]
                         appendCandidateExtra(vals,c,m,ck)
