@@ -245,13 +245,19 @@ def main():
 
             hname = f"h_{ipad}_{sample}"
             hist = ROOT.TH1D(hname, title, nbins, xmin, xmax)
-            hist.SetDirectory(0)
+            # Keep the histogram registered in the current ROOT directory while
+            # TTree::Draw fills it by name. Detaching it before Draw causes ROOT
+            # to create/fill a different histogram with the same name, leaving
+            # this Python object empty.
             hist.SetLineColor(COLORS[sample])
             hist.SetLineWidth(2 if sample != "data" else 3)
             hist.SetStats(0)
 
             # Unweighted by design: this is a reconstruction/shape QA plot.
             nfilled = chain.Draw(f"{expr}>>{hname}", base_cut, "goff")
+            # Now detach it so it survives independently of ROOT directory/file
+            # ownership for the rest of the canvas construction.
+            hist.SetDirectory(0)
             integral = hist.Integral(1, hist.GetNbinsX())
 
             if integral > 0:
