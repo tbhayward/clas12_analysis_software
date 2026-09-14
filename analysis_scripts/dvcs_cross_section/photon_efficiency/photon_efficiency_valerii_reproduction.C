@@ -13656,6 +13656,12 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
         // These histograms do NOT alter the production efficiency extraction.
         std::array<std::unique_ptr<TH1D>,FT_NP> h_predft_recofd;
         std::array<std::unique_ptr<TH1D>,FT_NP> h_predft_recoft;
+
+        // Focused QA diagnostic: predicted FT radius for the probe-independent
+        // denominator sample.  This is filled before any reconstructed-probe
+        // requirement and therefore tests only whether data and pi0 MC sample
+        // the same predicted radial phase space on the FT face.
+        std::array<std::unique_ptr<TH1D>,FT_NP> h_predft_radius;
     };
 
     auto icell=[](int id,int ip)->int {
@@ -13699,6 +13705,13 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
                 "",MGG_NBIN,MGG_HMIN,MGG_HMAX);
             s.h_predft_recoft[ip]->SetDirectory(nullptr);
             s.h_predft_recoft[ip]->Sumw2();
+
+            s.h_predft_radius[ip]=std::make_unique<TH1D>(
+                Form("predFT_radius_%s_p%d",s.name.c_str(),ip),
+                ";predicted FT radius R_{FT}^{pred} (cm);entries",
+                28,FT_R_MIN,FT_R_MAX);
+            s.h_predft_radius[ip]->SetDirectory(nullptr);
+            s.h_predft_radius[ip]->Sumw2();
         } // endfor
     };
 
@@ -13905,6 +13918,30 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
                   b.Mx2_ep<MX2_EP_HI)) continue;
 
             // ----------------------------------------------------------
+            // Focused QA: predicted FT radial phase space in the nominal
+            // production denominator.  No reconstructed probe candidate is
+            // required here.  This is deliberately filled after the nominal
+            // Mx2(ep) cut so it corresponds exactly to the production sample.
+            // ----------------------------------------------------------
+            if (expected_ft) {
+                const int ipft=find_pbin(b.probe_corr_p,1);
+                if (ipft>=0) {
+                    const FTProjection fp=project_ft(b,ft_plane);
+                    bool fill_radius=(fp.valid && fp.fiducial && finite_good(fp.r));
+                    // The CLASDIS contribution to the pi0 template must be
+                    // truth-confirmed pi0, matching the denominator composition
+                    // used by the production efficiency calculation.
+                    if (fill_radius && s->name=="clasdis") {
+                        fill_radius=(b.have_truth &&
+                                     b.truth_probe_pid==22 &&
+                                     b.truth_probe_parent==111);
+                    } // endif
+                    if (fill_radius)
+                        s->h_predft_radius[ipft]->Fill(fp.r);
+                } // endif
+            } // endif
+
+            // ----------------------------------------------------------
             // Focused QA: predicted FT -> reconstructed FD versus FT.
             // Keep the production selection completely unchanged.  For each
             // event whose inferred probe is predicted to land in FT, form
@@ -14008,6 +14045,146 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
             << "ERROR: not all samples survived the production scan.\n";
         return;
     } // endif
+
+    // ===============================================================
+    // Focused predicted-FT radius QA.
+    // ===============================================================
+    // Question being tested:
+    //   do data and the normalized pi0 MC populate the same predicted radial
+    //   phase space on the FT face in the nominal production denominator?
+    //
+    // This block does NOT alter the efficiency extraction.  The comparison is
+    // shape-only: the weighted pi0 MC is formed with the established FT AAO
+    // and CLASDIS normalization coefficients, then both data and MC are scaled
+    // to unit area for the overlay.
+    {
+        const std::string rdir=dir+"/predicted_FT_radius_QA";
+        gSystem->mkdir(rdir.c_str(),kTRUE);
+
+        std::ofstream rcsv(rdir+"/predicted_FT_radius_QA.csv");
+        rcsv << "Epred_low_GeV,Epred_high_GeV,"
+                "data_entries,mc_weighted_integral,"
+                "data_mean_cm,data_rms_cm,mc_mean_cm,mc_rms_cm,"
+                "KS_probability,chi2_ndf\n";
+        rcsv << std::setprecision(10);
+
+        TFile rroot((rdir+"/predicted_FT_radius_QA_histograms.root").c_str(),
+                    "RECREATE");
+
+        for (int ip=0;ip<FT_NP;ip++) {
+            TH1D* hd=sdata->h_predft_radius[ip].get();
+            TH1D* ha=saao->h_predft_radius[ip].get();
+            TH1D* hc=scls->h_predft_radius[ip].get();
+
+            auto hmc=std::unique_ptr<TH1D>(dynamic_cast<TH1D*>(ha->Clone(
+                Form("predFT_radius_weightedPi0MC_p%d",ip))));
+            hmc->SetDirectory(nullptr);
+            hmc->Reset("ICES");
+            hmc->Sumw2();
+            hmc->Add(ha,norm_ft.nominal.aao);
+            hmc->Add(hc,norm_ft.nominal.clasdis);
+
+            auto hd_unit=std::unique_ptr<TH1D>(dynamic_cast<TH1D*>(hd->Clone(
+                Form("predFT_radius_data_unit_p%d",ip))));
+            auto hmc_unit=std::unique_ptr<TH1D>(dynamic_cast<TH1D*>(hmc->Clone(
+                Form("predFT_radius_weightedPi0MC_unit_p%d",ip))));
+            hd_unit->SetDirectory(nullptr);
+            hmc_unit->SetDirectory(nullptr);
+
+            const double idata=hd_unit->Integral(1,hd_unit->GetNbinsX());
+            const double imc=hmc_unit->Integral(1,hmc_unit->GetNbinsX());
+            if (idata>0) hd_unit->Scale(1.0/idata);
+            if (imc>0) hmc_unit->Scale(1.0/imc);
+
+            double ks=0.0;
+            double chi2ndf=0.0;
+            if (idata>0 && imc>0) {
+                ks=hd_unit->KolmogorovTest(hmc_unit.get());
+                double chi2=0.0;
+                int nused=0;
+                for (int ib=1;ib<=hd_unit->GetNbinsX();ib++) {
+                    const double d=hd_unit->GetBinContent(ib);
+                    const double m=hmc_unit->GetBinContent(ib);
+                    const double ed=hd_unit->GetBinError(ib);
+                    const double em=hmc_unit->GetBinError(ib);
+                    const double v=ed*ed+em*em;
+                    if (!(v>0)) continue;
+                    chi2+=(d-m)*(d-m)/v;
+                    nused++;
+                } // endfor
+                if (nused>1) chi2ndf=chi2/double(nused-1);
+            } // endif
+
+            rcsv << FT_EDGES[ip] << "," << FT_EDGES[ip+1] << ","
+                 << hd->Integral(1,hd->GetNbinsX()) << ","
+                 << hmc->Integral(1,hmc->GetNbinsX()) << ","
+                 << hd->GetMean() << "," << hd->GetRMS() << ","
+                 << hmc->GetMean() << "," << hmc->GetRMS() << ","
+                 << ks << "," << chi2ndf << "\n";
+
+            TCanvas c(Form("c_predft_radius_p%d",ip),"",900,700);
+            c.SetLeftMargin(0.14);
+            c.SetRightMargin(0.04);
+            c.SetBottomMargin(0.13);
+            c.SetTopMargin(0.10);
+
+            const double ymax=1.25*std::max(hd_unit->GetMaximum(),
+                                            hmc_unit->GetMaximum());
+            hd_unit->SetTitle(Form(
+                "Predicted FT denominator: %.1f<E_{#gamma,pred}<%.1f GeV;"
+                "R_{FT}^{pred} (cm);Unit-normalized entries",
+                FT_EDGES[ip],FT_EDGES[ip+1]));
+            hd_unit->SetMinimum(0.0);
+            hd_unit->SetMaximum(ymax>0 ? ymax : 1.0);
+            hd_unit->SetMarkerStyle(20);
+            hd_unit->SetMarkerSize(0.9);
+            hd_unit->SetLineWidth(2);
+            hd_unit->Draw("E1");
+
+            hmc_unit->SetLineWidth(2);
+            hmc_unit->Draw("HIST SAME");
+
+            TLegend leg(0.58,0.74,0.92,0.89);
+            leg.SetBorderSize(0);
+            leg.SetFillStyle(0);
+            leg.AddEntry(hd_unit.get(),"data","lep");
+            leg.AddEntry(hmc_unit.get(),"weighted #pi^{0} MC","l");
+            leg.DrawClone();
+
+            c.SaveAs((rdir+Form(
+                "/FT_Epred_%.1f_%.1f_predicted_radius_data_vs_pi0MC.png",
+                FT_EDGES[ip],FT_EDGES[ip+1])).c_str());
+
+            rroot.cd();
+            hd->Write(Form("data_p%d",ip));
+            ha->Write(Form("aaogen_p%d",ip));
+            hc->Write(Form("clasdis_p%d",ip));
+            hmc->Write(Form("weightedPi0MC_p%d",ip));
+            hd_unit->Write(Form("data_unit_p%d",ip));
+            hmc_unit->Write(Form("weightedPi0MC_unit_p%d",ip));
+
+            std::cout
+                << "[predFT radius QA] " << FT_EDGES[ip] << " < Epred < "
+                << FT_EDGES[ip+1] << " GeV: data mean=" << hd->GetMean()
+                << " cm, pi0 MC mean=" << hmc->GetMean()
+                << " cm, KS=" << ks << ", chi2/ndf=" << chi2ndf << "\n";
+        } // endfor
+
+        rroot.Close();
+        rcsv.close();
+
+        std::ofstream readme(rdir+"/README.txt");
+        readme
+            << "Focused predicted-FT radius QA\n"
+            << "==============================\n\n"
+            << "Production cuts and normalization coefficients are unchanged.\n"
+            << "For the nominal predicted-FT denominator sample, this diagnostic\n"
+            << "compares the projected FT radius R_FT^pred in data to the weighted\n"
+            << "pi0 MC (AAOgen + truth-pi0 CLASDIS component).\n"
+            << "No reconstructed probe photon is required.  The plotted comparison\n"
+            << "is unit-normalized so it tests radial phase-space shape only.\n";
+        readme.close();
+    }
 
     // ===============================================================
     // Focused one-variable Mx2(ep) exclusivity scan for predicted FT.
