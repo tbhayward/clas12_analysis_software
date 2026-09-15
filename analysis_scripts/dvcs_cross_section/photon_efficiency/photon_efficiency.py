@@ -35,7 +35,6 @@ Stage 1D -- reconstructed gamma2 selection, numerator only
     Search neutral_[0..4] for reconstructed PID-22 candidates, excluding the
     tag REC index. Select the PID-22 candidate closest to inferred X.
     p_gamma2 >= 0.4 GeV
-    angle(e,gamma2) > 8 deg
 
     The historical gamma2 beta cut was conditional and its run setting was not
     recorded, so it is NOT imposed here. The skim does not contain a saved
@@ -57,10 +56,10 @@ Unavailable samples are simply skipped.
 
 Outputs
 -------
-output/photon_efficiency_stage1_preparation_<period>.png
-output/photon_efficiency_stage1_common_photon_<period>.png
-output/photon_efficiency_stage1_probe_<period>.png
-output/photon_efficiency_stage1_cutflow_<period>.txt
+output/1_photon_efficiency_stage1_preparation_<period>.png
+output/2_photon_efficiency_stage1_common_photon_<period>.png
+output/3_photon_efficiency_stage1_probe_<period>.png
+output/5_photon_efficiency_stage1_cutflow_<period>.txt
 
 All plotted distributions are unit-normalized shape comparisons. MC
 normalization belongs to Stage 2.
@@ -70,6 +69,7 @@ import argparse
 import glob
 import math
 import os
+import shutil
 import sys
 
 import ROOT
@@ -246,8 +246,6 @@ COMMON_PROBE_CUTS = [
 GAMMA2_CUTS = [
     ("p_gamma2 >= 0.4 GeV",
      "probe_p >= 0.4"),
-    ("angle(e,gamma2) > 8 deg",
-     "e_gamma2_angle_deg > 8.0"),
 ]
 
 
@@ -585,7 +583,7 @@ def draw_before_after_canvas(sample_dfs,
 
 
 def write_cutflow(path, initial_counts, prep_counts,
-                  common_counts, probe_exists_counts, probe_counts):
+                  common_counts, common_probe_counts, probe_counts):
     with open(path, "w") as out:
         out.write("CLAS12 photon-efficiency Stage-1 cutflow\n")
         out.write("=======================================\n\n")
@@ -626,16 +624,16 @@ def write_cutflow(path, initial_counts, prep_counts,
                 )
                 previous = count
 
-            nprobe = probe_exists_counts[sample]
-            frac = 100.0 * nprobe / previous if previous else 0.0
-            total = 100.0 * nprobe / n0 if n0 else 0.0
-            out.write("\n  Stage 1C -- common inferred-probe X selection complete\n")
-            out.write(
-                f"    {'common denominator/probe selection':<46s} "
-                f"{nprobe:12d}  "
-                f"{frac:8.3f}% step  {total:8.3f}% initial\n"
-            )
-            previous = nprobe
+            out.write("\n  Stage 1C -- common inferred-probe selection\n")
+            for cut_label, count in common_probe_counts[sample]:
+                frac = 100.0 * count / previous if previous else 0.0
+                total = 100.0 * count / n0 if n0 else 0.0
+                out.write(
+                    f"    {cut_label:<46s} "
+                    f"{count:12d}  "
+                    f"{frac:8.3f}% step  {total:8.3f}% initial\n"
+                )
+                previous = count
 
             out.write("\n  Stage 1D -- reconstructed gamma2 numerator\n")
             for cut_label, count in probe_counts[sample]:
@@ -664,7 +662,18 @@ def main():
     ROOT.EnableImplicitMT(args.threads)
     print(f"ROOT implicit multithreading: {args.threads} worker(s)")
 
-    os.makedirs(args.output_dir, exist_ok=True)
+    # This analysis owns its output directory: start every run clean so old
+    # canvases/cutflows cannot be mistaken for products of the current cuts.
+    if os.path.isdir(args.output_dir):
+        for name in os.listdir(args.output_dir):
+            path = os.path.join(args.output_dir, name)
+            if os.path.isdir(path) and not os.path.islink(path):
+                shutil.rmtree(path)
+            else:
+                os.remove(path)
+    else:
+        os.makedirs(args.output_dir, exist_ok=True)
+    print(f"Cleared output directory: {os.path.abspath(args.output_dir)}")
 
     chains = {}
     dfs = {}
@@ -704,7 +713,7 @@ def main():
     common_count_handles = {}
 
     probe_base_dfs = {}
-    probe_exists_handles = {}
+    common_probe_count_handles = {}
 
     probe_final_dfs = {}
     probe_count_handles = {}
@@ -729,7 +738,7 @@ def main():
             common_df, COMMON_PROBE_CUTS, "common_probe"
         )
         probe_base_dfs[sample] = common_probe_df
-        probe_exists_handles[sample] = common_probe_df.Count()
+        common_probe_count_handles[sample] = common_probe_handles
 
         # Numerator only: require a reconstructed PID-22 gamma2 and apply
         # the explicitly chosen second-photon cuts.
@@ -751,14 +760,14 @@ def main():
     # actions that share the same RDataFrame graph together.
     prep_counts = {}
     common_counts = {}
-    probe_exists_counts = {}
+    common_probe_counts = {}
     probe_counts = {}
 
     for sample in dfs:
         actions = [initial_count_handles[sample]]
         actions += [h for _, h in prep_count_handles[sample]]
         actions += [h for _, h in common_count_handles[sample]]
-        actions += [probe_exists_handles[sample]]
+        actions += [h for _, h in common_probe_count_handles[sample]]
         actions += [h for _, h in probe_count_handles[sample]]
 
         ROOT.RDF.RunGraphs(actions)
@@ -772,9 +781,10 @@ def main():
             (label, int(handle.GetValue()))
             for label, handle in common_count_handles[sample]
         ]
-        probe_exists_counts[sample] = int(
-            probe_exists_handles[sample].GetValue()
-        )
+        common_probe_counts[sample] = [
+            (label, int(handle.GetValue()))
+            for label, handle in common_probe_count_handles[sample]
+        ]
         probe_counts[sample] = [
             (label, int(handle.GetValue()))
             for label, handle in probe_count_handles[sample]
@@ -811,30 +821,20 @@ def main():
             140, -1.0, 2.0, [-0.30, 0.40]
         ),
         (
-            "e_vz",
-            "Electron vertex;v_{z,e} (cm);Unit-normalized entries",
-            120, -15.0, 10.0, [-8.0, 2.0]
-        ),
-        (
-            "vz_e_minus_vz_p",
-            "Electron-proton vertex difference;v_{z,e}-v_{z,p} (cm);Unit-normalized entries",
-            120, -40.0, 40.0, [-20.0, 20.0]
-        ),
-        (
             "Mx2_epg_raw",
             "Missing mass squared e'p'#gamma1;M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries",
-            140, -0.5, 1.0, []
+            120, -0.3, 0.3, []
         ),
         (
             "Emiss_epg",
             "Missing energy e'p'#gamma1;E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries",
-            140, -1.0, 2.0, []
+            160, -1.0, 10.0, []
         ),
     ]
 
     prep_file = os.path.join(
         args.output_dir,
-        f"photon_efficiency_stage1_preparation_{args.period}.png"
+        f"1_photon_efficiency_stage1_preparation_{args.period}.png"
     )
 
     keep_prep = draw_before_after_canvas(
@@ -848,19 +848,14 @@ def main():
 
     common_plots = [
         (
-            "tag_beta",
-            "#gamma1 velocity;#beta_{#gamma1};Unit-normalized entries",
-            120, 0.5, 1.5, [0.9, 1.1]
-        ),
-        (
             "e_gamma1_angle_deg",
             "Electron-#gamma1 opening angle;#angle(e,#gamma1) (deg);Unit-normalized entries",
-            120, 0.0, 60.0, [8.0]
+            160, 0.0, 120.0, [8.0]
         ),
         (
             "tag_corr_p",
             "#gamma1 momentum;p_{#gamma1} (GeV);Unit-normalized entries",
-            120, 0.0, 8.0, []
+            150, 0.0, 10.0, []
         ),
         (
             "Mx2_ep",
@@ -881,7 +876,7 @@ def main():
 
     common_file = os.path.join(
         args.output_dir,
-        f"photon_efficiency_stage1_common_photon_{args.period}.png"
+        f"2_photon_efficiency_stage1_common_photon_{args.period}.png"
     )
 
     keep_common = draw_before_after_canvas(
@@ -899,12 +894,6 @@ def main():
 
     probe_plot_specs = [
         (
-            "gamma1_X_angle_deg",
-            "#gamma1-to-inferred-X angle;#angle(#gamma1,X) (deg);Unit-normalized entries",
-            120, 0.0, 20.0,
-            [PROBE_ANGLE_LOW, PROBE_ANGLE_HIGH]
-        ),
-        (
             "Mx2_ep",
             "Missing mass squared e'p';M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries",
             120, -0.5, 0.6,
@@ -921,11 +910,6 @@ def main():
             120, 0.0, 8.0, [0.4]
         ),
         (
-            "e_gamma2_angle_deg",
-            "Electron-#gamma2 opening angle;#angle(e,#gamma2) (deg);Unit-normalized entries",
-            120, 0.0, 60.0, [8.0]
-        ),
-        (
             "probe_beta",
             "Selected #gamma2 velocity (diagnostic only);#beta_{#gamma2};Unit-normalized entries",
             120, 0.5, 1.5, [0.9, 1.1]
@@ -934,7 +918,7 @@ def main():
 
     probe_file = os.path.join(
         args.output_dir,
-        f"photon_efficiency_stage1_probe_{args.period}.png"
+        f"3_photon_efficiency_stage1_probe_{args.period}.png"
     )
 
     gamma2_plot_base_dfs = {
@@ -1003,7 +987,7 @@ def main():
 
     nearest_file = os.path.join(
         args.output_dir,
-        f"photon_efficiency_stage1_nearest_neutral_{args.period}.png"
+        f"4_photon_efficiency_stage1_nearest_neutral_{args.period}.png"
     )
 
     keep_nearest = draw_before_after_canvas(
@@ -1018,7 +1002,7 @@ def main():
 
     cutflow_file = os.path.join(
         args.output_dir,
-        f"photon_efficiency_stage1_cutflow_{args.period}.txt"
+        f"5_photon_efficiency_stage1_cutflow_{args.period}.txt"
     )
 
     write_cutflow(
@@ -1026,7 +1010,7 @@ def main():
         initial_counts,
         prep_counts,
         common_counts,
-        probe_exists_counts,
+        common_probe_counts,
         probe_counts
     )
 
