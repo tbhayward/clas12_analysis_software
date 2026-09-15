@@ -35,6 +35,9 @@ import shutil
 import sys
 
 import ROOT
+import numpy as np
+from scipy.ndimage import gaussian_filter1d, shift as ndimage_shift
+from scipy.optimize import minimize
 
 ROOT.gROOT.SetBatch(True)
 ROOT.TH1.SetDefaultSumw2(True)
@@ -641,7 +644,7 @@ def draw_normalization_fit(dfs, output_dir, period):
         pad.SetLeftMargin(0.14)
         pad.SetRightMargin(0.04)
         pad.SetBottomMargin(0.13)
-        pad.SetTopMargin(0.09)
+        pad.SetTopMargin(0.12)
         if logy:
             pad.SetLogy(True)
 
@@ -697,13 +700,199 @@ def draw_normalization_fit(dfs, output_dir, period):
 
         label = ROOT.TLatex()
         label.SetNDC(True); label.SetTextAlign(13); label.SetTextSize(0.034)
-        label.DrawLatex(0.16, 0.92, "E_{#gamma1} > 4 GeV: " + role)
+        label.DrawLatex(0.16, 0.955, "E_{#gamma1} > 4 GeV: " + role)
         keep.append(label)
 
     output_file = os.path.join(output_dir, f"2_{period}_normalization_fit_Egamma1_gt_4_GeV.png")
     canvas.SaveAs(output_file)
     return keep, output_file
 
+
+
+def _th1_to_numpy(hist):
+    """Return regular-bin contents from a TH1 as a float numpy array."""
+    return np.asarray([hist.GetBinContent(i) for i in range(1, hist.GetNbinsX() + 1)], dtype=float)
+
+
+def _morph_1d_counts(counts, shift_bins, sigma_bins):
+    """Apply the DVCS-analysis shift+additional-Gaussian-smearing morph to 1D counts.
+
+    The integral is explicitly restored after morphing, so A and B remain pure
+    normalization coefficients rather than absorbing morph-induced yield changes.
+    """
+    x = np.asarray(counts, dtype=float)
+    original = float(np.sum(x))
+    if original <= 0.0:
+        return np.zeros_like(x)
+    out = x.copy()
+    if sigma_bins > 1.0e-8:
+        out = gaussian_filter1d(out, sigma=float(sigma_bins), mode="nearest")
+    if abs(shift_bins) > 1.0e-8:
+        out = ndimage_shift(out, shift=float(shift_bins), order=1, mode="nearest", prefilter=False)
+    out = np.clip(out, 0.0, None)
+    total = float(np.sum(out))
+    if total <= 0.0:
+        return x.copy()
+    return out * (original / total)
+
+
+def fit_two_poisson_templates_common_morph(data_hist, dvcs_hist, aao_hist, seed_A, seed_B):
+    """Fit A*DVCS + B*AAO with one common shift/smearing applied to both templates.
+
+    This mirrors the shift+additional-smearing template morph used in the DVCS
+    analysis, but deliberately shares the morph between the two components so
+    template-shape freedom cannot independently fake a change in composition.
+    Shift and smearing are measured in E_gamma1 histogram bins.
+    """
+    d = _th1_to_numpy(data_hist)
+    x0 = _th1_to_numpy(dvcs_hist)
+    y0 = _th1_to_numpy(aao_hist)
+
+    def objective(par):
+        A, B, shift_bins, sigma_bins = [float(v) for v in par]
+        x = _morph_1d_counts(x0, shift_bins, sigma_bins)
+        y = _morph_1d_counts(y0, shift_bins, sigma_bins)
+        mu = np.clip(A*x + B*y, 1.0e-12, None)
+        return float(np.sum(mu - d*np.log(mu)))
+
+    starts = [
+        np.asarray([seed_A, seed_B, 0.0, 0.5]),
+        np.asarray([seed_A, seed_B, 0.0, 1.5]),
+        np.asarray([seed_A, seed_B, -1.0, 1.0]),
+        np.asarray([seed_A, seed_B, +1.0, 1.0]),
+    ]
+    bounds = ((1.0e-12, None), (1.0e-12, None), (-4.0, 4.0), (0.0, 4.0))
+    results = [minimize(objective, q, method="L-BFGS-B", bounds=bounds,
+                        options={"maxiter": 500, "ftol": 1.0e-12}) for q in starts]
+    res = min(results, key=lambda r: float(r.fun))
+    A, B, shift_bins, sigma_bins = [float(v) for v in res.x]
+    x = _morph_1d_counts(x0, shift_bins, sigma_bins)
+    y = _morph_1d_counts(y0, shift_bins, sigma_bins)
+    mu = np.clip(A*x + B*y, 1.0e-12, None)
+
+    dev = 0.0
+    used = 0
+    for di, mui in zip(d, mu):
+        if mui <= 0.0:
+            continue
+        dev += 2.0*(mui - di + di*np.log(di/mui)) if di > 0.0 else 2.0*mui
+        used += 1
+    ndof = max(used - 4, 0)
+    return {
+        "success": bool(res.success), "message": str(res.message),
+        "A": A, "B": B, "shift_bins": shift_bins, "sigma_bins": sigma_bins,
+        "deviance": float(dev), "ndof": int(ndof), "dvcs": x, "aao": y,
+    }
+
+
+def _fill_th1_from_numpy(template_hist, values, name):
+    h = template_hist.Clone(name)
+    h.Reset("ICES")
+    h.SetDirectory(0)
+    for i, value in enumerate(values, start=1):
+        h.SetBinContent(i, float(value))
+    return h
+
+
+def draw_normalization_morph_comparison(dfs, output_dir, period):
+    """Compare nominal and common-morphed E_gamma1 normalization fits.
+
+    The morph is fitted ONLY to E_gamma1.  Its A and B are then applied without
+    refitting to the other observables.  The E_gamma1 shift/smearing itself is
+    not blindly transferred to those different variables.
+    """
+    needed = ("data", "dvcsgen", "aaogen")
+    if any(sample not in dfs for sample in needed):
+        return [], None
+
+    selected = {}
+    for sample in needed:
+        selected[sample] = (dfs[sample]
+            .Filter("Mx2_ep < 0.18", f"morph_{sample}_Mx2_ep_lt_0p18")
+            .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", f"morph_{sample}_Mx2_epg_window")
+            .Filter("E_gamma1 > 4.0", f"morph_{sample}_Egamma1_gt_4"))
+
+    plots = [
+        ("E_gamma1", ";E_{#gamma1} (GeV);Entries", 100, 4.0, 9.0, False, "morph fit observable"),
+        ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Entries", 120, 0.0, 9.0, True, "validation: A,B only"),
+        ("Mx2_ep", ";M^{2}_{X}(e'p') (GeV^{2});Entries", 120, -0.5, 1.0, False, "validation: A,B only"),
+        ("Mx2_epg_raw", ";M^{2}_{X}(e'p'#gamma1) (GeV^{2});Entries", 120, -0.1, 0.15, True, "validation: A,B only"),
+    ]
+    unique = str(abs(hash((output_dir, period, "normalization_morph_comparison"))))
+    booked, actions = {}, []
+    for ip, (expr, title, nb, lo, hi, _log, _role) in enumerate(plots):
+        booked[ip] = {}
+        for sample in needed:
+            h = selected[sample].Histo1D((f"h_morph_{ip}_{sample}_{unique}", title, nb, lo, hi), expr)
+            booked[ip][sample] = h
+            actions.append(h)
+    ROOT.RDF.RunGraphs(actions)
+    raw = {ip: {} for ip in range(len(plots))}
+    for ip in raw:
+        for sample in needed:
+            h = booked[ip][sample].GetValue(); h.SetDirectory(0); raw[ip][sample] = h
+
+    A0, B0, eA0, eB0, corr0, dev0, ndof0 = fit_two_poisson_templates(
+        raw[0]["data"], raw[0]["dvcsgen"], raw[0]["aaogen"])
+    mf = fit_two_poisson_templates_common_morph(raw[0]["data"], raw[0]["dvcsgen"], raw[0]["aaogen"], A0, B0)
+    A1, B1 = mf["A"], mf["B"]
+    dA = 100.0*(A1/A0 - 1.0) if A0 else float("nan")
+    dB = 100.0*(B1/B0 - 1.0) if B0 else float("nan")
+    binw = raw[0]["data"].GetXaxis().GetBinWidth(1)
+
+    print("\nNormalization-template morphing comparison, E_gamma1 > 4 GeV")
+    print("  Nominal fit: Data_i = A*DVCSgen_i + B*AAOgen_i")
+    print(f"    A_nominal = {A0:.8g} +/- {eA0:.3g}")
+    print(f"    B_nominal = {B0:.8g} +/- {eB0:.3g}")
+    print(f"    deviance/dof = {dev0:.2f}/{ndof0}")
+    print("  Common-morph fit: same shift and additional Gaussian smearing for both templates")
+    print(f"    A_morph = {A1:.8g}   change vs nominal = {dA:+.3f}%")
+    print(f"    B_morph = {B1:.8g}   change vs nominal = {dB:+.3f}%")
+    print(f"    shift = {mf['shift_bins']:+.4f} bins = {mf['shift_bins']*binw:+.5f} GeV")
+    print(f"    additional smearing sigma = {mf['sigma_bins']:.4f} bins = {mf['sigma_bins']*binw:.5f} GeV")
+    print(f"    deviance/dof = {mf['deviance']:.2f}/{mf['ndof']}")
+    print(f"    minimizer success = {mf['success']} ({mf['message']})")
+    print("  Validation panels use A_morph and B_morph without refitting and without transferring")
+    print("  the E_gamma1 shift/smearing numerically to the other observables.\n")
+
+    canvas = ROOT.TCanvas(f"c_morphcmp_{unique}", "", 1500, 1100)
+    canvas.Divide(2, 2, 0.002, 0.002)
+    keep = [canvas] + actions
+    for ip, (_expr, _title, _nb, _lo, _hi, logy, role) in enumerate(plots):
+        pad = canvas.cd(ip+1); pad.SetTicks(1,1); pad.SetLeftMargin(0.14); pad.SetRightMargin(0.04); pad.SetBottomMargin(0.13); pad.SetTopMargin(0.12)
+        if logy: pad.SetLogy(True)
+        data = raw[ip]["data"].Clone(f"h_mcmp_data_{ip}_{unique}"); data.SetDirectory(0)
+        if ip == 0:
+            dvcs = _fill_th1_from_numpy(raw[ip]["dvcsgen"], mf["dvcs"], f"h_mcmp_dvcs_{ip}_{unique}")
+            aao = _fill_th1_from_numpy(raw[ip]["aaogen"], mf["aao"], f"h_mcmp_aao_{ip}_{unique}")
+        else:
+            dvcs = raw[ip]["dvcsgen"].Clone(f"h_mcmp_dvcs_{ip}_{unique}"); dvcs.SetDirectory(0)
+            aao = raw[ip]["aaogen"].Clone(f"h_mcmp_aao_{ip}_{unique}"); aao.SetDirectory(0)
+        dvcs.Scale(A1); aao.Scale(B1)
+        total = dvcs.Clone(f"h_mcmp_total_{ip}_{unique}"); total.Add(aao); total.SetDirectory(0)
+        for h in (data,dvcs,aao,total): h.SetStats(0)
+        data.SetLineColor(ROOT.kBlack); data.SetLineWidth(3)
+        dvcs.SetLineColor(COLORS["dvcsgen"]); dvcs.SetLineWidth(2)
+        aao.SetLineColor(COLORS["aaogen"]); aao.SetLineWidth(2)
+        total.SetLineColor(ROOT.kMagenta+2); total.SetLineWidth(4)
+        keep += [data,dvcs,aao,total]
+        ymax=max(h.GetMaximum() for h in (data,dvcs,aao,total))
+        if logy:
+            pos=[h.GetBinContent(i) for h in (data,dvcs,aao,total) for i in range(1,h.GetNbinsX()+1) if h.GetBinContent(i)>0]
+            data.SetMinimum(max((min(pos) if pos else 1.0)*0.5,0.1)); data.SetMaximum(max(10*ymax,10.0))
+        else:
+            data.SetMinimum(0); data.SetMaximum(1.25*ymax if ymax>0 else 1)
+        data.GetXaxis().SetTitleSize(0.045); data.GetYaxis().SetTitleSize(0.043); data.GetXaxis().SetLabelSize(0.036); data.GetYaxis().SetLabelSize(0.036); data.GetXaxis().SetTitleOffset(1.05); data.GetYaxis().SetTitleOffset(1.45)
+        data.Draw("E1"); dvcs.Draw("HIST SAME"); aao.Draw("HIST SAME"); total.Draw("HIST SAME"); data.Draw("E1 SAME")
+        leg=ROOT.TLegend(0.43,0.66,0.90,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.027)
+        leg.AddEntry(data,f"Data (N={int(data.GetEntries()):,})","lep")
+        leg.AddEntry(total,"Morphed A#timesDVCSgen + B#timesAAOgen" if ip==0 else "A_{morph}#timesDVCSgen + B_{morph}#timesAAOgen","l")
+        leg.AddEntry(dvcs,f"DVCSgen (A_{{morph}}={A1:.4g})","l"); leg.AddEntry(aao,f"AAOgen (B_{{morph}}={B1:.4g})","l"); leg.Draw(); keep.append(leg)
+        label=ROOT.TLatex(); label.SetNDC(True); label.SetTextAlign(13); label.SetTextSize(0.032); label.DrawLatex(0.16,0.955,"E_{#gamma1} > 4 GeV: "+role); keep.append(label)
+
+    out=os.path.join(output_dir,f"3_{period}_normalization_common_morph_Egamma1_gt_4_GeV.png")
+    canvas.SaveAs(out)
+    return keep,out
 
 def print_egamma1_survival_scan(dfs):
     """Print exclusive-sample survival versus E_gamma1 threshold for every sample."""
@@ -815,6 +1004,8 @@ def main():
     keep.extend(norm_keep)
     fit_keep, fit_output = draw_normalization_fit(dfs, normalization_dir, args.period)
     keep.extend(fit_keep)
+    morph_keep, morph_output = draw_normalization_morph_comparison(dfs, normalization_dir, args.period)
+    keep.extend(morph_keep)
     _ = keep  # Keep ROOT objects alive through SaveAs().
 
     for output_file in written:
@@ -822,6 +1013,8 @@ def main():
     print(f"\nWrote: {norm_output}")
     if fit_output:
         print(f"\nWrote: {fit_output}")
+    if morph_output:
+        print(f"\nWrote: {morph_output}")
     return 0
 
 
