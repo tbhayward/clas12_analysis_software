@@ -9,7 +9,7 @@ Each row is one reconstructed e'p'gamma1 hypothesis produced by the skim.
 
 Plot the following observables as rows:
   1) E_gamma1                     0.4 to 10 GeV
-  2) missing energy e'p'gamma1    1 to 10 GeV
+  2) missing energy e'p'gamma1    0 to 9 GeV
   3) Mx2(e'p')                   -0.5 to 1.0 GeV^2
   4) Mx2(e'p'gamma1)             -0.1 to 0.15 GeV^2
 
@@ -209,7 +209,7 @@ def draw_canvas(dfs, output_file):
     """Draw the four observables through the requested cumulative cut sequence."""
     plots = [
         ("E_gamma1", ";E_{#gamma1} (GeV);Unit-normalized entries", 172, 0.4, 9.0),
-        ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 180, 1.0, 10.0),
+        ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 180, 0.0, 9.0),
         ("Mx2_ep", ";M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries", 180, -0.5, 1.0),
         ("Mx2_epg_raw", ";M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries", 180, -0.1, 0.15),
     ]
@@ -371,9 +371,11 @@ def main():
         if sample in count_handles:
             print(f"  {label:<14s} {int(count_handles[sample].GetValue()):,}")
 
+    exclusivity_dir = os.path.join(args.output_dir, "exclusivity_selection")
+    os.makedirs(exclusivity_dir, exist_ok=True)
     output_file = os.path.join(
-        args.output_dir,
-        f"1_photon_efficiency_epgamma_hypotheses_{args.period}.png",
+        exclusivity_dir,
+        f"1_{args.period}_photon_efficiency_epgamma_hypotheses.png",
     )
 
     keep = draw_canvas(dfs, output_file)
