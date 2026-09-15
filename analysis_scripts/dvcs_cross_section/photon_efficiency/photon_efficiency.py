@@ -1866,7 +1866,9 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
         f.SetParameters(amp,mode,0.12,max(edge,0.0),0.0,0.0)
         f.SetParLimits(0,0.0,max(10.0*amp,1.0e9)); f.SetParLimits(1,-0.35,0.45); f.SetParLimits(2,0.015,0.35)
         h.Fit(f,"QNR")
-        return f,float(f.GetParameter(1)),abs(float(f.GetParameter(2)))
+        mu = float(f.GetParameter(1))
+        sigma = abs(float(f.GetParameter(2)))
+        return f, mu, sigma
 
     fdata, mu_data, sig_data = fit_peak(hdata, f"f_intdp_data_{unique}")
     fmc, mu_mc, sig_mc = fit_peak(hmc, f"f_intdp_mc_{unique}")
@@ -1908,7 +1910,15 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
     sig_data,bg_data=components(fdata,f"intdp_data_{unique}"); sig_mc,bg_mc=components(fmc,f"intdp_mc_{unique}")
 
     def bgsub_window(h,bg,mu,sig,n,scale):
-        lo=max(-1.0,mu-n*sig); hi=min(1.0,mu+n*sig); ax=h.GetXaxis()
+        # Convert all scalar inputs to native Python numbers before arithmetic.
+        # This avoids cppyy/PyROOT operator dispatch (NotImplementedError).
+        mu = float(mu)
+        sig = abs(float(sig))
+        n = float(n)
+        scale = float(scale)
+        lo = max(-1.0, mu - n*sig)
+        hi = min(1.0, mu + n*sig)
+        ax = h.GetXaxis()
         b1=ax.FindBin(lo+1e-9); b2=ax.FindBin(hi-1e-9); obs=float(h.Integral(b1,b2))/scale
         bkg=float(bg.Integral(lo,hi)/h.GetBinWidth(1))/scale; signal=max(0.0,obs-bkg)
         return obs,bkg,signal
