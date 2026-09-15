@@ -1836,81 +1836,23 @@ def draw_probe_delta_p(dfs, output_dir, period, coeffs):
     return keep, out
 
 def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
-    """Integrated Delta-p matching study; no p/theta/phi binning."""
+    """Focused Delta-p diagnostics; no efficiency is extracted here.
+
+    The retired Gaussian/polynomial and AAOgen-template efficiency machinery is
+    intentionally not run.  AAOgen truth is used only to diagnose what makes
+    Delta p broad: detector dependence, p_X dependence, REC-vs-MC photon
+    response, and the separate p_X-vs-MC and MC-vs-REC contributions.
+    """
     if coeffs is None or "data" not in dfs or "aaogen" not in dfs:
-        print("WARNING: data/AAOgen unavailable; skipping integrated Delta-p efficiency.")
+        print("WARNING: data/AAOgen unavailable; skipping Delta-p diagnostics.")
         return [], None, None
-    A, B, C = coeffs["mean"]
-    unique = str(abs(hash((period, "integrated_delta_p_efficiency"))))
-    selected = {}
-    for sample in ("data", "aaogen"):
-        selected[sample] = (_exclusive_df(dfs[sample], f"intdp_{sample}")
-            .Define("intdp_vec", "pe_delta_p_tag_probe(probe_raw_p,tag_rec_index,neutral_idx,neutral_pid,neutral_p)"))
-    hs, acts = {}, []
-    for sample in ("data", "aaogen"):
-        h = selected[sample].Histo1D((f"h_intdp_{sample}_{unique}", "", 200, -1.0, 1.0), "intdp_vec")
-        hs[sample] = h; acts.append(h)
-    ROOT.RDF.RunGraphs(acts)
-    hdata = hs["data"].GetValue().Clone(f"h_intdp_data_draw_{unique}"); hdata.SetDirectory(0)
-    hmc = hs["aaogen"].GetValue().Clone(f"h_intdp_aaogen_draw_{unique}"); hmc.SetDirectory(0); hmc.Scale(B)
+    _, B, _ = coeffs["mean"]
+    unique = str(abs(hash((period, "delta_p_focused_diagnostics"))))
 
-    def fit_peak(h, name):
-        ax=h.GetXaxis(); b1=ax.FindBin(-0.45); b2=ax.FindBin(0.45)
-        ib=max(range(b1,b2+1), key=lambda b:h.GetBinContent(b)); mode=ax.GetBinCenter(ib)
-        # Exclusive peak + smooth combinatorial background.  The old Gaussian-only
-        # fit let the broad tails inflate sigma badly.  Fit data and AAOgen independently.
-        lo,hi=-1.00,1.00
-        f=ROOT.TF1(name,"gaus(0)+pol2(3)",lo,hi)
-        amp=max(h.GetBinContent(ib),1.0)
-        edge=0.5*(h.GetBinContent(ax.FindBin(lo+0.03))+h.GetBinContent(ax.FindBin(hi-0.03)))
-        f.SetParameters(amp,mode,0.12,max(edge,0.0),0.0,0.0)
-        f.SetParLimits(0,0.0,max(10.0*amp,1.0e9)); f.SetParLimits(1,-0.35,0.45); f.SetParLimits(2,0.015,0.35)
-        h.Fit(f,"QNR")
-        mu = float(f.GetParameter(1))
-        sigma = abs(float(f.GetParameter(2)))
-        return f, mu, sigma
-
-    fdata, mu_data, sig_data = fit_peak(hdata, f"f_intdp_data_{unique}")
-    fmc, mu_mc, sig_mc = fit_peak(hmc, f"f_intdp_mc_{unique}")
-
-    # One best candidate per already-selected epgammaX row.  This preserves the
-    # denominator population while preventing multiple probe photons on that row
-    # from producing multiple numerator counts.
     if not hasattr(draw_probe_integrated_delta_p_efficiency, "_helper_declared"):
         ROOT.gInterpreter.Declare(r'''
-        double pe_best_delta_p(const ROOT::VecOps::RVec<double>& v, double mu) {
-            if (v.empty()) return 1.0e9;
-            double best=v[0], d=std::abs(v[0]-mu);
-            for (size_t i=1;i<v.size();++i) {
-                const double di=std::abs(v[i]-mu);
-                if (di<d) { d=di; best=v[i]; }
-            }
-            return best;
-        }
-
-        ROOT::VecOps::RVec<double> pe_best_delta_p_info(
-            double probe_p,double mu,int tag_index,
-            const ROOT::VecOps::RVec<int>& neutral_idx,
-            const ROOT::VecOps::RVec<int>& neutral_pid,
-            const ROOT::VecOps::RVec<int>& neutral_detector,
-            const ROOT::VecOps::RVec<double>& neutral_p) {
-            ROOT::VecOps::RVec<double> out;
-            int best=-1; double bestdp=1e9,bestdist=1e99;
-            for(size_t i=0;i<neutral_idx.size();++i){
-                if(neutral_idx[i]<0 || neutral_idx[i]==tag_index || neutral_pid[i]!=22 || !(neutral_p[i]>0)) continue;
-                const double dp=probe_p-neutral_p[i], d=std::abs(dp-mu);
-                if(d<bestdist){bestdist=d; bestdp=dp; best=(int)i;}
-            }
-            if(best<0) return out;
-            const size_t i=(size_t)best;
-            out.push_back(bestdp);
-            out.push_back((i<neutral_detector.size()) ? (double)neutral_detector[i] : -1.0);
-            out.push_back((i<neutral_p.size()) ? neutral_p[i] : -1.0);
-            return out;
-        }
-
-        ROOT::VecOps::RVec<double> pe_best_delta_p_truth(
-            double probe_p,double mu,int tag_index,
+        ROOT::VecOps::RVec<double> pe_best_dp_diagnostic(
+            double probe_p,int tag_index,
             int mc_tag_index,int mc_tag_pid,double mc_tag_p,double mc_tag_th,double mc_tag_ph,
             const ROOT::VecOps::RVec<int>& neutral_idx,
             const ROOT::VecOps::RVec<int>& neutral_pid,
@@ -1921,847 +1863,171 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
             const ROOT::VecOps::RVec<double>& neutral_mc_p,
             const ROOT::VecOps::RVec<double>& neutral_mc_th,
             const ROOT::VecOps::RVec<double>& neutral_mc_ph) {
-            ROOT::VecOps::RVec<double> out;
-            int best=-1; double bestdp=1e9,bestdist=1e99;
-            for(size_t i=0;i<neutral_idx.size();++i){
-                if(neutral_idx[i]<0 || neutral_idx[i]==tag_index || neutral_pid[i]!=22 || !(neutral_p[i]>0)) continue;
-                const double dp=probe_p-neutral_p[i], d=std::abs(dp-mu);
-                if(d<bestdist){bestdist=d; bestdp=dp; best=(int)i;}
-            }
-            if(best<0) return out;
-            bool truth=false; const size_t i=(size_t)best;
-            if(mc_tag_index>=0 && mc_tag_pid==22 && mc_tag_p>0 &&
-               i<neutral_mc_index.size() && i<neutral_mc_pid.size() &&
-               i<neutral_mc_p.size() && i<neutral_mc_th.size() && i<neutral_mc_ph.size() &&
-               neutral_mc_index[i]>=0 && neutral_mc_pid[i]==22 &&
-               neutral_mc_index[i]!=mc_tag_index && neutral_mc_p[i]>0){
-                const double dot=std::sin(mc_tag_th*M_PI/180.)*std::sin(neutral_mc_th[i]*M_PI/180.)*
-                    std::cos((mc_tag_ph-neutral_mc_ph[i])*M_PI/180.)+
-                    std::cos(mc_tag_th*M_PI/180.)*std::cos(neutral_mc_th[i]*M_PI/180.);
-                const double c=std::max(-1.,std::min(1.,dot));
-                const double m2=2.*mc_tag_p*neutral_mc_p[i]*(1.-c);
-                if(m2>=0){const double m=std::sqrt(m2); truth=(m>0.125 && m<0.145);}
-            }
-            out.push_back(bestdp);
-            out.push_back(truth?1.0:0.0);
-            out.push_back((i<neutral_detector.size()) ? (double)neutral_detector[i] : -1.0);
-            out.push_back((i<neutral_p.size()) ? neutral_p[i] : -1.0);
-            return out;
+          ROOT::VecOps::RVec<double> out;
+          int best=-1; double bestdp=1e99;
+          for(size_t i=0;i<neutral_idx.size();++i){
+            if(neutral_idx[i]<0 || neutral_idx[i]==tag_index || neutral_pid[i]!=22 || !(neutral_p[i]>0)) continue;
+            const double dp=probe_p-neutral_p[i];
+            if(std::abs(dp)<std::abs(bestdp)){bestdp=dp; best=(int)i;}
+          }
+          if(best<0) return out;
+          const size_t i=(size_t)best;
+          bool truth=false;
+          double mcp=-1.0;
+          if(mc_tag_index>=0 && mc_tag_pid==22 && mc_tag_p>0 &&
+             i<neutral_mc_index.size() && i<neutral_mc_pid.size() && i<neutral_mc_p.size() &&
+             i<neutral_mc_th.size() && i<neutral_mc_ph.size() &&
+             neutral_mc_index[i]>=0 && neutral_mc_pid[i]==22 &&
+             neutral_mc_index[i]!=mc_tag_index && neutral_mc_p[i]>0){
+            mcp=neutral_mc_p[i];
+            const double dot=std::sin(mc_tag_th*M_PI/180.)*std::sin(neutral_mc_th[i]*M_PI/180.)*
+                std::cos((mc_tag_ph-neutral_mc_ph[i])*M_PI/180.)+
+                std::cos(mc_tag_th*M_PI/180.)*std::cos(neutral_mc_th[i]*M_PI/180.);
+            const double c=std::max(-1.,std::min(1.,dot));
+            const double m2=2.*mc_tag_p*neutral_mc_p[i]*(1.-c);
+            if(m2>=0){const double m=std::sqrt(m2); truth=(m>0.125 && m<0.145);}
+          }
+          out.push_back(bestdp);                                                   // 0
+          out.push_back((i<neutral_detector.size()) ? neutral_detector[i] : -1); // 1
+          out.push_back(neutral_p[i]);                                            // 2 REC p_gamma
+          out.push_back(truth?1.0:0.0);                                           // 3
+          out.push_back(mcp);                                                     // 4 MC p_gamma
+          return out;
+        }
+
+        ROOT::VecOps::RVec<double> pe_best_dp_data(
+            double probe_p,int tag_index,
+            const ROOT::VecOps::RVec<int>& neutral_idx,
+            const ROOT::VecOps::RVec<int>& neutral_pid,
+            const ROOT::VecOps::RVec<int>& neutral_detector,
+            const ROOT::VecOps::RVec<double>& neutral_p) {
+          ROOT::VecOps::RVec<double> out;
+          int best=-1; double bestdp=1e99;
+          for(size_t i=0;i<neutral_idx.size();++i){
+            if(neutral_idx[i]<0 || neutral_idx[i]==tag_index || neutral_pid[i]!=22 || !(neutral_p[i]>0)) continue;
+            const double dp=probe_p-neutral_p[i];
+            if(std::abs(dp)<std::abs(bestdp)){bestdp=dp; best=(int)i;}
+          }
+          if(best<0) return out;
+          const size_t i=(size_t)best;
+          out.push_back(bestdp);
+          out.push_back((i<neutral_detector.size()) ? neutral_detector[i] : -1);
+          out.push_back(neutral_p[i]);
+          return out;
         }
         ''')
         draw_probe_integrated_delta_p_efficiency._helper_declared = True
-    # Nominal candidate ranking is purely reconstructed and fit-independent:
-    # choose the photon with the smallest |Delta p|.  This avoids feeding the
-    # unstable Gaussian+polynomial peak position back into candidate selection.
-    candidate_mu = 0.0
-    ddata=selected["data"].Define("best_dp",f"pe_best_delta_p(intdp_vec,{candidate_mu:.17g})")
-    ddata=ddata.Define("best_dp_info",
-        f"pe_best_delta_p_info(probe_raw_p,{candidate_mu:.17g},tag_rec_index,neutral_idx,neutral_pid,neutral_detector,neutral_p)")
-    ddata=ddata.Define("best_dp_detector","best_dp_info.size()>1 ? best_dp_info[1] : -1.0")
-    ddata=ddata.Define("best_dp_rec_p","best_dp_info.size()>2 ? best_dp_info[2] : -1.0")
-    dmc=selected["aaogen"].Define("best_dp",f"pe_best_delta_p(intdp_vec,{candidate_mu:.17g})")
-    dmc=dmc.Define("best_dp_truth_info",
-        f"pe_best_delta_p_truth(probe_raw_p,{candidate_mu:.17g},tag_rec_index,mc_tag_index,mc_tag_pid,"
-        "mc_tag_p,mc_tag_theta,mc_tag_phi,neutral_idx,neutral_pid,neutral_detector,neutral_p,"
-        "neutral_mc_index,neutral_mc_pid,neutral_mc_p,neutral_mc_theta,neutral_mc_phi)")
-    dmc=dmc.Define("best_dp_truth","best_dp_truth_info.size()>1 ? best_dp_truth_info[1] : -1.0")
-    dmc=dmc.Define("best_dp_detector","best_dp_truth_info.size()>2 ? best_dp_truth_info[2] : -1.0")
-    dmc=dmc.Define("best_dp_rec_p","best_dp_truth_info.size()>3 ? best_dp_truth_info[3] : -1.0")
-    den_data,den_mc=ddata.Count(),dmc.Count(); cand_data=ddata.Filter("best_dp < 1e8").Count(); cand_mc=dmc.Filter("best_dp < 1e8").Count()
-    hbdp=ddata.Filter("best_dp < 1e8").Histo1D((f"h_bestdp_data_{unique}","",200,-1.0,1.0),"best_dp")
-    hbmc=dmc.Filter("best_dp < 1e8").Histo1D((f"h_bestdp_mc_{unique}","",200,-1.0,1.0),"best_dp")
-    htruth=dmc.Filter("best_dp < 1e8 && best_dp_truth > 0.5").Histo1D((f"h_bestdp_truth_{unique}","",200,-1.0,1.0),"best_dp")
-    hwrong=dmc.Filter("best_dp < 1e8 && best_dp_truth < 0.5").Histo1D((f"h_bestdp_wrong_{unique}","",200,-1.0,1.0),"best_dp")
-    ntruth=dmc.Filter("best_dp < 1e8 && best_dp_truth > 0.5").Count()
-    nwrong=dmc.Filter("best_dp < 1e8 && best_dp_truth < 0.5").Count()
-    ROOT.RDF.RunGraphs([den_data,den_mc,cand_data,cand_mc,hbdp,hbmc,htruth,hwrong,ntruth,nwrong])
-    nd=int(den_data.GetValue()); nm=int(den_mc.GetValue())
-    # Refit the actual one-best-candidate-per-row spectra.  These are the fits used
-    # for the final mu, sigma, background subtraction, and efficiency.
-    hdata=hbdp.GetValue().Clone(f"h_bestdp_data_draw_{unique}"); hdata.SetDirectory(0)
-    hmc=hbmc.GetValue().Clone(f"h_bestdp_mc_draw_{unique}"); hmc.SetDirectory(0); hmc.Scale(B)
-    fdata,mu_data,sig_data=fit_peak(hdata,f"f_intdp_data_best_{unique}")
-    fmc,mu_mc,sig_mc=fit_peak(hmc,f"f_intdp_mc_best_{unique}")
-    for label, mu_value, sigma_value in (
-        ("data", mu_data, sig_data),
-        ("AAOgen", mu_mc, sig_mc),
-    ):
-        # Native-float finite checks without relying on the math module.
-        # NaN fails x == x; +/-inf are rejected by the explicit magnitude bound.
-        if (mu_value != mu_value or sigma_value != sigma_value
-                or abs(mu_value) >= 1.0e100 or abs(sigma_value) >= 1.0e100
-                or sigma_value <= 0.0):
-            raise RuntimeError(
-                f"Integrated Delta-p {label} fit returned invalid parameters: "
-                f"mu={mu_value}, sigma={sigma_value}"
-            )
 
-    def components(f,prefix):
-        sg=ROOT.TF1(prefix+"_sig","gaus",-1.00,1.00); sg.SetParameters(f.GetParameter(0),f.GetParameter(1),f.GetParameter(2))
-        bg=ROOT.TF1(prefix+"_bg","pol2",-1.00,1.00); bg.SetParameters(f.GetParameter(3),f.GetParameter(4),f.GetParameter(5))
-        return sg,bg
-    sigfunc_data,bg_data=components(fdata,f"intdp_data_{unique}")
-    sigfunc_mc,bg_mc=components(fmc,f"intdp_mc_{unique}")
+    ddata = (_exclusive_df(dfs["data"], "dpdiag_data")
+        .Define("dpdiag", "pe_best_dp_data(probe_raw_p,tag_rec_index,neutral_idx,neutral_pid,neutral_detector,neutral_p)")
+        .Filter("dpdiag.size()>2")
+        .Define("best_dp", "dpdiag[0]")
+        .Define("best_det", "dpdiag[1]")
+        .Define("best_rec_p", "dpdiag[2]"))
+    dmc = (_exclusive_df(dfs["aaogen"], "dpdiag_mc")
+        .Define("dpdiag", "pe_best_dp_diagnostic(probe_raw_p,tag_rec_index,mc_tag_index,mc_tag_pid,mc_tag_p,mc_tag_theta,mc_tag_phi,neutral_idx,neutral_pid,neutral_detector,neutral_p,neutral_mc_index,neutral_mc_pid,neutral_mc_p,neutral_mc_theta,neutral_mc_phi)")
+        .Filter("dpdiag.size()>4")
+        .Define("best_dp", "dpdiag[0]")
+        .Define("best_det", "dpdiag[1]")
+        .Define("best_rec_p", "dpdiag[2]")
+        .Define("best_truth", "dpdiag[3]")
+        .Define("best_mc_p", "dpdiag[4]")
+        .Define("rec_over_mc", "best_mc_p>0 ? best_rec_p/best_mc_p : -1.0")
+        .Define("px_minus_mc", "best_mc_p>0 ? probe_raw_p-best_mc_p : -999.0")
+        .Define("mc_minus_rec", "best_mc_p>0 ? best_mc_p-best_rec_p : -999.0"))
 
-    def bgsub_window(h,bg,mu,sig,n,scale):
-        # Convert all scalar inputs to native Python numbers before arithmetic.
-        # This avoids cppyy/PyROOT operator dispatch (NotImplementedError).
-        mu = float(mu)
-        sig = abs(float(sig))
-        n = float(n)
-        scale = float(scale)
-        lo = max(-1.0, mu - n*sig)
-        hi = min(1.0, mu + n*sig)
-        ax = h.GetXaxis()
-        b1=ax.FindBin(lo+1e-9); b2=ax.FindBin(hi-1e-9); obs=float(h.Integral(b1,b2))/scale
-        bkg=float(bg.Integral(lo,hi)/h.GetBinWidth(1))/scale; signal=max(0.0,obs-bkg)
-        return obs,bkg,signal
-    results={}
-    for n in (1,2,3):
-        od,bd,sd=bgsub_window(hdata,bg_data,mu_data,sig_data,n,1.0)
-        om,bm,sm=bgsub_window(hmc,bg_mc,mu_mc,sig_mc,n,B)
-        ed=sd/nd if nd else float('nan'); em=sm/nm if nm else float('nan')
-        results[n]={"Ndata":sd,"Nmc":sm,"obs_data":od,"bkg_data":bd,"obs_mc":om,"bkg_mc":bm,"eff_data":ed,"eff_mc":em,"ratio":ed/em if em>0 else float('nan')}
+    keep=[]; outputs=[]
+    det_specs=[("FT","best_det==0"),("FD","best_det==1")]
+    ene_specs=[("0.4 < p_{X} < 2 GeV","probe_raw_p>0.4 && probe_raw_p<2.0"),
+               ("2 < p_{X} < 4 GeV","probe_raw_p>=2.0 && probe_raw_p<4.0"),
+               ("p_{X} > 4 GeV","probe_raw_p>=4.0")]
 
-    c=ROOT.TCanvas(f"c_intdp_eff_{unique}","",1500,720)
-    c.Divide(2,1,0.002,0.002)
-    keep=[c,hdata,hmc,fdata,fmc,sigfunc_data,bg_data,sigfunc_mc,bg_mc]
-    panels = [
-        (hdata,fdata,sigfunc_data,bg_data,mu_data,sig_data,
-         "Data: integrated #Delta p fit",ROOT.kBlack),
-        (hmc,fmc,sigfunc_mc,bg_mc,mu_mc,sig_mc,
-         "AAOgen: integrated #Delta p fit",ROOT.kRed+1),
-    ]
-    for ipad,(h,f,sg,bg,mu,sig,title,col) in enumerate(panels,1):
-        pad=c.cd(ipad); pad.SetTicks(1,1); pad.SetLeftMargin(0.14); pad.SetBottomMargin(0.14); pad.SetTopMargin(0.11); pad.SetRightMargin(0.04)
-        h.SetStats(0); h.SetLineColor(col); h.SetMarkerColor(col); h.SetMarkerStyle(20); h.SetMarkerSize(0.55)
-        h.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)"); h.GetYaxis().SetTitle("Normalized candidate combinations"); h.GetYaxis().SetTitleOffset(1.55); h.Draw("E1")
-        f.SetLineColor(ROOT.kMagenta+2); f.SetLineWidth(3); f.Draw("SAME")
-        sg.SetLineColor(ROOT.kBlue); sg.SetLineWidth(3); sg.Draw("SAME")
-        bg.SetLineColor(ROOT.kGray+2); bg.SetLineStyle(2); bg.SetLineWidth(2); bg.Draw("SAME")
-        lab=ROOT.TLatex(); lab.SetNDC(True); lab.SetTextSize(0.031)
-        lab.DrawLatex(0.18,0.92,title)
-        lab.DrawLatex(0.18,0.865,f"#mu = {mu:+.4f} GeV")
-        lab.DrawLatex(0.18,0.815,f"#sigma = {sig:.4f} GeV")
-        chi2ndf = float(f.GetChisquare())/float(f.GetNDF()) if f.GetNDF() > 0 else float("nan")
-        lab.DrawLatex(0.18,0.765,f"#chi^{{2}}/ndf = {chi2ndf:.2f}")
-        y=0.705
-        for n in (1,2,3):
-            r=results[n]
-            txt=(f"{n}#sigma: #epsilon_{{data}}={r['eff_data']:.4f}, C_{{#gamma}}={r['ratio']:.4f}" if ipad==1 else f"{n}#sigma: #epsilon_{{AAO}}={r['eff_mc']:.4f}")
-            lab.DrawLatex(0.18,y,txt); y-=0.05
-        keep.append(lab)
-    out=os.path.join(output_dir,f"6_{period}_integrated_delta_p_efficiency.png"); c.SaveAs(out)
+    def h1(df,filt,name):
+        return df.Filter(filt).Histo1D((name,"",200,-1.0,1.0),"best_dp")
 
-    # Direct AAOgen truth decomposition of exactly the same best-candidate population.
-    ht=htruth.GetValue().Clone(f"h_bestdp_truth_draw_{unique}"); ht.SetDirectory(0); ht.Scale(B)
-    hw=hwrong.GetValue().Clone(f"h_bestdp_wrong_draw_{unique}"); hw.SetDirectory(0); hw.Scale(B)
-    nt,nw=int(ntruth.GetValue()),int(nwrong.GetValue())
-    ct=ROOT.TCanvas(f"c_bestdp_truth_{unique}","",1450,760)
-    ct.SetTicks(1,1); ct.SetLeftMargin(0.12); ct.SetRightMargin(0.04); ct.SetBottomMargin(0.14); ct.SetTopMargin(0.11)
-    hmc.SetStats(0); hmc.SetLineColor(ROOT.kBlack); hmc.SetLineWidth(2); hmc.GetXaxis().SetRangeUser(-1.0,1.0)
-    hmc.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)")
-    hmc.GetYaxis().SetTitle("Normalized best-candidate rows"); hmc.GetYaxis().SetTitleOffset(1.35); hmc.Draw("HIST")
-    ht.SetLineColor(ROOT.kBlue+1); ht.SetLineWidth(3); ht.Draw("HIST SAME")
-    hw.SetLineColor(ROOT.kRed+1); hw.SetLineWidth(3); hw.SetLineStyle(2); hw.Draw("HIST SAME")
-    lt=ROOT.TLegend(0.56,0.69,0.93,0.87); lt.SetBorderSize(0); lt.SetFillStyle(0); lt.SetTextSize(0.031)
-    lt.AddEntry(hmc,"AAOgen all best candidates","l"); lt.AddEntry(ht,f"Truth #pi^{{0}} pair ({nt:,})","l")
-    lt.AddEntry(hw,f"Wrong/combinatorial ({nw:,})","l"); lt.Draw()
-    tt=ROOT.TLatex(); tt.SetNDC(True); tt.SetTextAlign(22); tt.SetTextSize(0.036)
-    tt.DrawLatex(0.52,0.955,"AAOgen best-candidate #Delta p: direct MC truth decomposition")
-    ts=ROOT.TLatex(); ts.SetNDC(True); ts.SetTextSize(0.026)
-    ts.DrawLatex(0.15,0.88,"Truth: distinct matched MC photons with 0.125 < M_{#gamma#gamma}^{gen} < 0.145 GeV")
-    truth_out=os.path.join(output_dir,f"7_{period}_AAOgen_delta_p_truth_decomposition.png"); ct.SaveAs(truth_out)
-    keep.extend([ct,ht,hw,lt,tt,ts])
-    print("\nAAOgen best-candidate Delta-p truth decomposition:")
-    print("  Same best-candidate rule as the efficiency numerator.")
-    print("  Truth = distinct matched MC photons with 0.125 < Mgg_gen < 0.145 GeV.")
-    print(f"  truth pi0={nt:,}; wrong/combinatorial={nw:,}; truth fraction={nt/(nt+nw):.6f}" if nt+nw else "  no candidates")
-    print(f"  Wrote truth decomposition to {truth_out}")
-
-    # ------------------------------------------------------------------
-    # Response diagnostics: use AAOgen truth labels to understand the machinery,
-    # never to decide whether a Data candidate is signal.
-    #
-    # Detector split uses the detector of the selected reconstructed probe
-    # candidate (0=FT, 1=FD).  Energy slices use probe_raw_p, i.e. the momentum
-    # predicted by the missing e'p'gamma1 system, so the slicing itself does not
-    # require a reconstructed probe photon.
-    # ------------------------------------------------------------------
-    diag_specs = [
-        ("FT", "best_dp_detector == 0"),
-        ("FD", "best_dp_detector == 1"),
-    ]
-    energy_specs = [
-        ("0.4 < p_{X} < 2 GeV", "probe_raw_p >= 0.4 && probe_raw_p < 2.0"),
-        ("2 < p_{X} < 4 GeV", "probe_raw_p >= 2.0 && probe_raw_p < 4.0"),
-        ("p_{X} > 4 GeV", "probe_raw_p >= 4.0"),
-    ]
-
-    def _diag_hist(df, filt, name):
-        return df.Filter(f"best_dp < 1e8 && ({filt})").Histo1D((name,"",160,-1.0,1.0),"best_dp")
-
-    def _truth_stats(df, filt):
-        base=df.Filter(f"best_dp < 1e8 && ({filt})")
-        ntot=base.Count()
-        ntrue=base.Filter("best_dp_truth > 0.5").Count()
-        htrue=base.Filter("best_dp_truth > 0.5").Histo1D((f"h_tmp_true_{unique}_{abs(hash(filt))}","",400,-4.0,4.0),"best_dp")
-        ROOT.RDF.RunGraphs([ntot,ntrue,htrue])
-        n0=int(ntot.GetValue()); n1=int(ntrue.GetValue())
-        hh=htrue.GetValue()
-        mean=float(hh.GetMean()) if hh.GetEntries()>0 else float("nan")
-        rms=float(hh.GetRMS()) if hh.GetEntries()>0 else float("nan")
-        # Fractions outside broad, symmetric residual windows.  These are
-        # descriptive tail metrics, not efficiency cuts.
-        vals={}
-        denom=float(hh.Integral(1,hh.GetNbinsX()))
-        for cut in (0.25,0.50,1.00):
-            ax=hh.GetXaxis(); b1=ax.FindBin(-cut+1e-9); b2=ax.FindBin(cut-1e-9)
-            inside=float(hh.Integral(b1,b2))
-            vals[cut]=(1.0-inside/denom) if denom>0 else float("nan")
-        return n0,n1,(n1/n0 if n0 else float("nan")),mean,rms,vals
-
-    # 8a: FT/FD.  Left column is AAOgen truth decomposition in absolute
-    # B-scaled counts. Right column compares Data and inclusive AAOgen shapes
-    # after area-normalizing AAOgen to Data; no truth information enters Data.
-    cdet=ROOT.TCanvas(f"c_dp_detector_diag_{unique}","",1500,1050)
-    cdet.Divide(2,2,0.002,0.002)
-    det_keep=[cdet]
-    print("\nDelta-p detector diagnostic (truth labels used for AAOgen validation only):")
-    for ir,(lab,filt) in enumerate(diag_specs):
-        ha_all=_diag_hist(dmc,filt,f"h_det_all_{ir}_{unique}")
-        ha_true=_diag_hist(dmc,f"({filt}) && best_dp_truth > 0.5",f"h_det_true_{ir}_{unique}")
-        ha_wrong=_diag_hist(dmc,f"({filt}) && best_dp_truth < 0.5",f"h_det_wrong_{ir}_{unique}")
-        hd=_diag_hist(ddata,filt,f"h_det_data_{ir}_{unique}")
-        ROOT.RDF.RunGraphs([ha_all,ha_true,ha_wrong,hd])
-        hall=ha_all.GetValue().Clone(f"h_det_all_draw_{ir}_{unique}"); hall.SetDirectory(0); hall.Scale(B)
-        htr=ha_true.GetValue().Clone(f"h_det_true_draw_{ir}_{unique}"); htr.SetDirectory(0); htr.Scale(B)
-        hwr=ha_wrong.GetValue().Clone(f"h_det_wrong_draw_{ir}_{unique}"); hwr.SetDirectory(0); hwr.Scale(B)
-        hda=hd.GetValue().Clone(f"h_det_data_draw_{ir}_{unique}"); hda.SetDirectory(0)
-        p=cdet.cd(1+2*ir); p.SetTicks(1,1); p.SetLeftMargin(.13); p.SetBottomMargin(.14); p.SetTopMargin(.10)
-        hall.SetStats(0); hall.SetLineColor(ROOT.kBlack); hall.SetLineWidth(2)
-        hall.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)"); hall.GetYaxis().SetTitle("B-scaled AAOgen rows"); hall.Draw("HIST")
-        htr.SetLineColor(ROOT.kBlue+1); htr.SetLineWidth(3); htr.Draw("HIST SAME")
-        hwr.SetLineColor(ROOT.kRed+1); hwr.SetLineStyle(2); hwr.SetLineWidth(3); hwr.Draw("HIST SAME")
-        lg=ROOT.TLegend(.58,.69,.93,.88); lg.SetBorderSize(0); lg.SetFillStyle(0); lg.AddEntry(hall,f"{lab}: all","l"); lg.AddEntry(htr,"truth-matched","l"); lg.AddEntry(hwr,"wrong/combinatorial","l"); lg.Draw()
-        tl=ROOT.TLatex(); tl.SetNDC(True); tl.SetTextSize(.034); tl.DrawLatex(.15,.93,f"AAOgen {lab}: truth decomposition")
-        p=cdet.cd(2+2*ir); p.SetTicks(1,1); p.SetLeftMargin(.13); p.SetBottomMargin(.14); p.SetTopMargin(.10)
-        hda.SetStats(0); hda.SetLineColor(ROOT.kBlack); hda.SetMarkerColor(ROOT.kBlack); hda.SetMarkerStyle(20); hda.SetMarkerSize(.45)
-        haa=hall.Clone(f"h_det_shape_{ir}_{unique}"); haa.SetDirectory(0)
-        if haa.Integral()>0 and hda.Integral()>0: haa.Scale(hda.Integral()/haa.Integral())
-        ymax=max(hda.GetMaximum(),haa.GetMaximum())*1.12; hda.SetMaximum(ymax)
-        hda.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)"); hda.GetYaxis().SetTitle("Shape-normalized rows"); hda.Draw("E1")
-        haa.SetLineColor(ROOT.kMagenta+2); haa.SetLineWidth(3); haa.Draw("HIST SAME")
-        lg2=ROOT.TLegend(.62,.76,.93,.88); lg2.SetBorderSize(0); lg2.SetFillStyle(0); lg2.AddEntry(hda,"Data","lep"); lg2.AddEntry(haa,"AAOgen (area matched)","l"); lg2.Draw()
-        tl2=ROOT.TLatex(); tl2.SetNDC(True); tl2.SetTextSize(.034); tl2.DrawLatex(.15,.93,f"{lab}: Data vs inclusive AAOgen")
-        n0,n1,purity,mean,rms,tails=_truth_stats(dmc,filt)
-        print(f"  {lab}: candidates={n0:,}, truth={n1:,}, minimum-|Delta p| truth purity={purity:.4f}, truth <Delta p>={mean:+.4f} GeV, RMS={rms:.4f} GeV, tails |Delta p|>0.25/0.50/1.00 = {tails[0.25]:.4f}/{tails[0.50]:.4f}/{tails[1.00]:.4f}")
-        det_keep += [hall,htr,hwr,hda,haa,lg,lg2,tl,tl2]
-    det_out=os.path.join(output_dir,f"8a_{period}_delta_p_FT_FD_diagnostic.png"); cdet.SaveAs(det_out)
-    print(f"  Wrote FT/FD diagnostic to {det_out}")
-
-    # 8b: predicted-probe energy dependence, same two-column logic.
-    cene=ROOT.TCanvas(f"c_dp_energy_diag_{unique}","",1500,1450)
-    cene.Divide(2,3,0.002,0.002)
-    ene_keep=[cene]
-    print("\nDelta-p predicted-probe-energy diagnostic:")
-    for ir,(lab,filt) in enumerate(energy_specs):
-        ha_all=_diag_hist(dmc,filt,f"h_en_all_{ir}_{unique}")
-        ha_true=_diag_hist(dmc,f"({filt}) && best_dp_truth > 0.5",f"h_en_true_{ir}_{unique}")
-        ha_wrong=_diag_hist(dmc,f"({filt}) && best_dp_truth < 0.5",f"h_en_wrong_{ir}_{unique}")
-        hd=_diag_hist(ddata,filt,f"h_en_data_{ir}_{unique}")
-        ROOT.RDF.RunGraphs([ha_all,ha_true,ha_wrong,hd])
-        hall=ha_all.GetValue().Clone(f"h_en_all_draw_{ir}_{unique}"); hall.SetDirectory(0); hall.Scale(B)
-        htr=ha_true.GetValue().Clone(f"h_en_true_draw_{ir}_{unique}"); htr.SetDirectory(0); htr.Scale(B)
-        hwr=ha_wrong.GetValue().Clone(f"h_en_wrong_draw_{ir}_{unique}"); hwr.SetDirectory(0); hwr.Scale(B)
-        hda=hd.GetValue().Clone(f"h_en_data_draw_{ir}_{unique}"); hda.SetDirectory(0)
-        p=cene.cd(1+2*ir); p.SetTicks(1,1); p.SetLeftMargin(.13); p.SetBottomMargin(.14); p.SetTopMargin(.10)
-        hall.SetStats(0); hall.SetLineColor(ROOT.kBlack); hall.SetLineWidth(2); hall.GetXaxis().SetTitle("#Delta p (GeV)"); hall.GetYaxis().SetTitle("B-scaled AAOgen rows"); hall.Draw("HIST")
+    # 8a: detector split.  Truth is shown only on the AAOgen side; Data is never
+    # classified with an MC-derived shape.
+    cdet=ROOT.TCanvas(f"c_dp_det_{unique}","",1500,1050); cdet.Divide(2,2,0.002,0.002); keep.append(cdet)
+    print("\nDelta-p detector diagnostic (AAOgen truth is diagnostic only):")
+    for ir,(lab,filt) in enumerate(det_specs):
+        aa=h1(dmc,filt,f"h_da_{ir}_{unique}"); tr=h1(dmc,f"({filt}) && best_truth>0.5",f"h_dt_{ir}_{unique}"); wr=h1(dmc,f"({filt}) && best_truth<0.5",f"h_dw_{ir}_{unique}"); da=h1(ddata,filt,f"h_dd_{ir}_{unique}")
+        nall=dmc.Filter(filt).Count(); ntr=dmc.Filter(f"({filt}) && best_truth>0.5").Count()
+        ROOT.RDF.RunGraphs([aa,tr,wr,da,nall,ntr])
+        hall=aa.GetValue().Clone(); hall.SetDirectory(0); hall.Scale(B); htr=tr.GetValue().Clone(); htr.SetDirectory(0); htr.Scale(B); hwr=wr.GetValue().Clone(); hwr.SetDirectory(0); hwr.Scale(B); hda=da.GetValue().Clone(); hda.SetDirectory(0)
+        p=cdet.cd(1+2*ir); p.SetTicks(1,1); p.SetLeftMargin(.13); p.SetBottomMargin(.14)
+        hall.SetStats(0); hall.SetLineColor(ROOT.kBlack); hall.SetLineWidth(2); hall.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)"); hall.GetYaxis().SetTitle("B-scaled AAOgen rows"); hall.Draw("HIST")
         htr.SetLineColor(ROOT.kBlue+1); htr.SetLineWidth(3); htr.Draw("HIST SAME"); hwr.SetLineColor(ROOT.kRed+1); hwr.SetLineStyle(2); hwr.SetLineWidth(3); hwr.Draw("HIST SAME")
-        tl=ROOT.TLatex(); tl.SetNDC(True); tl.SetTextSize(.033); tl.DrawLatex(.15,.93,f"AAOgen: {lab}")
-        p=cene.cd(2+2*ir); p.SetTicks(1,1); p.SetLeftMargin(.13); p.SetBottomMargin(.14); p.SetTopMargin(.10)
-        hda.SetStats(0); hda.SetLineColor(ROOT.kBlack); hda.SetMarkerColor(ROOT.kBlack); hda.SetMarkerStyle(20); hda.SetMarkerSize(.42)
-        haa=hall.Clone(f"h_en_shape_{ir}_{unique}"); haa.SetDirectory(0)
+        lg=ROOT.TLegend(.58,.70,.93,.88); lg.SetBorderSize(0); lg.SetFillStyle(0); lg.AddEntry(hall,f"{lab}: all","l"); lg.AddEntry(htr,"truth-matched","l"); lg.AddEntry(hwr,"wrong/combinatorial","l"); lg.Draw()
+        t=ROOT.TLatex(); t.SetNDC(True); t.SetTextSize(.034); t.DrawLatex(.15,.93,f"AAOgen {lab}: truth decomposition")
+        p=cdet.cd(2+2*ir); p.SetTicks(1,1); p.SetLeftMargin(.13); p.SetBottomMargin(.14)
+        hda.SetStats(0); hda.SetMarkerStyle(20); hda.SetMarkerSize(.45); haa=hall.Clone(); haa.SetDirectory(0)
         if haa.Integral()>0 and hda.Integral()>0: haa.Scale(hda.Integral()/haa.Integral())
-        hda.SetMaximum(max(hda.GetMaximum(),haa.GetMaximum())*1.12); hda.GetXaxis().SetTitle("#Delta p (GeV)"); hda.GetYaxis().SetTitle("Shape-normalized rows"); hda.Draw("E1")
-        haa.SetLineColor(ROOT.kMagenta+2); haa.SetLineWidth(3); haa.Draw("HIST SAME")
-        tl2=ROOT.TLatex(); tl2.SetNDC(True); tl2.SetTextSize(.033); tl2.DrawLatex(.15,.93,f"Data vs AAOgen: {lab}")
-        n0,n1,purity,mean,rms,tails=_truth_stats(dmc,filt)
-        print(f"  {lab}: candidates={n0:,}, truth={n1:,}, minimum-|Delta p| truth purity={purity:.4f}, truth <Delta p>={mean:+.4f} GeV, RMS={rms:.4f} GeV, tails |Delta p|>0.25/0.50/1.00 = {tails[0.25]:.4f}/{tails[0.50]:.4f}/{tails[1.00]:.4f}")
-        ene_keep += [hall,htr,hwr,hda,haa,tl,tl2]
-    ene_out=os.path.join(output_dir,f"8b_{period}_delta_p_probe_energy_diagnostic.png"); cene.SaveAs(ene_out)
-    print(f"  Wrote probe-energy diagnostic to {ene_out}")
-    keep.extend(det_keep+ene_keep)
+        hda.SetMaximum(1.12*max(hda.GetMaximum(),haa.GetMaximum())); hda.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)"); hda.GetYaxis().SetTitle("Shape-normalized rows"); hda.Draw("E1"); haa.SetLineColor(ROOT.kMagenta+2); haa.SetLineWidth(3); haa.Draw("HIST SAME")
+        lg2=ROOT.TLegend(.62,.76,.93,.88); lg2.SetBorderSize(0); lg2.SetFillStyle(0); lg2.AddEntry(hda,"Data","lep"); lg2.AddEntry(haa,"AAOgen (area matched)","l"); lg2.Draw()
+        purity=float(ntr.GetValue())/float(nall.GetValue()) if nall.GetValue() else 0.0
+        print(f"  {lab}: candidates={int(nall.GetValue()):,}, truth={int(ntr.GetValue()):,}, minimum-|Delta p| truth purity={purity:.4f}")
+        keep += [hall,htr,hwr,hda,haa,lg,lg2,t]
+    out8a=os.path.join(output_dir,f"8a_{period}_delta_p_FT_FD_diagnostic.png"); cdet.SaveAs(out8a); outputs.append(out8a)
 
-    # ------------------------------------------------------------------
-    # Truth-template DIAGNOSTIC ONLY.
-    #
-    # IMPORTANT: this is deliberately NOT the production efficiency definition.
-    # Using the reconstructed AAOgen truth-matched shape to classify Data would
-    # feed the MC reconstruction response back into the Data efficiency estimate.
-    # Keep this machinery only to quantify Data/MC shape disagreement and to test
-    # whether a template method could close in controlled MC.
-    # ------------------------------------------------------------------
-    def hist_arrays(h):
-        nb=h.GetNbinsX()
-        x=np.asarray([h.GetBinCenter(i) for i in range(1,nb+1)],dtype=float)
-        y=np.asarray([h.GetBinContent(i) for i in range(1,nb+1)],dtype=float)
-        return x,y
+    # 8b: p_X dependence in Data and inclusive AAOgen.
+    cene=ROOT.TCanvas(f"c_dp_en_{unique}","",1500,1450); cene.Divide(2,3,0.002,0.002); keep.append(cene)
+    print("\nDelta-p predicted-probe-momentum diagnostic:")
+    for ir,(lab,filt) in enumerate(ene_specs):
+        aa=h1(dmc,filt,f"h_ea_{ir}_{unique}"); tr=h1(dmc,f"({filt}) && best_truth>0.5",f"h_et_{ir}_{unique}"); wr=h1(dmc,f"({filt}) && best_truth<0.5",f"h_ew_{ir}_{unique}"); da=h1(ddata,filt,f"h_ed_{ir}_{unique}")
+        ROOT.RDF.RunGraphs([aa,tr,wr,da]); hall=aa.GetValue().Clone(); hall.SetDirectory(0); hall.Scale(B); htr=tr.GetValue().Clone(); htr.SetDirectory(0); htr.Scale(B); hwr=wr.GetValue().Clone(); hwr.SetDirectory(0); hwr.Scale(B); hda=da.GetValue().Clone(); hda.SetDirectory(0)
+        p=cene.cd(1+2*ir); p.SetTicks(1,1); p.SetLeftMargin(.13); p.SetBottomMargin(.14); hall.SetStats(0); hall.SetLineWidth(2); hall.GetXaxis().SetTitle("#Delta p (GeV)"); hall.GetYaxis().SetTitle("B-scaled AAOgen rows"); hall.Draw("HIST"); htr.SetLineColor(ROOT.kBlue+1); htr.SetLineWidth(3); htr.Draw("HIST SAME"); hwr.SetLineColor(ROOT.kRed+1); hwr.SetLineStyle(2); hwr.SetLineWidth(3); hwr.Draw("HIST SAME")
+        tt=ROOT.TLatex(); tt.SetNDC(True); tt.SetTextSize(.033); tt.DrawLatex(.15,.93,f"AAOgen: {lab}")
+        p=cene.cd(2+2*ir); p.SetTicks(1,1); p.SetLeftMargin(.13); p.SetBottomMargin(.14); hda.SetStats(0); hda.SetMarkerStyle(20); hda.SetMarkerSize(.42); haa=hall.Clone(); haa.SetDirectory(0)
+        if haa.Integral()>0 and hda.Integral()>0: haa.Scale(hda.Integral()/haa.Integral())
+        hda.SetMaximum(1.12*max(hda.GetMaximum(),haa.GetMaximum())); hda.GetXaxis().SetTitle("#Delta p (GeV)"); hda.GetYaxis().SetTitle("Shape-normalized rows"); hda.Draw("E1"); haa.SetLineColor(ROOT.kMagenta+2); haa.SetLineWidth(3); haa.Draw("HIST SAME"); tt2=ROOT.TLatex(); tt2.SetNDC(True); tt2.SetTextSize(.033); tt2.DrawLatex(.15,.93,f"Data vs AAOgen: {lab}")
+        keep += [hall,htr,hwr,hda,haa,tt,tt2]
+    out8b=os.path.join(output_dir,f"8b_{period}_delta_p_probe_energy_diagnostic.png"); cene.SaveAs(out8b); outputs.append(out8b)
 
-    def poisson_deviance(obs, pred):
-        obs=np.asarray(obs,dtype=float)
-        pred=np.clip(np.asarray(pred,dtype=float),1.0e-12,None)
-        terms=np.where(obs>0.0,2.0*(pred-obs+obs*np.log(obs/pred)),2.0*pred)
-        return float(np.sum(terms))
+    # 8c: direct reconstructed-vs-generated photon response in correctly matched
+    # AAOgen photons.  This is a detector-response diagnostic, NOT a Data correction.
+    ctr=ROOT.TCanvas(f"c_dp_truthresp_{unique}","",1500,1100); ctr.Divide(2,2,0.002,0.002); keep.append(ctr)
+    print("\nAAOgen truth-matched photon response diagnostic (no Data equivalence assumed):")
+    for ir,(lab,filt) in enumerate(det_specs):
+        base=f"({filt}) && best_truth>0.5 && best_mc_p>0"
+        h2=dmc.Filter(base).Histo2D((f"h2_resp_{ir}_{unique}","",100,0,8,100,0,8),"best_mc_p","best_rec_p")
+        hr=dmc.Filter(base).Histo2D((f"h2_ratio_{ir}_{unique}","",100,0,8,100,0,1.5),"best_mc_p","rec_over_mc")
+        prof=dmc.Filter(base).Profile1D((f"p_ratio_{ir}_{unique}","",40,0,8),"best_mc_p","rec_over_mc")
+        n=dmc.Filter(base).Count(); meanr=dmc.Filter(base).Mean("rec_over_mc")
+        ROOT.RDF.RunGraphs([h2,hr,prof,n,meanr])
+        a=h2.GetValue().Clone(); a.SetDirectory(0); r=hr.GetValue().Clone(); r.SetDirectory(0); pr=prof.GetValue().Clone(); pr.SetDirectory(0)
+        p=ctr.cd(1+ir); p.SetRightMargin(.15); p.SetLeftMargin(.12); p.SetBottomMargin(.13); a.SetStats(0); a.GetXaxis().SetTitle("generated p_{#gamma} (GeV)"); a.GetYaxis().SetTitle("reconstructed p_{#gamma} (GeV)"); a.Draw("COLZ"); line=ROOT.TLine(0,0,8,8); line.SetLineStyle(2); line.Draw(); tx=ROOT.TLatex(); tx.SetNDC(True); tx.SetTextSize(.034); tx.DrawLatex(.15,.93,f"AAOgen truth-matched {lab}: REC vs MC")
+        p=ctr.cd(3+ir); p.SetRightMargin(.15); p.SetLeftMargin(.12); p.SetBottomMargin(.13); r.SetStats(0); r.GetXaxis().SetTitle("generated p_{#gamma} (GeV)"); r.GetYaxis().SetTitle("p_{#gamma}^{REC}/p_{#gamma}^{MC}"); r.Draw("COLZ"); pr.SetLineColor(ROOT.kBlack); pr.SetLineWidth(3); pr.Draw("HIST SAME"); one=ROOT.TLine(0,1,8,1); one.SetLineStyle(2); one.Draw(); tx2=ROOT.TLatex(); tx2.SetNDC(True); tx2.SetTextSize(.034); tx2.DrawLatex(.15,.93,f"{lab}: response ratio; profile in black")
+        print(f"  {lab}: truth-matched candidates={int(n.GetValue()):,}, mean p_REC/p_MC={float(meanr.GetValue()):.4f}")
+        keep += [a,r,pr,line,one,tx,tx2]
+    out8c=os.path.join(output_dir,f"8c_{period}_AAOgen_truth_photon_response.png"); ctr.SaveAs(out8c); outputs.append(out8c)
 
-    def normalized_template(v):
-        v=np.clip(np.asarray(v,dtype=float),0.0,None)
-        s=float(np.sum(v))
-        return v/s if s>0.0 else np.zeros_like(v)
+    # 8d: exact MC decomposition Delta p = (p_X-p_MC) + (p_MC-p_REC).
+    # This identifies whether the AAOgen width originates mainly in inferred X or
+    # in reconstructed photon response.  It is deliberately not extrapolated to Data.
+    ccomp=ROOT.TCanvas(f"c_dp_comp_{unique}","",1500,650); ccomp.Divide(2,1,0.002,0.002); keep.append(ccomp)
+    print("\nAAOgen truth-matched Delta-p component decomposition:")
+    for ir,(lab,filt) in enumerate(det_specs):
+        base=f"({filt}) && best_truth>0.5 && best_mc_p>0"
+        hd=dmc.Filter(base).Histo1D((f"h_cmp_dp_{ir}_{unique}","",240,-3,3),"best_dp")
+        hx=dmc.Filter(base).Histo1D((f"h_cmp_x_{ir}_{unique}","",240,-3,3),"px_minus_mc")
+        hc=dmc.Filter(base).Histo1D((f"h_cmp_c_{ir}_{unique}","",240,-3,3),"mc_minus_rec")
+        md=dmc.Filter(base).Mean("best_dp"); mx=dmc.Filter(base).Mean("px_minus_mc"); mc=dmc.Filter(base).Mean("mc_minus_rec")
+        ROOT.RDF.RunGraphs([hd,hx,hc,md,mx,mc]); a=hd.GetValue().Clone(); a.SetDirectory(0); x=hx.GetValue().Clone(); x.SetDirectory(0); q=hc.GetValue().Clone(); q.SetDirectory(0)
+        for hh in (a,x,q):
+            if hh.Integral()>0: hh.Scale(1.0/hh.Integral())
+        p=ccomp.cd(1+ir); p.SetTicks(1,1); p.SetLeftMargin(.13); p.SetBottomMargin(.14); a.SetStats(0); a.SetLineColor(ROOT.kBlack); a.SetLineWidth(3); a.GetXaxis().SetTitle("momentum residual (GeV)"); a.GetYaxis().SetTitle("Unit-normalized truth-matched AAOgen"); a.Draw("HIST"); x.SetLineColor(ROOT.kBlue+1); x.SetLineWidth(3); x.Draw("HIST SAME"); q.SetLineColor(ROOT.kRed+1); q.SetLineWidth(3); q.SetLineStyle(2); q.Draw("HIST SAME")
+        lg=ROOT.TLegend(.54,.69,.93,.88); lg.SetBorderSize(0); lg.SetFillStyle(0); lg.AddEntry(a,"#Delta p = p_{X}-p_{REC}","l"); lg.AddEntry(x,"p_{X}-p_{MC}","l"); lg.AddEntry(q,"p_{MC}-p_{REC}","l"); lg.Draw(); tt=ROOT.TLatex(); tt.SetNDC(True); tt.SetTextSize(.034); tt.DrawLatex(.15,.93,f"AAOgen truth-matched {lab}")
+        print(f"  {lab}: <Delta p>={float(md.GetValue()):+.4f} GeV = <pX-pMC> {float(mx.GetValue()):+.4f} + <pMC-pREC> {float(mc.GetValue()):+.4f} GeV")
+        keep += [a,x,q,lg,tt]
+    out8d=os.path.join(output_dir,f"8d_{period}_AAOgen_delta_p_component_decomposition.png"); ccomp.SaveAs(out8d); outputs.append(out8d)
 
-    def morph_template_shape(shape, shift_bins=0.0, sigma_bins=0.0):
-        # _morph_1d_counts preserves the integral; templates passed here are
-        # normalized to unit area, so the returned shape is also unit area.
-        return normalized_template(_morph_1d_counts(
-            normalized_template(shape),float(shift_bins),float(sigma_bins)))
+    print("\nIntegrated Delta-p efficiency extraction is intentionally disabled at this stage.")
+    print("  No AAOgen truth template is used to classify Data.")
+    print("  The new truth plots diagnose AAOgen reconstruction only; they do not assume Data has the same response.")
+    print("  Retired plots 6, 7, 8, 9, 10, 11, 12, and 13 are no longer produced.")
+    result={"diagnostic_outputs":outputs, "nominal_efficiency":None}
+    return keep, out8a, result
 
-    xbins,data_counts=hist_arrays(hdata)
-    _,all_mc_counts=hist_arrays(hmc)
-    _,truth_scaled=hist_arrays(ht)
-    _,wrong_scaled=hist_arrays(hw)
-    truth_shape=normalized_template(truth_scaled)
-    wrong_shape=normalized_template(wrong_scaled)
-    bin_width=float(hdata.GetBinWidth(1))
-
-    def fit_template_mixture(obs, signal_shape, background_shape,
-                             fit_lo=-1.0, fit_hi=1.0, allow_signal_morph=False):
-        obs=np.asarray(obs,dtype=float)
-        sig0=normalized_template(signal_shape)
-        bg0=normalized_template(background_shape)
-        mask=(xbins>=fit_lo-1.0e-12)&(xbins<=fit_hi+1.0e-12)
-        if not np.any(mask):
-            raise RuntimeError("Template fit has an empty fit range.")
-
-        # Parameters are full-range component yields.  For a restricted fit
-        # range, the expected counts in the fitted bins are simply the relevant
-        # fraction of each full template.
-        total=max(float(np.sum(obs[mask])),1.0)
-        starts=[]
-        if allow_signal_morph:
-            for frac in (0.70,0.85,0.95):
-                for sh in (0.0,5.0,10.0):
-                    starts.append(np.asarray([frac*total,(1.0-frac)*total,sh,1.0]))
-            bounds=[(0.0,5.0*total),(0.0,5.0*total),(-20.0,20.0),(0.0,20.0)]
-        else:
-            starts=[np.asarray([0.85*total,0.15*total]),
-                    np.asarray([0.70*total,0.30*total]),
-                    np.asarray([0.95*total,0.05*total])]
-            bounds=[(0.0,5.0*total),(0.0,5.0*total)]
-
-        def objective(par):
-            ns=float(par[0]); nb=float(par[1])
-            if allow_signal_morph:
-                sig=morph_template_shape(sig0,float(par[2]),float(par[3]))
-            else:
-                sig=sig0
-            pred=ns*sig+nb*bg0
-            p=np.clip(pred[mask],1.0e-12,None)
-            d=obs[mask]
-            return float(np.sum(p-d*np.log(p)))
-
-        fits=[minimize(objective,s,bounds=bounds,method="L-BFGS-B",
-                       options={"maxiter":1000,"ftol":1.0e-12}) for s in starts]
-        res=min(fits,key=lambda r:float(r.fun))
-        par=np.asarray(res.x,dtype=float)
-        sig=morph_template_shape(sig0,par[2],par[3]) if allow_signal_morph else sig0
-        pred=par[0]*sig+par[1]*bg0
-        dev=poisson_deviance(obs[mask],pred[mask])
-        npar=4 if allow_signal_morph else 2
-        ndf=max(int(np.count_nonzero(mask))-npar,1)
-        return {
-            "success":bool(res.success),"status":int(res.status),
-            "message":str(res.message),"nsig":float(par[0]),"nbg":float(par[1]),
-            "shift_bins":float(par[2]) if allow_signal_morph else 0.0,
-            "sigma_bins":float(par[3]) if allow_signal_morph else 0.0,
-            "shift_GeV":(float(par[2])*bin_width if allow_signal_morph else 0.0),
-            "sigma_GeV":(float(par[3])*bin_width if allow_signal_morph else 0.0),
-            "signal_shape":sig,"background_shape":bg0,"prediction":pred,
-            "deviance":dev,"ndf":ndf,"deviance_ndf":dev/ndf,
-            "fit_lo":float(fit_lo),"fit_hi":float(fit_hi)
-        }
-
-    # AAOgen closure is deliberately blind: the target is the total best-candidate
-    # spectrum.  Truth labels enter only through the two fixed component shapes.
-    closure=fit_template_mixture(all_mc_counts,truth_shape,wrong_shape,
-                                 -1.0,1.0,allow_signal_morph=False)
-    truth_known=float(np.sum(truth_scaled))
-    wrong_known=float(np.sum(wrong_scaled))
-    closure_truth_bias=(closure["nsig"]-truth_known)/truth_known if truth_known>0 else float("nan")
-    closure_wrong_bias=(closure["nbg"]-wrong_known)/wrong_known if wrong_known>0 else float("nan")
-
-    # Data nominal: allow the AAOgen truth signal template a translation and
-    # additional Gaussian smearing.  The wrong/combinatorial template shape is
-    # fixed; both component normalizations float.
-    data_template=fit_template_mixture(data_counts,truth_shape,wrong_shape,
-                                       -1.0,1.0,allow_signal_morph=True)
-    data_nomorph=fit_template_mixture(data_counts,truth_shape,wrong_shape,
-                                      -1.0,1.0,allow_signal_morph=False)
-
-    # Range stability of the physically motivated template extraction.
-    template_ranges=[(-0.50,0.60),(-0.70,0.80),(-1.00,1.00)]
-    template_range_results=[]
-    for flo,fhi in template_ranges:
-        rr=fit_template_mixture(data_counts,truth_shape,wrong_shape,
-                                flo,fhi,allow_signal_morph=True)
-        template_range_results.append(rr)
-
-    nd_now=int(den_data.GetValue())
-    nm_now=int(den_mc.GetValue())
-    eff_mc_truth=float(nt)/float(nm_now) if nm_now else float("nan")
-    eff_data_template=data_template["nsig"]/float(nd_now) if nd_now else float("nan")
-    Cgamma_template=(eff_data_template/eff_mc_truth
-                     if eff_mc_truth>0.0 else float("nan"))
-
-    # Utility for drawing a numpy prediction as a ROOT histogram.
-    def array_hist(name, arr, color, style=1, width=2):
-        hh=hdata.Clone(name); hh.SetDirectory(0); hh.Reset("ICES")
-        for ib,val in enumerate(np.asarray(arr,dtype=float),1):
-            hh.SetBinContent(ib,float(val)); hh.SetBinError(ib,0.0)
-        hh.SetLineColor(color); hh.SetLineStyle(style); hh.SetLineWidth(width)
-        hh.SetMarkerStyle(1)
-        return hh
-
-    # 8: blind AAOgen closure.
-    cclosure=ROOT.TCanvas(f"c_dp_template_closure_{unique}","",1450,780)
-    cclosure.SetTicks(1,1); cclosure.SetLeftMargin(0.12); cclosure.SetRightMargin(0.04)
-    cclosure.SetBottomMargin(0.14); cclosure.SetTopMargin(0.11)
-    hmc.SetStats(0); hmc.SetLineColor(ROOT.kBlack); hmc.SetLineWidth(2)
-    hmc.GetXaxis().SetRangeUser(-1.0,1.0)
-    hmc.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)")
-    hmc.GetYaxis().SetTitle("Normalized best-candidate rows"); hmc.GetYaxis().SetTitleOffset(1.35)
-    hmc.Draw("HIST")
-    hcl_sig=array_hist(f"h_cl_sig_{unique}",closure["nsig"]*closure["signal_shape"],ROOT.kBlue+1,1,3)
-    hcl_bg=array_hist(f"h_cl_bg_{unique}",closure["nbg"]*closure["background_shape"],ROOT.kRed+1,2,3)
-    hcl_tot=array_hist(f"h_cl_tot_{unique}",closure["prediction"],ROOT.kMagenta+2,1,3)
-    hcl_tot.Draw("HIST SAME"); hcl_sig.Draw("HIST SAME"); hcl_bg.Draw("HIST SAME")
-    lcl=ROOT.TLegend(0.57,0.66,0.93,0.87); lcl.SetBorderSize(0); lcl.SetFillStyle(0); lcl.SetTextSize(0.030)
-    lcl.AddEntry(hmc,"AAOgen total (truth labels hidden)","l")
-    lcl.AddEntry(hcl_tot,"Fitted truth + wrong templates","l")
-    lcl.AddEntry(hcl_sig,"Fitted truth-template component","l")
-    lcl.AddEntry(hcl_bg,"Fitted wrong-template component","l"); lcl.Draw()
-    tx=ROOT.TLatex(); tx.SetNDC(True); tx.SetTextSize(0.029)
-    tx.DrawLatex(0.15,0.92,"AAOgen blind template-yield closure")
-    tx.DrawLatex(0.15,0.865,f"Known truth yield = {truth_known:.0f}; fitted = {closure['nsig']:.0f}")
-    tx.DrawLatex(0.15,0.815,f"Truth-yield bias = {100.0*closure_truth_bias:+.2f}%")
-    tx.DrawLatex(0.15,0.765,f"deviance/ndf = {closure['deviance_ndf']:.2f}")
-    closure_out=os.path.join(output_dir,f"8_{period}_AAOgen_delta_p_template_closure.png")
-    cclosure.SaveAs(closure_out)
-    keep.extend([cclosure,hcl_sig,hcl_bg,hcl_tot,lcl,tx])
-
-    # 9: Data truth-template extraction.
-    ctemp=ROOT.TCanvas(f"c_dp_template_data_{unique}","",1450,780)
-    ctemp.SetTicks(1,1); ctemp.SetLeftMargin(0.12); ctemp.SetRightMargin(0.04)
-    ctemp.SetBottomMargin(0.14); ctemp.SetTopMargin(0.11)
-    hdata.SetStats(0); hdata.SetLineColor(ROOT.kBlack); hdata.SetLineWidth(2)
-    hdata.GetXaxis().SetRangeUser(-1.0,1.0)
-    hdata.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)")
-    hdata.GetYaxis().SetTitle("Best-candidate rows"); hdata.GetYaxis().SetTitleOffset(1.35)
-    hdata.Draw("E1")
-    hdt_sig=array_hist(f"h_dt_sig_{unique}",data_template["nsig"]*data_template["signal_shape"],ROOT.kBlue+1,1,3)
-    hdt_bg=array_hist(f"h_dt_bg_{unique}",data_template["nbg"]*data_template["background_shape"],ROOT.kRed+1,2,3)
-    hdt_tot=array_hist(f"h_dt_tot_{unique}",data_template["prediction"],ROOT.kMagenta+2,1,3)
-    hdt_tot.Draw("HIST SAME"); hdt_sig.Draw("HIST SAME"); hdt_bg.Draw("HIST SAME")
-    ldt=ROOT.TLegend(0.57,0.66,0.93,0.87); ldt.SetBorderSize(0); ldt.SetFillStyle(0); ldt.SetTextSize(0.030)
-    ldt.AddEntry(hdata,"Data","lep"); ldt.AddEntry(hdt_tot,"Template fit","l")
-    ldt.AddEntry(hdt_sig,"Morphed AAOgen truth signal","l")
-    ldt.AddEntry(hdt_bg,"AAOgen wrong/combinatorial","l"); ldt.Draw()
-    td=ROOT.TLatex(); td.SetNDC(True); td.SetTextSize(0.028)
-    td.DrawLatex(0.15,0.92,"Data #Delta p truth-template diagnostic")
-    td.DrawLatex(0.15,0.87,f"signal shift = {data_template['shift_GeV']:+.4f} GeV, extra smear = {data_template['sigma_GeV']:.4f} GeV")
-    td.DrawLatex(0.15,0.82,f"deviance/ndf = {data_template['deviance_ndf']:.2f}")
-    td.DrawLatex(0.15,0.77,f"#epsilon_{{data}} = {eff_data_template:.4f}, #epsilon_{{AAO}}^{{truth}} = {eff_mc_truth:.4f}, C_{{#gamma}} = {Cgamma_template:.4f}")
-    data_template_out=os.path.join(output_dir,f"9_{period}_data_delta_p_truth_template_fit.png")
-    ctemp.SaveAs(data_template_out)
-    keep.extend([ctemp,hdt_sig,hdt_bg,hdt_tot,ldt,td])
-
-    # 10: compact template-method stability plot.
-    cts=ROOT.TCanvas(f"c_dp_template_stability_{unique}","",1450,760)
-    cts.SetTicks(1,1); cts.SetLeftMargin(0.12); cts.SetRightMargin(0.04)
-    cts.SetBottomMargin(0.18); cts.SetTopMargin(0.11)
-    fr=ROOT.TH1D(f"h_dp_template_stability_{unique}","",4,0.5,4.5); fr.SetDirectory(0); fr.SetStats(0)
-    labels=["no morph [-1,1]","morph [-0.5,0.6]","morph [-0.7,0.8]","morph [-1,1]"]
-    vals=[]
-    ed0=data_nomorph["nsig"]/float(nd_now) if nd_now else float("nan")
-    vals.append(ed0/eff_mc_truth if eff_mc_truth>0 else float("nan"))
-    for rr in template_range_results:
-        ee=rr["nsig"]/float(nd_now) if nd_now else float("nan")
-        vals.append(ee/eff_mc_truth if eff_mc_truth>0 else float("nan"))
-    finite=[v for v in vals if np.isfinite(v)]
-    if finite:
-        fr.SetMinimum(max(0.0,min(finite)-0.08)); fr.SetMaximum(max(finite)+0.08)
-    else:
-        fr.SetMinimum(0.0); fr.SetMaximum(1.2)
-    fr.GetYaxis().SetTitle("C_{#gamma} = #epsilon_{data}/#epsilon_{AAOgen}^{truth}")
-    fr.GetYaxis().SetTitleOffset(1.35); fr.GetXaxis().SetLabelSize(0.035)
-    for i,lab in enumerate(labels,1): fr.GetXaxis().SetBinLabel(i,lab)
-    fr.Draw("AXIS")
-    gg=ROOT.TGraph()
-    for i,v in enumerate(vals,1):
-        if np.isfinite(v): gg.SetPoint(gg.GetN(),float(i),float(v))
-    gg.SetMarkerStyle(20); gg.SetMarkerSize(1.4); gg.SetLineWidth(2); gg.Draw("PL SAME")
-    tts=ROOT.TLatex(); tts.SetNDC(True); tts.SetTextAlign(22); tts.SetTextSize(0.036)
-    tts.DrawLatex(0.53,0.955,"Truth-template #Delta p diagnostic stability")
-    template_stability_out=os.path.join(output_dir,f"10_{period}_delta_p_truth_template_stability.png")
-    cts.SaveAs(template_stability_out)
-    keep.extend([cts,fr,gg,tts])
-
-    print("\nAAOgen blind Delta-p template closure:")
-    print(f"  known truth yield={truth_known:.1f}; fitted truth yield={closure['nsig']:.1f}; bias={100.0*closure_truth_bias:+.3f}%")
-    print(f"  known wrong yield={wrong_known:.1f}; fitted wrong yield={closure['nbg']:.1f}; bias={100.0*closure_wrong_bias:+.3f}%")
-    print(f"  deviance/ndf={closure['deviance_ndf']:.4f}; fit success={closure['success']} status={closure['status']}")
-    print("\nData Delta-p truth-template DIAGNOSTIC (NOT nominal efficiency):")
-    print(f"  signal yield={data_template['nsig']:.1f}; background yield={data_template['nbg']:.1f}")
-    print(f"  signal shift={data_template['shift_GeV']:+.6f} GeV; extra smear={data_template['sigma_GeV']:.6f} GeV")
-    print(f"  deviance/ndf={data_template['deviance_ndf']:.4f}; fit success={data_template['success']} status={data_template['status']}")
-    print(f"  epsilon_data={eff_data_template:.6f}; epsilon_AAOgen_truth={eff_mc_truth:.6f}; C_gamma={Cgamma_template:.6f}")
-    print("  Range stability:")
-    for rr in template_range_results:
-        ee=rr["nsig"]/float(nd_now) if nd_now else float("nan")
-        cc=ee/eff_mc_truth if eff_mc_truth>0 else float("nan")
-        print(f"    [{rr['fit_lo']:+.2f},{rr['fit_hi']:+.2f}] GeV: C_gamma={cc:.6f}, shift={rr['shift_GeV']:+.5f} GeV, smear={rr['sigma_GeV']:.5f} GeV, dev/ndf={rr['deviance_ndf']:.3f}")
-    print(f"  Wrote closure to {closure_out}")
-    print(f"  Wrote Data template fit to {data_template_out}")
-    print(f"  Wrote template stability to {template_stability_out}")
-
-    # ------------------------------------------------------------------
-    # Legacy Gaussian+polynomial model/range study retained below ONLY as
-    # a diagnostic demonstrating why that decomposition is not nominal.
-    # ------------------------------------------------------------------
-    # Signal/background model and fit-range stability.
-    #
-    # IMPORTANT: hdata/hmc are already the one-best-candidate-per-denominator-row
-    # spectra.  We do NOT redo candidate selection for each fit variation.  This
-    # isolates the uncertainty from the signal/background decomposition itself.
-    # ------------------------------------------------------------------
-    stability_ranges = [(-0.50,0.60), (-0.70,0.80), (-1.00,1.00)]
-    stability_orders = (1,2,3)
-    stability = []
-    stability_keep = []
-
-    def stability_fit(h, name, order, fit_lo, fit_hi):
-        ax=h.GetXaxis()
-        sb1=ax.FindBin(max(fit_lo,-0.45)+1e-9)
-        sb2=ax.FindBin(min(fit_hi,+0.45)-1e-9)
-        ib=max(range(sb1,sb2+1), key=lambda b:h.GetBinContent(b))
-        mode=float(ax.GetBinCenter(ib))
-        amp=max(float(h.GetBinContent(ib)),1.0)
-        edge=0.5*(float(h.GetBinContent(ax.FindBin(fit_lo+0.03)))+
-                  float(h.GetBinContent(ax.FindBin(fit_hi-0.03))))
-        f=ROOT.TF1(name,f"gaus(0)+pol{order}(3)",fit_lo,fit_hi)
-        pars=[amp,mode,0.12,max(edge,0.0)]+[0.0]*order
-        f.SetParameters(*pars)
-        f.SetParLimits(0,0.0,max(10.0*amp,1.0e9))
-        f.SetParLimits(1,-0.35,0.45)
-        f.SetParLimits(2,0.015,0.35)
-        fitptr=h.Fit(f,"QNRS")
-        try:
-            status=int(fitptr)
-        except Exception:
-            status=-999
-        mu=float(f.GetParameter(1))
-        sigma=abs(float(f.GetParameter(2)))
-        ndf=int(f.GetNDF())
-        chi2=float(f.GetChisquare())
-        valid=(status==0 and mu==mu and sigma==sigma and sigma>0.0 and
-               abs(mu)<1e100 and abs(sigma)<1e100 and ndf>0)
-        return f,mu,sigma,status,chi2,ndf,valid
-
-    def stability_bg(f, order, name, fit_lo, fit_hi):
-        bg=ROOT.TF1(name,f"pol{order}",fit_lo,fit_hi)
-        bg.SetParameters(*[float(f.GetParameter(3+i)) for i in range(order+1)])
-        return bg
-
-    def stability_window(h,bg,mu,sigma,n,scale,fit_lo,fit_hi):
-        # Never extrapolate the polynomial background outside the interval
-        # actually used to determine it.
-        req_lo=float(mu)-float(n)*float(sigma)
-        req_hi=float(mu)+float(n)*float(sigma)
-        lo=max(float(fit_lo),req_lo)
-        hi=min(float(fit_hi),req_hi)
-        if hi<=lo:
-            return None
-        ax=h.GetXaxis()
-        b1=ax.FindBin(lo+1e-9)
-        b2=ax.FindBin(hi-1e-9)
-        obs=float(h.Integral(b1,b2))/float(scale)
-        bkg=float(bg.Integral(lo,hi)/h.GetBinWidth(1))/float(scale)
-        signal=max(0.0,obs-bkg)
-        coverage=(hi-lo)/(req_hi-req_lo) if req_hi>req_lo else 0.0
-        return obs,bkg,signal,coverage
-
-    for order in stability_orders:
-        for ir,(fit_lo,fit_hi) in enumerate(stability_ranges):
-            fd,mud,sd,std,c2d,ndfd,vd=stability_fit(
-                hdata,f"f_stab_data_p{order}_r{ir}_{unique}",order,fit_lo,fit_hi)
-            fm,mum,sm,stm,c2m,ndfm,vm=stability_fit(
-                hmc,f"f_stab_mc_p{order}_r{ir}_{unique}",order,fit_lo,fit_hi)
-            bgd=stability_bg(fd,order,f"bg_stab_data_p{order}_r{ir}_{unique}",fit_lo,fit_hi)
-            bgm=stability_bg(fm,order,f"bg_stab_mc_p{order}_r{ir}_{unique}",fit_lo,fit_hi)
-            stability_keep.extend([fd,fm,bgd,bgm])
-            item={"order":order,"fit_lo":fit_lo,"fit_hi":fit_hi,
-                  "data_status":std,"mc_status":stm,
-                  "data_chi2ndf":c2d/ndfd if ndfd>0 else float("nan"),
-                  "mc_chi2ndf":c2m/ndfm if ndfm>0 else float("nan"),
-                  "data_mu":mud,"data_sigma":sd,"mc_mu":mum,"mc_sigma":sm,
-                  "valid":bool(vd and vm),"windows":{}}
-            if item["valid"]:
-                for n in (1,2,3):
-                    wd=stability_window(hdata,bgd,mud,sd,n,1.0,fit_lo,fit_hi)
-                    wm=stability_window(hmc,bgm,mum,sm,n,B,fit_lo,fit_hi)
-                    if wd is None or wm is None:
-                        continue
-                    od,bd,sgd,covd=wd
-                    om,bm,sgm,covm=wm
-                    ed=sgd/nd if nd else float("nan")
-                    em=sgm/nm if nm else float("nan")
-                    item["windows"][n]={
-                        "ratio":ed/em if em>0 else float("nan"),
-                        "eff_data":ed,"eff_mc":em,
-                        "coverage_data":covd,"coverage_mc":covm}
-            stability.append(item)
-
-    # One compact summary canvas.  Each x-bin is one background/range choice.
-    cstab=ROOT.TCanvas(f"c_intdp_stability_{unique}","",1550,820)
-    cstab.SetTicks(1,1); cstab.SetLeftMargin(0.11); cstab.SetRightMargin(0.04)
-    cstab.SetBottomMargin(0.23); cstab.SetTopMargin(0.10)
-    nchoices=len(stability)
-    frame=ROOT.TH1D(f"h_intdp_stability_frame_{unique}","",nchoices,0.5,nchoices+0.5)
-    frame.SetDirectory(0); frame.SetStats(0)
-    frame.GetYaxis().SetTitle("C_{#gamma} = #epsilon_{data} / #epsilon_{AAOgen}")
-    frame.GetYaxis().SetTitleOffset(1.35)
-    frame.GetXaxis().SetLabelSize(0.028); frame.GetXaxis().LabelsOption("v")
-
-    ratio_values=[]
-    for i,item in enumerate(stability,1):
-        frame.GetXaxis().SetBinLabel(
-            i,f"pol{item['order']} [{item['fit_lo']:+.1f},{item['fit_hi']:+.1f}]")
-        if item["valid"]:
-            for n in (1,2,3):
-                if n in item["windows"]:
-                    v=item["windows"][n]["ratio"]
-                    if v==v: ratio_values.append(v)
-    if ratio_values:
-        ymin=max(0.0,min(ratio_values)-0.08); ymax=max(ratio_values)+0.08
-        if ymax-ymin<0.20:
-            mid=0.5*(ymin+ymax); ymin=max(0.0,mid-0.10); ymax=mid+0.10
-    else:
-        ymin,ymax=0.5,1.1
-    frame.SetMinimum(ymin); frame.SetMaximum(ymax); frame.Draw("AXIS")
-
-    specs={1:(ROOT.kBlue+1,20),2:(ROOT.kRed+1,21),3:(ROOT.kGreen+2,22)}
-    stab_graphs={}
-    for n in (1,2,3):
-        g=ROOT.TGraph(); g.SetName(f"g_intdp_stability_{n}s_{unique}")
-        ip=0
-        for i,item in enumerate(stability,1):
-            if item["valid"] and n in item["windows"]:
-                v=item["windows"][n]["ratio"]
-                if v==v:
-                    g.SetPoint(ip,float(i),float(v)); ip+=1
-        col,marker=specs[n]
-        g.SetMarkerColor(col); g.SetLineColor(col); g.SetMarkerStyle(marker)
-        g.SetMarkerSize(1.25); g.SetLineWidth(2); g.Draw("PL SAME")
-        stab_graphs[n]=g
-
-    legstab=ROOT.TLegend(0.14,0.74,0.34,0.88)
-    legstab.SetBorderSize(0); legstab.SetFillStyle(0); legstab.SetTextSize(0.031)
-    for n in (1,2,3): legstab.AddEntry(stab_graphs[n],f"{n}#sigma window","lp")
-    legstab.Draw()
-    titlestab=ROOT.TLatex(); titlestab.SetNDC(True); titlestab.SetTextAlign(22)
-    titlestab.SetTextSize(0.036)
-    titlestab.DrawLatex(0.53,0.955,
-        "Integrated #Delta p efficiency: background-model and fit-range stability")
-    notestab=ROOT.TLatex(); notestab.SetNDC(True); notestab.SetTextSize(0.025)
-    notestab.DrawLatex(0.39,0.86,
-        "Best-candidate population fixed; only signal/background fit changes")
-
-    stability_out=os.path.join(
-        output_dir,f"11_{period}_LEGACY_integrated_delta_p_model_range_stability.png")
-    cstab.SaveAs(stability_out)
-    keep.extend(stability_keep+[cstab,frame,legstab,titlestab,notestab]+list(stab_graphs.values()))
-
-    # ------------------------------------------------------------------
-    # Visual inspection grids: one 3x3 canvas for Data and one for AAOgen.
-    # Rows are polynomial orders 1,2,3; columns are the three fit ranges.
-    # Each pad shows the SAME best-candidate histogram used in the numerical
-    # stability scan, together with total fit, Gaussian signal, and polynomial
-    # background.  This makes pathological decompositions immediately visible.
-    # ------------------------------------------------------------------
-    def draw_stability_fit_grid(sample_name, hsource, fit_key_prefix, color, output_name):
-        cgrid=ROOT.TCanvas(f"c_intdp_grid_{sample_name}_{unique}","",1800,1500)
-        cgrid.Divide(3,3,0.001,0.001)
-        grid_keep=[cgrid]
-        for ipad,item in enumerate(stability,1):
-            pad=cgrid.cd(ipad)
-            pad.SetTicks(1,1)
-            pad.SetLeftMargin(0.14)
-            pad.SetRightMargin(0.035)
-            pad.SetBottomMargin(0.14)
-            pad.SetTopMargin(0.12)
-
-            # Clone the common best-candidate spectrum so every pad owns a
-            # separately styled drawable histogram.
-            hh=hsource.Clone(f"h_grid_{sample_name}_{ipad}_{unique}")
-            hh.SetDirectory(0)
-            hh.SetStats(0)
-            hh.SetLineColor(color)
-            hh.SetMarkerColor(color)
-            hh.SetMarkerStyle(20)
-            hh.SetMarkerSize(0.38)
-            hh.GetXaxis().SetRangeUser(-1.0,1.0)
-            hh.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)")
-            hh.GetYaxis().SetTitle("Normalized candidate combinations")
-            hh.GetXaxis().SetTitleSize(0.045)
-            hh.GetYaxis().SetTitleSize(0.045)
-            hh.GetXaxis().SetLabelSize(0.037)
-            hh.GetYaxis().SetLabelSize(0.037)
-            hh.GetYaxis().SetTitleOffset(1.45)
-            hh.Draw("E1")
-
-            order=item["order"]
-            fit_lo=item["fit_lo"]
-            fit_hi=item["fit_hi"]
-            if sample_name=="data":
-                ftotal=next(obj for obj in stability_keep
-                            if obj.GetName()==f"f_stab_data_p{order}_r{(ipad-1)%3}_{unique}")
-                bg=next(obj for obj in stability_keep
-                        if obj.GetName()==f"bg_stab_data_p{order}_r{(ipad-1)%3}_{unique}")
-                mu=item["data_mu"]; sigma=item["data_sigma"]
-                chi2ndf=item["data_chi2ndf"]; status=item["data_status"]
-            else:
-                ftotal=next(obj for obj in stability_keep
-                            if obj.GetName()==f"f_stab_mc_p{order}_r{(ipad-1)%3}_{unique}")
-                bg=next(obj for obj in stability_keep
-                        if obj.GetName()==f"bg_stab_mc_p{order}_r{(ipad-1)%3}_{unique}")
-                mu=item["mc_mu"]; sigma=item["mc_sigma"]
-                chi2ndf=item["mc_chi2ndf"]; status=item["mc_status"]
-
-            # Build the Gaussian component directly from this variation's total fit.
-            sg=ROOT.TF1(f"sig_grid_{sample_name}_{ipad}_{unique}","gaus",fit_lo,fit_hi)
-            sg.SetParameters(float(ftotal.GetParameter(0)),
-                             float(ftotal.GetParameter(1)),
-                             float(ftotal.GetParameter(2)))
-
-            ftotal.SetLineColor(ROOT.kMagenta+2)
-            ftotal.SetLineWidth(3)
-            sg.SetLineColor(ROOT.kBlue)
-            sg.SetLineWidth(2)
-            bg.SetLineColor(ROOT.kGray+2)
-            bg.SetLineStyle(2)
-            bg.SetLineWidth(2)
-            ftotal.Draw("SAME")
-            sg.Draw("SAME")
-            bg.Draw("SAME")
-
-            # Mark the actual fit boundaries.  This is particularly useful for
-            # judging why the fitted background changes as the range is widened.
-            ymax=max(float(hh.GetMaximum())*1.08,1.0)
-            llo=ROOT.TLine(fit_lo,0.0,fit_lo,ymax)
-            lhi=ROOT.TLine(fit_hi,0.0,fit_hi,ymax)
-            for line in (llo,lhi):
-                line.SetLineColor(ROOT.kGray+1)
-                line.SetLineStyle(3)
-                line.SetLineWidth(1)
-                line.Draw()
-
-            lab=ROOT.TLatex()
-            lab.SetNDC(True)
-            lab.SetTextSize(0.033)
-            lab.DrawLatex(0.17,0.935,
-                          f"{sample_name.upper()}  pol{order}, [{fit_lo:+.1f},{fit_hi:+.1f}] GeV")
-            lab.DrawLatex(0.17,0.885,
-                          f"#mu={mu:+.4f} GeV, #sigma={sigma:.4f} GeV")
-            lab.DrawLatex(0.17,0.835,
-                          f"#chi^{{2}}/ndf={chi2ndf:.2f}, status={status}")
-            if item["valid"] and 2 in item["windows"]:
-                lab.DrawLatex(0.17,0.785,
-                              f"C_{{#gamma}}(2#sigma)={item['windows'][2]['ratio']:.4f}")
-
-            grid_keep.extend([hh,sg,llo,lhi,lab])
-
-        cgrid.cd()
-        cgrid.Update()
-        cgrid.SaveAs(output_name)
-        return cgrid,grid_keep
-
-    data_grid_out=os.path.join(
-        output_dir,f"12_{period}_LEGACY_integrated_delta_p_fit_grid_data.png")
-    mc_grid_out=os.path.join(
-        output_dir,f"13_{period}_LEGACY_integrated_delta_p_fit_grid_AAOgen.png")
-    cgrid_data,grid_data_keep=draw_stability_fit_grid(
-        "data",hdata,"data",ROOT.kBlack,data_grid_out)
-    cgrid_mc,grid_mc_keep=draw_stability_fit_grid(
-        "aaogen",hmc,"mc",ROOT.kRed+1,mc_grid_out)
-    keep.extend(grid_data_keep+grid_mc_keep)
-
-    print("\\nIntegrated Delta-p model/range stability:")
-    print("  Scan = pol1/pol2/pol3 backgrounds x fit ranges [-0.5,+0.6], [-0.7,+0.8], [-1.0,+1.0] GeV.")
-    print("  Best-candidate population is held fixed for every variation.")
-    print("  Polynomial background is integrated only inside its fitted range; coverage is printed when an n-sigma window is truncated.")
-    print("  model/range | data chi2/ndf | AAO chi2/ndf | Cgamma(1s) Cgamma(2s) Cgamma(3s)")
-    for item in stability:
-        label=f"pol{item['order']} [{item['fit_lo']:+.2f},{item['fit_hi']:+.2f}]"
-        if not item["valid"]:
-            print(f"  {label} | FIT FAILED data={item['data_status']} AAO={item['mc_status']}")
-            continue
-        vals=[]
-        for n in (1,2,3):
-            if n not in item["windows"]:
-                vals.append("NA"); continue
-            w=item["windows"][n]
-            vals.append(f"{w['ratio']:.6f}[cov {100*w['coverage_data']:.0f}/{100*w['coverage_mc']:.0f}%]")
-        print(f"  {label} | {item['data_chi2ndf']:.3f} | {item['mc_chi2ndf']:.3f} | "+" ".join(vals))
-    for n in (1,2,3):
-        vals=[item["windows"][n]["ratio"] for item in stability
-              if item["valid"] and n in item["windows"]
-              and item["windows"][n]["ratio"]==item["windows"][n]["ratio"]]
-        if vals:
-            mean=sum(vals)/len(vals)
-            rms=(sum((v-mean)**2 for v in vals)/len(vals))**0.5
-            print(f"  {n}sigma stability: mean={mean:.6f}, min={min(vals):.6f}, max={max(vals):.6f}, span={max(vals)-min(vals):.6f}, RMS={rms:.6f}")
-    print(f"  Wrote stability summary to {stability_out}")
-    results["truth_output"]=truth_out
-    results["stability"]=stability
-    results["stability_output"]=stability_out
-    results["stability_data_grid_output"]=data_grid_out
-    results["stability_mc_grid_output"]=mc_grid_out
-    print(f"  Wrote Data 3x3 fit grid to {data_grid_out}")
-    print(f"  Wrote AAOgen 3x3 fit grid to {mc_grid_out}")
-
-    # Promote the truth-template result to the nominal integrated result.
-    results["nominal_method"]="AAOgen truth-template Delta-p extraction"
-    results["nominal_eff_data"]=eff_data_template
-    results["nominal_eff_mc"]=eff_mc_truth
-    results["nominal_Cgamma"]=Cgamma_template
-    results["template_closure"]=closure
-    results["template_data_fit"]=data_template
-    results["template_range_results"]=template_range_results
-    results["template_closure_output"]=closure_out
-    results["template_data_output"]=data_template_out
-    results["template_stability_output"]=template_stability_out
-
-    print("\nIntegrated Delta-p efficiency study (NO kinematic binning):")
-    print("  NOMINAL method = AAOgen truth-matched Delta-p signal template + AAOgen wrong/combinatorial template.")
-    print("  Candidate ranking = smallest |Delta p|; it does not depend on a fitted Gaussian peak.")
-    print("  AAOgen efficiency numerator = directly truth-matched best candidates; no Gaussian window and no background subtraction.")
-    print("  Data signal template may shift and receive additional Gaussian smearing; signal/background normalizations float.")
-    print("  Legacy Gaussian+polynomial fits are diagnostic only and do NOT define the nominal C_gamma.")
-    print(f"  Denominator rows: data={nd_now:,}; AAOgen={nm_now:,}")
-    print(f"  Rows with >=1 probe candidate: data={int(cand_data.GetValue()):,}; AAOgen={int(cand_mc.GetValue()):,}")
-    print(f"  AAOgen truth-matched best candidates={nt:,}; epsilon_AAOgen_truth={eff_mc_truth:.6f}")
-    print(f"  Data fitted signal={data_template['nsig']:.1f}; epsilon_data={eff_data_template:.6f}")
-    print(f"  NOMINAL C_gamma={Cgamma_template:.6f}")
-    return keep,out,results
 
 def draw_probe_aaogen_pi0_fit(dfs, output_dir, period, coeffs):
     """Compare single- and double-Gaussian pi0 signal models on normalized AAOgen.
