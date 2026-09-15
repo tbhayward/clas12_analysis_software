@@ -18,7 +18,6 @@ Pads are cumulative selections, ordered top-left, top-right, bottom-left, bottom
   1) W > 2 GeV and angle(e',gamma1) > 8 deg
   2) additionally Mx2(e'p') < 0.15 GeV^2
   3) additionally -0.05 < Mx2(e'p'gamma1) < 0.05 GeV^2
-  4) additionally Mx2(e'gamma1) > 0 GeV^2
 
 Samples:
   Data black, DVCSgen green, AAOgen red, CLASDIS blue.
@@ -107,6 +106,30 @@ double pe_emiss_epg(double ebeam, double ep, double pp, double gp) {
     // Missing energy for e p -> e' p' gamma1 X:
     // E_miss = E_beam + M_p - E_e' - E_p' - E_gamma1.
     return ebeam + mp - Ee - Ep - gp;
+}
+
+ROOT::VecOps::RVec<double> pe_mgg_tag_probe(
+        double tag_p, double tag_th, double tag_ph, int tag_index,
+        const ROOT::VecOps::RVec<int>& neutral_idx,
+        const ROOT::VecOps::RVec<int>& neutral_pid,
+        const ROOT::VecOps::RVec<double>& neutral_p,
+        const ROOT::VecOps::RVec<double>& neutral_th,
+        const ROOT::VecOps::RVec<double>& neutral_ph) {
+    ROOT::VecOps::RVec<double> out;
+    const auto n = neutral_idx.size();
+    out.reserve(n);
+    for (size_t i = 0; i < n; ++i) {
+        if (neutral_idx[i] < 0) continue;
+        if (neutral_idx[i] == tag_index) continue;
+        if (neutral_pid[i] != 22) continue;
+        if (!(neutral_p[i] > 0.0)) continue;
+        const double dot = std::sin(tag_th)*std::sin(neutral_th[i])*std::cos(tag_ph-neutral_ph[i])
+                         + std::cos(tag_th)*std::cos(neutral_th[i]);
+        const double c = std::max(-1.0, std::min(1.0, dot));
+        const double m2 = 2.0*tag_p*neutral_p[i]*(1.0-c);
+        if (m2 >= 0.0) out.push_back(std::sqrt(m2));
+    }
+    return out;
 }
 """)
 
@@ -1179,6 +1202,82 @@ def draw_low_energy_normalization_v7(dfs, output_dir, period, coeffs):
                 specs[ip][5],f"E_{{#gamma1}} < 4 GeV: {rowname}")
     out=os.path.join(output_dir,f"3_{period}_lowE_normalization_nominal_vs_morph.png")
     canvas.SaveAs(out)
+    low_coeffs = {
+        "nominal": (A0, B0, f0["C"]),
+        "morph": (A1, B1, f1["C"]),
+        "mean": (Am, Bm, fm["C"]),
+    }
+    return keep,out,low_coeffs
+
+
+def draw_full_range_denominator(dfs, output_dir, period, coeffs):
+    """Final epgammaX denominator check over the complete E_gamma1 range.
+
+    Each row is one coefficient choice (nominal, morph, arithmetic mean).
+    The coefficients alone are applied here; no histogram morph is transferred.
+    """
+    needed=("data","dvcsgen","aaogen","clasdis")
+    if coeffs is None or any(x not in dfs for x in needed): return [],None
+    selected={x:_exclusive_df(dfs[x],f"finalden_{x}") for x in needed}
+    specs=[("E_gamma1",";E_{#gamma1} (GeV);Entries",170,0.4,8.9,False),
+           ("Emiss_epg",";E_{miss}(e'p'#gamma1) (GeV);Entries",180,0.0,9.0,True)]
+    unique=str(abs(hash((period,"final_denominator"))))
+    raw,actions=_book_raw_hists(selected,specs,f"finalden_{unique}")
+    canvas=ROOT.TCanvas(f"c_finalden_{unique}","",1500,1500); canvas.Divide(2,3,0.002,0.002)
+    keep=[canvas]+actions
+    for row,key in enumerate(("nominal","morph","mean")):
+        A,B,C=coeffs[key]
+        label={"nominal":"No morph coefficients","morph":"Morph coefficients","mean":"Mean coefficients"}[key]
+        for ip,spec in enumerate(specs):
+            pad=canvas.cd(row*2+ip+1)
+            data=raw[ip]["data"].Clone(f"d_finalden_{row}_{ip}_{unique}"); data.SetDirectory(0)
+            dv=raw[ip]["dvcsgen"].Clone(f"dv_finalden_{row}_{ip}_{unique}"); dv.SetDirectory(0); dv.Scale(A)
+            aa=raw[ip]["aaogen"].Clone(f"aa_finalden_{row}_{ip}_{unique}"); aa.SetDirectory(0); aa.Scale(B)
+            cl=raw[ip]["clasdis"].Clone(f"cl_finalden_{row}_{ip}_{unique}"); cl.SetDirectory(0); cl.Scale(C)
+            tot=dv.Clone(f"tot_finalden_{row}_{ip}_{unique}"); tot.SetDirectory(0); tot.Add(aa); tot.Add(cl)
+            labels={"total":"A#timesDVCS + B#timesAAO + C#timesCLASDIS",
+                    "dvcsgen":f"DVCSgen (A={A:.4g})","aaogen":f"AAOgen (B={B:.4g})","clasdis":f"CLASDIS (C={C:.4g})"}
+            keep += [data,dv,aa,cl,tot] + _style_count_panel(pad,data,{"dvcsgen":dv,"aaogen":aa,"clasdis":cl},tot,labels,spec[5],label)
+    out=os.path.join(output_dir,f"4_{period}_final_epgammaX_denominator.png"); canvas.SaveAs(out)
+    return keep,out
+
+
+def draw_probe_mgg(dfs, output_dir, period):
+    """First probe study: M(gamma_tag gamma_probe) for every retained PID-22 partner.
+
+    The tag is the photon defining the selected epgammaX denominator row.  Every
+    other retained neutral candidate with PID 22 is treated as a possible probe.
+    No tag-probe angular matching or pi0-mass requirement is imposed here.
+    """
+    selected={}
+    for sample,df in dfs.items():
+        selected[sample]=(_exclusive_df(df,f"probe_{sample}")
+            .Define("Mgg_tag_probe",
+                "pe_mgg_tag_probe(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
+                "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)"))
+    unique=str(abs(hash((period,"probe_mgg"))))
+    booked={}; actions=[]
+    for sample,df in selected.items():
+        h=df.Histo1D((f"h_probe_mgg_{sample}_{unique}",
+                      ";M_{#gamma_{tag}#gamma_{probe}} (GeV);Unit-normalized tag-probe combinations",
+                      160,0.0,0.8),"Mgg_tag_probe")
+        booked[sample]=h; actions.append(h)
+    if actions: ROOT.RDF.RunGraphs(actions)
+    canvas=ROOT.TCanvas(f"c_probe_mgg_{unique}","",1000,800); canvas.SetTicks(1,1); canvas.SetLeftMargin(0.13); canvas.SetRightMargin(0.04); canvas.SetBottomMargin(0.13); canvas.SetTopMargin(0.08)
+    keep=[canvas]+actions; hs=[]; ymax=0.0
+    leg=ROOT.TLegend(0.50,0.66,0.89,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.029); keep.append(leg)
+    for sample,label in SAMPLES:
+        if sample not in booked: continue
+        h=booked[sample].GetValue().Clone(f"hp_probe_{sample}_{unique}"); h.SetDirectory(0); h.SetStats(0); h.SetLineColor(COLORS[sample]); h.SetLineWidth(3)
+        n=int(round(h.GetEntries())); integ=h.Integral(1,h.GetNbinsX())
+        if integ>0: h.Scale(1.0/integ)
+        ymax=max(ymax,h.GetMaximum()); hs.append(h); keep.append(h); leg.AddEntry(h,f"{label} (pairs={n:,})","l")
+    for i,h in enumerate(hs):
+        h.SetMinimum(0.0); h.SetMaximum(1.22*ymax if ymax else 1.0)
+        h.GetXaxis().SetTitleSize(0.047); h.GetYaxis().SetTitleSize(0.043); h.GetXaxis().SetLabelSize(0.038); h.GetYaxis().SetLabelSize(0.038); h.GetYaxis().SetTitleOffset(1.35)
+        h.Draw("HIST" if i==0 else "HIST SAME")
+    leg.Draw()
+    out=os.path.join(output_dir,f"1_{period}_Mgg_tag_probe.png"); canvas.SaveAs(out)
     return keep,out
 
 def main():
@@ -1238,8 +1337,15 @@ def main():
     keep.extend(lowshape_keep)
     high_keep, high_output, high_coeffs = draw_high_energy_normalization_v7(dfs, normalization_dir, args.period)
     keep.extend(high_keep)
-    low_keep, low_output = draw_low_energy_normalization_v7(dfs, normalization_dir, args.period, high_coeffs)
+    low_keep, low_output, denominator_coeffs = draw_low_energy_normalization_v7(dfs, normalization_dir, args.period, high_coeffs)
     keep.extend(low_keep)
+    final_keep, final_output = draw_full_range_denominator(dfs, normalization_dir, args.period, denominator_coeffs)
+    keep.extend(final_keep)
+
+    probe_dir = os.path.join(args.output_dir, "probe")
+    os.makedirs(probe_dir, exist_ok=True)
+    probe_keep, probe_output = draw_probe_mgg(dfs, probe_dir, args.period)
+    keep.extend(probe_keep)
     _ = keep  # Keep ROOT objects alive through SaveAs().
 
     for output_file in written:
@@ -1250,6 +1356,10 @@ def main():
         print(f"\nWrote: {high_output}")
     if low_output:
         print(f"\nWrote: {low_output}")
+    if final_output:
+        print(f"\nWrote: {final_output}")
+    if probe_output:
+        print(f"\nWrote: {probe_output}")
     return 0
 
 
