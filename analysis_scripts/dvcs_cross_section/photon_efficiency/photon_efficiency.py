@@ -1857,10 +1857,15 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
     def fit_peak(h, name):
         ax=h.GetXaxis(); b1=ax.FindBin(-0.45); b2=ax.FindBin(0.45)
         ib=max(range(b1,b2+1), key=lambda b:h.GetBinContent(b)); mode=ax.GetBinCenter(ib)
-        f=ROOT.TF1(name,"gaus",max(-0.65,mode-0.28),min(0.65,mode+0.28))
-        f.SetParameters(max(h.GetBinContent(ib),1.0),mode,0.16); h.Fit(f,"QNR")
-        mu=float(f.GetParameter(1)); sig=abs(float(f.GetParameter(2)))
-        f.SetRange(max(-0.8,mu-2.5*sig),min(0.8,mu+2.5*sig)); h.Fit(f,"QNR")
+        # Exclusive peak + smooth combinatorial background.  The old Gaussian-only
+        # fit let the broad tails inflate sigma badly.  Fit data and AAOgen independently.
+        lo,hi=-0.50,0.60
+        f=ROOT.TF1(name,"gaus(0)+pol2(3)",lo,hi)
+        amp=max(h.GetBinContent(ib),1.0)
+        edge=0.5*(h.GetBinContent(ax.FindBin(lo+0.03))+h.GetBinContent(ax.FindBin(hi-0.03)))
+        f.SetParameters(amp,mode,0.12,max(edge,0.0),0.0,0.0)
+        f.SetParLimits(0,0.0,max(10.0*amp,1.0e9)); f.SetParLimits(1,-0.35,0.45); f.SetParLimits(2,0.015,0.35)
+        h.Fit(f,"QNR")
         return f,float(f.GetParameter(1)),abs(float(f.GetParameter(2)))
 
     fdata, mu_data, sig_data = fit_peak(hdata, f"f_intdp_data_{unique}")
@@ -1885,23 +1890,43 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
     ddata=selected["data"].Define("best_dp",f"pe_best_delta_p(intdp_vec,{mu_data:.17g})")
     dmc=selected["aaogen"].Define("best_dp",f"pe_best_delta_p(intdp_vec,{mu_mc:.17g})")
     den_data,den_mc=ddata.Count(),dmc.Count(); cand_data=ddata.Filter("best_dp < 1e8").Count(); cand_mc=dmc.Filter("best_dp < 1e8").Count()
-    nums={}; actions=[den_data,den_mc,cand_data,cand_mc]
-    for n in (1,2,3):
-        hd=ddata.Filter(f"best_dp < 1e8 && abs(best_dp-({mu_data:.17g})) < {n}*({sig_data:.17g})").Count()
-        hm=dmc.Filter(f"best_dp < 1e8 && abs(best_dp-({mu_mc:.17g})) < {n}*({sig_mc:.17g})").Count()
-        nums[n]=(hd,hm); actions += [hd,hm]
-    ROOT.RDF.RunGraphs(actions); nd=int(den_data.GetValue()); nm=int(den_mc.GetValue())
-    results={}
-    for n,(hd,hm) in nums.items():
-        kd,km=int(hd.GetValue()),int(hm.GetValue()); ed=kd/nd if nd else float('nan'); em=km/nm if nm else float('nan')
-        results[n]={"Ndata":kd,"Nmc":km,"eff_data":ed,"eff_mc":em,"ratio":ed/em if em>0 else float('nan')}
+    hbdp=ddata.Filter("best_dp < 1e8").Histo1D((f"h_bestdp_data_{unique}","",200,-1.0,1.0),"best_dp")
+    hbmc=dmc.Filter("best_dp < 1e8").Histo1D((f"h_bestdp_mc_{unique}","",200,-1.0,1.0),"best_dp")
+    ROOT.RDF.RunGraphs([den_data,den_mc,cand_data,cand_mc,hbdp,hbmc])
+    nd=int(den_data.GetValue()); nm=int(den_mc.GetValue())
+    # Refit the actual one-best-candidate-per-row spectra.  These are the fits used
+    # for the final mu, sigma, background subtraction, and efficiency.
+    hdata=hbdp.GetValue().Clone(f"h_bestdp_data_draw_{unique}"); hdata.SetDirectory(0)
+    hmc=hbmc.GetValue().Clone(f"h_bestdp_mc_draw_{unique}"); hmc.SetDirectory(0); hmc.Scale(B)
+    fdata,mu_data,sig_data=fit_peak(hdata,f"f_intdp_data_best_{unique}")
+    fmc,mu_mc,sig_mc=fit_peak(hmc,f"f_intdp_mc_best_{unique}")
 
-    c=ROOT.TCanvas(f"c_intdp_eff_{unique}","",1500,720); c.Divide(2,1,0.002,0.002); keep=[c,hdata,hmc,fdata,fmc]
-    for ipad,(h,f,mu,sig,title,col) in enumerate([(hdata,fdata,mu_data,sig_data,"Data: integrated #Delta p fit",ROOT.kBlack),(hmc,fmc,mu_mc,sig_mc,"AAOgen: integrated #Delta p fit",ROOT.kRed+1)],1):
+    def components(f,prefix):
+        sg=ROOT.TF1(prefix+"_sig","gaus",-0.50,0.60); sg.SetParameters(f.GetParameter(0),f.GetParameter(1),f.GetParameter(2))
+        bg=ROOT.TF1(prefix+"_bg","pol2",-0.50,0.60); bg.SetParameters(f.GetParameter(3),f.GetParameter(4),f.GetParameter(5))
+        return sg,bg
+    sig_data,bg_data=components(fdata,f"intdp_data_{unique}"); sig_mc,bg_mc=components(fmc,f"intdp_mc_{unique}")
+
+    def bgsub_window(h,bg,mu,sig,n,scale):
+        lo=max(-1.0,mu-n*sig); hi=min(1.0,mu+n*sig); ax=h.GetXaxis()
+        b1=ax.FindBin(lo+1e-9); b2=ax.FindBin(hi-1e-9); obs=float(h.Integral(b1,b2))/scale
+        bkg=float(bg.Integral(lo,hi)/h.GetBinWidth(1))/scale; signal=max(0.0,obs-bkg)
+        return obs,bkg,signal
+    results={}
+    for n in (1,2,3):
+        od,bd,sd=bgsub_window(hdata,bg_data,mu_data,sig_data,n,1.0)
+        om,bm,sm=bgsub_window(hmc,bg_mc,mu_mc,sig_mc,n,B)
+        ed=sd/nd if nd else float('nan'); em=sm/nm if nm else float('nan')
+        results[n]={"Ndata":sd,"Nmc":sm,"obs_data":od,"bkg_data":bd,"obs_mc":om,"bkg_mc":bm,"eff_data":ed,"eff_mc":em,"ratio":ed/em if em>0 else float('nan')}
+
+    c=ROOT.TCanvas(f"c_intdp_eff_{unique}","",1500,720); c.Divide(2,1,0.002,0.002); keep=[c,hdata,hmc,fdata,fmc,sig_data,bg_data,sig_mc,bg_mc]
+    for ipad,(h,f,sg,bg,mu,sig,title,col) in enumerate([(hdata,fdata,sig_data,bg_data,mu_data,sig_data,"Data: integrated #Delta p fit",ROOT.kBlack),(hmc,fmc,sig_mc,bg_mc,mu_mc,sig_mc,"AAOgen: integrated #Delta p fit",ROOT.kRed+1)],1):
         pad=c.cd(ipad); pad.SetTicks(1,1); pad.SetLeftMargin(0.14); pad.SetBottomMargin(0.14); pad.SetTopMargin(0.11); pad.SetRightMargin(0.04)
         h.SetStats(0); h.SetLineColor(col); h.SetMarkerColor(col); h.SetMarkerStyle(20); h.SetMarkerSize(0.55)
         h.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)"); h.GetYaxis().SetTitle("Normalized candidate combinations"); h.GetYaxis().SetTitleOffset(1.55); h.Draw("E1")
         f.SetLineColor(ROOT.kMagenta+2); f.SetLineWidth(3); f.Draw("SAME")
+        sg.SetLineColor(ROOT.kBlue); sg.SetLineWidth(3); sg.Draw("SAME")
+        bg.SetLineColor(ROOT.kGray+2); bg.SetLineStyle(2); bg.SetLineWidth(2); bg.Draw("SAME")
         lab=ROOT.TLatex(); lab.SetNDC(True); lab.SetTextSize(0.034); lab.DrawLatex(0.18,0.92,title); lab.DrawLatex(0.18,0.86,f"#mu = {mu:+.4f} GeV"); lab.DrawLatex(0.18,0.81,f"#sigma = {sig:.4f} GeV")
         y=0.75
         for n in (1,2,3):
@@ -1912,13 +1937,15 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
     out=os.path.join(output_dir,f"6_{period}_integrated_delta_p_efficiency.png"); c.SaveAs(out)
     print("\nIntegrated Delta-p efficiency study (NO kinematic binning):")
     print("  MC signal reference = AAOgen only (exclusive ep-pi0 signal sample).")
+    print("  Final fit model = Gaussian exclusive peak + quadratic background over -0.50 < Delta p < +0.60 GeV.")
+    print("  Efficiency numerators are background-subtracted inside each sample own 1/2/3-sigma window.")
     print("  DVCSgen is not included in the signal efficiency; generator-exclusive ep-pi0 was removed from CLASDIS.")
     print(f"  Fits: data mu={mu_data:+.6f} GeV sigma={sig_data:.6f} GeV; AAOgen mu={mu_mc:+.6f} GeV sigma={sig_mc:.6f} GeV")
     print(f"  Denominator rows: data={nd:,}; AAOgen={nm:,}")
     print(f"  Rows with >=1 probe candidate: data={int(cand_data.GetValue()):,}; AAOgen={int(cand_mc.GetValue()):,}")
     print("  Each epgammaX denominator row contributes at most once: use the probe candidate closest to that sample's fitted peak.")
     for n in (1,2,3):
-        r=results[n]; print(f"  {n}sigma: data {r['Ndata']:,}/{nd:,}={r['eff_data']:.6f}; AAOgen {r['Nmc']:,}/{nm:,}={r['eff_mc']:.6f}; C_gamma={r['ratio']:.6f}")
+        r=results[n]; print(f"  {n}sigma: data obs={r['obs_data']:.1f}, bg={r['bkg_data']:.1f}, signal={r['Ndata']:.1f}, eff={r['eff_data']:.6f}; AAOgen obs={r['obs_mc']:.1f}, bg={r['bkg_mc']:.1f}, signal={r['Nmc']:.1f}, eff={r['eff_mc']:.6f}; C_gamma={r['ratio']:.6f}")
     return keep,out,results
 
 def draw_probe_aaogen_pi0_fit(dfs, output_dir, period, coeffs):
