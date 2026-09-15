@@ -123,6 +123,36 @@ double pe_emiss_epg(double ebeam, double ep, double pp, double gp) {
     return ebeam + mp - Ee - Ep - gp;
 }
 
+ROOT::VecOps::RVec<double> pe_delta_p_tag_probe(
+        double probe_missing_p, int tag_index,
+        const ROOT::VecOps::RVec<int>& neutral_idx,
+        const ROOT::VecOps::RVec<int>& neutral_pid,
+        const ROOT::VecOps::RVec<double>& neutral_p) {
+    // Signed momentum residual for each reconstructed candidate probe photon:
+    //
+    //   Delta p = |p_X| - |p_gamma_candidate|
+    //
+    // probe_missing_p is the magnitude of the missing three-momentum after
+    // subtracting e', p', and the tag photon gamma1.  In an exclusive
+    // e'p'gamma1 gamma2 event, X is gamma2, so Delta p should peak near zero
+    // for the correct reconstructed partner.
+    //
+    // Use exactly the same reconstructed partner population as pe_mgg_tag_probe:
+    // retained PID-22 neutrals, excluding the tag itself, with positive momentum.
+    ROOT::VecOps::RVec<double> out;
+    const auto n = neutral_idx.size();
+    out.reserve(n);
+    if (!(probe_missing_p > 0.0)) return out;
+    for (size_t i = 0; i < n; ++i) {
+        if (neutral_idx[i] < 0) continue;
+        if (neutral_idx[i] == tag_index) continue;
+        if (neutral_pid[i] != 22) continue;
+        if (!(neutral_p[i] > 0.0)) continue;
+        out.push_back(probe_missing_p - neutral_p[i]);
+    }
+    return out;
+}
+
 ROOT::VecOps::RVec<double> pe_mgg_tag_probe(
         double tag_p, double tag_th, double tag_ph, int tag_index,
         const ROOT::VecOps::RVec<int>& neutral_idx,
@@ -1628,6 +1658,183 @@ def draw_probe_mgg(dfs, output_dir, period, coeffs):
     return keep, out
 
 
+
+def draw_probe_delta_p(dfs, output_dir, period, coeffs):
+    """Plot Delta p = |p_X| - |p_gamma_candidate| for candidate probe photons.
+
+    p_X is the missing three-momentum after e', p', and the tag photon gamma1:
+        p_X = p_beam + p_target - p_e' - p_p' - p_gamma1.
+    The target has zero three-momentum, so the saved probe_raw_p branch is
+    precisely |p_X| from that missing four-vector.
+
+    Candidate gamma_probe objects are exactly the same retained reconstructed
+    PID-22 partners used in the Mgg probe plot.  The same final epgammaX
+    selection and the same A/B/C normalization coefficients are used.
+
+    Two views are written on one canvas:
+      left:  broad -4 < Delta p < 4 GeV
+      right: zoom  -1 < Delta p < 1 GeV
+    No Delta-p cut is applied.
+    """
+    if coeffs is None:
+        print("WARNING: no denominator normalization coefficients; skipping probe Delta-p plot.")
+        return [], None
+
+    selected = {}
+    for sample, df in dfs.items():
+        selected[sample] = (_exclusive_df(df, f"probe_deltap_{sample}")
+            .Define("delta_p_tag_probe",
+                "pe_delta_p_tag_probe(probe_raw_p,tag_rec_index,"
+                "neutral_idx,neutral_pid,neutral_p)"))
+
+    A, B, C = coeffs["mean"]
+    scales = {"data": 1.0, "dvcsgen": A, "aaogen": B, "clasdis": C}
+    unique = str(abs(hash((period, "probe_delta_p_scaled_components"))))
+
+    # Book a single broad histogram; the second pad is only an axis zoom of the
+    # identical histogram, so both panels contain exactly the same combinations.
+    booked, actions = {}, []
+    for sample, df in selected.items():
+        h = df.Histo1D(
+            (f"h_probe_deltap_{sample}_{unique}",
+             ";#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV);Normalized tag-probe combinations",
+             320, -4.0, 4.0),
+            "delta_p_tag_probe")
+        booked[sample] = h
+        actions.append(h)
+
+    if actions:
+        ROOT.RDF.RunGraphs(actions)
+
+    drawn = {}
+    raw_pairs = {}
+    keep = list(actions)
+    for sample, _label in SAMPLES:
+        if sample not in booked:
+            continue
+        h = booked[sample].GetValue().Clone(f"hp_deltap_{sample}_{unique}")
+        h.SetDirectory(0)
+        h.SetStats(0)
+        raw_pairs[sample] = int(round(h.GetEntries()))
+        if sample == "data":
+            h.SetLineColor(ROOT.kBlack)
+            h.SetLineWidth(3)
+            h.SetLineStyle(1)
+        else:
+            h.Scale(scales[sample])
+            h.SetLineColor(COLORS[sample])
+            h.SetLineWidth(2)
+            h.SetLineStyle(2)
+        drawn[sample] = h
+        keep.append(h)
+
+    combined = None
+    for sample in ("dvcsgen", "aaogen", "clasdis"):
+        if sample not in drawn:
+            continue
+        if combined is None:
+            combined = drawn[sample].Clone(f"h_probe_deltap_combined_{unique}")
+            combined.SetDirectory(0)
+        else:
+            combined.Add(drawn[sample])
+    if combined is not None:
+        combined.SetStats(0)
+        combined.SetLineColor(ROOT.kMagenta + 2)
+        combined.SetLineWidth(4)
+        combined.SetLineStyle(1)
+        keep.append(combined)
+
+    canvas = ROOT.TCanvas(f"c_probe_deltap_{unique}", "", 1500, 720)
+    canvas.Divide(2, 1, 0.002, 0.002)
+    keep.append(canvas)
+
+    def draw_panel(pad, xmin, xmax, title):
+        pad.SetTicks(1, 1)
+        pad.SetLeftMargin(0.14)
+        pad.SetRightMargin(0.04)
+        pad.SetBottomMargin(0.14)
+        pad.SetTopMargin(0.11)
+
+        first = drawn.get("data", combined)
+        if first is None and drawn:
+            first = next(iter(drawn.values()))
+        if first is None:
+            return
+
+        all_h = list(drawn.values()) + ([combined] if combined is not None else [])
+        ymax = 0.0
+        for h in all_h:
+            b1 = h.GetXaxis().FindBin(xmin + 1e-9)
+            b2 = h.GetXaxis().FindBin(xmax - 1e-9)
+            for ib in range(b1, b2 + 1):
+                ymax = max(ymax, h.GetBinContent(ib))
+
+        first.GetXaxis().SetRangeUser(xmin, xmax)
+        first.SetMinimum(0.0)
+        first.SetMaximum(1.20 * ymax if ymax > 0 else 1.0)
+        first.GetXaxis().SetTitleSize(0.046)
+        first.GetYaxis().SetTitleSize(0.041)
+        first.GetXaxis().SetLabelSize(0.036)
+        first.GetYaxis().SetLabelSize(0.036)
+        first.GetYaxis().SetTitleOffset(1.55)
+        first.Draw("HIST")
+
+        if combined is not None and combined is not first:
+            combined.GetXaxis().SetRangeUser(xmin, xmax)
+            combined.Draw("HIST SAME")
+        for sample in ("dvcsgen", "aaogen", "clasdis"):
+            if sample in drawn and drawn[sample] is not first:
+                drawn[sample].GetXaxis().SetRangeUser(xmin, xmax)
+                drawn[sample].Draw("HIST SAME")
+        if "data" in drawn:
+            drawn["data"].GetXaxis().SetRangeUser(xmin, xmax)
+            drawn["data"].Draw("HIST SAME")
+
+        zero = ROOT.TLine(0.0, 0.0, 0.0, first.GetMaximum())
+        zero.SetLineColor(ROOT.kGray + 2)
+        zero.SetLineStyle(3)
+        zero.SetLineWidth(2)
+        zero.Draw()
+        keep.append(zero)
+
+        leg = ROOT.TLegend(0.53, 0.62, 0.94, 0.87)
+        leg.SetBorderSize(0)
+        leg.SetFillStyle(0)
+        leg.SetTextSize(0.027)
+        if "data" in drawn:
+            leg.AddEntry(drawn["data"], f"Data (pairs={raw_pairs['data']:,})", "l")
+        if combined is not None:
+            leg.AddEntry(combined, "Combined MC", "l")
+        if "dvcsgen" in drawn:
+            leg.AddEntry(drawn["dvcsgen"], f"DVCSgen (#times{A:.4g})", "l")
+        if "aaogen" in drawn:
+            leg.AddEntry(drawn["aaogen"], f"AAOgen (#times{B:.4g})", "l")
+        if "clasdis" in drawn:
+            leg.AddEntry(drawn["clasdis"], f"CLASDIS incl. (#times{C:.4g})", "l")
+        leg.Draw()
+
+        lab = ROOT.TLatex()
+        lab.SetNDC(True)
+        lab.SetTextAlign(22)
+        lab.SetTextSize(0.036)
+        lab.DrawLatex(0.53, 0.955, title)
+        keep.extend([leg, lab])
+
+    draw_panel(canvas.cd(1), -4.0, 4.0, "Probe momentum residual: broad view")
+    draw_panel(canvas.cd(2), -1.0, 1.0, "Probe momentum residual: near-exclusive region")
+
+    out = os.path.join(output_dir, f"5_{period}_delta_p_tag_probe.png")
+    canvas.SaveAs(out)
+
+    print("\nProbe Delta-p comparison:")
+    print("  Definition: Delta p = |p_X(e'p'gamma1)| - |p_gamma_probe|")
+    print("  p_X uses the saved probe_raw_p missing-momentum magnitude.")
+    print("  Candidate probes are the same retained PID-22 partners used in Mgg.")
+    print("  Same _exclusive_df() selection as probe Mgg; NO Delta-p cut applied.")
+    print(f"  MC scales: DVCSgen={A:.8g}, AAOgen={B:.8g}, CLASDIS={C:.8g}")
+    print(f"  Wrote broad (-4,4) and zoomed (-1,1) views to {out}")
+    return keep, out
+
 def draw_probe_aaogen_pi0_fit(dfs, output_dir, period, coeffs):
     """Compare single- and double-Gaussian pi0 signal models on normalized AAOgen.
 
@@ -2617,6 +2824,8 @@ def main():
     probe_dir = os.path.join(args.output_dir, "probe")
     os.makedirs(probe_dir, exist_ok=True)
     probe_keep, probe_output = draw_probe_mgg(dfs, probe_dir, args.period, denominator_coeffs)
+    deltap_keep, deltap_output = draw_probe_delta_p(
+        dfs, probe_dir, args.period, denominator_coeffs)
     keep.extend(probe_keep)
     pi0fit_keep, pi0fit_output, pi0fit_result = draw_probe_aaogen_pi0_fit(
         dfs, probe_dir, args.period, denominator_coeffs)
