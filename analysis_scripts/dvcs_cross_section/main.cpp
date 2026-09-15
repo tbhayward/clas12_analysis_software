@@ -706,34 +706,20 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // --------- Pass-2 bin-centering correction ----------
-    // Recompute the central KM15 factor using the actual pass-2 mean
-    // kinematics.  The fast backend batches the entire CSV through a small
-    // fixed number of persistent Gepard/KM15 worker processes.
+    // --------- Bin-centering-correction analysis-note outputs ----------
+    // Production Fbin values are inherited directly from the pass-1 analysis
+    // (imports/all_bin_v3.csv), exactly like Frad.  This step is read-only:
+    // it produces diagnostics for the reused pass-1 factors and does not
+    // modify the pass-2 analysis CSV.
     {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-
-        try {
-            std::filesystem::copy_file(
-                csv_main,
-                "output/csvs/dvcs_pass2_analysis_backup_bin_centering.csv",
-                std::filesystem::copy_options::overwrite_existing);
-        } catch (const std::exception& ex) {
-            std::cerr << "[main] WARNING: failed to create bin-centering backup: "
-                      << ex.what() << "\n";
-        }
-
-        ModelPaths model_paths;
-        const int quadrature_order = 3;  // 3^4 = 81 KM15 points per populated bin.
-        if (!update_bin_centering_corrections_csv(
-                csv_main, quadrature_order, model_paths, false, ModelChoice::KM15Only)) {
-            std::cerr << "[main] ERROR: bin-centering corrections failed.\n";
+        if (!write_bin_centering_analysis_note_outputs(
+                "imports/all_bin_v3.csv",
+                "output/bin_centering_corrections")) {
+            std::cerr
+                << "[main] ERROR: bin-centering-correction analysis-note outputs failed.\n";
             return 1;
         }
-
-        plot_bin_centering_fbin_vs_phi(csv_main, "output/bin_centering_plots");
     }
-
 
     // // {
     // //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";

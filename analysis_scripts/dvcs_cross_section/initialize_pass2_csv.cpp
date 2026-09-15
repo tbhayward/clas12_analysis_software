@@ -613,10 +613,10 @@ static void add_norm_columns(std::vector<std::string>& H) {
 static void add_pass1_fixed_systematic_columns(std::vector<std::string>& H) {
     // The pi0 term is recalculated from the pass-2 contamination using the
     // pass-1 7.2% relative uncertainty on the acceptance-corrected background.
-    // Acceptance retains the pass-2 reweighting study; Frad keeps the dedicated
-    // radiative prescription, while the central Fbin value is now recomputed
-    // from KM15 at the pass-2 bin means (its existing model-spread systematic
-    // is retained provisionally).
+    // Acceptance retains the pass-2 reweighting study.  Frad and Fbin both
+    // retain the pass-1 correction prescription: their central values are
+    // imported by bin index from imports/all_bin_v3.csv, with the corresponding
+    // pass-1 systematic treatment retained.
     H.push_back("Syst. err (pi0 subtraction)");
     H.push_back("pi0 subtraction sys frac, 10.6 GeV");
     H.push_back("pi0 effective contamination, 10.6 GeV");
