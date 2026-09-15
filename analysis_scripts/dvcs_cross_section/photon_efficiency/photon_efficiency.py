@@ -10,12 +10,12 @@ Each row is one reconstructed e'p'gamma1 hypothesis produced by the skim.
 Plot the following observables as rows:
   1) E_gamma1                     0.4 to 10 GeV
   2) missing energy e'p'gamma1    1 to 10 GeV
-  3) Mx2(e'p')                   -0.5 to 2.0 GeV^2
-  4) Mx2(e'p'gamma1)             -0.1 to 0.2 GeV^2
+  3) Mx2(e'p')                   -0.5 to 1.0 GeV^2
+  4) Mx2(e'p'gamma1)             -0.1 to 0.15 GeV^2
 
 Columns are cumulative selections:
   1) W > 2 GeV only
-  2) additionally Mx2(e'p') < 0.25 GeV^2
+  2) additionally Mx2(e'p') < 0.18 GeV^2
   3) additionally -0.05 < Mx2(e'p'gamma1) < 0.05 GeV^2
 
 Samples:
@@ -192,16 +192,16 @@ def make_dataframe(chain):
 def draw_canvas(dfs, output_file):
     """Draw the four observables through the requested cumulative cut sequence."""
     plots = [
-        ("E_gamma1", "#gamma1 energy;E_{#gamma1} (GeV);Unit-normalized entries", 192, 0.4, 10.0),
-        ("Emiss_epg", "Missing energy e'p'#gamma1;E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 180, 1.0, 10.0),
-        ("Mx2_ep", "Missing mass squared e'p';M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries", 180, -0.5, 1.0),
-        ("Mx2_epg_raw", "Missing mass squared e'p'#gamma1;M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries", 180, -0.1, 0.2),
+        ("E_gamma1", ";E_{#gamma1} (GeV);Unit-normalized entries", 172, 0.4, 9.0),
+        ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 180, 1.0, 10.0),
+        ("Mx2_ep", ";M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries", 180, -0.5, 1.0),
+        ("Mx2_epg_raw", ";M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries", 180, -0.1, 0.15),
     ]
 
     stages = [
         ("", lambda df: df),
-        ("M^{2}_{X}(e'p') < 0.25 GeV^{2}",
-         lambda df: df.Filter("Mx2_ep < 0.25", "Mx2_ep_lt_0p25")),
+        ("M^{2}_{X}(e'p') < 0.18 GeV^{2}",
+         lambda df: df.Filter("Mx2_ep < 0.18", "Mx2_ep_lt_0p18")),
         ("-0.05 < M^{2}_{X}(e'p'#gamma1) < 0.05 GeV^{2}",
          lambda df: df.Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "Mx2_epg_window")),
     ]
