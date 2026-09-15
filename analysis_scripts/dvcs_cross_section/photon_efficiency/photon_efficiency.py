@@ -1390,81 +1390,67 @@ def draw_probe_mgg(dfs, output_dir, period):
 
 
 def _event_grouped_unique_tag_mgg(df, hist_name, title):
-    """Build Mgg from the unique reconstructed tag photons in each physical event.
+    """Build every unique reconstructed-photon pair per physical event.
 
-    PhotonEfficiency has one row per e'p'gamma-tag hypothesis.  Therefore the
-    cleanest event-level reconstructed photon collection available in this tree
-    is obtained by grouping rows by (source_file_hash, runnum, evnum), keeping
-    one copy of each unique tag_rec_index, and then forming every unordered
-    pair of those unique photons.  neutral_[0..4], inferred X, and MC truth are
-    deliberately not used.
+    Rows are NOT assumed to be contiguous.  We materialize only the seven
+    required columns, sort by the physical-event key, deduplicate photons by
+    tag_rec_index inside each event, and fill every unordered pair once.
     """
     cols = ["source_file_hash", "runnum", "evnum", "tag_rec_index",
             "tag_corr_p", "tag_corr_theta", "tag_corr_phi"]
     arr = df.AsNumpy(cols)
-
     h = ROOT.TH1D(hist_name, title, 150, 0.0, 0.30)
     h.SetDirectory(0)
-
     nrows = len(arr["evnum"])
     if nrows == 0:
-        return h, 0, 0, 0
+        return h, 0, 0
 
-    # The producer writes all hypotheses from one HIPO event consecutively.
-    # We nevertheless key on source_file_hash + run + event and explicitly
-    # detect a non-contiguous repeated key below rather than silently assuming.
-    current_key = None
-    photons = {}
-    seen_closed = set()
-    repeated_noncontiguous = 0
-    n_events = 0
-    n_events_ge2 = 0
+    # Sort once by event key and REC index.  This is much faster than a Python
+    # TTree entry loop and is correct even when the same event appears in
+    # non-contiguous ROOT rows.
+    sh = np.asarray(arr["source_file_hash"], dtype=np.uint64)
+    rn = np.asarray(arr["runnum"], dtype=np.int64)
+    ev = np.asarray(arr["evnum"], dtype=np.int64)
+    ri = np.asarray(arr["tag_rec_index"], dtype=np.int64)
+    pp = np.asarray(arr["tag_corr_p"], dtype=float)
+    tt = np.asarray(arr["tag_corr_theta"], dtype=float)
+    ph = np.asarray(arr["tag_corr_phi"], dtype=float)
+    order = np.lexsort((ri, ev, rn, sh))
+    sh, rn, ev, ri = sh[order], rn[order], ev[order], ri[order]
+    pp, tt, ph = pp[order], tt[order], ph[order]
 
-    def flush_event(photon_map):
-        nonlocal n_events, n_events_ge2
-        if current_key is None:
-            return
-        n_events += 1
-        vals = list(photon_map.values())
-        if len(vals) < 2:
-            return
-        n_events_ge2 += 1
-        for i in range(len(vals)):
-            p1, th1, ph1 = vals[i]
-            for j in range(i + 1, len(vals)):
-                p2, th2, ph2 = vals[j]
-                dot = (np.sin(th1)*np.sin(th2)*np.cos(ph1-ph2)
-                       + np.cos(th1)*np.cos(th2))
-                c = max(-1.0, min(1.0, float(dot)))
-                m2 = 2.0*float(p1)*float(p2)*(1.0-c)
-                if m2 >= 0.0:
-                    h.Fill(np.sqrt(m2))
+    # Keep one row per (event, REC index). Negative REC indices are unusable.
+    valid = ri >= 0
+    sh, rn, ev, ri = sh[valid], rn[valid], ev[valid], ri[valid]
+    pp, tt, ph = pp[valid], tt[valid], ph[valid]
+    if len(ri) == 0:
+        return h, 0, 0
+    first = np.ones(len(ri), dtype=bool)
+    first[1:] = ((sh[1:] != sh[:-1]) | (rn[1:] != rn[:-1]) |
+                 (ev[1:] != ev[:-1]) | (ri[1:] != ri[:-1]))
+    sh, rn, ev, ri = sh[first], rn[first], ev[first], ri[first]
+    pp, tt, ph = pp[first], tt[first], ph[first]
 
-    for i in range(nrows):
-        key = (int(arr["source_file_hash"][i]),
-               int(arr["runnum"][i]), int(arr["evnum"][i]))
-        if key != current_key:
-            if current_key is not None:
-                flush_event(photons)
-                seen_closed.add(current_key)
-            if key in seen_closed:
-                repeated_noncontiguous += 1
-            current_key = key
-            photons = {}
+    # Boundaries of the now-contiguous physical events.
+    start = np.r_[0, np.nonzero((sh[1:] != sh[:-1]) | (rn[1:] != rn[:-1]) |
+                                (ev[1:] != ev[:-1]))[0] + 1]
+    stop = np.r_[start[1:], len(ev)]
+    n_events = len(start)
+    n_events_ge2 = int(np.count_nonzero((stop - start) >= 2))
 
-        rec_idx = int(arr["tag_rec_index"][i])
-        if rec_idx < 0:
+    # Photon multiplicities are small, so only this short per-event loop stays
+    # in Python. All expensive ROOT entry access and grouping is vectorized.
+    for lo, hi in zip(start, stop):
+        n = int(hi - lo)
+        if n < 2:
             continue
-        # Multiple proton hypotheses and/or duplicate rows can carry the same
-        # reconstructed photon.  REC index is the identity of the photon.
-        if rec_idx not in photons:
-            photons[rec_idx] = (float(arr["tag_corr_p"][i]),
-                                float(arr["tag_corr_theta"][i]),
-                                float(arr["tag_corr_phi"][i]))
-
-    flush_event(photons)
-    return h, n_events, n_events_ge2, repeated_noncontiguous
-
+        for i in range(lo, hi - 1):
+            dot = (np.sin(tt[i]) * np.sin(tt[i+1:hi]) * np.cos(ph[i]-ph[i+1:hi])
+                   + np.cos(tt[i]) * np.cos(tt[i+1:hi]))
+            m2 = 2.0 * pp[i] * pp[i+1:hi] * (1.0 - np.clip(dot, -1.0, 1.0))
+            for mass in np.sqrt(np.maximum(m2, 0.0)):
+                h.Fill(float(mass))
+    return h, n_events, n_events_ge2
 
 def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
     """AAOgen event-level reconstructed-photon pair audit.
@@ -1489,10 +1475,10 @@ def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
     excl = _exclusive_df(dfs["aaogen"], "probe_event_grouped_exclusive")
 
     unique = str(abs(hash((period, "probe_event_grouped_pair_audit"))))
-    hbase, nev_base, nev2_base, repeat_base = _event_grouped_unique_tag_mgg(
+    hbase, nev_base, nev2_base = _event_grouped_unique_tag_mgg(
         base, f"h_mgg_event_grouped_base_{unique}",
         ";M_{#gamma#gamma} (GeV);Unit-normalized unique event-level #gamma#gamma pairs")
-    hexcl, nev_excl, nev2_excl, repeat_excl = _event_grouped_unique_tag_mgg(
+    hexcl, nev_excl, nev2_excl = _event_grouped_unique_tag_mgg(
         excl, f"h_mgg_event_grouped_excl_{unique}",
         ";M_{#gamma#gamma} (GeV);Unit-normalized unique event-level #gamma#gamma pairs")
 
@@ -1558,12 +1544,7 @@ def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
           f"{int(hbase.GetEntries()):,} gamma-gamma pairs")
     print(f"  Exclusive: {nev_excl:,} physical events; {nev2_excl:,} with >=2 photons; "
           f"{int(hexcl.GetEntries()):,} gamma-gamma pairs")
-    if repeat_base or repeat_excl:
-        print(f"  WARNING: non-contiguous repeated event keys observed: "
-              f"baseline={repeat_base}, exclusive={repeat_excl}")
-        print("  If nonzero, the grouping implementation must be changed before interpreting the plot.")
-    else:
-        print("  Event rows were contiguous by physical-event key, as expected from the producer.")
+    print("  Event rows were globally sorted by physical-event key; no contiguity assumption is used.")
     print("  EXPECTATION: AAOgen should show a visible pi0 peak near 0.135 GeV if the")
     print("  reconstructed tag photons retained in PhotonEfficiency contain both pi0 daughters.")
     return keep, out
@@ -1575,12 +1556,10 @@ def _mgg_from_p_theta_phi(p1, th1, ph1, p2, th2, ph2):
     return np.sqrt(max(0.0, 2.0*float(p1)*float(p2)*(1.0-c)))
 
 def dump_aaogen_truth_rec_events(files, output_dir, period, max_events=12):
-    """Text-level AAOgen truth -> REC trace using PhotonEfficiencyEvents.
+    """Fast AAOgen truth -> REC trace from PhotonEfficiencyEvents.
 
-    Selects clean events where the event tree says there are exactly two generated
-    photons and both are classified as pi0 photons.  It then prints the generated
-    photon four-vector information, each photon's best REC association, and both
-    generated and REC Mgg values.  This bypasses the hypothesis tree completely.
+    Selection happens inside ROOT's compiled RDataFrame engine.  Only the small
+    selected sample is transferred to NumPy; there is no Python GetEntry loop.
     """
     if not files:
         return None
@@ -1592,16 +1571,9 @@ def dump_aaogen_truth_rec_events(files, output_dir, period, max_events=12):
         return None
 
     out = os.path.join(output_dir, f"3_{period}_AAOgen_truth_REC_event_dump.txt")
-    n_clean = n_both_rec = n_both_pid22 = 0
-    masses_gen, masses_rec = [], []
-    examples = []
-
-    # Event-tree schema has changed across skim/converter revisions.  Resolve the
-    # actual branch names rather than assuming the ev_* prefix is present.
     branch_names = {b.GetName() for b in ch.GetListOfBranches()}
     def pick_branch(*names):
-        return next((name for name in names if name in branch_names), None)
-
+        return next((x for x in names if x in branch_names), None)
     b_W = pick_branch("ev_W", "W")
     b_nph = pick_branch("ev_gen_n_photon", "gen_n_photon")
     b_npi0ph = pick_branch("ev_gen_n_pi0_photon", "gen_n_pi0_photon")
@@ -1609,71 +1581,64 @@ def dump_aaogen_truth_rec_events(files, output_dir, period, max_events=12):
     b_hash = pick_branch("ev_source_file_hash", "source_file_hash")
     b_run = pick_branch("ev_runnum", "runnum")
     b_evt = pick_branch("ev_evnum", "evnum")
-
-    required = {
-        "generated-photon count": b_nph,
-        "pi0-photon count": b_npi0ph,
-        "saved generated-photon total": b_ngamma,
-        "source-file hash": b_hash,
-        "run number": b_run,
-        "event number": b_evt,
-    }
-    missing = [label for label, name in required.items() if name is None]
+    required = {"generated-photon count":b_nph, "pi0-photon count":b_npi0ph,
+                "saved generated-photon total":b_ngamma, "source-file hash":b_hash,
+                "run number":b_run, "event number":b_evt}
+    missing = [k for k,v in required.items() if v is None]
+    array_branches = ["gen_gamma_p","gen_gamma_theta","gen_gamma_phi",
+                      "gen_gamma_index","gen_gamma_n_rec_matches","gen_gamma_n_rec_pid22",
+                      "gen_gamma_best_rec_index","gen_gamma_best_rec_pid","gen_gamma_best_rec_p",
+                      "gen_gamma_best_rec_theta","gen_gamma_best_rec_phi","gen_gamma_best_rec_delta_alpha"]
+    missing += [x for x in array_branches if x not in branch_names]
     if missing:
-        print("\nERROR: PhotonEfficiencyEvents is present, but the event dump cannot find:")
-        for label in missing:
-            print(f"  - {label}")
-        print("Available PhotonEfficiencyEvents branches are:")
-        for name in sorted(branch_names):
-            print(f"  {name}")
-        print("No event-dump selection was attempted. This is a schema issue, not a physics result.\n")
+        print("\nERROR: PhotonEfficiencyEvents event dump is missing required branches:")
+        for x in missing: print(f"  - {x}")
+        print("No truth/REC event dump was attempted.\n")
         return None
 
-    if b_W is None:
-        print("WARNING: PhotonEfficiencyEvents has no saved W branch; the truth/REC dump will run without W > 2.")
+    rdf = ROOT.RDataFrame(ch)
+    cut = f"{b_nph} == 2 && {b_npi0ph} == 2 && {b_ngamma} == 2"
+    if b_W is not None:
+        cut = f"({b_W} > 2.0) && ({cut})"
+    else:
+        print("WARNING: PhotonEfficiencyEvents has no W branch; truth/REC dump runs without W > 2.")
+    sel = rdf.Filter(cut, "clean generated pi0 -> gamma gamma")
+    n_clean = int(sel.Count().GetValue())
 
-    for iev in range(ch.GetEntries()):
-        ch.GetEntry(iev)
-        Wval = float(getattr(ch, b_W)) if b_W is not None else float("nan")
-        if b_W is not None and Wval <= 2.0:
-            continue
-        if int(getattr(ch, b_nph)) != 2 or int(getattr(ch, b_npi0ph)) != 2:
-            continue
-        if int(getattr(ch, b_ngamma)) != 2:
-            continue
-        n_clean += 1
-        gp=[]
-        for k in range(2):
-            gp.append((float(ch.gen_gamma_p[k]), float(ch.gen_gamma_theta[k]), float(ch.gen_gamma_phi[k])))
-        mgen=_mgg_from_p_theta_phi(*gp[0], *gp[1]); masses_gen.append(mgen)
-        r0=int(ch.gen_gamma_best_rec_index[0]); r1=int(ch.gen_gamma_best_rec_index[1])
-        if r0 >= 0 and r1 >= 0:
-            n_both_rec += 1
-        pid0=int(ch.gen_gamma_best_rec_pid[0]); pid1=int(ch.gen_gamma_best_rec_pid[1])
+    cols = [b_hash,b_run,b_evt] + ([b_W] if b_W else []) + array_branches
+    # This is now only the clean two-photon subset, rather than every event.
+    arr = sel.AsNumpy(cols)
+
+    masses_gen=[]; masses_rec=[]; examples=[]; n_both_rec=0; n_both_pid22=0
+    for i in range(n_clean):
+        gp0=(float(arr["gen_gamma_p"][i][0]),float(arr["gen_gamma_theta"][i][0]),float(arr["gen_gamma_phi"][i][0]))
+        gp1=(float(arr["gen_gamma_p"][i][1]),float(arr["gen_gamma_theta"][i][1]),float(arr["gen_gamma_phi"][i][1]))
+        mgen=_mgg_from_p_theta_phi(*gp0,*gp1); masses_gen.append(mgen)
+        r0=int(arr["gen_gamma_best_rec_index"][i][0]); r1=int(arr["gen_gamma_best_rec_index"][i][1])
+        pid0=int(arr["gen_gamma_best_rec_pid"][i][0]); pid1=int(arr["gen_gamma_best_rec_pid"][i][1])
+        if r0>=0 and r1>=0: n_both_rec += 1
         mrec=None
-        if r0 >= 0 and r1 >= 0 and pid0 == 22 and pid1 == 22 and r0 != r1:
+        if r0>=0 and r1>=0 and r0!=r1 and pid0==22 and pid1==22:
             n_both_pid22 += 1
-            rp0=(float(ch.gen_gamma_best_rec_p[0]), float(ch.gen_gamma_best_rec_theta[0]), float(ch.gen_gamma_best_rec_phi[0]))
-            rp1=(float(ch.gen_gamma_best_rec_p[1]), float(ch.gen_gamma_best_rec_theta[1]), float(ch.gen_gamma_best_rec_phi[1]))
-            mrec=_mgg_from_p_theta_phi(*rp0, *rp1); masses_rec.append(mrec)
-        if len(examples) < max_events:
-            examples.append({
-                'key':(int(getattr(ch,b_hash)),int(getattr(ch,b_run)),int(getattr(ch,b_evt))), 'W':Wval, 'mgen':mgen, 'mrec':mrec,
-                'g0':(int(ch.gen_gamma_index[0]),)+gp[0]+(int(ch.gen_gamma_n_rec_matches[0]),int(ch.gen_gamma_n_rec_pid22[0]),r0,pid0,float(ch.gen_gamma_best_rec_p[0]),float(ch.gen_gamma_best_rec_theta[0]),float(ch.gen_gamma_best_rec_phi[0]),float(ch.gen_gamma_best_rec_delta_alpha[0])),
-                'g1':(int(ch.gen_gamma_index[1]),)+gp[1]+(int(ch.gen_gamma_n_rec_matches[1]),int(ch.gen_gamma_n_rec_pid22[1]),r1,pid1,float(ch.gen_gamma_best_rec_p[1]),float(ch.gen_gamma_best_rec_theta[1]),float(ch.gen_gamma_best_rec_phi[1]),float(ch.gen_gamma_best_rec_delta_alpha[1]))
-            })
+            rp0=(float(arr["gen_gamma_best_rec_p"][i][0]),float(arr["gen_gamma_best_rec_theta"][i][0]),float(arr["gen_gamma_best_rec_phi"][i][0]))
+            rp1=(float(arr["gen_gamma_best_rec_p"][i][1]),float(arr["gen_gamma_best_rec_theta"][i][1]),float(arr["gen_gamma_best_rec_phi"][i][1]))
+            mrec=_mgg_from_p_theta_phi(*rp0,*rp1); masses_rec.append(mrec)
+        if len(examples)<max_events:
+            Wval=float(arr[b_W][i]) if b_W else float("nan")
+            def gt(k,gp,r,pid):
+                return (int(arr["gen_gamma_index"][i][k]),)+gp+(int(arr["gen_gamma_n_rec_matches"][i][k]),int(arr["gen_gamma_n_rec_pid22"][i][k]),r,pid,float(arr["gen_gamma_best_rec_p"][i][k]),float(arr["gen_gamma_best_rec_theta"][i][k]),float(arr["gen_gamma_best_rec_phi"][i][k]),float(arr["gen_gamma_best_rec_delta_alpha"][i][k]))
+            examples.append({'key':(int(arr[b_hash][i]),int(arr[b_run][i]),int(arr[b_evt][i])), 'W':Wval,'mgen':mgen,'mrec':mrec,'g0':gt(0,gp0,r0,pid0),'g1':gt(1,gp1,r1,pid1)})
 
     with open(out,'w') as f:
         f.write("AAOgen truth -> reconstructed photon event trace\n")
-        f.write(("Selection: W > 2 GeV, " if b_W is not None else "Selection: ") + "exactly two generated photons, both classified as pi0 photons.\n")
-        f.write("This reads PhotonEfficiencyEvents only; no tag/probe, neutral_[0..4], inferred X, or exclusivity cuts.\n\n")
+        f.write(("Selection: W > 2 GeV, " if b_W else "Selection: ")+"exactly two generated photons, both classified as pi0 photons.\n")
+        f.write("PhotonEfficiencyEvents only; no tag/probe, neutral arrays, inferred X, or exclusivity cuts.\n\n")
         f.write(f"clean generated pi0->gamma gamma events: {n_clean:,}\n")
         f.write(f"both generated photons have a best REC association: {n_both_rec:,} ({100*n_both_rec/n_clean if n_clean else 0:.2f}%)\n")
         f.write(f"both best REC associations are distinct PID22: {n_both_pid22:,} ({100*n_both_pid22/n_clean if n_clean else 0:.2f}%)\n")
         if masses_gen: f.write(f"generated Mgg: mean={np.mean(masses_gen):.6f} GeV, median={np.median(masses_gen):.6f} GeV\n")
         if masses_rec: f.write(f"best-REC PID22 Mgg: mean={np.mean(masses_rec):.6f} GeV, median={np.median(masses_rec):.6f} GeV\n")
-        f.write("\nPer-event examples. theta/phi are saved radians; delta_alpha is saved matching angle.\n")
-        f.write("gamma tuple = (MC index, p, theta, phi, nREC, nRECpid22, bestRECindex, bestRECpid, bestRECp, bestRECtheta, bestRECphi, delta_alpha)\n\n")
+        f.write("\nPer-event examples. theta/phi are saved radians.\n")
         for x in examples:
             f.write(f"event key={x['key']}  W={x['W']:.4f}  Mgg_gen={x['mgen']:.6f}  Mgg_REC={x['mrec'] if x['mrec'] is not None else 'NA'}\n")
             f.write(f"  gamma0 {x['g0']}\n  gamma1 {x['g1']}\n\n")
