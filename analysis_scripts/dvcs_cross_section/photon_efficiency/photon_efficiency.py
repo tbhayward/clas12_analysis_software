@@ -1835,6 +1835,92 @@ def draw_probe_delta_p(dfs, output_dir, period, coeffs):
     print(f"  Wrote broad (-4,4) and zoomed (-1,1) views to {out}")
     return keep, out
 
+def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
+    """Integrated Delta-p matching study; no p/theta/phi binning."""
+    if coeffs is None or "data" not in dfs or "aaogen" not in dfs:
+        print("WARNING: data/AAOgen unavailable; skipping integrated Delta-p efficiency.")
+        return [], None, None
+    A, B, C = coeffs["mean"]
+    unique = str(abs(hash((period, "integrated_delta_p_efficiency"))))
+    selected = {}
+    for sample in ("data", "aaogen"):
+        selected[sample] = (_exclusive_df(dfs[sample], f"intdp_{sample}")
+            .Define("intdp_vec", "pe_delta_p_tag_probe(probe_raw_p,tag_rec_index,neutral_idx,neutral_pid,neutral_p)"))
+    hs, acts = {}, []
+    for sample in ("data", "aaogen"):
+        h = selected[sample].Histo1D((f"h_intdp_{sample}_{unique}", "", 200, -1.0, 1.0), "intdp_vec")
+        hs[sample] = h; acts.append(h)
+    ROOT.RDF.RunGraphs(acts)
+    hdata = hs["data"].GetValue().Clone(f"h_intdp_data_draw_{unique}"); hdata.SetDirectory(0)
+    hmc = hs["aaogen"].GetValue().Clone(f"h_intdp_aaogen_draw_{unique}"); hmc.SetDirectory(0); hmc.Scale(B)
+
+    def fit_peak(h, name):
+        ax=h.GetXaxis(); b1=ax.FindBin(-0.45); b2=ax.FindBin(0.45)
+        ib=max(range(b1,b2+1), key=lambda b:h.GetBinContent(b)); mode=ax.GetBinCenter(ib)
+        f=ROOT.TF1(name,"gaus",max(-0.65,mode-0.28),min(0.65,mode+0.28))
+        f.SetParameters(max(h.GetBinContent(ib),1.0),mode,0.16); h.Fit(f,"QNR")
+        mu=float(f.GetParameter(1)); sig=abs(float(f.GetParameter(2)))
+        f.SetRange(max(-0.8,mu-2.5*sig),min(0.8,mu+2.5*sig)); h.Fit(f,"QNR")
+        return f,float(f.GetParameter(1)),abs(float(f.GetParameter(2)))
+
+    fdata, mu_data, sig_data = fit_peak(hdata, f"f_intdp_data_{unique}")
+    fmc, mu_mc, sig_mc = fit_peak(hmc, f"f_intdp_mc_{unique}")
+
+    # One best candidate per already-selected epgammaX row.  This preserves the
+    # denominator population while preventing multiple probe photons on that row
+    # from producing multiple numerator counts.
+    if not hasattr(draw_probe_integrated_delta_p_efficiency, "_helper_declared"):
+        ROOT.gInterpreter.Declare(r'''
+        double pe_best_delta_p(const ROOT::VecOps::RVec<double>& v, double mu) {
+            if (v.empty()) return 1.0e9;
+            double best=v[0], d=std::abs(v[0]-mu);
+            for (size_t i=1;i<v.size();++i) {
+                const double di=std::abs(v[i]-mu);
+                if (di<d) { d=di; best=v[i]; }
+            }
+            return best;
+        }
+        ''')
+        draw_probe_integrated_delta_p_efficiency._helper_declared = True
+    ddata=selected["data"].Define("best_dp",f"pe_best_delta_p(intdp_vec,{mu_data:.17g})")
+    dmc=selected["aaogen"].Define("best_dp",f"pe_best_delta_p(intdp_vec,{mu_mc:.17g})")
+    den_data,den_mc=ddata.Count(),dmc.Count(); cand_data=ddata.Filter("best_dp < 1e8").Count(); cand_mc=dmc.Filter("best_dp < 1e8").Count()
+    nums={}; actions=[den_data,den_mc,cand_data,cand_mc]
+    for n in (1,2,3):
+        hd=ddata.Filter(f"best_dp < 1e8 && abs(best_dp-({mu_data:.17g})) < {n}*({sig_data:.17g})").Count()
+        hm=dmc.Filter(f"best_dp < 1e8 && abs(best_dp-({mu_mc:.17g})) < {n}*({sig_mc:.17g})").Count()
+        nums[n]=(hd,hm); actions += [hd,hm]
+    ROOT.RDF.RunGraphs(actions); nd=int(den_data.GetValue()); nm=int(den_mc.GetValue())
+    results={}
+    for n,(hd,hm) in nums.items():
+        kd,km=int(hd.GetValue()),int(hm.GetValue()); ed=kd/nd if nd else float('nan'); em=km/nm if nm else float('nan')
+        results[n]={"Ndata":kd,"Nmc":km,"eff_data":ed,"eff_mc":em,"ratio":ed/em if em>0 else float('nan')}
+
+    c=ROOT.TCanvas(f"c_intdp_eff_{unique}","",1500,720); c.Divide(2,1,0.002,0.002); keep=[c,hdata,hmc,fdata,fmc]
+    for ipad,(h,f,mu,sig,title,col) in enumerate([(hdata,fdata,mu_data,sig_data,"Data: integrated #Delta p fit",ROOT.kBlack),(hmc,fmc,mu_mc,sig_mc,"AAOgen: integrated #Delta p fit",ROOT.kRed+1)],1):
+        pad=c.cd(ipad); pad.SetTicks(1,1); pad.SetLeftMargin(0.14); pad.SetBottomMargin(0.14); pad.SetTopMargin(0.11); pad.SetRightMargin(0.04)
+        h.SetStats(0); h.SetLineColor(col); h.SetMarkerColor(col); h.SetMarkerStyle(20); h.SetMarkerSize(0.55)
+        h.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)"); h.GetYaxis().SetTitle("Normalized candidate combinations"); h.GetYaxis().SetTitleOffset(1.55); h.Draw("E1")
+        f.SetLineColor(ROOT.kMagenta+2); f.SetLineWidth(3); f.Draw("SAME")
+        lab=ROOT.TLatex(); lab.SetNDC(True); lab.SetTextSize(0.034); lab.DrawLatex(0.18,0.92,title); lab.DrawLatex(0.18,0.86,f"#mu = {mu:+.4f} GeV"); lab.DrawLatex(0.18,0.81,f"#sigma = {sig:.4f} GeV")
+        y=0.75
+        for n in (1,2,3):
+            r=results[n]
+            txt=(f"{n}#sigma: #epsilon_{{data}}={r['eff_data']:.4f}, C_{{#gamma}}={r['ratio']:.4f}" if ipad==1 else f"{n}#sigma: #epsilon_{{AAO}}={r['eff_mc']:.4f}")
+            lab.DrawLatex(0.18,y,txt); y-=0.05
+        keep.append(lab)
+    out=os.path.join(output_dir,f"6_{period}_integrated_delta_p_efficiency.png"); c.SaveAs(out)
+    print("\nIntegrated Delta-p efficiency study (NO kinematic binning):")
+    print("  MC signal reference = AAOgen only (exclusive ep-pi0 signal sample).")
+    print("  DVCSgen is not included in the signal efficiency; generator-exclusive ep-pi0 was removed from CLASDIS.")
+    print(f"  Fits: data mu={mu_data:+.6f} GeV sigma={sig_data:.6f} GeV; AAOgen mu={mu_mc:+.6f} GeV sigma={sig_mc:.6f} GeV")
+    print(f"  Denominator rows: data={nd:,}; AAOgen={nm:,}")
+    print(f"  Rows with >=1 probe candidate: data={int(cand_data.GetValue()):,}; AAOgen={int(cand_mc.GetValue()):,}")
+    print("  Each epgammaX denominator row contributes at most once: use the probe candidate closest to that sample's fitted peak.")
+    for n in (1,2,3):
+        r=results[n]; print(f"  {n}sigma: data {r['Ndata']:,}/{nd:,}={r['eff_data']:.6f}; AAOgen {r['Nmc']:,}/{nm:,}={r['eff_mc']:.6f}; C_gamma={r['ratio']:.6f}")
+    return keep,out,results
+
 def draw_probe_aaogen_pi0_fit(dfs, output_dir, period, coeffs):
     """Compare single- and double-Gaussian pi0 signal models on normalized AAOgen.
 
@@ -2826,6 +2912,10 @@ def main():
     probe_keep, probe_output = draw_probe_mgg(dfs, probe_dir, args.period, denominator_coeffs)
     deltap_keep, deltap_output = draw_probe_delta_p(
         dfs, probe_dir, args.period, denominator_coeffs)
+    keep.extend(deltap_keep)
+    inteff_keep, inteff_output, inteff_result = draw_probe_integrated_delta_p_efficiency(
+        dfs, probe_dir, args.period, denominator_coeffs)
+    keep.extend(inteff_keep)
     keep.extend(probe_keep)
     pi0fit_keep, pi0fit_output, pi0fit_result = draw_probe_aaogen_pi0_fit(
         dfs, probe_dir, args.period, denominator_coeffs)
