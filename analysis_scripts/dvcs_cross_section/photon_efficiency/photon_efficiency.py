@@ -16,7 +16,7 @@ Exclusivity plots are followed by high- and low-energy normalization studies.\n\
 
 Pads are cumulative selections, ordered top-left, top-right, bottom-left, bottom-right:
   1) W > 2 GeV and angle(e',gamma1) > 8 deg
-  2) additionally Mx2(e'p') < 0.18 GeV^2
+  2) additionally Mx2(e'p') < 0.15 GeV^2
   3) additionally -0.05 < Mx2(e'p'gamma1) < 0.05 GeV^2
   4) additionally Mx2(e'gamma1) > 0 GeV^2
 
@@ -245,8 +245,8 @@ def draw_canvases(dfs, output_dir, period):
 
     stages = [
         ("", lambda df: df),
-        ("M^{2}_{X}(e'p') < 0.18 GeV^{2}",
-         lambda df: df.Filter("Mx2_ep < 0.18", "Mx2_ep_lt_0p18")),
+        ("M^{2}_{X}(e'p') < 0.15 GeV^{2}",
+         lambda df: df.Filter("Mx2_ep < 0.15", "Mx2_ep_lt_0p15")),
         ("-0.05 < M^{2}_{X}(e'p'#gamma1) < 0.05 GeV^{2}",
          lambda df: df.Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "Mx2_epg_window")),
     ]
@@ -374,7 +374,7 @@ def draw_normalization_step1(dfs, output_dir, period):
         if sample not in dfs:
             continue
         selected[sample] = (dfs[sample]
-            .Filter("Mx2_ep < 0.18", "norm_Mx2_ep_lt_0p18")
+            .Filter("Mx2_ep < 0.15", "norm_Mx2_ep_lt_0p15")
             .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "norm_Mx2_epg_window")
             .Filter("E_gamma1 > 4.0", "norm_Egamma1_gt_4"))
 
@@ -582,7 +582,7 @@ def draw_normalization_fit(dfs, output_dir, period):
     selected = {}
     for sample in needed:
         selected[sample] = (dfs[sample]
-            .Filter("Mx2_ep < 0.18", f"fit_{sample}_Mx2_ep_lt_0p18")
+            .Filter("Mx2_ep < 0.15", f"fit_{sample}_Mx2_ep_lt_0p15")
             .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", f"fit_{sample}_Mx2_epg_window")
             .Filter("E_gamma1 > 4.0", f"fit_{sample}_Egamma1_gt_4"))
 
@@ -808,7 +808,7 @@ def draw_normalization_morph_comparison(dfs, output_dir, period):
     selected = {}
     for sample in needed:
         selected[sample] = (dfs[sample]
-            .Filter("Mx2_ep < 0.18", f"morph_{sample}_Mx2_ep_lt_0p18")
+            .Filter("Mx2_ep < 0.15", f"morph_{sample}_Mx2_ep_lt_0p15")
             .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", f"morph_{sample}_Mx2_epg_window")
             .Filter("E_gamma1 > 4.0", f"morph_{sample}_Egamma1_gt_4"))
 
@@ -907,7 +907,7 @@ def print_egamma1_survival_scan(dfs):
         if sample not in dfs:
             continue
         ex = (dfs[sample]
-              .Filter("Mx2_ep < 0.18", f"scan_{sample}_Mx2_ep_lt_0p18")
+              .Filter("Mx2_ep < 0.15", f"scan_{sample}_Mx2_ep_lt_0p15")
               .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05",
                       f"scan_{sample}_Mx2_epg_window"))
         exclusive[sample] = ex
@@ -927,7 +927,7 @@ def print_egamma1_survival_scan(dfs):
         ROOT.RDF.RunGraphs(actions)
 
     print("\nE_gamma1 survival scan after the full exclusive selection")
-    print("  Denominator = all rows after Mx2(ep) < 0.18 and -0.05 < Mx2(epgamma1) < 0.05")
+    print("  Denominator = all rows after Mx2(ep) < 0.15 and -0.05 < Mx2(epgamma1) < 0.05")
     print("  The same selected rows feed E_gamma1, Emiss(epgamma1), Mx2(ep), and Mx2(epgamma1),")
     print("  so N and the survival percentage are identical for each of those four distributions.\n")
 
@@ -956,7 +956,7 @@ def print_egamma1_survival_scan(dfs):
 
 def _exclusive_df(df, tag):
     return (df
-            .Filter("Mx2_ep < 0.18", f"{tag}_Mx2_ep_lt_0p18")
+            .Filter("Mx2_ep < 0.15", f"{tag}_Mx2_ep_lt_0p15")
             .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", f"{tag}_Mx2_epg_window"))
 
 
@@ -1125,39 +1125,61 @@ def fit_clasdis_fixed_ab_common_morph(data_hist,dvcs_hist,aao_hist,clas_hist,A,B
 
 
 def draw_low_energy_normalization_v7(dfs, output_dir, period, coeffs):
-    """Low-E normalization: keep high-E A/B fixed and determine only CLASDIS C.
+    """Low-E normalization in the same 2x2 layout as the high-E study.
 
-    Three coefficient cases are retained: nominal high-E A/B, common-morph high-E
-    A/B with a fresh common low-E morph while only C floats, and the arithmetic
-    mean A/B with no morph. Each case gets a compact E_gamma1 + E_miss canvas.
+    High-E A/B are held fixed.  The top row uses the nominal high-E A/B and
+    floats only CLASDIS C.  The bottom row uses the morphed high-E A/B and
+    floats C together with a common low-E E_gamma1 shift/smearing.  The mean
+    A/B case is still calculated and printed as the third normalization case,
+    but is not given a separate canvas.
     """
     needed=("data","dvcsgen","aaogen","clasdis")
-    if coeffs is None or any(s not in dfs for s in needed): return [],[]
-    selected={s:_exclusive_df(dfs[s],f"v7lo_{s}").Filter("E_gamma1 < 4.0",f"v7lo_{s}_Elt4") for s in needed}
-    specs=[("E_gamma1",";E_{#gamma1} (GeV);Entries",90,0.4,4.0,False),("Emiss_epg",";E_{miss}(e'p'#gamma1) (GeV);Entries",120,0.,9.,True)]
-    unique=str(abs(hash((period,"v7_low_norm")))); raw,actions=_book_raw_hists(selected,specs,f"v7lon_{unique}")
-    keep=list(actions); outs=[]
-    cases=[]
-    A0,B0=coeffs["nominal"]; f0=fit_clasdis_fixed_ab(raw[0]["data"],raw[0]["dvcsgen"],raw[0]["aaogen"],raw[0]["clasdis"],A0,B0); cases.append(("nominal",A0,B0,f0,False))
-    A1,B1=coeffs["morph"]; f1=fit_clasdis_fixed_ab_common_morph(raw[0]["data"],raw[0]["dvcsgen"],raw[0]["aaogen"],raw[0]["clasdis"],A1,B1); cases.append(("morph",A1,B1,f1,True))
-    Am,Bm=coeffs["mean"]; fm=fit_clasdis_fixed_ab(raw[0]["data"],raw[0]["dvcsgen"],raw[0]["aaogen"],raw[0]["clasdis"],Am,Bm); cases.append(("mean",Am,Bm,fm,False))
+    if coeffs is None or any(s not in dfs for s in needed): return [],None
+    selected={s:_exclusive_df(dfs[s],f"v8lo_{s}").Filter("E_gamma1 < 4.0",f"v8lo_{s}_Elt4") for s in needed}
+    specs=[("E_gamma1",";E_{#gamma1} (GeV);Entries",90,0.4,4.0,False),
+           ("Emiss_epg",";E_{miss}(e'p'#gamma1) (GeV);Entries",120,0.,9.,True)]
+    unique=str(abs(hash((period,"v8_low_norm")))); raw,actions=_book_raw_hists(selected,specs,f"v8lon_{unique}")
+    keep=list(actions)
+
+    A0,B0=coeffs["nominal"]
+    f0=fit_clasdis_fixed_ab(raw[0]["data"],raw[0]["dvcsgen"],raw[0]["aaogen"],raw[0]["clasdis"],A0,B0)
+    A1,B1=coeffs["morph"]
+    f1=fit_clasdis_fixed_ab_common_morph(raw[0]["data"],raw[0]["dvcsgen"],raw[0]["aaogen"],raw[0]["clasdis"],A1,B1)
+    Am,Bm=coeffs["mean"]
+    fm=fit_clasdis_fixed_ab(raw[0]["data"],raw[0]["dvcsgen"],raw[0]["aaogen"],raw[0]["clasdis"],Am,Bm)
+
     print("\nLow-E normalization, E_gamma1 < 4 GeV; A and B fixed from high-E fits")
-    for name,A,B,fit,ism in cases:
-        extra=f", shift={fit['shift_bins']:+.4f} bins, smear={fit['sigma_bins']:.4f} bins" if ism else ""
-        print(f"  {name:7s}: A={A:.8g}, B={B:.8g}, C_CLASDIS={fit['C']:.8g}, deviance/dof={fit['deviance']:.2f}/{fit['ndof']}{extra}")
-    for ic,(name,A,B,fit,ism) in enumerate(cases, start=3):
-        C=fit["C"]; canvas=ROOT.TCanvas(f"c_v7low_{name}_{unique}","",1500,650); canvas.Divide(2,1,0.002,0.002); keep.append(canvas)
+    print(f"  nominal: A={A0:.8g}, B={B0:.8g}, C_CLASDIS={f0['C']:.8g}, deviance/dof={f0['deviance']:.2f}/{f0['ndof']}")
+    print(f"  morph  : A={A1:.8g}, B={B1:.8g}, C_CLASDIS={f1['C']:.8g}, deviance/dof={f1['deviance']:.2f}/{f1['ndof']}, shift={f1['shift_bins']:+.4f} bins, smear={f1['sigma_bins']:.4f} bins")
+    print(f"  mean   : A={Am:.8g}, B={Bm:.8g}, C_CLASDIS={fm['C']:.8g}, deviance/dof={fm['deviance']:.2f}/{fm['ndof']}")
+
+    canvas=ROOT.TCanvas(f"c_v8low_{unique}","",1500,1100); canvas.Divide(2,2,0.002,0.002); keep.append(canvas)
+    rows=(("No morph",A0,B0,f0,False),("Common morph",A1,B1,f1,True))
+    for row,(rowname,A,B,fit,ism) in enumerate(rows):
+        C=fit["C"]
         for ip in range(2):
-            pad=canvas.cd(ip+1); data=raw[ip]["data"].Clone(f"d_v7low_{name}_{ip}_{unique}"); data.SetDirectory(0)
+            pad=canvas.cd(row*2+ip+1)
+            data=raw[ip]["data"].Clone(f"d_v8low_{row}_{ip}_{unique}"); data.SetDirectory(0)
             if ism and ip==0:
-                dv=_fill_th1_from_numpy(raw[ip]["dvcsgen"],fit["dvcs"],f"dv_v7low_{name}_{ip}_{unique}"); aa=_fill_th1_from_numpy(raw[ip]["aaogen"],fit["aao"],f"aa_v7low_{name}_{ip}_{unique}"); cl=_fill_th1_from_numpy(raw[ip]["clasdis"],fit["clasdis"],f"cl_v7low_{name}_{ip}_{unique}")
+                dv=_fill_th1_from_numpy(raw[ip]["dvcsgen"],fit["dvcs"],f"dv_v8low_{row}_{ip}_{unique}")
+                aa=_fill_th1_from_numpy(raw[ip]["aaogen"],fit["aao"],f"aa_v8low_{row}_{ip}_{unique}")
+                cl=_fill_th1_from_numpy(raw[ip]["clasdis"],fit["clasdis"],f"cl_v8low_{row}_{ip}_{unique}")
             else:
-                dv=raw[ip]["dvcsgen"].Clone(f"dv_v7low_{name}_{ip}_{unique}"); dv.SetDirectory(0); aa=raw[ip]["aaogen"].Clone(f"aa_v7low_{name}_{ip}_{unique}"); aa.SetDirectory(0); cl=raw[ip]["clasdis"].Clone(f"cl_v7low_{name}_{ip}_{unique}"); cl.SetDirectory(0)
-            dv.Scale(A); aa.Scale(B); cl.Scale(C); total=dv.Clone(f"tot_v7low_{name}_{ip}_{unique}"); total.Add(aa); total.Add(cl); total.SetDirectory(0)
-            labels={"total":"A#timesDVCS + B#timesAAO + C#timesCLASDIS","dvcsgen":f"DVCSgen (A={A:.4g})","aaogen":f"AAOgen (B={B:.4g})","clasdis":f"CLASDIS (C={C:.4g})"}
-            keep += [data,dv,aa,cl,total] + _style_count_panel(pad,data,{"dvcsgen":dv,"aaogen":aa,"clasdis":cl},total,labels,specs[ip][5],f"E_{{#gamma1}} < 4 GeV: {name}")
-        out=os.path.join(output_dir,f"{ic}_{period}_lowE_normalization_{name}.png"); canvas.SaveAs(out); outs.append(out)
-    return keep,outs
+                dv=raw[ip]["dvcsgen"].Clone(f"dv_v8low_{row}_{ip}_{unique}"); dv.SetDirectory(0)
+                aa=raw[ip]["aaogen"].Clone(f"aa_v8low_{row}_{ip}_{unique}"); aa.SetDirectory(0)
+                cl=raw[ip]["clasdis"].Clone(f"cl_v8low_{row}_{ip}_{unique}"); cl.SetDirectory(0)
+            dv.Scale(A); aa.Scale(B); cl.Scale(C)
+            total=dv.Clone(f"tot_v8low_{row}_{ip}_{unique}"); total.Add(aa); total.Add(cl); total.SetDirectory(0)
+            labels={"total":"A#timesDVCS + B#timesAAO + C#timesCLASDIS",
+                    "dvcsgen":f"DVCSgen (A={A:.4g})",
+                    "aaogen":f"AAOgen (B={B:.4g})",
+                    "clasdis":f"CLASDIS (C={C:.4g})"}
+            keep += [data,dv,aa,cl,total] + _style_count_panel(
+                pad,data,{"dvcsgen":dv,"aaogen":aa,"clasdis":cl},total,labels,
+                specs[ip][5],f"E_{{#gamma1}} < 4 GeV: {rowname}")
+    out=os.path.join(output_dir,f"3_{period}_lowE_normalization_nominal_vs_morph.png")
+    canvas.SaveAs(out)
+    return keep,out
 
 def main():
     args = parse_args()
@@ -1216,7 +1238,7 @@ def main():
     keep.extend(lowshape_keep)
     high_keep, high_output, high_coeffs = draw_high_energy_normalization_v7(dfs, normalization_dir, args.period)
     keep.extend(high_keep)
-    low_keep, low_outputs = draw_low_energy_normalization_v7(dfs, normalization_dir, args.period, high_coeffs)
+    low_keep, low_output = draw_low_energy_normalization_v7(dfs, normalization_dir, args.period, high_coeffs)
     keep.extend(low_keep)
     _ = keep  # Keep ROOT objects alive through SaveAs().
 
@@ -1226,8 +1248,8 @@ def main():
     print(f"\nWrote: {lowshape_output}")
     if high_output:
         print(f"\nWrote: {high_output}")
-    for output_file in low_outputs:
-        print(f"\nWrote: {output_file}")
+    if low_output:
+        print(f"\nWrote: {low_output}")
     return 0
 
 
