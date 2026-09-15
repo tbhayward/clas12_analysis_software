@@ -7,14 +7,14 @@ Current step
 Use every row in the PhotonEfficiency hypothesis tree, requiring W > 2 GeV and angle(e',gamma1) > 8 deg.
 Each row is one reconstructed e'p'gamma1 hypothesis produced by the skim.
 
-Plot the following observables as rows:
+Plot each of the following observables on its own 2x2 canvas:
   1) E_gamma1                     0.4 to 9 GeV
   2) missing energy e'p'gamma1    0 to 9 GeV
   3) Mx2(e'p')                   -0.5 to 1.0 GeV^2
   4) Mx2(e'p'gamma1)             -0.1 to 0.15 GeV^2
   5) Mx2(e'gamma1)                -20 to 20 GeV^2
 
-Columns are cumulative selections:
+Pads are cumulative selections, ordered top-left, top-right, bottom-left, bottom-right:
   1) W > 2 GeV and angle(e',gamma1) > 8 deg
   2) additionally Mx2(e'p') < 0.18 GeV^2
   3) additionally -0.05 < Mx2(e'p'gamma1) < 0.05 GeV^2
@@ -230,14 +230,14 @@ def make_dataframe(chain):
             .Filter("angle_e_gamma1_deg > 8.0", "angle_e_gamma1_gt_8_deg"))
 
 
-def draw_canvas(dfs, output_file):
-    """Draw the five observables through the requested cumulative cut sequence."""
+def draw_canvases(dfs, output_dir, period):
+    """Draw one 2x2 canvas per observable through the cumulative cut sequence."""
     plots = [
-        ("E_gamma1", ";E_{#gamma1} (GeV);Unit-normalized entries", 172, 0.4, 9.0),
-        ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 180, 0.0, 9.0),
-        ("Mx2_ep", ";M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries", 180, -0.5, 1.0),
-        ("Mx2_epg_raw", ";M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries", 180, -0.1, 0.15),
-        ("Mx2_egamma1", ";M^{2}_{X}(e'#gamma1) (GeV^{2});Unit-normalized entries", 160, -20.0, 20.0),
+        ("E_gamma1", ";E_{#gamma1} (GeV);Unit-normalized entries", 172, 0.4, 9.0, False, "gamma1_energy"),
+        ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 180, 0.0, 9.0, True, "missing_energy_epgamma1"),
+        ("Mx2_ep", ";M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries", 180, -0.5, 1.0, False, "mx2_ep"),
+        ("Mx2_epg_raw", ";M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries", 180, -0.1, 0.15, True, "mx2_epgamma1"),
+        ("Mx2_egamma1", ";M^{2}_{X}(e'#gamma1) (GeV^{2});Unit-normalized entries", 160, -20.0, 20.0, False, "mx2_egamma1"),
     ]
 
     stages = [
@@ -261,9 +261,9 @@ def draw_canvas(dfs, output_file):
 
     booked = {}
     actions = []
-    unique = str(abs(hash(output_file)))
-    for icol in range(len(stages)):
-        for irow, (expr, title, nbins, xmin, xmax) in enumerate(plots):
+    unique = str(abs(hash((output_dir, period))))
+    for irow, (expr, title, nbins, xmin, xmax, _logy, _slug) in enumerate(plots):
+        for icol in range(len(stages)):
             booked[(irow, icol)] = {}
             for sample, label in SAMPLES:
                 key = (sample, icol)
@@ -278,23 +278,24 @@ def draw_canvas(dfs, output_file):
     if actions:
         ROOT.RDF.RunGraphs(actions)
 
-    canvas = ROOT.TCanvas("c_photon_efficiency_restart", "", 2800, 2100)
-    canvas.Divide(4, 5, 0.002, 0.002)
-    keep = [canvas] + list(actions)
+    keep = list(actions)
+    written = []
+    for irow, (_expr, _title, _nbins, _xmin, _xmax, logy, slug) in enumerate(plots):
+        canvas = ROOT.TCanvas(f"c_{slug}_{unique}", "", 1500, 1100)
+        canvas.Divide(2, 2, 0.002, 0.002)
+        keep.append(canvas)
 
-    for irow, _plot in enumerate(plots):
         for icol, (stage_title, _filter) in enumerate(stages):
-            pad_number = irow * 4 + icol + 1
-            pad = canvas.cd(pad_number)
+            pad = canvas.cd(icol + 1)
             pad.SetTicks(1, 1)
             pad.SetLeftMargin(0.14)
             pad.SetRightMargin(0.035)
             pad.SetBottomMargin(0.13)
             pad.SetTopMargin(0.12)
-            if irow in (1, 3):
+            if logy:
                 pad.SetLogy(True)
 
-            legend = ROOT.TLegend(0.66, 0.67, 0.94, 0.88)
+            legend = ROOT.TLegend(0.64, 0.68, 0.94, 0.88)
             legend.SetBorderSize(0)
             legend.SetFillStyle(0)
             legend.SetTextSize(0.028)
@@ -317,7 +318,7 @@ def draw_canvas(dfs, output_file):
                 if integral > 0.0:
                     hist.Scale(1.0 / integral)
                 ymax = max(ymax, hist.GetMaximum())
-                if irow in (1, 3):
+                if logy:
                     for ibin in range(1, hist.GetNbinsX() + 1):
                         value = hist.GetBinContent(ibin)
                         if value > 0.0 and (positive_min is None or value < positive_min):
@@ -328,7 +329,7 @@ def draw_canvas(dfs, output_file):
 
             first = True
             for _sample, _label, hist in histograms:
-                if irow in (1, 3):
+                if logy:
                     ymin = max((positive_min or 1.0e-6) * 0.5, 1.0e-7)
                     hist.SetMinimum(ymin)
                     hist.SetMaximum(5.0 * ymax if ymax > 0.0 else 1.0)
@@ -353,8 +354,11 @@ def draw_canvas(dfs, output_file):
                 keep.append(title)
             legend.Draw()
 
-    canvas.SaveAs(output_file)
-    return keep
+        output_file = os.path.join(output_dir, f"{irow + 1}_{period}_{slug}.png")
+        canvas.SaveAs(output_file)
+        written.append(output_file)
+
+    return keep, written
 
 def main():
     args = parse_args()
@@ -403,15 +407,11 @@ def main():
 
     exclusivity_dir = os.path.join(args.output_dir, "exclusivity_selection")
     os.makedirs(exclusivity_dir, exist_ok=True)
-    output_file = os.path.join(
-        exclusivity_dir,
-        f"1_{args.period}_photon_efficiency_epgamma_hypotheses.png",
-    )
-
-    keep = draw_canvas(dfs, output_file)
+    keep, written = draw_canvases(dfs, exclusivity_dir, args.period)
     _ = keep  # Keep ROOT objects alive through SaveAs().
 
-    print(f"\nWrote: {output_file}")
+    for output_file in written:
+        print(f"\nWrote: {output_file}")
     return 0
 
 
