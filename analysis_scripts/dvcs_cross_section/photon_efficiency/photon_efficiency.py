@@ -1388,61 +1388,125 @@ def draw_probe_mgg(dfs, output_dir, period):
     return keep,out
 
 
+def _event_grouped_unique_tag_mgg(df, hist_name, title):
+    """Build Mgg from the unique reconstructed tag photons in each physical event.
+
+    PhotonEfficiency has one row per e'p'gamma-tag hypothesis.  Therefore the
+    cleanest event-level reconstructed photon collection available in this tree
+    is obtained by grouping rows by (source_file_hash, runnum, evnum), keeping
+    one copy of each unique tag_rec_index, and then forming every unordered
+    pair of those unique photons.  neutral_[0..4], inferred X, and MC truth are
+    deliberately not used.
+    """
+    cols = ["source_file_hash", "runnum", "evnum", "tag_rec_index",
+            "tag_corr_p", "tag_corr_theta", "tag_corr_phi"]
+    arr = df.AsNumpy(cols)
+
+    h = ROOT.TH1D(hist_name, title, 150, 0.0, 0.30)
+    h.SetDirectory(0)
+
+    nrows = len(arr["evnum"])
+    if nrows == 0:
+        return h, 0, 0, 0
+
+    # The producer writes all hypotheses from one HIPO event consecutively.
+    # We nevertheless key on source_file_hash + run + event and explicitly
+    # detect a non-contiguous repeated key below rather than silently assuming.
+    current_key = None
+    photons = {}
+    seen_closed = set()
+    repeated_noncontiguous = 0
+    n_events = 0
+    n_events_ge2 = 0
+
+    def flush_event(photon_map):
+        nonlocal n_events, n_events_ge2
+        if current_key is None:
+            return
+        n_events += 1
+        vals = list(photon_map.values())
+        if len(vals) < 2:
+            return
+        n_events_ge2 += 1
+        for i in range(len(vals)):
+            p1, th1, ph1 = vals[i]
+            for j in range(i + 1, len(vals)):
+                p2, th2, ph2 = vals[j]
+                dot = (np.sin(th1)*np.sin(th2)*np.cos(ph1-ph2)
+                       + np.cos(th1)*np.cos(th2))
+                c = max(-1.0, min(1.0, float(dot)))
+                m2 = 2.0*float(p1)*float(p2)*(1.0-c)
+                if m2 >= 0.0:
+                    h.Fill(np.sqrt(m2))
+
+    for i in range(nrows):
+        key = (int(arr["source_file_hash"][i]),
+               int(arr["runnum"][i]), int(arr["evnum"][i]))
+        if key != current_key:
+            if current_key is not None:
+                flush_event(photons)
+                seen_closed.add(current_key)
+            if key in seen_closed:
+                repeated_noncontiguous += 1
+            current_key = key
+            photons = {}
+
+        rec_idx = int(arr["tag_rec_index"][i])
+        if rec_idx < 0:
+            continue
+        # Multiple proton hypotheses and/or duplicate rows can carry the same
+        # reconstructed photon.  REC index is the identity of the photon.
+        if rec_idx not in photons:
+            photons[rec_idx] = (float(arr["tag_corr_p"][i]),
+                                float(arr["tag_corr_theta"][i]),
+                                float(arr["tag_corr_phi"][i]))
+
+    flush_event(photons)
+    return h, n_events, n_events_ge2, repeated_noncontiguous
+
+
 def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
-    """Recover the old reconstructed pi0 peak without using inferred X or MC truth.
+    """AAOgen event-level reconstructed-photon pair audit.
 
-    This is intentionally narrower than the previous truth audit.  The previous
-    bottom-row truth test assumed parent information existed in the MC::Particle
-    tag/probe branches; that assumption was wrong.
+    This now does exactly the intended construction:
+      1. group PhotonEfficiency rows belonging to one physical event;
+      2. recover the unique reconstructed PID-22 photons from tag_rec_index;
+      3. form every unordered gamma_i gamma_j pair once;
+      4. histogram M(gamma_i gamma_j).
 
-    Here we ask only whether the CURRENT ROOT skim still contains a normal
-    reconstructed gamma-gamma pi0 signal before the epgammaX denominator cuts.
-
-    Top:    W>2 baseline sample, unique unordered REC photon pairs only.
-    Bottom: the same pair construction after the finalized epgammaX exclusivity
-            cuts, showing directly whether those cuts are what remove the peak.
+    The retained neutral arrays are NOT used.  Neither inferred X nor MC truth
+    enters the pair construction.
     """
     if "aaogen" not in dfs:
         return [], None
 
-    base = dfs["aaogen"].Define(
-        "Mgg_unique_event_base",
-        "pe_mgg_unique_rec_pair(e_theta,e_phi,"
-        "tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
-        "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)"
-    )
-    excl = _exclusive_df(dfs["aaogen"], "probe_unique_pair_exclusive").Define(
-        "Mgg_unique_event_excl",
-        "pe_mgg_unique_rec_pair(e_theta,e_phi,"
-        "tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
-        "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)"
-    )
+    # dfs["aaogen"] already has W > 2 GeV and angle(e',tag) > 8 deg.  Since
+    # every unique photon is recovered through a row where that photon itself
+    # is the tag, this means every photon entering the collection satisfies the
+    # same >8 degree requirement.
+    base = dfs["aaogen"]
+    excl = _exclusive_df(dfs["aaogen"], "probe_event_grouped_exclusive")
 
-    unique = str(abs(hash((period, "probe_unique_rec_pair_audit"))))
-    hbase = base.Histo1D(
-        (f"h_mgg_unique_base_{unique}",
-         ";M_{#gamma#gamma} (GeV);Unit-normalized unique REC #gamma#gamma pairs",
-         150, 0.0, 0.30),
-        "Mgg_unique_event_base",
-    )
-    hexcl = excl.Histo1D(
-        (f"h_mgg_unique_excl_{unique}",
-         ";M_{#gamma#gamma} (GeV);Unit-normalized unique REC #gamma#gamma pairs",
-         150, 0.0, 0.30),
-        "Mgg_unique_event_excl",
-    )
-    ROOT.RDF.RunGraphs([hbase, hexcl])
+    unique = str(abs(hash((period, "probe_event_grouped_pair_audit"))))
+    hbase, nev_base, nev2_base, repeat_base = _event_grouped_unique_tag_mgg(
+        base, f"h_mgg_event_grouped_base_{unique}",
+        ";M_{#gamma#gamma} (GeV);Unit-normalized unique event-level #gamma#gamma pairs")
+    hexcl, nev_excl, nev2_excl, repeat_excl = _event_grouped_unique_tag_mgg(
+        excl, f"h_mgg_event_grouped_excl_{unique}",
+        ";M_{#gamma#gamma} (GeV);Unit-normalized unique event-level #gamma#gamma pairs")
 
-    canvas = ROOT.TCanvas(f"c_unique_pair_audit_{unique}", "", 1050, 900)
+    canvas = ROOT.TCanvas(f"c_event_grouped_pair_audit_{unique}", "", 1050, 900)
     canvas.Divide(1, 2)
     keep = [canvas, hbase, hexcl]
 
     panels = [
-        (hbase, "AAOgen: W > 2 GeV, unique reconstructed photon pairs"),
-        (hexcl, "AAOgen: same pairs after final ep#gammaX exclusivity cuts"),
+        (hbase, "AAOgen: event-grouped unique reconstructed photons",
+         nev_base, nev2_base),
+        (hexcl, "AAOgen: event-grouped photons after final ep#gammaX cuts",
+         nev_excl, nev2_excl),
     ]
 
-    for ipad, (handle, title) in enumerate(panels, 1):
+    for ipad, (h, title, nev, nev2) in enumerate(panels, 1):
         pad = canvas.cd(ipad)
         pad.SetTicks(1, 1)
         pad.SetLeftMargin(0.12)
@@ -1450,12 +1514,10 @@ def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
         pad.SetBottomMargin(0.14)
         pad.SetTopMargin(0.11)
 
-        h = handle.GetValue().Clone(f"h_unique_pair_draw_{ipad}_{unique}")
-        h.SetDirectory(0)
         h.SetStats(0)
         h.SetLineColor(ROOT.kRed + 1)
         h.SetLineWidth(3)
-        n = int(round(h.GetEntries()))
+        npairs = int(round(h.GetEntries()))
         integ = h.Integral(1, h.GetNbinsX())
         if integ > 0:
             h.Scale(1.0 / integ)
@@ -1478,26 +1540,31 @@ def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
         tex.SetTextFont(42)
         tex.SetTextSize(0.040)
         tex.DrawLatex(0.13, 0.94, title)
-        tex.SetTextSize(0.034)
-        tex.DrawLatex(0.69, 0.84, f"N pairs = {n:,}")
-        keep += [h, line, tex]
+        tex.SetTextSize(0.031)
+        tex.DrawLatex(0.64, 0.84, f"events = {nev:,}")
+        tex.DrawLatex(0.64, 0.79, f"events with #geq2 #gamma = {nev2:,}")
+        tex.DrawLatex(0.64, 0.74, f"pairs = {npairs:,}")
+        keep += [line, tex]
 
-    out = os.path.join(output_dir, f"2_{period}_AAOgen_unique_REC_pair_audit.png")
+    out = os.path.join(output_dir, f"2_{period}_AAOgen_event_grouped_REC_pair_audit.png")
     canvas.SaveAs(out)
 
-    print("\nAAOgen reconstructed-pair recovery audit:")
-    print("  No MC truth is used in this diagnostic.")
-    print("  No inferred-X/nearest-to-X information is used to construct the pairs.")
-    print("  A pair is filled only when probe REC index > tag REC index, so the")
-    print("  same unordered reconstructed photon pair is not double-counted.")
-    print("  TOP: W>2 and the basic >8 deg photon/electron requirement only.")
-    print("       -> A pi0 peak here means the v4 ROOT production still contains")
-    print("          the reconstructed pi0 signal; NO HIPO reprocessing is needed.")
-    print("  BOTTOM: identical construction after the final epgammaX cuts.")
-    print("       -> If the top peaks and bottom does not, our denominator/tag")
-    print("          selection is hiding the pi0 peak rather than the skim losing it.")
-    print("  If even the TOP panel has no pi0 peak, then we inspect the retained")
-    print("  neutral truncation / REC-index coverage before considering reprocessing.")
+    print("\nAAOgen event-grouped reconstructed-pair audit:")
+    print("  Construction: group by (source_file_hash, runnum, evnum), deduplicate")
+    print("  photons by tag_rec_index, then fill every unordered photon pair once.")
+    print("  neutral_[0..4], inferred X, nearest-to-X, and MC truth are NOT used.")
+    print(f"  Baseline: {nev_base:,} physical events; {nev2_base:,} with >=2 photons; "
+          f"{int(hbase.GetEntries()):,} gamma-gamma pairs")
+    print(f"  Exclusive: {nev_excl:,} physical events; {nev2_excl:,} with >=2 photons; "
+          f"{int(hexcl.GetEntries()):,} gamma-gamma pairs")
+    if repeat_base or repeat_excl:
+        print(f"  WARNING: non-contiguous repeated event keys observed: "
+              f"baseline={repeat_base}, exclusive={repeat_excl}")
+        print("  If nonzero, the grouping implementation must be changed before interpreting the plot.")
+    else:
+        print("  Event rows were contiguous by physical-event key, as expected from the producer.")
+    print("  EXPECTATION: AAOgen should show a visible pi0 peak near 0.135 GeV if the")
+    print("  reconstructed tag photons retained in PhotonEfficiency contain both pi0 daughters.")
     return keep, out
 
 def main():
