@@ -19,16 +19,26 @@ Stage 1A -- preparation cuts
 Stage 1B -- common gamma1 cuts, applied after Stage 1A
     0.9 < beta_gamma1 < 1.1
     angle(e,gamma1) > 8 deg
+    p_gamma1 >= 0.4 GeV
+    tag_pass_fiducial == 1
 
-Stage 1C -- reconstructed probe (gamma2) selection
-    Search neutral_[0..4] for reconstructed PID-22 candidates, excluding the
-    tag REC index. Select the PID-22 candidate closest to the inferred missing
-    photon direction X.
-
-    3 < angle(gamma2,X) < 4.12 + 3*1.687 = 9.181 deg
-    0.039 - 3*0.09 < Mx2(ep) < 0.039 + 3*0.09 GeV^2
-        => -0.231 < Mx2(ep) < 0.309 GeV^2
+Stage 1C -- common inferred-probe X selection
+    X is the inferred photon stored in probe_raw_*.
+    These cuts are common to the denominator and numerator:
+    3 < angle(gamma1,X) < 4.12 + 3*1.687 = 9.181 deg
+    -0.231 < Mx2(ep) < 0.309 GeV^2
     Mx2(e gamma1) > 1.4 GeV^2
+
+Stage 1D -- reconstructed gamma2 selection, numerator only
+    Search neutral_[0..4] for reconstructed PID-22 candidates, excluding the
+    tag REC index. Select the PID-22 candidate closest to inferred X.
+    p_gamma2 >= 0.4 GeV
+    angle(e,gamma2) > 8 deg
+
+    The historical gamma2 beta cut was conditional and its run setting was not
+    recorded, so it is NOT imposed here. The skim does not contain a saved
+    neutral_pass_fiducial boolean; neutral PCAL coordinates are retained for
+    adding the exact gamma2 PCAL fiducial definition once specified.
 
 Diagnostics also retain the nearest neutral candidate regardless of PID so that
 PID behavior is visible rather than hidden by the numerator definition.
@@ -216,17 +226,28 @@ COMMON_PHOTON_CUTS = [
      "tag_beta > 0.9 && tag_beta < 1.1"),
     ("angle(e,gamma1) > 8 deg",
      "e_gamma1_angle_deg > 8.0"),
+    ("p_gamma1 >= 0.4 GeV",
+     "tag_corr_p >= 0.4"),
+    ("gamma1 fiducial",
+     "tag_pass_fiducial == 1"),
 ]
 
-PROBE_CUTS = [
-    ("3 < angle(gamma2,X) < 9.181 deg",
-     f"probe_angle_deg > {PROBE_ANGLE_LOW:.6f} && "
-     f"probe_angle_deg < {PROBE_ANGLE_HIGH:.6f}"),
+COMMON_PROBE_CUTS = [
+    ("3 < angle(gamma1,X) < 9.181 deg",
+     f"gamma1_X_angle_deg > {PROBE_ANGLE_LOW:.6f} && "
+     f"gamma1_X_angle_deg < {PROBE_ANGLE_HIGH:.6f}"),
     ("-0.231 < Mx2(ep) < 0.309 GeV^2",
      f"Mx2_ep > {PROBE_MX2_LOW:.6f} && "
      f"Mx2_ep < {PROBE_MX2_HIGH:.6f}"),
     ("Mx2(e gamma1) > 1.4 GeV^2",
      "Mx2_egamma1 > 1.4"),
+]
+
+GAMMA2_CUTS = [
+    ("p_gamma2 >= 0.4 GeV",
+     "probe_p >= 0.4"),
+    ("angle(e,gamma2) > 8 deg",
+     "e_gamma2_angle_deg > 8.0"),
 ]
 
 
@@ -317,6 +338,13 @@ def make_dataframe(chain):
         "pe_angle_deg(e_theta,e_phi,tag_corr_theta,tag_corr_phi)"
     )
 
+    # X is the inferred photon direction from the corrected e'p' system,
+    # stored by the producer in probe_raw_*.
+    df = df.Define(
+        "gamma1_X_angle_deg",
+        "pe_angle_deg(tag_corr_theta,tag_corr_phi,probe_raw_theta,probe_raw_phi)"
+    )
+
     df = df.Define(
         "Mx2_egamma1",
         "pe_mx2_egamma(beam_energy,e_p,e_theta,e_phi,"
@@ -391,6 +419,18 @@ def make_dataframe(chain):
     df = df.Define(
         "probe_rec_index",
         "pe_vec_ivalue(neutral_idx,probe_slot)"
+    )
+    df = df.Define(
+        "probe_theta",
+        "pe_vec_value(neutral_theta,probe_slot)"
+    )
+    df = df.Define(
+        "probe_phi",
+        "pe_vec_value(neutral_phi,probe_slot)"
+    )
+    df = df.Define(
+        "e_gamma2_angle_deg",
+        "probe_exists ? pe_angle_deg(e_theta,e_phi,probe_theta,probe_phi) : -999.0"
     )
 
     return df
@@ -552,7 +592,8 @@ def write_cutflow(path, initial_counts, prep_counts,
 
         out.write("Stage 1A: preparation\n")
         out.write("Stage 1B: common gamma1 cuts\n")
-        out.write("Stage 1C: nearest PID-22 gamma2 probe + probe cuts\n\n")
+        out.write("Stage 1C: common inferred-probe X selection\n")
+        out.write("Stage 1D: reconstructed PID-22 gamma2 selection\n\n")
 
         for sample, label in SAMPLES:
             if sample not in initial_counts:
@@ -588,14 +629,15 @@ def write_cutflow(path, initial_counts, prep_counts,
             nprobe = probe_exists_counts[sample]
             frac = 100.0 * nprobe / previous if previous else 0.0
             total = 100.0 * nprobe / n0 if n0 else 0.0
-            out.write("\n  Stage 1C -- gamma2 probe\n")
+            out.write("\n  Stage 1C -- common inferred-probe X selection complete\n")
             out.write(
-                f"    {'nearest retained PID-22 probe exists':<46s} "
+                f"    {'common denominator/probe selection':<46s} "
                 f"{nprobe:12d}  "
                 f"{frac:8.3f}% step  {total:8.3f}% initial\n"
             )
             previous = nprobe
 
+            out.write("\n  Stage 1D -- reconstructed gamma2 numerator\n")
             for cut_label, count in probe_counts[sample]:
                 frac = 100.0 * count / previous if previous else 0.0
                 total = 100.0 * count / n0 if n0 else 0.0
@@ -682,18 +724,27 @@ def main():
         common_dfs[sample] = common_df
         common_count_handles[sample] = common_handles
 
-        probe_base = common_df.Filter(
-            "probe_exists",
-            "nearest_PID22_probe_exists"
+        # Common inferred-probe selection: applies to denominator AND numerator.
+        common_probe_df, common_probe_handles = apply_cuts(
+            common_df, COMMON_PROBE_CUTS, "common_probe"
         )
-        probe_base_dfs[sample] = probe_base
-        probe_exists_handles[sample] = probe_base.Count()
+        probe_base_dfs[sample] = common_probe_df
+        probe_exists_handles[sample] = common_probe_df.Count()
 
-        probe_final, probe_handles = apply_cuts(
-            probe_base, PROBE_CUTS, "probe"
+        # Numerator only: require a reconstructed PID-22 gamma2 and apply
+        # the explicitly chosen second-photon cuts.
+        gamma2_base = common_probe_df.Filter(
+            "probe_exists",
+            "nearest_PID22_gamma2_exists"
+        )
+        probe_final, gamma2_handles = apply_cuts(
+            gamma2_base, GAMMA2_CUTS, "gamma2"
         )
         probe_final_dfs[sample] = probe_final
-        probe_count_handles[sample] = probe_handles
+        probe_count_handles[sample] = (
+            [("nearest retained PID-22 gamma2 exists", gamma2_base.Count())]
+            + gamma2_handles
+        )
 
     # Materialize each sample's cutflow in one coordinated event loop rather
     # than triggering one scan per Count(). RunGraphs executes all booked
@@ -848,8 +899,8 @@ def main():
 
     probe_plot_specs = [
         (
-            "probe_angle_deg",
-            "Selected #gamma2 match to X;#angle(#gamma2,X) (deg);Unit-normalized entries",
+            "gamma1_X_angle_deg",
+            "#gamma1-to-inferred-X angle;#angle(#gamma1,X) (deg);Unit-normalized entries",
             120, 0.0, 20.0,
             [PROBE_ANGLE_LOW, PROBE_ANGLE_HIGH]
         ),
@@ -867,17 +918,17 @@ def main():
         (
             "probe_p",
             "Selected #gamma2 momentum;p_{#gamma2} (GeV);Unit-normalized entries",
-            120, 0.0, 8.0, []
+            120, 0.0, 8.0, [0.4]
+        ),
+        (
+            "e_gamma2_angle_deg",
+            "Electron-#gamma2 opening angle;#angle(e,#gamma2) (deg);Unit-normalized entries",
+            120, 0.0, 60.0, [8.0]
         ),
         (
             "probe_beta",
-            "Selected #gamma2 velocity;#beta_{#gamma2};Unit-normalized entries",
-            120, 0.5, 1.5, []
-        ),
-        (
-            "probe_detector",
-            "Selected #gamma2 detector;Detector code;Unit-normalized entries",
-            4, -0.5, 3.5, []
+            "Selected #gamma2 velocity (diagnostic only);#beta_{#gamma2};Unit-normalized entries",
+            120, 0.5, 1.5, [0.9, 1.1]
         ),
     ]
 
@@ -886,10 +937,17 @@ def main():
         f"photon_efficiency_stage1_probe_{args.period}.png"
     )
 
+    gamma2_plot_base_dfs = {
+        sample: probe_base_dfs[sample].Filter(
+            "probe_exists", "gamma2_exists_for_probe_canvas"
+        )
+        for sample in dfs
+    }
+
     keep_probe = draw_before_after_canvas(
-        dfs, probe_base_dfs, probe_final_dfs,
+        dfs, gamma2_plot_base_dfs, probe_final_dfs,
         probe_plot_specs, probe_file,
-        "PID-22 probe base", "after probe cuts"
+        "common probe + #gamma2", "after #gamma2 cuts"
     )
 
     # -----------------------------------------------------------------------
@@ -900,7 +958,7 @@ def main():
     nearest_before = {}
     nearest_after = {}
     for sample in dfs:
-        nearest_before[sample] = common_dfs[sample].Filter(
+        nearest_before[sample] = probe_base_dfs[sample].Filter(
             "nearest_neutral_exists",
             "nearest_neutral_exists_for_diagnostic"
         )
@@ -979,9 +1037,9 @@ def main():
     print(f"  {os.path.abspath(nearest_file)}")
     print(f"  {os.path.abspath(cutflow_file)}")
 
-    print("\nNumerical Stage-1 probe boundaries:")
+    print("\nNumerical Stage-1 common inferred-probe boundaries:")
     print(
-        f"  {PROBE_ANGLE_LOW:.3f} < angle(gamma2,X) "
+        f"  {PROBE_ANGLE_LOW:.3f} < angle(gamma1,X) "
         f"< {PROBE_ANGLE_HIGH:.3f} deg"
     )
     print(
