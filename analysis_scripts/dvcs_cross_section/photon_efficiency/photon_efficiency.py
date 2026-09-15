@@ -1820,7 +1820,7 @@ def draw_probe_delta_p(dfs, output_dir, period, coeffs):
         lab.DrawLatex(0.53, 0.955, title)
         keep.extend([leg, lab])
 
-    draw_panel(canvas.cd(1), -4.0, 4.0, "Probe momentum residual: broad view")
+    draw_panel(canvas.cd(1), -5.0, 5.0, "Probe momentum residual: broad view")
     draw_panel(canvas.cd(2), -1.0, 1.0, "Probe momentum residual: near-exclusive region")
 
     out = os.path.join(output_dir, f"5_{period}_delta_p_tag_probe.png")
@@ -1859,7 +1859,7 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
         ib=max(range(b1,b2+1), key=lambda b:h.GetBinContent(b)); mode=ax.GetBinCenter(ib)
         # Exclusive peak + smooth combinatorial background.  The old Gaussian-only
         # fit let the broad tails inflate sigma badly.  Fit data and AAOgen independently.
-        lo,hi=-0.50,0.60
+        lo,hi=-1.00,1.00
         f=ROOT.TF1(name,"gaus(0)+pol2(3)",lo,hi)
         amp=max(h.GetBinContent(ib),1.0)
         edge=0.5*(h.GetBinContent(ax.FindBin(lo+0.03))+h.GetBinContent(ax.FindBin(hi-0.03)))
@@ -1887,14 +1887,58 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
             }
             return best;
         }
+
+        ROOT::VecOps::RVec<double> pe_best_delta_p_truth(
+            double probe_p,double mu,int tag_index,
+            int mc_tag_index,int mc_tag_pid,double mc_tag_p,double mc_tag_th,double mc_tag_ph,
+            const ROOT::VecOps::RVec<int>& neutral_idx,
+            const ROOT::VecOps::RVec<int>& neutral_pid,
+            const ROOT::VecOps::RVec<double>& neutral_p,
+            const ROOT::VecOps::RVec<int>& neutral_mc_index,
+            const ROOT::VecOps::RVec<int>& neutral_mc_pid,
+            const ROOT::VecOps::RVec<double>& neutral_mc_p,
+            const ROOT::VecOps::RVec<double>& neutral_mc_th,
+            const ROOT::VecOps::RVec<double>& neutral_mc_ph) {
+            ROOT::VecOps::RVec<double> out;
+            int best=-1; double bestdp=1e9,bestdist=1e99;
+            for(size_t i=0;i<neutral_idx.size();++i){
+                if(neutral_idx[i]<0 || neutral_idx[i]==tag_index || neutral_pid[i]!=22 || !(neutral_p[i]>0)) continue;
+                const double dp=probe_p-neutral_p[i], d=std::abs(dp-mu);
+                if(d<bestdist){bestdist=d; bestdp=dp; best=(int)i;}
+            }
+            if(best<0) return out;
+            bool truth=false; const size_t i=(size_t)best;
+            if(mc_tag_index>=0 && mc_tag_pid==22 && mc_tag_p>0 &&
+               i<neutral_mc_index.size() && i<neutral_mc_pid.size() &&
+               i<neutral_mc_p.size() && i<neutral_mc_th.size() && i<neutral_mc_ph.size() &&
+               neutral_mc_index[i]>=0 && neutral_mc_pid[i]==22 &&
+               neutral_mc_index[i]!=mc_tag_index && neutral_mc_p[i]>0){
+                const double dot=std::sin(mc_tag_th*M_PI/180.)*std::sin(neutral_mc_th[i]*M_PI/180.)*
+                    std::cos((mc_tag_ph-neutral_mc_ph[i])*M_PI/180.)+
+                    std::cos(mc_tag_th*M_PI/180.)*std::cos(neutral_mc_th[i]*M_PI/180.);
+                const double c=std::max(-1.,std::min(1.,dot));
+                const double m2=2.*mc_tag_p*neutral_mc_p[i]*(1.-c);
+                if(m2>=0){const double m=std::sqrt(m2); truth=(m>0.125 && m<0.145);}
+            }
+            out.push_back(bestdp); out.push_back(truth?1.0:0.0); return out;
+        }
         ''')
         draw_probe_integrated_delta_p_efficiency._helper_declared = True
     ddata=selected["data"].Define("best_dp",f"pe_best_delta_p(intdp_vec,{mu_data:.17g})")
     dmc=selected["aaogen"].Define("best_dp",f"pe_best_delta_p(intdp_vec,{mu_mc:.17g})")
+    dmc=dmc.Define("best_dp_truth_info",
+        f"pe_best_delta_p_truth(probe_raw_p,{mu_mc:.17g},tag_rec_index,mc_tag_index,mc_tag_pid,"
+        "mc_tag_p,mc_tag_theta,mc_tag_phi,neutral_idx,neutral_pid,neutral_p,"
+        "neutral_mc_index,neutral_mc_pid,neutral_mc_p,neutral_mc_theta,neutral_mc_phi)")
+    dmc=dmc.Define("best_dp_truth","best_dp_truth_info.size()>1 ? best_dp_truth_info[1] : -1.0")
     den_data,den_mc=ddata.Count(),dmc.Count(); cand_data=ddata.Filter("best_dp < 1e8").Count(); cand_mc=dmc.Filter("best_dp < 1e8").Count()
     hbdp=ddata.Filter("best_dp < 1e8").Histo1D((f"h_bestdp_data_{unique}","",200,-1.0,1.0),"best_dp")
     hbmc=dmc.Filter("best_dp < 1e8").Histo1D((f"h_bestdp_mc_{unique}","",200,-1.0,1.0),"best_dp")
-    ROOT.RDF.RunGraphs([den_data,den_mc,cand_data,cand_mc,hbdp,hbmc])
+    htruth=dmc.Filter("best_dp < 1e8 && best_dp_truth > 0.5").Histo1D((f"h_bestdp_truth_{unique}","",200,-1.0,1.0),"best_dp")
+    hwrong=dmc.Filter("best_dp < 1e8 && best_dp_truth < 0.5").Histo1D((f"h_bestdp_wrong_{unique}","",200,-1.0,1.0),"best_dp")
+    ntruth=dmc.Filter("best_dp < 1e8 && best_dp_truth > 0.5").Count()
+    nwrong=dmc.Filter("best_dp < 1e8 && best_dp_truth < 0.5").Count()
+    ROOT.RDF.RunGraphs([den_data,den_mc,cand_data,cand_mc,hbdp,hbmc,htruth,hwrong,ntruth,nwrong])
     nd=int(den_data.GetValue()); nm=int(den_mc.GetValue())
     # Refit the actual one-best-candidate-per-row spectra.  These are the fits used
     # for the final mu, sigma, background subtraction, and efficiency.
@@ -1917,8 +1961,8 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
             )
 
     def components(f,prefix):
-        sg=ROOT.TF1(prefix+"_sig","gaus",-0.50,0.60); sg.SetParameters(f.GetParameter(0),f.GetParameter(1),f.GetParameter(2))
-        bg=ROOT.TF1(prefix+"_bg","pol2",-0.50,0.60); bg.SetParameters(f.GetParameter(3),f.GetParameter(4),f.GetParameter(5))
+        sg=ROOT.TF1(prefix+"_sig","gaus",-1.00,1.00); sg.SetParameters(f.GetParameter(0),f.GetParameter(1),f.GetParameter(2))
+        bg=ROOT.TF1(prefix+"_bg","pol2",-1.00,1.00); bg.SetParameters(f.GetParameter(3),f.GetParameter(4),f.GetParameter(5))
         return sg,bg
     sigfunc_data,bg_data=components(fdata,f"intdp_data_{unique}")
     sigfunc_mc,bg_mc=components(fmc,f"intdp_mc_{unique}")
@@ -1973,6 +2017,32 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
         keep.append(lab)
     out=os.path.join(output_dir,f"6_{period}_integrated_delta_p_efficiency.png"); c.SaveAs(out)
 
+    # Direct AAOgen truth decomposition of exactly the same best-candidate population.
+    ht=htruth.GetValue().Clone(f"h_bestdp_truth_draw_{unique}"); ht.SetDirectory(0); ht.Scale(B)
+    hw=hwrong.GetValue().Clone(f"h_bestdp_wrong_draw_{unique}"); hw.SetDirectory(0); hw.Scale(B)
+    nt,nw=int(ntruth.GetValue()),int(nwrong.GetValue())
+    ct=ROOT.TCanvas(f"c_bestdp_truth_{unique}","",1450,760)
+    ct.SetTicks(1,1); ct.SetLeftMargin(0.12); ct.SetRightMargin(0.04); ct.SetBottomMargin(0.14); ct.SetTopMargin(0.11)
+    hmc.SetStats(0); hmc.SetLineColor(ROOT.kBlack); hmc.SetLineWidth(2); hmc.GetXaxis().SetRangeUser(-1.0,1.0)
+    hmc.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)")
+    hmc.GetYaxis().SetTitle("Normalized best-candidate rows"); hmc.GetYaxis().SetTitleOffset(1.35); hmc.Draw("HIST")
+    ht.SetLineColor(ROOT.kBlue+1); ht.SetLineWidth(3); ht.Draw("HIST SAME")
+    hw.SetLineColor(ROOT.kRed+1); hw.SetLineWidth(3); hw.SetLineStyle(2); hw.Draw("HIST SAME")
+    lt=ROOT.TLegend(0.56,0.69,0.93,0.87); lt.SetBorderSize(0); lt.SetFillStyle(0); lt.SetTextSize(0.031)
+    lt.AddEntry(hmc,"AAOgen all best candidates","l"); lt.AddEntry(ht,f"Truth #pi^{{0}} pair ({nt:,})","l")
+    lt.AddEntry(hw,f"Wrong/combinatorial ({nw:,})","l"); lt.Draw()
+    tt=ROOT.TLatex(); tt.SetNDC(True); tt.SetTextAlign(22); tt.SetTextSize(0.036)
+    tt.DrawLatex(0.52,0.955,"AAOgen best-candidate #Delta p: direct MC truth decomposition")
+    ts=ROOT.TLatex(); ts.SetNDC(True); ts.SetTextSize(0.026)
+    ts.DrawLatex(0.15,0.88,"Truth: distinct matched MC photons with 0.125 < M_{#gamma#gamma}^{gen} < 0.145 GeV")
+    truth_out=os.path.join(output_dir,f"7_{period}_AAOgen_delta_p_truth_decomposition.png"); ct.SaveAs(truth_out)
+    keep.extend([ct,ht,hw,lt,tt,ts])
+    print("\nAAOgen best-candidate Delta-p truth decomposition:")
+    print("  Same best-candidate rule as the efficiency numerator.")
+    print("  Truth = distinct matched MC photons with 0.125 < Mgg_gen < 0.145 GeV.")
+    print(f"  truth pi0={nt:,}; wrong/combinatorial={nw:,}; truth fraction={nt/(nt+nw):.6f}" if nt+nw else "  no candidates")
+    print(f"  Wrote truth decomposition to {truth_out}")
+
     # ------------------------------------------------------------------
     # Signal/background model and fit-range stability.
     #
@@ -1980,7 +2050,7 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
     # spectra.  We do NOT redo candidate selection for each fit variation.  This
     # isolates the uncertainty from the signal/background decomposition itself.
     # ------------------------------------------------------------------
-    stability_ranges = [(-0.50,0.60), (-0.60,0.70), (-0.70,0.80)]
+    stability_ranges = [(-0.50,0.60), (-0.70,0.80), (-1.00,1.00)]
     stability_orders = (1,2,3)
     stability = []
     stability_keep = []
@@ -2123,7 +2193,7 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
         "Best-candidate population fixed; only signal/background fit changes")
 
     stability_out=os.path.join(
-        output_dir,f"7_{period}_integrated_delta_p_model_range_stability.png")
+        output_dir,f"8_{period}_integrated_delta_p_model_range_stability.png")
     cstab.SaveAs(stability_out)
     keep.extend(stability_keep+[cstab,frame,legstab,titlestab,notestab]+list(stab_graphs.values()))
 
@@ -2232,9 +2302,9 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
         return cgrid,grid_keep
 
     data_grid_out=os.path.join(
-        output_dir,f"8_{period}_integrated_delta_p_fit_grid_data.png")
+        output_dir,f"9_{period}_integrated_delta_p_fit_grid_data.png")
     mc_grid_out=os.path.join(
-        output_dir,f"9_{period}_integrated_delta_p_fit_grid_AAOgen.png")
+        output_dir,f"10_{period}_integrated_delta_p_fit_grid_AAOgen.png")
     cgrid_data,grid_data_keep=draw_stability_fit_grid(
         "data",hdata,"data",ROOT.kBlack,data_grid_out)
     cgrid_mc,grid_mc_keep=draw_stability_fit_grid(
@@ -2242,7 +2312,7 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
     keep.extend(grid_data_keep+grid_mc_keep)
 
     print("\\nIntegrated Delta-p model/range stability:")
-    print("  Scan = pol1/pol2/pol3 backgrounds x fit ranges [-0.5,+0.6], [-0.6,+0.7], [-0.7,+0.8] GeV.")
+    print("  Scan = pol1/pol2/pol3 backgrounds x fit ranges [-0.5,+0.6], [-0.7,+0.8], [-1.0,+1.0] GeV.")
     print("  Best-candidate population is held fixed for every variation.")
     print("  Polynomial background is integrated only inside its fitted range; coverage is printed when an n-sigma window is truncated.")
     print("  model/range | data chi2/ndf | AAO chi2/ndf | Cgamma(1s) Cgamma(2s) Cgamma(3s)")
@@ -2267,6 +2337,7 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
             rms=(sum((v-mean)**2 for v in vals)/len(vals))**0.5
             print(f"  {n}sigma stability: mean={mean:.6f}, min={min(vals):.6f}, max={max(vals):.6f}, span={max(vals)-min(vals):.6f}, RMS={rms:.6f}")
     print(f"  Wrote stability summary to {stability_out}")
+    results["truth_output"]=truth_out
     results["stability"]=stability
     results["stability_output"]=stability_out
     results["stability_data_grid_output"]=data_grid_out
@@ -2276,7 +2347,7 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
 
     print("\nIntegrated Delta-p efficiency study (NO kinematic binning):")
     print("  MC signal reference = AAOgen only (exclusive ep-pi0 signal sample).")
-    print("  Final fit model = Gaussian exclusive peak + quadratic background over -0.50 < Delta p < +0.60 GeV.")
+    print("  Final fit model = Gaussian exclusive peak + quadratic background over -1.00 < Delta p < +1.00 GeV.")
     print("  Efficiency numerators are background-subtracted inside each sample own 1/2/3-sigma window.")
     print("  DVCSgen is not included in the signal efficiency; generator-exclusive ep-pi0 was removed from CLASDIS.")
     print(f"  Fits: data mu={mu_data:+.6f} GeV sigma={sig_data:.6f} GeV; AAOgen mu={mu_mc:+.6f} GeV sigma={sig_mc:.6f} GeV")
@@ -3308,6 +3379,8 @@ def main():
         print(f"\nWrote: {deltap_output}")
     if inteff_output:
         print(f"\nWrote: {inteff_output}")
+    if inteff_result and inteff_result.get("truth_output"):
+        print(f"\nWrote: {inteff_result['truth_output']}")
     if inteff_result and inteff_result.get("stability_output"):
         print(f"\nWrote: {inteff_result['stability_output']}")
     if inteff_result and inteff_result.get("stability_data_grid_output"):
