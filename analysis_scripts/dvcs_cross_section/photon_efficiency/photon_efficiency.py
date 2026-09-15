@@ -1596,13 +1596,50 @@ def dump_aaogen_truth_rec_events(files, output_dir, period, max_events=12):
     masses_gen, masses_rec = [], []
     examples = []
 
+    # Event-tree schema has changed across skim/converter revisions.  Resolve the
+    # actual branch names rather than assuming the ev_* prefix is present.
+    branch_names = {b.GetName() for b in ch.GetListOfBranches()}
+    def pick_branch(*names):
+        return next((name for name in names if name in branch_names), None)
+
+    b_W = pick_branch("ev_W", "W")
+    b_nph = pick_branch("ev_gen_n_photon", "gen_n_photon")
+    b_npi0ph = pick_branch("ev_gen_n_pi0_photon", "gen_n_pi0_photon")
+    b_ngamma = pick_branch("ev_gen_gamma_total", "gen_gamma_total")
+    b_hash = pick_branch("ev_source_file_hash", "source_file_hash")
+    b_run = pick_branch("ev_runnum", "runnum")
+    b_evt = pick_branch("ev_evnum", "evnum")
+
+    required = {
+        "generated-photon count": b_nph,
+        "pi0-photon count": b_npi0ph,
+        "saved generated-photon total": b_ngamma,
+        "source-file hash": b_hash,
+        "run number": b_run,
+        "event number": b_evt,
+    }
+    missing = [label for label, name in required.items() if name is None]
+    if missing:
+        print("\nERROR: PhotonEfficiencyEvents is present, but the event dump cannot find:")
+        for label in missing:
+            print(f"  - {label}")
+        print("Available PhotonEfficiencyEvents branches are:")
+        for name in sorted(branch_names):
+            print(f"  {name}")
+        print("No event-dump selection was attempted. This is a schema issue, not a physics result.\n")
+        return None
+
+    if b_W is None:
+        print("WARNING: PhotonEfficiencyEvents has no saved W branch; the truth/REC dump will run without W > 2.")
+
     for iev in range(ch.GetEntries()):
         ch.GetEntry(iev)
-        if float(ch.ev_W) <= 2.0:
+        Wval = float(getattr(ch, b_W)) if b_W is not None else float("nan")
+        if b_W is not None and Wval <= 2.0:
             continue
-        if int(ch.ev_gen_n_photon) != 2 or int(ch.ev_gen_n_pi0_photon) != 2:
+        if int(getattr(ch, b_nph)) != 2 or int(getattr(ch, b_npi0ph)) != 2:
             continue
-        if int(ch.ev_gen_gamma_total) != 2:
+        if int(getattr(ch, b_ngamma)) != 2:
             continue
         n_clean += 1
         gp=[]
@@ -1621,14 +1658,14 @@ def dump_aaogen_truth_rec_events(files, output_dir, period, max_events=12):
             mrec=_mgg_from_p_theta_phi(*rp0, *rp1); masses_rec.append(mrec)
         if len(examples) < max_events:
             examples.append({
-                'key':(int(ch.ev_source_file_hash),int(ch.ev_runnum),int(ch.ev_evnum)), 'W':float(ch.ev_W), 'mgen':mgen, 'mrec':mrec,
+                'key':(int(getattr(ch,b_hash)),int(getattr(ch,b_run)),int(getattr(ch,b_evt))), 'W':Wval, 'mgen':mgen, 'mrec':mrec,
                 'g0':(int(ch.gen_gamma_index[0]),)+gp[0]+(int(ch.gen_gamma_n_rec_matches[0]),int(ch.gen_gamma_n_rec_pid22[0]),r0,pid0,float(ch.gen_gamma_best_rec_p[0]),float(ch.gen_gamma_best_rec_theta[0]),float(ch.gen_gamma_best_rec_phi[0]),float(ch.gen_gamma_best_rec_delta_alpha[0])),
                 'g1':(int(ch.gen_gamma_index[1]),)+gp[1]+(int(ch.gen_gamma_n_rec_matches[1]),int(ch.gen_gamma_n_rec_pid22[1]),r1,pid1,float(ch.gen_gamma_best_rec_p[1]),float(ch.gen_gamma_best_rec_theta[1]),float(ch.gen_gamma_best_rec_phi[1]),float(ch.gen_gamma_best_rec_delta_alpha[1]))
             })
 
     with open(out,'w') as f:
         f.write("AAOgen truth -> reconstructed photon event trace\n")
-        f.write("Selection: W > 2 GeV, exactly two generated photons, both classified as pi0 photons.\n")
+        f.write(("Selection: W > 2 GeV, " if b_W is not None else "Selection: ") + "exactly two generated photons, both classified as pi0 photons.\n")
         f.write("This reads PhotonEfficiencyEvents only; no tag/probe, neutral_[0..4], inferred X, or exclusivity cuts.\n\n")
         f.write(f"clean generated pi0->gamma gamma events: {n_clean:,}\n")
         f.write(f"both generated photons have a best REC association: {n_both_rec:,} ({100*n_both_rec/n_clean if n_clean else 0:.2f}%)\n")
