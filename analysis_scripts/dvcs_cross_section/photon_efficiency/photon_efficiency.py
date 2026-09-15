@@ -1959,14 +1959,203 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
         f.SetLineColor(ROOT.kMagenta+2); f.SetLineWidth(3); f.Draw("SAME")
         sg.SetLineColor(ROOT.kBlue); sg.SetLineWidth(3); sg.Draw("SAME")
         bg.SetLineColor(ROOT.kGray+2); bg.SetLineStyle(2); bg.SetLineWidth(2); bg.Draw("SAME")
-        lab=ROOT.TLatex(); lab.SetNDC(True); lab.SetTextSize(0.034); lab.DrawLatex(0.18,0.92,title); lab.DrawLatex(0.18,0.86,f"#mu = {mu:+.4f} GeV"); lab.DrawLatex(0.18,0.81,f"#sigma = {sig:.4f} GeV")
-        y=0.75
+        lab=ROOT.TLatex(); lab.SetNDC(True); lab.SetTextSize(0.031)
+        lab.DrawLatex(0.18,0.92,title)
+        lab.DrawLatex(0.18,0.865,f"#mu = {mu:+.4f} GeV")
+        lab.DrawLatex(0.18,0.815,f"#sigma = {sig:.4f} GeV")
+        chi2ndf = float(f.GetChisquare())/float(f.GetNDF()) if f.GetNDF() > 0 else float("nan")
+        lab.DrawLatex(0.18,0.765,f"#chi^{{2}}/ndf = {chi2ndf:.2f}")
+        y=0.705
         for n in (1,2,3):
             r=results[n]
             txt=(f"{n}#sigma: #epsilon_{{data}}={r['eff_data']:.4f}, C_{{#gamma}}={r['ratio']:.4f}" if ipad==1 else f"{n}#sigma: #epsilon_{{AAO}}={r['eff_mc']:.4f}")
             lab.DrawLatex(0.18,y,txt); y-=0.05
         keep.append(lab)
     out=os.path.join(output_dir,f"6_{period}_integrated_delta_p_efficiency.png"); c.SaveAs(out)
+
+    # ------------------------------------------------------------------
+    # Signal/background model and fit-range stability.
+    #
+    # IMPORTANT: hdata/hmc are already the one-best-candidate-per-denominator-row
+    # spectra.  We do NOT redo candidate selection for each fit variation.  This
+    # isolates the uncertainty from the signal/background decomposition itself.
+    # ------------------------------------------------------------------
+    stability_ranges = [(-0.50,0.60), (-0.60,0.70), (-0.70,0.80)]
+    stability_orders = (1,2,3)
+    stability = []
+    stability_keep = []
+
+    def stability_fit(h, name, order, fit_lo, fit_hi):
+        ax=h.GetXaxis()
+        sb1=ax.FindBin(max(fit_lo,-0.45)+1e-9)
+        sb2=ax.FindBin(min(fit_hi,+0.45)-1e-9)
+        ib=max(range(sb1,sb2+1), key=lambda b:h.GetBinContent(b))
+        mode=float(ax.GetBinCenter(ib))
+        amp=max(float(h.GetBinContent(ib)),1.0)
+        edge=0.5*(float(h.GetBinContent(ax.FindBin(fit_lo+0.03)))+
+                  float(h.GetBinContent(ax.FindBin(fit_hi-0.03))))
+        f=ROOT.TF1(name,f"gaus(0)+pol{order}(3)",fit_lo,fit_hi)
+        pars=[amp,mode,0.12,max(edge,0.0)]+[0.0]*order
+        f.SetParameters(*pars)
+        f.SetParLimits(0,0.0,max(10.0*amp,1.0e9))
+        f.SetParLimits(1,-0.35,0.45)
+        f.SetParLimits(2,0.015,0.35)
+        fitptr=h.Fit(f,"QNRS")
+        try:
+            status=int(fitptr)
+        except Exception:
+            status=-999
+        mu=float(f.GetParameter(1))
+        sigma=abs(float(f.GetParameter(2)))
+        ndf=int(f.GetNDF())
+        chi2=float(f.GetChisquare())
+        valid=(status==0 and mu==mu and sigma==sigma and sigma>0.0 and
+               abs(mu)<1e100 and abs(sigma)<1e100 and ndf>0)
+        return f,mu,sigma,status,chi2,ndf,valid
+
+    def stability_bg(f, order, name, fit_lo, fit_hi):
+        bg=ROOT.TF1(name,f"pol{order}",fit_lo,fit_hi)
+        bg.SetParameters(*[float(f.GetParameter(3+i)) for i in range(order+1)])
+        return bg
+
+    def stability_window(h,bg,mu,sigma,n,scale,fit_lo,fit_hi):
+        # Never extrapolate the polynomial background outside the interval
+        # actually used to determine it.
+        req_lo=float(mu)-float(n)*float(sigma)
+        req_hi=float(mu)+float(n)*float(sigma)
+        lo=max(float(fit_lo),req_lo)
+        hi=min(float(fit_hi),req_hi)
+        if hi<=lo:
+            return None
+        ax=h.GetXaxis()
+        b1=ax.FindBin(lo+1e-9)
+        b2=ax.FindBin(hi-1e-9)
+        obs=float(h.Integral(b1,b2))/float(scale)
+        bkg=float(bg.Integral(lo,hi)/h.GetBinWidth(1))/float(scale)
+        signal=max(0.0,obs-bkg)
+        coverage=(hi-lo)/(req_hi-req_lo) if req_hi>req_lo else 0.0
+        return obs,bkg,signal,coverage
+
+    for order in stability_orders:
+        for ir,(fit_lo,fit_hi) in enumerate(stability_ranges):
+            fd,mud,sd,std,c2d,ndfd,vd=stability_fit(
+                hdata,f"f_stab_data_p{order}_r{ir}_{unique}",order,fit_lo,fit_hi)
+            fm,mum,sm,stm,c2m,ndfm,vm=stability_fit(
+                hmc,f"f_stab_mc_p{order}_r{ir}_{unique}",order,fit_lo,fit_hi)
+            bgd=stability_bg(fd,order,f"bg_stab_data_p{order}_r{ir}_{unique}",fit_lo,fit_hi)
+            bgm=stability_bg(fm,order,f"bg_stab_mc_p{order}_r{ir}_{unique}",fit_lo,fit_hi)
+            stability_keep.extend([fd,fm,bgd,bgm])
+            item={"order":order,"fit_lo":fit_lo,"fit_hi":fit_hi,
+                  "data_status":std,"mc_status":stm,
+                  "data_chi2ndf":c2d/ndfd if ndfd>0 else float("nan"),
+                  "mc_chi2ndf":c2m/ndfm if ndfm>0 else float("nan"),
+                  "data_mu":mud,"data_sigma":sd,"mc_mu":mum,"mc_sigma":sm,
+                  "valid":bool(vd and vm),"windows":{}}
+            if item["valid"]:
+                for n in (1,2,3):
+                    wd=stability_window(hdata,bgd,mud,sd,n,1.0,fit_lo,fit_hi)
+                    wm=stability_window(hmc,bgm,mum,sm,n,B,fit_lo,fit_hi)
+                    if wd is None or wm is None:
+                        continue
+                    od,bd,sgd,covd=wd
+                    om,bm,sgm,covm=wm
+                    ed=sgd/nd if nd else float("nan")
+                    em=sgm/nm if nm else float("nan")
+                    item["windows"][n]={
+                        "ratio":ed/em if em>0 else float("nan"),
+                        "eff_data":ed,"eff_mc":em,
+                        "coverage_data":covd,"coverage_mc":covm}
+            stability.append(item)
+
+    # One compact summary canvas.  Each x-bin is one background/range choice.
+    cstab=ROOT.TCanvas(f"c_intdp_stability_{unique}","",1550,820)
+    cstab.SetTicks(1,1); cstab.SetLeftMargin(0.11); cstab.SetRightMargin(0.04)
+    cstab.SetBottomMargin(0.23); cstab.SetTopMargin(0.10)
+    nchoices=len(stability)
+    frame=ROOT.TH1D(f"h_intdp_stability_frame_{unique}","",nchoices,0.5,nchoices+0.5)
+    frame.SetDirectory(0); frame.SetStats(0)
+    frame.GetYaxis().SetTitle("C_{#gamma} = #epsilon_{data} / #epsilon_{AAOgen}")
+    frame.GetYaxis().SetTitleOffset(1.35)
+    frame.GetXaxis().SetLabelSize(0.028); frame.GetXaxis().LabelsOption("v")
+
+    ratio_values=[]
+    for i,item in enumerate(stability,1):
+        frame.GetXaxis().SetBinLabel(
+            i,f"pol{item['order']} [{item['fit_lo']:+.1f},{item['fit_hi']:+.1f}]")
+        if item["valid"]:
+            for n in (1,2,3):
+                if n in item["windows"]:
+                    v=item["windows"][n]["ratio"]
+                    if v==v: ratio_values.append(v)
+    if ratio_values:
+        ymin=max(0.0,min(ratio_values)-0.08); ymax=max(ratio_values)+0.08
+        if ymax-ymin<0.20:
+            mid=0.5*(ymin+ymax); ymin=max(0.0,mid-0.10); ymax=mid+0.10
+    else:
+        ymin,ymax=0.5,1.1
+    frame.SetMinimum(ymin); frame.SetMaximum(ymax); frame.Draw("AXIS")
+
+    specs={1:(ROOT.kBlue+1,20),2:(ROOT.kRed+1,21),3:(ROOT.kGreen+2,22)}
+    stab_graphs={}
+    for n in (1,2,3):
+        g=ROOT.TGraph(); g.SetName(f"g_intdp_stability_{n}s_{unique}")
+        ip=0
+        for i,item in enumerate(stability,1):
+            if item["valid"] and n in item["windows"]:
+                v=item["windows"][n]["ratio"]
+                if v==v:
+                    g.SetPoint(ip,float(i),float(v)); ip+=1
+        col,marker=specs[n]
+        g.SetMarkerColor(col); g.SetLineColor(col); g.SetMarkerStyle(marker)
+        g.SetMarkerSize(1.25); g.SetLineWidth(2); g.Draw("PL SAME")
+        stab_graphs[n]=g
+
+    legstab=ROOT.TLegend(0.14,0.74,0.34,0.88)
+    legstab.SetBorderSize(0); legstab.SetFillStyle(0); legstab.SetTextSize(0.031)
+    for n in (1,2,3): legstab.AddEntry(stab_graphs[n],f"{n}#sigma window","lp")
+    legstab.Draw()
+    titlestab=ROOT.TLatex(); titlestab.SetNDC(True); titlestab.SetTextAlign(22)
+    titlestab.SetTextSize(0.036)
+    titlestab.DrawLatex(0.53,0.955,
+        "Integrated #Delta p efficiency: background-model and fit-range stability")
+    notestab=ROOT.TLatex(); notestab.SetNDC(True); notestab.SetTextSize(0.025)
+    notestab.DrawLatex(0.39,0.86,
+        "Best-candidate population fixed; only signal/background fit changes")
+
+    stability_out=os.path.join(
+        output_dir,f"7_{period}_integrated_delta_p_model_range_stability.png")
+    cstab.SaveAs(stability_out)
+    keep.extend(stability_keep+[cstab,frame,legstab,titlestab,notestab]+list(stab_graphs.values()))
+
+    print("\nIntegrated Delta-p model/range stability:")
+    print("  Scan = pol1/pol2/pol3 backgrounds x fit ranges [-0.5,+0.6], [-0.6,+0.7], [-0.7,+0.8] GeV.")
+    print("  Best-candidate population is held fixed for every variation.")
+    print("  Polynomial background is integrated only inside its fitted range; coverage is printed when an n-sigma window is truncated.")
+    print("  model/range | data chi2/ndf | AAO chi2/ndf | Cgamma(1s) Cgamma(2s) Cgamma(3s)")
+    for item in stability:
+        label=f"pol{item['order']} [{item['fit_lo']:+.2f},{item['fit_hi']:+.2f}]"
+        if not item["valid"]:
+            print(f"  {label} | FIT FAILED data={item['data_status']} AAO={item['mc_status']}")
+            continue
+        vals=[]
+        for n in (1,2,3):
+            if n not in item["windows"]:
+                vals.append("NA"); continue
+            w=item["windows"][n]
+            vals.append(f"{w['ratio']:.6f}[cov {100*w['coverage_data']:.0f}/{100*w['coverage_mc']:.0f}%]")
+        print(f"  {label} | {item['data_chi2ndf']:.3f} | {item['mc_chi2ndf']:.3f} | "+" ".join(vals))
+    for n in (1,2,3):
+        vals=[item["windows"][n]["ratio"] for item in stability
+              if item["valid"] and n in item["windows"]
+              and item["windows"][n]["ratio"]==item["windows"][n]["ratio"]]
+        if vals:
+            mean=sum(vals)/len(vals)
+            rms=(sum((v-mean)**2 for v in vals)/len(vals))**0.5
+            print(f"  {n}sigma stability: mean={mean:.6f}, min={min(vals):.6f}, max={max(vals):.6f}, span={max(vals)-min(vals):.6f}, RMS={rms:.6f}")
+    print(f"  Wrote stability summary to {stability_out}")
+    results["stability"]=stability
+    results["stability_output"]=stability_out
+
     print("\nIntegrated Delta-p efficiency study (NO kinematic binning):")
     print("  MC signal reference = AAOgen only (exclusive ep-pi0 signal sample).")
     print("  Final fit model = Gaussian exclusive peak + quadratic background over -0.50 < Delta p < +0.60 GeV.")
@@ -3001,6 +3190,8 @@ def main():
         print(f"\nWrote: {deltap_output}")
     if inteff_output:
         print(f"\nWrote: {inteff_output}")
+    if inteff_result and inteff_result.get("stability_output"):
+        print(f"\nWrote: {inteff_result['stability_output']}")
     if pi0fit_output:
         print(f"\nWrote: {pi0fit_output}")
     if pi0fit_result and pi0fit_result.get("window_scan_output"):
