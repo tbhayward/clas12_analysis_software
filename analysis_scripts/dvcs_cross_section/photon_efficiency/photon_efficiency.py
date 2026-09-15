@@ -4,7 +4,7 @@ CLAS12 photon-efficiency analysis -- restart from the raw e'p'gamma1 hypotheses.
 
 Current step
 ------------
-Use every row in the PhotonEfficiency hypothesis tree, requiring only W > 2 GeV.
+Use every row in the PhotonEfficiency hypothesis tree, requiring W > 2 GeV and angle(e',gamma1) > 8 deg.
 Each row is one reconstructed e'p'gamma1 hypothesis produced by the skim.
 
 Plot the following observables as rows:
@@ -14,7 +14,7 @@ Plot the following observables as rows:
   4) Mx2(e'p'gamma1)             -0.1 to 0.15 GeV^2
 
 Columns are cumulative selections:
-  1) W > 2 GeV only
+  1) W > 2 GeV and angle(e',gamma1) > 8 deg
   2) additionally Mx2(e'p') < 0.18 GeV^2
   3) additionally -0.05 < Mx2(e'p'gamma1) < 0.05 GeV^2
 
@@ -63,6 +63,16 @@ COLORS = {
 
 ROOT.gInterpreter.Declare(r"""
 #include <cmath>
+
+double pe_angle_deg(double th1_deg, double ph1_deg, double th2_deg, double ph2_deg) {
+    const double d2r = M_PI / 180.0;
+    const double th1 = th1_deg*d2r, ph1 = ph1_deg*d2r;
+    const double th2 = th2_deg*d2r, ph2 = ph2_deg*d2r;
+    const double dot = std::sin(th1)*std::sin(th2)*std::cos(ph1-ph2)
+                     + std::cos(th1)*std::cos(th2);
+    const double c = std::max(-1.0, std::min(1.0, dot));
+    return std::acos(c) / d2r;
+}
 
 double pe_emiss_epg(double ebeam, double ep, double pp, double gp) {
     const double me = 0.00051099895;
@@ -168,9 +178,9 @@ def make_dataframe(chain):
     """
     Start from every e'p'gamma1 hypothesis saved in PhotonEfficiency.
 
-    No analysis selection is imposed here except W > 2 GeV.  In particular,
-    there is no beta, photon fiducial, electron-photon opening-angle,
-    missing-mass, inferred-probe, or gamma2 requirement at this stage.
+    The baseline exclusive sample imposes W > 2 GeV and angle(e',gamma1) > 8 deg.
+    There is no beta, photon fiducial, additional missing-mass, inferred-probe,
+    or gamma2 requirement before the two displayed exclusivity cuts.
     """
     df = ROOT.RDataFrame(chain)
 
@@ -186,7 +196,13 @@ def make_dataframe(chain):
         "pe_emiss_epg(beam_energy,e_p,p_corr_p,E_gamma1)",
     )
 
-    return df.Filter("W > 2.0", "W_gt_2_GeV")
+    df = df.Define(
+        "angle_e_gamma1_deg",
+        "pe_angle_deg(e_theta,e_phi,tag_corr_theta,tag_corr_phi)",
+    )
+    return (df
+            .Filter("W > 2.0", "W_gt_2_GeV")
+            .Filter("angle_e_gamma1_deg > 8.0", "angle_e_gamma1_gt_8_deg"))
 
 
 def draw_canvas(dfs, output_file):
@@ -302,7 +318,7 @@ def draw_canvas(dfs, output_file):
                 title = ROOT.TLatex()
                 title.SetNDC(True)
                 title.SetTextAlign(22)
-                title.SetTextSize(0.026)
+                title.SetTextSize(0.038)
                 title.DrawLatex(0.52, 0.925, stage_title)
                 keep.append(title)
             legend.Draw()
