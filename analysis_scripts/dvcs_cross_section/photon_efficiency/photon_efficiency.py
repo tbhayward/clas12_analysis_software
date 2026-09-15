@@ -8,15 +8,15 @@ Use every row in the PhotonEfficiency hypothesis tree, requiring only W > 2 GeV.
 Each row is one reconstructed e'p'gamma1 hypothesis produced by the skim.
 
 Plot the following observables as rows:
-  1) E_gamma1                     1 to 10 GeV
+  1) E_gamma1                     0.4 to 10 GeV
   2) missing energy e'p'gamma1    1 to 10 GeV
   3) Mx2(e'p')                   -0.5 to 2.0 GeV^2
   4) Mx2(e'p'gamma1)             -0.1 to 0.2 GeV^2
 
 Columns are cumulative selections:
   1) W > 2 GeV only
-  2) additionally -0.05 < Mx2(e'p'gamma1) < 0.05 GeV^2
-  3) additionally Mx2(e'p') < 0.25 GeV^2
+  2) additionally Mx2(e'p') < 0.25 GeV^2
+  3) additionally -0.05 < Mx2(e'p'gamma1) < 0.05 GeV^2
 
 Samples:
   Data black, DVCSgen green, AAOgen red, CLASDIS blue.
@@ -192,18 +192,18 @@ def make_dataframe(chain):
 def draw_canvas(dfs, output_file):
     """Draw the four observables through the requested cumulative cut sequence."""
     plots = [
-        ("E_gamma1", "#gamma1 energy;E_{#gamma1} (GeV);Unit-normalized entries", 180, 1.0, 10.0),
+        ("E_gamma1", "#gamma1 energy;E_{#gamma1} (GeV);Unit-normalized entries", 192, 0.4, 10.0),
         ("Emiss_epg", "Missing energy e'p'#gamma1;E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 180, 1.0, 10.0),
-        ("Mx2_ep", "Missing mass squared e'p';M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries", 200, -0.5, 2.0),
+        ("Mx2_ep", "Missing mass squared e'p';M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries", 180, -0.5, 1.0),
         ("Mx2_epg_raw", "Missing mass squared e'p'#gamma1;M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries", 180, -0.1, 0.2),
     ]
 
     stages = [
-        ("W > 2 GeV", lambda df: df),
-        ("-0.05 < M^{2}_{X}(e'p'#gamma1) < 0.05 GeV^{2}",
-         lambda df: df.Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "Mx2_epg_window")),
+        ("", lambda df: df),
         ("M^{2}_{X}(e'p') < 0.25 GeV^{2}",
          lambda df: df.Filter("Mx2_ep < 0.25", "Mx2_ep_lt_0p25")),
+        ("-0.05 < M^{2}_{X}(e'p'#gamma1) < 0.05 GeV^{2}",
+         lambda df: df.Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "Mx2_epg_window")),
     ]
 
     stage_dfs = {}
@@ -298,12 +298,13 @@ def draw_canvas(dfs, output_file):
                 hist.Draw("HIST" if first else "HIST SAME")
                 first = False
 
-            title = ROOT.TLatex()
-            title.SetNDC(True)
-            title.SetTextAlign(22)
-            title.SetTextSize(0.033)
-            title.DrawLatex(0.52, 0.955, stage_title)
-            keep.append(title)
+            if stage_title:
+                title = ROOT.TLatex()
+                title.SetNDC(True)
+                title.SetTextAlign(22)
+                title.SetTextSize(0.026)
+                title.DrawLatex(0.52, 0.925, stage_title)
+                keep.append(title)
             legend.Draw()
 
     canvas.SaveAs(output_file)
