@@ -29,6 +29,7 @@
 
 #include "bsa.h"
 #include "global_cuts.h"
+#include "cross_sections.h"
 
 // ROOT
 #include <TAxis.h>
@@ -179,6 +180,16 @@ static inline const char* topology_name(TopologyIndex topo) {
         case TopologyIndex::CD_FT: return "CD_FT";
         default: return "";
     }
+}
+
+enum class PhotonTopologyFilter { All, FDPhoton, FTPhoton };
+
+static inline bool topology_passes_filter(TopologyIndex topo, PhotonTopologyFilter filter) {
+    if (filter == PhotonTopologyFilter::All) return true;
+    if (filter == PhotonTopologyFilter::FDPhoton) {
+        return topo == TopologyIndex::FD_FD || topo == TopologyIndex::CD_FD;
+    } //endif
+    return topo == TopologyIndex::CD_FT;
 }
 
 static inline std::string period_display_from_tree_key(const std::string& tree_key) {
@@ -378,6 +389,16 @@ static int col_optional(const CSV& csv, const std::string& name) {
     auto it = csv.index.find(name);
     if (it == csv.index.end()) return -1;
     return it->second;
+}
+
+static int ensure_col(CSV& csv, const std::string& name) {
+    auto it = csv.index.find(name);
+    if (it != csv.index.end()) return it->second;
+    const int idx = static_cast<int>(csv.header.size());
+    csv.header.push_back(name);
+    csv.index[name] = idx;
+    for (auto& row : csv.rows) row.push_back("");
+    return idx;
 }
 
 static inline double to_double_strict(const std::string& s, const std::string& what) {
@@ -992,6 +1013,24 @@ static inline bool passes_compiled_sigma_cuts(const CompiledSigmaCuts& cuts,
     return true;
 }
 
+static inline unsigned long long splitmix64(unsigned long long x) {
+    x += 0x9e3779b97f4a7c15ULL;
+    x = (x ^ (x >> 30)) * 0xbf58476d1ce4e5b9ULL;
+    x = (x ^ (x >> 27)) * 0x94d049bb133111ebULL;
+    return x ^ (x >> 31);
+}
+
+static inline int scrambled_helicity(int original_helicity, int runnum, Long64_t entry,
+                                     int replica, unsigned long long seed,
+                                     unsigned long long channel_salt) {
+    if (original_helicity == 0) return 0;
+    unsigned long long key = seed ^ channel_salt;
+    key ^= static_cast<unsigned long long>(static_cast<unsigned int>(runnum)) * 0x9e3779b97f4a7c15ULL;
+    key ^= static_cast<unsigned long long>(entry) * 0xbf58476d1ce4e5b9ULL;
+    key ^= static_cast<unsigned long long>(replica + 1) * 0x94d049bb133111ebULL;
+    return (splitmix64(key) & 1ULL) ? 1 : -1;
+}
+
 struct CountTask {
     std::string tree_key;
     std::string period;
@@ -1002,6 +1041,7 @@ struct CountTask {
 
 struct CountTaskResult {
     DenseCounts counts;
+    std::vector<DenseCounts> scramble_counts;
     long long entries = 0;
     long long topology = 0;
     long long global = 0;
@@ -1015,9 +1055,19 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
                                       const std::vector<RowBin>& rows,
                                       const FastBinning& fast_bins,
                                       const TopoCutMap& sigma_cuts,
-                                      int max_workers) {
+                                      int max_workers,
+                                      PhotonTopologyFilter topology_filter = PhotonTopologyFilter::All,
+                                      std::vector<PeriodCounts>* scramble_outputs = nullptr,
+                                      int scramble_replicas = 0,
+                                      unsigned long long scramble_seed = 0ULL) {
     PeriodCounts out;
     for (const std::string& period : base_period_order()) out[period] = RowCounts();
+    if (scramble_outputs) {
+        scramble_outputs->assign(std::max(0, scramble_replicas), PeriodCounts());
+        for (PeriodCounts& pc : *scramble_outputs) {
+            for (const std::string& period : base_period_order()) pc[period] = RowCounts();
+        } //endfor
+    } //endif
 
     std::vector<CountTask> tasks;
     tasks.reserve(trees.size());
@@ -1071,11 +1121,16 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
             const CountTask& task = tasks[task_index];
             CountTaskResult local;
             local.counts.resize(rows.size());
+            if (scramble_outputs && scramble_replicas > 0) {
+                local.scramble_counts.resize(scramble_replicas);
+                for (DenseCounts& dc : local.scramble_counts) dc.resize(rows.size());
+            } //endif
 
             BranchBinder b;
             b.bind(task.tree);
         if (!(b.has_detector1 && b.has_detector2 && b.has_helicity && b.has_x &&
-              b.has_Q2 && b.has_t1 && b.has_phi2)) {
+              b.has_Q2 && b.has_t1 && b.has_phi2) ||
+            (scramble_outputs && scramble_replicas > 0 && !b.has_runnum)) {
             fatal("[bsa] " + channel_name + " tree " + task.tree_key +
                   " is missing one or more required branches: detector1, detector2, helicity, x, Q2, t1, phi2");
         }
@@ -1086,6 +1141,7 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
 
             const TopologyIndex topo = topology_index(b.detector1, b.detector2);
             if (topo == TopologyIndex::INVALID) continue;
+            if (!topology_passes_filter(topo, topology_filter)) continue;
             ++local.topology;
 
             if (!passes_global_cuts_dispatch(b, task.period)) continue;
@@ -1109,6 +1165,15 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
                 const RowBin& rb = rows[row_index];
                 if (!row_accepts_phi(phi_deg, rb.pmin, rb.pmax)) continue;
                 add_event(local.counts[row_index], b.helicity);
+                if (scramble_outputs && scramble_replicas > 0) {
+                    const unsigned long long salt =
+                        (cut_prefix == "DVCS") ? 0x44564353ULL : 0x504930ULL;
+                    for (int rep = 0; rep < scramble_replicas; ++rep) {
+                        const int h_scr = scrambled_helicity(
+                            b.helicity, b.runnum, i, rep, scramble_seed, salt);
+                        add_event(local.scramble_counts[rep][row_index], h_scr);
+                    } //endfor
+                } //endif
                 matched = true;
             }
             if (matched) ++local.matched;
@@ -1134,6 +1199,18 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
             dst.plus += h.plus;
             dst.minus += h.minus;
         }
+        if (scramble_outputs && scramble_replicas > 0) {
+            for (int rep = 0; rep < scramble_replicas; ++rep) {
+                RowCounts& rep_period = (*scramble_outputs)[rep][task.period];
+                for (int r = 0; r < static_cast<int>(local.scramble_counts[rep].size()); ++r) {
+                    const HelCounts& h = local.scramble_counts[rep][r];
+                    if (h.plus == 0.0 && h.minus == 0.0) continue;
+                    HelCounts& dst = rep_period[r];
+                    dst.plus += h.plus;
+                    dst.minus += h.minus;
+                } //endfor
+            } //endfor
+        } //endif
 
         std::cout << "[bsa] channel=" << channel_name
                   << " tree=" << task.tree_key
@@ -1227,7 +1304,8 @@ static bool period_has_any_channel_yield_columns(const CSV& csv,
     return false;
 }
 
-static PeriodLeakRows build_pi0_leakage(const CSV& csv, const BSAOptions& opt) {
+static PeriodLeakRows build_pi0_leakage(const CSV& csv, const BSAOptions& opt,
+                                        PhotonTopologyFilter topology_filter = PhotonTopologyFilter::All) {
     PeriodLeakRows out;
 
     for (const std::string& period : base_period_order()) {
@@ -1260,14 +1338,44 @@ static PeriodLeakRows build_pi0_leakage(const CSV& csv, const BSAOptions& opt) {
             double epg_yield = 0.0;
             double pi0_yield = 0.0;
 
-            const bool ok_c = parse_tuple_first(csv.rows[r][c_contam], contam);
-            const bool ok_g = sum_topology_columns_for_period_channel_unpol_preferred(csv, r, "ep->epg", period, epg_yield);
-            const bool ok_p = sum_topology_columns_for_period_channel_unpol_preferred(csv, r, "ep->eppi0", period, pi0_yield);
+            bool ok_c = parse_tuple_first(csv.rows[r][c_contam], contam);
+            bool ok_g = sum_topology_columns_for_period_channel_unpol_preferred(csv, r, "ep->epg", period, epg_yield);
+            bool ok_p = sum_topology_columns_for_period_channel_unpol_preferred(csv, r, "ep->eppi0", period, pi0_yield);
 
-            if (ok_c && ok_g && ok_p && contam >= 0.0 && epg_yield > 0.0 && pi0_yield > 0.0) {
-                c[r] = contam;
-                f[r] = contam * epg_yield / pi0_yield;
-                ++n_valid;
+            if (topology_filter == PhotonTopologyFilter::All) {
+                if (ok_c && ok_g && ok_p && contam >= 0.0 && epg_yield > 0.0 && pi0_yield > 0.0) {
+                    c[r] = contam;
+                    f[r] = contam * epg_yield / pi0_yield;
+                    ++n_valid;
+                } //endif
+            } else {
+                // For a topology-separated BSA, use the topology-matched MC
+                // leakage conversion f_pi0 = N_rec(eppi0->epg) / N_rec(eppi0).
+                // This avoids applying the topology-summed contamination factor
+                // to FD and FT samples, whose photon efficiencies differ.
+                double mis = 0.0, rec = 0.0, data_g = 0.0, data_p = 0.0;
+                bool have_mis = false, have_rec = false, have_g = false, have_p = false;
+                for (const std::string& topo : csv_topology_labels()) {
+                    const bool is_ft = (topo == "(CD, FT)");
+                    if (topology_filter == PhotonTopologyFilter::FDPhoton && is_ft) continue;
+                    if (topology_filter == PhotonTopologyFilter::FTPhoton && !is_ft) continue;
+                    auto add_tuple = [&](const std::string& name, double& sum, bool& have) {
+                        const int ci = col_optional(csv, name);
+                        double v = 0.0;
+                        if (ci >= 0 && parse_tuple_first(csv.rows[r][ci], v) && v >= 0.0) {
+                            sum += v; have = true;
+                        } //endif
+                    };
+                    add_tuple("reconstructed current corrected yield, ep->eppi0->epg, " + topo + ", mc, " + period, mis, have_mis);
+                    add_tuple("reconstructed current corrected yield, ep->eppi0, " + topo + ", mc, " + period, rec, have_rec);
+                    add_tuple("normalized raw yield, ep->epg, " + topo + ", exp, " + period + ", unpol", data_g, have_g);
+                    add_tuple("normalized raw yield, ep->eppi0, " + topo + ", exp, " + period + ", unpol", data_p, have_p);
+                } //endfor
+                if (have_mis && have_rec && rec > 0.0) {
+                    f[r] = mis / rec;
+                    if (have_g && have_p && data_g > 0.0) c[r] = f[r] * data_p / data_g;
+                    ++n_valid;
+                } //endif
             } //endif
 
             if (!opt.enable_pi0_subtraction) {
@@ -1282,7 +1390,11 @@ static PeriodLeakRows build_pi0_leakage(const CSV& csv, const BSAOptions& opt) {
         std::cout << "[bsa] pi0 leakage scale factors for " << period
                   << ": valid rows=" << n_valid << "/" << csv.rows.size()
                   << " using contamination column '" << c_contam_name
-                  << "' and summed topology normalized raw-yield columns.\n";
+                  << "' and "
+                  << (topology_filter == PhotonTopologyFilter::All
+                      ? "summed-topology data yields"
+                      : "topology-matched eppi0 MC leakage yields")
+                  << ".\n";
     } //endfor
 
     return out;
@@ -1315,6 +1427,10 @@ struct AsymResult {
     double f_pi0_effective = 0.0;
     double contamination_ratio_effective = 0.0;
     double polarized_denominator = 0.0;
+
+    // Absolute point-to-point uncertainty from the established relative
+    // uncertainty on the pi0 leakage scale factor.
+    double pi0_subtraction_sys = 0.0;
 };
 
 struct ComponentForVariance {
@@ -1351,7 +1467,8 @@ static AsymResult compute_group_bsa(const PeriodCounts& gamma_counts,
                                     const PeriodLeakRows& leaks,
                                     const std::vector<std::string>& component_periods,
                                     int row_index,
-                                    const BSAOptions& opt) {
+                                    const BSAOptions& opt,
+                                    double pi0_leakage_scale = 1.0) {
     AsymResult r;
 
     double numerator = 0.0;
@@ -1376,7 +1493,9 @@ static AsymResult compute_group_bsa(const PeriodCounts& gamma_counts,
         const HelCounts g = get_counts_for_row(gamma_counts, period, row_index);
         const HelCounts p = get_counts_for_row(pi0_counts, period, row_index);
         const double pol = beam_pol_for_period(period, opt);
-        const double f = opt.enable_pi0_subtraction ? get_vector_value(leaks.f_pi0, period, row_index) : 0.0;
+        const double f = opt.enable_pi0_subtraction
+            ? pi0_leakage_scale * get_vector_value(leaks.f_pi0, period, row_index)
+            : 0.0;
         const double c = opt.enable_pi0_subtraction ? get_vector_value(leaks.contamination, period, row_index) : 0.0;
 
         const double gp = g.plus;
@@ -1461,6 +1580,73 @@ static std::string fmt_tuple(double value, double stat) {
     return ss.str();
 }
 
+static void write_topology_summary_csv(
+    const std::string& path,
+    const std::vector<RowBin>& rows,
+    const std::map<std::string, std::vector<AsymResult>>& fd_results,
+    const std::map<std::string, std::vector<AsymResult>>& ft_results) {
+    const std::filesystem::path p(path);
+    std::filesystem::create_directories(p.parent_path());
+    std::ofstream out(path);
+    if (!out.is_open()) fatal("[bsa] cannot write topology summary CSV: " + path);
+    out << "group,row,xBmin,xBmax,Q2min,Q2max,tmin,tmax,phimin,phimax,"
+           "A_FD,stat_FD,A_FT,stat_FT,delta_FD_minus_FT,pull_FD_minus_FT\n";
+    for (const std::string& group : output_group_order()) {
+        const auto& fd = fd_results.at(group);
+        const auto& ft = ft_results.at(group);
+        for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
+            if (!rows[r].valid || !fd[r].valid || !ft[r].valid) continue;
+            const double delta = fd[r].value - ft[r].value;
+            const double den = std::hypot(fd[r].stat, ft[r].stat);
+            const double pull = den > 0.0 ? delta / den : 0.0;
+            const RowBin& b = rows[r];
+            out << group << ',' << r << ',' << b.xBmin << ',' << b.xBmax << ','
+                << b.Q2min << ',' << b.Q2max << ',' << b.tmin << ',' << b.tmax << ','
+                << b.pmin << ',' << b.pmax << ',' << fd[r].value << ',' << fd[r].stat << ','
+                << ft[r].value << ',' << ft[r].stat << ',' << delta << ',' << pull << '\n';
+        } //endfor
+    } //endfor
+}
+
+static void write_scramble_summary_csv(
+    const std::string& path,
+    const std::vector<RowBin>& rows,
+    const std::map<std::string, std::vector<AsymResult>>& nominal,
+    const std::vector<std::map<std::string, std::vector<AsymResult>>>& replicas) {
+    const std::filesystem::path p(path);
+    std::filesystem::create_directories(p.parent_path());
+    std::ofstream out(path);
+    if (!out.is_open()) fatal("[bsa] cannot write helicity-scramble summary CSV: " + path);
+    out << "group,row,xBmin,xBmax,Q2min,Q2max,tmin,tmax,phimin,phimax,"
+           "A_nominal,stat_nominal,scramble_mean,scramble_rms,mean_over_stat,rms_over_stat,n_valid\n";
+    for (const std::string& group : output_group_order()) {
+        for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
+            if (!rows[r].valid || !nominal.at(group)[r].valid) continue;
+            std::vector<double> vals;
+            for (const auto& rep : replicas) {
+                const AsymResult& a = rep.at(group)[r];
+                if (a.valid) vals.push_back(a.value);
+            } //endfor
+            if (vals.size() < 2) continue;
+            double mean = 0.0;
+            for (double v : vals) mean += v;
+            mean /= static_cast<double>(vals.size());
+            double var = 0.0;
+            for (double v : vals) var += (v - mean) * (v - mean);
+            var /= static_cast<double>(vals.size() - 1);
+            const double rms = std::sqrt(std::max(0.0, var));
+            const double stat = nominal.at(group)[r].stat;
+            const RowBin& b = rows[r];
+            out << group << ',' << r << ',' << b.xBmin << ',' << b.xBmax << ','
+                << b.Q2min << ',' << b.Q2max << ',' << b.tmin << ',' << b.tmax << ','
+                << b.pmin << ',' << b.pmax << ',' << nominal.at(group)[r].value << ',' << stat << ','
+                << mean << ',' << rms << ','
+                << (stat > 0.0 ? mean / stat : 0.0) << ','
+                << (stat > 0.0 ? rms / stat : 0.0) << ',' << vals.size() << '\n';
+        } //endfor
+    } //endfor
+}
+
 // -----------------------------------------------------------------------------
 // JSON and plotting
 // -----------------------------------------------------------------------------
@@ -1507,6 +1693,7 @@ static void write_json_summary(const std::string& path,
             if (a.valid) {
                 row["BSA_pi0_subtracted"] = a.value;
                 row["BSA_pi0_subtracted_stat"] = a.stat;
+                row["BSA_pi0_subtraction_sys"] = a.pi0_subtraction_sys;
             } //endif
             if (a.raw_valid) {
                 row["BSA_raw_epg"] = a.raw_value;
@@ -1808,13 +1995,43 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
         const FastBinning fast_bins = build_fast_binning(rows);
         const TopoCutMap sigma_cuts = load_combined_cuts(options.combined_cuts_json);
         const PeriodLeakRows leaks = build_pi0_leakage(csv, options);
+        PeriodLeakRows leaks_fd, leaks_ft;
+        if (options.make_photon_topology_study) {
+            leaks_fd = build_pi0_leakage(csv, options, PhotonTopologyFilter::FDPhoton);
+            leaks_ft = build_pi0_leakage(csv, options, PhotonTopologyFilter::FTPhoton);
+        } //endif
 
+        std::vector<PeriodCounts> gamma_scrambles;
+        std::vector<PeriodCounts> pi0_scrambles;
+        const int n_scrambles = options.make_helicity_scrambling_study
+            ? std::max(0, options.helicity_scramble_replicas) : 0;
         const PeriodCounts gamma_counts =
             accumulate_counts(dvcsDataTrees, "DVCS", "DVCS", rows, fast_bins, sigma_cuts,
-                              options.max_workers);
+                              options.max_workers, PhotonTopologyFilter::All,
+                              n_scrambles > 0 ? &gamma_scrambles : nullptr, n_scrambles,
+                              options.helicity_scramble_seed);
         const PeriodCounts pi0_counts =
             accumulate_counts(eppi0DataTrees, "eppi0", "eppi0", rows, fast_bins, sigma_cuts,
-                              options.max_workers);
+                              options.max_workers, PhotonTopologyFilter::All,
+                              n_scrambles > 0 ? &pi0_scrambles : nullptr, n_scrambles,
+                              options.helicity_scramble_seed);
+
+        PeriodCounts gamma_fd_counts, gamma_ft_counts, pi0_fd_counts, pi0_ft_counts;
+        if (options.make_photon_topology_study) {
+            std::cout << "[bsa] Building independent FD-photon and FT-photon BSA samples.\n";
+            gamma_fd_counts = accumulate_counts(
+                dvcsDataTrees, "DVCS FD-photon", "DVCS", rows, fast_bins, sigma_cuts,
+                options.max_workers, PhotonTopologyFilter::FDPhoton);
+            gamma_ft_counts = accumulate_counts(
+                dvcsDataTrees, "DVCS FT-photon", "DVCS", rows, fast_bins, sigma_cuts,
+                options.max_workers, PhotonTopologyFilter::FTPhoton);
+            pi0_fd_counts = accumulate_counts(
+                eppi0DataTrees, "eppi0 FD-photon", "eppi0", rows, fast_bins, sigma_cuts,
+                options.max_workers, PhotonTopologyFilter::FDPhoton);
+            pi0_ft_counts = accumulate_counts(
+                eppi0DataTrees, "eppi0 FT-photon", "eppi0", rows, fast_bins, sigma_cuts,
+                options.max_workers, PhotonTopologyFilter::FTPhoton);
+        } //endif
 
         std::map<std::string, std::vector<AsymResult>> results;
         for (const std::string& group : output_group_order()) {
@@ -1825,22 +2042,87 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
                 if (!rows[r].valid) continue;
                 group_results[r] =
                     compute_group_bsa(gamma_counts, pi0_counts, leaks, components, r, options);
+
+                if (group_results[r].valid && options.enable_pi0_subtraction &&
+                    options.pi0_leakage_relative_uncertainty > 0.0) {
+                    const double rel = options.pi0_leakage_relative_uncertainty;
+                    const AsymResult lo = compute_group_bsa(
+                        gamma_counts, pi0_counts, leaks, components, r, options, 1.0 - rel);
+                    const AsymResult hi = compute_group_bsa(
+                        gamma_counts, pi0_counts, leaks, components, r, options, 1.0 + rel);
+                    if (lo.valid && hi.valid) {
+                        group_results[r].pi0_subtraction_sys =
+                            0.5 * std::abs(hi.value - lo.value);
+                    } //endif
+                } //endif
             } //endfor
 
             results[group] = std::move(group_results);
         } //endfor
 
+        if (n_scrambles > 0) {
+            std::vector<std::map<std::string, std::vector<AsymResult>>> scramble_results;
+            scramble_results.resize(n_scrambles);
+            for (int rep = 0; rep < n_scrambles; ++rep) {
+                for (const std::string& group : output_group_order()) {
+                    const auto components = component_periods_for_group(group);
+                    auto& vec = scramble_results[rep][group];
+                    vec.resize(rows.size());
+                    for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
+                        if (!rows[r].valid) continue;
+                        vec[r] = compute_group_bsa(
+                            gamma_scrambles[rep], pi0_scrambles[rep], leaks, components, r, options);
+                    } //endfor
+                } //endfor
+            } //endfor
+            const std::filesystem::path scramble_csv =
+                std::filesystem::path(options.output_root) / "bsa_studies" / "helicity_scrambling_summary.csv";
+            write_scramble_summary_csv(scramble_csv.string(), rows, results, scramble_results);
+            std::cout << "[bsa] Wrote " << n_scrambles
+                      << "-replica helicity-scrambling null study to "
+                      << scramble_csv.string() << "\n";
+        } //endif
+
+        if (options.make_photon_topology_study) {
+            std::map<std::string, std::vector<AsymResult>> fd_results;
+            std::map<std::string, std::vector<AsymResult>> ft_results;
+            for (const std::string& group : output_group_order()) {
+                const auto components = component_periods_for_group(group);
+                fd_results[group].resize(rows.size());
+                ft_results[group].resize(rows.size());
+                for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
+                    if (!rows[r].valid) continue;
+                    fd_results[group][r] = compute_group_bsa(
+                        gamma_fd_counts, pi0_fd_counts, leaks_fd, components, r, options);
+                    ft_results[group][r] = compute_group_bsa(
+                        gamma_ft_counts, pi0_ft_counts, leaks_ft, components, r, options);
+                } //endfor
+            } //endfor
+            const std::filesystem::path topo_csv =
+                std::filesystem::path(options.output_root) / "bsa_studies" / "bsa_fd_vs_ft.csv";
+            write_topology_summary_csv(topo_csv.string(), rows, fd_results, ft_results);
+            std::cout << "[bsa] Wrote FD-vs-FT photon topology study to "
+                      << topo_csv.string() << "\n";
+            if (options.make_plots) {
+                make_bsa_plots((std::filesystem::path(options.output_root) / "bsa_studies/FD_photon").string(), rows, fd_results);
+                make_bsa_plots((std::filesystem::path(options.output_root) / "bsa_studies/FT_photon").string(), rows, ft_results);
+            } //endif
+        } //endif
+
         for (const std::string& group : output_group_order()) {
             const std::string col_name = "BSA, counts, " + group;
             const int c = col_strict(csv, col_name);
+            const int c_pi0_sys = ensure_col(csv, col_name + ", pi0 subtraction sys");
             const auto& vec = results.at(group);
 
             for (int r = 0; r < static_cast<int>(csv.rows.size()); ++r) {
                 if (r >= static_cast<int>(vec.size()) || !vec[r].valid) {
                     csv.rows[r][c].clear();
+                    csv.rows[r][c_pi0_sys].clear();
                     continue;
                 } //endif
                 csv.rows[r][c] = fmt_tuple(vec[r].value, vec[r].stat);
+                csv.rows[r][c_pi0_sys] = std::to_string(vec[r].pi0_subtraction_sys);
             } //endfor
         } //endfor
 
@@ -1859,6 +2141,41 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
         return true;
     } catch (const std::exception& e) {
         std::cerr << "[bsa] ERROR: " << e.what() << "\n";
+        return false;
+    } //endtry
+}
+
+bool write_bsa_helicity_charge_balance(const std::string& output_csv,
+                                       const std::string& charge_csv) {
+    try {
+        LumiBuildOptions opts;
+        opts.charge_csv_path = charge_csv;
+        const LumiMap lumi = build_lumi_map(opts);
+        const std::filesystem::path p(output_csv);
+        std::filesystem::create_directories(p.parent_path());
+        std::ofstream out(output_csv);
+        if (!out.is_open()) throw std::runtime_error("cannot write " + output_csv);
+        out << "period,Qplus_nC,Qminus_nC,Qplus_over_Qminus,charge_asymmetry\n";
+        for (const std::string& period : base_period_order()) {
+            auto it = lumi.find(period);
+            if (it == lumi.end() || !(it->second.stat > 0.0) || !(it->second.sys > 0.0)) {
+                out << period << ",,,,\n";
+                std::cout << "[bsa] helicity-charge balance " << period
+                          << ": unavailable (expected for Sp18).\n";
+                continue;
+            } //endif
+            const double qp = it->second.stat;
+            const double qm = it->second.sys;
+            const double ratio = qp / qm;
+            const double asym = (qp - qm) / (qp + qm);
+            out << period << ',' << qp << ',' << qm << ',' << ratio << ',' << asym << '\n';
+            std::cout << "[bsa] helicity-charge balance " << period
+                      << ": Q+/Q-=" << ratio
+                      << ", (Q+-Q-)/(Q++Q-)=" << asym << "\n";
+        } //endfor
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "[bsa] WARNING: helicity-charge balance check failed: " << e.what() << "\n";
         return false;
     } //endtry
 }

@@ -562,13 +562,24 @@ int main(int argc, char* argv[]) {
         bsa_opts.beam_pol_fa18_out = 0.8922;
         bsa_opts.beam_pol_sp19_inb = 0.8453;
         bsa_opts.enable_pi0_subtraction = true;
+        bsa_opts.pi0_leakage_relative_uncertainty = 0.10;
         bsa_opts.make_plots = true;
+        bsa_opts.make_photon_topology_study = true;
+        bsa_opts.make_helicity_scrambling_study = true;
+        bsa_opts.helicity_scramble_replicas = 100;
+        bsa_opts.helicity_scramble_seed = 20260915ULL;
         bsa_opts.max_workers = 7;
 
         if (!update_bsa_counts_csv(dataTrees, eppi0DataTrees, bsa_opts)) {
             std::cerr << "[main] ERROR: update_bsa_counts_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
+
+        // Validation only: CEBAF's rapid helicity reversal should make the
+        // integrated + and - charges equal to high precision. Sp18 is expected
+        // to be unavailable because helicity-resolved Faraday-cup charge was
+        // not recoverable for that period.
+        (void)write_bsa_helicity_charge_balance();
     }
 
     // // --------- Pi0-subtracted DVCS kinematic DATA/MC shape comparisons ----------

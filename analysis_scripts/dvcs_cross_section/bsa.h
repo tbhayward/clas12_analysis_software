@@ -37,6 +37,24 @@ struct BSAOptions {
     // with rows in Q2 and columns in |t|. Each subplot shows A_LU(phi).
     bool make_plots = true;
 
+    // Pass-2 pi0 leakage uncertainty established by the contamination study.
+    // The BSA systematic is evaluated by repeating the helicity-yield subtraction
+    // with f_pi0 scaled by (1 +/- pi0_leakage_relative_uncertainty).
+    double pi0_leakage_relative_uncertainty = 0.10;
+
+    // Produce independent FD-photon (FD_FD + CD_FD) and FT-photon (CD_FT)
+    // BSA extractions. These are diagnostics only and do not replace the nominal
+    // all-topology BSA written to the main CSV.
+    bool make_photon_topology_study = true;
+
+    // False-asymmetry study. For each replica, every selected event keeps its
+    // run and kinematics but its helicity sign is independently randomized with
+    // a deterministic hash. This destroys a physical helicity correlation while
+    // retaining the actual run/acceptance population.
+    bool make_helicity_scrambling_study = true;
+    int helicity_scramble_replicas = 100;
+    unsigned long long helicity_scramble_seed = 20260915ULL;
+
     // Maximum number of independent data trees processed concurrently.
     // Internally capped at seven workers.
     int max_workers = 7;
@@ -71,5 +89,13 @@ struct BSAOptions {
 bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
                            const std::map<std::string, TTree*>& eppi0DataTrees,
                            const BSAOptions& options = BSAOptions());
+
+// Document the + / - helicity accumulated-charge balance using the same
+// authoritative global.csv and final run selections as cross_sections.cpp.
+// Periods without usable helicity-resolved Faraday-cup charge (Sp18) are
+// reported as unavailable rather than inferred.
+bool write_bsa_helicity_charge_balance(
+    const std::string& output_csv = "output/bsa_studies/helicity_charge_balance.csv",
+    const std::string& charge_csv = "imports/integrated_luminosity/global.csv");
 
 #endif // BSA_H

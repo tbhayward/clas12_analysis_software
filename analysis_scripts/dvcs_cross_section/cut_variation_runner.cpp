@@ -1,6 +1,7 @@
 #include "cut_variation_runner.h"
 
 #include "acceptance.h"
+#include "bsa.h"
 #include "cross_sections.h"
 #include "cut_variation_systematics.h"
 #include "python_exclusivity_runner.h"
@@ -175,6 +176,79 @@ std::string format_triple(double value, double stat, double sys) {
 
 bool starts_with(const std::string& s, const std::string& prefix) {
     return s.rfind(prefix, 0) == 0;
+}
+
+std::size_t ensure_column(CsvTable& t, const std::string& name) {
+    auto it = t.index.find(name);
+    if (it != t.index.end()) return it->second;
+    const std::size_t idx = t.header.size();
+    t.header.push_back(name);
+    t.index[name] = idx;
+    for (auto& row : t.rows) row.push_back("");
+    return idx;
+}
+
+void update_bsa_cut_systematics(const AutomaticCutVariationOptions& options) {
+    CsvTable nominal = read_csv(options.nominal_csv);
+    const CsvTable excl_loose = read_csv((fs::path(options.output_dir) / "csv/exclusivity_loose_98.csv").string());
+    const CsvTable excl_tight = read_csv((fs::path(options.output_dir) / "csv/exclusivity_tight_90.csv").string());
+    const CsvTable fid_loose = read_csv((fs::path(options.output_dir) / "csv/fiducial_loose.csv").string());
+    const CsvTable fid_tight = read_csv((fs::path(options.output_dir) / "csv/fiducial_tight.csv").string());
+    if (nominal.rows.size() != excl_loose.rows.size() || nominal.rows.size() != excl_tight.rows.size() ||
+        nominal.rows.size() != fid_loose.rows.size() || nominal.rows.size() != fid_tight.rows.size()) {
+        throw std::runtime_error("BSA cut-systematic CSV row counts differ");
+    } //endif
+
+    fs::create_directories(fs::path(options.output_dir) / "bsa");
+    std::ofstream diag(fs::path(options.output_dir) / "bsa/bsa_cut_variation_diagnostics.csv");
+    diag << "group,row,A_nominal,A_excl_loose,A_excl_tight,A_fid_loose,A_fid_tight,"
+            "exclusivity_sys,fiducial_sys,total_cut_sys\n";
+
+    const std::vector<std::string> groups = {
+        "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out", "Fa18", "Sp18", "10.6 GeV"
+    };
+    for (const std::string& group : groups) {
+        const std::string base = "BSA, counts, " + group;
+        auto get_idx = [&](const CsvTable& t) -> std::size_t {
+            auto it = t.index.find(base);
+            if (it == t.index.end()) throw std::runtime_error("missing BSA column in variation CSV: " + base);
+            return it->second;
+        };
+        const std::size_t in = get_idx(nominal);
+        const std::size_t iel = get_idx(excl_loose);
+        const std::size_t iet = get_idx(excl_tight);
+        const std::size_t ifl = get_idx(fid_loose);
+        const std::size_t ift = get_idx(fid_tight);
+        const std::size_t cex = ensure_column(nominal, base + ", exclusivity sys");
+        const std::size_t cfi = ensure_column(nominal, base + ", fiducial sys");
+        const std::size_t ctot = ensure_column(nominal, base + ", cut sys");
+
+        for (std::size_t r = 0; r < nominal.rows.size(); ++r) {
+            const TripleCell n = parse_triple(nominal.rows[r][in]);
+            const TripleCell el = parse_triple(excl_loose.rows[r][iel]);
+            const TripleCell et = parse_triple(excl_tight.rows[r][iet]);
+            const TripleCell fl = parse_triple(fid_loose.rows[r][ifl]);
+            const TripleCell ft = parse_triple(fid_tight.rows[r][ift]);
+            if (!n.ok || !el.ok || !et.ok || !fl.ok || !ft.ok) {
+                nominal.rows[r][cex].clear(); nominal.rows[r][cfi].clear(); nominal.rows[r][ctot].clear();
+                continue;
+            } //endif
+            // BSA crosses zero, so use absolute A_LU changes; no relative-difference
+            // instability criterion is applied. The symmetric loose/tight average
+            // mirrors the pass-1 cut prescription without dividing by A_LU.
+            const double sex = 0.5 * (std::abs(el.value - n.value) + std::abs(et.value - n.value));
+            const double sfi = 0.5 * (std::abs(fl.value - n.value) + std::abs(ft.value - n.value));
+            const double stot = std::hypot(sex, sfi);
+            nominal.rows[r][cex] = std::to_string(sex);
+            nominal.rows[r][cfi] = std::to_string(sfi);
+            nominal.rows[r][ctot] = std::to_string(stot);
+            diag << group << ',' << r << ',' << n.value << ',' << el.value << ',' << et.value << ','
+                 << fl.value << ',' << ft.value << ',' << sex << ',' << sfi << ',' << stot << '\n';
+        } //endfor
+    } //endfor
+    write_csv(options.nominal_csv, nominal);
+    std::cout << "[cut-variation-runner] Added absolute BSA exclusivity/fiducial cut systematics to "
+              << options.nominal_csv << "\n";
 }
 
 // The nominal CSV contains the exact effective correction applied in every bin.
@@ -422,6 +496,24 @@ bool produce_variation(
                                            stage_out.string(), 1, pi0_opts)) return false;
     if (!update_pi0_corrected_counts_csv(csv_path.string(), stage_out.string())) return false;
     stage_done("pi0 contamination", pi0_t0);
+
+    // BSA must be recomputed from the varied event selection itself.  This is
+    // intentionally done before acceptance/radiative/bin-centering stages,
+    // because those helicity-independent corrections are not part of A_LU.
+    BSAOptions bsa_opts;
+    bsa_opts.csv_path = csv_path.string();
+    bsa_opts.combined_cuts_json = cuts_json;
+    bsa_opts.output_root = (stage_out / "bsa").string();
+    bsa_opts.enable_pi0_subtraction = true;
+    bsa_opts.pi0_leakage_relative_uncertainty = 0.10;
+    bsa_opts.make_plots = false;
+    bsa_opts.make_photon_topology_study = false;
+    bsa_opts.make_helicity_scrambling_study = false;
+    bsa_opts.max_workers = options.max_workers;
+    const auto bsa_t0 = stage_start("BSA");
+    if (!update_bsa_counts_csv(dataTrees, eppi0DataTrees, bsa_opts)) return false;
+    stage_done("BSA", bsa_t0);
+
     const auto acc_t0 = stage_start("acceptance");
     if (!update_acceptance_csv(csv_path.string(), genMcTrees, recMcTrees, cuts_json,
                                (json_dir / "global_cuts_config.json").string(),
@@ -522,6 +614,11 @@ bool run_automatic_cut_variation_systematics(
             }
         }
         set_default_global_cuts(nominal_global_cuts);
+
+        // BSA-specific cut systematics use absolute A_LU differences because
+        // the asymmetry crosses zero. They are intentionally kept separate from
+        // the cross-section Barlow/relative-systematic machinery below.
+        update_bsa_cut_systematics(options);
 
         CutVariationSystematicsOptions syst;
         syst.enabled = true;
