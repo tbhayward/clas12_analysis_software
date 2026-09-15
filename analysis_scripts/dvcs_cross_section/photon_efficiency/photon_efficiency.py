@@ -1389,77 +1389,113 @@ def draw_probe_mgg(dfs, output_dir, period):
     return keep,out
 
 
-def _event_grouped_unique_tag_mgg(df, hist_name, title):
-    """Build every unique reconstructed-photon pair per physical event.
+def _event_grouped_unique_tag_mgg(df, hist_name, title, tolerance=1.0e-10):
+    """Build every unique reconstructed-photon pair for each sequential e+p block.
 
-    Rows are NOT assumed to be contiguous.  We materialize only the seven
-    required columns, sort by the physical-event key, deduplicate photons by
-    tag_rec_index inside each event, and fill every unordered pair once.
+    For MC we deliberately do NOT use evnum as an event identifier.  The skim
+    producer writes all tag-photon hypotheses for one selected electron+proton
+    hypothesis consecutively.  We therefore delimit blocks by changes in the
+    saved electron and proton kinematics (plus source_file_hash), verify their
+    within-block stability, deduplicate photons by tag_rec_index, and fill every
+    unordered photon pair exactly once.
     """
-    cols = ["source_file_hash", "runnum", "evnum", "tag_rec_index",
+    cols = ["source_file_hash", "tag_rec_index",
+            "e_p", "e_theta", "e_phi", "e_vz",
+            "p_rec_index", "p_raw_p", "p_raw_theta", "p_raw_phi",
+            "p_corr_p", "p_corr_theta", "p_corr_phi", "p_vz",
             "tag_corr_p", "tag_corr_theta", "tag_corr_phi"]
     arr = df.AsNumpy(cols)
     h = ROOT.TH1D(hist_name, title, 150, 0.0, 0.30)
     h.SetDirectory(0)
-    nrows = len(arr["evnum"])
+    nrows = len(arr["tag_rec_index"])
     if nrows == 0:
-        return h, 0, 0
+        return h, 0, 0, {}
 
-    # Sort once by event key and REC index.  This is much faster than a Python
-    # TTree entry loop and is correct even when the same event appears in
-    # non-contiguous ROOT rows.
     sh = np.asarray(arr["source_file_hash"], dtype=np.uint64)
-    rn = np.asarray(arr["runnum"], dtype=np.int64)
-    ev = np.asarray(arr["evnum"], dtype=np.int64)
     ri = np.asarray(arr["tag_rec_index"], dtype=np.int64)
-    pp = np.asarray(arr["tag_corr_p"], dtype=float)
-    tt = np.asarray(arr["tag_corr_theta"], dtype=float)
-    ph = np.asarray(arr["tag_corr_phi"], dtype=float)
-    order = np.lexsort((ri, ev, rn, sh))
-    sh, rn, ev, ri = sh[order], rn[order], ev[order], ri[order]
-    pp, tt, ph = pp[order], tt[order], ph[order]
+    pri = np.asarray(arr["p_rec_index"], dtype=np.int64)
+    ep_cols = ["e_p", "e_theta", "e_phi", "e_vz",
+               "p_raw_p", "p_raw_theta", "p_raw_phi",
+               "p_corr_p", "p_corr_theta", "p_corr_phi", "p_vz"]
+    kin = np.column_stack([np.asarray(arr[x], dtype=np.float64) for x in ep_cols])
+    pp = np.asarray(arr["tag_corr_p"], dtype=np.float64)
+    tt = np.asarray(arr["tag_corr_theta"], dtype=np.float64)
+    ph = np.asarray(arr["tag_corr_phi"], dtype=np.float64)
 
-    # Keep one row per (event, REC index). Negative REC indices are unusable.
-    valid = ri >= 0
-    sh, rn, ev, ri = sh[valid], rn[valid], ev[valid], ri[valid]
-    pp, tt, ph = pp[valid], tt[valid], ph[valid]
-    if len(ri) == 0:
-        return h, 0, 0
-    first = np.ones(len(ri), dtype=bool)
-    first[1:] = ((sh[1:] != sh[:-1]) | (rn[1:] != rn[:-1]) |
-                 (ev[1:] != ev[:-1]) | (ri[1:] != ri[:-1]))
-    sh, rn, ev, ri = sh[first], rn[first], ev[first], ri[first]
-    pp, tt, ph = pp[first], tt[first], ph[first]
+    # A new block begins whenever the source file, selected proton REC index,
+    # or any saved electron/proton kinematic quantity changes beyond tolerance.
+    same_source = sh[1:] == sh[:-1]
+    same_proton = pri[1:] == pri[:-1]
+    delta = np.max(np.abs(kin[1:] - kin[:-1]), axis=1)
+    same_kin = delta <= tolerance
+    same = same_source & same_proton & same_kin
+    starts = np.r_[0, np.nonzero(~same)[0] + 1]
+    stops = np.r_[starts[1:], nrows]
 
-    # Boundaries of the now-contiguous physical events.
-    start = np.r_[0, np.nonzero((sh[1:] != sh[:-1]) | (rn[1:] != rn[:-1]) |
-                                (ev[1:] != ev[:-1]))[0] + 1]
-    stop = np.r_[start[1:], len(ev)]
-    n_events = len(start)
-    n_events_ge2 = int(np.count_nonzero((stop - start) >= 2))
+    n_blocks = len(starts)
+    n_blocks_ge2 = 0
+    n_pairs = 0
+    n_duplicate_tag_rows = 0
+    max_within_block_spread = 0.0
+    block_sizes = []
 
-    # Photon multiplicities are small, so only this short per-event loop stays
-    # in Python. All expensive ROOT entry access and grouping is vectorized.
-    for lo, hi in zip(start, stop):
-        n = int(hi - lo)
-        if n < 2:
+    for lo, hi in zip(starts, stops):
+        # Explicitly verify that the whole block, not merely adjacent rows,
+        # carries the same e+p hypothesis.
+        if hi - lo > 1:
+            spread = float(np.max(np.abs(kin[lo:hi] - kin[lo])))
+            max_within_block_spread = max(max_within_block_spread, spread)
+
+        # Preserve first appearance of each valid REC photon in this sequential
+        # e+p block. Repeated tag_rec_index rows are not separate photons.
+        seen = set()
+        idx = []
+        for j in range(lo, hi):
+            rec = int(ri[j])
+            if rec < 0:
+                continue
+            if rec in seen:
+                n_duplicate_tag_rows += 1
+                continue
+            seen.add(rec)
+            idx.append(j)
+        block_sizes.append(len(idx))
+        if len(idx) < 2:
             continue
-        for i in range(lo, hi - 1):
-            dot = (np.sin(tt[i]) * np.sin(tt[i+1:hi]) * np.cos(ph[i]-ph[i+1:hi])
-                   + np.cos(tt[i]) * np.cos(tt[i+1:hi]))
-            m2 = 2.0 * pp[i] * pp[i+1:hi] * (1.0 - np.clip(dot, -1.0, 1.0))
+        n_blocks_ge2 += 1
+        for ia in range(len(idx) - 1):
+            i = idx[ia]
+            js = np.asarray(idx[ia+1:], dtype=np.int64)
+            dot = (np.sin(tt[i]) * np.sin(tt[js]) * np.cos(ph[i] - ph[js])
+                   + np.cos(tt[i]) * np.cos(tt[js]))
+            m2 = 2.0 * pp[i] * pp[js] * (1.0 - np.clip(dot, -1.0, 1.0))
             for mass in np.sqrt(np.maximum(m2, 0.0)):
                 h.Fill(float(mass))
-    return h, n_events, n_events_ge2
+                n_pairs += 1
+
+    bs = np.asarray(block_sizes, dtype=np.int64)
+    diagnostics = {
+        "rows": nrows,
+        "blocks": n_blocks,
+        "blocks_ge2": n_blocks_ge2,
+        "pairs": n_pairs,
+        "duplicate_tag_rows": n_duplicate_tag_rows,
+        "max_within_block_spread": max_within_block_spread,
+        "block_size_mean": float(np.mean(bs)) if len(bs) else 0.0,
+        "block_size_max": int(np.max(bs)) if len(bs) else 0,
+        "block_size_1": int(np.count_nonzero(bs == 1)),
+        "block_size_2": int(np.count_nonzero(bs == 2)),
+        "block_size_ge3": int(np.count_nonzero(bs >= 3)),
+        "tolerance": tolerance,
+    }
+    return h, n_blocks, n_blocks_ge2, diagnostics
 
 def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
     """AAOgen event-level reconstructed-photon pair audit.
 
-    This now does exactly the intended construction:
-      1. group PhotonEfficiency rows belonging to one physical event;
-      2. recover the unique reconstructed PID-22 photons from tag_rec_index;
-      3. form every unordered gamma_i gamma_j pair once;
-      4. histogram M(gamma_i gamma_j).
+    MC evnum is deliberately not used. Consecutive rows are grouped only while
+    their saved electron and selected-proton kinematics remain identical within
+    a tight tolerance. Unique tag_rec_index photons are then paired once.
 
     The retained neutral arrays are NOT used.  Neither inferred X nor MC truth
     enters the pair construction.
@@ -1475,10 +1511,10 @@ def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
     excl = _exclusive_df(dfs["aaogen"], "probe_event_grouped_exclusive")
 
     unique = str(abs(hash((period, "probe_event_grouped_pair_audit"))))
-    hbase, nev_base, nev2_base = _event_grouped_unique_tag_mgg(
+    hbase, nev_base, nev2_base, diag_base = _event_grouped_unique_tag_mgg(
         base, f"h_mgg_event_grouped_base_{unique}",
         ";M_{#gamma#gamma} (GeV);Unit-normalized unique event-level #gamma#gamma pairs")
-    hexcl, nev_excl, nev2_excl = _event_grouped_unique_tag_mgg(
+    hexcl, nev_excl, nev2_excl, diag_excl = _event_grouped_unique_tag_mgg(
         excl, f"h_mgg_event_grouped_excl_{unique}",
         ";M_{#gamma#gamma} (GeV);Unit-normalized unique event-level #gamma#gamma pairs")
 
@@ -1487,9 +1523,9 @@ def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
     keep = [canvas, hbase, hexcl]
 
     panels = [
-        (hbase, "AAOgen: event-grouped unique reconstructed photons",
+        (hbase, "AAOgen: sequential e+p blocks, unique reconstructed photons",
          nev_base, nev2_base),
-        (hexcl, "AAOgen: event-grouped photons after final ep#gammaX cuts",
+        (hexcl, "AAOgen: sequential e+p blocks after final ep#gammaX cuts",
          nev_excl, nev2_excl),
     ]
 
@@ -1536,15 +1572,18 @@ def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
     out = os.path.join(output_dir, f"2_{period}_AAOgen_event_grouped_REC_pair_audit.png")
     canvas.SaveAs(out)
 
-    print("\nAAOgen event-grouped reconstructed-pair audit:")
-    print("  Construction: group by (source_file_hash, runnum, evnum), deduplicate")
-    print("  photons by tag_rec_index, then fill every unordered photon pair once.")
+    print("\nAAOgen sequential e+p reconstructed-pair audit:")
+    print("  MC evnum is NOT used for grouping.")
+    print("  Construction: consecutive rows remain in one block only while source_file_hash,")
+    print("  p_rec_index, and all saved electron/proton kinematics agree within 1e-10.")
+    print("  Within each block, photons are deduplicated by tag_rec_index and every unordered pair is filled once.")
     print("  neutral_[0..4], inferred X, nearest-to-X, and MC truth are NOT used.")
-    print(f"  Baseline: {nev_base:,} physical events; {nev2_base:,} with >=2 photons; "
-          f"{int(hbase.GetEntries()):,} gamma-gamma pairs")
-    print(f"  Exclusive: {nev_excl:,} physical events; {nev2_excl:,} with >=2 photons; "
-          f"{int(hexcl.GetEntries()):,} gamma-gamma pairs")
-    print("  Event rows were globally sorted by physical-event key; no contiguity assumption is used.")
+    print(f"  Baseline: {nev_base:,} e+p blocks; {nev2_base:,} with >=2 unique photons; {int(hbase.GetEntries()):,} pairs")
+    print(f"    block sizes: N1={diag_base['block_size_1']:,}, N2={diag_base['block_size_2']:,}, N>=3={diag_base['block_size_ge3']:,}, max={diag_base['block_size_max']}")
+    print(f"    duplicate tag rows removed={diag_base['duplicate_tag_rows']:,}; max within-block e/p spread={diag_base['max_within_block_spread']:.3e}")
+    print(f"  Exclusive: {nev_excl:,} e+p blocks; {nev2_excl:,} with >=2 unique photons; {int(hexcl.GetEntries()):,} pairs")
+    print(f"    block sizes: N1={diag_excl['block_size_1']:,}, N2={diag_excl['block_size_2']:,}, N>=3={diag_excl['block_size_ge3']:,}, max={diag_excl['block_size_max']}")
+    print(f"    duplicate tag rows removed={diag_excl['duplicate_tag_rows']:,}; max within-block e/p spread={diag_excl['max_within_block_spread']:.3e}")
     print("  EXPECTATION: AAOgen should show a visible pi0 peak near 0.135 GeV if the")
     print("  reconstructed tag photons retained in PhotonEfficiency contain both pi0 daughters.")
     return keep, out
