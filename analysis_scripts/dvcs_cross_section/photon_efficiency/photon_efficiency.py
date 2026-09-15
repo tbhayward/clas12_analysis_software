@@ -394,6 +394,8 @@ def draw_canvases(dfs, output_dir, period):
          lambda df: df.Filter("Mx2_ep < 0.15", "Mx2_ep_lt_0p15")),
         ("-0.05 < M^{2}_{X}(e'p'#gamma1) < 0.05 GeV^{2}",
          lambda df: df.Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "Mx2_epg_window")),
+        ("M^{2}_{X}(e'#gamma1) > 1.0 GeV^{2}",
+         lambda df: df.Filter("Mx2_egamma1 > 1.0", "Mx2_egamma1_gt_1p0")),
     ]
 
     stage_dfs = {}
@@ -401,8 +403,8 @@ def draw_canvases(dfs, output_dir, period):
         if sample not in dfs:
             continue
         stage_dfs[(sample, 0)] = dfs[sample]
-        stage_dfs[(sample, 1)] = stages[1][1](stage_dfs[(sample, 0)])
-        stage_dfs[(sample, 2)] = stages[2][1](stage_dfs[(sample, 1)])
+        for istage in range(1, len(stages)):
+            stage_dfs[(sample, istage)] = stages[istage][1](stage_dfs[(sample, istage - 1)])
 
     booked = {}
     actions = []
@@ -426,8 +428,8 @@ def draw_canvases(dfs, output_dir, period):
     keep = list(actions)
     written = []
     for irow, (_expr, _title, _nbins, _xmin, _xmax, logy, slug) in enumerate(plots):
-        canvas = ROOT.TCanvas(f"c_{slug}_{unique}", "", 1800, 650)
-        canvas.Divide(3, 1, 0.002, 0.002)
+        canvas = ROOT.TCanvas(f"c_{slug}_{unique}", "", 2200, 650)
+        canvas.Divide(len(stages), 1, 0.002, 0.002)
         keep.append(canvas)
 
         for icol, (stage_title, _filter) in enumerate(stages):
@@ -521,6 +523,7 @@ def draw_normalization_step1(dfs, output_dir, period):
         selected[sample] = (dfs[sample]
             .Filter("Mx2_ep < 0.15", "norm_Mx2_ep_lt_0p15")
             .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "norm_Mx2_epg_window")
+            .Filter("Mx2_egamma1 > 1.0", "norm_Mx2_egamma1_gt_1p0")
             .Filter("E_gamma1 > 4.0", "norm_Egamma1_gt_4"))
 
     unique = str(abs(hash((output_dir, period, "normalization_step1"))))
@@ -543,6 +546,13 @@ def draw_normalization_step1(dfs, output_dir, period):
     canvas = ROOT.TCanvas(f"c_norm1_{unique}", "", 1500, 1100)
     canvas.Divide(2, 2, 0.002, 0.002)
     keep = [canvas] + list(actions)
+    canvas.cd()
+    canvas_title = ROOT.TLatex()
+    canvas_title.SetNDC(True)
+    canvas_title.SetTextAlign(22)
+    canvas_title.SetTextSize(0.028)
+    canvas_title.DrawLatex(0.50, 0.992, "E_{#gamma1} > 4 GeV")
+    keep.append(canvas_title)
 
     for iplot, (_expr, _title, _nbins, _xmin, _xmax, logy) in enumerate(plots):
         pad = canvas.cd(iplot + 1)
@@ -1100,9 +1110,11 @@ def print_egamma1_survival_scan(dfs):
 # ---------------------------------------------------------------------------
 
 def _exclusive_df(df, tag):
+    """Final epgammaX exclusivity selection used by normalization and probe stages."""
     return (df
             .Filter("Mx2_ep < 0.15", f"{tag}_Mx2_ep_lt_0p15")
-            .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", f"{tag}_Mx2_epg_window"))
+            .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", f"{tag}_Mx2_epg_window")
+            .Filter("Mx2_egamma1 > 1.0", f"{tag}_Mx2_egamma1_gt_1p0"))
 
 
 def _book_raw_hists(selected, specs, tag):
@@ -1213,6 +1225,9 @@ def draw_low_energy_shapes_v7(dfs, output_dir, period):
     selected={s:_exclusive_df(dfs[s],f"v7loShape_{s}").Filter("E_gamma1 < 4.0",f"v7loShape_{s}_Elt4") for s,_ in SAMPLES if s in dfs}
     unique=str(abs(hash((period,"v7_low_shapes")))); raw,actions=_book_raw_hists(selected,specs,f"v7los_{unique}")
     canvas=ROOT.TCanvas(f"c_v7los_{unique}","",1500,1100); canvas.Divide(2,2,0.002,0.002); keep=[canvas]+actions
+    canvas.cd()
+    canvas_title=ROOT.TLatex(); canvas_title.SetNDC(True); canvas_title.SetTextAlign(22); canvas_title.SetTextSize(0.028)
+    canvas_title.DrawLatex(0.50,0.992,"E_{#gamma1} < 4 GeV"); keep.append(canvas_title)
     for ip,spec in enumerate(specs):
         pad=canvas.cd(ip+1); pad.SetTicks(1,1); pad.SetLeftMargin(0.14); pad.SetRightMargin(0.04); pad.SetBottomMargin(0.13); pad.SetTopMargin(0.08)
         if spec[5]: pad.SetLogy(True)
@@ -1364,44 +1379,75 @@ def draw_full_range_denominator(dfs, output_dir, period, coeffs):
     return keep,out
 
 
-def draw_probe_mgg(dfs, output_dir, period):
-    """First probe study: M(gamma_tag gamma_probe) for every retained PID-22 partner.
+def draw_probe_mgg(dfs, output_dir, period, coeffs):
+    """M(gamma_tag gamma_probe) after the final epgammaX selection.
 
-    The tag is the photon defining the selected epgammaX denominator row.  Every
-    other retained neutral candidate with PID 22 is treated as a possible probe.
-    No tag-probe angular matching or pi0-mass requirement is imposed here.
+    Data remain in measured counts. MC components are scaled by the arithmetic-
+    mean A/B/C normalization coefficients obtained in the immediately preceding
+    denominator-normalization step. Histograms are not unit normalized.
     """
+    if coeffs is None:
+        print("WARNING: no denominator normalization coefficients; skipping probe Mgg plot.")
+        return [], None
+
     selected={}
     for sample,df in dfs.items():
         selected[sample]=(_exclusive_df(df,f"probe_{sample}")
             .Define("Mgg_tag_probe",
                 "pe_mgg_tag_probe(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
                 "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)"))
-    unique=str(abs(hash((period,"probe_mgg"))))
+
+    A,B,C=coeffs["mean"]
+    scales={"data":1.0,"dvcsgen":A,"aaogen":B,"clasdis":C}
+    unique=str(abs(hash((period,"probe_mgg_scaled"))))
     booked={}; actions=[]
     for sample,df in selected.items():
         h=df.Histo1D((f"h_probe_mgg_{sample}_{unique}",
-                      ";M_{#gamma_{tag}#gamma_{probe}} (GeV);Unit-normalized tag-probe combinations",
+                      ";M_{#gamma_{tag}#gamma_{probe}} (GeV);Normalized tag-probe combinations",
                       160,0.0,0.8),"Mgg_tag_probe")
         booked[sample]=h; actions.append(h)
-    if actions: ROOT.RDF.RunGraphs(actions)
-    canvas=ROOT.TCanvas(f"c_probe_mgg_{unique}","",1000,800); canvas.SetTicks(1,1); canvas.SetLeftMargin(0.13); canvas.SetRightMargin(0.04); canvas.SetBottomMargin(0.13); canvas.SetTopMargin(0.08)
+    if actions:
+        ROOT.RDF.RunGraphs(actions)
+
+    canvas=ROOT.TCanvas(f"c_probe_mgg_{unique}","",1000,800)
+    canvas.SetTicks(1,1); canvas.SetLeftMargin(0.13); canvas.SetRightMargin(0.04)
+    canvas.SetBottomMargin(0.13); canvas.SetTopMargin(0.08)
     keep=[canvas]+actions; hs=[]; ymax=0.0
-    leg=ROOT.TLegend(0.50,0.66,0.89,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.029); keep.append(leg)
+    leg=ROOT.TLegend(0.46,0.65,0.89,0.88)
+    leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.026); keep.append(leg)
+
     for sample,label in SAMPLES:
-        if sample not in booked: continue
-        h=booked[sample].GetValue().Clone(f"hp_probe_{sample}_{unique}"); h.SetDirectory(0); h.SetStats(0); h.SetLineColor(COLORS[sample]); h.SetLineWidth(3)
-        n=int(round(h.GetEntries())); integ=h.Integral(1,h.GetNbinsX())
-        if integ>0: h.Scale(1.0/integ)
-        ymax=max(ymax,h.GetMaximum()); hs.append(h); keep.append(h); leg.AddEntry(h,f"{label} (pairs={n:,})","l")
+        if sample not in booked:
+            continue
+        h=booked[sample].GetValue().Clone(f"hp_probe_{sample}_{unique}")
+        h.SetDirectory(0); h.SetStats(0); h.SetLineColor(COLORS[sample]); h.SetLineWidth(3)
+        n=int(round(h.GetEntries()))
+        scale=scales.get(sample,1.0)
+        if sample!="data":
+            h.Scale(scale)
+            leg_label=f"{label} (#times{scale:.4g}; raw pairs={n:,})"
+        else:
+            leg_label=f"{label} (pairs={n:,})"
+        ymax=max(ymax,h.GetMaximum()); hs.append(h); keep.append(h)
+        leg.AddEntry(h,leg_label,"l")
+
     for i,h in enumerate(hs):
         h.SetMinimum(0.0); h.SetMaximum(1.22*ymax if ymax else 1.0)
-        h.GetXaxis().SetTitleSize(0.047); h.GetYaxis().SetTitleSize(0.043); h.GetXaxis().SetLabelSize(0.038); h.GetYaxis().SetLabelSize(0.038); h.GetYaxis().SetTitleOffset(1.35)
+        h.GetXaxis().SetTitleSize(0.047); h.GetYaxis().SetTitleSize(0.043)
+        h.GetXaxis().SetLabelSize(0.038); h.GetYaxis().SetLabelSize(0.038)
+        h.GetYaxis().SetTitleOffset(1.35)
         h.Draw("HIST" if i==0 else "HIST SAME")
     leg.Draw()
-    out=os.path.join(output_dir,f"1_{period}_Mgg_tag_probe.png"); canvas.SaveAs(out)
-    return keep,out
 
+    print("\nProbe Mgg normalization (mean coefficients from preceding denominator step):")
+    print(f"  Data:     1")
+    print(f"  DVCSgen:  A = {A:.8g}")
+    print(f"  AAOgen:   B = {B:.8g}")
+    print(f"  CLASDIS:  C = {C:.8g}")
+
+    out=os.path.join(output_dir,f"1_{period}_Mgg_tag_probe.png")
+    canvas.SaveAs(out)
+    return keep,out
 
 def _event_grouped_unique_tag_mgg(df, hist_name, title, tolerance=1.0e-10):
     """Build every unique reconstructed-photon pair for each sequential e+p block.
@@ -1801,12 +1847,8 @@ def main():
 
     probe_dir = os.path.join(args.output_dir, "probe")
     os.makedirs(probe_dir, exist_ok=True)
-    probe_keep, probe_output = draw_probe_mgg(dfs, probe_dir, args.period)
+    probe_keep, probe_output = draw_probe_mgg(dfs, probe_dir, args.period, denominator_coeffs)
     keep.extend(probe_keep)
-    probe_audit_keep, probe_audit_output = draw_probe_mgg_truth_diagnostic(dfs, probe_dir, args.period)
-    keep.extend(probe_audit_keep)
-    aaogen_files = discover("aaogen", args.period) if "aaogen" in dfs else []
-    event_dump_output = dump_aaogen_truth_rec_events(aaogen_files, probe_dir, args.period)
     _ = keep  # Keep ROOT objects alive through SaveAs().
 
     for output_file in written:
@@ -1821,10 +1863,6 @@ def main():
         print(f"\nWrote: {final_output}")
     if probe_output:
         print(f"\nWrote: {probe_output}")
-    if probe_audit_output:
-        print(f"\nWrote: {probe_audit_output}")
-    if event_dump_output:
-        print(f"\nWrote: {event_dump_output}")
     return 0
 
 
