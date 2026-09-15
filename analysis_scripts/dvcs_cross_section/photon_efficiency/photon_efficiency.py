@@ -1924,10 +1924,14 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
         }
         ''')
         draw_probe_integrated_delta_p_efficiency._helper_declared = True
-    ddata=selected["data"].Define("best_dp",f"pe_best_delta_p(intdp_vec,{mu_data:.17g})")
-    dmc=selected["aaogen"].Define("best_dp",f"pe_best_delta_p(intdp_vec,{mu_mc:.17g})")
+    # Nominal candidate ranking is purely reconstructed and fit-independent:
+    # choose the photon with the smallest |Delta p|.  This avoids feeding the
+    # unstable Gaussian+polynomial peak position back into candidate selection.
+    candidate_mu = 0.0
+    ddata=selected["data"].Define("best_dp",f"pe_best_delta_p(intdp_vec,{candidate_mu:.17g})")
+    dmc=selected["aaogen"].Define("best_dp",f"pe_best_delta_p(intdp_vec,{candidate_mu:.17g})")
     dmc=dmc.Define("best_dp_truth_info",
-        f"pe_best_delta_p_truth(probe_raw_p,{mu_mc:.17g},tag_rec_index,mc_tag_index,mc_tag_pid,"
+        f"pe_best_delta_p_truth(probe_raw_p,{candidate_mu:.17g},tag_rec_index,mc_tag_index,mc_tag_pid,"
         "mc_tag_p,mc_tag_theta,mc_tag_phi,neutral_idx,neutral_pid,neutral_p,"
         "neutral_mc_index,neutral_mc_pid,neutral_mc_p,neutral_mc_theta,neutral_mc_phi)")
     dmc=dmc.Define("best_dp_truth","best_dp_truth_info.size()>1 ? best_dp_truth_info[1] : -1.0")
@@ -2043,6 +2047,248 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
     print(f"  truth pi0={nt:,}; wrong/combinatorial={nw:,}; truth fraction={nt/(nt+nw):.6f}" if nt+nw else "  no candidates")
     print(f"  Wrote truth decomposition to {truth_out}")
 
+    # ------------------------------------------------------------------
+    # Truth-template extraction.
+    #
+    # The Gaussian+polynomial decomposition above is retained only as a
+    # diagnostic.  The nominal efficiency extraction below uses the measured
+    # AAOgen truth-matched Delta-p shape as the signal template and the AAOgen
+    # wrong/combinatorial best-candidate shape as the background template.
+    # ------------------------------------------------------------------
+    def hist_arrays(h):
+        nb=h.GetNbinsX()
+        x=np.asarray([h.GetBinCenter(i) for i in range(1,nb+1)],dtype=float)
+        y=np.asarray([h.GetBinContent(i) for i in range(1,nb+1)],dtype=float)
+        return x,y
+
+    def poisson_deviance(obs, pred):
+        obs=np.asarray(obs,dtype=float)
+        pred=np.clip(np.asarray(pred,dtype=float),1.0e-12,None)
+        terms=np.where(obs>0.0,2.0*(pred-obs+obs*np.log(obs/pred)),2.0*pred)
+        return float(np.sum(terms))
+
+    def normalized_template(v):
+        v=np.clip(np.asarray(v,dtype=float),0.0,None)
+        s=float(np.sum(v))
+        return v/s if s>0.0 else np.zeros_like(v)
+
+    def morph_template_shape(shape, shift_bins=0.0, sigma_bins=0.0):
+        # _morph_1d_counts preserves the integral; templates passed here are
+        # normalized to unit area, so the returned shape is also unit area.
+        return normalized_template(_morph_1d_counts(
+            normalized_template(shape),float(shift_bins),float(sigma_bins)))
+
+    xbins,data_counts=hist_arrays(hdata)
+    _,all_mc_counts=hist_arrays(hmc)
+    _,truth_scaled=hist_arrays(ht)
+    _,wrong_scaled=hist_arrays(hw)
+    truth_shape=normalized_template(truth_scaled)
+    wrong_shape=normalized_template(wrong_scaled)
+    bin_width=float(hdata.GetBinWidth(1))
+
+    def fit_template_mixture(obs, signal_shape, background_shape,
+                             fit_lo=-1.0, fit_hi=1.0, allow_signal_morph=False):
+        obs=np.asarray(obs,dtype=float)
+        sig0=normalized_template(signal_shape)
+        bg0=normalized_template(background_shape)
+        mask=(xbins>=fit_lo-1.0e-12)&(xbins<=fit_hi+1.0e-12)
+        if not np.any(mask):
+            raise RuntimeError("Template fit has an empty fit range.")
+
+        # Parameters are full-range component yields.  For a restricted fit
+        # range, the expected counts in the fitted bins are simply the relevant
+        # fraction of each full template.
+        total=max(float(np.sum(obs[mask])),1.0)
+        starts=[]
+        if allow_signal_morph:
+            for frac in (0.70,0.85,0.95):
+                for sh in (0.0,5.0,10.0):
+                    starts.append(np.asarray([frac*total,(1.0-frac)*total,sh,1.0]))
+            bounds=[(0.0,5.0*total),(0.0,5.0*total),(-20.0,20.0),(0.0,20.0)]
+        else:
+            starts=[np.asarray([0.85*total,0.15*total]),
+                    np.asarray([0.70*total,0.30*total]),
+                    np.asarray([0.95*total,0.05*total])]
+            bounds=[(0.0,5.0*total),(0.0,5.0*total)]
+
+        def objective(par):
+            ns=float(par[0]); nb=float(par[1])
+            if allow_signal_morph:
+                sig=morph_template_shape(sig0,float(par[2]),float(par[3]))
+            else:
+                sig=sig0
+            pred=ns*sig+nb*bg0
+            p=np.clip(pred[mask],1.0e-12,None)
+            d=obs[mask]
+            return float(np.sum(p-d*np.log(p)))
+
+        fits=[minimize(objective,s,bounds=bounds,method="L-BFGS-B",
+                       options={"maxiter":1000,"ftol":1.0e-12}) for s in starts]
+        res=min(fits,key=lambda r:float(r.fun))
+        par=np.asarray(res.x,dtype=float)
+        sig=morph_template_shape(sig0,par[2],par[3]) if allow_signal_morph else sig0
+        pred=par[0]*sig+par[1]*bg0
+        dev=poisson_deviance(obs[mask],pred[mask])
+        npar=4 if allow_signal_morph else 2
+        ndf=max(int(np.count_nonzero(mask))-npar,1)
+        return {
+            "success":bool(res.success),"status":int(res.status),
+            "message":str(res.message),"nsig":float(par[0]),"nbg":float(par[1]),
+            "shift_bins":float(par[2]) if allow_signal_morph else 0.0,
+            "sigma_bins":float(par[3]) if allow_signal_morph else 0.0,
+            "shift_GeV":(float(par[2])*bin_width if allow_signal_morph else 0.0),
+            "sigma_GeV":(float(par[3])*bin_width if allow_signal_morph else 0.0),
+            "signal_shape":sig,"background_shape":bg0,"prediction":pred,
+            "deviance":dev,"ndf":ndf,"deviance_ndf":dev/ndf,
+            "fit_lo":float(fit_lo),"fit_hi":float(fit_hi)
+        }
+
+    # AAOgen closure is deliberately blind: the target is the total best-candidate
+    # spectrum.  Truth labels enter only through the two fixed component shapes.
+    closure=fit_template_mixture(all_mc_counts,truth_shape,wrong_shape,
+                                 -1.0,1.0,allow_signal_morph=False)
+    truth_known=float(np.sum(truth_scaled))
+    wrong_known=float(np.sum(wrong_scaled))
+    closure_truth_bias=(closure["nsig"]-truth_known)/truth_known if truth_known>0 else float("nan")
+    closure_wrong_bias=(closure["nbg"]-wrong_known)/wrong_known if wrong_known>0 else float("nan")
+
+    # Data nominal: allow the AAOgen truth signal template a translation and
+    # additional Gaussian smearing.  The wrong/combinatorial template shape is
+    # fixed; both component normalizations float.
+    data_template=fit_template_mixture(data_counts,truth_shape,wrong_shape,
+                                       -1.0,1.0,allow_signal_morph=True)
+    data_nomorph=fit_template_mixture(data_counts,truth_shape,wrong_shape,
+                                      -1.0,1.0,allow_signal_morph=False)
+
+    # Range stability of the physically motivated template extraction.
+    template_ranges=[(-0.50,0.60),(-0.70,0.80),(-1.00,1.00)]
+    template_range_results=[]
+    for flo,fhi in template_ranges:
+        rr=fit_template_mixture(data_counts,truth_shape,wrong_shape,
+                                flo,fhi,allow_signal_morph=True)
+        template_range_results.append(rr)
+
+    nd_now=int(den_data.GetValue())
+    nm_now=int(den_mc.GetValue())
+    eff_mc_truth=float(nt)/float(nm_now) if nm_now else float("nan")
+    eff_data_template=data_template["nsig"]/float(nd_now) if nd_now else float("nan")
+    Cgamma_template=(eff_data_template/eff_mc_truth
+                     if eff_mc_truth>0.0 else float("nan"))
+
+    # Utility for drawing a numpy prediction as a ROOT histogram.
+    def array_hist(name, arr, color, style=1, width=2):
+        hh=hdata.Clone(name); hh.SetDirectory(0); hh.Reset("ICES")
+        for ib,val in enumerate(np.asarray(arr,dtype=float),1):
+            hh.SetBinContent(ib,float(val)); hh.SetBinError(ib,0.0)
+        hh.SetLineColor(color); hh.SetLineStyle(style); hh.SetLineWidth(width)
+        hh.SetMarkerStyle(1)
+        return hh
+
+    # 8: blind AAOgen closure.
+    cclosure=ROOT.TCanvas(f"c_dp_template_closure_{unique}","",1450,780)
+    cclosure.SetTicks(1,1); cclosure.SetLeftMargin(0.12); cclosure.SetRightMargin(0.04)
+    cclosure.SetBottomMargin(0.14); cclosure.SetTopMargin(0.11)
+    hmc.SetStats(0); hmc.SetLineColor(ROOT.kBlack); hmc.SetLineWidth(2)
+    hmc.GetXaxis().SetRangeUser(-1.0,1.0)
+    hmc.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)")
+    hmc.GetYaxis().SetTitle("Normalized best-candidate rows"); hmc.GetYaxis().SetTitleOffset(1.35)
+    hmc.Draw("HIST")
+    hcl_sig=array_hist(f"h_cl_sig_{unique}",closure["nsig"]*closure["signal_shape"],ROOT.kBlue+1,1,3)
+    hcl_bg=array_hist(f"h_cl_bg_{unique}",closure["nbg"]*closure["background_shape"],ROOT.kRed+1,2,3)
+    hcl_tot=array_hist(f"h_cl_tot_{unique}",closure["prediction"],ROOT.kMagenta+2,1,3)
+    hcl_tot.Draw("HIST SAME"); hcl_sig.Draw("HIST SAME"); hcl_bg.Draw("HIST SAME")
+    lcl=ROOT.TLegend(0.57,0.66,0.93,0.87); lcl.SetBorderSize(0); lcl.SetFillStyle(0); lcl.SetTextSize(0.030)
+    lcl.AddEntry(hmc,"AAOgen total (truth labels hidden)","l")
+    lcl.AddEntry(hcl_tot,"Fitted truth + wrong templates","l")
+    lcl.AddEntry(hcl_sig,"Fitted truth-template component","l")
+    lcl.AddEntry(hcl_bg,"Fitted wrong-template component","l"); lcl.Draw()
+    tx=ROOT.TLatex(); tx.SetNDC(True); tx.SetTextSize(0.029)
+    tx.DrawLatex(0.15,0.92,"AAOgen blind template-yield closure")
+    tx.DrawLatex(0.15,0.865,f"Known truth yield = {truth_known:.0f}; fitted = {closure['nsig']:.0f}")
+    tx.DrawLatex(0.15,0.815,f"Truth-yield bias = {100.0*closure_truth_bias:+.2f}%")
+    tx.DrawLatex(0.15,0.765,f"deviance/ndf = {closure['deviance_ndf']:.2f}")
+    closure_out=os.path.join(output_dir,f"8_{period}_AAOgen_delta_p_template_closure.png")
+    cclosure.SaveAs(closure_out)
+    keep.extend([cclosure,hcl_sig,hcl_bg,hcl_tot,lcl,tx])
+
+    # 9: Data truth-template extraction.
+    ctemp=ROOT.TCanvas(f"c_dp_template_data_{unique}","",1450,780)
+    ctemp.SetTicks(1,1); ctemp.SetLeftMargin(0.12); ctemp.SetRightMargin(0.04)
+    ctemp.SetBottomMargin(0.14); ctemp.SetTopMargin(0.11)
+    hdata.SetStats(0); hdata.SetLineColor(ROOT.kBlack); hdata.SetLineWidth(2)
+    hdata.GetXaxis().SetRangeUser(-1.0,1.0)
+    hdata.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)")
+    hdata.GetYaxis().SetTitle("Best-candidate rows"); hdata.GetYaxis().SetTitleOffset(1.35)
+    hdata.Draw("E1")
+    hdt_sig=array_hist(f"h_dt_sig_{unique}",data_template["nsig"]*data_template["signal_shape"],ROOT.kBlue+1,1,3)
+    hdt_bg=array_hist(f"h_dt_bg_{unique}",data_template["nbg"]*data_template["background_shape"],ROOT.kRed+1,2,3)
+    hdt_tot=array_hist(f"h_dt_tot_{unique}",data_template["prediction"],ROOT.kMagenta+2,1,3)
+    hdt_tot.Draw("HIST SAME"); hdt_sig.Draw("HIST SAME"); hdt_bg.Draw("HIST SAME")
+    ldt=ROOT.TLegend(0.57,0.66,0.93,0.87); ldt.SetBorderSize(0); ldt.SetFillStyle(0); ldt.SetTextSize(0.030)
+    ldt.AddEntry(hdata,"Data","lep"); ldt.AddEntry(hdt_tot,"Template fit","l")
+    ldt.AddEntry(hdt_sig,"Morphed AAOgen truth signal","l")
+    ldt.AddEntry(hdt_bg,"AAOgen wrong/combinatorial","l"); ldt.Draw()
+    td=ROOT.TLatex(); td.SetNDC(True); td.SetTextSize(0.028)
+    td.DrawLatex(0.15,0.92,"Data #Delta p truth-template extraction")
+    td.DrawLatex(0.15,0.87,f"signal shift = {data_template['shift_GeV']:+.4f} GeV, extra smear = {data_template['sigma_GeV']:.4f} GeV")
+    td.DrawLatex(0.15,0.82,f"deviance/ndf = {data_template['deviance_ndf']:.2f}")
+    td.DrawLatex(0.15,0.77,f"#epsilon_{{data}} = {eff_data_template:.4f}, #epsilon_{{AAO}}^{{truth}} = {eff_mc_truth:.4f}, C_{{#gamma}} = {Cgamma_template:.4f}")
+    data_template_out=os.path.join(output_dir,f"9_{period}_data_delta_p_truth_template_fit.png")
+    ctemp.SaveAs(data_template_out)
+    keep.extend([ctemp,hdt_sig,hdt_bg,hdt_tot,ldt,td])
+
+    # 10: compact template-method stability plot.
+    cts=ROOT.TCanvas(f"c_dp_template_stability_{unique}","",1450,760)
+    cts.SetTicks(1,1); cts.SetLeftMargin(0.12); cts.SetRightMargin(0.04)
+    cts.SetBottomMargin(0.18); cts.SetTopMargin(0.11)
+    fr=ROOT.TH1D(f"h_dp_template_stability_{unique}","",4,0.5,4.5); fr.SetDirectory(0); fr.SetStats(0)
+    labels=["no morph [-1,1]","morph [-0.5,0.6]","morph [-0.7,0.8]","morph [-1,1]"]
+    vals=[]
+    ed0=data_nomorph["nsig"]/float(nd_now) if nd_now else float("nan")
+    vals.append(ed0/eff_mc_truth if eff_mc_truth>0 else float("nan"))
+    for rr in template_range_results:
+        ee=rr["nsig"]/float(nd_now) if nd_now else float("nan")
+        vals.append(ee/eff_mc_truth if eff_mc_truth>0 else float("nan"))
+    finite=[v for v in vals if np.isfinite(v)]
+    if finite:
+        fr.SetMinimum(max(0.0,min(finite)-0.08)); fr.SetMaximum(max(finite)+0.08)
+    else:
+        fr.SetMinimum(0.0); fr.SetMaximum(1.2)
+    fr.GetYaxis().SetTitle("C_{#gamma} = #epsilon_{data}/#epsilon_{AAOgen}^{truth}")
+    fr.GetYaxis().SetTitleOffset(1.35); fr.GetXaxis().SetLabelSize(0.035)
+    for i,lab in enumerate(labels,1): fr.GetXaxis().SetBinLabel(i,lab)
+    fr.Draw("AXIS")
+    gg=ROOT.TGraph()
+    for i,v in enumerate(vals,1):
+        if np.isfinite(v): gg.SetPoint(gg.GetN(),float(i),float(v))
+    gg.SetMarkerStyle(20); gg.SetMarkerSize(1.4); gg.SetLineWidth(2); gg.Draw("PL SAME")
+    tts=ROOT.TLatex(); tts.SetNDC(True); tts.SetTextAlign(22); tts.SetTextSize(0.036)
+    tts.DrawLatex(0.53,0.955,"Truth-template #Delta p extraction stability")
+    template_stability_out=os.path.join(output_dir,f"10_{period}_delta_p_truth_template_stability.png")
+    cts.SaveAs(template_stability_out)
+    keep.extend([cts,fr,gg,tts])
+
+    print("\nAAOgen blind Delta-p template closure:")
+    print(f"  known truth yield={truth_known:.1f}; fitted truth yield={closure['nsig']:.1f}; bias={100.0*closure_truth_bias:+.3f}%")
+    print(f"  known wrong yield={wrong_known:.1f}; fitted wrong yield={closure['nbg']:.1f}; bias={100.0*closure_wrong_bias:+.3f}%")
+    print(f"  deviance/ndf={closure['deviance_ndf']:.4f}; fit success={closure['success']} status={closure['status']}")
+    print("\nData Delta-p truth-template extraction:")
+    print(f"  signal yield={data_template['nsig']:.1f}; background yield={data_template['nbg']:.1f}")
+    print(f"  signal shift={data_template['shift_GeV']:+.6f} GeV; extra smear={data_template['sigma_GeV']:.6f} GeV")
+    print(f"  deviance/ndf={data_template['deviance_ndf']:.4f}; fit success={data_template['success']} status={data_template['status']}")
+    print(f"  epsilon_data={eff_data_template:.6f}; epsilon_AAOgen_truth={eff_mc_truth:.6f}; C_gamma={Cgamma_template:.6f}")
+    print("  Range stability:")
+    for rr in template_range_results:
+        ee=rr["nsig"]/float(nd_now) if nd_now else float("nan")
+        cc=ee/eff_mc_truth if eff_mc_truth>0 else float("nan")
+        print(f"    [{rr['fit_lo']:+.2f},{rr['fit_hi']:+.2f}] GeV: C_gamma={cc:.6f}, shift={rr['shift_GeV']:+.5f} GeV, smear={rr['sigma_GeV']:.5f} GeV, dev/ndf={rr['deviance_ndf']:.3f}")
+    print(f"  Wrote closure to {closure_out}")
+    print(f"  Wrote Data template fit to {data_template_out}")
+    print(f"  Wrote template stability to {template_stability_out}")
+
+    # ------------------------------------------------------------------
+    # Legacy Gaussian+polynomial model/range study retained below ONLY as
+    # a diagnostic demonstrating why that decomposition is not nominal.
     # ------------------------------------------------------------------
     # Signal/background model and fit-range stability.
     #
@@ -2193,7 +2439,7 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
         "Best-candidate population fixed; only signal/background fit changes")
 
     stability_out=os.path.join(
-        output_dir,f"8_{period}_integrated_delta_p_model_range_stability.png")
+        output_dir,f"11_{period}_LEGACY_integrated_delta_p_model_range_stability.png")
     cstab.SaveAs(stability_out)
     keep.extend(stability_keep+[cstab,frame,legstab,titlestab,notestab]+list(stab_graphs.values()))
 
@@ -2302,9 +2548,9 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
         return cgrid,grid_keep
 
     data_grid_out=os.path.join(
-        output_dir,f"9_{period}_integrated_delta_p_fit_grid_data.png")
+        output_dir,f"12_{period}_LEGACY_integrated_delta_p_fit_grid_data.png")
     mc_grid_out=os.path.join(
-        output_dir,f"10_{period}_integrated_delta_p_fit_grid_AAOgen.png")
+        output_dir,f"13_{period}_LEGACY_integrated_delta_p_fit_grid_AAOgen.png")
     cgrid_data,grid_data_keep=draw_stability_fit_grid(
         "data",hdata,"data",ROOT.kBlack,data_grid_out)
     cgrid_mc,grid_mc_keep=draw_stability_fit_grid(
@@ -2345,17 +2591,29 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
     print(f"  Wrote Data 3x3 fit grid to {data_grid_out}")
     print(f"  Wrote AAOgen 3x3 fit grid to {mc_grid_out}")
 
+    # Promote the truth-template result to the nominal integrated result.
+    results["nominal_method"]="AAOgen truth-template Delta-p extraction"
+    results["nominal_eff_data"]=eff_data_template
+    results["nominal_eff_mc"]=eff_mc_truth
+    results["nominal_Cgamma"]=Cgamma_template
+    results["template_closure"]=closure
+    results["template_data_fit"]=data_template
+    results["template_range_results"]=template_range_results
+    results["template_closure_output"]=closure_out
+    results["template_data_output"]=data_template_out
+    results["template_stability_output"]=template_stability_out
+
     print("\nIntegrated Delta-p efficiency study (NO kinematic binning):")
-    print("  MC signal reference = AAOgen only (exclusive ep-pi0 signal sample).")
-    print("  Final fit model = Gaussian exclusive peak + quadratic background over -1.00 < Delta p < +1.00 GeV.")
-    print("  Efficiency numerators are background-subtracted inside each sample own 1/2/3-sigma window.")
-    print("  DVCSgen is not included in the signal efficiency; generator-exclusive ep-pi0 was removed from CLASDIS.")
-    print(f"  Fits: data mu={mu_data:+.6f} GeV sigma={sig_data:.6f} GeV; AAOgen mu={mu_mc:+.6f} GeV sigma={sig_mc:.6f} GeV")
-    print(f"  Denominator rows: data={nd:,}; AAOgen={nm:,}")
+    print("  NOMINAL method = AAOgen truth-matched Delta-p signal template + AAOgen wrong/combinatorial template.")
+    print("  Candidate ranking = smallest |Delta p|; it does not depend on a fitted Gaussian peak.")
+    print("  AAOgen efficiency numerator = directly truth-matched best candidates; no Gaussian window and no background subtraction.")
+    print("  Data signal template may shift and receive additional Gaussian smearing; signal/background normalizations float.")
+    print("  Legacy Gaussian+polynomial fits are diagnostic only and do NOT define the nominal C_gamma.")
+    print(f"  Denominator rows: data={nd_now:,}; AAOgen={nm_now:,}")
     print(f"  Rows with >=1 probe candidate: data={int(cand_data.GetValue()):,}; AAOgen={int(cand_mc.GetValue()):,}")
-    print("  Each epgammaX denominator row contributes at most once: use the probe candidate closest to that sample's fitted peak.")
-    for n in (1,2,3):
-        r=results[n]; print(f"  {n}sigma: data obs={r['obs_data']:.1f}, bg={r['bkg_data']:.1f}, signal={r['Ndata']:.1f}, eff={r['eff_data']:.6f}; AAOgen obs={r['obs_mc']:.1f}, bg={r['bkg_mc']:.1f}, signal={r['Nmc']:.1f}, eff={r['eff_mc']:.6f}; C_gamma={r['ratio']:.6f}")
+    print(f"  AAOgen truth-matched best candidates={nt:,}; epsilon_AAOgen_truth={eff_mc_truth:.6f}")
+    print(f"  Data fitted signal={data_template['nsig']:.1f}; epsilon_data={eff_data_template:.6f}")
+    print(f"  NOMINAL C_gamma={Cgamma_template:.6f}")
     return keep,out,results
 
 def draw_probe_aaogen_pi0_fit(dfs, output_dir, period, coeffs):
@@ -3381,6 +3639,12 @@ def main():
         print(f"\nWrote: {inteff_output}")
     if inteff_result and inteff_result.get("truth_output"):
         print(f"\nWrote: {inteff_result['truth_output']}")
+    if inteff_result and inteff_result.get("template_closure_output"):
+        print(f"\nWrote: {inteff_result['template_closure_output']}")
+    if inteff_result and inteff_result.get("template_data_output"):
+        print(f"\nWrote: {inteff_result['template_data_output']}")
+    if inteff_result and inteff_result.get("template_stability_output"):
+        print(f"\nWrote: {inteff_result['template_stability_output']}")
     if inteff_result and inteff_result.get("stability_output"):
         print(f"\nWrote: {inteff_result['stability_output']}")
     if inteff_result and inteff_result.get("stability_data_grid_output"):
