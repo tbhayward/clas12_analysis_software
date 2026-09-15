@@ -292,7 +292,7 @@ def draw_canvases(dfs, output_dir, period):
             if logy:
                 pad.SetLogy(True)
 
-            legend = ROOT.TLegend(0.64, 0.68, 0.94, 0.88)
+            legend = ROOT.TLegend(0.55, 0.68, 0.90, 0.88)
             legend.SetBorderSize(0)
             legend.SetFillStyle(0)
             legend.SetTextSize(0.028)
@@ -357,6 +357,111 @@ def draw_canvases(dfs, output_dir, period):
 
     return keep, written
 
+def draw_normalization_step1(dfs, output_dir, period):
+    """Plot the high-Egamma1 normalization control region after exclusivity cuts."""
+    plots = [
+        ("E_gamma1", ";E_{#gamma1} (GeV);Unit-normalized entries", 120, 0.4, 9.0, False),
+        ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 120, 0.0, 9.0, True),
+        ("Mx2_ep", ";M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries", 120, -0.5, 1.0, False),
+        ("Mx2_epg_raw", ";M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries", 120, -0.1, 0.15, True),
+    ]
+
+    selected = {}
+    for sample, _label in SAMPLES:
+        if sample not in dfs:
+            continue
+        selected[sample] = (dfs[sample]
+            .Filter("Mx2_ep < 0.18", "norm_Mx2_ep_lt_0p18")
+            .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "norm_Mx2_epg_window")
+            .Filter("E_gamma1 > 6.0", "norm_Egamma1_gt_6"))
+
+    unique = str(abs(hash((output_dir, period, "normalization_step1"))))
+    booked = {}
+    actions = []
+    for iplot, (expr, title, nbins, xmin, xmax, _logy) in enumerate(plots):
+        booked[iplot] = {}
+        for sample, label in SAMPLES:
+            if sample not in selected:
+                continue
+            h = selected[sample].Histo1D(
+                (f"h_norm1_{iplot}_{sample}_{unique}", title, nbins, xmin, xmax), expr
+            )
+            booked[iplot][sample] = (label, h)
+            actions.append(h)
+
+    if actions:
+        ROOT.RDF.RunGraphs(actions)
+
+    canvas = ROOT.TCanvas(f"c_norm1_{unique}", "", 1500, 1100)
+    canvas.Divide(2, 2, 0.002, 0.002)
+    keep = [canvas] + list(actions)
+
+    for iplot, (_expr, _title, _nbins, _xmin, _xmax, logy) in enumerate(plots):
+        pad = canvas.cd(iplot + 1)
+        pad.SetTicks(1, 1)
+        pad.SetLeftMargin(0.14)
+        pad.SetRightMargin(0.04)
+        pad.SetBottomMargin(0.13)
+        pad.SetTopMargin(0.08)
+        if logy:
+            pad.SetLogy(True)
+
+        legend = ROOT.TLegend(0.55, 0.68, 0.90, 0.88)
+        legend.SetBorderSize(0)
+        legend.SetFillStyle(0)
+        legend.SetTextSize(0.030)
+        keep.append(legend)
+
+        histograms = []
+        ymax = 0.0
+        positive_min = None
+        for sample, label in SAMPLES:
+            if sample not in booked[iplot]:
+                continue
+            _, result = booked[iplot][sample]
+            hist = result.GetValue()
+            hist.SetDirectory(0)
+            hist.SetStats(0)
+            hist.SetLineColor(COLORS[sample])
+            hist.SetLineWidth(3)
+            entries = int(round(hist.GetEntries()))
+            integral = hist.Integral(1, hist.GetNbinsX())
+            if integral > 0.0:
+                hist.Scale(1.0 / integral)
+            ymax = max(ymax, hist.GetMaximum())
+            if logy:
+                for ibin in range(1, hist.GetNbinsX() + 1):
+                    value = hist.GetBinContent(ibin)
+                    if value > 0.0 and (positive_min is None or value < positive_min):
+                        positive_min = value
+            histograms.append(hist)
+            keep.append(hist)
+            legend.AddEntry(hist, f"{label} (N={entries:,})", "l")
+
+        first = True
+        for hist in histograms:
+            if logy:
+                ymin = max((positive_min or 1.0e-6) * 0.5, 1.0e-7)
+                hist.SetMinimum(ymin)
+                hist.SetMaximum(5.0 * ymax if ymax > 0.0 else 1.0)
+            else:
+                hist.SetMinimum(0.0)
+                hist.SetMaximum(1.25 * ymax if ymax > 0.0 else 1.0)
+            hist.GetXaxis().SetTitleSize(0.045)
+            hist.GetYaxis().SetTitleSize(0.043)
+            hist.GetXaxis().SetLabelSize(0.036)
+            hist.GetYaxis().SetLabelSize(0.036)
+            hist.GetXaxis().SetTitleOffset(1.05)
+            hist.GetYaxis().SetTitleOffset(1.45)
+            hist.Draw("HIST" if first else "HIST SAME")
+            first = False
+        legend.Draw()
+
+    output_file = os.path.join(output_dir, f"1_{period}_Egamma1_gt_6_GeV.png")
+    canvas.SaveAs(output_file)
+    return keep, output_file
+
+
 def main():
     args = parse_args()
 
@@ -405,10 +510,16 @@ def main():
     exclusivity_dir = os.path.join(args.output_dir, "exclusivity_selection")
     os.makedirs(exclusivity_dir, exist_ok=True)
     keep, written = draw_canvases(dfs, exclusivity_dir, args.period)
+
+    normalization_dir = os.path.join(args.output_dir, "normalization")
+    os.makedirs(normalization_dir, exist_ok=True)
+    norm_keep, norm_output = draw_normalization_step1(dfs, normalization_dir, args.period)
+    keep.extend(norm_keep)
     _ = keep  # Keep ROOT objects alive through SaveAs().
 
     for output_file in written:
         print(f"\nWrote: {output_file}")
+    print(f"\nWrote: {norm_output}")
     return 0
 
 
