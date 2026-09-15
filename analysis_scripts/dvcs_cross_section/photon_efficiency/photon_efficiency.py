@@ -1902,12 +1902,22 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
     hmc=hbmc.GetValue().Clone(f"h_bestdp_mc_draw_{unique}"); hmc.SetDirectory(0); hmc.Scale(B)
     fdata,mu_data,sig_data=fit_peak(hdata,f"f_intdp_data_best_{unique}")
     fmc,mu_mc,sig_mc=fit_peak(hmc,f"f_intdp_mc_best_{unique}")
+    for label, mu_value, sigma_value in (
+        ("data", mu_data, sig_data),
+        ("AAOgen", mu_mc, sig_mc),
+    ):
+        if not math.isfinite(mu_value) or not math.isfinite(sigma_value) or sigma_value <= 0.0:
+            raise RuntimeError(
+                f"Integrated Delta-p {label} fit returned invalid parameters: "
+                f"mu={mu_value}, sigma={sigma_value}"
+            )
 
     def components(f,prefix):
         sg=ROOT.TF1(prefix+"_sig","gaus",-0.50,0.60); sg.SetParameters(f.GetParameter(0),f.GetParameter(1),f.GetParameter(2))
         bg=ROOT.TF1(prefix+"_bg","pol2",-0.50,0.60); bg.SetParameters(f.GetParameter(3),f.GetParameter(4),f.GetParameter(5))
         return sg,bg
-    sig_data,bg_data=components(fdata,f"intdp_data_{unique}"); sig_mc,bg_mc=components(fmc,f"intdp_mc_{unique}")
+    sigfunc_data,bg_data=components(fdata,f"intdp_data_{unique}")
+    sigfunc_mc,bg_mc=components(fmc,f"intdp_mc_{unique}")
 
     def bgsub_window(h,bg,mu,sig,n,scale):
         # Convert all scalar inputs to native Python numbers before arithmetic.
@@ -1929,8 +1939,16 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
         ed=sd/nd if nd else float('nan'); em=sm/nm if nm else float('nan')
         results[n]={"Ndata":sd,"Nmc":sm,"obs_data":od,"bkg_data":bd,"obs_mc":om,"bkg_mc":bm,"eff_data":ed,"eff_mc":em,"ratio":ed/em if em>0 else float('nan')}
 
-    c=ROOT.TCanvas(f"c_intdp_eff_{unique}","",1500,720); c.Divide(2,1,0.002,0.002); keep=[c,hdata,hmc,fdata,fmc,sig_data,bg_data,sig_mc,bg_mc]
-    for ipad,(h,f,sg,bg,mu,sig,title,col) in enumerate([(hdata,fdata,sig_data,bg_data,mu_data,sig_data,"Data: integrated #Delta p fit",ROOT.kBlack),(hmc,fmc,sig_mc,bg_mc,mu_mc,sig_mc,"AAOgen: integrated #Delta p fit",ROOT.kRed+1)],1):
+    c=ROOT.TCanvas(f"c_intdp_eff_{unique}","",1500,720)
+    c.Divide(2,1,0.002,0.002)
+    keep=[c,hdata,hmc,fdata,fmc,sigfunc_data,bg_data,sigfunc_mc,bg_mc]
+    panels = [
+        (hdata,fdata,sigfunc_data,bg_data,mu_data,sig_data,
+         "Data: integrated #Delta p fit",ROOT.kBlack),
+        (hmc,fmc,sigfunc_mc,bg_mc,mu_mc,sig_mc,
+         "AAOgen: integrated #Delta p fit",ROOT.kRed+1),
+    ]
+    for ipad,(h,f,sg,bg,mu,sig,title,col) in enumerate(panels,1):
         pad=c.cd(ipad); pad.SetTicks(1,1); pad.SetLeftMargin(0.14); pad.SetBottomMargin(0.14); pad.SetTopMargin(0.11); pad.SetRightMargin(0.04)
         h.SetStats(0); h.SetLineColor(col); h.SetMarkerColor(col); h.SetMarkerStyle(20); h.SetMarkerSize(0.55)
         h.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)"); h.GetYaxis().SetTitle("Normalized candidate combinations"); h.GetYaxis().SetTitleOffset(1.55); h.Draw("E1")
@@ -2975,6 +2993,10 @@ def main():
         print(f"\nWrote: {final_output}")
     if probe_output:
         print(f"\nWrote: {probe_output}")
+    if deltap_output:
+        print(f"\nWrote: {deltap_output}")
+    if inteff_output:
+        print(f"\nWrote: {inteff_output}")
     if pi0fit_output:
         print(f"\nWrote: {pi0fit_output}")
     if pi0fit_result and pi0fit_result.get("window_scan_output"):
