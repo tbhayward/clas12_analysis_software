@@ -1827,6 +1827,8 @@ def draw_probe_aaogen_pi0_fit(dfs, output_dir, period, coeffs):
         "double_yield": y_double,
         "double_chi2": f_double.GetChisquare(),
         "double_ndf": f_double.GetNDF(),
+        "single_params": [f_single.GetParameter(i) for i in range(6)],
+        "double_params": [f_double.GetParameter(i) for i in range(8)],
         "single_window_span": single_span,
         "double_window_span": double_span,
         "scan": scan,
@@ -1857,143 +1859,199 @@ def draw_probe_aaogen_pi0_fit(dfs, output_dir, period, coeffs):
     return keep, out, result
 
 
-def draw_probe_aaogen_truth_closure(aaogen_files, output_dir, period, coeffs, fit_result):
-    """Truth closure for the AAOgen pi0-yield extraction.
+def draw_probe_aaogen_truth_closure(dfs, output_dir, period, coeffs, fit_result):
+    """Truth-label the *same selected AAOgen tag-probe combinations* used by the fit.
 
-    PhotonEfficiencyEvents is one row per accepted-electron MC event and contains
-    the generated MC::Particle photons plus each generated photon's best REC
-    association.  For AAOgen events with exactly two generated photons, we:
-      1) verify the generated pair is a pi0 using generated Mgg,
-      2) require both generated photons to have distinct best REC PID-22 matches,
-      3) construct the matched reconstructed Mgg from those two REC associations.
+    This is the closure that is actually relevant to the fitted pi0 yield:
+      - start from the same PhotonEfficiency AAOgen rows as plot 2;
+      - apply exactly _exclusive_df(), hence the identical epgammaX cuts;
+      - build exactly the same tag + retained-PID22-partner combinations;
+      - use saved MC::Particle/REC matching only to label each combination as
+        a true pi0 daughter pair or a combinatorial/wrong pair.
 
-    This gives a truth-tagged reconstructed pi0 spectrum independent of the
-    inclusive tag-probe signal/background fit.  The fitted normalized yield is
-    compared directly with the B-scaled truth-matched reconstructed yield.
+    A true pair requires:
+      * the reconstructed tag's saved MC match is a photon from a pi0;
+      * the saved generated probe is the other photon from that pi0;
+      * the reconstructed neutral partner is PID 22 and is matched to that
+        generated probe MC index.
+
+    The inclusive selected spectrum is therefore decomposed bin-by-bin as
+        inclusive = truth-matched pi0 + combinatorial/wrong.
+    All three spectra are scaled by the same AAOgen normalization B used in
+    plots 1--3.  Closure is evaluated over the nominal fit interval, exactly
+    matching the integration interval used for the fitted signal yields.
     """
-    if not aaogen_files or coeffs is None or fit_result is None:
-        print("WARNING: truth-closure inputs unavailable; skipping AAOgen pi0 closure.")
+    if coeffs is None or fit_result is None or "aaogen" not in dfs:
+        print("WARNING: AAOgen truth-closure inputs unavailable; skipping.")
         return [], None, None
 
     _, B, _ = coeffs["mean"]
+    lo = float(fit_result["nominal_lo"])
+    hi = float(fit_result["nominal_hi"])
+    unique = str(abs(hash((period, "aaogen_selected_pair_truth_closure"))))
 
-    ch=ROOT.TChain(EVENT_TREE)
-    for path in aaogen_files:
-        ch.Add(path)
-    if int(ch.GetEntries()) == 0:
-        print("WARNING: AAOgen PhotonEfficiencyEvents is empty; skipping truth closure.")
-        return [], None, None
+    # Exact same selected rows and exact same inclusive Mgg construction as plot 2.
+    df = (_exclusive_df(dfs["aaogen"], "truthclosure_selected_aaogen")
+          .Define("closure_Mgg_all",
+              "pe_mgg_tag_probe(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
+              "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)")
+          .Define("closure_Mgg_true",
+              "pe_mgg_truth_matched_pi0_reco("
+              "tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
+              "mc_tag_index,mc_tag_pid,mc_tag_parent,"
+              "mc_probe_index,mc_probe_pid,mc_probe_parent,"
+              "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi,"
+              "neutral_mc_index,neutral_mc_pid)"))
 
-    branches={b.GetName() for b in ch.GetListOfBranches()}
-    required=[
-        "W","gen_gamma_total","gen_gamma_p","gen_gamma_theta","gen_gamma_phi",
-        "gen_gamma_best_rec_index","gen_gamma_best_rec_pid",
-        "gen_gamma_best_rec_p","gen_gamma_best_rec_theta","gen_gamma_best_rec_phi",
-    ]
-    missing=[x for x in required if x not in branches]
-    if missing:
-        print("WARNING: AAOgen truth closure missing PhotonEfficiencyEvents branches:")
-        for x in missing:
-            print(f"  - {x}")
-        return [], None, None
+    hall_ptr = df.Histo1D(
+        (f"h_closure_all_{unique}",
+         ";M_{#gamma_{tag}#gamma_{probe}} (GeV);Normalized tag-probe combinations",
+         160, 0.0, 0.8), "closure_Mgg_all")
+    htrue_ptr = df.Histo1D(
+        (f"h_closure_true_{unique}",
+         ";M_{#gamma_{tag}#gamma_{probe}} (GeV);Normalized tag-probe combinations",
+         160, 0.0, 0.8), "closure_Mgg_true")
+    ROOT.RDF.RunGraphs([hall_ptr, htrue_ptr])
 
-    unique=str(abs(hash((period,"aaogen_truth_closure"))))
-    rdf=ROOT.RDataFrame(ch).Filter("W > 2.0","truthclosure_W_gt_2")
-    two=(rdf.Filter("gen_gamma_total == 2","truthclosure_two_generated_photons")
-         .Define("truth_Mgg_gen",
-             "pe_mgg_deg(gen_gamma_p[0],gen_gamma_theta[0],gen_gamma_phi[0],"
-             "gen_gamma_p[1],gen_gamma_theta[1],gen_gamma_phi[1])"))
+    hall = hall_ptr.GetValue().Clone(f"h_closure_all_scaled_{unique}")
+    htrue = htrue_ptr.GetValue().Clone(f"h_closure_true_scaled_{unique}")
+    hall.SetDirectory(0); htrue.SetDirectory(0)
+    hall.Sumw2(); htrue.Sumw2()
+    hall.Scale(B); htrue.Scale(B)
 
-    # AAOgen is an exclusive pi0 generator, but use the generated invariant mass
-    # itself as the truth definition rather than the problematic MC::Lund
-    # gen_n_pi0_photon bookkeeping. A tight ±10 MeV window is far wider than
-    # generator numerical precision and unambiguously selects pi0->gamma gamma.
-    truth=(two.Filter("truth_Mgg_gen > 0.125 && truth_Mgg_gen < 0.145",
-                      "truthclosure_generated_pi0_mass")
-           .Filter("gen_gamma_best_rec_index[0] >= 0 && gen_gamma_best_rec_index[1] >= 0",
-                   "truthclosure_both_rec_associated")
-           .Filter("gen_gamma_best_rec_index[0] != gen_gamma_best_rec_index[1]",
-                   "truthclosure_distinct_rec_associations")
-           .Filter("gen_gamma_best_rec_pid[0] == 22 && gen_gamma_best_rec_pid[1] == 22",
-                   "truthclosure_both_rec_pid22")
-           .Define("truth_Mgg_rec",
-             "pe_mgg_deg(gen_gamma_best_rec_p[0],gen_gamma_best_rec_theta[0],gen_gamma_best_rec_phi[0],"
-             "gen_gamma_best_rec_p[1],gen_gamma_best_rec_theta[1],gen_gamma_best_rec_phi[1])"))
+    hbg = hall.Clone(f"h_closure_bg_scaled_{unique}")
+    hbg.SetDirectory(0)
+    hbg.Add(htrue, -1.0)
 
-    hgen=two.Histo1D((f"h_truthclosure_gen_{unique}",
-                      ";M_{#gamma#gamma} (GeV);Normalized combinations",120,0.10,0.17),
-                     "truth_Mgg_gen")
-    hrec=truth.Histo1D((f"h_truthclosure_rec_{unique}",
-                       ";M_{#gamma#gamma} (GeV);Normalized combinations",160,0.0,0.30),
-                      "truth_Mgg_rec")
-    ngen=two.Count()
-    ntruthgen=two.Filter("truth_Mgg_gen > 0.125 && truth_Mgg_gen < 0.145").Count()
-    nrec=truth.Count()
-    ROOT.RDF.RunGraphs([hgen,hrec,ngen,ntruthgen,nrec])
+    # Same bin convention as the fit. The fit yields are integrals over [lo,hi].
+    ax = hall.GetXaxis()
+    blo = ax.FindBin(lo + 1.0e-9)
+    bhi = ax.FindBin(hi - 1.0e-9)
+    truth_yield = float(htrue.Integral(blo, bhi))
+    inclusive_yield = float(hall.Integral(blo, bhi))
+    bg_yield = float(hbg.Integral(blo, bhi))
 
-    hg=hgen.GetValue().Clone(f"hg_truthclosure_{unique}")
-    hr=hrec.GetValue().Clone(f"hr_truthclosure_{unique}")
-    for h in (hg,hr):
-        h.SetDirectory(0); h.Sumw2(); h.Scale(B); h.SetStats(0)
+    fit_single = float(fit_result["single_yield"])
+    fit_double = float(fit_result["double_yield"])
+    bias_single = 100.0 * (fit_single / truth_yield - 1.0) if truth_yield > 0 else float("nan")
+    bias_double = 100.0 * (fit_double / truth_yield - 1.0) if truth_yield > 0 else float("nan")
 
-    truth_yield=float(nrec.GetValue())*B
-    fit_single=float(fit_result["single_yield"])
-    fit_double=float(fit_result["double_yield"])
-    bias_single=100.0*(fit_single/truth_yield-1.0) if truth_yield>0 else float("nan")
-    bias_double=100.0*(fit_double/truth_yield-1.0) if truth_yield>0 else float("nan")
+    # Reconstruct exactly the nominal double-Gaussian fit components from plot 2.
+    dp = fit_result["double_params"]
+    f_sig = ROOT.TF1(
+        f"f_closure_double_signal_{unique}",
+        "[0]*exp(-0.5*((x-[1])/[2])^2)+[3]*exp(-0.5*((x-[1])/[4])^2)",
+        lo, hi)
+    for i in range(5):
+        f_sig.SetParameter(i, dp[i])
 
-    c=ROOT.TCanvas(f"c_truthclosure_{unique}","",1450,700)
-    c.Divide(2,1,0.002,0.002)
-    keep=[c,hgen,hrec,ngen,ntruthgen,nrec,hg,hr]
+    f_bg = ROOT.TF1(f"f_closure_double_bg_{unique}", "pol2", lo, hi)
+    for i in range(3):
+        f_bg.SetParameter(i, dp[5+i])
 
-    p=c.cd(1); p.SetTicks(1,1); p.SetLeftMargin(0.16); p.SetRightMargin(0.04); p.SetBottomMargin(0.14); p.SetTopMargin(0.10)
-    hg.SetLineColor(ROOT.kBlue+1); hg.SetLineWidth(2); hg.SetMarkerColor(ROOT.kBlue+1); hg.SetMarkerStyle(20); hg.SetMarkerSize(0.6)
-    hg.GetXaxis().SetTitleSize(0.048); hg.GetYaxis().SetTitleSize(0.043); hg.GetYaxis().SetTitleOffset(1.55)
-    hg.Draw("E1")
-    t1=ROOT.TLatex(); t1.SetNDC(True); t1.SetTextAlign(22); t1.SetTextSize(0.037)
-    t1.DrawLatex(0.53,0.955,"AAOgen generated two-photon truth")
-    keep.append(t1)
+    # Canvas: left = truth decomposition; right = direct truth-vs-fit closure.
+    c = ROOT.TCanvas(f"c_selected_truthclosure_{unique}", "", 1500, 720)
+    c.Divide(2, 1, 0.002, 0.002)
+    keep = [c, hall_ptr, htrue_ptr, hall, htrue, hbg, f_sig, f_bg]
 
-    p=c.cd(2); p.SetTicks(1,1); p.SetLeftMargin(0.16); p.SetRightMargin(0.04); p.SetBottomMargin(0.14); p.SetTopMargin(0.10)
-    hr.SetLineColor(ROOT.kRed+1); hr.SetLineWidth(2); hr.SetMarkerColor(ROOT.kRed+1); hr.SetMarkerStyle(20); hr.SetMarkerSize(0.6)
-    hr.GetXaxis().SetTitleSize(0.048); hr.GetYaxis().SetTitleSize(0.043); hr.GetYaxis().SetTitleOffset(1.55)
-    hr.Draw("E1")
-    t2=ROOT.TLatex(); t2.SetNDC(True); t2.SetTextAlign(22); t2.SetTextSize(0.037)
-    t2.DrawLatex(0.53,0.955,"Truth-matched reconstructed #pi^{0} pairs")
-    info=ROOT.TLatex(); info.SetNDC(True); info.SetTextSize(0.029)
-    info.DrawLatex(0.20,0.86,f"Truth N_{{#pi^{{0}}}} = {truth_yield:,.0f}")
-    info.DrawLatex(0.20,0.81,f"Single-G fit bias = {bias_single:+.2f}%")
-    info.DrawLatex(0.20,0.76,f"Double-G fit bias = {bias_double:+.2f}%")
-    keep.extend([t2,info])
+    # Left panel.
+    p = c.cd(1)
+    p.SetTicks(1,1); p.SetLeftMargin(0.16); p.SetRightMargin(0.04)
+    p.SetBottomMargin(0.14); p.SetTopMargin(0.11)
 
-    out=os.path.join(output_dir,f"4_{period}_AAOgen_Mgg_pi0_truth_closure.png")
+    hall.SetStats(0)
+    hall.SetLineColor(ROOT.kRed + 1); hall.SetLineWidth(2)
+    hall.SetMarkerColor(ROOT.kRed + 1); hall.SetMarkerStyle(20); hall.SetMarkerSize(0.55)
+    hall.GetXaxis().SetRangeUser(0.0, 0.30)
+    hall.GetXaxis().SetTitleSize(0.048); hall.GetYaxis().SetTitleSize(0.043)
+    hall.GetYaxis().SetTitleOffset(1.60)
+    hall.SetMaximum(1.18 * max(hall.GetMaximum(), 1.0))
+    hall.Draw("E1")
+
+    htrue.SetLineColor(ROOT.kBlue + 1); htrue.SetLineWidth(3)
+    htrue.SetMarkerColor(ROOT.kBlue + 1); htrue.SetMarkerStyle(24); htrue.SetMarkerSize(0.50)
+    htrue.Draw("E1 SAME")
+
+    hbg.SetLineColor(ROOT.kGray + 2); hbg.SetLineWidth(2); hbg.SetLineStyle(2)
+    hbg.Draw("HIST SAME")
+    hall.Draw("E1 SAME")
+
+    leg1 = ROOT.TLegend(0.48, 0.68, 0.94, 0.87)
+    leg1.SetBorderSize(0); leg1.SetFillStyle(0); leg1.SetTextSize(0.029)
+    leg1.AddEntry(hall, "All selected AAOgen combinations", "lep")
+    leg1.AddEntry(htrue, "Truth-matched #pi^{0} pairs", "lep")
+    leg1.AddEntry(hbg, "Combinatorial / wrong pairs", "l")
+    leg1.Draw()
+
+    title1 = ROOT.TLatex(); title1.SetNDC(True); title1.SetTextAlign(22); title1.SetTextSize(0.036)
+    title1.DrawLatex(0.54, 0.955, "Same selected AAOgen combinations: truth decomposition")
+    keep += [leg1, title1]
+
+    # Right panel: truth signal against the actual fitted signal/background.
+    p = c.cd(2)
+    p.SetTicks(1,1); p.SetLeftMargin(0.16); p.SetRightMargin(0.04)
+    p.SetBottomMargin(0.14); p.SetTopMargin(0.11)
+
+    htrue2 = htrue.Clone(f"h_closure_true_compare_{unique}")
+    htrue2.SetDirectory(0); htrue2.SetStats(0)
+    htrue2.GetXaxis().SetRangeUser(0.0, 0.30)
+    htrue2.GetYaxis().SetTitleOffset(1.60)
+    htrue2.SetMaximum(1.25 * max(htrue.GetMaximum(), f_sig.GetMaximum(), 1.0))
+    htrue2.Draw("E1")
+
+    f_sig.SetLineColor(ROOT.kMagenta + 2); f_sig.SetLineWidth(3)
+    f_bg.SetLineColor(ROOT.kGray + 2); f_bg.SetLineWidth(2); f_bg.SetLineStyle(2)
+    f_sig.Draw("SAME")
+    f_bg.Draw("SAME")
+
+    leg2 = ROOT.TLegend(0.53, 0.67, 0.94, 0.87)
+    leg2.SetBorderSize(0); leg2.SetFillStyle(0); leg2.SetTextSize(0.028)
+    leg2.AddEntry(htrue2, "Truth-matched #pi^{0} pairs", "lep")
+    leg2.AddEntry(f_sig, "Double-Gaussian fitted signal", "l")
+    leg2.AddEntry(f_bg, "Quadratic fitted background", "l")
+    leg2.Draw()
+
+    info = ROOT.TLatex(); info.SetNDC(True); info.SetTextSize(0.027)
+    info.DrawLatex(0.19, 0.84, f"{lo:.2f} < M_{{#gamma#gamma}} < {hi:.2f} GeV")
+    info.DrawLatex(0.19, 0.79, f"Truth N_{{#pi^{{0}}}} = {truth_yield:,.0f}")
+    info.DrawLatex(0.19, 0.74, f"Single-G N_{{#pi^{{0}}}} = {fit_single:,.0f}  ({bias_single:+.2f}%)")
+    info.DrawLatex(0.19, 0.69, f"Double-G N_{{#pi^{{0}}}} = {fit_double:,.0f}  ({bias_double:+.2f}%)")
+
+    title2 = ROOT.TLatex(); title2.SetNDC(True); title2.SetTextAlign(22); title2.SetTextSize(0.036)
+    title2.DrawLatex(0.54, 0.955, "Fit closure against known AAOgen truth")
+    keep += [htrue2, leg2, info, title2]
+
+    out = os.path.join(output_dir, f"4_{period}_AAOgen_Mgg_pi0_truth_closure.png")
     c.SaveAs(out)
 
-    result={
-        "truth_yield":truth_yield,
-        "single_fit_yield":fit_single,
-        "double_fit_yield":fit_double,
-        "single_bias_pct":bias_single,
-        "double_bias_pct":bias_double,
-        "generated_two_photon":int(ngen.GetValue()),
-        "generated_pi0_mass":int(ntruthgen.GetValue()),
-        "truth_matched_reco":int(nrec.GetValue()),
+    result = {
+        "truth_yield": truth_yield,
+        "inclusive_yield": inclusive_yield,
+        "background_yield": bg_yield,
+        "single_fit_yield": fit_single,
+        "double_fit_yield": fit_double,
+        "single_bias_pct": bias_single,
+        "double_bias_pct": bias_double,
+        "raw_all_pairs": int(round(hall_ptr.GetValue().GetEntries())),
+        "raw_truth_pairs": int(round(htrue_ptr.GetValue().GetEntries())),
     }
 
-    print("\nAAOgen pi0 truth closure:")
-    print("  truth definition: exactly two MC::Particle photons with 0.125 < generated Mgg < 0.145 GeV")
-    print("  reconstructed truth pair: both generated photons have distinct best REC associations, both PID 22")
-    print(f"  two-generated-photon events = {result['generated_two_photon']:,}")
-    print(f"  generated pi0-mass events = {result['generated_pi0_mass']:,}")
-    print(f"  truth-matched reconstructed pairs = {result['truth_matched_reco']:,}")
-    print(f"  B-scaled truth reconstructed yield = {truth_yield:.2f}")
-    print(f"  single-Gaussian fitted yield = {fit_single:.2f}  bias = {bias_single:+.3f}%")
-    print(f"  double-Gaussian fitted yield = {fit_double:.2f}  bias = {bias_double:+.3f}%")
-    print("  IMPORTANT: this closure uses the event-tree best REC associations and therefore")
-    print("             tests signal-yield extraction before the next fiducial-volume step.")
+    print("\nAAOgen selected-pair pi0 truth closure:")
+    print("  IMPORTANT: this now starts from the SAME _exclusive_df() AAOgen rows")
+    print("             and the SAME tag + retained-PID22 combinations used in plot 2.")
+    print("  MC truth is used only to label each already-selected reconstructed pair.")
+    print(f"  nominal comparison interval = {lo:.3f}--{hi:.3f} GeV")
+    print(f"  raw selected combinations = {result['raw_all_pairs']:,}")
+    print(f"  raw truth-matched pi0 combinations = {result['raw_truth_pairs']:,}")
+    print(f"  B-scaled inclusive combinations in fit interval = {inclusive_yield:.2f}")
+    print(f"  B-scaled truth pi0 combinations in fit interval = {truth_yield:.2f}")
+    print(f"  B-scaled combinatorial/wrong combinations in fit interval = {bg_yield:.2f}")
+    print(f"  single-Gaussian fitted signal = {fit_single:.2f}  closure bias = {bias_single:+.3f}%")
+    print(f"  double-Gaussian fitted signal = {fit_double:.2f}  closure bias = {bias_double:+.3f}%")
+    print("  These closure biases are now meaningful because numerator and truth reference")
+    print("  use the same selected reconstructed combination population and mass interval.")
 
-    return keep,out,result
-
+    return keep, out, result
 
 def _event_grouped_unique_tag_mgg(df, hist_name, title, tolerance=1.0e-10):
     """Build every unique reconstructed-photon pair for each sequential e+p block.
@@ -2399,9 +2457,8 @@ def main():
         dfs, probe_dir, args.period, denominator_coeffs)
     keep.extend(pi0fit_keep)
 
-    aaogen_files = discover("aaogen", args.period) if "aaogen" in dfs else []
     truthclosure_keep, truthclosure_output, truthclosure_result = draw_probe_aaogen_truth_closure(
-        aaogen_files, probe_dir, args.period, denominator_coeffs, pi0fit_result)
+        dfs, probe_dir, args.period, denominator_coeffs, pi0fit_result)
     keep.extend(truthclosure_keep)
     _ = keep  # Keep ROOT objects alive through SaveAs().
 
