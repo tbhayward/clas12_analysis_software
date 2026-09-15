@@ -390,8 +390,8 @@ def draw_canvases(dfs, output_dir, period):
 
     stages = [
         ("", lambda df: df),
-        ("M^{2}_{X}(e'p') < 0.15 GeV^{2}",
-         lambda df: df.Filter("Mx2_ep < 0.15", "Mx2_ep_lt_0p15")),
+        ("M^{2}_{X}(e'p') < 0.13 GeV^{2}",
+         lambda df: df.Filter("Mx2_ep < 0.13", "Mx2_ep_lt_0p13")),
         ("-0.05 < M^{2}_{X}(e'p'#gamma1) < 0.05 GeV^{2}",
          lambda df: df.Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "Mx2_epg_window")),
         ("M^{2}_{X}(e'#gamma1) > 1.0 GeV^{2}",
@@ -521,7 +521,7 @@ def draw_normalization_step1(dfs, output_dir, period):
         if sample not in dfs:
             continue
         selected[sample] = (dfs[sample]
-            .Filter("Mx2_ep < 0.15", "norm_Mx2_ep_lt_0p15")
+            .Filter("Mx2_ep < 0.13", "norm_Mx2_ep_lt_0p13")
             .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "norm_Mx2_epg_window")
             .Filter("Mx2_egamma1 > 1.0", "norm_Mx2_egamma1_gt_1p0")
             .Filter("E_gamma1 > 4.0", "norm_Egamma1_gt_4"))
@@ -551,7 +551,7 @@ def draw_normalization_step1(dfs, output_dir, period):
     canvas_title.SetNDC(True)
     canvas_title.SetTextAlign(22)
     canvas_title.SetTextSize(0.028)
-    canvas_title.DrawLatex(0.50, 0.992, "E_{#gamma1} > 4 GeV")
+    canvas_title.DrawLatex(0.50, 0.975, "E_{#gamma1} > 4 GeV")
     keep.append(canvas_title)
 
     for iplot, (_expr, _title, _nbins, _xmin, _xmax, logy) in enumerate(plots):
@@ -560,7 +560,7 @@ def draw_normalization_step1(dfs, output_dir, period):
         pad.SetLeftMargin(0.14)
         pad.SetRightMargin(0.04)
         pad.SetBottomMargin(0.13)
-        pad.SetTopMargin(0.08)
+        pad.SetTopMargin(0.11)
         if logy:
             pad.SetLogy(True)
 
@@ -1112,7 +1112,7 @@ def print_egamma1_survival_scan(dfs):
 def _exclusive_df(df, tag):
     """Final epgammaX exclusivity selection used by normalization and probe stages."""
     return (df
-            .Filter("Mx2_ep < 0.15", f"{tag}_Mx2_ep_lt_0p15")
+            .Filter("Mx2_ep < 0.13", f"{tag}_Mx2_ep_lt_0p13")
             .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", f"{tag}_Mx2_epg_window")
             .Filter("Mx2_egamma1 > 1.0", f"{tag}_Mx2_egamma1_gt_1p0"))
 
@@ -1227,9 +1227,9 @@ def draw_low_energy_shapes_v7(dfs, output_dir, period):
     canvas=ROOT.TCanvas(f"c_v7los_{unique}","",1500,1100); canvas.Divide(2,2,0.002,0.002); keep=[canvas]+actions
     canvas.cd()
     canvas_title=ROOT.TLatex(); canvas_title.SetNDC(True); canvas_title.SetTextAlign(22); canvas_title.SetTextSize(0.028)
-    canvas_title.DrawLatex(0.50,0.992,"E_{#gamma1} < 4 GeV"); keep.append(canvas_title)
+    canvas_title.DrawLatex(0.50,0.975,"E_{#gamma1} < 4 GeV"); keep.append(canvas_title)
     for ip,spec in enumerate(specs):
-        pad=canvas.cd(ip+1); pad.SetTicks(1,1); pad.SetLeftMargin(0.14); pad.SetRightMargin(0.04); pad.SetBottomMargin(0.13); pad.SetTopMargin(0.08)
+        pad=canvas.cd(ip+1); pad.SetTicks(1,1); pad.SetLeftMargin(0.14); pad.SetRightMargin(0.04); pad.SetBottomMargin(0.13); pad.SetTopMargin(0.11)
         if spec[5]: pad.SetLogy(True)
         leg=ROOT.TLegend(0.50,0.68,0.88,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.028); keep.append(leg)
         hs=[]; ymax=0.; pmin=None
@@ -1384,70 +1384,154 @@ def draw_probe_mgg(dfs, output_dir, period, coeffs):
 
     Data remain in measured counts. MC components are scaled by the arithmetic-
     mean A/B/C normalization coefficients obtained in the immediately preceding
-    denominator-normalization step. Histograms are not unit normalized.
+    denominator-normalization step. Individual MC components are shown as thin
+    dashed lines; their sum is shown as a separate solid curve.
     """
     if coeffs is None:
         print("WARNING: no denominator normalization coefficients; skipping probe Mgg plot.")
         return [], None
 
-    selected={}
-    for sample,df in dfs.items():
-        selected[sample]=(_exclusive_df(df,f"probe_{sample}")
+    selected = {}
+    for sample, df in dfs.items():
+        selected[sample] = (_exclusive_df(df, f"probe_{sample}")
             .Define("Mgg_tag_probe",
                 "pe_mgg_tag_probe(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
                 "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)"))
 
-    A,B,C=coeffs["mean"]
-    scales={"data":1.0,"dvcsgen":A,"aaogen":B,"clasdis":C}
-    unique=str(abs(hash((period,"probe_mgg_scaled"))))
-    booked={}; actions=[]
-    for sample,df in selected.items():
-        h=df.Histo1D((f"h_probe_mgg_{sample}_{unique}",
-                      ";M_{#gamma_{tag}#gamma_{probe}} (GeV);Normalized tag-probe combinations",
-                      160,0.0,0.8),"Mgg_tag_probe")
-        booked[sample]=h; actions.append(h)
+    A, B, C = coeffs["mean"]
+    scales = {"data": 1.0, "dvcsgen": A, "aaogen": B, "clasdis": C}
+    unique = str(abs(hash((period, "probe_mgg_scaled_components"))))
+    booked, actions = {}, []
+
+    for sample, df in selected.items():
+        h = df.Histo1D(
+            (f"h_probe_mgg_{sample}_{unique}",
+             ";M_{#gamma_{tag}#gamma_{probe}} (GeV);Normalized tag-probe combinations",
+             160, 0.0, 0.8),
+            "Mgg_tag_probe")
+        booked[sample] = h
+        actions.append(h)
+
     if actions:
         ROOT.RDF.RunGraphs(actions)
 
-    canvas=ROOT.TCanvas(f"c_probe_mgg_{unique}","",1000,800)
-    canvas.SetTicks(1,1); canvas.SetLeftMargin(0.13); canvas.SetRightMargin(0.04)
-    canvas.SetBottomMargin(0.13); canvas.SetTopMargin(0.08)
-    keep=[canvas]+actions; hs=[]; ymax=0.0
-    leg=ROOT.TLegend(0.46,0.65,0.89,0.88)
-    leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.026); keep.append(leg)
+    canvas = ROOT.TCanvas(f"c_probe_mgg_{unique}", "", 1050, 800)
+    canvas.SetTicks(1, 1)
+    canvas.SetLeftMargin(0.13)
+    canvas.SetRightMargin(0.04)
+    canvas.SetBottomMargin(0.13)
+    canvas.SetTopMargin(0.08)
 
-    for sample,label in SAMPLES:
+    keep = [canvas] + actions
+    leg = ROOT.TLegend(0.43, 0.62, 0.89, 0.88)
+    leg.SetBorderSize(0)
+    leg.SetFillStyle(0)
+    leg.SetTextSize(0.026)
+    keep.append(leg)
+
+    drawn = {}
+    raw_pairs = {}
+    for sample, label in SAMPLES:
         if sample not in booked:
             continue
-        h=booked[sample].GetValue().Clone(f"hp_probe_{sample}_{unique}")
-        h.SetDirectory(0); h.SetStats(0); h.SetLineColor(COLORS[sample]); h.SetLineWidth(3)
-        n=int(round(h.GetEntries()))
-        scale=scales.get(sample,1.0)
-        if sample!="data":
-            h.Scale(scale)
-            leg_label=f"{label} (#times{scale:.4g}; raw pairs={n:,})"
-        else:
-            leg_label=f"{label} (pairs={n:,})"
-        ymax=max(ymax,h.GetMaximum()); hs.append(h); keep.append(h)
-        leg.AddEntry(h,leg_label,"l")
+        h = booked[sample].GetValue().Clone(f"hp_probe_{sample}_{unique}")
+        h.SetDirectory(0)
+        h.SetStats(0)
+        raw_pairs[sample] = int(round(h.GetEntries()))
 
-    for i,h in enumerate(hs):
-        h.SetMinimum(0.0); h.SetMaximum(1.22*ymax if ymax else 1.0)
-        h.GetXaxis().SetTitleSize(0.047); h.GetYaxis().SetTitleSize(0.043)
-        h.GetXaxis().SetLabelSize(0.038); h.GetYaxis().SetLabelSize(0.038)
-        h.GetYaxis().SetTitleOffset(1.35)
-        h.Draw("HIST" if i==0 else "HIST SAME")
+        if sample != "data":
+            h.Scale(scales[sample])
+            h.SetLineColor(COLORS[sample])
+            h.SetLineWidth(2)
+            h.SetLineStyle(2)
+        else:
+            h.SetLineColor(COLORS["data"])
+            h.SetLineWidth(3)
+            h.SetLineStyle(1)
+
+        drawn[sample] = h
+        keep.append(h)
+
+    # Sum the already-scaled MC components. Use a distinct violet/magenta-family
+    # ROOT color so it is visually separate from black Data and the component colors.
+    combined = None
+    for sample in ("dvcsgen", "aaogen", "clasdis"):
+        if sample not in drawn:
+            continue
+        if combined is None:
+            combined = drawn[sample].Clone(f"h_probe_combined_mc_{unique}")
+            combined.SetDirectory(0)
+        else:
+            combined.Add(drawn[sample])
+
+    if combined is not None:
+        combined.SetStats(0)
+        combined.SetLineColor(ROOT.kMagenta + 2)
+        combined.SetLineWidth(4)
+        combined.SetLineStyle(1)
+        keep.append(combined)
+
+    ymax = 0.0
+    if "data" in drawn:
+        ymax = max(ymax, drawn["data"].GetMaximum())
+    if combined is not None:
+        ymax = max(ymax, combined.GetMaximum())
+    for sample in ("dvcsgen", "aaogen", "clasdis"):
+        if sample in drawn:
+            ymax = max(ymax, drawn[sample].GetMaximum())
+
+    # Draw Data first to establish axes, then the combined prediction, then thin
+    # component overlays, and finally Data again so it remains visually prominent.
+    first_hist = drawn.get("data")
+    if first_hist is None:
+        first_hist = combined
+    if first_hist is None and drawn:
+        first_hist = next(iter(drawn.values()))
+
+    if first_hist is not None:
+        first_hist.SetMinimum(0.0)
+        first_hist.SetMaximum(1.22 * ymax if ymax else 1.0)
+        first_hist.GetXaxis().SetTitleSize(0.047)
+        first_hist.GetYaxis().SetTitleSize(0.043)
+        first_hist.GetXaxis().SetLabelSize(0.038)
+        first_hist.GetYaxis().SetLabelSize(0.038)
+        first_hist.GetYaxis().SetTitleOffset(1.35)
+        first_hist.Draw("HIST")
+
+    if combined is not None and combined is not first_hist:
+        combined.Draw("HIST SAME")
+
+    for sample in ("dvcsgen", "aaogen", "clasdis"):
+        if sample in drawn and drawn[sample] is not first_hist:
+            drawn[sample].Draw("HIST SAME")
+
+    if "data" in drawn and drawn["data"] is not first_hist:
+        drawn["data"].Draw("HIST SAME")
+    elif "data" in drawn:
+        drawn["data"].Draw("HIST SAME")
+
+    if "data" in drawn:
+        leg.AddEntry(drawn["data"], f"Data (pairs={raw_pairs['data']:,})", "l")
+    if combined is not None:
+        leg.AddEntry(combined, "Combined MC", "l")
+    if "dvcsgen" in drawn:
+        leg.AddEntry(drawn["dvcsgen"], f"DVCSgen (#times{A:.4g})", "l")
+    if "aaogen" in drawn:
+        leg.AddEntry(drawn["aaogen"], f"AAOgen (#times{B:.4g})", "l")
+    if "clasdis" in drawn:
+        leg.AddEntry(drawn["clasdis"], f"CLASDIS incl. (#times{C:.4g})", "l")
     leg.Draw()
 
     print("\nProbe Mgg normalization (mean coefficients from preceding denominator step):")
-    print(f"  Data:     1")
+    print("  Data:     1")
     print(f"  DVCSgen:  A = {A:.8g}")
     print(f"  AAOgen:   B = {B:.8g}")
     print(f"  CLASDIS:  C = {C:.8g}")
+    print("  Combined MC = A*DVCSgen + B*AAOgen + C*CLASDIS")
 
-    out=os.path.join(output_dir,f"1_{period}_Mgg_tag_probe.png")
+    out = os.path.join(output_dir, f"1_{period}_Mgg_tag_probe.png")
     canvas.SaveAs(out)
-    return keep,out
+    return keep, out
 
 def _event_grouped_unique_tag_mgg(df, hist_name, title, tolerance=1.0e-10):
     """Build every unique reconstructed-photon pair for each sequential e+p block.
