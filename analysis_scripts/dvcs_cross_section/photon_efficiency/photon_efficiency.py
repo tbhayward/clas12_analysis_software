@@ -231,7 +231,7 @@ def make_dataframe(chain):
 
 
 def draw_canvases(dfs, output_dir, period):
-    """Draw one 2x2 canvas per observable through the cumulative cut sequence."""
+    """Draw one 1x3 canvas per observable through the cumulative cut sequence."""
     plots = [
         ("E_gamma1", ";E_{#gamma1} (GeV);Unit-normalized entries", 172, 0.4, 9.0, False, "gamma1_energy"),
         ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 180, 0.0, 9.0, True, "missing_energy_epgamma1"),
@@ -246,8 +246,6 @@ def draw_canvases(dfs, output_dir, period):
          lambda df: df.Filter("Mx2_ep < 0.18", "Mx2_ep_lt_0p18")),
         ("-0.05 < M^{2}_{X}(e'p'#gamma1) < 0.05 GeV^{2}",
          lambda df: df.Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "Mx2_epg_window")),
-        ("M^{2}_{X}(e'#gamma1) > 0 GeV^{2}",
-         lambda df: df.Filter("Mx2_egamma1 > 0.0", "Mx2_egamma1_gt_0")),
     ]
 
     stage_dfs = {}
@@ -257,7 +255,6 @@ def draw_canvases(dfs, output_dir, period):
         stage_dfs[(sample, 0)] = dfs[sample]
         stage_dfs[(sample, 1)] = stages[1][1](stage_dfs[(sample, 0)])
         stage_dfs[(sample, 2)] = stages[2][1](stage_dfs[(sample, 1)])
-        stage_dfs[(sample, 3)] = stages[3][1](stage_dfs[(sample, 2)])
 
     booked = {}
     actions = []
@@ -281,8 +278,8 @@ def draw_canvases(dfs, output_dir, period):
     keep = list(actions)
     written = []
     for irow, (_expr, _title, _nbins, _xmin, _xmax, logy, slug) in enumerate(plots):
-        canvas = ROOT.TCanvas(f"c_{slug}_{unique}", "", 1500, 1100)
-        canvas.Divide(2, 2, 0.002, 0.002)
+        canvas = ROOT.TCanvas(f"c_{slug}_{unique}", "", 1800, 650)
+        canvas.Divide(3, 1, 0.002, 0.002)
         keep.append(canvas)
 
         for icol, (stage_title, _filter) in enumerate(stages):
