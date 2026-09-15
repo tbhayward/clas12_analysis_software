@@ -12,6 +12,7 @@ Plot the following observables as rows:
   2) missing energy e'p'gamma1    0 to 9 GeV
   3) Mx2(e'p')                   -0.5 to 1.0 GeV^2
   4) Mx2(e'p'gamma1)             -0.1 to 0.15 GeV^2
+  5) Mx2(e'gamma1)                  0 to 8 GeV^2
 
 Columns are cumulative selections:
   1) W > 2 GeV and angle(e',gamma1) > 8 deg
@@ -65,13 +66,31 @@ ROOT.gInterpreter.Declare(r"""
 #include <cmath>
 
 double pe_angle_deg(double th1_deg, double ph1_deg, double th2_deg, double ph2_deg) {
-    const double d2r = M_PI / 180.0;
-    const double th1 = th1_deg*d2r, ph1 = ph1_deg*d2r;
-    const double th2 = th2_deg*d2r, ph2 = ph2_deg*d2r;
+    // Saved theta/phi branches are in radians.
+    const double th1 = th1_deg, ph1 = ph1_deg;
+    const double th2 = th2_deg, ph2 = ph2_deg;
     const double dot = std::sin(th1)*std::sin(th2)*std::cos(ph1-ph2)
                      + std::cos(th1)*std::cos(th2);
     const double c = std::max(-1.0, std::min(1.0, dot));
-    return std::acos(c) / d2r;
+    return std::acos(c) * 180.0 / M_PI;
+}
+
+double pe_mx2_egamma(double ebeam, double ep, double eth, double eph,
+                     double gp, double gth, double gph) {
+    const double me = 0.00051099895;
+    const double mp = 0.9382720813;
+    const double Ee = std::sqrt(ep*ep + me*me);
+    const double ex = ep*std::sin(eth)*std::cos(eph);
+    const double ey = ep*std::sin(eth)*std::sin(eph);
+    const double ez = ep*std::cos(eth);
+    const double gx = gp*std::sin(gth)*std::cos(gph);
+    const double gy = gp*std::sin(gth)*std::sin(gph);
+    const double gz = gp*std::cos(gth);
+    const double Em = ebeam + mp - Ee - gp;
+    const double px = -ex - gx;
+    const double py = -ey - gy;
+    const double pz = ebeam - ez - gz;
+    return Em*Em - px*px - py*py - pz*pz;
 }
 
 double pe_emiss_epg(double ebeam, double ep, double pp, double gp) {
@@ -197,6 +216,11 @@ def make_dataframe(chain):
     )
 
     df = df.Define(
+        "Mx2_egamma1",
+        "pe_mx2_egamma(beam_energy,e_p,e_theta,e_phi,E_gamma1,tag_corr_theta,tag_corr_phi)",
+    )
+
+    df = df.Define(
         "angle_e_gamma1_deg",
         "pe_angle_deg(e_theta,e_phi,tag_corr_theta,tag_corr_phi)",
     )
@@ -212,6 +236,7 @@ def draw_canvas(dfs, output_file):
         ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 180, 0.0, 9.0),
         ("Mx2_ep", ";M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries", 180, -0.5, 1.0),
         ("Mx2_epg_raw", ";M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries", 180, -0.1, 0.15),
+        ("Mx2_egamma1", ";M^{2}_{X}(e'#gamma1) (GeV^{2});Unit-normalized entries", 160, 0.0, 8.0),
     ]
 
     stages = [
@@ -250,7 +275,7 @@ def draw_canvas(dfs, output_file):
         ROOT.RDF.RunGraphs(actions)
 
     canvas = ROOT.TCanvas("c_photon_efficiency_restart", "", 2100, 2100)
-    canvas.Divide(3, 4, 0.002, 0.002)
+    canvas.Divide(3, 5, 0.002, 0.002)
     keep = [canvas] + list(actions)
 
     for irow, _plot in enumerate(plots):
