@@ -236,7 +236,7 @@ def draw_canvas(dfs, output_file):
         ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 180, 0.0, 9.0),
         ("Mx2_ep", ";M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries", 180, -0.5, 1.0),
         ("Mx2_epg_raw", ";M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries", 180, -0.1, 0.15),
-        ("Mx2_egamma1", ";M^{2}_{X}(e'#gamma1) (GeV^{2});Unit-normalized entries", 160, 0.0, 8.0),
+        ("Mx2_egamma1", ";M^{2}_{X}(e'#gamma1) (GeV^{2});Unit-normalized entries", 200, -10.0, 10.0),
     ]
 
     stages = [
@@ -287,7 +287,7 @@ def draw_canvas(dfs, output_file):
             pad.SetRightMargin(0.035)
             pad.SetBottomMargin(0.13)
             pad.SetTopMargin(0.12)
-            if irow == 3:
+            if irow in (1, 3):
                 pad.SetLogy(True)
 
             legend = ROOT.TLegend(0.66, 0.67, 0.94, 0.88)
@@ -312,7 +312,7 @@ def draw_canvas(dfs, output_file):
                 if integral > 0.0:
                     hist.Scale(1.0 / integral)
                 ymax = max(ymax, hist.GetMaximum())
-                if irow == 3:
+                if irow in (1, 3):
                     for ibin in range(1, hist.GetNbinsX() + 1):
                         value = hist.GetBinContent(ibin)
                         if value > 0.0 and (positive_min is None or value < positive_min):
@@ -323,7 +323,7 @@ def draw_canvas(dfs, output_file):
 
             first = True
             for _sample, _label, hist in histograms:
-                if irow == 3:
+                if irow in (1, 3):
                     ymin = max((positive_min or 1.0e-6) * 0.5, 1.0e-7)
                     hist.SetMinimum(ymin)
                     hist.SetMaximum(5.0 * ymax if ymax > 0.0 else 1.0)
@@ -343,7 +343,7 @@ def draw_canvas(dfs, output_file):
                 title = ROOT.TLatex()
                 title.SetNDC(True)
                 title.SetTextAlign(22)
-                title.SetTextSize(0.038)
+                title.SetTextSize(0.046)
                 title.DrawLatex(0.52, 0.925, stage_title)
                 keep.append(title)
             legend.Draw()
