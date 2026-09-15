@@ -1906,7 +1906,11 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
         ("data", mu_data, sig_data),
         ("AAOgen", mu_mc, sig_mc),
     ):
-        if not math.isfinite(mu_value) or not math.isfinite(sigma_value) or sigma_value <= 0.0:
+        # Native-float finite checks without relying on the math module.
+        # NaN fails x == x; +/-inf are rejected by the explicit magnitude bound.
+        if (mu_value != mu_value or sigma_value != sigma_value
+                or abs(mu_value) >= 1.0e100 or abs(sigma_value) >= 1.0e100
+                or sigma_value <= 0.0):
             raise RuntimeError(
                 f"Integrated Delta-p {label} fit returned invalid parameters: "
                 f"mu={mu_value}, sigma={sigma_value}"
