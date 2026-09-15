@@ -1916,6 +1916,65 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
           return out;
         }
         ''')
+        ROOT.gInterpreter.Declare(r'''
+        ROOT::VecOps::RVec<double> pe_compare_probe_selectors(
+            double probe_p,int tag_index,
+            int mc_tag_index,int mc_tag_pid,double mc_tag_p,double mc_tag_th,double mc_tag_ph,
+            const ROOT::VecOps::RVec<int>& neutral_idx,
+            const ROOT::VecOps::RVec<int>& neutral_pid,
+            const ROOT::VecOps::RVec<int>& neutral_detector,
+            const ROOT::VecOps::RVec<double>& neutral_p,
+            const ROOT::VecOps::RVec<double>& neutral_delta_alpha,
+            const ROOT::VecOps::RVec<int>& neutral_mc_index,
+            const ROOT::VecOps::RVec<int>& neutral_mc_pid,
+            const ROOT::VecOps::RVec<double>& neutral_mc_p,
+            const ROOT::VecOps::RVec<double>& neutral_mc_th,
+            const ROOT::VecOps::RVec<double>& neutral_mc_ph) {
+          ROOT::VecOps::RVec<double> out;
+          int best_dp=-1, best_ang=-1;
+          double min_dp=1e99, min_ang=1e99;
+          for(size_t i=0;i<neutral_idx.size();++i){
+            if(neutral_idx[i]<0 || neutral_idx[i]==tag_index || neutral_pid[i]!=22 || !(neutral_p[i]>0)) continue;
+            const double adp=std::abs(probe_p-neutral_p[i]);
+            if(adp<min_dp){min_dp=adp; best_dp=(int)i;}
+            if(i<neutral_delta_alpha.size() && std::isfinite(neutral_delta_alpha[i]) && neutral_delta_alpha[i]>=0){
+              const double a=neutral_delta_alpha[i];
+              if(a<min_ang){min_ang=a; best_ang=(int)i;}
+            }
+          }
+          if(best_dp<0 && best_ang<0) return out;
+
+          auto is_truth = [&](int j)->double {
+            if(j<0) return 0.0;
+            const size_t i=(size_t)j;
+            if(!(mc_tag_index>=0 && mc_tag_pid==22 && mc_tag_p>0) ||
+               i>=neutral_mc_index.size() || i>=neutral_mc_pid.size() || i>=neutral_mc_p.size() ||
+               i>=neutral_mc_th.size() || i>=neutral_mc_ph.size() ||
+               neutral_mc_index[i]<0 || neutral_mc_pid[i]!=22 || neutral_mc_index[i]==mc_tag_index || !(neutral_mc_p[i]>0)) return 0.0;
+            const double dot=std::sin(mc_tag_th*M_PI/180.)*std::sin(neutral_mc_th[i]*M_PI/180.)*
+                std::cos((mc_tag_ph-neutral_mc_ph[i])*M_PI/180.)+
+                std::cos(mc_tag_th*M_PI/180.)*std::cos(neutral_mc_th[i]*M_PI/180.);
+            const double c=std::max(-1.,std::min(1.,dot));
+            const double m2=2.*mc_tag_p*neutral_mc_p[i]*(1.-c);
+            if(m2<0) return 0.0;
+            const double m=std::sqrt(m2);
+            return (m>0.125 && m<0.145) ? 1.0 : 0.0;
+          };
+          auto det = [&](int j)->double {
+            return (j>=0 && (size_t)j<neutral_detector.size()) ? (double)neutral_detector[(size_t)j] : -1.0;
+          };
+          out.push_back((double)best_dp);                 // 0
+          out.push_back(is_truth(best_dp));              // 1
+          out.push_back(det(best_dp));                   // 2
+          out.push_back((double)best_ang);               // 3
+          out.push_back(is_truth(best_ang));             // 4
+          out.push_back(det(best_ang));                  // 5
+          out.push_back(best_dp==best_ang ? 1.0 : 0.0);  // 6
+          out.push_back(best_ang>=0 ? min_ang : -1.0);   // 7
+          out.push_back(best_dp>=0 ? min_dp : -1.0);     // 8
+          return out;
+        }
+        ''')
         draw_probe_integrated_delta_p_efficiency._helper_declared = True
 
     ddata = (_exclusive_df(dfs["data"], "dpdiag_data")
@@ -2020,6 +2079,56 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
         print(f"  {lab}: <Delta p>={float(md.GetValue()):+.4f} GeV = <pX-pMC> {float(mx.GetValue()):+.4f} + <pMC-pREC> {float(mc.GetValue()):+.4f} GeV")
         keep += [a,x,q,lg,tt]
     out8d=os.path.join(output_dir,f"8d_{period}_AAOgen_delta_p_component_decomposition.png"); ccomp.SaveAs(out8d); outputs.append(out8d)
+
+    # 8e: go/no-go test for probe-candidate identification.  MC truth is used
+    # ONLY to score which reconstructed candidate was selected.  No AAOgen
+    # angular or momentum-response shape is imposed on Data.
+    dsel = (_exclusive_df(dfs["aaogen"], "selector_mc")
+        .Define("selcmp", "pe_compare_probe_selectors(probe_raw_p,tag_rec_index,mc_tag_index,mc_tag_pid,mc_tag_p,mc_tag_theta,mc_tag_phi,neutral_idx,neutral_pid,neutral_detector,neutral_p,neutral_delta_alpha,neutral_mc_index,neutral_mc_pid,neutral_mc_p,neutral_mc_theta,neutral_mc_phi)")
+        .Filter("selcmp.size()>8")
+        .Define("sel_dp_truth", "selcmp[1]")
+        .Define("sel_dp_det", "selcmp[2]")
+        .Define("sel_ang_truth", "selcmp[4]")
+        .Define("sel_ang_det", "selcmp[5]")
+        .Define("sel_agree", "selcmp[6]")
+        .Define("sel_min_angle", "selcmp[7]")
+        .Define("sel_min_abs_dp", "selcmp[8]"))
+
+    print("\nProbe-candidate selector truth-purity test (AAOgen truth scores the selector only):")
+    selector_rows=[]
+    for lab,detcode in (("FT",0),("FD",1)):
+        ndp=dsel.Filter(f"sel_dp_det=={detcode}").Count()
+        tdp=dsel.Filter(f"sel_dp_det=={detcode} && sel_dp_truth>0.5").Count()
+        nang=dsel.Filter(f"sel_ang_det=={detcode}").Count()
+        tang=dsel.Filter(f"sel_ang_det=={detcode} && sel_ang_truth>0.5").Count()
+        ROOT.RDF.RunGraphs([ndp,tdp,nang,tang])
+        ndpv,tdpv,nangv,tangv=map(lambda x:int(x.GetValue()),(ndp,tdp,nang,tang))
+        pdp=tdpv/ndpv if ndpv else 0.0
+        pang=tangv/nangv if nangv else 0.0
+        selector_rows.append((lab,ndpv,pdp,nangv,pang))
+        print(f"  {lab}: min-|Delta p| {tdpv:,}/{ndpv:,} = {pdp:.4f}; min-Delta alpha {tangv:,}/{nangv:,} = {pang:.4f}")
+
+    nall=dsel.Count(); tdpall=dsel.Filter("sel_dp_truth>0.5").Count(); tangall=dsel.Filter("sel_ang_truth>0.5").Count(); nagree=dsel.Filter("sel_agree>0.5").Count()
+    ROOT.RDF.RunGraphs([nall,tdpall,tangall,nagree])
+    nv=int(nall.GetValue()); dpv=int(tdpall.GetValue()); anv=int(tangall.GetValue()); agr=int(nagree.GetValue())
+    print(f"  Overall: min-|Delta p| purity={dpv/nv if nv else 0:.4f}; min-Delta alpha purity={anv/nv if nv else 0:.4f}; selectors choose same candidate={agr/nv if nv else 0:.4f}")
+
+    csel=ROOT.TCanvas(f"c_selector_purity_{unique}","",1200,700); keep.append(csel)
+    csel.SetLeftMargin(.12); csel.SetBottomMargin(.16); csel.SetTicks(1,1)
+    hdp=ROOT.TH1D(f"h_selector_dp_{unique}",";selected probe detector;truth-selection purity",2,0,2)
+    hang=ROOT.TH1D(f"h_selector_ang_{unique}",";selected probe detector;truth-selection purity",2,0,2)
+    hdp.SetDirectory(0); hang.SetDirectory(0); hdp.SetStats(0); hang.SetStats(0)
+    for ib,(lab,_,pdp,_,pang) in enumerate(selector_rows,1):
+        hdp.GetXaxis().SetBinLabel(ib,lab); hang.GetXaxis().SetBinLabel(ib,lab); hdp.SetBinContent(ib,pdp); hang.SetBinContent(ib,pang)
+    hdp.SetMinimum(0.0); hdp.SetMaximum(1.05); hdp.SetLineColor(ROOT.kRed+1); hdp.SetMarkerColor(ROOT.kRed+1); hdp.SetMarkerStyle(21); hdp.SetMarkerSize(1.6); hdp.SetLineWidth(3)
+    hang.SetLineColor(ROOT.kBlue+1); hang.SetMarkerColor(ROOT.kBlue+1); hang.SetMarkerStyle(20); hang.SetMarkerSize(1.6); hang.SetLineWidth(3)
+    hdp.Draw("P HIST"); hang.Draw("P HIST SAME")
+    lg=ROOT.TLegend(.57,.73,.91,.88); lg.SetBorderSize(0); lg.SetFillStyle(0); lg.AddEntry(hdp,"minimum |#Delta p|","lp"); lg.AddEntry(hang,"minimum #Delta#alpha","lp"); lg.Draw()
+    tx=ROOT.TLatex(); tx.SetNDC(True); tx.SetTextSize(.037); tx.DrawLatex(.15,.93,"AAOgen probe-candidate selection: truth purity")
+    tx.SetTextSize(.029); tx.DrawLatex(.15,.875,"Truth is used only to score the reconstructed-candidate rule")
+    keep += [hdp,hang,lg,tx]
+    out8e=os.path.join(output_dir,f"8e_{period}_AAOgen_probe_candidate_selector_purity.png"); csel.SaveAs(out8e); outputs.append(out8e)
+    print(f"  Wrote selector comparison to {out8e}")
 
     print("\nIntegrated Delta-p efficiency extraction is intentionally disabled at this stage.")
     print("  No AAOgen truth template is used to classify Data.")
