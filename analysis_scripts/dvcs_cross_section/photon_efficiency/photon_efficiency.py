@@ -58,8 +58,10 @@ Outputs
 -------
 output/1_photon_efficiency_stage1_preparation_<period>.png
 output/2_photon_efficiency_stage1_common_photon_<period>.png
-output/3_photon_efficiency_stage1_probe_<period>.png
-output/5_photon_efficiency_stage1_cutflow_<period>.txt
+output/3_photon_efficiency_stage1_probe_sequence_<period>.png
+output/4_photon_efficiency_stage1_gamma2_<period>.png
+output/5_photon_efficiency_stage1_nearest_neutral_<period>.png
+output/6_photon_efficiency_stage1_cutflow_<period>.txt
 
 All plotted distributions are unit-normalized shape comparisons. MC
 normalization belongs to Stage 2.
@@ -582,6 +584,150 @@ def draw_before_after_canvas(sample_dfs,
     return keep
 
 
+
+def draw_three_stage_canvas(sample_dfs,
+                            stage0_dfs,
+                            stage1_dfs,
+                            stage2_dfs,
+                            plots,
+                            outfile,
+                            stage0_label,
+                            stage1_label,
+                            stage2_label):
+    """
+    Three sequential selections on the same axes.
+
+    Line style identifies stage:
+      dotted  = Stage 1B baseline
+      dashed  = after the Mx2(ep) probe window
+      solid   = after Mx2(e gamma1) > 1.4 GeV^2
+
+    Color identifies sample. Histograms are independently unit-normalized so
+    this canvas is a shape/selection diagnostic, not a yield comparison.
+    """
+    nx = 3
+    ny = int(math.ceil(len(plots) / nx))
+
+    cname = "c_" + os.path.basename(outfile).replace(".", "_")
+    canvas = ROOT.TCanvas(cname, "", 1800, 540 * ny)
+    canvas.Divide(nx, ny, 0.002, 0.002)
+
+    booked = {}
+    actions = []
+    unique = str(abs(hash(outfile)))
+
+    for ip, plot in enumerate(plots, start=1):
+        expr, title, nbins, xmin, xmax, guides = plot
+        booked[ip] = {}
+
+        for sample, label in SAMPLES:
+            if sample not in sample_dfs:
+                continue
+
+            h0_r = make_hist(
+                stage0_dfs[sample], expr,
+                f"h_s0_{ip}_{sample}_{unique}",
+                title, nbins, xmin, xmax
+            )
+            h1_r = make_hist(
+                stage1_dfs[sample], expr,
+                f"h_s1_{ip}_{sample}_{unique}",
+                title, nbins, xmin, xmax
+            )
+            h2_r = make_hist(
+                stage2_dfs[sample], expr,
+                f"h_s2_{ip}_{sample}_{unique}",
+                title, nbins, xmin, xmax
+            )
+            booked[ip][sample] = (label, h0_r, h1_r, h2_r)
+            actions.extend([h0_r, h1_r, h2_r])
+
+    if actions:
+        ROOT.RDF.RunGraphs(actions)
+
+    keep = list(actions)
+
+    for ip, plot in enumerate(plots, start=1):
+        expr, title, nbins, xmin, xmax, guides = plot
+
+        pad = canvas.cd(ip)
+        pad.SetTicks(1, 1)
+        pad.SetLeftMargin(0.12)
+        pad.SetRightMargin(0.035)
+        pad.SetBottomMargin(0.12)
+        pad.SetTopMargin(0.10)
+
+        legend = ROOT.TLegend(0.43, 0.53, 0.95, 0.89)
+        legend.SetBorderSize(0)
+        legend.SetFillStyle(0)
+        legend.SetTextSize(0.019)
+        keep.append(legend)
+
+        triples = []
+        ymax = 0.0
+
+        for sample, label in SAMPLES:
+            if sample not in booked[ip]:
+                continue
+
+            label, h0_r, h1_r, h2_r = booked[ip][sample]
+            h0 = h0_r.GetValue()
+            h1 = h1_r.GetValue()
+            h2 = h2_r.GetValue()
+
+            for h in (h0, h1, h2):
+                h.SetLineColor(COLORS[sample])
+                h.SetStats(0)
+
+            h0.SetLineStyle(3)
+            h1.SetLineStyle(2)
+            h2.SetLineStyle(1)
+            h0.SetLineWidth(2)
+            h1.SetLineWidth(2)
+            h2.SetLineWidth(3)
+
+            for h in (h0, h1, h2):
+                integral = h.Integral(1, h.GetNbinsX())
+                if integral > 0:
+                    h.Scale(1.0 / integral)
+                ymax = max(ymax, h.GetMaximum())
+
+            triples.append((sample, label, h0, h1, h2))
+            keep.extend([h0, h1, h2])
+
+            legend.AddEntry(h0, f"{label}: {stage0_label}", "l")
+            legend.AddEntry(h1, f"{label}: {stage1_label}", "l")
+            legend.AddEntry(h2, f"{label}: {stage2_label}", "l")
+
+        first = True
+        for sample, label, h0, h1, h2 in triples:
+            for h in (h0, h1, h2):
+                h.SetMaximum(1.35 * ymax if ymax > 0 else 1.0)
+                h.SetMinimum(0.0)
+                h.GetXaxis().SetTitleSize(0.041)
+                h.GetYaxis().SetTitleSize(0.038)
+                h.GetXaxis().SetLabelSize(0.033)
+                h.GetYaxis().SetLabelSize(0.033)
+                h.GetXaxis().SetTitleOffset(1.15)
+                h.GetYaxis().SetTitleOffset(1.45)
+                h.Draw("HIST" if first else "HIST SAME")
+                first = False
+
+        for x in guides:
+            line = ROOT.TLine(x, 0.0, x, 1.08 * ymax)
+            line.SetLineColor(ROOT.kGray + 2)
+            line.SetLineStyle(3)
+            line.SetLineWidth(2)
+            line.Draw("SAME")
+            keep.append(line)
+
+        legend.Draw()
+
+    canvas.SaveAs(outfile)
+    keep.append(canvas)
+    return keep
+
+
 def write_cutflow(path, initial_counts, prep_counts,
                   common_counts, common_probe_counts, probe_counts):
     with open(path, "w") as out:
@@ -712,6 +858,7 @@ def main():
     common_dfs = {}
     common_count_handles = {}
 
+    probe_mx2_dfs = {}
     probe_base_dfs = {}
     common_probe_count_handles = {}
 
@@ -734,10 +881,26 @@ def main():
         common_count_handles[sample] = common_handles
 
         # Common inferred-probe selection: applies to denominator AND numerator.
-        common_probe_df, common_probe_handles = apply_cuts(
-            common_df, COMMON_PROBE_CUTS, "common_probe"
+        #
+        # Keep the intermediate dataframe after ONLY the Mx2(ep) probe window.
+        # This is used in Canvas 3 to show explicitly how the Mx2(e gamma1)
+        # distribution changes before the >1.4 GeV^2 requirement is applied.
+        probe_mx2_df = common_df.Filter(
+            COMMON_PROBE_CUTS[0][1],
+            "common_probe_Mx2_ep_window"
+        )
+        probe_mx2_dfs[sample] = probe_mx2_df
+
+        common_probe_df = probe_mx2_df.Filter(
+            COMMON_PROBE_CUTS[1][1],
+            "common_probe_Mx2_egamma1_gt_1p4"
         )
         probe_base_dfs[sample] = common_probe_df
+
+        common_probe_handles = [
+            (COMMON_PROBE_CUTS[0][0], probe_mx2_df.Count()),
+            (COMMON_PROBE_CUTS[1][0], common_probe_df.Count()),
+        ]
         common_probe_count_handles[sample] = common_probe_handles
 
         # Numerator only: require a reconstructed PID-22 gamma2 and apply
@@ -885,14 +1048,58 @@ def main():
     )
 
     # -----------------------------------------------------------------------
-    # Canvas 3: probe diagnostics and requested probe cuts.
+    # Canvas 3: Stage-1C selection sequence.
     #
-    # "Before" here means after Stage 1B AND after requiring that the relevant
-    # diagnostic candidate exists. This avoids sentinel values dominating the
-    # distributions.
+    # This is deliberately independent of whether a reconstructed gamma2
+    # exists. It shows:
+    #   Stage 1B common gamma1
+    #       -> after the narrow Mx2(ep) probe window
+    #       -> after Mx2(e gamma1) > 1.4 GeV^2
+    #
+    # This makes the strong DVCS rejection from the *combination* of these
+    # two requirements visually explicit.
     # -----------------------------------------------------------------------
 
-    probe_plot_specs = [
+    probe_sequence_plots = [
+        (
+            "Mx2_ep",
+            "Missing mass squared e'p';M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries",
+            140, -0.5, 0.6,
+            [PROBE_MX2_LOW, PROBE_MX2_HIGH]
+        ),
+        (
+            "Mx2_egamma1",
+            "Missing mass squared e'#gamma1;M^{2}_{X}(e'#gamma1) (GeV^{2});Unit-normalized entries",
+            160, 0.0, 8.0, [1.4]
+        ),
+    ]
+
+    probe_sequence_file = os.path.join(
+        args.output_dir,
+        f"3_photon_efficiency_stage1_probe_sequence_{args.period}.png"
+    )
+
+    keep_probe_sequence = draw_three_stage_canvas(
+        dfs,
+        common_dfs,
+        probe_mx2_dfs,
+        probe_base_dfs,
+        probe_sequence_plots,
+        probe_sequence_file,
+        "Stage 1B",
+        "after Mx2(ep) window",
+        "after Mx2(e#gamma1)>1.4"
+    )
+
+    # -----------------------------------------------------------------------
+    # Canvas 4: reconstructed-gamma2 numerator diagnostics.
+    #
+    # The baseline here is the completed Stage-1C denominator selection plus
+    # the existence of a retained PID-22 gamma2 candidate. Only the explicit
+    # reconstructed-gamma2 cut is then applied.
+    # -----------------------------------------------------------------------
+
+    gamma2_plot_specs = [
         (
             "Mx2_ep",
             "Missing mass squared e'p';M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries",
@@ -916,9 +1123,9 @@ def main():
         ),
     ]
 
-    probe_file = os.path.join(
+    gamma2_file = os.path.join(
         args.output_dir,
-        f"3_photon_efficiency_stage1_probe_{args.period}.png"
+        f"4_photon_efficiency_stage1_gamma2_{args.period}.png"
     )
 
     gamma2_plot_base_dfs = {
@@ -930,8 +1137,8 @@ def main():
 
     keep_probe = draw_before_after_canvas(
         dfs, gamma2_plot_base_dfs, probe_final_dfs,
-        probe_plot_specs, probe_file,
-        "common probe + #gamma2", "after #gamma2 cuts"
+        gamma2_plot_specs, gamma2_file,
+        "Stage 1C + #gamma2", "after p_{#gamma2} cut"
     )
 
     # -----------------------------------------------------------------------
@@ -987,7 +1194,7 @@ def main():
 
     nearest_file = os.path.join(
         args.output_dir,
-        f"4_photon_efficiency_stage1_nearest_neutral_{args.period}.png"
+        f"5_photon_efficiency_stage1_nearest_neutral_{args.period}.png"
     )
 
     keep_nearest = draw_before_after_canvas(
@@ -1002,7 +1209,7 @@ def main():
 
     cutflow_file = os.path.join(
         args.output_dir,
-        f"5_photon_efficiency_stage1_cutflow_{args.period}.txt"
+        f"6_photon_efficiency_stage1_cutflow_{args.period}.txt"
     )
 
     write_cutflow(
@@ -1017,7 +1224,8 @@ def main():
     print("\nStage-1 outputs:")
     print(f"  {os.path.abspath(prep_file)}")
     print(f"  {os.path.abspath(common_file)}")
-    print(f"  {os.path.abspath(probe_file)}")
+    print(f"  {os.path.abspath(probe_sequence_file)}")
+    print(f"  {os.path.abspath(gamma2_file)}")
     print(f"  {os.path.abspath(nearest_file)}")
     print(f"  {os.path.abspath(cutflow_file)}")
 
