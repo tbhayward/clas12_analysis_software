@@ -70,13 +70,25 @@ ROOT.gInterpreter.Declare(r"""
 #include <cmath>
 
 double pe_angle_deg(double th1_deg, double ph1_deg, double th2_deg, double ph2_deg) {
-    // Saved theta/phi branches are in radians.
-    const double th1 = th1_deg, ph1 = ph1_deg;
-    const double th2 = th2_deg, ph2 = ph2_deg;
+    // Saved theta/phi branches are in DEGREES (producer thetaDeg/phiDeg).
+    const double d2r = M_PI / 180.0;
+    const double th1 = th1_deg*d2r, ph1 = ph1_deg*d2r;
+    const double th2 = th2_deg*d2r, ph2 = ph2_deg*d2r;
     const double dot = std::sin(th1)*std::sin(th2)*std::cos(ph1-ph2)
                      + std::cos(th1)*std::cos(th2);
     const double c = std::max(-1.0, std::min(1.0, dot));
     return std::acos(c) * 180.0 / M_PI;
+}
+
+double pe_mgg_deg(double p1, double th1_deg, double ph1_deg,
+                  double p2, double th2_deg, double ph2_deg) {
+    const double d2r = M_PI / 180.0;
+    const double th1=th1_deg*d2r, ph1=ph1_deg*d2r;
+    const double th2=th2_deg*d2r, ph2=ph2_deg*d2r;
+    const double dot=std::sin(th1)*std::sin(th2)*std::cos(ph1-ph2)+std::cos(th1)*std::cos(th2);
+    const double c=std::max(-1.0,std::min(1.0,dot));
+    const double m2=2.0*p1*p2*(1.0-c);
+    return m2>=0.0 ? std::sqrt(m2) : -1.0;
 }
 
 double pe_mx2_egamma(double ebeam, double ep, double eth, double eph,
@@ -84,6 +96,8 @@ double pe_mx2_egamma(double ebeam, double ep, double eth, double eph,
     const double me = 0.00051099895;
     const double mp = 0.9382720813;
     const double Ee = std::sqrt(ep*ep + me*me);
+    const double d2r = M_PI / 180.0;
+    eth *= d2r; eph *= d2r; gth *= d2r; gph *= d2r;
     const double ex = ep*std::sin(eth)*std::cos(eph);
     const double ey = ep*std::sin(eth)*std::sin(eph);
     const double ez = ep*std::cos(eth);
@@ -124,8 +138,8 @@ ROOT::VecOps::RVec<double> pe_mgg_tag_probe(
         if (neutral_idx[i] == tag_index) continue;
         if (neutral_pid[i] != 22) continue;
         if (!(neutral_p[i] > 0.0)) continue;
-        const double dot = std::sin(tag_th)*std::sin(neutral_th[i])*std::cos(tag_ph-neutral_ph[i])
-                         + std::cos(tag_th)*std::cos(neutral_th[i]);
+        const double dot = std::sin((tag_th)*M_PI/180.0)*std::sin((neutral_th[i])*M_PI/180.0)*std::cos((tag_ph-neutral_ph[i])*M_PI/180.0)
+                         + std::cos((tag_th)*M_PI/180.0)*std::cos((neutral_th[i])*M_PI/180.0);
         const double c = std::max(-1.0, std::min(1.0, dot));
         const double m2 = 2.0*tag_p*neutral_p[i]*(1.0-c);
         if (m2 >= 0.0) out.push_back(std::sqrt(m2));
@@ -160,15 +174,15 @@ ROOT::VecOps::RVec<double> pe_mgg_unique_rec_pair(
         if (!(tag_p >= 0.4) || !(neutral_p[i] >= 0.4)) continue;
 
         const double ce =
-            std::sin(e_th)*std::sin(neutral_th[i])*std::cos(e_ph-neutral_ph[i])
-            + std::cos(e_th)*std::cos(neutral_th[i]);
+            std::sin((e_th)*M_PI/180.0)*std::sin((neutral_th[i])*M_PI/180.0)*std::cos((e_ph-neutral_ph[i])*M_PI/180.0)
+            + std::cos((e_th)*M_PI/180.0)*std::cos((neutral_th[i])*M_PI/180.0);
         const double ae =
             std::acos(std::max(-1.0, std::min(1.0, ce))) * 180.0 / M_PI;
         if (!(ae > 8.0)) continue;
 
         const double dot =
-            std::sin(tag_th)*std::sin(neutral_th[i])*std::cos(tag_ph-neutral_ph[i])
-            + std::cos(tag_th)*std::cos(neutral_th[i]);
+            std::sin((tag_th)*M_PI/180.0)*std::sin((neutral_th[i])*M_PI/180.0)*std::cos((tag_ph-neutral_ph[i])*M_PI/180.0)
+            + std::cos((tag_th)*M_PI/180.0)*std::cos((neutral_th[i])*M_PI/180.0);
         const double c = std::max(-1.0, std::min(1.0, dot));
         const double m2 = 2.0*tag_p*neutral_p[i]*(1.0-c);
         if (m2 >= 0.0) out.push_back(std::sqrt(m2));
@@ -192,8 +206,8 @@ ROOT::VecOps::RVec<double> pe_mgg_nearest_pid22(
         if (neutral_da[i] < best_da) { best_da=neutral_da[i]; best=(int)i; }
     }
     if (best < 0) return out;
-    const double dot = std::sin(tag_th)*std::sin(neutral_th[best])*std::cos(tag_ph-neutral_ph[best])
-                     + std::cos(tag_th)*std::cos(neutral_th[best]);
+    const double dot = std::sin((tag_th)*M_PI/180.0)*std::sin((neutral_th[best])*M_PI/180.0)*std::cos((tag_ph-neutral_ph[best])*M_PI/180.0)
+                     + std::cos((tag_th)*M_PI/180.0)*std::cos((neutral_th[best])*M_PI/180.0);
     const double c=std::max(-1.0,std::min(1.0,dot));
     const double m2=2.0*tag_p*neutral_p[best]*(1.0-c);
     if (m2>=0.0) out.push_back(std::sqrt(m2));
@@ -221,8 +235,8 @@ ROOT::VecOps::RVec<double> pe_mgg_truth_matched_pi0_reco(
         if (neutral_idx[i] < 0 || neutral_idx[i] == tag_index || neutral_pid[i] != 22) continue;
         if (neutral_mc_index[i] != mc_probe_index || neutral_mc_pid[i] != 22) continue;
         if (!(neutral_p[i] > 0.0)) continue;
-        const double dot=std::sin(tag_th)*std::sin(neutral_th[i])*std::cos(tag_ph-neutral_ph[i])
-                        +std::cos(tag_th)*std::cos(neutral_th[i]);
+        const double dot=std::sin((tag_th)*M_PI/180.0)*std::sin((neutral_th[i])*M_PI/180.0)*std::cos((tag_ph-neutral_ph[i])*M_PI/180.0)
+                        +std::cos((tag_th)*M_PI/180.0)*std::cos((neutral_th[i])*M_PI/180.0);
         const double c=std::max(-1.0,std::min(1.0,dot));
         const double m2=2.0*tag_p*neutral_p[i]*(1.0-c);
         if (m2>=0.0) out.push_back(std::sqrt(m2));
@@ -234,7 +248,7 @@ double pe_mgg_truth_pi0(double p1,double th1,double ph1,int i1,int pid1,int par1
                          double p2,double th2,double ph2,int i2,int pid2,int par2) {
     if (i1<0 || i2<0 || i1==i2 || pid1!=22 || pid2!=22 || par1!=111 || par2!=111) return -1.0;
     if (!(p1>0.0) || !(p2>0.0)) return -1.0;
-    const double dot=std::sin(th1)*std::sin(th2)*std::cos(ph1-ph2)+std::cos(th1)*std::cos(th2);
+    const double dot=std::sin((th1)*M_PI/180.0)*std::sin((th2)*M_PI/180.0)*std::cos((ph1-ph2)*M_PI/180.0)+std::cos((th1)*M_PI/180.0)*std::cos((th2)*M_PI/180.0);
     const double c=std::max(-1.0,std::min(1.0,dot));
     const double m2=2.0*p1*p2*(1.0-c);
     return m2>=0.0 ? std::sqrt(m2) : -1.0;
@@ -1419,8 +1433,9 @@ def _event_grouped_unique_tag_mgg(df, hist_name, title, tolerance=1.0e-10):
                "p_corr_p", "p_corr_theta", "p_corr_phi", "p_vz"]
     kin = np.column_stack([np.asarray(arr[x], dtype=np.float64) for x in ep_cols])
     pp = np.asarray(arr["tag_corr_p"], dtype=np.float64)
-    tt = np.asarray(arr["tag_corr_theta"], dtype=np.float64)
-    ph = np.asarray(arr["tag_corr_phi"], dtype=np.float64)
+    # Producer stores all theta/phi values in degrees. Convert once before trig.
+    tt = np.deg2rad(np.asarray(arr["tag_corr_theta"], dtype=np.float64))
+    ph = np.deg2rad(np.asarray(arr["tag_corr_phi"], dtype=np.float64))
 
     # A new block begins whenever the source file, selected proton REC index,
     # or any saved electron/proton kinematic quantity changes beyond tolerance.
@@ -1589,106 +1604,138 @@ def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
     return keep, out
 
 
-def _mgg_from_p_theta_phi(p1, th1, ph1, p2, th2, ph2):
+def _mgg_from_p_theta_phi(p1, th1_deg, ph1_deg, p2, th2_deg, ph2_deg):
+    """Photon-pair mass from saved skim angles, which are in degrees."""
+    th1, ph1, th2, ph2 = np.deg2rad([th1_deg, ph1_deg, th2_deg, ph2_deg])
     dot = (np.sin(th1)*np.sin(th2)*np.cos(ph1-ph2) + np.cos(th1)*np.cos(th2))
     c = max(-1.0, min(1.0, float(dot)))
     return np.sqrt(max(0.0, 2.0*float(p1)*float(p2)*(1.0-c)))
 
-def dump_aaogen_truth_rec_events(files, output_dir, period, max_events=12):
-    """Fast AAOgen truth -> REC trace from PhotonEfficiencyEvents.
+def dump_aaogen_truth_rec_events(files, output_dir, period, max_events=20):
+    """AAOgen generator-bookkeeping, angle-unit, and truth->REC diagnostics.
 
-    Selection happens inside ROOT's compiled RDataFrame engine.  Only the small
-    selected sample is transferred to NumPy; there is no Python GetEntry loop.
+    This intentionally does NOT require gen_n_pi0_photon.  That counter comes
+    from MC::Lund, whereas the saved gen_gamma_* arrays come from MC::Particle.
+    AAOgen can therefore have two genuine generated photons while the LUND pi0
+    counters are zero/missing.  We inspect those two truth systems separately.
     """
     if not files:
         return None
     ch = ROOT.TChain(EVENT_TREE)
     for f in files:
         ch.Add(f)
-    if ch.GetEntries() == 0:
+    nentries = int(ch.GetEntries())
+    if nentries == 0:
         print("WARNING: AAOgen PhotonEfficiencyEvents tree is empty/missing.")
         return None
 
-    out = os.path.join(output_dir, f"3_{period}_AAOgen_truth_REC_event_dump.txt")
+    txt_out = os.path.join(output_dir, f"3_{period}_AAOgen_truth_REC_event_dump.txt")
+    png_out = os.path.join(output_dir, f"3_{period}_AAOgen_generator_truth_audit.png")
     branch_names = {b.GetName() for b in ch.GetListOfBranches()}
-    def pick_branch(*names):
-        return next((x for x in names if x in branch_names), None)
-    b_W = pick_branch("ev_W", "W")
-    b_nph = pick_branch("ev_gen_n_photon", "gen_n_photon")
-    b_npi0ph = pick_branch("ev_gen_n_pi0_photon", "gen_n_pi0_photon")
-    b_ngamma = pick_branch("ev_gen_gamma_total", "gen_gamma_total")
-    b_hash = pick_branch("ev_source_file_hash", "source_file_hash")
-    b_run = pick_branch("ev_runnum", "runnum")
-    b_evt = pick_branch("ev_evnum", "evnum")
-    required = {"generated-photon count":b_nph, "pi0-photon count":b_npi0ph,
-                "saved generated-photon total":b_ngamma, "source-file hash":b_hash,
-                "run number":b_run, "event number":b_evt}
-    missing = [k for k,v in required.items() if v is None]
-    array_branches = ["gen_gamma_p","gen_gamma_theta","gen_gamma_phi",
-                      "gen_gamma_index","gen_gamma_n_rec_matches","gen_gamma_n_rec_pid22",
-                      "gen_gamma_best_rec_index","gen_gamma_best_rec_pid","gen_gamma_best_rec_p",
-                      "gen_gamma_best_rec_theta","gen_gamma_best_rec_phi","gen_gamma_best_rec_delta_alpha"]
-    missing += [x for x in array_branches if x not in branch_names]
+    needed = ["W", "has_mc_particle", "has_mc_lund", "gen_n_photon", "gen_n_pi0_photon",
+              "gen_n_pi0", "gen_gamma_total", "gen_gamma_p", "gen_gamma_theta", "gen_gamma_phi",
+              "gen_gamma_index", "gen_gamma_n_rec_matches", "gen_gamma_n_rec_pid22",
+              "gen_gamma_best_rec_index", "gen_gamma_best_rec_pid", "gen_gamma_best_rec_p",
+              "gen_gamma_best_rec_theta", "gen_gamma_best_rec_phi", "gen_gamma_best_rec_delta_alpha"]
+    missing = [x for x in needed if x not in branch_names]
     if missing:
-        print("\nERROR: PhotonEfficiencyEvents event dump is missing required branches:")
-        for x in missing: print(f"  - {x}")
-        print("No truth/REC event dump was attempted.\n")
+        print("\nERROR: PhotonEfficiencyEvents diagnostic is missing required branches:")
+        for x in missing:
+            print(f"  - {x}")
         return None
 
-    rdf = ROOT.RDataFrame(ch)
-    cut = f"{b_nph} == 2 && {b_npi0ph} == 2 && {b_ngamma} == 2"
-    if b_W is not None:
-        cut = f"({b_W} > 2.0) && ({cut})"
-    else:
-        print("WARNING: PhotonEfficiencyEvents has no W branch; truth/REC dump runs without W > 2.")
-    sel = rdf.Filter(cut, "clean generated pi0 -> gamma gamma")
-    n_clean = int(sel.Count().GetValue())
+    rdf = ROOT.RDataFrame(ch).Filter("W > 2.0", "W > 2 GeV")
+    # Fast aggregate bookkeeping.  These actions run in compiled ROOT code.
+    h_nph = rdf.Histo1D((f"h_evt_nph_{period}", ";gen_n_photon;Events", 9, -0.5, 8.5), "gen_n_photon")
+    h_ngt = rdf.Histo1D((f"h_evt_ngt_{period}", ";gen_gamma_total (MC::Particle);Events", 9, -0.5, 8.5), "gen_gamma_total")
+    h_npi = rdf.Histo1D((f"h_evt_npi_{period}", ";gen_n_pi0 (MC::Lund);Events", 6, -0.5, 5.5), "gen_n_pi0")
+    h_npig = rdf.Histo1D((f"h_evt_npig_{period}", ";gen_n_pi0_photon (MC::Lund);Events", 9, -0.5, 8.5), "gen_n_pi0_photon")
+    n_w = rdf.Count()
+    n_lund = rdf.Filter("has_mc_lund == 1").Count()
+    n_part = rdf.Filter("has_mc_particle == 1").Count()
+    n_two_mcpart = rdf.Filter("gen_gamma_total == 2").Count()
+    n_two_lund = rdf.Filter("gen_n_photon == 2").Count()
+    n_two_pi0lund = rdf.Filter("gen_n_pi0_photon == 2").Count()
+    two = rdf.Filter("gen_gamma_total == 2") \
+        .Define("Mgg_gen_first2", "pe_mgg_deg(gen_gamma_p[0],gen_gamma_theta[0],gen_gamma_phi[0],gen_gamma_p[1],gen_gamma_theta[1],gen_gamma_phi[1])")
+    h_mgen = two.Histo1D((f"h_evt_mgen_{period}", ";Generated M_{#gamma#gamma} (GeV);Events", 160, 0.0, 0.30), "Mgg_gen_first2")
+    actions=[h_nph,h_ngt,h_npi,h_npig,n_w,n_lund,n_part,n_two_mcpart,n_two_lund,n_two_pi0lund,h_mgen]
+    ROOT.RDF.RunGraphs(actions)
 
-    cols = [b_hash,b_run,b_evt] + ([b_W] if b_W else []) + array_branches
-    # This is now only the clean two-photon subset, rather than every event.
-    arr = sel.AsNumpy(cols)
+    # Plot the bookkeeping and the actual MC::Particle two-photon invariant mass.
+    c=ROOT.TCanvas(f"c_gen_truth_audit_{period}","",1200,900); c.Divide(2,2)
+    hs=[h_ngt.GetValue(),h_nph.GetValue(),h_npig.GetValue(),h_mgen.GetValue()]
+    titles=["Saved generated photons from MC::Particle","Stable photons counted from MC::Lund",
+            "Direct #pi^{0} daughter photons counted from MC::Lund","MC::Particle events with exactly two generated photons"]
+    keep=[c]
+    for i,(h,title) in enumerate(zip(hs,titles),1):
+        pad=c.cd(i); pad.SetTicks(1,1); pad.SetLeftMargin(0.13); pad.SetBottomMargin(0.13); pad.SetTopMargin(0.11)
+        h.SetStats(0); h.SetLineWidth(3); h.SetTitle(title); h.Draw("HIST")
+        keep.append(h)
+        if i==4:
+            line=ROOT.TLine(0.1349768,0.0,0.1349768,max(1.0,h.GetMaximum()*1.05)); line.SetLineStyle(2); line.SetLineWidth(2); line.Draw(); keep.append(line)
+    c.SaveAs(png_out)
 
-    masses_gen=[]; masses_rec=[]; examples=[]; n_both_rec=0; n_both_pid22=0
-    for i in range(n_clean):
-        gp0=(float(arr["gen_gamma_p"][i][0]),float(arr["gen_gamma_theta"][i][0]),float(arr["gen_gamma_phi"][i][0]))
-        gp1=(float(arr["gen_gamma_p"][i][1]),float(arr["gen_gamma_theta"][i][1]),float(arr["gen_gamma_phi"][i][1]))
-        mgen=_mgg_from_p_theta_phi(*gp0,*gp1); masses_gen.append(mgen)
-        r0=int(arr["gen_gamma_best_rec_index"][i][0]); r1=int(arr["gen_gamma_best_rec_index"][i][1])
-        pid0=int(arr["gen_gamma_best_rec_pid"][i][0]); pid1=int(arr["gen_gamma_best_rec_pid"][i][1])
-        if r0>=0 and r1>=0: n_both_rec += 1
+    # Small direct TTree trace: stop after max_events useful two-photon events.
+    # This is intentionally bounded and therefore cannot reproduce the old multi-minute loop.
+    examples=[]
+    scanned=0
+    for i in range(min(nentries, 20000)):
+        ch.GetEntry(i); scanned += 1
+        if float(ch.W) <= 2.0 or int(ch.gen_gamma_total) != 2:
+            continue
+        p0,p1=float(ch.gen_gamma_p[0]),float(ch.gen_gamma_p[1])
+        t0,t1=float(ch.gen_gamma_theta[0]),float(ch.gen_gamma_theta[1])
+        f0,f1=float(ch.gen_gamma_phi[0]),float(ch.gen_gamma_phi[1])
+        m_formula=float(_mgg_from_p_theta_phi(p0,t0,f0,p1,t1,f1))
+        # Independent Cartesian construction using degree->radian conversion.
+        tr0,fr0,tr1,fr1=np.deg2rad([t0,f0,t1,f1])
+        v0=np.array([p0*np.sin(tr0)*np.cos(fr0),p0*np.sin(tr0)*np.sin(fr0),p0*np.cos(tr0)])
+        v1=np.array([p1*np.sin(tr1)*np.cos(fr1),p1*np.sin(tr1)*np.sin(fr1),p1*np.cos(tr1)])
+        m2_cart=(p0+p1)**2-float(np.dot(v0+v1,v0+v1))
+        m_cart=float(np.sqrt(max(0.0,m2_cart)))
+        r0,r1=int(ch.gen_gamma_best_rec_index[0]),int(ch.gen_gamma_best_rec_index[1])
+        pid0,pid1=int(ch.gen_gamma_best_rec_pid[0]),int(ch.gen_gamma_best_rec_pid[1])
         mrec=None
         if r0>=0 and r1>=0 and r0!=r1 and pid0==22 and pid1==22:
-            n_both_pid22 += 1
-            rp0=(float(arr["gen_gamma_best_rec_p"][i][0]),float(arr["gen_gamma_best_rec_theta"][i][0]),float(arr["gen_gamma_best_rec_phi"][i][0]))
-            rp1=(float(arr["gen_gamma_best_rec_p"][i][1]),float(arr["gen_gamma_best_rec_theta"][i][1]),float(arr["gen_gamma_best_rec_phi"][i][1]))
-            mrec=_mgg_from_p_theta_phi(*rp0,*rp1); masses_rec.append(mrec)
-        if len(examples)<max_events:
-            Wval=float(arr[b_W][i]) if b_W else float("nan")
-            def gt(k,gp,r,pid):
-                return (int(arr["gen_gamma_index"][i][k]),)+gp+(int(arr["gen_gamma_n_rec_matches"][i][k]),int(arr["gen_gamma_n_rec_pid22"][i][k]),r,pid,float(arr["gen_gamma_best_rec_p"][i][k]),float(arr["gen_gamma_best_rec_theta"][i][k]),float(arr["gen_gamma_best_rec_phi"][i][k]),float(arr["gen_gamma_best_rec_delta_alpha"][i][k]))
-            examples.append({'key':(int(arr[b_hash][i]),int(arr[b_run][i]),int(arr[b_evt][i])), 'W':Wval,'mgen':mgen,'mrec':mrec,'g0':gt(0,gp0,r0,pid0),'g1':gt(1,gp1,r1,pid1)})
+            mrec=float(_mgg_from_p_theta_phi(float(ch.gen_gamma_best_rec_p[0]),float(ch.gen_gamma_best_rec_theta[0]),float(ch.gen_gamma_best_rec_phi[0]),
+                                             float(ch.gen_gamma_best_rec_p[1]),float(ch.gen_gamma_best_rec_theta[1]),float(ch.gen_gamma_best_rec_phi[1])))
+        examples.append(dict(W=float(ch.W),nph=int(ch.gen_n_photon),npi0ph=int(ch.gen_n_pi0_photon),npi0=int(ch.gen_n_pi0),
+                             haslund=int(ch.has_mc_lund),m=m_formula,mcart=m_cart,mrec=mrec,
+                             g0=(int(ch.gen_gamma_index[0]),p0,t0,f0,int(ch.gen_gamma_n_rec_matches[0]),int(ch.gen_gamma_n_rec_pid22[0]),r0,pid0,float(ch.gen_gamma_best_rec_p[0]),float(ch.gen_gamma_best_rec_theta[0]),float(ch.gen_gamma_best_rec_phi[0])),
+                             g1=(int(ch.gen_gamma_index[1]),p1,t1,f1,int(ch.gen_gamma_n_rec_matches[1]),int(ch.gen_gamma_n_rec_pid22[1]),r1,pid1,float(ch.gen_gamma_best_rec_p[1]),float(ch.gen_gamma_best_rec_theta[1]),float(ch.gen_gamma_best_rec_phi[1]))))
+        if len(examples)>=max_events:
+            break
 
-    with open(out,'w') as f:
-        f.write("AAOgen truth -> reconstructed photon event trace\n")
-        f.write(("Selection: W > 2 GeV, " if b_W else "Selection: ")+"exactly two generated photons, both classified as pi0 photons.\n")
-        f.write("PhotonEfficiencyEvents only; no tag/probe, neutral arrays, inferred X, or exclusivity cuts.\n\n")
-        f.write(f"clean generated pi0->gamma gamma events: {n_clean:,}\n")
-        f.write(f"both generated photons have a best REC association: {n_both_rec:,} ({100*n_both_rec/n_clean if n_clean else 0:.2f}%)\n")
-        f.write(f"both best REC associations are distinct PID22: {n_both_pid22:,} ({100*n_both_pid22/n_clean if n_clean else 0:.2f}%)\n")
-        if masses_gen: f.write(f"generated Mgg: mean={np.mean(masses_gen):.6f} GeV, median={np.median(masses_gen):.6f} GeV\n")
-        if masses_rec: f.write(f"best-REC PID22 Mgg: mean={np.mean(masses_rec):.6f} GeV, median={np.median(masses_rec):.6f} GeV\n")
-        f.write("\nPer-event examples. theta/phi are saved radians.\n")
-        for x in examples:
-            f.write(f"event key={x['key']}  W={x['W']:.4f}  Mgg_gen={x['mgen']:.6f}  Mgg_REC={x['mrec'] if x['mrec'] is not None else 'NA'}\n")
-            f.write(f"  gamma0 {x['g0']}\n  gamma1 {x['g1']}\n\n")
-    print("\nAAOgen truth -> REC event dump:")
-    print(f"  clean generated pi0->gamma gamma events: {n_clean:,}")
-    print(f"  both have best REC association: {n_both_rec:,}")
-    print(f"  both are distinct reconstructed PID22: {n_both_pid22:,}")
-    if masses_gen: print(f"  generated Mgg mean/median: {np.mean(masses_gen):.6f} / {np.median(masses_gen):.6f} GeV")
-    if masses_rec: print(f"  REC Mgg mean/median:       {np.mean(masses_rec):.6f} / {np.median(masses_rec):.6f} GeV")
-    print(f"  detailed examples -> {out}")
-    return out
+    nw=int(n_w.GetValue()); nl=int(n_lund.GetValue()); npart=int(n_part.GetValue()); ntwo=int(n_two_mcpart.GetValue())
+    with open(txt_out,"w") as f:
+        f.write("AAOgen generator bookkeeping + angle-unit + truth->REC audit\n")
+        f.write("All saved theta/phi branches are DEGREES: process_photon_efficiency.groovy writes thetaDeg()/phiDeg().\n")
+        f.write("W > 2 GeV is enforced for aggregate counts and displayed examples.\n\n")
+        f.write(f"PhotonEfficiencyEvents entries: {nentries:,}\nW>2 entries: {nw:,}\n")
+        f.write(f"has MC::Particle: {npart:,} ({100*npart/nw if nw else 0:.2f}%)\n")
+        f.write(f"has MC::Lund: {nl:,} ({100*nl/nw if nw else 0:.2f}%)\n")
+        f.write(f"gen_gamma_total==2 (MC::Particle): {ntwo:,}\n")
+        f.write(f"gen_n_photon==2 (MC::Lund stable photons): {int(n_two_lund.GetValue()):,}\n")
+        f.write(f"gen_n_pi0_photon==2 (MC::Lund direct pi0 daughters): {int(n_two_pi0lund.GetValue()):,}\n")
+        f.write("\nIMPORTANT: gen_n_photon/gen_n_pi0_photon are MC::Lund counters; gen_gamma_total/gen_gamma_* are MC::Particle. They must not be assumed equivalent.\n")
+        f.write(f"\nDirect examples: scanned at most {scanned:,} entries to obtain {len(examples)} W>2, gen_gamma_total==2 events.\n")
+        for j,x in enumerate(examples):
+            f.write(f"\n[{j}] W={x['W']:.5f} has_lund={x['haslund']} gen_n_photon={x['nph']} gen_n_pi0_photon={x['npi0ph']} gen_n_pi0={x['npi0']}\n")
+            f.write(f"    Mgg_gen(degree formula)={x['m']:.8f} GeV  Mgg_gen(Cartesian)={x['mcart']:.8f} GeV  delta={abs(x['m']-x['mcart']):.3e} GeV\n")
+            f.write(f"    Mgg_bestREC_PID22={x['mrec'] if x['mrec'] is not None else 'NA'}\n")
+            f.write(f"    gamma0(index,p,theta_deg,phi_deg,nmatch,npid22,best_rec,best_pid,best_p,best_theta_deg,best_phi_deg)={x['g0']}\n")
+            f.write(f"    gamma1(index,p,theta_deg,phi_deg,nmatch,npid22,best_rec,best_pid,best_p,best_theta_deg,best_phi_deg)={x['g1']}\n")
+
+    print("\nAAOgen generator/truth diagnostic:")
+    print("  CRITICAL UNIT CHECK: producer stores theta/phi in DEGREES, not radians.")
+    print(f"  W>2 event-tree entries: {nw:,}; has MC::Particle={npart:,}; has MC::Lund={nl:,}")
+    print(f"  gen_gamma_total==2 (MC::Particle): {ntwo:,}")
+    print(f"  gen_n_photon==2 (MC::Lund): {int(n_two_lund.GetValue()):,}")
+    print(f"  gen_n_pi0_photon==2 (MC::Lund): {int(n_two_pi0lund.GetValue()):,}")
+    print(f"  wrote generator audit -> {png_out}")
+    print(f"  wrote bounded event trace -> {txt_out}")
+    return txt_out
 
 def main():
     args = parse_args()
