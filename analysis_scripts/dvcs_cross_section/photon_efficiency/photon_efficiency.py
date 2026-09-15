@@ -358,7 +358,7 @@ def draw_canvases(dfs, output_dir, period):
     return keep, written
 
 def draw_normalization_step1(dfs, output_dir, period):
-    """Plot the E_gamma1 > 5 GeV normalization control region after exclusivity cuts."""
+    """Plot the E_gamma1 > 4 GeV normalization control region after exclusivity cuts."""
     plots = [
         ("E_gamma1", ";E_{#gamma1} (GeV);Unit-normalized entries", 120, 0.4, 9.0, False),
         ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 120, 0.0, 9.0, True),
@@ -373,7 +373,7 @@ def draw_normalization_step1(dfs, output_dir, period):
         selected[sample] = (dfs[sample]
             .Filter("Mx2_ep < 0.18", "norm_Mx2_ep_lt_0p18")
             .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "norm_Mx2_epg_window")
-            .Filter("E_gamma1 > 5.0", "norm_Egamma1_gt_5"))
+            .Filter("E_gamma1 > 4.0", "norm_Egamma1_gt_4"))
 
     unique = str(abs(hash((output_dir, period, "normalization_step1"))))
     booked = {}
@@ -457,7 +457,250 @@ def draw_normalization_step1(dfs, output_dir, period):
             first = False
         legend.Draw()
 
-    output_file = os.path.join(output_dir, f"1_{period}_Egamma1_gt_5_GeV.png")
+    output_file = os.path.join(output_dir, f"1_{period}_Egamma1_gt_4_GeV.png")
+    canvas.SaveAs(output_file)
+    return keep, output_file
+
+
+
+def fit_two_poisson_templates(data_hist, dvcs_hist, aao_hist):
+    """Fit Data_i = A*DVCS_i + B*AAO_i with a binned Poisson likelihood.
+
+    The minimization is a two-parameter Newton iteration with positivity-preserving
+    line search.  The returned covariance is the inverse local curvature matrix
+    of -log L at the optimum.
+    """
+    import math
+
+    bins = []
+    for ibin in range(1, data_hist.GetNbinsX() + 1):
+        d = float(data_hist.GetBinContent(ibin))
+        x = float(dvcs_hist.GetBinContent(ibin))
+        y = float(aao_hist.GetBinContent(ibin))
+        if x > 0.0 or y > 0.0 or d > 0.0:
+            bins.append((d, x, y))
+
+    if not bins:
+        raise RuntimeError("No populated bins available for the normalization fit")
+
+    sum_d = sum(v[0] for v in bins)
+    sum_x = sum(v[1] for v in bins)
+    sum_y = sum(v[2] for v in bins)
+    scale = sum_d / max(sum_x + sum_y, 1.0)
+    A = max(scale, 1.0e-12)
+    B = max(scale, 1.0e-12)
+
+    def nll(a, b):
+        total = 0.0
+        for d, x, y in bins:
+            mu = max(a*x + b*y, 1.0e-300)
+            total += mu - d*math.log(mu)
+        return total
+
+    for _ in range(100):
+        gA = gB = hAA = hAB = hBB = 0.0
+        for d, x, y in bins:
+            mu = max(A*x + B*y, 1.0e-300)
+            common = 1.0 - d/mu
+            gA += x*common
+            gB += y*common
+            curv = d/(mu*mu)
+            hAA += x*x*curv
+            hAB += x*y*curv
+            hBB += y*y*curv
+
+        det = hAA*hBB - hAB*hAB
+        if det <= 0.0:
+            raise RuntimeError("Normalization-fit curvature matrix is singular")
+        stepA = ( hBB*gA - hAB*gB) / det
+        stepB = (-hAB*gA + hAA*gB) / det
+
+        old = nll(A, B)
+        alpha = 1.0
+        accepted = False
+        while alpha > 1.0e-8:
+            trialA = A - alpha*stepA
+            trialB = B - alpha*stepB
+            if trialA > 0.0 and trialB > 0.0 and nll(trialA, trialB) <= old:
+                accepted = True
+                break
+            alpha *= 0.5
+        if not accepted:
+            break
+
+        rel = max(abs(trialA-A)/max(A,1.0e-12), abs(trialB-B)/max(B,1.0e-12))
+        A, B = trialA, trialB
+        if rel < 1.0e-10:
+            break
+
+    # Recompute local curvature/covariance at the solution.
+    hAA = hAB = hBB = 0.0
+    for d, x, y in bins:
+        mu = max(A*x + B*y, 1.0e-300)
+        curv = d/(mu*mu)
+        hAA += x*x*curv
+        hAB += x*y*curv
+        hBB += y*y*curv
+    det = hAA*hBB - hAB*hAB
+    varA = hBB/det
+    varB = hAA/det
+    covAB = -hAB/det
+    errA = math.sqrt(max(varA, 0.0))
+    errB = math.sqrt(max(varB, 0.0))
+    corr = covAB/(errA*errB) if errA > 0.0 and errB > 0.0 else 0.0
+
+    # Poisson deviance: useful goodness-of-description diagnostic.
+    deviance = 0.0
+    used = 0
+    for d, x, y in bins:
+        mu = A*x + B*y
+        if mu <= 0.0:
+            continue
+        if d > 0.0:
+            deviance += 2.0*(mu - d + d*math.log(d/mu))
+        else:
+            deviance += 2.0*mu
+        used += 1
+    ndof = max(used - 2, 0)
+    return A, B, errA, errB, corr, deviance, ndof
+
+
+def draw_normalization_fit(dfs, output_dir, period):
+    """Fit A*DVCSgen + B*AAOgen to raw Data E_gamma1 counts for E_gamma1 > 4 GeV.
+
+    The same fitted A and B are then applied without refitting to Emiss(epgamma1),
+    Mx2(ep), and Mx2(epgamma1).  CLASDIS is deliberately excluded from the fit.
+    """
+    needed = ("data", "dvcsgen", "aaogen")
+    if any(sample not in dfs for sample in needed):
+        print("WARNING: normalization fit skipped; Data, DVCSgen, and AAOgen are all required")
+        return [], None
+
+    selected = {}
+    for sample in needed:
+        selected[sample] = (dfs[sample]
+            .Filter("Mx2_ep < 0.18", f"fit_{sample}_Mx2_ep_lt_0p18")
+            .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", f"fit_{sample}_Mx2_epg_window")
+            .Filter("E_gamma1 > 4.0", f"fit_{sample}_Egamma1_gt_4"))
+
+    plots = [
+        ("E_gamma1", ";E_{#gamma1} (GeV);Entries", 100, 4.0, 9.0, False, "fit observable"),
+        ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Entries", 120, 0.0, 9.0, True, "validation"),
+        ("Mx2_ep", ";M^{2}_{X}(e'p') (GeV^{2});Entries", 120, -0.5, 1.0, False, "validation"),
+        ("Mx2_epg_raw", ";M^{2}_{X}(e'p'#gamma1) (GeV^{2});Entries", 120, -0.1, 0.15, True, "validation"),
+    ]
+
+    unique = str(abs(hash((output_dir, period, "normalization_fit"))))
+    booked = {}
+    actions = []
+    for iplot, (expr, title, nbins, xmin, xmax, _logy, _role) in enumerate(plots):
+        booked[iplot] = {}
+        for sample in needed:
+            h = selected[sample].Histo1D(
+                (f"h_normfit_{iplot}_{sample}_{unique}", title, nbins, xmin, xmax), expr
+            )
+            booked[iplot][sample] = h
+            actions.append(h)
+    ROOT.RDF.RunGraphs(actions)
+
+    raw = {}
+    for iplot in range(len(plots)):
+        raw[iplot] = {}
+        for sample in needed:
+            h = booked[iplot][sample].GetValue()
+            h.SetDirectory(0)
+            raw[iplot][sample] = h
+
+    A, B, errA, errB, corr, dev, ndof = fit_two_poisson_templates(
+        raw[0]["data"], raw[0]["dvcsgen"], raw[0]["aaogen"]
+    )
+    n_dvcs = A * raw[0]["dvcsgen"].Integral(1, raw[0]["dvcsgen"].GetNbinsX())
+    n_aao = B * raw[0]["aaogen"].Integral(1, raw[0]["aaogen"].GetNbinsX())
+    n_model = n_dvcs + n_aao
+    frac_dvcs = n_dvcs/n_model if n_model > 0.0 else 0.0
+    frac_aao = n_aao/n_model if n_model > 0.0 else 0.0
+
+    print("\nNormalization fit from raw E_gamma1 counts, E_gamma1 > 4 GeV")
+    print("  Model: Data_i = A * DVCSgen_i + B * AAOgen_i")
+    print("  CLASDIS is excluded from the fit.")
+    print(f"  A = {A:.8g} +/- {errA:.3g}")
+    print(f"  B = {B:.8g} +/- {errB:.3g}")
+    print(f"  corr(A,B) = {corr:+.4f}")
+    print(f"  Poisson deviance / dof = {dev:.2f} / {ndof}" if ndof else f"  Poisson deviance = {dev:.2f}")
+    print(f"  fitted DVCSgen yield = {n_dvcs:,.1f} ({100.0*frac_dvcs:.2f}%)")
+    print(f"  fitted AAOgen yield  = {n_aao:,.1f} ({100.0*frac_aao:.2f}%)")
+    print("  The same A and B are applied to the other three panels without refitting.\n")
+
+    canvas = ROOT.TCanvas(f"c_normfit_{unique}", "", 1500, 1100)
+    canvas.Divide(2, 2, 0.002, 0.002)
+    keep = [canvas] + actions
+
+    for iplot, (_expr, _title, _nbins, _xmin, _xmax, logy, role) in enumerate(plots):
+        pad = canvas.cd(iplot + 1)
+        pad.SetTicks(1, 1)
+        pad.SetLeftMargin(0.14)
+        pad.SetRightMargin(0.04)
+        pad.SetBottomMargin(0.13)
+        pad.SetTopMargin(0.09)
+        if logy:
+            pad.SetLogy(True)
+
+        data = raw[iplot]["data"].Clone(f"h_draw_data_{iplot}_{unique}")
+        dvcs = raw[iplot]["dvcsgen"].Clone(f"h_draw_dvcs_{iplot}_{unique}")
+        aao = raw[iplot]["aaogen"].Clone(f"h_draw_aao_{iplot}_{unique}")
+        total = dvcs.Clone(f"h_draw_total_{iplot}_{unique}")
+        dvcs.Scale(A)
+        aao.Scale(B)
+        total.Reset("ICES")
+        total.Add(dvcs)
+        total.Add(aao)
+        for h in (data, dvcs, aao, total):
+            h.SetDirectory(0)
+            h.SetStats(0)
+        data.SetLineColor(ROOT.kBlack); data.SetLineWidth(3)
+        dvcs.SetLineColor(COLORS["dvcsgen"]); dvcs.SetLineWidth(2)
+        aao.SetLineColor(COLORS["aaogen"]); aao.SetLineWidth(2)
+        total.SetLineColor(ROOT.kMagenta + 2); total.SetLineWidth(4)
+        keep.extend([data, dvcs, aao, total])
+
+        ymax = max(data.GetMaximum(), total.GetMaximum(), dvcs.GetMaximum(), aao.GetMaximum())
+        if logy:
+            positive = []
+            for h in (data, total, dvcs, aao):
+                positive += [h.GetBinContent(i) for i in range(1, h.GetNbinsX()+1) if h.GetBinContent(i) > 0.0]
+            ymin = max((min(positive) if positive else 1.0)*0.5, 0.1)
+            data.SetMinimum(ymin)
+            data.SetMaximum(max(10.0*ymax, 10.0))
+        else:
+            data.SetMinimum(0.0)
+            data.SetMaximum(1.25*ymax if ymax > 0.0 else 1.0)
+        data.GetXaxis().SetTitleSize(0.045)
+        data.GetYaxis().SetTitleSize(0.043)
+        data.GetXaxis().SetLabelSize(0.036)
+        data.GetYaxis().SetLabelSize(0.036)
+        data.GetXaxis().SetTitleOffset(1.05)
+        data.GetYaxis().SetTitleOffset(1.45)
+        data.Draw("E1")
+        dvcs.Draw("HIST SAME")
+        aao.Draw("HIST SAME")
+        total.Draw("HIST SAME")
+        data.Draw("E1 SAME")
+
+        leg = ROOT.TLegend(0.47, 0.67, 0.90, 0.88)
+        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.029)
+        leg.AddEntry(data, f"Data (N={int(data.GetEntries()):,})", "lep")
+        leg.AddEntry(total, "A#timesDVCSgen + B#timesAAOgen", "l")
+        leg.AddEntry(dvcs, f"A#timesDVCSgen (A={A:.4g})", "l")
+        leg.AddEntry(aao, f"B#timesAAOgen (B={B:.4g})", "l")
+        leg.Draw()
+        keep.append(leg)
+
+        label = ROOT.TLatex()
+        label.SetNDC(True); label.SetTextAlign(13); label.SetTextSize(0.034)
+        label.DrawLatex(0.16, 0.92, "E_{#gamma1} > 4 GeV: " + role)
+        keep.append(label)
+
+    output_file = os.path.join(output_dir, f"2_{period}_normalization_fit_Egamma1_gt_4_GeV.png")
     canvas.SaveAs(output_file)
     return keep, output_file
 
@@ -566,17 +809,19 @@ def main():
     os.makedirs(exclusivity_dir, exist_ok=True)
     keep, written = draw_canvases(dfs, exclusivity_dir, args.period)
 
-    print_egamma1_survival_scan(dfs)
-
     normalization_dir = os.path.join(args.output_dir, "normalization")
     os.makedirs(normalization_dir, exist_ok=True)
     norm_keep, norm_output = draw_normalization_step1(dfs, normalization_dir, args.period)
     keep.extend(norm_keep)
+    fit_keep, fit_output = draw_normalization_fit(dfs, normalization_dir, args.period)
+    keep.extend(fit_keep)
     _ = keep  # Keep ROOT objects alive through SaveAs().
 
     for output_file in written:
         print(f"\nWrote: {output_file}")
     print(f"\nWrote: {norm_output}")
+    if fit_output:
+        print(f"\nWrote: {fit_output}")
     return 0
 
 
