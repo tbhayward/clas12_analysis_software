@@ -133,6 +133,48 @@ ROOT::VecOps::RVec<double> pe_mgg_tag_probe(
 }
 
 
+
+ROOT::VecOps::RVec<double> pe_mgg_unique_rec_pair(
+        double e_th, double e_ph,
+        double tag_p, double tag_th, double tag_ph, int tag_index,
+        const ROOT::VecOps::RVec<int>& neutral_idx,
+        const ROOT::VecOps::RVec<int>& neutral_pid,
+        const ROOT::VecOps::RVec<double>& neutral_p,
+        const ROOT::VecOps::RVec<double>& neutral_th,
+        const ROOT::VecOps::RVec<double>& neutral_ph) {
+    // Reconstruct unique REC photon pairs from the hypothesis tree without using X.
+    //
+    // Every REC photon can appear as a tag on its own hypothesis row.  Requiring
+    // probe REC index > tag REC index therefore keeps a given unordered pair only
+    // once, rather than filling gamma_i-gamma_j and gamma_j-gamma_i separately.
+    //
+    // This diagnostic deliberately uses no epgammaX exclusivity cuts and no
+    // nearest-to-X information.  Both photons must satisfy the same basic
+    // p >= 0.4 GeV and electron-photon opening-angle > 8 deg requirements.
+    ROOT::VecOps::RVec<double> out;
+    for (size_t i = 0; i < neutral_idx.size(); ++i) {
+        if (neutral_idx[i] < 0) continue;
+        if (neutral_idx[i] <= tag_index) continue;
+        if (neutral_pid[i] != 22) continue;
+        if (!(tag_p >= 0.4) || !(neutral_p[i] >= 0.4)) continue;
+
+        const double ce =
+            std::sin(e_th)*std::sin(neutral_th[i])*std::cos(e_ph-neutral_ph[i])
+            + std::cos(e_th)*std::cos(neutral_th[i]);
+        const double ae =
+            std::acos(std::max(-1.0, std::min(1.0, ce))) * 180.0 / M_PI;
+        if (!(ae > 8.0)) continue;
+
+        const double dot =
+            std::sin(tag_th)*std::sin(neutral_th[i])*std::cos(tag_ph-neutral_ph[i])
+            + std::cos(tag_th)*std::cos(neutral_th[i]);
+        const double c = std::max(-1.0, std::min(1.0, dot));
+        const double m2 = 2.0*tag_p*neutral_p[i]*(1.0-c);
+        if (m2 >= 0.0) out.push_back(std::sqrt(m2));
+    }
+    return out;
+}
+
 ROOT::VecOps::RVec<double> pe_mgg_nearest_pid22(
         double tag_p, double tag_th, double tag_ph, int tag_index,
         const ROOT::VecOps::RVec<int>& neutral_idx,
@@ -1347,55 +1389,116 @@ def draw_probe_mgg(dfs, output_dir, period):
 
 
 def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
-    """AAOgen-only four-vector/truth audit for the missing pi0 peak.
+    """Recover the old reconstructed pi0 peak without using inferred X or MC truth.
 
-    The four panels deliberately answer one question at a time:
-      1) does the inclusive reconstructed pairing reproduce the surprising smooth shape?
-      2) does choosing only the nearest retained PID-22 candidate recover the peak?
-      3) when the saved MC roles say tag/probe are pi0 daughters and the reconstructed
-         neutral is matched to the saved generated probe, does reconstructed Mgg peak?
-      4) do the saved generated tag/probe four-vectors themselves give m_pi0?
+    This is intentionally narrower than the previous truth audit.  The previous
+    bottom-row truth test assumed parent information existed in the MC::Particle
+    tag/probe branches; that assumption was wrong.
+
+    Here we ask only whether the CURRENT ROOT skim still contains a normal
+    reconstructed gamma-gamma pi0 signal before the epgammaX denominator cuts.
+
+    Top:    W>2 baseline sample, unique unordered REC photon pairs only.
+    Bottom: the same pair construction after the finalized epgammaX exclusivity
+            cuts, showing directly whether those cuts are what remove the peak.
     """
     if "aaogen" not in dfs:
         return [], None
-    df=_exclusive_df(dfs["aaogen"],"probe_truth_audit_aaogen")
-    df=(df
-        .Define("Mgg_audit_all","pe_mgg_tag_probe(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)")
-        .Define("Mgg_audit_nearest","pe_mgg_nearest_pid22(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi,neutral_delta_alpha)")
-        .Define("Mgg_audit_truth_reco","pe_mgg_truth_matched_pi0_reco(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,mc_tag_index,mc_tag_pid,mc_tag_parent,mc_probe_index,mc_probe_pid,mc_probe_parent,neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi,neutral_mc_index,neutral_mc_pid)")
-        .Define("Mgg_audit_truth_gen","pe_mgg_truth_pi0(mc_tag_p,mc_tag_theta,mc_tag_phi,mc_tag_index,mc_tag_pid,mc_tag_parent,mc_probe_p,mc_probe_theta,mc_probe_phi,mc_probe_index,mc_probe_pid,mc_probe_parent)"))
-    unique=str(abs(hash((period,"probe_truth_audit"))))
-    specs=[
-      ("Mgg_audit_all","All retained reconstructed PID-22 partners"),
-      ("Mgg_audit_nearest","Nearest-to-X retained PID-22 partner only"),
-      ("Mgg_audit_truth_reco","Reco pair matched to saved #pi^{0} truth tag/probe"),
-      ("Mgg_audit_truth_gen","Saved generated #pi^{0} tag/probe four-vectors")]
-    booked=[]; actions=[]
-    for i,(col,title) in enumerate(specs):
-        d=df if i<3 else df.Filter("Mgg_audit_truth_gen >= 0.0","valid generated pi0 pair")
-        h=d.Histo1D((f"h_probe_truth_audit_{i}_{unique}",f";M_{{#gamma#gamma}} (GeV);Unit-normalized entries",120,0.0,0.30),col)
-        booked.append((h,title)); actions.append(h)
-    ROOT.RDF.RunGraphs(actions)
-    c=ROOT.TCanvas(f"c_probe_truth_audit_{unique}","",1400,1050); c.Divide(2,2)
-    keep=[c]+actions
-    for i,(hp,title) in enumerate(booked,1):
-        pad=c.cd(i); pad.SetTicks(1,1); pad.SetLeftMargin(0.13); pad.SetRightMargin(0.04); pad.SetBottomMargin(0.13); pad.SetTopMargin(0.12)
-        h=hp.GetValue().Clone(f"h_probe_truth_audit_draw_{i}_{unique}"); h.SetDirectory(0); h.SetStats(0); h.SetLineColor(ROOT.kRed+1); h.SetLineWidth(3)
-        n=int(round(h.GetEntries())); integ=h.Integral(1,h.GetNbinsX())
-        if integ>0: h.Scale(1.0/integ)
-        h.SetMinimum(0.0); h.SetMaximum(1.22*h.GetMaximum() if h.GetMaximum()>0 else 1.0)
-        h.GetXaxis().SetTitleSize(0.047); h.GetYaxis().SetTitleSize(0.043); h.GetXaxis().SetLabelSize(0.038); h.GetYaxis().SetLabelSize(0.038); h.GetYaxis().SetTitleOffset(1.35)
+
+    base = dfs["aaogen"].Define(
+        "Mgg_unique_event_base",
+        "pe_mgg_unique_rec_pair(e_theta,e_phi,"
+        "tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
+        "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)"
+    )
+    excl = _exclusive_df(dfs["aaogen"], "probe_unique_pair_exclusive").Define(
+        "Mgg_unique_event_excl",
+        "pe_mgg_unique_rec_pair(e_theta,e_phi,"
+        "tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
+        "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)"
+    )
+
+    unique = str(abs(hash((period, "probe_unique_rec_pair_audit"))))
+    hbase = base.Histo1D(
+        (f"h_mgg_unique_base_{unique}",
+         ";M_{#gamma#gamma} (GeV);Unit-normalized unique REC #gamma#gamma pairs",
+         150, 0.0, 0.30),
+        "Mgg_unique_event_base",
+    )
+    hexcl = excl.Histo1D(
+        (f"h_mgg_unique_excl_{unique}",
+         ";M_{#gamma#gamma} (GeV);Unit-normalized unique REC #gamma#gamma pairs",
+         150, 0.0, 0.30),
+        "Mgg_unique_event_excl",
+    )
+    ROOT.RDF.RunGraphs([hbase, hexcl])
+
+    canvas = ROOT.TCanvas(f"c_unique_pair_audit_{unique}", "", 1050, 900)
+    canvas.Divide(1, 2)
+    keep = [canvas, hbase, hexcl]
+
+    panels = [
+        (hbase, "AAOgen: W > 2 GeV, unique reconstructed photon pairs"),
+        (hexcl, "AAOgen: same pairs after final ep#gammaX exclusivity cuts"),
+    ]
+
+    for ipad, (handle, title) in enumerate(panels, 1):
+        pad = canvas.cd(ipad)
+        pad.SetTicks(1, 1)
+        pad.SetLeftMargin(0.12)
+        pad.SetRightMargin(0.04)
+        pad.SetBottomMargin(0.14)
+        pad.SetTopMargin(0.11)
+
+        h = handle.GetValue().Clone(f"h_unique_pair_draw_{ipad}_{unique}")
+        h.SetDirectory(0)
+        h.SetStats(0)
+        h.SetLineColor(ROOT.kRed + 1)
+        h.SetLineWidth(3)
+        n = int(round(h.GetEntries()))
+        integ = h.Integral(1, h.GetNbinsX())
+        if integ > 0:
+            h.Scale(1.0 / integ)
+        h.SetMinimum(0.0)
+        h.SetMaximum(1.25 * h.GetMaximum() if h.GetMaximum() > 0 else 1.0)
+        h.GetXaxis().SetTitleSize(0.050)
+        h.GetYaxis().SetTitleSize(0.045)
+        h.GetXaxis().SetLabelSize(0.040)
+        h.GetYaxis().SetLabelSize(0.040)
+        h.GetYaxis().SetTitleOffset(1.25)
         h.Draw("HIST")
-        line=ROOT.TLine(0.1349768,0.0,0.1349768,h.GetMaximum()); line.SetLineStyle(2); line.SetLineWidth(2); line.Draw()
-        tex=ROOT.TLatex(); tex.SetNDC(True); tex.SetTextSize(0.034); tex.SetTextFont(42); tex.DrawLatex(0.14,0.94,title); tex.DrawLatex(0.62,0.86,f"N = {n:,}")
-        keep += [h,line,tex]
-    out=os.path.join(output_dir,f"2_{period}_AAOgen_Mgg_truth_audit.png"); c.SaveAs(out)
-    print("\nAAOgen M(gamma gamma) truth audit:")
-    print("  Panel 1: all reconstructed PID-22 partners -- reproduces the original construction.")
-    print("  Panel 2: nearest retained PID-22 to inferred X -- tests combinatorial dilution.")
-    print("  Panel 3: reconstructed pair whose saved MC identities are the pi0 tag/probe photons -- tests REC four-vectors/matching.")
-    print("  Panel 4: same saved generated pi0 tag/probe four-vectors -- must peak at ~0.135 GeV if truth roles are sane.")
-    return keep,out
+
+        line = ROOT.TLine(0.1349768, 0.0, 0.1349768, h.GetMaximum())
+        line.SetLineStyle(2)
+        line.SetLineWidth(2)
+        line.Draw()
+
+        tex = ROOT.TLatex()
+        tex.SetNDC(True)
+        tex.SetTextFont(42)
+        tex.SetTextSize(0.040)
+        tex.DrawLatex(0.13, 0.94, title)
+        tex.SetTextSize(0.034)
+        tex.DrawLatex(0.69, 0.84, f"N pairs = {n:,}")
+        keep += [h, line, tex]
+
+    out = os.path.join(output_dir, f"2_{period}_AAOgen_unique_REC_pair_audit.png")
+    canvas.SaveAs(out)
+
+    print("\nAAOgen reconstructed-pair recovery audit:")
+    print("  No MC truth is used in this diagnostic.")
+    print("  No inferred-X/nearest-to-X information is used to construct the pairs.")
+    print("  A pair is filled only when probe REC index > tag REC index, so the")
+    print("  same unordered reconstructed photon pair is not double-counted.")
+    print("  TOP: W>2 and the basic >8 deg photon/electron requirement only.")
+    print("       -> A pi0 peak here means the v4 ROOT production still contains")
+    print("          the reconstructed pi0 signal; NO HIPO reprocessing is needed.")
+    print("  BOTTOM: identical construction after the final epgammaX cuts.")
+    print("       -> If the top peaks and bottom does not, our denominator/tag")
+    print("          selection is hiding the pi0 peak rather than the skim losing it.")
+    print("  If even the TOP panel has no pi0 peak, then we inspect the retained")
+    print("  neutral truncation / REC-index coverage before considering reprocessing.")
+    return keep, out
 
 def main():
     args = parse_args()
