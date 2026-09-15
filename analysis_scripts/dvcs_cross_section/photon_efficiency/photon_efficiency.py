@@ -244,6 +244,100 @@ ROOT::VecOps::RVec<double> pe_mgg_truth_matched_pi0_reco(
     return out;
 }
 
+
+ROOT::VecOps::RVec<double> pe_mgg_truth_by_matched_mc(
+        double tag_p, double tag_th, double tag_ph, int tag_index,
+        int mc_tag_index, int mc_tag_pid,
+        double mc_tag_p, double mc_tag_th, double mc_tag_ph,
+        const ROOT::VecOps::RVec<int>& neutral_idx,
+        const ROOT::VecOps::RVec<int>& neutral_pid,
+        const ROOT::VecOps::RVec<double>& neutral_p,
+        const ROOT::VecOps::RVec<double>& neutral_th,
+        const ROOT::VecOps::RVec<double>& neutral_ph,
+        const ROOT::VecOps::RVec<int>& neutral_mc_index,
+        const ROOT::VecOps::RVec<int>& neutral_mc_pid,
+        const ROOT::VecOps::RVec<double>& neutral_mc_p,
+        const ROOT::VecOps::RVec<double>& neutral_mc_th,
+        const ROOT::VecOps::RVec<double>& neutral_mc_ph) {
+    ROOT::VecOps::RVec<double> out;
+    if (mc_tag_index < 0 || mc_tag_pid != 22 || !(mc_tag_p > 0.0)) return out;
+    for (size_t i=0;i<neutral_idx.size();++i) {
+        if (neutral_idx[i] < 0 || neutral_idx[i] == tag_index || neutral_pid[i] != 22) continue;
+        if (i >= neutral_mc_index.size() || i >= neutral_mc_pid.size() ||
+            i >= neutral_mc_p.size() || i >= neutral_mc_th.size() || i >= neutral_mc_ph.size()) continue;
+        if (neutral_mc_index[i] < 0 || neutral_mc_pid[i] != 22) continue;
+        if (neutral_mc_index[i] == mc_tag_index || !(neutral_mc_p[i] > 0.0)) continue;
+
+        // Truth test uses the two generated photons actually associated with this
+        // reconstructed pair.  No parent-PDG or saved "probe role" assumption.
+        const double tdot = std::sin(mc_tag_th*M_PI/180.0)*std::sin(neutral_mc_th[i]*M_PI/180.0)*
+                            std::cos((mc_tag_ph-neutral_mc_ph[i])*M_PI/180.0) +
+                            std::cos(mc_tag_th*M_PI/180.0)*std::cos(neutral_mc_th[i]*M_PI/180.0);
+        const double tc = std::max(-1.0,std::min(1.0,tdot));
+        const double tm2 = 2.0*mc_tag_p*neutral_mc_p[i]*(1.0-tc);
+        if (!(tm2 >= 0.0)) continue;
+        const double tm = std::sqrt(tm2);
+        if (!(tm > 0.125 && tm < 0.145)) continue;
+
+        const double rdot = std::sin(tag_th*M_PI/180.0)*std::sin(neutral_th[i]*M_PI/180.0)*
+                            std::cos((tag_ph-neutral_ph[i])*M_PI/180.0) +
+                            std::cos(tag_th*M_PI/180.0)*std::cos(neutral_th[i]*M_PI/180.0);
+        const double rc = std::max(-1.0,std::min(1.0,rdot));
+        const double rm2 = 2.0*tag_p*neutral_p[i]*(1.0-rc);
+        if (rm2 >= 0.0) out.push_back(std::sqrt(rm2));
+    }
+    return out;
+}
+
+ROOT::VecOps::RVec<int> pe_mgg_truth_match_stage(
+        int tag_index, int mc_tag_index, int mc_tag_pid, double mc_tag_p,
+        const ROOT::VecOps::RVec<int>& neutral_idx,
+        const ROOT::VecOps::RVec<int>& neutral_pid,
+        const ROOT::VecOps::RVec<int>& neutral_mc_index,
+        const ROOT::VecOps::RVec<int>& neutral_mc_pid,
+        const ROOT::VecOps::RVec<double>& neutral_mc_p) {
+    ROOT::VecOps::RVec<int> out;
+    for (size_t i=0;i<neutral_idx.size();++i) {
+        if (neutral_idx[i] < 0 || neutral_idx[i] == tag_index || neutral_pid[i] != 22) continue;
+        int stage=1; // reconstructed tag + reconstructed PID22 partner exists
+        if (mc_tag_index >= 0) stage=2; else { out.push_back(stage); continue; }
+        if (mc_tag_pid == 22) stage=3; else { out.push_back(stage); continue; }
+        if (mc_tag_p > 0.0) stage=4; else { out.push_back(stage); continue; }
+        if (i < neutral_mc_index.size() && neutral_mc_index[i] >= 0) stage=5; else { out.push_back(stage); continue; }
+        if (i < neutral_mc_pid.size() && neutral_mc_pid[i] == 22) stage=6; else { out.push_back(stage); continue; }
+        if (i < neutral_mc_p.size() && neutral_mc_p[i] > 0.0) stage=7; else { out.push_back(stage); continue; }
+        if (neutral_mc_index[i] != mc_tag_index) stage=8;
+        out.push_back(stage);
+    }
+    return out;
+}
+
+ROOT::VecOps::RVec<int> pe_mgg_truth_role_diagnostics(
+        int tag_index, int mc_tag_index, int mc_tag_pid, int mc_tag_parent,
+        int mc_probe_index, int mc_probe_pid, int mc_probe_parent,
+        const ROOT::VecOps::RVec<int>& neutral_idx,
+        const ROOT::VecOps::RVec<int>& neutral_pid,
+        const ROOT::VecOps::RVec<int>& neutral_mc_index,
+        const ROOT::VecOps::RVec<int>& neutral_mc_pid) {
+    // One bit-mask per reconstructed tag-partner combination.  This diagnoses
+    // the *old* assumptions; it is not used to define truth in the new closure.
+    ROOT::VecOps::RVec<int> out;
+    for (size_t i=0;i<neutral_idx.size();++i) {
+        if (neutral_idx[i] < 0 || neutral_idx[i] == tag_index || neutral_pid[i] != 22) continue;
+        int mask=0;
+        if (mc_tag_index >= 0) mask |= 1;
+        if (mc_tag_pid == 22) mask |= 2;
+        if (mc_tag_parent == 111) mask |= 4;
+        if (mc_probe_index >= 0) mask |= 8;
+        if (mc_probe_pid == 22) mask |= 16;
+        if (mc_probe_parent == 111) mask |= 32;
+        if (i < neutral_mc_index.size() && neutral_mc_index[i] == mc_probe_index) mask |= 64;
+        if (i < neutral_mc_pid.size() && neutral_mc_pid[i] == 22) mask |= 128;
+        out.push_back(mask);
+    }
+    return out;
+}
+
 double pe_mgg_truth_pi0(double p1,double th1,double ph1,int i1,int pid1,int par1,
                          double p2,double th2,double ph2,int i2,int pid2,int par2) {
     if (i1<0 || i2<0 || i1==i2 || pid1!=22 || pid2!=22 || par1!=111 || par2!=111) return -1.0;
@@ -1869,11 +1963,11 @@ def draw_probe_aaogen_truth_closure(dfs, output_dir, period, coeffs, fit_result)
       - use saved MC::Particle/REC matching only to label each combination as
         a true pi0 daughter pair or a combinatorial/wrong pair.
 
-    A true pair requires:
-      * the reconstructed tag's saved MC match is a photon from a pi0;
-      * the saved generated probe is the other photon from that pi0;
-      * the reconstructed neutral partner is PID 22 and is matched to that
-        generated probe MC index.
+    A true pair is defined directly from the two reconstructed photons' own
+    REC-to-MC associations: both must match distinct generated photons, and the
+    invariant mass of those two matched generated photons must lie in the pi0
+    mass window 0.125--0.145 GeV.  Parent-PDG and saved "probe role" fields are
+    diagnosed separately but are not required for the truth label.
 
     The inclusive selected spectrum is therefore decomposed bin-by-bin as
         inclusive = truth-matched pi0 + combinatorial/wrong.
@@ -1896,11 +1990,17 @@ def draw_probe_aaogen_truth_closure(dfs, output_dir, period, coeffs, fit_result)
               "pe_mgg_tag_probe(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
               "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)")
           .Define("closure_Mgg_true",
-              "pe_mgg_truth_matched_pi0_reco("
+              "pe_mgg_truth_by_matched_mc("
               "tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
-              "mc_tag_index,mc_tag_pid,mc_tag_parent,"
-              "mc_probe_index,mc_probe_pid,mc_probe_parent,"
+              "mc_tag_index,mc_tag_pid,mc_tag_p,mc_tag_theta,mc_tag_phi,"
               "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi,"
+              "neutral_mc_index,neutral_mc_pid,neutral_mc_p,neutral_mc_theta,neutral_mc_phi)")
+          .Define("closure_match_stage",
+              "pe_mgg_truth_match_stage(tag_rec_index,mc_tag_index,mc_tag_pid,mc_tag_p,"
+              "neutral_idx,neutral_pid,neutral_mc_index,neutral_mc_pid,neutral_mc_p)")
+          .Define("closure_role_mask",
+              "pe_mgg_truth_role_diagnostics(tag_rec_index,mc_tag_index,mc_tag_pid,mc_tag_parent,"
+              "mc_probe_index,mc_probe_pid,mc_probe_parent,neutral_idx,neutral_pid,"
               "neutral_mc_index,neutral_mc_pid)"))
 
     hall_ptr = df.Histo1D(
@@ -1911,7 +2011,9 @@ def draw_probe_aaogen_truth_closure(dfs, output_dir, period, coeffs, fit_result)
         (f"h_closure_true_{unique}",
          ";M_{#gamma_{tag}#gamma_{probe}} (GeV);Normalized tag-probe combinations",
          160, 0.0, 0.8), "closure_Mgg_true")
-    ROOT.RDF.RunGraphs([hall_ptr, htrue_ptr])
+    hstage_ptr = df.Histo1D((f"h_closure_stage_{unique}", ";stage;combinations", 8, 0.5, 8.5), "closure_match_stage")
+    hrole_ptr = df.Histo1D((f"h_closure_role_{unique}", ";mask;combinations", 256, -0.5, 255.5), "closure_role_mask")
+    ROOT.RDF.RunGraphs([hall_ptr, htrue_ptr, hstage_ptr, hrole_ptr])
 
     hall = hall_ptr.GetValue().Clone(f"h_closure_all_scaled_{unique}")
     htrue = htrue_ptr.GetValue().Clone(f"h_closure_true_scaled_{unique}")
@@ -1952,7 +2054,7 @@ def draw_probe_aaogen_truth_closure(dfs, output_dir, period, coeffs, fit_result)
     # Canvas: left = truth decomposition; right = direct truth-vs-fit closure.
     c = ROOT.TCanvas(f"c_selected_truthclosure_{unique}", "", 1500, 720)
     c.Divide(2, 1, 0.002, 0.002)
-    keep = [c, hall_ptr, htrue_ptr, hall, htrue, hbg, f_sig, f_bg]
+    keep = [c, hall_ptr, htrue_ptr, hstage_ptr, hrole_ptr, hall, htrue, hbg, f_sig, f_bg]
 
     # Left panel.
     p = c.cd(1)
@@ -2024,6 +2126,30 @@ def draw_probe_aaogen_truth_closure(dfs, output_dir, period, coeffs, fit_result)
     out = os.path.join(output_dir, f"4_{period}_AAOgen_Mgg_pi0_truth_closure.png")
     c.SaveAs(out)
 
+    hstage = hstage_ptr.GetValue()
+    hrole = hrole_ptr.GetValue()
+    stage_exact = {i: int(round(hstage.GetBinContent(i))) for i in range(1,9)}
+    # Because each combination stores the highest stage reached, cumulative N(stage>=k)
+    # is the sum from k through 8.
+    stage_cumulative = {k: sum(stage_exact[i] for i in range(k,9)) for k in range(1,9)}
+
+    role_counts = {"tag_index":0,"tag_pid22":0,"tag_parent111":0,"probe_index":0,
+                   "probe_pid22":0,"probe_parent111":0,"partner_eq_probe":0,"partner_pid22":0,
+                   "all_old_requirements":0}
+    for ib in range(1, hrole.GetNbinsX()+1):
+        n=int(round(hrole.GetBinContent(ib)))
+        if not n: continue
+        mask=int(round(hrole.GetBinCenter(ib)))
+        if mask & 1: role_counts["tag_index"] += n
+        if mask & 2: role_counts["tag_pid22"] += n
+        if mask & 4: role_counts["tag_parent111"] += n
+        if mask & 8: role_counts["probe_index"] += n
+        if mask & 16: role_counts["probe_pid22"] += n
+        if mask & 32: role_counts["probe_parent111"] += n
+        if mask & 64: role_counts["partner_eq_probe"] += n
+        if mask & 128: role_counts["partner_pid22"] += n
+        if mask == 255: role_counts["all_old_requirements"] += n
+
     result = {
         "truth_yield": truth_yield,
         "inclusive_yield": inclusive_yield,
@@ -2034,22 +2160,61 @@ def draw_probe_aaogen_truth_closure(dfs, output_dir, period, coeffs, fit_result)
         "double_bias_pct": bias_double,
         "raw_all_pairs": int(round(hall_ptr.GetValue().GetEntries())),
         "raw_truth_pairs": int(round(htrue_ptr.GetValue().GetEntries())),
+        "match_stage_cumulative": stage_cumulative,
+        "old_role_counts": role_counts,
     }
 
+    diag_out = os.path.join(output_dir, f"4b_{period}_AAOgen_Mgg_truth_matching_diagnostics.txt")
+    with open(diag_out, "w") as fout:
+        fout.write("AAOgen selected reconstructed-pair truth-matching diagnostics\n")
+        fout.write("============================================================\n\n")
+        fout.write("Population: exactly the same _exclusive_df() AAOgen rows and tag + retained PID22 partner combinations used in probe plot 2.\n\n")
+        labels={1:"reconstructed tag + reconstructed PID22 partner exists",
+                2:"tag has a saved MC particle index",
+                3:"tag's matched MC particle is a photon (PID 22)",
+                4:"tag's matched MC photon has a saved positive momentum",
+                5:"partner has a saved MC particle index",
+                6:"partner's matched MC particle is a photon (PID 22)",
+                7:"partner's matched MC photon has a saved positive momentum",
+                8:"tag and partner are matched to two distinct MC particles"}
+        fout.write("Direct REC -> MC association chain (cumulative counts):\n")
+        for k in range(1,9): fout.write(f"  stage {k}: {stage_cumulative[k]:,}  {labels[k]}\n")
+        fout.write("\nOld role/parent assumptions, tested independently (NOT used by new truth definition):\n")
+        for key,val in role_counts.items(): fout.write(f"  {key:24s} {val:,}\n")
+        fout.write("\nNew truth definition: after stage 8, compute Mgg from the two matched generated-photon four-vectors; call the reconstructed pair a true pi0 pair when 0.125 < generated Mgg < 0.145 GeV.\n")
+        fout.write(f"Raw truth-labeled reconstructed combinations: {result['raw_truth_pairs']:,}\n")
+        fout.write(f"B-scaled truth yield in {lo:.3f}--{hi:.3f} GeV reconstructed fit interval: {truth_yield:.3f}\n")
+        fout.write(f"Single-G fit yield: {fit_single:.3f}; closure bias: {bias_single:+.3f}%\n")
+        fout.write(f"Double-G fit yield: {fit_double:.3f}; closure bias: {bias_double:+.3f}%\n")
+
     print("\nAAOgen selected-pair pi0 truth closure:")
-    print("  IMPORTANT: this now starts from the SAME _exclusive_df() AAOgen rows")
-    print("             and the SAME tag + retained-PID22 combinations used in plot 2.")
-    print("  MC truth is used only to label each already-selected reconstructed pair.")
-    print(f"  nominal comparison interval = {lo:.3f}--{hi:.3f} GeV")
-    print(f"  raw selected combinations = {result['raw_all_pairs']:,}")
-    print(f"  raw truth-matched pi0 combinations = {result['raw_truth_pairs']:,}")
-    print(f"  B-scaled inclusive combinations in fit interval = {inclusive_yield:.2f}")
-    print(f"  B-scaled truth pi0 combinations in fit interval = {truth_yield:.2f}")
-    print(f"  B-scaled combinatorial/wrong combinations in fit interval = {bg_yield:.2f}")
-    print(f"  single-Gaussian fitted signal = {fit_single:.2f}  closure bias = {bias_single:+.3f}%")
-    print(f"  double-Gaussian fitted signal = {fit_double:.2f}  closure bias = {bias_double:+.3f}%")
-    print("  These closure biases are now meaningful because numerator and truth reference")
-    print("  use the same selected reconstructed combination population and mass interval.")
+    print("  Population: SAME selected reconstructed AAOgen tag-partner combinations as plot 2.")
+    print("  New truth label: match each reconstructed photon independently to its saved MC photon;")
+    print("                   require two distinct matched MC photons; compute their generated Mgg;")
+    print("                   generated 0.125 < Mgg < 0.145 GeV => true pi0 pair.")
+    print("  Parent==111 and saved mc_probe_index are NOT used to define truth.")
+    print(f"  nominal reconstructed fit interval = {lo:.3f}--{hi:.3f} GeV")
+    print("\n  REC -> MC matching chain (cumulative):")
+    stage_labels=["reconstructed pair", "tag has MC index", "tag MC PID=22", "tag MC momentum saved",
+                  "partner has MC index", "partner MC PID=22", "partner MC momentum saved", "distinct MC indices"]
+    for k,label in enumerate(stage_labels,1):
+        print(f"    {k}. {label:29s}: {stage_cumulative[k]:,}")
+    print("\n  Diagnostic of the assumptions that produced the previous zero:")
+    print(f"    tag mc_parent == 111:                 {role_counts['tag_parent111']:,}")
+    print(f"    saved probe MC index exists:          {role_counts['probe_index']:,}")
+    print(f"    saved probe MC PID == 22:             {role_counts['probe_pid22']:,}")
+    print(f"    saved probe mc_parent == 111:         {role_counts['probe_parent111']:,}")
+    print(f"    reconstructed partner == saved probe: {role_counts['partner_eq_probe']:,}")
+    print(f"    ALL old requirements simultaneously:  {role_counts['all_old_requirements']:,}")
+    print("\n  New direct generated-mass truth result:")
+    print(f"    raw selected combinations = {result['raw_all_pairs']:,}")
+    print(f"    raw truth-matched pi0 combinations = {result['raw_truth_pairs']:,}")
+    print(f"    B-scaled inclusive combinations in fit interval = {inclusive_yield:.2f}")
+    print(f"    B-scaled truth pi0 combinations in fit interval = {truth_yield:.2f}")
+    print(f"    B-scaled combinatorial/wrong combinations in fit interval = {bg_yield:.2f}")
+    print(f"    single-Gaussian fitted signal = {fit_single:.2f}  closure bias = {bias_single:+.3f}%")
+    print(f"    double-Gaussian fitted signal = {fit_double:.2f}  closure bias = {bias_double:+.3f}%")
+    print(f"  Detailed matching diagnostic -> {diag_out}")
 
     return keep, out, result
 
