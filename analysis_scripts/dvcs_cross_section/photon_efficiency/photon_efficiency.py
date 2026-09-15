@@ -8,16 +8,17 @@ Use every row in the PhotonEfficiency hypothesis tree, requiring W > 2 GeV and a
 Each row is one reconstructed e'p'gamma1 hypothesis produced by the skim.
 
 Plot the following observables as rows:
-  1) E_gamma1                     0.4 to 10 GeV
+  1) E_gamma1                     0.4 to 9 GeV
   2) missing energy e'p'gamma1    0 to 9 GeV
   3) Mx2(e'p')                   -0.5 to 1.0 GeV^2
   4) Mx2(e'p'gamma1)             -0.1 to 0.15 GeV^2
-  5) Mx2(e'gamma1)                  0 to 8 GeV^2
+  5) Mx2(e'gamma1)                -20 to 20 GeV^2
 
 Columns are cumulative selections:
   1) W > 2 GeV and angle(e',gamma1) > 8 deg
   2) additionally Mx2(e'p') < 0.18 GeV^2
   3) additionally -0.05 < Mx2(e'p'gamma1) < 0.05 GeV^2
+  4) additionally Mx2(e'gamma1) > 0 GeV^2
 
 Samples:
   Data black, DVCSgen green, AAOgen red, CLASDIS blue.
@@ -230,13 +231,13 @@ def make_dataframe(chain):
 
 
 def draw_canvas(dfs, output_file):
-    """Draw the four observables through the requested cumulative cut sequence."""
+    """Draw the five observables through the requested cumulative cut sequence."""
     plots = [
         ("E_gamma1", ";E_{#gamma1} (GeV);Unit-normalized entries", 172, 0.4, 9.0),
         ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 180, 0.0, 9.0),
         ("Mx2_ep", ";M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries", 180, -0.5, 1.0),
         ("Mx2_epg_raw", ";M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries", 180, -0.1, 0.15),
-        ("Mx2_egamma1", ";M^{2}_{X}(e'#gamma1) (GeV^{2});Unit-normalized entries", 200, -10.0, 10.0),
+        ("Mx2_egamma1", ";M^{2}_{X}(e'#gamma1) (GeV^{2});Unit-normalized entries", 160, -20.0, 20.0),
     ]
 
     stages = [
@@ -245,6 +246,8 @@ def draw_canvas(dfs, output_file):
          lambda df: df.Filter("Mx2_ep < 0.18", "Mx2_ep_lt_0p18")),
         ("-0.05 < M^{2}_{X}(e'p'#gamma1) < 0.05 GeV^{2}",
          lambda df: df.Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "Mx2_epg_window")),
+        ("M^{2}_{X}(e'#gamma1) > 0 GeV^{2}",
+         lambda df: df.Filter("Mx2_egamma1 > 0.0", "Mx2_egamma1_gt_0")),
     ]
 
     stage_dfs = {}
@@ -254,6 +257,7 @@ def draw_canvas(dfs, output_file):
         stage_dfs[(sample, 0)] = dfs[sample]
         stage_dfs[(sample, 1)] = stages[1][1](stage_dfs[(sample, 0)])
         stage_dfs[(sample, 2)] = stages[2][1](stage_dfs[(sample, 1)])
+        stage_dfs[(sample, 3)] = stages[3][1](stage_dfs[(sample, 2)])
 
     booked = {}
     actions = []
@@ -274,13 +278,13 @@ def draw_canvas(dfs, output_file):
     if actions:
         ROOT.RDF.RunGraphs(actions)
 
-    canvas = ROOT.TCanvas("c_photon_efficiency_restart", "", 2100, 2100)
-    canvas.Divide(3, 5, 0.002, 0.002)
+    canvas = ROOT.TCanvas("c_photon_efficiency_restart", "", 2800, 2100)
+    canvas.Divide(4, 5, 0.002, 0.002)
     keep = [canvas] + list(actions)
 
     for irow, _plot in enumerate(plots):
         for icol, (stage_title, _filter) in enumerate(stages):
-            pad_number = irow * 3 + icol + 1
+            pad_number = irow * 4 + icol + 1
             pad = canvas.cd(pad_number)
             pad.SetTicks(1, 1)
             pad.SetLeftMargin(0.14)
@@ -308,6 +312,7 @@ def draw_canvas(dfs, output_file):
                 hist.SetStats(0)
                 hist.SetLineColor(COLORS[sample])
                 hist.SetLineWidth(3)
+                entries = int(round(hist.GetEntries()))
                 integral = hist.Integral(1, hist.GetNbinsX())
                 if integral > 0.0:
                     hist.Scale(1.0 / integral)
@@ -319,7 +324,7 @@ def draw_canvas(dfs, output_file):
                             positive_min = value
                 histograms.append((sample, label, hist))
                 keep.append(hist)
-                legend.AddEntry(hist, label, "l")
+                legend.AddEntry(hist, f"{label} (N={entries:,})", "l")
 
             first = True
             for _sample, _label, hist in histograms:
@@ -391,7 +396,7 @@ def main():
 
     # Materialize the W>2 counts in coordinated ROOT event loops.
     ROOT.RDF.RunGraphs(list(count_handles.values()))
-    print("\nRows entering the first canvas (W > 2 GeV only):")
+    print("\nRows entering the first canvas (W > 2 GeV and angle(e',gamma1) > 8 deg):")
     for sample, label in SAMPLES:
         if sample in count_handles:
             print(f"  {label:<14s} {int(count_handles[sample].GetValue()):,}")
