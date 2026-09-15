@@ -1533,6 +1533,207 @@ def draw_probe_mgg(dfs, output_dir, period, coeffs):
     canvas.SaveAs(out)
     return keep, out
 
+
+def draw_probe_aaogen_pi0_fit(dfs, output_dir, period, coeffs):
+    """Fit the normalized AAOgen Mgg peak with Gaussian signal + smooth background.
+
+    This is still the reconstructed tag-probe spectrum before the later measurable-
+    fiducial-volume restriction. The AAOgen histogram is first scaled by the same
+    mean B coefficient used in the preceding normalized probe comparison. The fit
+    therefore returns the expected reconstructed pi0 signal yield on the Data
+    normalization scale for this pre-fiducial selection.
+
+    Model:
+        Gaussian signal + quadratic polynomial background.
+    The displayed histogram retains statistical error bars. The signal yield is
+    obtained by integrating the fitted Gaussian over the fit range and dividing
+    by the histogram bin width.
+    """
+    if coeffs is None or "aaogen" not in dfs:
+        print("WARNING: AAOgen or normalization coefficients unavailable; skipping pi0 fit.")
+        return [], None, None
+
+    _, B, _ = coeffs["mean"]
+
+    df = (_exclusive_df(dfs["aaogen"], "probe_pi0fit_aaogen")
+          .Define("Mgg_tag_probe_fit",
+              "pe_mgg_tag_probe(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
+              "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)"))
+
+    unique = str(abs(hash((period, "probe_aaogen_pi0_fit"))))
+    hptr = df.Histo1D(
+        (f"h_probe_aaogen_pi0fit_{unique}",
+         ";M_{#gamma_{tag}#gamma_{probe}} (GeV);Normalized tag-probe combinations",
+         160, 0.0, 0.8),
+        "Mgg_tag_probe_fit")
+    ROOT.RDF.RunGraphs([hptr])
+
+    h = hptr.GetValue().Clone(f"h_probe_aaogen_pi0fit_scaled_{unique}")
+    h.SetDirectory(0)
+    h.Sumw2()
+    h.Scale(B)
+    h.SetStats(0)
+    h.SetMarkerStyle(20)
+    h.SetMarkerSize(0.75)
+    h.SetMarkerColor(COLORS["aaogen"])
+    h.SetLineColor(COLORS["aaogen"])
+    h.SetLineWidth(1)
+
+    # Fit locally around the pi0 peak. A quadratic background is flexible enough
+    # for the smooth combinatorial continuum without giving it enough freedom to
+    # absorb the narrow pi0 signal.
+    fit_lo, fit_hi = 0.075, 0.200
+    f_total = ROOT.TF1(
+        f"f_probe_aaogen_pi0_total_{unique}",
+        "gaus(0)+pol2(3)", fit_lo, fit_hi)
+
+    # Seed the peak from the histogram near the physical pi0 mass.
+    peak_bin = h.GetXaxis().FindBin(0.135)
+    peak_height = max(h.GetBinContent(peak_bin), 1.0e-9)
+    side_lo_bin = h.GetXaxis().FindBin(fit_lo + 0.005)
+    side_hi_bin = h.GetXaxis().FindBin(fit_hi - 0.005)
+    side_level = max(0.0, 0.5 * (h.GetBinContent(side_lo_bin) + h.GetBinContent(side_hi_bin)))
+    amp_seed = max(peak_height - side_level, 0.25 * peak_height, 1.0e-9)
+
+    f_total.SetParameters(amp_seed, 0.135, 0.012, side_level, 0.0, 0.0)
+    f_total.SetParNames("Gaussian amplitude", "Gaussian mean", "Gaussian sigma",
+                        "Background p0", "Background p1", "Background p2")
+    f_total.SetParLimits(0, 0.0, max(10.0 * peak_height, 1.0))
+    f_total.SetParLimits(1, 0.115, 0.155)
+    f_total.SetParLimits(2, 0.003, 0.035)
+
+    fit_result = h.Fit(f_total, "SQR0", "", fit_lo, fit_hi)
+
+    amp = f_total.GetParameter(0)
+    mean = f_total.GetParameter(1)
+    sigma = abs(f_total.GetParameter(2))
+
+    f_sig = ROOT.TF1(
+        f"f_probe_aaogen_pi0_signal_{unique}",
+        "gaus", fit_lo, fit_hi)
+    f_sig.SetParameters(amp, mean, sigma)
+    f_sig.SetLineColor(ROOT.kBlue + 1)
+    f_sig.SetLineWidth(3)
+    f_sig.SetLineStyle(1)
+
+    f_bg = ROOT.TF1(
+        f"f_probe_aaogen_pi0_background_{unique}",
+        "pol2", fit_lo, fit_hi)
+    for ip in range(3):
+        f_bg.SetParameter(ip, f_total.GetParameter(ip + 3))
+    f_bg.SetLineColor(ROOT.kGray + 2)
+    f_bg.SetLineWidth(3)
+    f_bg.SetLineStyle(2)
+
+    f_total.SetLineColor(ROOT.kMagenta + 2)
+    f_total.SetLineWidth(3)
+    f_total.SetLineStyle(1)
+
+    bin_width = h.GetXaxis().GetBinWidth(1)
+    signal_yield = f_sig.Integral(fit_lo, fit_hi) / bin_width
+
+    # Propagate the Gaussian-parameter covariance to the integrated signal yield
+    # numerically. This includes amplitude/mean/sigma correlations from the fit.
+    signal_yield_err = float("nan")
+    try:
+        cov = fit_result.GetCovarianceMatrix()
+        pars = [amp, mean, sigma]
+
+        def signal_integral_for(p):
+            ft = ROOT.TF1(f"tmp_sig_int_{unique}_{abs(hash(tuple(p)))}", "gaus", fit_lo, fit_hi)
+            ft.SetParameters(p[0], p[1], abs(p[2]))
+            val = ft.Integral(fit_lo, fit_hi) / bin_width
+            return val
+
+        grad = []
+        for ip in range(3):
+            step = max(abs(pars[ip]) * 1.0e-5, 1.0e-7)
+            pp = pars.copy(); pm = pars.copy()
+            pp[ip] += step; pm[ip] -= step
+            grad.append((signal_integral_for(pp) - signal_integral_for(pm)) / (2.0 * step))
+
+        var = 0.0
+        for i in range(3):
+            for j in range(3):
+                var += grad[i] * float(cov[i][j]) * grad[j]
+        signal_yield_err = (max(var, 0.0)) ** 0.5
+    except Exception:
+        pass
+
+    canvas = ROOT.TCanvas(f"c_probe_aaogen_pi0fit_{unique}", "", 1000, 800)
+    canvas.SetTicks(1, 1)
+    canvas.SetLeftMargin(0.13)
+    canvas.SetRightMargin(0.04)
+    canvas.SetBottomMargin(0.13)
+    canvas.SetTopMargin(0.08)
+
+    h.SetMinimum(0.0)
+    h.SetMaximum(1.28 * max(h.GetMaximum(), f_total.GetMaximum(fit_lo, fit_hi)))
+    h.GetXaxis().SetRangeUser(0.0, 0.30)
+    h.GetXaxis().SetTitleSize(0.047)
+    h.GetYaxis().SetTitleSize(0.043)
+    h.GetXaxis().SetLabelSize(0.038)
+    h.GetYaxis().SetLabelSize(0.038)
+    h.GetYaxis().SetTitleOffset(1.35)
+    h.Draw("E1")
+    f_bg.Draw("SAME")
+    f_sig.Draw("SAME")
+    f_total.Draw("SAME")
+    h.Draw("E1 SAME")
+
+    leg = ROOT.TLegend(0.51, 0.62, 0.89, 0.88)
+    leg.SetBorderSize(0)
+    leg.SetFillStyle(0)
+    leg.SetTextSize(0.027)
+    leg.AddEntry(h, f"AAOgen #times B ({B:.4g})", "lep")
+    leg.AddEntry(f_total, "Gaussian + background fit", "l")
+    leg.AddEntry(f_sig, "Gaussian #pi^{0} signal", "l")
+    leg.AddEntry(f_bg, "Quadratic background", "l")
+    leg.Draw()
+
+    info = ROOT.TLatex()
+    info.SetNDC(True)
+    info.SetTextSize(0.029)
+    info.DrawLatex(0.17, 0.87, f"#mu = {mean:.4f} GeV")
+    info.DrawLatex(0.17, 0.83, f"#sigma = {sigma:.4f} GeV")
+    if signal_yield_err == signal_yield_err:
+        info.DrawLatex(0.17, 0.79, f"N_{{#pi^{{0}}}} = {signal_yield:,.0f} #pm {signal_yield_err:,.0f}")
+    else:
+        info.DrawLatex(0.17, 0.79, f"N_{{#pi^{{0}}}} = {signal_yield:,.0f}")
+    info.DrawLatex(0.17, 0.75, f"#chi^{{2}}/ndf = {f_total.GetChisquare():.1f}/{f_total.GetNDF()}")
+
+    keep = [canvas, hptr, h, f_total, f_sig, f_bg, leg, info, fit_result]
+    out = os.path.join(output_dir, f"2_{period}_AAOgen_Mgg_pi0_fit.png")
+    canvas.SaveAs(out)
+
+    result = {
+        "B": B,
+        "fit_lo": fit_lo,
+        "fit_hi": fit_hi,
+        "mean": mean,
+        "sigma": sigma,
+        "signal_yield": signal_yield,
+        "signal_yield_err": signal_yield_err,
+        "chi2": f_total.GetChisquare(),
+        "ndf": f_total.GetNDF(),
+    }
+
+    print("\\nAAOgen pi0 Mgg fit (pre-fiducial-volume step):")
+    print(f"  AAOgen normalization B = {B:.8g}")
+    print(f"  fit range = {fit_lo:.3f}--{fit_hi:.3f} GeV")
+    print(f"  Gaussian mean = {mean:.6f} GeV")
+    print(f"  Gaussian sigma = {sigma:.6f} GeV")
+    if signal_yield_err == signal_yield_err:
+        print(f"  fitted pi0 signal = {signal_yield:.2f} +/- {signal_yield_err:.2f}")
+    else:
+        print(f"  fitted pi0 signal = {signal_yield:.2f}")
+    print(f"  chi2/ndf = {f_total.GetChisquare():.2f}/{f_total.GetNDF()}")
+    print("  NOTE: this is the normalized reconstructed AAOgen signal before the")
+    print("        measurable probe fiducial-volume restriction planned for the next step.")
+
+    return keep, out, result
+
+
 def _event_grouped_unique_tag_mgg(df, hist_name, title, tolerance=1.0e-10):
     """Build every unique reconstructed-photon pair for each sequential e+p block.
 
@@ -1933,6 +2134,9 @@ def main():
     os.makedirs(probe_dir, exist_ok=True)
     probe_keep, probe_output = draw_probe_mgg(dfs, probe_dir, args.period, denominator_coeffs)
     keep.extend(probe_keep)
+    pi0fit_keep, pi0fit_output, pi0fit_result = draw_probe_aaogen_pi0_fit(
+        dfs, probe_dir, args.period, denominator_coeffs)
+    keep.extend(pi0fit_keep)
     _ = keep  # Keep ROOT objects alive through SaveAs().
 
     for output_file in written:
@@ -1947,6 +2151,8 @@ def main():
         print(f"\nWrote: {final_output}")
     if probe_output:
         print(f"\nWrote: {probe_output}")
+    if pi0fit_output:
+        print(f"\nWrote: {pi0fit_output}")
     return 0
 
 
