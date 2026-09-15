@@ -43,6 +43,7 @@ ROOT.TH1.SetDefaultSumw2(True)
 
 BASE = "/work/clas12/thayward/photon_efficiency/ROOT_trees"
 TREE = "PhotonEfficiency"
+EVENT_TREE = "PhotonEfficiencyEvents"
 EXPECTED_SKIM_VERSION = 4
 
 # Requested draw order / colors.
@@ -1567,6 +1568,87 @@ def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
     print("  reconstructed tag photons retained in PhotonEfficiency contain both pi0 daughters.")
     return keep, out
 
+
+def _mgg_from_p_theta_phi(p1, th1, ph1, p2, th2, ph2):
+    dot = (np.sin(th1)*np.sin(th2)*np.cos(ph1-ph2) + np.cos(th1)*np.cos(th2))
+    c = max(-1.0, min(1.0, float(dot)))
+    return np.sqrt(max(0.0, 2.0*float(p1)*float(p2)*(1.0-c)))
+
+def dump_aaogen_truth_rec_events(files, output_dir, period, max_events=12):
+    """Text-level AAOgen truth -> REC trace using PhotonEfficiencyEvents.
+
+    Selects clean events where the event tree says there are exactly two generated
+    photons and both are classified as pi0 photons.  It then prints the generated
+    photon four-vector information, each photon's best REC association, and both
+    generated and REC Mgg values.  This bypasses the hypothesis tree completely.
+    """
+    if not files:
+        return None
+    ch = ROOT.TChain(EVENT_TREE)
+    for f in files:
+        ch.Add(f)
+    if ch.GetEntries() == 0:
+        print("WARNING: AAOgen PhotonEfficiencyEvents tree is empty/missing.")
+        return None
+
+    out = os.path.join(output_dir, f"3_{period}_AAOgen_truth_REC_event_dump.txt")
+    n_clean = n_both_rec = n_both_pid22 = 0
+    masses_gen, masses_rec = [], []
+    examples = []
+
+    for iev in range(ch.GetEntries()):
+        ch.GetEntry(iev)
+        if float(ch.ev_W) <= 2.0:
+            continue
+        if int(ch.ev_gen_n_photon) != 2 or int(ch.ev_gen_n_pi0_photon) != 2:
+            continue
+        if int(ch.ev_gen_gamma_total) != 2:
+            continue
+        n_clean += 1
+        gp=[]
+        for k in range(2):
+            gp.append((float(ch.gen_gamma_p[k]), float(ch.gen_gamma_theta[k]), float(ch.gen_gamma_phi[k])))
+        mgen=_mgg_from_p_theta_phi(*gp[0], *gp[1]); masses_gen.append(mgen)
+        r0=int(ch.gen_gamma_best_rec_index[0]); r1=int(ch.gen_gamma_best_rec_index[1])
+        if r0 >= 0 and r1 >= 0:
+            n_both_rec += 1
+        pid0=int(ch.gen_gamma_best_rec_pid[0]); pid1=int(ch.gen_gamma_best_rec_pid[1])
+        mrec=None
+        if r0 >= 0 and r1 >= 0 and pid0 == 22 and pid1 == 22 and r0 != r1:
+            n_both_pid22 += 1
+            rp0=(float(ch.gen_gamma_best_rec_p[0]), float(ch.gen_gamma_best_rec_theta[0]), float(ch.gen_gamma_best_rec_phi[0]))
+            rp1=(float(ch.gen_gamma_best_rec_p[1]), float(ch.gen_gamma_best_rec_theta[1]), float(ch.gen_gamma_best_rec_phi[1]))
+            mrec=_mgg_from_p_theta_phi(*rp0, *rp1); masses_rec.append(mrec)
+        if len(examples) < max_events:
+            examples.append({
+                'key':(int(ch.ev_source_file_hash),int(ch.ev_runnum),int(ch.ev_evnum)), 'W':float(ch.ev_W), 'mgen':mgen, 'mrec':mrec,
+                'g0':(int(ch.gen_gamma_index[0]),)+gp[0]+(int(ch.gen_gamma_n_rec_matches[0]),int(ch.gen_gamma_n_rec_pid22[0]),r0,pid0,float(ch.gen_gamma_best_rec_p[0]),float(ch.gen_gamma_best_rec_theta[0]),float(ch.gen_gamma_best_rec_phi[0]),float(ch.gen_gamma_best_rec_delta_alpha[0])),
+                'g1':(int(ch.gen_gamma_index[1]),)+gp[1]+(int(ch.gen_gamma_n_rec_matches[1]),int(ch.gen_gamma_n_rec_pid22[1]),r1,pid1,float(ch.gen_gamma_best_rec_p[1]),float(ch.gen_gamma_best_rec_theta[1]),float(ch.gen_gamma_best_rec_phi[1]),float(ch.gen_gamma_best_rec_delta_alpha[1]))
+            })
+
+    with open(out,'w') as f:
+        f.write("AAOgen truth -> reconstructed photon event trace\n")
+        f.write("Selection: W > 2 GeV, exactly two generated photons, both classified as pi0 photons.\n")
+        f.write("This reads PhotonEfficiencyEvents only; no tag/probe, neutral_[0..4], inferred X, or exclusivity cuts.\n\n")
+        f.write(f"clean generated pi0->gamma gamma events: {n_clean:,}\n")
+        f.write(f"both generated photons have a best REC association: {n_both_rec:,} ({100*n_both_rec/n_clean if n_clean else 0:.2f}%)\n")
+        f.write(f"both best REC associations are distinct PID22: {n_both_pid22:,} ({100*n_both_pid22/n_clean if n_clean else 0:.2f}%)\n")
+        if masses_gen: f.write(f"generated Mgg: mean={np.mean(masses_gen):.6f} GeV, median={np.median(masses_gen):.6f} GeV\n")
+        if masses_rec: f.write(f"best-REC PID22 Mgg: mean={np.mean(masses_rec):.6f} GeV, median={np.median(masses_rec):.6f} GeV\n")
+        f.write("\nPer-event examples. theta/phi are saved radians; delta_alpha is saved matching angle.\n")
+        f.write("gamma tuple = (MC index, p, theta, phi, nREC, nRECpid22, bestRECindex, bestRECpid, bestRECp, bestRECtheta, bestRECphi, delta_alpha)\n\n")
+        for x in examples:
+            f.write(f"event key={x['key']}  W={x['W']:.4f}  Mgg_gen={x['mgen']:.6f}  Mgg_REC={x['mrec'] if x['mrec'] is not None else 'NA'}\n")
+            f.write(f"  gamma0 {x['g0']}\n  gamma1 {x['g1']}\n\n")
+    print("\nAAOgen truth -> REC event dump:")
+    print(f"  clean generated pi0->gamma gamma events: {n_clean:,}")
+    print(f"  both have best REC association: {n_both_rec:,}")
+    print(f"  both are distinct reconstructed PID22: {n_both_pid22:,}")
+    if masses_gen: print(f"  generated Mgg mean/median: {np.mean(masses_gen):.6f} / {np.median(masses_gen):.6f} GeV")
+    if masses_rec: print(f"  REC Mgg mean/median:       {np.mean(masses_rec):.6f} / {np.median(masses_rec):.6f} GeV")
+    print(f"  detailed examples -> {out}")
+    return out
+
 def main():
     args = parse_args()
 
@@ -1635,6 +1717,8 @@ def main():
     keep.extend(probe_keep)
     probe_audit_keep, probe_audit_output = draw_probe_mgg_truth_diagnostic(dfs, probe_dir, args.period)
     keep.extend(probe_audit_keep)
+    aaogen_files = discover("aaogen", args.period) if "aaogen" in dfs else []
+    event_dump_output = dump_aaogen_truth_rec_events(aaogen_files, probe_dir, args.period)
     _ = keep  # Keep ROOT objects alive through SaveAs().
 
     for output_file in written:
@@ -1651,6 +1735,8 @@ def main():
         print(f"\nWrote: {probe_output}")
     if probe_audit_output:
         print(f"\nWrote: {probe_audit_output}")
+    if event_dump_output:
+        print(f"\nWrote: {event_dump_output}")
     return 0
 
 
