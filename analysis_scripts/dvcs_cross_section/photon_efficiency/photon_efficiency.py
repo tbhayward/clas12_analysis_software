@@ -1535,19 +1535,16 @@ def draw_probe_mgg(dfs, output_dir, period, coeffs):
 
 
 def draw_probe_aaogen_pi0_fit(dfs, output_dir, period, coeffs):
-    """Fit the normalized AAOgen Mgg peak with Gaussian signal + smooth background.
+    """Compare single- and double-Gaussian pi0 signal models on normalized AAOgen.
 
-    This is still the reconstructed tag-probe spectrum before the later measurable-
-    fiducial-volume restriction. The AAOgen histogram is first scaled by the same
-    mean B coefficient used in the preceding normalized probe comparison. The fit
-    therefore returns the expected reconstructed pi0 signal yield on the Data
-    normalization scale for this pre-fiducial selection.
+    AAOgen is scaled by the same mean B coefficient used in the preceding probe
+    comparison.  The nominal comparison uses 0.05 < Mgg < 0.22 GeV and a
+    quadratic background.  The double-Gaussian signal has a common mean and two
+    widths; both Gaussian components count as pi0 signal.
 
-    Model:
-        Gaussian signal + quadratic polynomial background.
-    The displayed histogram retains statistical error bars. The signal yield is
-    obtained by integrating the fitted Gaussian over the fit range and dividing
-    by the histogram bin width.
+    A fit-window scan is also performed for both signal models to quantify how
+    stable the extracted normalized pi0 yield is against reasonable changes of
+    the fitted mass interval.
     """
     if coeffs is None or "aaogen" not in dfs:
         print("WARNING: AAOgen or normalization coefficients unavailable; skipping pi0 fit.")
@@ -1560,7 +1557,7 @@ def draw_probe_aaogen_pi0_fit(dfs, output_dir, period, coeffs):
               "pe_mgg_tag_probe(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,"
               "neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)"))
 
-    unique = str(abs(hash((period, "probe_aaogen_pi0_fit"))))
+    unique = str(abs(hash((period, "probe_aaogen_pi0_fit_models"))))
     hptr = df.Histo1D(
         (f"h_probe_aaogen_pi0fit_{unique}",
          ";M_{#gamma_{tag}#gamma_{probe}} (GeV);Normalized tag-probe combinations",
@@ -1574,165 +1571,290 @@ def draw_probe_aaogen_pi0_fit(dfs, output_dir, period, coeffs):
     h.Scale(B)
     h.SetStats(0)
     h.SetMarkerStyle(20)
-    h.SetMarkerSize(0.75)
+    h.SetMarkerSize(0.65)
     h.SetMarkerColor(COLORS["aaogen"])
     h.SetLineColor(COLORS["aaogen"])
     h.SetLineWidth(1)
-
-    # Fit locally around the pi0 peak. A quadratic background is flexible enough
-    # for the smooth combinatorial continuum without giving it enough freedom to
-    # absorb the narrow pi0 signal.
-    fit_lo, fit_hi = 0.075, 0.200
-    f_total = ROOT.TF1(
-        f"f_probe_aaogen_pi0_total_{unique}",
-        "gaus(0)+pol2(3)", fit_lo, fit_hi)
-
-    # Seed the peak from the histogram near the physical pi0 mass.
-    peak_bin = h.GetXaxis().FindBin(0.135)
-    peak_height = max(h.GetBinContent(peak_bin), 1.0e-9)
-    side_lo_bin = h.GetXaxis().FindBin(fit_lo + 0.005)
-    side_hi_bin = h.GetXaxis().FindBin(fit_hi - 0.005)
-    side_level = max(0.0, 0.5 * (h.GetBinContent(side_lo_bin) + h.GetBinContent(side_hi_bin)))
-    amp_seed = max(peak_height - side_level, 0.25 * peak_height, 1.0e-9)
-
-    f_total.SetParameters(amp_seed, 0.135, 0.012, side_level, 0.0, 0.0)
-    f_total.SetParNames("Gaussian amplitude", "Gaussian mean", "Gaussian sigma",
-                        "Background p0", "Background p1", "Background p2")
-    f_total.SetParLimits(0, 0.0, max(10.0 * peak_height, 1.0))
-    f_total.SetParLimits(1, 0.115, 0.155)
-    f_total.SetParLimits(2, 0.003, 0.035)
-
-    fit_result = h.Fit(f_total, "SQR0", "", fit_lo, fit_hi)
-
-    amp = f_total.GetParameter(0)
-    mean = f_total.GetParameter(1)
-    sigma = abs(f_total.GetParameter(2))
-
-    f_sig = ROOT.TF1(
-        f"f_probe_aaogen_pi0_signal_{unique}",
-        "gaus", fit_lo, fit_hi)
-    f_sig.SetParameters(amp, mean, sigma)
-    f_sig.SetLineColor(ROOT.kBlue + 1)
-    f_sig.SetLineWidth(3)
-    f_sig.SetLineStyle(1)
-
-    f_bg = ROOT.TF1(
-        f"f_probe_aaogen_pi0_background_{unique}",
-        "pol2", fit_lo, fit_hi)
-    for ip in range(3):
-        f_bg.SetParameter(ip, f_total.GetParameter(ip + 3))
-    f_bg.SetLineColor(ROOT.kGray + 2)
-    f_bg.SetLineWidth(3)
-    f_bg.SetLineStyle(2)
-
-    f_total.SetLineColor(ROOT.kMagenta + 2)
-    f_total.SetLineWidth(3)
-    f_total.SetLineStyle(1)
-
     bin_width = h.GetXaxis().GetBinWidth(1)
-    signal_yield = f_sig.Integral(fit_lo, fit_hi) / bin_width
 
-    # Propagate the Gaussian-parameter covariance to the integrated signal yield
-    # numerically. This includes amplitude/mean/sigma correlations from the fit.
-    signal_yield_err = float("nan")
-    try:
-        cov = fit_result.GetCovarianceMatrix()
-        pars = [amp, mean, sigma]
+    def _seed_background(hist, lo, hi):
+        blo = hist.GetXaxis().FindBin(lo + 0.005)
+        bhi = hist.GetXaxis().FindBin(hi - 0.005)
+        return max(0.0, 0.5 * (hist.GetBinContent(blo) + hist.GetBinContent(bhi)))
 
-        def signal_integral_for(p):
-            ft = ROOT.TF1(f"tmp_sig_int_{unique}_{abs(hash(tuple(p)))}", "gaus", fit_lo, fit_hi)
-            ft.SetParameters(p[0], p[1], abs(p[2]))
-            val = ft.Integral(fit_lo, fit_hi) / bin_width
-            return val
+    def _fit_single(hist, lo, hi, suffix):
+        f = ROOT.TF1(f"f_pi0_single_{unique}_{suffix}", "gaus(0)+pol2(3)", lo, hi)
+        peak = max(hist.GetBinContent(hist.GetXaxis().FindBin(0.135)), 1.0e-9)
+        bg = _seed_background(hist, lo, hi)
+        amp = max(peak - bg, 0.25 * peak, 1.0e-9)
+        f.SetParameters(amp, 0.135, 0.012, bg, 0.0, 0.0)
+        f.SetParLimits(0, 0.0, max(10.0 * peak, 1.0))
+        f.SetParLimits(1, 0.115, 0.155)
+        f.SetParLimits(2, 0.003, 0.040)
+        r = hist.Fit(f, "SQR0", "", lo, hi)
 
-        grad = []
-        for ip in range(3):
-            step = max(abs(pars[ip]) * 1.0e-5, 1.0e-7)
-            pp = pars.copy(); pm = pars.copy()
-            pp[ip] += step; pm[ip] -= step
-            grad.append((signal_integral_for(pp) - signal_integral_for(pm)) / (2.0 * step))
+        sig = ROOT.TF1(f"f_pi0_single_sig_{unique}_{suffix}", "gaus", lo, hi)
+        sig.SetParameters(f.GetParameter(0), f.GetParameter(1), abs(f.GetParameter(2)))
+        yld = sig.Integral(lo, hi) / bin_width
+        return f, r, sig, yld
 
-        var = 0.0
-        for i in range(3):
-            for j in range(3):
-                var += grad[i] * float(cov[i][j]) * grad[j]
-        signal_yield_err = (max(var, 0.0)) ** 0.5
-    except Exception:
-        pass
+    def _fit_double(hist, lo, hi, suffix):
+        # Two Gaussian components share one mean:
+        # [0]*exp(-0.5*((x-[1])/[2])^2) + [3]*exp(-0.5*((x-[1])/[4])^2) + pol2(5)
+        form = ("[0]*exp(-0.5*((x-[1])/[2])^2)"
+                "+[3]*exp(-0.5*((x-[1])/[4])^2)"
+                "+[5]+[6]*x+[7]*x*x")
+        f = ROOT.TF1(f"f_pi0_double_{unique}_{suffix}", form, lo, hi)
+        peak = max(hist.GetBinContent(hist.GetXaxis().FindBin(0.135)), 1.0e-9)
+        bg = _seed_background(hist, lo, hi)
+        sigheight = max(peak - bg, 0.25 * peak, 1.0e-9)
+        f.SetParameters(0.75 * sigheight, 0.135, 0.009,
+                        0.25 * sigheight, 0.020,
+                        bg, 0.0, 0.0)
+        f.SetParLimits(0, 0.0, max(10.0 * peak, 1.0))
+        f.SetParLimits(1, 0.115, 0.155)
+        f.SetParLimits(2, 0.003, 0.020)
+        f.SetParLimits(3, 0.0, max(10.0 * peak, 1.0))
+        f.SetParLimits(4, 0.010, 0.060)
+        r = hist.Fit(f, "SQR0", "", lo, hi)
 
-    canvas = ROOT.TCanvas(f"c_probe_aaogen_pi0fit_{unique}", "", 1000, 800)
-    canvas.SetTicks(1, 1)
-    canvas.SetLeftMargin(0.13)
-    canvas.SetRightMargin(0.04)
-    canvas.SetBottomMargin(0.13)
-    canvas.SetTopMargin(0.08)
+        sigform = ("[0]*exp(-0.5*((x-[1])/[2])^2)"
+                   "+[3]*exp(-0.5*((x-[1])/[4])^2)")
+        sig = ROOT.TF1(f"f_pi0_double_sig_{unique}_{suffix}", sigform, lo, hi)
+        sig.SetParameters(f.GetParameter(0), f.GetParameter(1), abs(f.GetParameter(2)),
+                          f.GetParameter(3), abs(f.GetParameter(4)))
+        yld = sig.Integral(lo, hi) / bin_width
+        return f, r, sig, yld
 
-    h.SetMinimum(0.0)
-    h.SetMaximum(1.28 * max(h.GetMaximum(), f_total.GetMaximum(fit_lo, fit_hi)))
-    h.GetXaxis().SetRangeUser(0.0, 0.30)
-    h.GetXaxis().SetTitleSize(0.047)
-    h.GetYaxis().SetTitleSize(0.043)
-    h.GetXaxis().SetLabelSize(0.038)
-    h.GetYaxis().SetLabelSize(0.038)
-    h.GetYaxis().SetTitleOffset(1.35)
-    h.Draw("E1")
-    f_bg.Draw("SAME")
-    f_sig.Draw("SAME")
-    f_total.Draw("SAME")
-    h.Draw("E1 SAME")
+    nominal_lo, nominal_hi = 0.050, 0.220
+    f_single, r_single, sig_single, y_single = _fit_single(
+        h, nominal_lo, nominal_hi, "nominal")
+    f_double, r_double, sig_double, y_double = _fit_double(
+        h, nominal_lo, nominal_hi, "nominal")
 
-    leg = ROOT.TLegend(0.51, 0.62, 0.89, 0.88)
-    leg.SetBorderSize(0)
-    leg.SetFillStyle(0)
-    leg.SetTextSize(0.027)
-    leg.AddEntry(h, f"AAOgen #times B ({B:.4g})", "lep")
-    leg.AddEntry(f_total, "Gaussian + background fit", "l")
-    leg.AddEntry(f_sig, "Gaussian #pi^{0} signal", "l")
-    leg.AddEntry(f_bg, "Quadratic background", "l")
-    leg.Draw()
+    # Components for display.
+    bg_single = ROOT.TF1(f"f_pi0_single_bg_{unique}", "pol2", nominal_lo, nominal_hi)
+    for ip in range(3):
+        bg_single.SetParameter(ip, f_single.GetParameter(ip + 3))
 
-    info = ROOT.TLatex()
-    info.SetNDC(True)
-    info.SetTextSize(0.029)
-    info.DrawLatex(0.17, 0.87, f"#mu = {mean:.4f} GeV")
-    info.DrawLatex(0.17, 0.83, f"#sigma = {sigma:.4f} GeV")
-    if signal_yield_err == signal_yield_err:
-        info.DrawLatex(0.17, 0.79, f"N_{{#pi^{{0}}}} = {signal_yield:,.0f} #pm {signal_yield_err:,.0f}")
-    else:
-        info.DrawLatex(0.17, 0.79, f"N_{{#pi^{{0}}}} = {signal_yield:,.0f}")
-    info.DrawLatex(0.17, 0.75, f"#chi^{{2}}/ndf = {f_total.GetChisquare():.1f}/{f_total.GetNDF()}")
+    bg_double = ROOT.TF1(
+        f"f_pi0_double_bg_{unique}", "[0]+[1]*x+[2]*x*x", nominal_lo, nominal_hi)
+    for ip in range(3):
+        bg_double.SetParameter(ip, f_double.GetParameter(ip + 5))
 
-    keep = [canvas, hptr, h, f_total, f_sig, f_bg, leg, info, fit_result]
+    # Window stability scan requested explicitly.
+    windows = [
+        (0.050, 0.200),
+        (0.060, 0.210),
+        (0.070, 0.220),
+        (0.050, 0.220),
+    ]
+    scan = []
+    scan_keep = []
+    for iw, (lo, hi) in enumerate(windows):
+        fs, rs, ss, ys = _fit_single(h, lo, hi, f"scan_s_{iw}")
+        fd, rd, sd, yd = _fit_double(h, lo, hi, f"scan_d_{iw}")
+        scan.append({
+            "lo": lo, "hi": hi,
+            "single_yield": ys,
+            "single_chi2": fs.GetChisquare(),
+            "single_ndf": fs.GetNDF(),
+            "double_yield": yd,
+            "double_chi2": fd.GetChisquare(),
+            "double_ndf": fd.GetNDF(),
+        })
+        scan_keep.extend([fs, rs, ss, fd, rd, sd])
+
+    single_yields = [x["single_yield"] for x in scan]
+    double_yields = [x["double_yield"] for x in scan]
+    single_span = max(single_yields) - min(single_yields)
+    double_span = max(double_yields) - min(double_yields)
+
+    canvas = ROOT.TCanvas(f"c_probe_aaogen_pi0fit_{unique}", "", 1500, 720)
+    canvas.Divide(2, 1, 0.002, 0.002)
+    keep = [canvas, hptr, h, f_single, r_single, sig_single, bg_single,
+            f_double, r_double, sig_double, bg_double] + scan_keep
+
+    def _draw_panel(padnum, total, signal, background, title, yld, extra_lines):
+        pad = canvas.cd(padnum)
+        pad.SetTicks(1, 1)
+        pad.SetLeftMargin(0.14)
+        pad.SetRightMargin(0.04)
+        pad.SetBottomMargin(0.14)
+        pad.SetTopMargin(0.10)
+
+        hp = h.Clone(f"h_pi0_panel_{unique}_{padnum}")
+        hp.SetDirectory(0)
+        hp.GetXaxis().SetRangeUser(0.0, 0.30)
+        hp.SetMinimum(0.0)
+        hp.SetMaximum(1.28 * max(h.GetMaximum(), total.GetMaximum(nominal_lo, nominal_hi)))
+        hp.GetXaxis().SetTitleSize(0.050)
+        hp.GetYaxis().SetTitleSize(0.045)
+        hp.GetXaxis().SetLabelSize(0.040)
+        hp.GetYaxis().SetLabelSize(0.040)
+        hp.GetYaxis().SetTitleOffset(1.45)
+        hp.Draw("E1")
+
+        total.SetLineColor(ROOT.kMagenta + 2)
+        total.SetLineWidth(3)
+        total.SetLineStyle(1)
+        signal.SetLineColor(ROOT.kBlue + 1)
+        signal.SetLineWidth(3)
+        signal.SetLineStyle(1)
+        background.SetLineColor(ROOT.kGray + 2)
+        background.SetLineWidth(3)
+        background.SetLineStyle(2)
+        background.Draw("SAME")
+        signal.Draw("SAME")
+        total.Draw("SAME")
+        hp.Draw("E1 SAME")
+
+        tt = ROOT.TLatex()
+        tt.SetNDC(True)
+        tt.SetTextAlign(22)
+        tt.SetTextSize(0.038)
+        tt.DrawLatex(0.50, 0.955, title)
+
+        info = ROOT.TLatex()
+        info.SetNDC(True)
+        info.SetTextSize(0.031)
+        y0 = 0.88
+        for il, line in enumerate(extra_lines):
+            info.DrawLatex(0.17, y0 - 0.045 * il, line)
+
+        leg = ROOT.TLegend(0.51, 0.64, 0.92, 0.88)
+        leg.SetBorderSize(0)
+        leg.SetFillStyle(0)
+        leg.SetTextSize(0.027)
+        leg.AddEntry(hp, f"AAOgen #times B ({B:.4g})", "lep")
+        leg.AddEntry(total, "Signal + quadratic background", "l")
+        leg.AddEntry(signal, "#pi^{0} signal", "l")
+        leg.AddEntry(background, "Quadratic background", "l")
+        leg.Draw()
+
+        keep.extend([hp, tt, info, leg])
+
+    _draw_panel(
+        1, f_single, sig_single, bg_single, "Single-Gaussian signal",
+        y_single,
+        [
+            f"#mu = {f_single.GetParameter(1):.4f} GeV",
+            f"#sigma = {abs(f_single.GetParameter(2)):.4f} GeV",
+            f"N_{{#pi^{{0}}}} = {y_single:,.0f}",
+            f"#chi^{{2}}/ndf = {f_single.GetChisquare():.1f}/{f_single.GetNDF()}",
+        ])
+
+    _draw_panel(
+        2, f_double, sig_double, bg_double, "Common-mean double-Gaussian signal",
+        y_double,
+        [
+            f"#mu = {f_double.GetParameter(1):.4f} GeV",
+            f"#sigma_{{core}} = {abs(f_double.GetParameter(2)):.4f} GeV",
+            f"#sigma_{{broad}} = {abs(f_double.GetParameter(4)):.4f} GeV",
+            f"N_{{#pi^{{0}}}} = {y_double:,.0f}",
+            f"#chi^{{2}}/ndf = {f_double.GetChisquare():.1f}/{f_double.GetNDF()}",
+        ])
+
     out = os.path.join(output_dir, f"2_{period}_AAOgen_Mgg_pi0_fit.png")
     canvas.SaveAs(out)
 
+    # A compact second canvas makes the window dependence visible rather than
+    # burying it only in console output.
+    cscan = ROOT.TCanvas(f"c_probe_aaogen_pi0scan_{unique}", "", 900, 700)
+    cscan.SetTicks(1, 1)
+    cscan.SetLeftMargin(0.14)
+    cscan.SetRightMargin(0.05)
+    cscan.SetBottomMargin(0.14)
+    cscan.SetTopMargin(0.08)
+
+    nwin = len(scan)
+    gs = ROOT.TGraph(nwin)
+    gd = ROOT.TGraph(nwin)
+    for i, row in enumerate(scan):
+        gs.SetPoint(i, i + 1, row["single_yield"])
+        gd.SetPoint(i, i + 1, row["double_yield"])
+
+    gs.SetMarkerStyle(20)
+    gs.SetMarkerSize(1.2)
+    gs.SetLineWidth(2)
+    gs.SetLineColor(ROOT.kBlue + 1)
+    gs.SetMarkerColor(ROOT.kBlue + 1)
+    gd.SetMarkerStyle(21)
+    gd.SetMarkerSize(1.2)
+    gd.SetLineWidth(2)
+    gd.SetLineColor(ROOT.kMagenta + 2)
+    gd.SetMarkerColor(ROOT.kMagenta + 2)
+
+    ymin = 0.985 * min(single_yields + double_yields)
+    ymax = 1.015 * max(single_yields + double_yields)
+    frame = ROOT.TH1D(f"h_pi0_scan_frame_{unique}",
+                      ";Fit window;Normalized fitted N_{#pi^{0}}",
+                      nwin, 0.5, nwin + 0.5)
+    frame.SetDirectory(0)
+    frame.SetStats(0)
+    frame.SetMinimum(ymin)
+    frame.SetMaximum(ymax)
+    for i, row in enumerate(scan, start=1):
+        frame.GetXaxis().SetBinLabel(i, f"{row['lo']:.2f}-{row['hi']:.2f}")
+    frame.GetXaxis().SetTitleSize(0.047)
+    frame.GetYaxis().SetTitleSize(0.043)
+    frame.GetXaxis().SetLabelSize(0.038)
+    frame.GetYaxis().SetLabelSize(0.038)
+    frame.GetYaxis().SetTitleOffset(1.45)
+    frame.Draw()
+    gs.Draw("LP SAME")
+    gd.Draw("LP SAME")
+
+    lscan = ROOT.TLegend(0.55, 0.73, 0.90, 0.88)
+    lscan.SetBorderSize(0)
+    lscan.SetFillStyle(0)
+    lscan.SetTextSize(0.030)
+    lscan.AddEntry(gs, "Single Gaussian", "lp")
+    lscan.AddEntry(gd, "Double Gaussian", "lp")
+    lscan.Draw()
+
+    scan_out = os.path.join(output_dir, f"3_{period}_AAOgen_Mgg_pi0_fit_window_scan.png")
+    cscan.SaveAs(scan_out)
+    keep.extend([cscan, gs, gd, frame, lscan])
+
     result = {
         "B": B,
-        "fit_lo": fit_lo,
-        "fit_hi": fit_hi,
-        "mean": mean,
-        "sigma": sigma,
-        "signal_yield": signal_yield,
-        "signal_yield_err": signal_yield_err,
-        "chi2": f_total.GetChisquare(),
-        "ndf": f_total.GetNDF(),
+        "nominal_lo": nominal_lo,
+        "nominal_hi": nominal_hi,
+        "single_yield": y_single,
+        "single_chi2": f_single.GetChisquare(),
+        "single_ndf": f_single.GetNDF(),
+        "double_yield": y_double,
+        "double_chi2": f_double.GetChisquare(),
+        "double_ndf": f_double.GetNDF(),
+        "single_window_span": single_span,
+        "double_window_span": double_span,
+        "scan": scan,
+        "window_scan_output": scan_out,
     }
 
-    print("\\nAAOgen pi0 Mgg fit (pre-fiducial-volume step):")
+    print("\\nAAOgen pi0 Mgg signal-model comparison (pre-fiducial-volume step):")
     print(f"  AAOgen normalization B = {B:.8g}")
-    print(f"  fit range = {fit_lo:.3f}--{fit_hi:.3f} GeV")
-    print(f"  Gaussian mean = {mean:.6f} GeV")
-    print(f"  Gaussian sigma = {sigma:.6f} GeV")
-    if signal_yield_err == signal_yield_err:
-        print(f"  fitted pi0 signal = {signal_yield:.2f} +/- {signal_yield_err:.2f}")
-    else:
-        print(f"  fitted pi0 signal = {signal_yield:.2f}")
-    print(f"  chi2/ndf = {f_total.GetChisquare():.2f}/{f_total.GetNDF()}")
-    print("  NOTE: this is the normalized reconstructed AAOgen signal before the")
-    print("        measurable probe fiducial-volume restriction planned for the next step.")
+    print(f"  nominal fit range = {nominal_lo:.3f}--{nominal_hi:.3f} GeV")
+    print("  single Gaussian + quadratic background:")
+    print(f"    N_pi0 = {y_single:.2f}")
+    print(f"    chi2/ndf = {f_single.GetChisquare():.2f}/{f_single.GetNDF()}")
+    print("  common-mean double Gaussian + quadratic background:")
+    print(f"    N_pi0 = {y_double:.2f}")
+    print(f"    chi2/ndf = {f_double.GetChisquare():.2f}/{f_double.GetNDF()}")
+    print("\\n  Fit-window stability:")
+    for row in scan:
+        print(f"    {row['lo']:.3f}--{row['hi']:.3f} GeV:"
+              f" single N={row['single_yield']:.2f}, chi2/ndf={row['single_chi2']:.1f}/{row['single_ndf']};"
+              f" double N={row['double_yield']:.2f}, chi2/ndf={row['double_chi2']:.1f}/{row['double_ndf']}")
+    print(f"  single-Gaussian full yield span = {single_span:.2f}"
+          f" ({100.0 * single_span / y_single:.3f}% of nominal)")
+    print(f"  double-Gaussian full yield span = {double_span:.2f}"
+          f" ({100.0 * double_span / y_double:.3f}% of nominal)")
+    print("  NOTE: these are normalized reconstructed AAOgen yields before the")
+    print("        measurable probe fiducial-volume restriction.")
 
     return keep, out, result
-
 
 def _event_grouped_unique_tag_mgg(df, hist_name, title, tolerance=1.0e-10):
     """Build every unique reconstructed-photon pair for each sequential e+p block.
@@ -2153,6 +2275,8 @@ def main():
         print(f"\nWrote: {probe_output}")
     if pi0fit_output:
         print(f"\nWrote: {pi0fit_output}")
+    if pi0fit_result and pi0fit_result.get("window_scan_output"):
+        print(f"\nWrote: {pi0fit_result['window_scan_output']}")
     return 0
 
 
