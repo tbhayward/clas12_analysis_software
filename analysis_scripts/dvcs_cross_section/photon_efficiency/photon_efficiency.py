@@ -234,6 +234,10 @@ def parse_args():
     p = argparse.ArgumentParser()
     p.add_argument("--period", default="fa18_inb")
     p.add_argument("--output-dir", default="output")
+    p.add_argument(
+        "--threads", type=int, default=2,
+        help="ROOT implicit-multithreading worker count (default: 2)"
+    )
     return p.parse_args()
 
 
@@ -303,6 +307,10 @@ def make_dataframe(chain):
     Add derived quantities once. The actual cuts remain explicit below.
     """
     df = ROOT.RDataFrame(chain)
+
+    # RDataFrame histogram actions take column names. Define all expressions
+    # that are plotted as explicit columns once here.
+    df = df.Define("vz_e_minus_vz_p", "e_vz - p_vz")
 
     df = df.Define(
         "e_gamma1_angle_deg",
@@ -414,9 +422,10 @@ def draw_before_after_canvas(sample_dfs,
                              before_label,
                              after_label):
     """
-    Dashed = before; solid = after.
-    Color identifies the sample.
-    Each histogram is independently unit normalized.
+    Dashed = before; solid = after. Color identifies sample.
+
+    All histogram actions for the canvas are booked first and then evaluated
+    with RunGraphs, avoiding a separate TChain scan for each histogram.
     """
     nx = 3
     ny = int(math.ceil(len(plots) / nx))
@@ -425,7 +434,36 @@ def draw_before_after_canvas(sample_dfs,
     canvas = ROOT.TCanvas(cname, "", 1800, 540 * ny)
     canvas.Divide(nx, ny, 0.002, 0.002)
 
-    keep = []
+    # Book everything before touching GetValue().
+    booked = {}
+    actions = []
+    unique = str(abs(hash(outfile)))
+
+    for ip, plot in enumerate(plots, start=1):
+        expr, title, nbins, xmin, xmax, guides = plot
+        booked[ip] = {}
+
+        for sample, label in SAMPLES:
+            if sample not in sample_dfs:
+                continue
+
+            hb_r = make_hist(
+                before_dfs[sample], expr,
+                f"h_b_{ip}_{sample}_{unique}",
+                title, nbins, xmin, xmax
+            )
+            ha_r = make_hist(
+                after_dfs[sample], expr,
+                f"h_a_{ip}_{sample}_{unique}",
+                title, nbins, xmin, xmax
+            )
+            booked[ip][sample] = (label, hb_r, ha_r)
+            actions.extend([hb_r, ha_r])
+
+    if actions:
+        ROOT.RDF.RunGraphs(actions)
+
+    keep = list(actions)
 
     for ip, plot in enumerate(plots, start=1):
         expr, title, nbins, xmin, xmax, guides = plot
@@ -447,24 +485,12 @@ def draw_before_after_canvas(sample_dfs,
         ymax = 0.0
 
         for sample, label in SAMPLES:
-            if sample not in sample_dfs:
+            if sample not in booked[ip]:
                 continue
 
-            hb_r = make_hist(
-                before_dfs[sample], expr,
-                f"h_b_{ip}_{sample}_{abs(hash(outfile))}",
-                title, nbins, xmin, xmax
-            )
-            ha_r = make_hist(
-                after_dfs[sample], expr,
-                f"h_a_{ip}_{sample}_{abs(hash(outfile))}",
-                title, nbins, xmin, xmax
-            )
-
+            label, hb_r, ha_r = booked[ip][sample]
             hb = hb_r.GetValue()
             ha = ha_r.GetValue()
-            hb.SetDirectory(0)
-            ha.SetDirectory(0)
 
             hb.SetLineColor(COLORS[sample])
             ha.SetLineColor(COLORS[sample])
@@ -484,14 +510,10 @@ def draw_before_after_canvas(sample_dfs,
 
             ymax = max(ymax, hb.GetMaximum(), ha.GetMaximum())
             hist_pairs.append((sample, label, hb, ha))
-            keep.extend([hb_r, ha_r, hb, ha])
+            keep.extend([hb, ha])
 
-            legend.AddEntry(
-                hb, f"{label}: {before_label}", "l"
-            )
-            legend.AddEntry(
-                ha, f"{label}: {after_label}", "l"
-            )
+            legend.AddEntry(hb, f"{label}: {before_label}", "l")
+            legend.AddEntry(ha, f"{label}: {after_label}", "l")
 
         first = True
         for sample, label, hb, ha in hist_pairs:
@@ -589,6 +611,17 @@ def write_cutflow(path, initial_counts, prep_counts,
 
 def main():
     args = parse_args()
+
+    if args.threads < 1:
+        print("ERROR: --threads must be >= 1", file=sys.stderr)
+        return 1
+
+    # ROOT performs the event loops in compiled C++; Python only constructs
+    # the computation graph. Keep the default deliberately conservative for
+    # shared ifarm nodes.
+    ROOT.EnableImplicitMT(args.threads)
+    print(f"ROOT implicit multithreading: {args.threads} worker(s)")
+
     os.makedirs(args.output_dir, exist_ok=True)
 
     chains = {}
@@ -620,6 +653,7 @@ def main():
     # Build the three stages.
     # -----------------------------------------------------------------------
 
+    initial_count_handles = {}
     initial_counts = {}
     prep_dfs = {}
     prep_count_handles = {}
@@ -634,7 +668,7 @@ def main():
     probe_count_handles = {}
 
     for sample, df in dfs.items():
-        initial_counts[sample] = int(df.Count().GetValue())
+        initial_count_handles[sample] = df.Count()
 
         prep_df, prep_handles = apply_cuts(
             df, PREP_CUTS, "prep"
@@ -661,13 +695,24 @@ def main():
         probe_final_dfs[sample] = probe_final
         probe_count_handles[sample] = probe_handles
 
-    # Materialize cutflow counts.
+    # Materialize each sample's cutflow in one coordinated event loop rather
+    # than triggering one scan per Count(). RunGraphs executes all booked
+    # actions that share the same RDataFrame graph together.
     prep_counts = {}
     common_counts = {}
     probe_exists_counts = {}
     probe_counts = {}
 
     for sample in dfs:
+        actions = [initial_count_handles[sample]]
+        actions += [h for _, h in prep_count_handles[sample]]
+        actions += [h for _, h in common_count_handles[sample]]
+        actions += [probe_exists_handles[sample]]
+        actions += [h for _, h in probe_count_handles[sample]]
+
+        ROOT.RDF.RunGraphs(actions)
+
+        initial_counts[sample] = int(initial_count_handles[sample].GetValue())
         prep_counts[sample] = [
             (label, int(handle.GetValue()))
             for label, handle in prep_count_handles[sample]
@@ -720,7 +765,7 @@ def main():
             120, -15.0, 10.0, [-8.0, 2.0]
         ),
         (
-            "e_vz-p_vz",
+            "vz_e_minus_vz_p",
             "Electron-proton vertex difference;v_{z,e}-v_{z,p} (cm);Unit-normalized entries",
             120, -40.0, 40.0, [-20.0, 20.0]
         ),
