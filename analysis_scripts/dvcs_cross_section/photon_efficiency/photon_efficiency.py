@@ -358,7 +358,7 @@ def draw_canvases(dfs, output_dir, period):
     return keep, written
 
 def draw_normalization_step1(dfs, output_dir, period):
-    """Plot the high-Egamma1 normalization control region after exclusivity cuts."""
+    """Plot the E_gamma1 > 5 GeV normalization control region after exclusivity cuts."""
     plots = [
         ("E_gamma1", ";E_{#gamma1} (GeV);Unit-normalized entries", 120, 0.4, 9.0, False),
         ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 120, 0.0, 9.0, True),
@@ -373,7 +373,7 @@ def draw_normalization_step1(dfs, output_dir, period):
         selected[sample] = (dfs[sample]
             .Filter("Mx2_ep < 0.18", "norm_Mx2_ep_lt_0p18")
             .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "norm_Mx2_epg_window")
-            .Filter("E_gamma1 > 6.0", "norm_Egamma1_gt_6"))
+            .Filter("E_gamma1 > 5.0", "norm_Egamma1_gt_5"))
 
     unique = str(abs(hash((output_dir, period, "normalization_step1"))))
     booked = {}
@@ -457,9 +457,64 @@ def draw_normalization_step1(dfs, output_dir, period):
             first = False
         legend.Draw()
 
-    output_file = os.path.join(output_dir, f"1_{period}_Egamma1_gt_6_GeV.png")
+    output_file = os.path.join(output_dir, f"1_{period}_Egamma1_gt_5_GeV.png")
     canvas.SaveAs(output_file)
     return keep, output_file
+
+
+def print_egamma1_survival_scan(dfs):
+    """Print exclusive-sample survival versus E_gamma1 threshold for every sample."""
+    thresholds = [0.4, 1.0, 2.0, 3.0, 4.0, 4.5, 5.0, 5.5, 6.0, 6.5, 7.0, 7.5, 8.0, 8.5]
+
+    exclusive = {}
+    totals = {}
+    scans = {}
+    actions = []
+
+    for sample, _label in SAMPLES:
+        if sample not in dfs:
+            continue
+        ex = (dfs[sample]
+              .Filter("Mx2_ep < 0.18", f"scan_{sample}_Mx2_ep_lt_0p18")
+              .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05",
+                      f"scan_{sample}_Mx2_epg_window"))
+        exclusive[sample] = ex
+        totals[sample] = ex.Count()
+        actions.append(totals[sample])
+        scans[sample] = {}
+        for threshold in thresholds:
+            tag = str(threshold).replace('.', 'p')
+            handle = ex.Filter(
+                f"E_gamma1 > {threshold:.6g}",
+                f"scan_{sample}_Egamma1_gt_{tag}",
+            ).Count()
+            scans[sample][threshold] = handle
+            actions.append(handle)
+
+    if actions:
+        ROOT.RDF.RunGraphs(actions)
+
+    print("\nE_gamma1 survival scan after the full exclusive selection")
+    print("  Denominator = all rows after Mx2(ep) < 0.18 and -0.05 < Mx2(epgamma1) < 0.05")
+    print("  The same selected rows feed E_gamma1, Emiss(epgamma1), Mx2(ep), and Mx2(epgamma1),")
+    print("  so N and the survival percentage are identical for each of those four distributions.\n")
+
+    header = f"{'E_gamma1 cut':>14s}"
+    active = [(sample, label) for sample, label in SAMPLES if sample in scans]
+    for _sample, label in active:
+        header += f" | {label:^25s}"
+    print(header)
+    print('-' * len(header))
+
+    for threshold in thresholds:
+        row = f"> {threshold:4.1f} GeV   "
+        for sample, _label in active:
+            total = int(totals[sample].GetValue())
+            n = int(scans[sample][threshold].GetValue())
+            pct = 100.0 * n / total if total else 0.0
+            row += f" | {n:10,d} ({pct:6.2f}%)"
+        print(row)
+
 
 
 def main():
@@ -510,6 +565,8 @@ def main():
     exclusivity_dir = os.path.join(args.output_dir, "exclusivity_selection")
     os.makedirs(exclusivity_dir, exist_ok=True)
     keep, written = draw_canvases(dfs, exclusivity_dir, args.period)
+
+    print_egamma1_survival_scan(dfs)
 
     normalization_dir = os.path.join(args.output_dir, "normalization")
     os.makedirs(normalization_dir, exist_ok=True)
