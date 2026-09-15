@@ -1040,7 +1040,7 @@ def fit_two_poisson_templates_common_morph(data_hist, dvcs_hist, aao_hist, seed_
         np.asarray([seed_A, seed_B, -1.0, 1.0]),
         np.asarray([seed_A, seed_B, +1.0, 1.0]),
     ]
-    bounds = ((1.0e-12, None), (1.0e-12, None), (-4.0, 4.0), (0.0, 4.0))
+    bounds = ((1.0e-12, None), (1.0e-12, None), (-5.0, 5.0), (0.0, 4.0))
     results = [minimize(objective, q, method="L-BFGS-B", bounds=bounds,
                         options={"maxiter": 500, "ftol": 1.0e-12}) for q in starts]
     res = min(results, key=lambda r: float(r.fun))
@@ -1832,7 +1832,7 @@ def draw_probe_delta_p(dfs, output_dir, period, coeffs):
     print("  Candidate probes are the same retained PID-22 partners used in Mgg.")
     print("  Same _exclusive_df() selection as probe Mgg; NO Delta-p cut applied.")
     print(f"  MC scales: DVCSgen={A:.8g}, AAOgen={B:.8g}, CLASDIS={C:.8g}")
-    print(f"  Wrote broad (-4,4) and zoomed (-1,1) views to {out}")
+    print(f"  Wrote broad (-5,5) and zoomed (-1,1) views to {out}")
     return keep, out
 
 def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
@@ -2127,7 +2127,121 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
     cstab.SaveAs(stability_out)
     keep.extend(stability_keep+[cstab,frame,legstab,titlestab,notestab]+list(stab_graphs.values()))
 
-    print("\nIntegrated Delta-p model/range stability:")
+    # ------------------------------------------------------------------
+    # Visual inspection grids: one 3x3 canvas for Data and one for AAOgen.
+    # Rows are polynomial orders 1,2,3; columns are the three fit ranges.
+    # Each pad shows the SAME best-candidate histogram used in the numerical
+    # stability scan, together with total fit, Gaussian signal, and polynomial
+    # background.  This makes pathological decompositions immediately visible.
+    # ------------------------------------------------------------------
+    def draw_stability_fit_grid(sample_name, hsource, fit_key_prefix, color, output_name):
+        cgrid=ROOT.TCanvas(f"c_intdp_grid_{sample_name}_{unique}","",1800,1500)
+        cgrid.Divide(3,3,0.001,0.001)
+        grid_keep=[cgrid]
+        for ipad,item in enumerate(stability,1):
+            pad=cgrid.cd(ipad)
+            pad.SetTicks(1,1)
+            pad.SetLeftMargin(0.14)
+            pad.SetRightMargin(0.035)
+            pad.SetBottomMargin(0.14)
+            pad.SetTopMargin(0.12)
+
+            # Clone the common best-candidate spectrum so every pad owns a
+            # separately styled drawable histogram.
+            hh=hsource.Clone(f"h_grid_{sample_name}_{ipad}_{unique}")
+            hh.SetDirectory(0)
+            hh.SetStats(0)
+            hh.SetLineColor(color)
+            hh.SetMarkerColor(color)
+            hh.SetMarkerStyle(20)
+            hh.SetMarkerSize(0.38)
+            hh.GetXaxis().SetRangeUser(-1.0,1.0)
+            hh.GetXaxis().SetTitle("#Delta p = |p_{X}| - |p_{#gamma_{probe}}| (GeV)")
+            hh.GetYaxis().SetTitle("Normalized candidate combinations")
+            hh.GetXaxis().SetTitleSize(0.045)
+            hh.GetYaxis().SetTitleSize(0.045)
+            hh.GetXaxis().SetLabelSize(0.037)
+            hh.GetYaxis().SetLabelSize(0.037)
+            hh.GetYaxis().SetTitleOffset(1.45)
+            hh.Draw("E1")
+
+            order=item["order"]
+            fit_lo=item["fit_lo"]
+            fit_hi=item["fit_hi"]
+            if sample_name=="data":
+                ftotal=next(obj for obj in stability_keep
+                            if obj.GetName()==f"f_stab_data_p{order}_r{(ipad-1)%3}_{unique}")
+                bg=next(obj for obj in stability_keep
+                        if obj.GetName()==f"bg_stab_data_p{order}_r{(ipad-1)%3}_{unique}")
+                mu=item["data_mu"]; sigma=item["data_sigma"]
+                chi2ndf=item["data_chi2ndf"]; status=item["data_status"]
+            else:
+                ftotal=next(obj for obj in stability_keep
+                            if obj.GetName()==f"f_stab_mc_p{order}_r{(ipad-1)%3}_{unique}")
+                bg=next(obj for obj in stability_keep
+                        if obj.GetName()==f"bg_stab_mc_p{order}_r{(ipad-1)%3}_{unique}")
+                mu=item["mc_mu"]; sigma=item["mc_sigma"]
+                chi2ndf=item["mc_chi2ndf"]; status=item["mc_status"]
+
+            # Build the Gaussian component directly from this variation's total fit.
+            sg=ROOT.TF1(f"sig_grid_{sample_name}_{ipad}_{unique}","gaus",fit_lo,fit_hi)
+            sg.SetParameters(float(ftotal.GetParameter(0)),
+                             float(ftotal.GetParameter(1)),
+                             float(ftotal.GetParameter(2)))
+
+            ftotal.SetLineColor(ROOT.kMagenta+2)
+            ftotal.SetLineWidth(3)
+            sg.SetLineColor(ROOT.kBlue)
+            sg.SetLineWidth(2)
+            bg.SetLineColor(ROOT.kGray+2)
+            bg.SetLineStyle(2)
+            bg.SetLineWidth(2)
+            ftotal.Draw("SAME")
+            sg.Draw("SAME")
+            bg.Draw("SAME")
+
+            # Mark the actual fit boundaries.  This is particularly useful for
+            # judging why the fitted background changes as the range is widened.
+            ymax=max(float(hh.GetMaximum())*1.08,1.0)
+            llo=ROOT.TLine(fit_lo,0.0,fit_lo,ymax)
+            lhi=ROOT.TLine(fit_hi,0.0,fit_hi,ymax)
+            for line in (llo,lhi):
+                line.SetLineColor(ROOT.kGray+1)
+                line.SetLineStyle(3)
+                line.SetLineWidth(1)
+                line.Draw()
+
+            lab=ROOT.TLatex()
+            lab.SetNDC(True)
+            lab.SetTextSize(0.033)
+            lab.DrawLatex(0.17,0.935,
+                          f"{sample_name.upper()}  pol{order}, [{fit_lo:+.1f},{fit_hi:+.1f}] GeV")
+            lab.DrawLatex(0.17,0.885,
+                          f"#mu={mu:+.4f} GeV, #sigma={sigma:.4f} GeV")
+            lab.DrawLatex(0.17,0.835,
+                          f"#chi^{{2}}/ndf={chi2ndf:.2f}, status={status}")
+            if item["valid"] and 2 in item["windows"]:
+                lab.DrawLatex(0.17,0.785,
+                              f"C_{{#gamma}}(2#sigma)={item['windows'][2]['ratio']:.4f}")
+
+            grid_keep.extend([hh,sg,llo,lhi,lab])
+
+        cgrid.cd()
+        cgrid.Update()
+        cgrid.SaveAs(output_name)
+        return cgrid,grid_keep
+
+    data_grid_out=os.path.join(
+        output_dir,f"8_{period}_integrated_delta_p_fit_grid_data.png")
+    mc_grid_out=os.path.join(
+        output_dir,f"9_{period}_integrated_delta_p_fit_grid_AAOgen.png")
+    cgrid_data,grid_data_keep=draw_stability_fit_grid(
+        "data",hdata,"data",ROOT.kBlack,data_grid_out)
+    cgrid_mc,grid_mc_keep=draw_stability_fit_grid(
+        "aaogen",hmc,"mc",ROOT.kRed+1,mc_grid_out)
+    keep.extend(grid_data_keep+grid_mc_keep)
+
+    print("\\nIntegrated Delta-p model/range stability:")
     print("  Scan = pol1/pol2/pol3 backgrounds x fit ranges [-0.5,+0.6], [-0.6,+0.7], [-0.7,+0.8] GeV.")
     print("  Best-candidate population is held fixed for every variation.")
     print("  Polynomial background is integrated only inside its fitted range; coverage is printed when an n-sigma window is truncated.")
@@ -2155,6 +2269,10 @@ def draw_probe_integrated_delta_p_efficiency(dfs, output_dir, period, coeffs):
     print(f"  Wrote stability summary to {stability_out}")
     results["stability"]=stability
     results["stability_output"]=stability_out
+    results["stability_data_grid_output"]=data_grid_out
+    results["stability_mc_grid_output"]=mc_grid_out
+    print(f"  Wrote Data 3x3 fit grid to {data_grid_out}")
+    print(f"  Wrote AAOgen 3x3 fit grid to {mc_grid_out}")
 
     print("\nIntegrated Delta-p efficiency study (NO kinematic binning):")
     print("  MC signal reference = AAOgen only (exclusive ep-pi0 signal sample).")
@@ -3192,6 +3310,10 @@ def main():
         print(f"\nWrote: {inteff_output}")
     if inteff_result and inteff_result.get("stability_output"):
         print(f"\nWrote: {inteff_result['stability_output']}")
+    if inteff_result and inteff_result.get("stability_data_grid_output"):
+        print(f"\nWrote: {inteff_result['stability_data_grid_output']}")
+    if inteff_result and inteff_result.get("stability_mc_grid_output"):
+        print(f"\nWrote: {inteff_result['stability_mc_grid_output']}")
     if pi0fit_output:
         print(f"\nWrote: {pi0fit_output}")
     if pi0fit_result and pi0fit_result.get("window_scan_output"):
