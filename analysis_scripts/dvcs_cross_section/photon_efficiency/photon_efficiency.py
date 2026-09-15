@@ -25,9 +25,11 @@ Stage 1B -- common gamma1 cuts, applied after Stage 1A
 Stage 1C -- common inferred-probe X selection
     X is the inferred photon stored in probe_raw_*.
     These cuts are common to the denominator and numerator:
-    3 < angle(gamma1,X) < 4.12 + 3*1.687 = 9.181 deg
     -0.231 < Mx2(ep) < 0.309 GeV^2
     Mx2(e gamma1) > 1.4 GeV^2
+
+    The angle(gamma1,X) requirement is deliberately disabled in this
+    diagnostic iteration so its effect can be isolated.
 
 Stage 1D -- reconstructed gamma2 selection, numerator only
     Search neutral_[0..4] for reconstructed PID-22 candidates, excluding the
@@ -233,9 +235,7 @@ COMMON_PHOTON_CUTS = [
 ]
 
 COMMON_PROBE_CUTS = [
-    ("3 < angle(gamma1,X) < 9.181 deg",
-     f"gamma1_X_angle_deg > {PROBE_ANGLE_LOW:.6f} && "
-     f"gamma1_X_angle_deg < {PROBE_ANGLE_HIGH:.6f}"),
+    # angle(gamma1,X) deliberately disabled for this diagnostic iteration.
     ("-0.231 < Mx2(ep) < 0.309 GeV^2",
      f"Mx2_ep > {PROBE_MX2_LOW:.6f} && "
      f"Mx2_ep < {PROBE_MX2_HIGH:.6f}"),
