@@ -7,11 +7,16 @@ Current step
 Use every row in the PhotonEfficiency hypothesis tree, requiring only W > 2 GeV.
 Each row is one reconstructed e'p'gamma1 hypothesis produced by the skim.
 
-Plot, in one vertical column:
+Plot the following observables as rows:
   1) E_gamma1                     1 to 10 GeV
   2) missing energy e'p'gamma1    1 to 10 GeV
   3) Mx2(e'p')                   -0.5 to 2.0 GeV^2
   4) Mx2(e'p'gamma1)             -0.1 to 0.2 GeV^2
+
+Columns are cumulative selections:
+  1) W > 2 GeV only
+  2) additionally -0.05 < Mx2(e'p'gamma1) < 0.05 GeV^2
+  3) additionally Mx2(e'p') < 0.25 GeV^2
 
 Samples:
   Data black, DVCSgen green, AAOgen red, CLASDIS blue.
@@ -185,117 +190,124 @@ def make_dataframe(chain):
 
 
 def draw_canvas(dfs, output_file):
-    """Draw the four requested distributions in one vertical column."""
+    """Draw the four observables through the requested cumulative cut sequence."""
     plots = [
-        (
-            "E_gamma1",
-            "#gamma1 energy;E_{#gamma1} (GeV);Unit-normalized entries",
-            180, 1.0, 10.0,
-        ),
-        (
-            "Emiss_epg",
-            "Missing energy e'p'#gamma1;E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries",
-            180, 1.0, 10.0,
-        ),
-        (
-            "Mx2_ep",
-            "Missing mass squared e'p';M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries",
-            200, -0.5, 2.0,
-        ),
-        (
-            "Mx2_epg_raw",
-            "Missing mass squared e'p'#gamma1;M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries",
-            180, -0.1, 0.2,
-        ),
+        ("E_gamma1", "#gamma1 energy;E_{#gamma1} (GeV);Unit-normalized entries", 180, 1.0, 10.0),
+        ("Emiss_epg", "Missing energy e'p'#gamma1;E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries", 180, 1.0, 10.0),
+        ("Mx2_ep", "Missing mass squared e'p';M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries", 200, -0.5, 2.0),
+        ("Mx2_epg_raw", "Missing mass squared e'p'#gamma1;M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries", 180, -0.1, 0.2),
     ]
 
-    # Book every histogram before evaluating any of them so ROOT can execute
-    # the work efficiently rather than rescanning once per plot.
+    stages = [
+        ("W > 2 GeV", lambda df: df),
+        ("-0.05 < M^{2}_{X}(e'p'#gamma1) < 0.05 GeV^{2}",
+         lambda df: df.Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", "Mx2_epg_window")),
+        ("M^{2}_{X}(e'p') < 0.25 GeV^{2}",
+         lambda df: df.Filter("Mx2_ep < 0.25", "Mx2_ep_lt_0p25")),
+    ]
+
+    stage_dfs = {}
+    for sample, _label in SAMPLES:
+        if sample not in dfs:
+            continue
+        stage_dfs[(sample, 0)] = dfs[sample]
+        stage_dfs[(sample, 1)] = stages[1][1](stage_dfs[(sample, 0)])
+        stage_dfs[(sample, 2)] = stages[2][1](stage_dfs[(sample, 1)])
+
     booked = {}
     actions = []
     unique = str(abs(hash(output_file)))
-
-    for ip, (expr, title, nbins, xmin, xmax) in enumerate(plots):
-        booked[ip] = {}
-        for sample, label in SAMPLES:
-            if sample not in dfs:
-                continue
-            h = dfs[sample].Histo1D(
-                (
-                    f"h_{ip}_{sample}_{unique}",
-                    title,
-                    nbins,
-                    xmin,
-                    xmax,
-                ),
-                expr,
-            )
-            booked[ip][sample] = (label, h)
-            actions.append(h)
+    for icol in range(len(stages)):
+        for irow, (expr, title, nbins, xmin, xmax) in enumerate(plots):
+            booked[(irow, icol)] = {}
+            for sample, label in SAMPLES:
+                key = (sample, icol)
+                if key not in stage_dfs:
+                    continue
+                h = stage_dfs[key].Histo1D(
+                    (f"h_{irow}_{icol}_{sample}_{unique}", title, nbins, xmin, xmax), expr
+                )
+                booked[(irow, icol)][sample] = (label, h)
+                actions.append(h)
 
     if actions:
         ROOT.RDF.RunGraphs(actions)
 
-    canvas = ROOT.TCanvas("c_photon_efficiency_restart", "", 900, 2100)
-    canvas.Divide(1, 4, 0.002, 0.002)
-
+    canvas = ROOT.TCanvas("c_photon_efficiency_restart", "", 2100, 2100)
+    canvas.Divide(3, 4, 0.002, 0.002)
     keep = [canvas] + list(actions)
 
-    for ip, _plot in enumerate(plots):
-        pad = canvas.cd(ip + 1)
-        pad.SetTicks(1, 1)
-        pad.SetLeftMargin(0.13)
-        pad.SetRightMargin(0.035)
-        pad.SetBottomMargin(0.13)
-        pad.SetTopMargin(0.09)
+    for irow, _plot in enumerate(plots):
+        for icol, (stage_title, _filter) in enumerate(stages):
+            pad_number = irow * 3 + icol + 1
+            pad = canvas.cd(pad_number)
+            pad.SetTicks(1, 1)
+            pad.SetLeftMargin(0.14)
+            pad.SetRightMargin(0.035)
+            pad.SetBottomMargin(0.13)
+            pad.SetTopMargin(0.12)
+            if irow == 3:
+                pad.SetLogy(True)
 
-        legend = ROOT.TLegend(0.69, 0.67, 0.94, 0.89)
-        legend.SetBorderSize(0)
-        legend.SetFillStyle(0)
-        legend.SetTextSize(0.030)
-        keep.append(legend)
+            legend = ROOT.TLegend(0.66, 0.67, 0.94, 0.88)
+            legend.SetBorderSize(0)
+            legend.SetFillStyle(0)
+            legend.SetTextSize(0.028)
+            keep.append(legend)
 
-        histograms = []
-        ymax = 0.0
+            histograms = []
+            ymax = 0.0
+            positive_min = None
+            for sample, label in SAMPLES:
+                if sample not in booked[(irow, icol)]:
+                    continue
+                _, result = booked[(irow, icol)][sample]
+                hist = result.GetValue()
+                hist.SetDirectory(0)
+                hist.SetStats(0)
+                hist.SetLineColor(COLORS[sample])
+                hist.SetLineWidth(3)
+                integral = hist.Integral(1, hist.GetNbinsX())
+                if integral > 0.0:
+                    hist.Scale(1.0 / integral)
+                ymax = max(ymax, hist.GetMaximum())
+                if irow == 3:
+                    for ibin in range(1, hist.GetNbinsX() + 1):
+                        value = hist.GetBinContent(ibin)
+                        if value > 0.0 and (positive_min is None or value < positive_min):
+                            positive_min = value
+                histograms.append((sample, label, hist))
+                keep.append(hist)
+                legend.AddEntry(hist, label, "l")
 
-        for sample, label in SAMPLES:
-            if sample not in booked[ip]:
-                continue
+            first = True
+            for _sample, _label, hist in histograms:
+                if irow == 3:
+                    ymin = max((positive_min or 1.0e-6) * 0.5, 1.0e-7)
+                    hist.SetMinimum(ymin)
+                    hist.SetMaximum(5.0 * ymax if ymax > 0.0 else 1.0)
+                else:
+                    hist.SetMinimum(0.0)
+                    hist.SetMaximum(1.25 * ymax if ymax > 0.0 else 1.0)
+                hist.GetXaxis().SetTitleSize(0.042)
+                hist.GetYaxis().SetTitleSize(0.040)
+                hist.GetXaxis().SetLabelSize(0.034)
+                hist.GetYaxis().SetLabelSize(0.034)
+                hist.GetXaxis().SetTitleOffset(1.05)
+                hist.GetYaxis().SetTitleOffset(1.45)
+                hist.Draw("HIST" if first else "HIST SAME")
+                first = False
 
-            _, result = booked[ip][sample]
-            hist = result.GetValue()
-            hist.SetDirectory(0)
-            hist.SetStats(0)
-            hist.SetLineColor(COLORS[sample])
-            hist.SetLineWidth(3)
-
-            integral = hist.Integral(1, hist.GetNbinsX())
-            if integral > 0.0:
-                hist.Scale(1.0 / integral)
-
-            ymax = max(ymax, hist.GetMaximum())
-            histograms.append((sample, label, hist))
-            keep.append(hist)
-            legend.AddEntry(hist, label, "l")
-
-        first = True
-        for _sample, _label, hist in histograms:
-            hist.SetMinimum(0.0)
-            hist.SetMaximum(1.25 * ymax if ymax > 0.0 else 1.0)
-            hist.GetXaxis().SetTitleSize(0.045)
-            hist.GetYaxis().SetTitleSize(0.043)
-            hist.GetXaxis().SetLabelSize(0.038)
-            hist.GetYaxis().SetLabelSize(0.038)
-            hist.GetXaxis().SetTitleOffset(1.05)
-            hist.GetYaxis().SetTitleOffset(1.35)
-            hist.Draw("HIST" if first else "HIST SAME")
-            first = False
-
-        legend.Draw()
+            title = ROOT.TLatex()
+            title.SetNDC(True)
+            title.SetTextAlign(22)
+            title.SetTextSize(0.033)
+            title.DrawLatex(0.52, 0.955, stage_title)
+            keep.append(title)
+            legend.Draw()
 
     canvas.SaveAs(output_file)
     return keep
-
 
 def main():
     args = parse_args()
