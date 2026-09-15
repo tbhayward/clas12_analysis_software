@@ -7,7 +7,7 @@ Current step
 Use every row in the PhotonEfficiency hypothesis tree, requiring W > 2 GeV and angle(e',gamma1) > 8 deg.
 Each row is one reconstructed e'p'gamma1 hypothesis produced by the skim.
 
-Plot each of the following observables on its own 2x2 canvas:
+Exclusivity plots are followed by high- and low-energy normalization studies.\n\nPlot each of the following observables on its own 1x3 canvas:
   1) E_gamma1                     0.4 to 9 GeV
   2) missing energy e'p'gamma1    0 to 9 GeV
   3) Mx2(e'p')                   -0.5 to 1.0 GeV^2
@@ -949,6 +949,216 @@ def print_egamma1_survival_scan(dfs):
 
 
 
+
+# ---------------------------------------------------------------------------
+# v7 normalization workflow
+# ---------------------------------------------------------------------------
+
+def _exclusive_df(df, tag):
+    return (df
+            .Filter("Mx2_ep < 0.18", f"{tag}_Mx2_ep_lt_0p18")
+            .Filter("Mx2_epg_raw > -0.05 && Mx2_epg_raw < 0.05", f"{tag}_Mx2_epg_window"))
+
+
+def _book_raw_hists(selected, specs, tag):
+    booked, actions = {}, []
+    for ip, (expr, title, nb, lo, hi, logy) in enumerate(specs):
+        booked[ip] = {}
+        for sample, df in selected.items():
+            h = df.Histo1D((f"h_{tag}_{ip}_{sample}", title, nb, lo, hi), expr)
+            booked[ip][sample] = h
+            actions.append(h)
+    if actions:
+        ROOT.RDF.RunGraphs(actions)
+    raw = {ip: {} for ip in range(len(specs))}
+    for ip in raw:
+        for sample, handle in booked[ip].items():
+            h = handle.GetValue(); h.SetDirectory(0); raw[ip][sample] = h
+    return raw, actions
+
+
+def _style_count_panel(pad, data, components, total, labels, logy=False, title_text=None):
+    pad.SetTicks(1, 1); pad.SetLeftMargin(0.14); pad.SetRightMargin(0.04)
+    pad.SetBottomMargin(0.13); pad.SetTopMargin(0.13)
+    if logy: pad.SetLogy(True)
+    data.SetStats(0); data.SetLineColor(ROOT.kBlack); data.SetLineWidth(3); data.SetMarkerStyle(20); data.SetMarkerSize(0.55)
+    total.SetStats(0); total.SetLineColor(ROOT.kMagenta+2); total.SetLineWidth(4)
+    for sample, h in components.items():
+        h.SetStats(0); h.SetLineColor(COLORS[sample]); h.SetLineWidth(2)
+    allh = [data, total] + list(components.values())
+    ymax = max(h.GetMaximum() for h in allh)
+    if logy:
+        pos = [h.GetBinContent(i) for h in allh for i in range(1, h.GetNbinsX()+1) if h.GetBinContent(i) > 0]
+        data.SetMinimum(max((min(pos) if pos else 1.0)*0.5, 0.1)); data.SetMaximum(max(10*ymax, 10.0))
+    else:
+        data.SetMinimum(0.0); data.SetMaximum(1.25*ymax if ymax > 0 else 1.0)
+    data.GetXaxis().SetTitleSize(0.045); data.GetYaxis().SetTitleSize(0.043)
+    data.GetXaxis().SetLabelSize(0.036); data.GetYaxis().SetLabelSize(0.036)
+    data.GetXaxis().SetTitleOffset(1.05); data.GetYaxis().SetTitleOffset(1.45)
+    data.Draw("E1")
+    for h in components.values(): h.Draw("HIST SAME")
+    total.Draw("HIST SAME"); data.Draw("E1 SAME")
+    leg = ROOT.TLegend(0.40, 0.66, 0.89, 0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.027)
+    leg.AddEntry(data, f"Data (N={int(data.GetEntries()):,})", "lep")
+    leg.AddEntry(total, labels["total"], "l")
+    for sample in ("dvcsgen", "aaogen", "clasdis"):
+        if sample in components: leg.AddEntry(components[sample], labels[sample], "l")
+    leg.Draw()
+    txt = None
+    if title_text:
+        txt = ROOT.TLatex(); txt.SetNDC(True); txt.SetTextAlign(13); txt.SetTextSize(0.034)
+        txt.DrawLatex(0.16, 0.965, title_text)
+    return [leg] + ([txt] if txt else [])
+
+
+def draw_high_energy_normalization_v7(dfs, output_dir, period):
+    """High-E control region: nominal and common-morph fits in one 2x2 canvas.
+
+    Top row = nominal coefficients; bottom row = common-morph coefficients.
+    Left = E_gamma1 fit observable; right = E_miss validation.  Also returns the
+    nominal, morph, and arithmetic-mean A/B coefficient sets for the low-E step.
+    """
+    needed = ("data", "dvcsgen", "aaogen")
+    if any(s not in dfs for s in needed): return [], None, None
+    selected = {s: _exclusive_df(dfs[s], f"v7hi_{s}").Filter("E_gamma1 > 4.0", f"v7hi_{s}_Egt4") for s in needed}
+    specs = [
+        ("E_gamma1", ";E_{#gamma1} (GeV);Entries", 100, 4.0, 9.0, False),
+        ("Emiss_epg", ";E_{miss}(e'p'#gamma1) (GeV);Entries", 120, 0.0, 9.0, True),
+    ]
+    unique = str(abs(hash((period, "v7_high_norm"))))
+    raw, actions = _book_raw_hists(selected, specs, f"v7hi_{unique}")
+    A0,B0,eA,eB,corr,dev0,nd0 = fit_two_poisson_templates(raw[0]["data"],raw[0]["dvcsgen"],raw[0]["aaogen"])
+    mf = fit_two_poisson_templates_common_morph(raw[0]["data"],raw[0]["dvcsgen"],raw[0]["aaogen"],A0,B0)
+    A1,B1 = mf["A"],mf["B"]
+    Am,Bm = 0.5*(A0+A1),0.5*(B0+B1)
+    binw = raw[0]["data"].GetXaxis().GetBinWidth(1)
+    coeffs = {"nominal":(A0,B0), "morph":(A1,B1), "mean":(Am,Bm)}
+    print("\nHigh-E normalization coefficients, E_gamma1 > 4 GeV")
+    print(f"  nominal: A={A0:.8g}, B={B0:.8g}, deviance/dof={dev0:.2f}/{nd0}")
+    print(f"  morph:   A={A1:.8g}, B={B1:.8g}, shift={mf['shift_bins']*binw:+.5f} GeV, smear={mf['sigma_bins']*binw:.5f} GeV, deviance/dof={mf['deviance']:.2f}/{mf['ndof']}")
+    print(f"  mean:    A={Am:.8g}, B={Bm:.8g}")
+
+    canvas=ROOT.TCanvas(f"c_v7hi_{unique}","",1500,1100); canvas.Divide(2,2,0.002,0.002)
+    keep=[canvas]+actions
+    for row,(A,B,is_morph,rowname) in enumerate(((A0,B0,False,"No morph"),(A1,B1,True,"Common morph"))):
+        for ip in range(2):
+            pad=canvas.cd(row*2+ip+1)
+            data=raw[ip]["data"].Clone(f"d_v7hi_{row}_{ip}_{unique}"); data.SetDirectory(0)
+            if is_morph and ip==0:
+                dv=_fill_th1_from_numpy(raw[ip]["dvcsgen"],mf["dvcs"],f"dv_v7hi_{row}_{ip}_{unique}")
+                aa=_fill_th1_from_numpy(raw[ip]["aaogen"],mf["aao"],f"aa_v7hi_{row}_{ip}_{unique}")
+            else:
+                dv=raw[ip]["dvcsgen"].Clone(f"dv_v7hi_{row}_{ip}_{unique}"); dv.SetDirectory(0)
+                aa=raw[ip]["aaogen"].Clone(f"aa_v7hi_{row}_{ip}_{unique}"); aa.SetDirectory(0)
+            dv.Scale(A); aa.Scale(B); total=dv.Clone(f"tot_v7hi_{row}_{ip}_{unique}"); total.Add(aa); total.SetDirectory(0)
+            labels={"total":"A#timesDVCSgen + B#timesAAOgen","dvcsgen":f"DVCSgen (A={A:.4g})","aaogen":f"AAOgen (B={B:.4g})"}
+            keep += [data,dv,aa,total] + _style_count_panel(pad,data,{"dvcsgen":dv,"aaogen":aa},total,labels,specs[ip][5],f"E_{{#gamma1}} > 4 GeV: {rowname}")
+    out=os.path.join(output_dir,f"2_{period}_highE_normalization_nominal_vs_morph.png"); canvas.SaveAs(out)
+    return keep,out,coeffs
+
+
+def draw_low_energy_shapes_v7(dfs, output_dir, period):
+    """Unit-normalized low-E companion to the high-E control-region plot."""
+    specs=[
+        ("E_gamma1",";E_{#gamma1} (GeV);Unit-normalized entries",100,0.4,4.0,False),
+        ("Emiss_epg",";E_{miss}(e'p'#gamma1) (GeV);Unit-normalized entries",120,0.0,9.0,True),
+        ("Mx2_ep",";M^{2}_{X}(e'p') (GeV^{2});Unit-normalized entries",120,-0.5,1.0,False),
+        ("Mx2_epg_raw",";M^{2}_{X}(e'p'#gamma1) (GeV^{2});Unit-normalized entries",120,-0.1,0.15,True),
+    ]
+    selected={s:_exclusive_df(dfs[s],f"v7loShape_{s}").Filter("E_gamma1 < 4.0",f"v7loShape_{s}_Elt4") for s,_ in SAMPLES if s in dfs}
+    unique=str(abs(hash((period,"v7_low_shapes")))); raw,actions=_book_raw_hists(selected,specs,f"v7los_{unique}")
+    canvas=ROOT.TCanvas(f"c_v7los_{unique}","",1500,1100); canvas.Divide(2,2,0.002,0.002); keep=[canvas]+actions
+    for ip,spec in enumerate(specs):
+        pad=canvas.cd(ip+1); pad.SetTicks(1,1); pad.SetLeftMargin(0.14); pad.SetRightMargin(0.04); pad.SetBottomMargin(0.13); pad.SetTopMargin(0.08)
+        if spec[5]: pad.SetLogy(True)
+        leg=ROOT.TLegend(0.50,0.68,0.88,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.028); keep.append(leg)
+        hs=[]; ymax=0.; pmin=None
+        for s,label in SAMPLES:
+            if s not in raw[ip]: continue
+            h=raw[ip][s].Clone(f"norm_v7los_{ip}_{s}_{unique}"); h.SetDirectory(0); h.SetStats(0); h.SetLineColor(COLORS[s]); h.SetLineWidth(3)
+            n=int(round(h.GetEntries())); integ=h.Integral(1,h.GetNbinsX());
+            if integ>0: h.Scale(1./integ)
+            ymax=max(ymax,h.GetMaximum()); hs.append(h); keep.append(h); leg.AddEntry(h,f"{label} (N={n:,})","l")
+            if spec[5]:
+                vals=[h.GetBinContent(i) for i in range(1,h.GetNbinsX()+1) if h.GetBinContent(i)>0]
+                if vals: pmin=min(vals) if pmin is None else min(pmin,min(vals))
+        for j,h in enumerate(hs):
+            if spec[5]: h.SetMinimum(max((pmin or 1e-6)*0.5,1e-7)); h.SetMaximum(max(5*ymax,1.0))
+            else: h.SetMinimum(0); h.SetMaximum(1.25*ymax if ymax else 1)
+            h.GetXaxis().SetTitleSize(0.045); h.GetYaxis().SetTitleSize(0.043); h.GetXaxis().SetLabelSize(0.036); h.GetYaxis().SetLabelSize(0.036); h.GetYaxis().SetTitleOffset(1.45)
+            h.Draw("HIST" if j==0 else "HIST SAME")
+        leg.Draw()
+    out=os.path.join(output_dir,f"1b_{period}_Egamma1_lt_4_GeV.png"); canvas.SaveAs(out); return keep,out
+
+
+def _poisson_deviance_arrays(d,mu,npar):
+    d=np.asarray(d,float); mu=np.clip(np.asarray(mu,float),1e-12,None); dev=0.; used=0
+    for di,mi in zip(d,mu):
+        dev += 2*(mi-di+di*np.log(di/mi)) if di>0 else 2*mi; used+=1
+    return float(dev),max(used-npar,0)
+
+
+def fit_clasdis_fixed_ab(data_hist,dvcs_hist,aao_hist,clas_hist,A,B):
+    d=_th1_to_numpy(data_hist); x=_th1_to_numpy(dvcs_hist); y=_th1_to_numpy(aao_hist); z=_th1_to_numpy(clas_hist)
+    base=A*x+B*y
+    def obj(q):
+        C=max(float(q[0]),1e-12); mu=np.clip(base+C*z,1e-12,None); return float(np.sum(mu-d*np.log(mu)))
+    seed=max((np.sum(d)-np.sum(base))/max(np.sum(z),1.),1e-8)
+    res=minimize(obj,[seed],method="L-BFGS-B",bounds=((1e-12,None),),options={"maxiter":500,"ftol":1e-12})
+    C=float(res.x[0]); mu=base+C*z; dev,nd=_poisson_deviance_arrays(d,mu,1)
+    return {"C":C,"deviance":dev,"ndof":nd,"success":bool(res.success)}
+
+
+def fit_clasdis_fixed_ab_common_morph(data_hist,dvcs_hist,aao_hist,clas_hist,A,B):
+    d=_th1_to_numpy(data_hist); x0=_th1_to_numpy(dvcs_hist); y0=_th1_to_numpy(aao_hist); z0=_th1_to_numpy(clas_hist)
+    seed=fit_clasdis_fixed_ab(data_hist,dvcs_hist,aao_hist,clas_hist,A,B)["C"]
+    def obj(q):
+        C,sh,sg=[float(v) for v in q]
+        x=_morph_1d_counts(x0,sh,sg); y=_morph_1d_counts(y0,sh,sg); z=_morph_1d_counts(z0,sh,sg)
+        mu=np.clip(A*x+B*y+C*z,1e-12,None); return float(np.sum(mu-d*np.log(mu)))
+    starts=[[seed,0,.5],[seed,0,1.5],[seed,-1,1],[seed,1,1]]
+    bounds=((1e-12,None),(-4.,4.),(0.,4.))
+    rr=[minimize(obj,q,method="L-BFGS-B",bounds=bounds,options={"maxiter":500,"ftol":1e-12}) for q in starts]; res=min(rr,key=lambda r:float(r.fun))
+    C,sh,sg=[float(v) for v in res.x]; x=_morph_1d_counts(x0,sh,sg); y=_morph_1d_counts(y0,sh,sg); z=_morph_1d_counts(z0,sh,sg); mu=A*x+B*y+C*z
+    dev,nd=_poisson_deviance_arrays(d,mu,3)
+    return {"C":C,"shift_bins":sh,"sigma_bins":sg,"dvcs":x,"aao":y,"clasdis":z,"deviance":dev,"ndof":nd,"success":bool(res.success)}
+
+
+def draw_low_energy_normalization_v7(dfs, output_dir, period, coeffs):
+    """Low-E normalization: keep high-E A/B fixed and determine only CLASDIS C.
+
+    Three coefficient cases are retained: nominal high-E A/B, common-morph high-E
+    A/B with a fresh common low-E morph while only C floats, and the arithmetic
+    mean A/B with no morph. Each case gets a compact E_gamma1 + E_miss canvas.
+    """
+    needed=("data","dvcsgen","aaogen","clasdis")
+    if coeffs is None or any(s not in dfs for s in needed): return [],[]
+    selected={s:_exclusive_df(dfs[s],f"v7lo_{s}").Filter("E_gamma1 < 4.0",f"v7lo_{s}_Elt4") for s in needed}
+    specs=[("E_gamma1",";E_{#gamma1} (GeV);Entries",90,0.4,4.0,False),("Emiss_epg",";E_{miss}(e'p'#gamma1) (GeV);Entries",120,0.,9.,True)]
+    unique=str(abs(hash((period,"v7_low_norm")))); raw,actions=_book_raw_hists(selected,specs,f"v7lon_{unique}")
+    keep=list(actions); outs=[]
+    cases=[]
+    A0,B0=coeffs["nominal"]; f0=fit_clasdis_fixed_ab(raw[0]["data"],raw[0]["dvcsgen"],raw[0]["aaogen"],raw[0]["clasdis"],A0,B0); cases.append(("nominal",A0,B0,f0,False))
+    A1,B1=coeffs["morph"]; f1=fit_clasdis_fixed_ab_common_morph(raw[0]["data"],raw[0]["dvcsgen"],raw[0]["aaogen"],raw[0]["clasdis"],A1,B1); cases.append(("morph",A1,B1,f1,True))
+    Am,Bm=coeffs["mean"]; fm=fit_clasdis_fixed_ab(raw[0]["data"],raw[0]["dvcsgen"],raw[0]["aaogen"],raw[0]["clasdis"],Am,Bm); cases.append(("mean",Am,Bm,fm,False))
+    print("\nLow-E normalization, E_gamma1 < 4 GeV; A and B fixed from high-E fits")
+    for name,A,B,fit,ism in cases:
+        extra=f", shift={fit['shift_bins']:+.4f} bins, smear={fit['sigma_bins']:.4f} bins" if ism else ""
+        print(f"  {name:7s}: A={A:.8g}, B={B:.8g}, C_CLASDIS={fit['C']:.8g}, deviance/dof={fit['deviance']:.2f}/{fit['ndof']}{extra}")
+    for ic,(name,A,B,fit,ism) in enumerate(cases, start=3):
+        C=fit["C"]; canvas=ROOT.TCanvas(f"c_v7low_{name}_{unique}","",1500,650); canvas.Divide(2,1,0.002,0.002); keep.append(canvas)
+        for ip in range(2):
+            pad=canvas.cd(ip+1); data=raw[ip]["data"].Clone(f"d_v7low_{name}_{ip}_{unique}"); data.SetDirectory(0)
+            if ism and ip==0:
+                dv=_fill_th1_from_numpy(raw[ip]["dvcsgen"],fit["dvcs"],f"dv_v7low_{name}_{ip}_{unique}"); aa=_fill_th1_from_numpy(raw[ip]["aaogen"],fit["aao"],f"aa_v7low_{name}_{ip}_{unique}"); cl=_fill_th1_from_numpy(raw[ip]["clasdis"],fit["clasdis"],f"cl_v7low_{name}_{ip}_{unique}")
+            else:
+                dv=raw[ip]["dvcsgen"].Clone(f"dv_v7low_{name}_{ip}_{unique}"); dv.SetDirectory(0); aa=raw[ip]["aaogen"].Clone(f"aa_v7low_{name}_{ip}_{unique}"); aa.SetDirectory(0); cl=raw[ip]["clasdis"].Clone(f"cl_v7low_{name}_{ip}_{unique}"); cl.SetDirectory(0)
+            dv.Scale(A); aa.Scale(B); cl.Scale(C); total=dv.Clone(f"tot_v7low_{name}_{ip}_{unique}"); total.Add(aa); total.Add(cl); total.SetDirectory(0)
+            labels={"total":"A#timesDVCS + B#timesAAO + C#timesCLASDIS","dvcsgen":f"DVCSgen (A={A:.4g})","aaogen":f"AAOgen (B={B:.4g})","clasdis":f"CLASDIS (C={C:.4g})"}
+            keep += [data,dv,aa,cl,total] + _style_count_panel(pad,data,{"dvcsgen":dv,"aaogen":aa,"clasdis":cl},total,labels,specs[ip][5],f"E_{{#gamma1}} < 4 GeV: {name}")
+        out=os.path.join(output_dir,f"{ic}_{period}_lowE_normalization_{name}.png"); canvas.SaveAs(out); outs.append(out)
+    return keep,outs
+
 def main():
     args = parse_args()
 
@@ -1002,19 +1212,22 @@ def main():
     os.makedirs(normalization_dir, exist_ok=True)
     norm_keep, norm_output = draw_normalization_step1(dfs, normalization_dir, args.period)
     keep.extend(norm_keep)
-    fit_keep, fit_output = draw_normalization_fit(dfs, normalization_dir, args.period)
-    keep.extend(fit_keep)
-    morph_keep, morph_output = draw_normalization_morph_comparison(dfs, normalization_dir, args.period)
-    keep.extend(morph_keep)
+    lowshape_keep, lowshape_output = draw_low_energy_shapes_v7(dfs, normalization_dir, args.period)
+    keep.extend(lowshape_keep)
+    high_keep, high_output, high_coeffs = draw_high_energy_normalization_v7(dfs, normalization_dir, args.period)
+    keep.extend(high_keep)
+    low_keep, low_outputs = draw_low_energy_normalization_v7(dfs, normalization_dir, args.period, high_coeffs)
+    keep.extend(low_keep)
     _ = keep  # Keep ROOT objects alive through SaveAs().
 
     for output_file in written:
         print(f"\nWrote: {output_file}")
     print(f"\nWrote: {norm_output}")
-    if fit_output:
-        print(f"\nWrote: {fit_output}")
-    if morph_output:
-        print(f"\nWrote: {morph_output}")
+    print(f"\nWrote: {lowshape_output}")
+    if high_output:
+        print(f"\nWrote: {high_output}")
+    for output_file in low_outputs:
+        print(f"\nWrote: {output_file}")
     return 0
 
 
