@@ -131,6 +131,71 @@ ROOT::VecOps::RVec<double> pe_mgg_tag_probe(
     }
     return out;
 }
+
+
+ROOT::VecOps::RVec<double> pe_mgg_nearest_pid22(
+        double tag_p, double tag_th, double tag_ph, int tag_index,
+        const ROOT::VecOps::RVec<int>& neutral_idx,
+        const ROOT::VecOps::RVec<int>& neutral_pid,
+        const ROOT::VecOps::RVec<double>& neutral_p,
+        const ROOT::VecOps::RVec<double>& neutral_th,
+        const ROOT::VecOps::RVec<double>& neutral_ph,
+        const ROOT::VecOps::RVec<double>& neutral_da) {
+    ROOT::VecOps::RVec<double> out;
+    int best = -1; double best_da = 1e99;
+    for (size_t i=0;i<neutral_idx.size();++i) {
+        if (neutral_idx[i] < 0 || neutral_idx[i] == tag_index || neutral_pid[i] != 22) continue;
+        if (!(neutral_p[i] > 0.0) || !std::isfinite(neutral_da[i])) continue;
+        if (neutral_da[i] < best_da) { best_da=neutral_da[i]; best=(int)i; }
+    }
+    if (best < 0) return out;
+    const double dot = std::sin(tag_th)*std::sin(neutral_th[best])*std::cos(tag_ph-neutral_ph[best])
+                     + std::cos(tag_th)*std::cos(neutral_th[best]);
+    const double c=std::max(-1.0,std::min(1.0,dot));
+    const double m2=2.0*tag_p*neutral_p[best]*(1.0-c);
+    if (m2>=0.0) out.push_back(std::sqrt(m2));
+    return out;
+}
+
+ROOT::VecOps::RVec<double> pe_mgg_truth_matched_pi0_reco(
+        double tag_p, double tag_th, double tag_ph, int tag_index,
+        int mc_tag_index, int mc_tag_pid, int mc_tag_parent,
+        int mc_probe_index, int mc_probe_pid, int mc_probe_parent,
+        const ROOT::VecOps::RVec<int>& neutral_idx,
+        const ROOT::VecOps::RVec<int>& neutral_pid,
+        const ROOT::VecOps::RVec<double>& neutral_p,
+        const ROOT::VecOps::RVec<double>& neutral_th,
+        const ROOT::VecOps::RVec<double>& neutral_ph,
+        const ROOT::VecOps::RVec<int>& neutral_mc_index,
+        const ROOT::VecOps::RVec<int>& neutral_mc_pid) {
+    ROOT::VecOps::RVec<double> out;
+    // AAOgen sanity check: reconstructed tag and reconstructed partner must map
+    // to the two saved generated pi0-photon roles.
+    if (mc_tag_index < 0 || mc_probe_index < 0 || mc_tag_index == mc_probe_index) return out;
+    if (mc_tag_pid != 22 || mc_probe_pid != 22) return out;
+    if (mc_tag_parent != 111 || mc_probe_parent != 111) return out;
+    for (size_t i=0;i<neutral_idx.size();++i) {
+        if (neutral_idx[i] < 0 || neutral_idx[i] == tag_index || neutral_pid[i] != 22) continue;
+        if (neutral_mc_index[i] != mc_probe_index || neutral_mc_pid[i] != 22) continue;
+        if (!(neutral_p[i] > 0.0)) continue;
+        const double dot=std::sin(tag_th)*std::sin(neutral_th[i])*std::cos(tag_ph-neutral_ph[i])
+                        +std::cos(tag_th)*std::cos(neutral_th[i]);
+        const double c=std::max(-1.0,std::min(1.0,dot));
+        const double m2=2.0*tag_p*neutral_p[i]*(1.0-c);
+        if (m2>=0.0) out.push_back(std::sqrt(m2));
+    }
+    return out;
+}
+
+double pe_mgg_truth_pi0(double p1,double th1,double ph1,int i1,int pid1,int par1,
+                         double p2,double th2,double ph2,int i2,int pid2,int par2) {
+    if (i1<0 || i2<0 || i1==i2 || pid1!=22 || pid2!=22 || par1!=111 || par2!=111) return -1.0;
+    if (!(p1>0.0) || !(p2>0.0)) return -1.0;
+    const double dot=std::sin(th1)*std::sin(th2)*std::cos(ph1-ph2)+std::cos(th1)*std::cos(th2);
+    const double c=std::max(-1.0,std::min(1.0,dot));
+    const double m2=2.0*p1*p2*(1.0-c);
+    return m2>=0.0 ? std::sqrt(m2) : -1.0;
+}
 """)
 
 
@@ -1280,6 +1345,58 @@ def draw_probe_mgg(dfs, output_dir, period):
     out=os.path.join(output_dir,f"1_{period}_Mgg_tag_probe.png"); canvas.SaveAs(out)
     return keep,out
 
+
+def draw_probe_mgg_truth_diagnostic(dfs, output_dir, period):
+    """AAOgen-only four-vector/truth audit for the missing pi0 peak.
+
+    The four panels deliberately answer one question at a time:
+      1) does the inclusive reconstructed pairing reproduce the surprising smooth shape?
+      2) does choosing only the nearest retained PID-22 candidate recover the peak?
+      3) when the saved MC roles say tag/probe are pi0 daughters and the reconstructed
+         neutral is matched to the saved generated probe, does reconstructed Mgg peak?
+      4) do the saved generated tag/probe four-vectors themselves give m_pi0?
+    """
+    if "aaogen" not in dfs:
+        return [], None
+    df=_exclusive_df(dfs["aaogen"],"probe_truth_audit_aaogen")
+    df=(df
+        .Define("Mgg_audit_all","pe_mgg_tag_probe(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi)")
+        .Define("Mgg_audit_nearest","pe_mgg_nearest_pid22(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi,neutral_delta_alpha)")
+        .Define("Mgg_audit_truth_reco","pe_mgg_truth_matched_pi0_reco(tag_corr_p,tag_corr_theta,tag_corr_phi,tag_rec_index,mc_tag_index,mc_tag_pid,mc_tag_parent,mc_probe_index,mc_probe_pid,mc_probe_parent,neutral_idx,neutral_pid,neutral_p,neutral_theta,neutral_phi,neutral_mc_index,neutral_mc_pid)")
+        .Define("Mgg_audit_truth_gen","pe_mgg_truth_pi0(mc_tag_p,mc_tag_theta,mc_tag_phi,mc_tag_index,mc_tag_pid,mc_tag_parent,mc_probe_p,mc_probe_theta,mc_probe_phi,mc_probe_index,mc_probe_pid,mc_probe_parent)"))
+    unique=str(abs(hash((period,"probe_truth_audit"))))
+    specs=[
+      ("Mgg_audit_all","All retained reconstructed PID-22 partners"),
+      ("Mgg_audit_nearest","Nearest-to-X retained PID-22 partner only"),
+      ("Mgg_audit_truth_reco","Reco pair matched to saved #pi^{0} truth tag/probe"),
+      ("Mgg_audit_truth_gen","Saved generated #pi^{0} tag/probe four-vectors")]
+    booked=[]; actions=[]
+    for i,(col,title) in enumerate(specs):
+        d=df if i<3 else df.Filter("Mgg_audit_truth_gen >= 0.0","valid generated pi0 pair")
+        h=d.Histo1D((f"h_probe_truth_audit_{i}_{unique}",f";M_{{#gamma#gamma}} (GeV);Unit-normalized entries",120,0.0,0.30),col)
+        booked.append((h,title)); actions.append(h)
+    ROOT.RDF.RunGraphs(actions)
+    c=ROOT.TCanvas(f"c_probe_truth_audit_{unique}","",1400,1050); c.Divide(2,2)
+    keep=[c]+actions
+    for i,(hp,title) in enumerate(booked,1):
+        pad=c.cd(i); pad.SetTicks(1,1); pad.SetLeftMargin(0.13); pad.SetRightMargin(0.04); pad.SetBottomMargin(0.13); pad.SetTopMargin(0.12)
+        h=hp.GetValue().Clone(f"h_probe_truth_audit_draw_{i}_{unique}"); h.SetDirectory(0); h.SetStats(0); h.SetLineColor(ROOT.kRed+1); h.SetLineWidth(3)
+        n=int(round(h.GetEntries())); integ=h.Integral(1,h.GetNbinsX())
+        if integ>0: h.Scale(1.0/integ)
+        h.SetMinimum(0.0); h.SetMaximum(1.22*h.GetMaximum() if h.GetMaximum()>0 else 1.0)
+        h.GetXaxis().SetTitleSize(0.047); h.GetYaxis().SetTitleSize(0.043); h.GetXaxis().SetLabelSize(0.038); h.GetYaxis().SetLabelSize(0.038); h.GetYaxis().SetTitleOffset(1.35)
+        h.Draw("HIST")
+        line=ROOT.TLine(0.1349768,0.0,0.1349768,h.GetMaximum()); line.SetLineStyle(2); line.SetLineWidth(2); line.Draw()
+        tex=ROOT.TLatex(); tex.SetNDC(True); tex.SetTextSize(0.034); tex.SetTextFont(42); tex.DrawLatex(0.14,0.94,title); tex.DrawLatex(0.62,0.86,f"N = {n:,}")
+        keep += [h,line,tex]
+    out=os.path.join(output_dir,f"2_{period}_AAOgen_Mgg_truth_audit.png"); c.SaveAs(out)
+    print("\nAAOgen M(gamma gamma) truth audit:")
+    print("  Panel 1: all reconstructed PID-22 partners -- reproduces the original construction.")
+    print("  Panel 2: nearest retained PID-22 to inferred X -- tests combinatorial dilution.")
+    print("  Panel 3: reconstructed pair whose saved MC identities are the pi0 tag/probe photons -- tests REC four-vectors/matching.")
+    print("  Panel 4: same saved generated pi0 tag/probe four-vectors -- must peak at ~0.135 GeV if truth roles are sane.")
+    return keep,out
+
 def main():
     args = parse_args()
 
@@ -1346,6 +1463,8 @@ def main():
     os.makedirs(probe_dir, exist_ok=True)
     probe_keep, probe_output = draw_probe_mgg(dfs, probe_dir, args.period)
     keep.extend(probe_keep)
+    probe_audit_keep, probe_audit_output = draw_probe_mgg_truth_diagnostic(dfs, probe_dir, args.period)
+    keep.extend(probe_audit_keep)
     _ = keep  # Keep ROOT objects alive through SaveAs().
 
     for output_file in written:
@@ -1360,6 +1479,8 @@ def main():
         print(f"\nWrote: {final_output}")
     if probe_output:
         print(f"\nWrote: {probe_output}")
+    if probe_audit_output:
+        print(f"\nWrote: {probe_audit_output}")
     return 0
 
 
