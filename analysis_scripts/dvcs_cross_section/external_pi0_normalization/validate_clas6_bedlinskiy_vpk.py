@@ -114,7 +114,11 @@ def _yaml_documents_from_archive(blob: bytes):
                 if name.endswith("/") or not name.lower().endswith((".yaml", ".yml")):
                     continue
                 text = zf.read(name).decode("utf-8")
-                yield name, yaml.safe_load(text)
+                # submission.yaml is a multi-document YAML stream; table
+                # files are normally single-document. load_all handles both.
+                for i, doc in enumerate(yaml.safe_load_all(text)):
+                    if doc is not None:
+                        yield (name if i == 0 else f"{name}#doc{i+1}"), doc
         return
 
     bio.seek(0)
@@ -126,7 +130,10 @@ def _yaml_documents_from_archive(blob: bytes):
                 f = tf.extractfile(member)
                 if f is None:
                     continue
-                yield member.name, yaml.safe_load(f.read().decode("utf-8"))
+                text = f.read().decode("utf-8")
+                for i, doc in enumerate(yaml.safe_load_all(text)):
+                    if doc is not None:
+                        yield (member.name if i == 0 else f"{member.name}#doc{i+1}"), doc
         return
     except tarfile.TarError as exc:
         raise RuntimeError("HEPData input is neither a valid ZIP nor tar archive.") from exc
