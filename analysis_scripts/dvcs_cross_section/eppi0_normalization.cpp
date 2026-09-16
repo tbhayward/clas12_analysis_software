@@ -156,12 +156,22 @@ struct SummaryRatioCurve {
     std::vector<double> ey;
 };
 
+struct PhotonTopologyNormalization {
+    std::string topology;
+    double integrated_ratio = 1.0;
+    double integrated_ratio_err = 0.0;
+    long long data_events = 0;
+    long long mc_events = 0;
+    std::map<std::string, SummaryRatioCurve> ratio_curves;
+};
+
 struct PeriodNormalization {
     std::string period;
     double integrated_ratio = 1.0;
     double integrated_ratio_err = 0.0;
     std::map<std::string, RegionNormalization> regions;
     std::map<std::string, SummaryRatioCurve> summary_ratio_curves;
+    std::map<std::string, PhotonTopologyNormalization> photon_topologies;
 };
 
 static void fatal(const std::string& msg);
@@ -955,6 +965,8 @@ struct Branches {
     int runnum = 0; bool has_runnum = false;
     int detector1 = 0; bool has_detector1 = false;
     int detector2 = 0; bool has_detector2 = false;
+    int detector_gamma1 = -1; bool has_detector_gamma1 = false;
+    int detector_gamma2 = -1; bool has_detector_gamma2 = false;
     int helicity = 0; bool has_helicity = false;
 
     double x = 0.0; bool has_x = false;
@@ -999,6 +1011,8 @@ struct Branches {
         ena("runnum");
         ena("detector1");
         ena("detector2");
+        ena("detector_gamma1");
+        ena("detector_gamma2");
         ena("helicity");
 
         ena("x");
@@ -1050,6 +1064,8 @@ struct Branches {
         bI("runnum", &runnum, has_runnum);
         bI("detector1", &detector1, has_detector1);
         bI("detector2", &detector2, has_detector2);
+        bI("detector_gamma1", &detector_gamma1, has_detector_gamma1);
+        bI("detector_gamma2", &detector_gamma2, has_detector_gamma2);
         bI("helicity", &helicity, has_helicity);
 
         bD("x", &x, has_x);
@@ -1720,7 +1736,7 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
     p.x_max = fit_xmax;
     p.valid = true;
 
-    const std::string fit_outdir = outdir + "/p1/fits";
+    const std::string fit_outdir = outdir + "/proton/fits";
     mkdir_p(fit_outdir);
 
     std::string safe_region = region;
@@ -1783,7 +1799,7 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
     leg.AddEntry(&fdraw, "cubic fit", "l");
     leg.Draw();
 
-    c.SaveAs((fit_outdir + "/p1_theta_ratio_cubic_fit_" + safe_region + ".png").c_str());
+    c.SaveAs((fit_outdir + "/proton_theta_ratio_cubic_fit_" + safe_region + ".png").c_str());
 
     return p;
 }
@@ -2404,6 +2420,22 @@ static const std::array<std::string, kCurrentRegionCount>& current_region_names(
     return names;
 }
 
+static std::string photon_pair_topology(const Branches& b) {
+    // eppi0 EPGG convention used elsewhere in this suite: 0 = FT, 1 = FD.
+    if (!(b.has_detector_gamma1 && b.has_detector_gamma2)) return "";
+    const int d1 = b.detector_gamma1;
+    const int d2 = b.detector_gamma2;
+    if (d1 == 0 && d2 == 0) return "FT-FT";
+    if ((d1 == 0 && d2 == 1) || (d1 == 1 && d2 == 0)) return "FT-FD";
+    if (d1 == 1 && d2 == 1) return "FD-FD";
+    return "";
+}
+
+static const std::vector<std::string>& photon_pair_topologies() {
+    static const std::vector<std::string> v = {"FT-FT", "FT-FD", "FD-FD"};
+    return v;
+}
+
 static int current_region_index(int detector2, double p2_phi_rad, bool has_p2_phi) {
     if (detector2 == 0) return 0;
     if (detector2 != 1 || !has_p2_phi || !std::isfinite(p2_phi_rad)) return -1;
@@ -2555,14 +2587,16 @@ static void draw_kinematics_overview_canvases(const std::string& outdir,
 
     TCanvas crat(("c_kin_overview_ratio_" + period_dir(period)).c_str(), "", 1500, 320 * ny);
     crat.Divide(nx, ny, 0.002, 0.002);
+    std::vector<TGraphErrors*> keep_ratio_graphs;
     for (size_t i = 0; i < vars.size(); ++i) {
         const VarConfig& v = vars[i];
         std::vector<TGraphErrors*> gr = make_ratio_graphs(data.hists.at(v.key), mc.hists.at(v.key));
         crat.cd(static_cast<int>(i) + 1);
         draw_ratio_panel(period, v, gr[0], 0, nullptr);
-        for (TGraphErrors* g : gr) delete g;
+        keep_ratio_graphs.insert(keep_ratio_graphs.end(), gr.begin(), gr.end());
     }
     crat.SaveAs((outdir + "/kinematics_data_over_mc_overview.png").c_str());
+    for (TGraphErrors* g : keep_ratio_graphs) delete g;
 }
 
 // -----------------------------------------------------------------------------
@@ -2672,6 +2706,78 @@ static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
               << " current_model=event_by_event_regional" << std::endl;
 }
 
+static void fill_eppi0_photon_topology_hists(const ChannelConfig& cfg,
+                                               const PeriodTags& tags,
+                                               TTree* tree,
+                                               const TopoCutMap& cuts,
+                                               const CurrentResponseModel& current_model,
+                                               bool is_data,
+                                               double event_norm,
+                                               std::map<std::string, HistSet>& out,
+                                               std::map<std::string, long long>& event_counts) {
+    if (!tree) return;
+    Branches b; b.bind(tree, !is_data);
+    if (!(b.has_detector_gamma1 && b.has_detector_gamma2)) {
+        std::cout << "[eppi0_norm] WARNING: " << tags.display
+                  << " tree lacks detector_gamma1/detector_gamma2; photon-pair topology study unavailable for this tree.\n";
+        return;
+    }
+    const Long64_t N = tree->GetEntries();
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+        if (!passes_event_selection(cfg, tags, cuts, b)) continue;
+        const std::string topo = photon_pair_topology(b);
+        if (topo.empty()) continue;
+        bool skip = false;
+        const double cw = eppi0_event_current_weight(current_model, tags.display, b, is_data, skip);
+        if (skip) continue;
+        const double w = is_data ? cw : event_norm * cw;
+        fill_hist_set(out.at(topo), b, w);
+        ++event_counts[topo];
+    }
+}
+
+static double hist_integral_and_error(const TH1D* h, double& err) {
+    double e2 = 0.0;
+    double sum = 0.0;
+    for (int b = 1; b <= h->GetNbinsX(); ++b) {
+        sum += h->GetBinContent(b);
+        e2 += h->GetBinError(b) * h->GetBinError(b);
+    }
+    err = std::sqrt(std::max(0.0, e2));
+    return sum;
+}
+
+static PhotonTopologyNormalization make_photon_topology_normalization(
+        const std::string& period,
+        const std::string& topology,
+        const HistSet& data,
+        const HistSet& mc,
+        long long data_events,
+        long long mc_events) {
+    PhotonTopologyNormalization out;
+    out.topology = topology;
+    out.data_events = data_events;
+    out.mc_events = mc_events;
+    double de = 0.0, me = 0.0;
+    const double d = hist_integral_and_error(data.hists.at("x")[0], de);
+    const double m = hist_integral_and_error(mc.hists.at("x")[0], me);
+    if (d > 0.0 && m > 0.0) {
+        out.integrated_ratio = d / m;
+        out.integrated_ratio_err = std::fabs(out.integrated_ratio) *
+            std::sqrt((de*de)/(d*d) + (me*me)/(m*m));
+    }
+    for (const std::string& key : {std::string("x"), std::string("Q2"), std::string("minus_t1")}) {
+        VarConfig vc;
+        for (const VarConfig& v : variable_configs()) if (v.key == key) { vc = v; break; }
+        out.ratio_curves[key] = make_summary_ratio_curve(period + " " + topology,
+                                                          vc,
+                                                          data.hists.at(key),
+                                                          mc.hists.at(key));
+    }
+    return out;
+}
+
 static PeriodNormalization run_period_normalization(const std::string& period,
                                                     TTree* data_tree,
                                                     TTree* rec_tree,
@@ -2726,6 +2832,27 @@ static PeriodNormalization run_period_normalization(const std::string& period,
                                  event_norm,
                                  current_model,
                                  ana_mc);
+
+    std::map<std::string, HistSet> photon_topo_data;
+    std::map<std::string, HistSet> photon_topo_mc;
+    std::map<std::string, long long> photon_topo_data_counts;
+    std::map<std::string, long long> photon_topo_mc_counts;
+    for (const std::string& topo : photon_pair_topologies()) {
+        photon_topo_data.emplace(topo, make_hist_set("photon_topo_data_" + period_dir(period) + "_" + topo));
+        photon_topo_mc.emplace(topo, make_hist_set("photon_topo_mc_" + period_dir(period) + "_" + topo));
+        photon_topo_data_counts[topo] = 0;
+        photon_topo_mc_counts[topo] = 0;
+    }
+    fill_eppi0_photon_topology_hists(epi, tags, data_tree, data_cuts, current_model,
+                                     true, 1.0, photon_topo_data, photon_topo_data_counts);
+    fill_eppi0_photon_topology_hists(epi, tags, rec_tree, mc_cuts, current_model,
+                                     false, event_norm, photon_topo_mc, photon_topo_mc_counts);
+    std::map<std::string, PhotonTopologyNormalization> photon_topology_norms;
+    for (const std::string& topo : photon_pair_topologies()) {
+        photon_topology_norms[topo] = make_photon_topology_normalization(
+            period, topo, photon_topo_data.at(topo), photon_topo_mc.at(topo),
+            photon_topo_data_counts[topo], photon_topo_mc_counts[topo]);
+    }
 
     std::map<std::string, SummaryRatioCurve> summary_ratio_curves;
 
@@ -2805,12 +2932,38 @@ static PeriodNormalization run_period_normalization(const std::string& period,
         region_norms[region] = rn;
     }
 
+    // Aggregate all six FD proton sectors separately from CD.  This is the
+    // meaningful FD-vs-CD comparison; ALL is often CD dominated.
+    {
+        double dsum = 0.0, msum = 0.0, de2 = 0.0, me2 = 0.0;
+        for (int isec = 1; isec <= 6; ++isec) {
+            const std::string region = "Sector " + std::to_string(isec);
+            TH1D* hd = h_data_fit.at(region);
+            TH1D* hm = h_mc_fit.at(region);
+            for (int ib = 1; ib <= hd->GetNbinsX(); ++ib) {
+                dsum += hd->GetBinContent(ib); msum += hm->GetBinContent(ib);
+                de2 += hd->GetBinError(ib)*hd->GetBinError(ib);
+                me2 += hm->GetBinError(ib)*hm->GetBinError(ib);
+            }
+        }
+        RegionNormalization fd;
+        fd.region = "FD";
+        fd.fit.valid = false;
+        if (dsum > 0.0 && msum > 0.0) {
+            fd.integrated_ratio = dsum / msum;
+            fd.integrated_ratio_err = std::fabs(fd.integrated_ratio) *
+                std::sqrt(de2/(dsum*dsum) + me2/(msum*msum));
+        }
+        region_norms["FD"] = fd;
+    }
+
     for (const VarConfig& v : variable_configs()) {
         if (v.key == "p1_theta") {
             std::map<std::string, CubicFit> fits_for_plot;
 
-            for (const auto& kv : region_norms) {
-                fits_for_plot[kv.first] = kv.second.fit;
+            for (const std::string& region : normalization_regions()) {
+                auto it = region_norms.find(region);
+                if (it != region_norms.end()) fits_for_plot[region] = it->second.fit;
             }
 
             plot_variable(period_root,
@@ -2880,6 +3033,10 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     out.integrated_ratio_err = ratio_err;
     out.regions = region_norms;
     out.summary_ratio_curves = summary_ratio_curves;
+    out.photon_topologies = photon_topology_norms;
+
+    for (auto& kv : photon_topo_data) delete_hist_set(kv.second);
+    for (auto& kv : photon_topo_mc) delete_hist_set(kv.second);
 
     for (auto& kv : h_data_fit) {
         delete kv.second;
@@ -3726,6 +3883,78 @@ static void save_parent_fit_summary_plots(const std::string& output_dir,
 // CSV output for normalization fits
 // -----------------------------------------------------------------------------
 
+static void write_photon_topology_summary_csv(const std::string& output_dir,
+                                              const std::vector<PeriodNormalization>& norms) {
+    const std::string dir = output_dir + "/photon_topology";
+    mkdir_p(dir);
+    const std::string path = dir + "/photon_topology_summary.csv";
+    std::ofstream out(path.c_str());
+    if (!out.is_open()) fatal("[eppi0_norm] FATAL: could not write photon topology summary: " + path);
+    out << "period,photon_topology,data_events,mc_events,integrated_data_over_mc,integrated_stat_err,factorization_double_ratio\n";
+    out << std::setprecision(12);
+    for (const PeriodNormalization& pn : norms) {
+        double rtt = 0.0, rtf = 0.0, rff = 0.0;
+        auto a=pn.photon_topologies.find("FT-FT"), b=pn.photon_topologies.find("FT-FD"), c=pn.photon_topologies.find("FD-FD");
+        if (a!=pn.photon_topologies.end()) rtt=a->second.integrated_ratio;
+        if (b!=pn.photon_topologies.end()) rtf=b->second.integrated_ratio;
+        if (c!=pn.photon_topologies.end()) rff=c->second.integrated_ratio;
+        const double closure = (rtt>0.0 && rff>0.0) ? (rtf*rtf)/(rtt*rff) : 0.0;
+        for (const std::string& topo : photon_pair_topologies()) {
+            auto it=pn.photon_topologies.find(topo); if (it==pn.photon_topologies.end()) continue;
+            const auto& x=it->second;
+            out << '"' << pn.period << "\",\"" << topo << "\"," << x.data_events << "," << x.mc_events
+                << "," << x.integrated_ratio << "," << x.integrated_ratio_err << "," << closure << "\n";
+        }
+    }
+    std::cout << "[eppi0_norm] Wrote photon-pair topology summary: " << path << std::endl;
+}
+
+static void draw_photon_topology_summary_canvases(const std::string& output_dir,
+                                                  const std::vector<PeriodNormalization>& norms) {
+    const std::string dir = output_dir + "/photon_topology";
+    mkdir_p(dir);
+    const std::vector<std::string> keys = {"x", "Q2", "minus_t1"};
+    const std::vector<std::string> xt = {"x_{B}", "Q^{2} (GeV^{2})", "-t (GeV^{2})"};
+    const int cols[3] = {kBlue+1, kRed+1, kGreen+2};
+    for (const PeriodNormalization& pn : norms) {
+        TCanvas can(("c_photon_topology_"+period_dir(pn.period)).c_str(), "", 1400, 1000);
+        can.Divide(2,2,0.002,0.002);
+        std::vector<TGraphErrors*> keep;
+        can.cd(1); gPad->SetGrid(1,1);
+        TH1D* fr=(TH1D*)gPad->DrawFrame(0.0,0.0,3.0,1.4);
+        fr->SetTitle((pn.period+" photon-pair topology;topology index;data / MC").c_str());
+        fr->GetXaxis()->SetBinLabel(fr->GetXaxis()->FindBin(0.5),"FT-FT");
+        fr->GetXaxis()->SetBinLabel(fr->GetXaxis()->FindBin(1.5),"FT-FD");
+        fr->GetXaxis()->SetBinLabel(fr->GetXaxis()->FindBin(2.5),"FD-FD");
+        TGraphErrors* gi=new TGraphErrors(); keep.push_back(gi); int ip=0;
+        for (const std::string& topo:photon_pair_topologies()) { auto it=pn.photon_topologies.find(topo); if(it==pn.photon_topologies.end()) continue; gi->SetPoint(ip,ip+0.5,it->second.integrated_ratio); gi->SetPointError(ip,0,it->second.integrated_ratio_err); ++ip; }
+        gi->SetMarkerStyle(20); gi->Draw("PE SAME");
+        TLine* l1=new TLine(0,1,3,1); l1->SetLineStyle(2); l1->Draw("SAME");
+        for (int ik=0;ik<3;++ik) {
+            can.cd(ik+2); gPad->SetGrid(1,1);
+            double xmin=1e99,xmax=-1e99;
+            for(const auto& kv:pn.photon_topologies){ auto it=kv.second.ratio_curves.find(keys[ik]); if(it==kv.second.ratio_curves.end()) continue; for(double x:it->second.x){xmin=std::min(xmin,x);xmax=std::max(xmax,x);} }
+            if(!(xmax>xmin)){xmin=0;xmax=1;}
+            const double dx=0.05*(xmax-xmin);
+            TH1D* f=(TH1D*)gPad->DrawFrame(xmin-dx,0.0,xmax+dx,1.4);
+            f->SetTitle((pn.period+";"+xt[ik]+";data / MC").c_str());
+            TLine* u=new TLine(xmin-dx,1,xmax+dx,1);u->SetLineStyle(2);u->Draw("SAME");
+            TLegend* leg=new TLegend(0.68,0.70,0.92,0.90);leg->SetBorderSize(0);leg->SetFillStyle(0);
+            int jt=0;
+            for(const std::string& topo:photon_pair_topologies()){
+                auto pt=pn.photon_topologies.find(topo); if(pt==pn.photon_topologies.end()) continue;
+                auto rc=pt->second.ratio_curves.find(keys[ik]); if(rc==pt->second.ratio_curves.end()) continue;
+                TGraphErrors* g=new TGraphErrors(); keep.push_back(g);
+                for(size_t q=0;q<rc->second.x.size();++q){g->SetPoint(q,rc->second.x[q],rc->second.y[q]);g->SetPointError(q,0,rc->second.ey[q]);}
+                g->SetMarkerStyle(20+jt);g->SetMarkerColor(cols[jt]);g->SetLineColor(cols[jt]);g->Draw("PE SAME");leg->AddEntry(g,topo.c_str(),"pe");++jt;
+            }
+            leg->Draw();
+        }
+        can.SaveAs((dir+"/"+period_dir(pn.period)+"_photon_topology_overview.png").c_str());
+        for(TGraphErrors* g:keep) delete g;
+    }
+}
+
 static void write_norm_summary_csv(const std::string& path,
                                    const std::vector<PeriodNormalization>& norms) {
     const std::size_t slash = path.find_last_of("/\\");
@@ -3746,6 +3975,12 @@ static void write_norm_summary_csv(const std::string& path,
         out << '"' << pn.period << "\",\"ALL\","
             << pn.integrated_ratio << "," << pn.integrated_ratio_err
             << ",,,,,,,,,,,0\n";
+        auto it_fd = pn.regions.find("FD");
+        if (it_fd != pn.regions.end()) {
+            out << '"' << pn.period << "\",\"FD\","
+                << it_fd->second.integrated_ratio << "," << it_fd->second.integrated_ratio_err
+                << ",,,,,,,,,,,0\n";
+        }
         for (const std::string& region : normalization_regions()) {
             auto it = pn.regions.find(region);
             if (it == pn.regions.end()) continue;
@@ -3884,6 +4119,8 @@ bool update_eppi0_normalization_csv(
             const std::string summary_dir = options.output_dir + "/summary";
             mkdir_p(summary_dir);
             save_parent_fit_summary_plots(summary_dir, norms);
+            write_photon_topology_summary_csv(options.output_dir, norms);
+            draw_photon_topology_summary_canvases(options.output_dir, norms);
         }
 
         write_norms_to_csv(csv, norms);
