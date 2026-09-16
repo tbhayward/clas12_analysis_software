@@ -67,6 +67,16 @@ HALLA_POINTS = EXT_OUTPUT / "dlamini2021_vpk_point_comparison.csv"
 PERIOD_ORDER = ["Sp18 Inb", "Sp18 Out", "Fa18 Inb", "Fa18 Out", "Sp19 Inb"]
 TOPOLOGY_ORDER = ["ALL", "FT-FT", "FT-FD", "FD-FD"]
 BOUNDARY_DISTANCE = 0.10
+# Local smooth residual field. Distances are in coordinates normalized to the
+# combined external-data ranges. The bandwidth is deliberately broad enough
+# that the correction varies smoothly rather than following individual points.
+LOCAL_BANDWIDTH = 0.22
+LOCAL_K = 24
+# Additional uncertainty assigned away from measured kinematics. This is not
+# used to move the central correction; it makes extrapolation visibly less
+# constraining. 0.20 means +20% absolute uncertainty per unit normalized
+# nearest-data distance.
+DISTANCE_UNCERTAINTY_SLOPE = 0.20
 
 
 def ensure_validation_outputs() -> None:
@@ -195,6 +205,88 @@ def add_model_interpolations(a: pd.DataFrame, clas6: pd.DataFrame, halla: pd.Dat
     return out
 
 
+def add_local_external_field(a: pd.DataFrame, clas6: pd.DataFrame, halla: pd.DataFrame) -> pd.DataFrame:
+    """Smooth external data/VPK residual with continuous support diagnostics.
+
+    This is intentionally not a hard-hull extrapolator.  For each AAOgen cell,
+    use nearby CLAS6+Hall-A measurements in normalized (xB,Q2,-t), weighted by
+    their quoted uncertainty and a Gaussian distance kernel.  The reported
+    uncertainty contains the local quoted errors, local point-to-point scatter,
+    and a term that grows continuously with distance from the nearest external
+    measurement.
+    """
+    out=a.copy()
+    ext=pd.concat([clas6,halla],ignore_index=True)
+    xyz=ext[["xB","Q2","minus_t"]].to_numpy(float)
+    q=out[["xB","Q2","minus_t"]].to_numpy(float)
+    lo=xyz.min(axis=0); span=xyz.max(axis=0)-lo
+    span=np.where(span>0,span,1.0)
+    xn=(xyz-lo)/span; qn=(q-lo)/span
+    tree=cKDTree(xn)
+    k=min(LOCAL_K,len(ext))
+    dist,idx=tree.query(qn,k=k)
+    if k==1:
+        dist=dist[:,None]; idx=idx[:,None]
+    ratio=ext.ratio.to_numpy(float); err=ext.ratio_err.to_numpy(float)
+    vals=ratio[idx]; errs=err[idx]
+    # Avoid a point with tiny quoted uncertainty dominating the field.
+    finite_err=err[np.isfinite(err)&(err>0)]
+    err_floor=float(np.nanmedian(finite_err))*0.35 if len(finite_err) else 0.02
+    ee=np.where(np.isfinite(errs)&(errs>0),np.maximum(errs,err_floor),err_floor)
+    kw=np.exp(-0.5*(dist/LOCAL_BANDWIDTH)**2)/(ee**2)
+    sw=np.sum(kw,axis=1)
+    M=np.sum(kw*vals,axis=1)/sw
+    # Error of local weighted mean plus observed local residual scatter.
+    meas=np.sqrt(1.0/np.maximum(sw,1e-300))
+    scatter=np.sqrt(np.sum(kw*(vals-M[:,None])**2,axis=1)/np.maximum(sw,1e-300))
+    neff=(sw**2)/np.maximum(np.sum(kw**2,axis=1),1e-300)
+    scatter_mean=scatter/np.sqrt(np.maximum(neff,1.0))
+    dnear=dist[:,0]
+    extrap=DISTANCE_UNCERTAINTY_SLOPE*dnear
+    sigma=np.sqrt(meas**2+scatter_mean**2+extrap**2)
+    out["external_nearest_distance_normalized"]=dnear
+    out["external_local_M"]=M
+    out["external_local_M_unc"]=sigma
+    out["external_local_n_eff"]=neff
+    return out
+
+
+def local_fold_summary(a: pd.DataFrame) -> pd.DataFrame:
+    rows=[]
+    for (p,t),g in a.groupby(["period","photon_topology"],sort=False):
+        w=g.sum_weight.to_numpy(float); W=float(w.sum())
+        M=g.external_local_M.to_numpy(float); S=g.external_local_M_unc.to_numpy(float)
+        d=g.external_nearest_distance_normalized.to_numpy(float)
+        mean=float(np.sum(w*M)/W)
+        # Conservative population-level model uncertainty: retain the weighted
+        # cell uncertainty rather than allowing huge MC statistics to average it away.
+        unc=float(np.sqrt(np.sum(w*S**2)/W))
+        qd=weighted_quantile(d,w,[.16,.5,.84,.95])
+        rows.append({"period":p,"photon_topology":t,"sum_weight":W,
+                     "local_M_acc":mean,"local_M_acc_unc":unc,
+                     "nearest_distance_p16":qd[0],"nearest_distance_median":qd[1],
+                     "nearest_distance_p84":qd[2],"nearest_distance_p95":qd[3]})
+    return pd.DataFrame(rows)
+
+
+def robustness_efficiencies(local_fold: pd.DataFrame, topology_path: Path) -> pd.DataFrame:
+    if not topology_path.exists(): return pd.DataFrame()
+    top=pd.read_csv(topology_path)
+    top=top[(top.comparison=="raw") & top.photon_topology.isin(["FT-FT","FD-FD"])].copy()
+    z=top.merge(local_fold,on=["period","photon_topology"],how="left")
+    z["candidate_single_photon_ratio_local"]=np.sqrt(z.data_over_mc/z.local_M_acc)
+    # Model correction needed for no photon inefficiency: R = M*r^2 -> M_required=R at r=1.
+    z["M_required_for_unit_photon_efficiency"]=z.data_over_mc
+    z["required_M_shift_from_local"]=z.M_required_for_unit_photon_efficiency-z.local_M_acc
+    z["required_shift_in_local_sigma"]=np.abs(z.required_M_shift_from_local)/z.local_M_acc_unc
+    # How much VPK would have to overpredict data in the relevant accepted population.
+    z["required_vpk_overprediction_percent"]=100.0*(1.0-z.M_required_for_unit_photon_efficiency)
+    return z[["period","photon_topology","data_over_mc","stat_err","local_M_acc","local_M_acc_unc",
+              "candidate_single_photon_ratio_local","M_required_for_unit_photon_efficiency",
+              "required_M_shift_from_local","required_shift_in_local_sigma","required_vpk_overprediction_percent",
+              "nearest_distance_median","nearest_distance_p84","nearest_distance_p95"]].sort_values(["period","photon_topology"])
+
+
 def weighted_quantile(v, w, qs):
     v=np.asarray(v,float); w=np.asarray(w,float); qs=np.asarray(qs,float)
     m=np.isfinite(v)&np.isfinite(w)&(w>0)
@@ -309,11 +401,13 @@ def plot_population_projection(a, ext_c, ext_h, xcol, ycol, xlabel, ylabel, stem
     axes[0].set_ylabel(ylabel); axes[3].set_ylabel(ylabel)
     axes[0].legend(fontsize=8)
     fig.suptitle(f"Accepted RGA AAOgen {topology} population and external π⁰ structure-function coverage",y=.995)
-    # A shared colorbar communicates the accepted weighted population density.
+    # Reserve a dedicated strip at far right for the shared colorbar.  Do not
+    # let matplotlib place it over the upper-right physics panel.
+    fig.subplots_adjust(left=.07,right=.86,bottom=.08,top=.92,wspace=.08,hspace=.16)
     active=[ax for ax in axes if ax.axison]
     if active:
-        cb=fig.colorbar(hb,ax=active,shrink=.86,pad=.02); cb.set_label("Accepted AAOgen weighted population / hex")
-    fig.subplots_adjust(left=.07,right=.91,bottom=.08,top=.92,wspace=.08,hspace=.16)
+        cax=fig.add_axes([.885,.16,.018,.68])
+        cb=fig.colorbar(hb,cax=cax); cb.set_label("Accepted AAOgen weighted population / hex")
     fig.savefig(PNG/f"accepted_aao_{topology.replace(chr(45),chr(95))}_{stem}_external_coverage.png",dpi=220)
     plt.close(fig)
 
@@ -373,6 +467,77 @@ def plot_folded_M(fold):
     fig.tight_layout(); fig.savefig(PNG/"folded_external_model_correction_by_period_topology.png",dpi=220); plt.close(fig)
 
 
+def plot_external_distance(a: pd.DataFrame, topology="FT-FT"):
+    periods=[p for p in PERIOD_ORDER if p in set(a.period)]
+    fig,axes=plt.subplots(2,3,figsize=(14,9),sharex=True,sharey=True); axes=axes.ravel()
+    vmax=float(np.nanpercentile(a.loc[a.photon_topology==topology,"external_nearest_distance_normalized"],99))
+    sc=None
+    for ax,p in zip(axes,periods):
+        g=a[(a.period==p)&(a.photon_topology==topology)]
+        # Cell marker size follows accepted weight weakly; color is the actual support distance.
+        size=8+30*np.sqrt(g.sum_weight/np.nanmax(g.sum_weight))
+        sc=ax.scatter(g.xB,g.Q2,c=g.external_nearest_distance_normalized,s=size,
+                      vmin=0,vmax=vmax,alpha=.75,rasterized=True)
+        ax.set_title(p); ax.grid(alpha=.15)
+    for ax in axes[len(periods):]: ax.axis("off")
+    for ax in axes[-3:]:
+        if ax.axison: ax.set_xlabel(r"$x_B$")
+    axes[0].set_ylabel(r"$Q^2$ (GeV$^2$)"); axes[3].set_ylabel(r"$Q^2$ (GeV$^2$)")
+    fig.suptitle(f"Accepted {topology} AAOgen: continuous distance to nearest external π⁰ measurement",y=.995)
+    fig.subplots_adjust(left=.07,right=.86,bottom=.08,top=.92,wspace=.08,hspace=.16)
+    if sc is not None:
+        cax=fig.add_axes([.885,.16,.018,.68]); cb=fig.colorbar(sc,cax=cax)
+        cb.set_label("Nearest-data distance (normalized 3D kinematics)")
+    fig.savefig(PNG/f"accepted_aao_{topology.replace('-','_')}_external_distance.png",dpi=220); plt.close(fig)
+
+
+def plot_local_correction(a: pd.DataFrame, topology="FT-FT"):
+    periods=[p for p in PERIOD_ORDER if p in set(a.period)]
+    fig,axes=plt.subplots(2,3,figsize=(14,9),sharex=True,sharey=True); axes=axes.ravel()
+    vals=a.loc[a.photon_topology==topology,"external_local_M"]
+    lo,hi=np.nanpercentile(vals,[1,99]); d=max(abs(lo-1),abs(hi-1)); lo,hi=1-d,1+d
+    sc=None
+    for ax,p in zip(axes,periods):
+        g=a[(a.period==p)&(a.photon_topology==topology)]
+        size=8+30*np.sqrt(g.sum_weight/np.nanmax(g.sum_weight))
+        sc=ax.scatter(g.xB,g.Q2,c=g.external_local_M,s=size,vmin=lo,vmax=hi,alpha=.75,rasterized=True)
+        ax.set_title(p); ax.grid(alpha=.15)
+    for ax in axes[len(periods):]: ax.axis("off")
+    for ax in axes[-3:]:
+        if ax.axison: ax.set_xlabel(r"$x_B$")
+    axes[0].set_ylabel(r"$Q^2$ (GeV$^2$)"); axes[3].set_ylabel(r"$Q^2$ (GeV$^2$)")
+    fig.suptitle(f"Accepted {topology} AAOgen: smooth external data/VPK correction field",y=.995)
+    fig.subplots_adjust(left=.07,right=.86,bottom=.08,top=.92,wspace=.08,hspace=.16)
+    if sc is not None:
+        cax=fig.add_axes([.885,.16,.018,.68]); cb=fig.colorbar(sc,cax=cax); cb.set_label(r"Local $M=$ data/VPK")
+    fig.savefig(PNG/f"accepted_aao_{topology.replace('-','_')}_local_model_correction.png",dpi=220); plt.close(fig)
+
+
+def plot_robustness(r: pd.DataFrame):
+    if r.empty:return
+    s=r[r.photon_topology=="FT-FT"].copy()
+    x=np.arange(len(s)); fig,ax=plt.subplots(figsize=(9.5,5.8))
+    ax.errorbar(x,s.local_M_acc,yerr=s.local_M_acc_unc,fmt="o",capsize=4,label="Smooth external constraint")
+    ax.scatter(x,s.M_required_for_unit_photon_efficiency,marker="s",s=55,label=r"Required if $r_{FT}=1$")
+    ax.axhline(1,linewidth=1,linestyle="--")
+    ax.set_xticks(x,s.period,rotation=25,ha="right"); ax.set_ylabel(r"Accepted-population model ratio $M=$ data/VPK")
+    ax.set_title("FT robustness: external π⁰ model constraint vs correction required to remove photon inefficiency")
+    ax.grid(axis="y",alpha=.2); ax.legend(); fig.tight_layout()
+    fig.savefig(PNG/"ft_model_correction_robustness.png",dpi=220); plt.close(fig)
+
+
+def plot_distance_cdf(a: pd.DataFrame):
+    fig,ax=plt.subplots(figsize=(9,6))
+    for topology in ["FD-FD","FT-FT"]:
+        g=a[a.photon_topology==topology]
+        d=g.external_nearest_distance_normalized.to_numpy(float); w=g.sum_weight.to_numpy(float)
+        o=np.argsort(d); d=d[o]; w=w[o]; c=np.cumsum(w)/np.sum(w)
+        ax.plot(d,c,label=topology)
+    ax.set_xlabel("Nearest external-data distance (normalized 3D kinematics)"); ax.set_ylabel("Cumulative accepted AAOgen weight")
+    ax.set_ylim(0,1.01); ax.grid(alpha=.2); ax.legend(); ax.set_title("How far are accepted photon topologies from measured π⁰ kinematics?")
+    fig.tight_layout(); fig.savefig(PNG/"external_distance_cdf_by_topology.png",dpi=220); plt.close(fig)
+
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--accepted-aao",type=Path,default=DEFAULT_AAO)
@@ -385,17 +550,22 @@ def main():
     a=load_aao(args.accepted_aao)
     a=add_clas6_coverage(a,clas6)
     a=add_model_interpolations(a,clas6,halla)
+    a=add_local_external_field(a,clas6,halla)
 
-    cov=coverage_summary(a); fold=fold_summary(a)
+    cov=coverage_summary(a); fold=fold_summary(a); local_fold=local_fold_summary(a)
     cov.to_csv(OUT/"rga_external_pi0_coverage_summary.csv",index=False)
     interference=interference_closure(CLAS6_POINTS)
     interference.to_csv(OUT/"clas6_U_TT_LT_closure_summary.csv",index=False)
     fold.to_csv(OUT/"rga_vpk_fold_summary.csv",index=False)
+    local_fold.to_csv(OUT/"rga_local_external_model_fold.csv",index=False)
     a.to_csv(OUT/"accepted_aao_population_with_external_support.csv",index=False)
 
     cand=candidate_efficiencies(fold,args.topology_summary)
     if not cand.empty:
         cand.to_csv(OUT/"rga_candidate_photon_efficiency.csv",index=False)
+    robust=robustness_efficiencies(local_fold,args.topology_summary)
+    if not robust.empty:
+        robust.to_csv(OUT/"rga_photon_efficiency_robustness.csv",index=False)
 
     for topology in ["ALL","FD-FD","FT-FT"]:
         plot_population_projection(a,clas6,halla,"xB","Q2",r"$x_B$",r"$Q^2$ (GeV$^2$)","xB_Q2",topology)
@@ -404,6 +574,11 @@ def main():
     plot_1d_periods(a)
     plot_topology_coverage(cov)
     plot_folded_M(fold)
+    for topology in ["FD-FD","FT-FT"]:
+        plot_external_distance(a,topology)
+        plot_local_correction(a,topology)
+    plot_distance_cdf(a)
+    plot_robustness(robust)
 
     print("\n=== RGA accepted-AAOgen external pi0 coverage ===")
     show=cov[cov.photon_topology=="ALL"][["period","raw_events","Q2_median_GeV2","clas6_interpolation_fraction","clas6_near_boundary_fraction","clas6_outside_fraction"]]
@@ -414,6 +589,9 @@ def main():
     print(fold[fold.photon_topology.isin(["ALL","FT-FT","FD-FD"])].to_string(index=False,formatters={
         "clas6_supported_weight_fraction":"{:.3f}".format,"clas6_M_acc_supported":"{:.3f}".format,
         "clas6_halla_supported_weight_fraction":"{:.3f}".format,"clas6_halla_M_acc_supported":"{:.3f}".format}))
+    if not robust.empty:
+        print("\n=== Smooth-field robustness test (all accepted kinematics) ===")
+        print(robust.to_string(index=False))
     if not cand.empty:
         print("\n=== Candidate single-photon residuals (diagnostic; support fraction shown) ===")
         print(cand.to_string(index=False))
