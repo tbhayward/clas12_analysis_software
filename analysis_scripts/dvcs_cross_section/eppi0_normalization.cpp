@@ -165,6 +165,21 @@ struct PhotonTopologyNormalization {
     std::map<std::string, SummaryRatioCurve> ratio_curves;
 };
 
+struct ControlledTopologyResult {
+    std::string topology;
+    double controlled_ratio = 0.0;
+    double controlled_ratio_err = 0.0;
+    double data_support_fraction = 0.0;
+    double mc_support_fraction = 0.0;
+};
+
+struct ControlledTopologyComparison {
+    int min_raw_events_per_sample = 0;
+    int common_cells = 0;
+    double closure = 0.0;
+    std::map<std::string, ControlledTopologyResult> topologies;
+};
+
 struct PeriodNormalization {
     std::string period;
     double integrated_ratio = 1.0;
@@ -172,6 +187,8 @@ struct PeriodNormalization {
     std::map<std::string, RegionNormalization> regions;
     std::map<std::string, SummaryRatioCurve> summary_ratio_curves;
     std::map<std::string, PhotonTopologyNormalization> photon_topologies;
+    ControlledTopologyComparison controlled_nominal;
+    ControlledTopologyComparison controlled_strict;
 };
 
 static void fatal(const std::string& msg);
@@ -2706,6 +2723,130 @@ static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
               << " current_model=event_by_event_regional" << std::endl;
 }
 
+
+struct TopologyCellAccum {
+    double sumw = 0.0;
+    double sumw2 = 0.0;
+    long long raw_events = 0;
+};
+
+struct TopologyKinematicGrid {
+    // Deliberately coarse.  The purpose is common-support control, not a fine
+    // differential measurement.  All three photon topologies must populate a
+    // cell before it can enter the controlled comparison.
+    static constexpr int NX = 7;
+    static constexpr int NQ = 6;
+    static constexpr int NT = 5;
+    static constexpr int NCELL = NX * NQ * NT;
+    std::map<std::string, std::array<TopologyCellAccum, NCELL>> cells;
+
+    TopologyKinematicGrid() {
+        for (const std::string& topo : photon_pair_topologies()) cells[topo] = {};
+    }
+
+    static int index(double x, double q2, double tabs) {
+        if (!(std::isfinite(x) && std::isfinite(q2) && std::isfinite(tabs))) return -1;
+        if (x < 0.0 || x >= 0.7 || q2 < 1.0 || q2 >= 7.0 || tabs < 0.0 || tabs >= 1.0) return -1;
+        const int ix = std::min(NX - 1, static_cast<int>(x / 0.1));
+        const int iq = std::min(NQ - 1, static_cast<int>((q2 - 1.0) / 1.0));
+        const int it = std::min(NT - 1, static_cast<int>(tabs / 0.2));
+        return (ix * NQ + iq) * NT + it;
+    }
+};
+
+static void fill_eppi0_photon_topology_grid(const ChannelConfig& cfg,
+                                             const PeriodTags& tags,
+                                             TTree* tree,
+                                             const TopoCutMap& cuts,
+                                             const CurrentResponseModel& current_model,
+                                             bool is_data,
+                                             double event_norm,
+                                             TopologyKinematicGrid& grid) {
+    if (!tree) return;
+    Branches b; b.bind(tree, !is_data);
+    if (!(b.has_detector_gamma1 && b.has_detector_gamma2 && b.has_x && b.has_Q2 && b.has_t1)) return;
+    const Long64_t N = tree->GetEntries();
+    for (Long64_t i = 0; i < N; ++i) {
+        tree->GetEntry(i);
+        if (!passes_event_selection(cfg, tags, cuts, b)) continue;
+        const std::string topo = photon_pair_topology(b);
+        if (topo.empty()) continue;
+        const int cell = TopologyKinematicGrid::index(b.x, b.Q2, std::fabs(b.t1));
+        if (cell < 0) continue;
+        bool skip = false;
+        const double cw = eppi0_event_current_weight(current_model, tags.display, b, is_data, skip);
+        if (skip) continue;
+        const double w = is_data ? cw : event_norm * cw;
+        TopologyCellAccum& a = grid.cells[topo][cell];
+        a.sumw += w;
+        a.sumw2 += w * w;
+        ++a.raw_events;
+    }
+}
+
+static ControlledTopologyComparison make_controlled_topology_comparison(
+        const TopologyKinematicGrid& data,
+        const TopologyKinematicGrid& mc,
+        int min_raw_events_per_sample) {
+    ControlledTopologyComparison out;
+    out.min_raw_events_per_sample = min_raw_events_per_sample;
+    std::vector<int> support;
+    for (int k = 0; k < TopologyKinematicGrid::NCELL; ++k) {
+        bool ok = true;
+        for (const std::string& topo : photon_pair_topologies()) {
+            const auto& d = data.cells.at(topo)[k];
+            const auto& m = mc.cells.at(topo)[k];
+            if (d.raw_events < min_raw_events_per_sample || m.raw_events < min_raw_events_per_sample ||
+                !(d.sumw > 0.0) || !(m.sumw > 0.0)) { ok = false; break; }
+        }
+        if (ok) support.push_back(k);
+    }
+    out.common_cells = static_cast<int>(support.size());
+    if (support.empty()) return out;
+
+    // One topology-neutral reference population: the combined reconstructed
+    // AAOgen yield in each common cell.  The same normalized f_k is then used
+    // for FT-FT, FT-FD and FD-FD.  Data never determine these weights.
+    double ref_total = 0.0;
+    std::vector<double> ref(support.size(), 0.0);
+    for (size_t j = 0; j < support.size(); ++j) {
+        for (const std::string& topo : photon_pair_topologies()) ref[j] += mc.cells.at(topo)[support[j]].sumw;
+        ref_total += ref[j];
+    }
+    if (!(ref_total > 0.0)) return out;
+
+    for (const std::string& topo : photon_pair_topologies()) {
+        ControlledTopologyResult r; r.topology = topo;
+        double var = 0.0, d_all = 0.0, d_sup = 0.0, m_all = 0.0, m_sup = 0.0;
+        for (int k = 0; k < TopologyKinematicGrid::NCELL; ++k) {
+            d_all += data.cells.at(topo)[k].sumw;
+            m_all += mc.cells.at(topo)[k].sumw;
+        }
+        for (size_t j = 0; j < support.size(); ++j) {
+            const int k = support[j];
+            const auto& d = data.cells.at(topo)[k];
+            const auto& m = mc.cells.at(topo)[k];
+            const double fk = ref[j] / ref_total;
+            const double rk = d.sumw / m.sumw;
+            const double rel_d2 = d.sumw2 / (d.sumw * d.sumw);
+            const double rel_m2 = m.sumw2 / (m.sumw * m.sumw);
+            const double erk = std::fabs(rk) * std::sqrt(std::max(0.0, rel_d2 + rel_m2));
+            r.controlled_ratio += fk * rk;
+            var += fk * fk * erk * erk;
+            d_sup += d.sumw; m_sup += m.sumw;
+        }
+        r.controlled_ratio_err = std::sqrt(std::max(0.0, var));
+        r.data_support_fraction = d_all > 0.0 ? d_sup / d_all : 0.0;
+        r.mc_support_fraction = m_all > 0.0 ? m_sup / m_all : 0.0;
+        out.topologies[topo] = r;
+    }
+    const double rtt = out.topologies["FT-FT"].controlled_ratio;
+    const double rtf = out.topologies["FT-FD"].controlled_ratio;
+    const double rff = out.topologies["FD-FD"].controlled_ratio;
+    if (rtt > 0.0 && rff > 0.0) out.closure = rtf * rtf / (rtt * rff);
+    return out;
+}
+
 static void fill_eppi0_photon_topology_hists(const ChannelConfig& cfg,
                                                const PeriodTags& tags,
                                                TTree* tree,
@@ -2770,10 +2911,14 @@ static PhotonTopologyNormalization make_photon_topology_normalization(
     for (const std::string& key : {std::string("x"), std::string("Q2"), std::string("minus_t1")}) {
         VarConfig vc;
         for (const VarConfig& v : variable_configs()) if (v.key == key) { vc = v; break; }
-        out.ratio_curves[key] = make_summary_ratio_curve(period + " " + topology,
-                                                          vc,
-                                                          data.hists.at(key),
-                                                          mc.hists.at(key));
+        const int rebin = (key == "x") ? 5 : ((key == "Q2") ? 3 : 4);
+        TH1D* hd = static_cast<TH1D*>(data.hists.at(key)[0]->Clone(("coarse_d_" + period_dir(period) + "_" + topology + "_" + key).c_str()));
+        TH1D* hm = static_cast<TH1D*>(mc.hists.at(key)[0]->Clone(("coarse_m_" + period_dir(period) + "_" + topology + "_" + key).c_str()));
+        hd->SetDirectory(nullptr); hm->SetDirectory(nullptr);
+        hd->Rebin(rebin); hm->Rebin(rebin);
+        std::vector<TH1D*> vd{hd}, vm{hm};
+        out.ratio_curves[key] = make_summary_ratio_curve(period + " " + topology, vc, vd, vm);
+        delete hd; delete hm;
     }
     return out;
 }
@@ -2853,6 +2998,16 @@ static PeriodNormalization run_period_normalization(const std::string& period,
             period, topo, photon_topo_data.at(topo), photon_topo_mc.at(topo),
             photon_topo_data_counts[topo], photon_topo_mc_counts[topo]);
     }
+
+    TopologyKinematicGrid topology_grid_data, topology_grid_mc;
+    fill_eppi0_photon_topology_grid(epi, tags, data_tree, data_cuts, current_model,
+                                    true, 1.0, topology_grid_data);
+    fill_eppi0_photon_topology_grid(epi, tags, rec_tree, mc_cuts, current_model,
+                                    false, event_norm, topology_grid_mc);
+    const ControlledTopologyComparison controlled_nominal =
+        make_controlled_topology_comparison(topology_grid_data, topology_grid_mc, 10);
+    const ControlledTopologyComparison controlled_strict =
+        make_controlled_topology_comparison(topology_grid_data, topology_grid_mc, 20);
 
     std::map<std::string, SummaryRatioCurve> summary_ratio_curves;
 
@@ -3034,6 +3189,8 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     out.regions = region_norms;
     out.summary_ratio_curves = summary_ratio_curves;
     out.photon_topologies = photon_topology_norms;
+    out.controlled_nominal = controlled_nominal;
+    out.controlled_strict = controlled_strict;
 
     for (auto& kv : photon_topo_data) delete_hist_set(kv.second);
     for (auto& kv : photon_topo_mc) delete_hist_set(kv.second);
@@ -3890,7 +4047,7 @@ static void write_photon_topology_summary_csv(const std::string& output_dir,
     const std::string path = dir + "/photon_topology_summary.csv";
     std::ofstream out(path.c_str());
     if (!out.is_open()) fatal("[eppi0_norm] FATAL: could not write photon topology summary: " + path);
-    out << "period,photon_topology,data_events,mc_events,integrated_data_over_mc,integrated_stat_err,factorization_double_ratio\n";
+    out << "period,comparison,photon_topology,data_events,mc_events,data_over_mc,stat_err,factorization_double_ratio,common_cells,data_support_fraction,mc_support_fraction,min_raw_events_per_sample\n";
     out << std::setprecision(12);
     for (const PeriodNormalization& pn : norms) {
         double rtt = 0.0, rtf = 0.0, rff = 0.0;
@@ -3902,8 +4059,24 @@ static void write_photon_topology_summary_csv(const std::string& output_dir,
         for (const std::string& topo : photon_pair_topologies()) {
             auto it=pn.photon_topologies.find(topo); if (it==pn.photon_topologies.end()) continue;
             const auto& x=it->second;
-            out << '"' << pn.period << "\",\"" << topo << "\"," << x.data_events << "," << x.mc_events
-                << "," << x.integrated_ratio << "," << x.integrated_ratio_err << "," << closure << "\n";
+            out << '"' << pn.period << "\",raw,\"" << topo << "\"," << x.data_events << "," << x.mc_events
+                << "," << x.integrated_ratio << "," << x.integrated_ratio_err << "," << closure
+                << ",0,1,1,0\n";
+        }
+        for (const auto& named : std::vector<std::pair<std::string, const ControlledTopologyComparison*>>{
+                 {"controlled_nominal", &pn.controlled_nominal}, {"controlled_strict", &pn.controlled_strict}}) {
+            const auto& cc = *named.second;
+            for (const std::string& topo : photon_pair_topologies()) {
+                auto it = cc.topologies.find(topo); if (it == cc.topologies.end()) continue;
+                const auto& r = it->second;
+                auto raw = pn.photon_topologies.find(topo);
+                const long long nd = raw == pn.photon_topologies.end() ? 0 : raw->second.data_events;
+                const long long nm = raw == pn.photon_topologies.end() ? 0 : raw->second.mc_events;
+                out << '"' << pn.period << "\"," << named.first << ",\"" << topo << "\"," << nd << "," << nm
+                    << "," << r.controlled_ratio << "," << r.controlled_ratio_err << "," << cc.closure
+                    << "," << cc.common_cells << "," << r.data_support_fraction << "," << r.mc_support_fraction
+                    << "," << cc.min_raw_events_per_sample << "\n";
+            }
         }
     }
     std::cout << "[eppi0_norm] Wrote photon-pair topology summary: " << path << std::endl;
@@ -3930,6 +4103,15 @@ static void draw_photon_topology_summary_canvases(const std::string& output_dir,
         for (const std::string& topo:photon_pair_topologies()) { auto it=pn.photon_topologies.find(topo); if(it==pn.photon_topologies.end()) continue; gi->SetPoint(ip,ip+0.5,it->second.integrated_ratio); gi->SetPointError(ip,0,it->second.integrated_ratio_err); ++ip; }
         gi->SetMarkerStyle(20); gi->Draw("PE SAME");
         TLine* l1=new TLine(0,1,3,1); l1->SetLineStyle(2); l1->Draw("SAME");
+        TGraphErrors* gc=new TGraphErrors(); keep.push_back(gc); ip=0;
+        for (const std::string& topo:photon_pair_topologies()) {
+            auto it=pn.controlled_nominal.topologies.find(topo); if(it==pn.controlled_nominal.topologies.end()) continue;
+            gc->SetPoint(ip,ip+0.62,it->second.controlled_ratio);
+            gc->SetPointError(ip,0,it->second.controlled_ratio_err); ++ip;
+        }
+        gc->SetMarkerStyle(24); gc->Draw("PE SAME");
+        TLegend* ileg=new TLegend(0.58,0.74,0.92,0.90); ileg->SetBorderSize(0); ileg->SetFillStyle(0);
+        ileg->AddEntry(gi,"raw","pe"); ileg->AddEntry(gc,"controlled (common x_{B}, Q^{2}, -t)","pe"); ileg->Draw();
         for (int ik=0;ik<3;++ik) {
             can.cd(ik+2); gPad->SetGrid(1,1);
             double xmin=1e99,xmax=-1e99;
