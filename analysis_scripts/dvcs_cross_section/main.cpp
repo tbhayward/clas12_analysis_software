@@ -316,6 +316,9 @@ int main(int argc, char* argv[]) {
         norm_opts.normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
         norm_opts.output_dir = "output/data_mc_normalization";
         norm_opts.override_to_unity = false;
+        norm_opts.clean_output_dir = true;
+        norm_opts.current_response_model_json =
+            "output/dvcs_current_dependence/calibration/current_response_model.json";
         norm_opts.write_normalized_yields = false;
         norm_opts.write_summary_csv = true;
         norm_opts.summary_csv_path =

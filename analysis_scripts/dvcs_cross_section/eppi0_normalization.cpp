@@ -23,11 +23,13 @@
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
 #include <fstream>
+#include <filesystem>
 #include <iomanip>
 #include <iostream>
 #include <limits>
@@ -38,6 +40,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -1258,7 +1261,7 @@ static std::vector<VarConfig> variable_configs() {
         {"minus_t1", "-t", "-t (GeV^{2})", 0, 3, 1},
         {"Mx2", "M_{X}^{2}", "M_{X}^{2} (GeV^{2})", 0, 3, 1},
         {"theta", "#theta", "#theta (rad)", 0, 3, 1},
-        {"theta_gamma_gamma", "#theta_{#gamma#gamma}", "#theta_{#gamma#gamma} (rad)", 0, 3, 1},
+        {"theta_pi0_pi0", "#theta_{#pi^{0}#pi^{0}}", "#theta_{#pi^{0}#pi^{0}} (rad)", 0, 3, 1},
         {"Emiss2", "E_{miss}^{2}", "E_{miss}^{2} (GeV^{2})", 0, 3, 1},
         {"Delta_phi", "#Delta#phi", "#Delta#phi (rad)", 0, 3, 1},
         {"Mx2_2", "M_{X}^{2}(e#gamma)", "M_{X}^{2}(e#gamma) (GeV^{2})", 0, 3, 1},
@@ -1327,7 +1330,7 @@ static double value_for_var(const VarConfig& v, const Branches& b) {
         if (v.key == "minus_t1") return -b.t1;
         if (v.key == "Mx2") return b.Mx2;
         if (v.key == "theta") return b.theta;
-        if (v.key == "theta_gamma_gamma") return b.theta_pi0_pi0;
+        if (v.key == "theta_pi0_pi0") return b.theta_pi0_pi0;
         if (v.key == "Emiss2") return b.Emiss2;
         if (v.key == "Delta_phi") { bool has=false; return b.delta_phi_value(has); }
         if (v.key == "Mx2_2") return b.Mx2_2;
@@ -1357,7 +1360,7 @@ static int nbins_for_panel(const VarConfig& v, int panel) {
         if (v.key == "minus_t1") return 40;
         if (v.key == "Mx2") return 60;
         if (v.key == "theta") return 60;
-        if (v.key == "theta_gamma_gamma") return 60;
+        if (v.key == "theta_pi0_pi0") return 60;
         if (v.key == "Emiss2") return 60;
         if (v.key == "Delta_phi") return 60;
         if (v.key == "Mx2_2") return 60;
@@ -1400,7 +1403,7 @@ static void range_for_panel(const VarConfig& v, int panel, double& xmin, double&
             return;
         }
 
-        if (v.key == "theta" || v.key == "theta_gamma_gamma") {
+        if (v.key == "theta" || v.key == "theta_pi0_pi0") {
             xmin = 0.0; xmax = 0.2; return;
         }
         if (v.key == "Emiss2") {
@@ -2324,7 +2327,7 @@ static void plot_variable(const std::string& outdir,
     if (v.kind == 3) {
         subdir = outdir + "/kinematics";
     } else {
-        subdir = outdir + ((v.particle == 1) ? "/p1" : "/p2");
+        subdir = outdir + ((v.particle == 1) ? "/proton" : "/pi0");
     }
 
     mkdir_p(subdir);
@@ -2389,6 +2392,180 @@ static void plot_variable(const std::string& outdir,
 }
 
 // -----------------------------------------------------------------------------
+// Production current-response model
+// -----------------------------------------------------------------------------
+
+static constexpr int kCurrentRegionCount = 7;
+
+static const std::array<std::string, kCurrentRegionCount>& current_region_names() {
+    static const std::array<std::string, kCurrentRegionCount> names = {
+        "FT", "S1", "S2", "S3", "S4", "S5", "S6"
+    };
+    return names;
+}
+
+static int current_region_index(int detector2, double p2_phi_rad, bool has_p2_phi) {
+    if (detector2 == 0) return 0;
+    if (detector2 != 1 || !has_p2_phi || !std::isfinite(p2_phi_rad)) return -1;
+    double phi = std::fmod(p2_phi_rad * RAD2DEG, 360.0);
+    if (phi < 0.0) phi += 360.0;
+    int sector = 0;
+    if (phi >= 330.0 || phi < 30.0) sector = 1;
+    else if (phi < 90.0) sector = 2;
+    else if (phi < 150.0) sector = 3;
+    else if (phi < 210.0) sector = 4;
+    else if (phi < 270.0) sector = 5;
+    else if (phi < 330.0) sector = 6;
+    return (sector >= 1 && sector <= 6) ? sector : -1;
+}
+
+struct CurrentResponseEntry {
+    bool valid = false;
+    double parameter = std::numeric_limits<double>::quiet_NaN();
+    bool has_angular_model = false;
+    double angular_center = 0.0;
+    double angular_gradient = 0.0;
+};
+
+struct CurrentResponseModel {
+    std::map<std::string, std::map<std::string, std::array<CurrentResponseEntry, kCurrentRegionCount>>> data;
+    std::map<std::string, std::map<std::string, std::array<CurrentResponseEntry, kCurrentRegionCount>>> mc;
+    std::map<std::string, std::unordered_map<int, int>> run_current_nA;
+    std::map<std::string, std::unordered_set<int>> excluded_data_runs;
+};
+
+static CurrentResponseModel load_current_response_model(const std::string& path) {
+    std::ifstream fin(path);
+    if (!fin.is_open()) fatal("[eppi0_norm] FATAL: cannot open current-response model JSON: " + path);
+    nlohmann::json j; fin >> j;
+    CurrentResponseModel model;
+
+    auto load_block = [&](const char* sample, auto& dst, const char* value_key) {
+        if (!j.contains(sample) || !j[sample].is_object()) return;
+        for (auto ch = j[sample].begin(); ch != j[sample].end(); ++ch) {
+            for (auto per = ch.value().begin(); per != ch.value().end(); ++per) {
+                std::array<CurrentResponseEntry, kCurrentRegionCount> arr{};
+                for (int ir = 0; ir < kCurrentRegionCount; ++ir) {
+                    const std::string& rn = current_region_names()[ir];
+                    if (!per.value().contains(rn)) continue;
+                    const auto& e = per.value()[rn];
+                    if (!e.contains(value_key)) continue;
+                    const double v = e[value_key].get<double>();
+                    if (!std::isfinite(v)) continue;
+                    arr[ir].valid = true;
+                    arr[ir].parameter = v;
+                    if (std::string(sample) == "data" && e.contains("angular_model") && e["angular_model"].is_object()) {
+                        const auto& a = e["angular_model"];
+                        if (a.value("variable", std::string()) == "e_theta") {
+                            const double center = a.value("center", std::numeric_limits<double>::quiet_NaN());
+                            const double grad = a.value("gradient_per_nA_per_deg", std::numeric_limits<double>::quiet_NaN());
+                            if (std::isfinite(center) && std::isfinite(grad)) {
+                                arr[ir].has_angular_model = true;
+                                arr[ir].angular_center = center;
+                                arr[ir].angular_gradient = grad;
+                            }
+                        }
+                    }
+                }
+                dst[ch.key()][per.key()] = arr;
+            }
+        }
+    };
+    load_block("data", model.data, "relative_slope_per_nA");
+    load_block("mc", model.mc, "reference_factor");
+
+    if (j.contains("run_current_nA")) {
+        for (auto per = j["run_current_nA"].begin(); per != j["run_current_nA"].end(); ++per)
+            for (auto rr = per.value().begin(); rr != per.value().end(); ++rr)
+                model.run_current_nA[per.key()][std::stoi(rr.key())] = rr.value().get<int>();
+    }
+    if (j.contains("excluded_data_runs")) {
+        for (auto per = j["excluded_data_runs"].begin(); per != j["excluded_data_runs"].end(); ++per)
+            for (auto rr = per.value().begin(); rr != per.value().end(); ++rr)
+                model.excluded_data_runs[per.key()].insert(std::stoi(rr.key()));
+    }
+    return model;
+}
+
+template <typename Table>
+static const CurrentResponseEntry* find_current_response_entry(
+    const Table& table, const std::string& channel, const std::string& period, int region) {
+    auto ic = table.find(channel);
+    if (ic == table.end()) return nullptr;
+    auto ip = ic->second.find(period);
+    if (ip == ic->second.end() || region < 0 || region >= kCurrentRegionCount) return nullptr;
+    return &ip->second[region];
+}
+
+static double eppi0_event_current_weight(const CurrentResponseModel& model,
+                                         const std::string& period,
+                                         const Branches& b,
+                                         bool is_data,
+                                         bool& skip) {
+    skip = false;
+    const int region = current_region_index(b.detector2, b.p2_phi, b.has_p2_phi);
+    if (region < 0) fatal("[eppi0_norm] FATAL: cannot determine photon current-response region.");
+
+    if (is_data) {
+        const CurrentResponseEntry* e = find_current_response_entry(model.data, "ep->eppi0", period, region);
+        if (!e || !e->valid) fatal("[eppi0_norm] FATAL: missing DATA ep->eppi0 current response for " + period + "/" + current_region_names()[region]);
+        auto ip = model.run_current_nA.find(period);
+        if (ip == model.run_current_nA.end()) fatal("[eppi0_norm] FATAL: missing run-current map for " + period);
+        auto ir = ip->second.find(b.runnum);
+        if (ir == ip->second.end()) {
+            auto ie = model.excluded_data_runs.find(period);
+            if (ie != model.excluded_data_runs.end() && ie->second.count(b.runnum)) { skip = true; return 0.0; }
+            fatal("[eppi0_norm] FATAL: run " + std::to_string(b.runnum) + " has no current assignment for " + period);
+        }
+        double slope = e->parameter;
+        if (e->has_angular_model) {
+            if (!b.has_e_theta || !std::isfinite(b.e_theta)) fatal("[eppi0_norm] FATAL: angular current model requires e_theta.");
+            slope += e->angular_gradient * (b.e_theta * RAD2DEG - e->angular_center);
+        }
+        const double response = 1.0 + slope * static_cast<double>(ir->second);
+        if (!(std::isfinite(response) && response > 0.0)) fatal("[eppi0_norm] FATAL: non-positive DATA current response.");
+        return 1.0 / response;
+    }
+
+    const CurrentResponseEntry* e = find_current_response_entry(model.mc, "ep->eppi0", period, region);
+    if (!e || !e->valid || !(e->parameter > 0.0)) fatal("[eppi0_norm] FATAL: missing MC ep->eppi0 current response for " + period + "/" + current_region_names()[region]);
+    return 1.0 / e->parameter;
+}
+
+static void draw_kinematics_overview_canvases(const std::string& outdir,
+                                                const std::string& period,
+                                                const HistSet& data,
+                                                const HistSet& mc) {
+    mkdir_p(outdir);
+    std::vector<VarConfig> vars;
+    for (const VarConfig& v : variable_configs()) if (v.kind == 3) vars.push_back(v);
+    if (vars.empty()) return;
+
+    const int nx = 2;
+    const int ny = static_cast<int>((vars.size() + 1) / 2);
+    TCanvas ccmp(("c_kin_overview_cmp_" + period_dir(period)).c_str(), "", 1500, 320 * ny);
+    ccmp.Divide(nx, ny, 0.002, 0.002);
+    for (size_t i = 0; i < vars.size(); ++i) {
+        const VarConfig& v = vars[i];
+        ccmp.cd(static_cast<int>(i) + 1);
+        const auto yr = y_range_for_panel(v, data.hists.at(v.key), mc.hists.at(v.key), 0, false);
+        draw_comparison_panel(period, v, data.hists.at(v.key)[0], mc.hists.at(v.key)[0], 0, yr, false);
+    }
+    ccmp.SaveAs((outdir + "/kinematics_data_mc_overview.png").c_str());
+
+    TCanvas crat(("c_kin_overview_ratio_" + period_dir(period)).c_str(), "", 1500, 320 * ny);
+    crat.Divide(nx, ny, 0.002, 0.002);
+    for (size_t i = 0; i < vars.size(); ++i) {
+        const VarConfig& v = vars[i];
+        std::vector<TGraphErrors*> gr = make_ratio_graphs(data.hists.at(v.key), mc.hists.at(v.key));
+        crat.cd(static_cast<int>(i) + 1);
+        draw_ratio_panel(period, v, gr[0], 0, nullptr);
+        for (TGraphErrors* g : gr) delete g;
+    }
+    crat.SaveAs((outdir + "/kinematics_data_over_mc_overview.png").c_str());
+}
+
+// -----------------------------------------------------------------------------
 // Period data/MC normalization histograms
 // -----------------------------------------------------------------------------
 
@@ -2448,36 +2625,26 @@ static void fill_eppi0_data_hists_analysis(const ChannelConfig& cfg,
                                            const PeriodTags& tags,
                                            TTree* tree,
                                            const TopoCutMap& data_cuts,
-                                           double current_factor,
+                                           const CurrentResponseModel& current_model,
                                            HistSet& hists) {
-    if (!tree) {
-        return;
-    }
-
-    Branches b;
-    b.bind(tree, false);
-
+    if (!tree) return;
+    Branches b; b.bind(tree, false);
     const Long64_t N = tree->GetEntries();
-    const double w = 1.0 / current_factor;
-
-    long long n_pass = 0;
-
+    long long n_pass = 0, n_current_skip = 0;
+    double sum_weight = 0.0;
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
-
-        if (!passes_event_selection(cfg, tags, data_cuts, b)) {
-            continue;
-        }
-
-        ++n_pass;
-        fill_hist_set(hists, b, w);
+        if (!passes_event_selection(cfg, tags, data_cuts, b)) continue;
+        bool skip = false;
+        const double w = eppi0_event_current_weight(current_model, tags.display, b, true, skip);
+        if (skip) { ++n_current_skip; continue; }
+        ++n_pass; sum_weight += w; fill_hist_set(hists, b, w);
     }
-
     std::cout << "[eppi0_norm] analysis DATA " << tags.display
-              << " entries=" << (long long)N
-              << " pass=" << n_pass
-              << " current_factor=" << current_factor
-              << std::endl;
+              << " entries=" << (long long)N << " pass=" << n_pass
+              << " current_skipped=" << n_current_skip
+              << " sum_current_weight=" << sum_weight
+              << " current_model=event_by_event_regional" << std::endl;
 }
 
 static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
@@ -2485,42 +2652,24 @@ static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
                                          TTree* tree,
                                          const TopoCutMap& mc_cuts,
                                          double event_norm,
-                                         double current_factor,
+                                         const CurrentResponseModel& current_model,
                                          HistSet& hists) {
-    if (!tree) {
-        return;
-    }
-
-    Branches b;
-    b.bind(tree, true);
-
+    if (!tree) return;
+    Branches b; b.bind(tree, true);
     const Long64_t N = tree->GetEntries();
-
-    long long n_pass = 0;
-    double sum_weight = 0.0;
-
+    long long n_pass = 0; double sum_weight = 0.0;
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
-
-        if (!passes_event_selection(cfg, tags, mc_cuts, b)) {
-            continue;
-        }
-
-        ++n_pass;
-
-        const double w = event_norm / current_factor;
-
-        fill_hist_set(hists, b, w);
-        sum_weight += w;
+        if (!passes_event_selection(cfg, tags, mc_cuts, b)) continue;
+        bool skip = false;
+        const double current_w = eppi0_event_current_weight(current_model, tags.display, b, false, skip);
+        const double w = event_norm * current_w;
+        ++n_pass; sum_weight += w; fill_hist_set(hists, b, w);
     }
-
     std::cout << "[eppi0_norm] analysis MC " << tags.display
-              << " entries=" << (long long)N
-              << " pass=" << n_pass
-              << " sum_weight=" << sum_weight
-              << " event_norm=" << event_norm
-              << " current_factor=" << current_factor
-              << std::endl;
+              << " entries=" << (long long)N << " pass=" << n_pass
+              << " sum_weight=" << sum_weight << " event_norm=" << event_norm
+              << " current_model=event_by_event_regional" << std::endl;
 }
 
 static PeriodNormalization run_period_normalization(const std::string& period,
@@ -2531,7 +2680,8 @@ static PeriodNormalization run_period_normalization(const std::string& period,
                                                     const TopoCutMap& data_cuts,
                                                     const TopoCutMap& mc_cuts,
                                                     const std::string& output_dir,
-                                                    const std::string& normalization_json_path) {
+                                                    const std::string& normalization_json_path,
+                                                    const CurrentResponseModel& current_model) {
     const ChannelConfig epi = eppi0_config();
     const PeriodTags parsed = parse_period_from_key(period);
 
@@ -2539,9 +2689,6 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     tags.display = period;
     tags.period_label = parsed.period_label;
     tags.period_code = parsed.period_code;
-
-    const double data_eff = read_current_factor_value(csv, epi, "exp", period);
-    const double mc_eff = read_current_factor_value(csv, epi, "mc", period);
 
     const double q_raw = data_charge_for_tree(data_tree, charge_map);
     const double q_mc = q_raw * CHARGE_TO_MC_FACTOR;
@@ -2559,7 +2706,7 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     norm_info.n_gen = n_gen;
     norm_info.event_norm = event_norm;
 
-    const std::string period_root = output_dir + "/" + period_dir(period);
+    const std::string period_root = output_dir + "/periods/" + period_dir(period);
     mkdir_p(period_root);
 
     HistSet ana_data = make_hist_set("ana_data_" + period_dir(period));
@@ -2569,7 +2716,7 @@ static PeriodNormalization run_period_normalization(const std::string& period,
                                    tags,
                                    data_tree,
                                    data_cuts,
-                                   data_eff,
+                                   current_model,
                                    ana_data);
 
     fill_eppi0_mc_hists_analysis(epi,
@@ -2577,7 +2724,7 @@ static PeriodNormalization run_period_normalization(const std::string& period,
                                  rec_tree,
                                  mc_cuts,
                                  event_norm,
-                                 mc_eff,
+                                 current_model,
                                  ana_mc);
 
     std::map<std::string, SummaryRatioCurve> summary_ratio_curves;
@@ -2592,6 +2739,9 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     }
 
     for (const VarConfig& v : variable_configs()) {
+        // Kinematic variables are collected into compact overview canvases below.
+        // Keep particle-level variables as sector/topology canvases.
+        if (v.kind == 3) continue;
         plot_variable(period_root,
                       period,
                       v,
@@ -2600,6 +2750,11 @@ static PeriodNormalization run_period_normalization(const std::string& period,
                       norm_info,
                       nullptr);
     }
+
+    draw_kinematics_overview_canvases(period_root + "/kinematics",
+                                      period,
+                                      ana_data,
+                                      ana_mc);
 
     std::map<std::string, TH1D*> h_data_fit;
     std::map<std::string, TH1D*> h_mc_fit;
@@ -2698,8 +2853,9 @@ static PeriodNormalization run_period_normalization(const std::string& period,
 
     if (dbg.is_open()) {
         dbg << "period " << period << "\n";
-        dbg << "data_current_factor " << std::setprecision(12) << data_eff << "\n";
-        dbg << "mc_current_factor " << std::setprecision(12) << mc_eff << "\n";
+        dbg << "current_correction event_by_event_regional_production_model\n";
+        dbg << "current_response_model_json production calibration\n";
+        dbg << "krishna_proton_efficiency_applied false\n";
         dbg << "data_charge_nC " << std::setprecision(12) << q_raw << "\n";
         dbg << "charge_to_mc_factor " << std::setprecision(12) << CHARGE_TO_MC_FACTOR << "\n";
         dbg << "integrated_luminosity_pb_inv " << std::setprecision(12) << lint << "\n";
@@ -2740,8 +2896,7 @@ static PeriodNormalization run_period_normalization(const std::string& period,
               << " regional_cubic_fits=" << region_norms.size()
               << " integrated_ratio=" << ratio
               << " +/- " << ratio_err
-              << " data_eff=" << data_eff
-              << " mc_eff=" << mc_eff
+              << " current_model=event_by_event_regional"
               << " sigma_mid_microbarn=" << aao_input.sigma_mid_microbarn
               << " n_gen=" << n_gen
               << " event_norm=" << event_norm
@@ -3684,6 +3839,13 @@ bool update_eppi0_normalization_csv(
 
         std::vector<PeriodNormalization> norms;
 
+        if (options.clean_output_dir && !options.override_to_unity) {
+            std::error_code ec;
+            std::filesystem::remove_all(options.output_dir, ec);
+            if (ec) fatal("[eppi0_norm] FATAL: failed to clean output directory '" + options.output_dir + "': " + ec.message());
+            std::cout << "[eppi0_norm] Cleared stale diagnostic output: " << options.output_dir << std::endl;
+        }
+
         if (options.override_to_unity) {
             std::cout << "[eppi0_norm] Override enabled: using unity eppi0 normalization polynomial."
                       << std::endl;
@@ -3691,6 +3853,10 @@ bool update_eppi0_normalization_csv(
             norms = unity_norms();
         } else {
             mkdir_p(options.output_dir);
+            const CurrentResponseModel current_model =
+                load_current_response_model(options.current_response_model_json);
+            std::cout << "[eppi0_norm] Loaded production current-response model: "
+                      << options.current_response_model_json << std::endl;
 
             const std::unordered_map<int, double> charge_map =
                 read_charge_csv(options.charge_csv_path);
@@ -3707,14 +3873,17 @@ bool update_eppi0_normalization_csv(
                                                                  data_cuts,
                                                                  mc_cuts,
                                                                  options.output_dir,
-                                                                 options.normalization_json_path);
+                                                                 options.normalization_json_path,
+                                                                 current_model);
 
                 norms.push_back(n);
             }
         }
 
         if (!options.override_to_unity) {
-            save_parent_fit_summary_plots(options.output_dir, norms);
+            const std::string summary_dir = options.output_dir + "/summary";
+            mkdir_p(summary_dir);
+            save_parent_fit_summary_plots(summary_dir, norms);
         }
 
         write_norms_to_csv(csv, norms);

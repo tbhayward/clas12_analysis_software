@@ -12,7 +12,12 @@ struct Eppi0NormalizationOptions {
     std::string combined_cuts_json = "output/jsons/combined_cuts.json";
     std::string output_dir = "output/data_mc_normalization";
     std::string normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
+    // Use the same event-by-event regional current-response calibration as total_counts.cpp.
+    std::string current_response_model_json =
+        "output/dvcs_current_dependence/calibration/current_response_model.json";
     bool override_to_unity = false;
+    // Remove stale diagnostic PNG/text outputs before a new study run.
+    bool clean_output_dir = true;
 
     // Study mode: derive the pi0 DATA/AAOGEN normalization, write fits,
     // diagnostic plots, and machine-readable summaries, but do NOT overwrite
@@ -38,7 +43,9 @@ struct Eppi0NormalizationOptions {
  *
  *   R_pi0(theta_p) = N_data(theta_p) / N_MC(theta_p)
  *
- * after applying the current-efficiency factors already saved in the CSV.
+ * after applying the same event-by-event regional current-response calibration
+ * used by the production total-counts analysis. Krishna/Neupane proton-efficiency
+ * weights are intentionally NOT applied in this normalization diagnostic.
  *
  * The seven cubic fits, one for each p1 FD sector and one CD region, are written to:
  *
