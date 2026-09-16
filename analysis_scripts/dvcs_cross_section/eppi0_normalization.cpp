@@ -1,5 +1,12 @@
 #include "eppi0_normalization.h"
 
+// -----------------------------------------------------------------------------
+// ACCEPTED-AAOGEN-POPULATION EXPORT VERSION: 2026-09-16
+// Exports the selected reconstructed AAOgen (xB,Q2,-t) population by period
+// and photon topology for external pi0-model folding.
+// -----------------------------------------------------------------------------
+
+
 #include "global_cuts.h"
 
 #include <TTree.h>
