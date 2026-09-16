@@ -31,6 +31,16 @@ struct Eppi0NormalizationOptions {
     std::string summary_csv_path =
         "output/data_mc_normalization/eppi0_normalization_summary.csv";
 
+    // Export the accepted reconstructed-AAOgen population used by this study
+    // as a sparse fine-grained (xB,Q2,-t,photon-topology) weighted grid.  This
+    // is intended for external pi0-model validation/folding without creating a
+    // potentially enormous event-level CSV.  The grid is filled in the same MC
+    // loop, after the same eppi0 selection, with the same event_norm and
+    // event-by-event current-response weight used by the normalization study.
+    bool write_accepted_mc_population = true;
+    std::string accepted_mc_population_csv_path =
+        "output/data_mc_normalization/accepted_aao_population.csv";
+
     int max_workers = 5;
 };
 

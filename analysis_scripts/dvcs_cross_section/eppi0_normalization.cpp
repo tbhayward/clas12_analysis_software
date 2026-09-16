@@ -2698,13 +2698,110 @@ static void fill_eppi0_data_hists_analysis(const ChannelConfig& cfg,
               << " current_model=event_by_event_regional" << std::endl;
 }
 
+
+// -----------------------------------------------------------------------------
+// Accepted reconstructed-AAOgen population for external pi0-model folding
+// -----------------------------------------------------------------------------
+// Fine enough that a smooth external correction M(xB,Q2,-t) can later be
+// evaluated at the weighted mean of each occupied cell without writing one CSV
+// row per MC event.  Only occupied cells are exported.
+struct AcceptedMcCell {
+    long long raw_events = 0;
+    double sumw = 0.0;
+    double sumw2 = 0.0;
+    double sumw_x = 0.0;
+    double sumw_q2 = 0.0;
+    double sumw_t = 0.0;
+};
+
+struct AcceptedMcPopulation {
+    static constexpr double X_MIN = 0.0, X_MAX = 0.8, DX = 0.02;
+    static constexpr double Q_MIN = 1.0, Q_MAX = 9.0, DQ = 0.10;
+    static constexpr double T_MIN = 0.0, T_MAX = 3.0, DT = 0.05;
+    static constexpr int NX = 40, NQ = 80, NT = 60;
+    std::map<std::string, std::map<int, AcceptedMcCell>> cells;
+    long long selected_events = 0;
+    long long missing_kinematics = 0;
+    long long outside_grid = 0;
+
+    AcceptedMcPopulation() {
+        cells["ALL"] = {};
+        for (const std::string& t : photon_pair_topologies()) cells[t] = {};
+    }
+
+    static int index(double x, double q2, double mt) {
+        if (!(std::isfinite(x) && std::isfinite(q2) && std::isfinite(mt))) return -1;
+        if (x < X_MIN || x >= X_MAX || q2 < Q_MIN || q2 >= Q_MAX || mt < T_MIN || mt >= T_MAX) return -1;
+        const int ix = static_cast<int>((x-X_MIN)/DX);
+        const int iq = static_cast<int>((q2-Q_MIN)/DQ);
+        const int it = static_cast<int>((mt-T_MIN)/DT);
+        return (ix*NQ + iq)*NT + it;
+    }
+
+    static void decode(int idx, int& ix, int& iq, int& it) {
+        it = idx % NT; idx /= NT;
+        iq = idx % NQ; idx /= NQ;
+        ix = idx;
+    }
+
+    void add(const Branches& b, double w) {
+        ++selected_events;
+        if (!(b.has_x && b.has_Q2 && b.has_t1)) { ++missing_kinematics; return; }
+        const double mt = -b.t1;
+        const int idx = index(b.x, b.Q2, mt);
+        if (idx < 0) { ++outside_grid; return; }
+        const std::string topo = photon_pair_topology(b);
+        std::vector<std::string> keys = {"ALL"};
+        if (!topo.empty()) keys.push_back(topo);
+        for (const std::string& key : keys) {
+            AcceptedMcCell& c = cells[key][idx];
+            ++c.raw_events;
+            c.sumw += w; c.sumw2 += w*w;
+            c.sumw_x += w*b.x; c.sumw_q2 += w*b.Q2; c.sumw_t += w*mt;
+        }
+    }
+};
+
+static void write_accepted_mc_population_csv(
+        const std::string& path,
+        const std::map<std::string, AcceptedMcPopulation>& populations) {
+    const std::filesystem::path pp(path);
+    if (pp.has_parent_path()) mkdir_p(pp.parent_path().string());
+    std::ofstream out(path.c_str());
+    if (!out.is_open()) fatal("[eppi0_norm] FATAL: cannot write accepted AAOgen population CSV: " + path);
+    out << "period,photon_topology,ix,iq,it,xB_low,xB_high,Q2_low_GeV2,Q2_high_GeV2,minus_t_low_GeV2,minus_t_high_GeV2,raw_events,sum_weight,sum_weight2,xB_weighted_mean,Q2_weighted_mean_GeV2,minus_t_weighted_mean_GeV2\n";
+    out << std::setprecision(12);
+    for (const auto& pkv : populations) {
+        const std::string& period = pkv.first;
+        const AcceptedMcPopulation& pop = pkv.second;
+        for (const auto& tkv : pop.cells) {
+            for (const auto& ckv : tkv.second) {
+                int ix=0,iq=0,it=0; AcceptedMcPopulation::decode(ckv.first,ix,iq,it);
+                const AcceptedMcCell& c=ckv.second;
+                if (!(c.sumw>0.0)) continue;
+                out << period << ',' << tkv.first << ',' << ix << ',' << iq << ',' << it << ','
+                    << AcceptedMcPopulation::X_MIN+ix*AcceptedMcPopulation::DX << ','
+                    << AcceptedMcPopulation::X_MIN+(ix+1)*AcceptedMcPopulation::DX << ','
+                    << AcceptedMcPopulation::Q_MIN+iq*AcceptedMcPopulation::DQ << ','
+                    << AcceptedMcPopulation::Q_MIN+(iq+1)*AcceptedMcPopulation::DQ << ','
+                    << AcceptedMcPopulation::T_MIN+it*AcceptedMcPopulation::DT << ','
+                    << AcceptedMcPopulation::T_MIN+(it+1)*AcceptedMcPopulation::DT << ','
+                    << c.raw_events << ',' << c.sumw << ',' << c.sumw2 << ','
+                    << c.sumw_x/c.sumw << ',' << c.sumw_q2/c.sumw << ',' << c.sumw_t/c.sumw << '\n';
+            }
+        }
+    }
+    std::cout << "[eppi0_norm] Wrote accepted AAOgen population grid: " << path << std::endl;
+}
+
 static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
                                          const PeriodTags& tags,
                                          TTree* tree,
                                          const TopoCutMap& mc_cuts,
                                          double event_norm,
                                          const CurrentResponseModel& current_model,
-                                         HistSet& hists) {
+                                         HistSet& hists,
+                                         AcceptedMcPopulation* accepted_population = nullptr) {
     if (!tree) return;
     Branches b; b.bind(tree, true);
     const Long64_t N = tree->GetEntries();
@@ -2716,6 +2813,7 @@ static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
         const double current_w = eppi0_event_current_weight(current_model, tags.display, b, false, skip);
         const double w = event_norm * current_w;
         ++n_pass; sum_weight += w; fill_hist_set(hists, b, w);
+        if (accepted_population) accepted_population->add(b, w);
     }
     std::cout << "[eppi0_norm] analysis MC " << tags.display
               << " entries=" << (long long)N << " pass=" << n_pass
@@ -2932,7 +3030,8 @@ static PeriodNormalization run_period_normalization(const std::string& period,
                                                     const TopoCutMap& mc_cuts,
                                                     const std::string& output_dir,
                                                     const std::string& normalization_json_path,
-                                                    const CurrentResponseModel& current_model) {
+                                                    const CurrentResponseModel& current_model,
+                                                    AcceptedMcPopulation* accepted_population) {
     const ChannelConfig epi = eppi0_config();
     const PeriodTags parsed = parse_period_from_key(period);
 
@@ -2976,7 +3075,8 @@ static PeriodNormalization run_period_normalization(const std::string& period,
                                  mc_cuts,
                                  event_norm,
                                  current_model,
-                                 ana_mc);
+                                 ana_mc,
+                                 accepted_population);
 
     std::map<std::string, HistSet> photon_topo_data;
     std::map<std::string, HistSet> photon_topo_mc;
@@ -4278,6 +4378,8 @@ bool update_eppi0_normalization_csv(
             const std::unordered_map<int, double> charge_map =
                 read_charge_csv(options.charge_csv_path);
 
+            std::map<std::string, AcceptedMcPopulation> accepted_mc_populations;
+
             for (const std::string& period : WORK_PERIOD_ORDER) {
                 TTree* data_tree = tree_for_period(eppi0DataTrees, period, "eppi0 data");
                 TTree* rec_tree = tree_for_period(eppi0RecMcTrees, period, "eppi0 reconstructed MC");
@@ -4291,9 +4393,21 @@ bool update_eppi0_normalization_csv(
                                                                  mc_cuts,
                                                                  options.output_dir,
                                                                  options.normalization_json_path,
-                                                                 current_model);
+                                                                 current_model,
+                                                                 options.write_accepted_mc_population ? &accepted_mc_populations[period] : nullptr);
 
                 norms.push_back(n);
+            }
+
+            if (options.write_accepted_mc_population) {
+                for (const auto& kv : accepted_mc_populations) {
+                    std::cout << "[eppi0_norm] accepted AAOgen population " << kv.first
+                              << " selected=" << kv.second.selected_events
+                              << " missing_kinematics=" << kv.second.missing_kinematics
+                              << " outside_grid=" << kv.second.outside_grid << std::endl;
+                }
+                write_accepted_mc_population_csv(options.accepted_mc_population_csv_path,
+                                                 accepted_mc_populations);
             }
         }
 
