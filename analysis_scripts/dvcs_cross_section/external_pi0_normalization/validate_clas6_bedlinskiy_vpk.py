@@ -32,6 +32,7 @@ import io
 import math
 import re
 import tarfile
+import zipfile
 import urllib.request
 from pathlib import Path
 
@@ -54,14 +55,22 @@ HEPDATA_URLS = [
     "https://www.hepdata.net/download/submission/ins1294143/1/yaml",
     "https://www.hepdata.net/download/submission/64122/1/yaml",
 ]
-CACHE = IMPORT / "bedlinskiy2014_hepdata_yaml.tar.gz"
+CACHE_CANDIDATES = [
+    IMPORT / "HEPData-ins1294143-v1.zip",
+    IMPORT / "bedlinskiy2014_hepdata_yaml.zip",
+    IMPORT / "bedlinskiy2014_hepdata_yaml.tar.gz",
+]
 EBEAM_GEV = 5.75
 
 
-def _download_hepdata() -> bytes:
+def _load_hepdata_archive() -> tuple[bytes, Path]:
+    """Use a local HEPData archive first; download only as a fallback."""
     IMPORT.mkdir(parents=True, exist_ok=True)
-    if CACHE.exists():
-        return CACHE.read_bytes()
+
+    for path in CACHE_CANDIDATES:
+        if path.exists():
+            print(f"[Bedlinskiy] using local HEPData archive:\n  {path}")
+            return path.read_bytes(), path
 
     errors = []
     for url in HEPDATA_URLS:
@@ -72,28 +81,55 @@ def _download_hepdata() -> bytes:
                 blob = r.read()
             if len(blob) < 1000:
                 raise RuntimeError(f"download suspiciously small ({len(blob)} bytes)")
-            CACHE.write_bytes(blob)
-            return blob
+
+            # HEPData's YAML endpoint currently returns ZIP. Detect rather than
+            # trusting the URL or Content-Type.
+            if zipfile.is_zipfile(io.BytesIO(blob)):
+                path = IMPORT / "HEPData-ins1294143-v1.zip"
+            elif tarfile.is_tarfile(fileobj := io.BytesIO(blob)):
+                path = IMPORT / "bedlinskiy2014_hepdata_yaml.tar.gz"
+            else:
+                raise RuntimeError("download is neither ZIP nor tar archive")
+            path.write_bytes(blob)
+            return blob, path
         except Exception as exc:
             errors.append(f"{url}: {exc}")
+
+    expected = "\n".join(f"  {p}" for p in CACHE_CANDIDATES[:2])
     raise RuntimeError(
-        "Could not download HEPData. Download the YAML submission archive for "
-        "HEPData record ins1294143 manually and save it as:\n"
-        f"  {CACHE}\n\n" + "\n".join(errors)
+        "Could not download HEPData. Download the YAML archive for HEPData "
+        "record ins1294143 and save it as either:\n"
+        f"{expected}\n\n" + "\n".join(errors)
     )
 
 
 def _yaml_documents_from_archive(blob: bytes):
-    # HEPData's /yaml endpoint is normally a tar.gz archive.
-    with tarfile.open(fileobj=io.BytesIO(blob), mode="r:*") as tf:
-        for member in tf.getmembers():
-            if not member.isfile() or not member.name.lower().endswith((".yaml", ".yml")):
-                continue
-            f = tf.extractfile(member)
-            if f is None:
-                continue
-            text = f.read().decode("utf-8")
-            yield member.name, yaml.safe_load(text)
+    """Yield YAML documents from either the ZIP or tar archive HEPData supplies."""
+    bio = io.BytesIO(blob)
+
+    if zipfile.is_zipfile(bio):
+        bio.seek(0)
+        with zipfile.ZipFile(bio) as zf:
+            for name in zf.namelist():
+                if name.endswith("/") or not name.lower().endswith((".yaml", ".yml")):
+                    continue
+                text = zf.read(name).decode("utf-8")
+                yield name, yaml.safe_load(text)
+        return
+
+    bio.seek(0)
+    try:
+        with tarfile.open(fileobj=bio, mode="r:*") as tf:
+            for member in tf.getmembers():
+                if not member.isfile() or not member.name.lower().endswith((".yaml", ".yml")):
+                    continue
+                f = tf.extractfile(member)
+                if f is None:
+                    continue
+                yield member.name, yaml.safe_load(f.read().decode("utf-8"))
+        return
+    except tarfile.TarError as exc:
+        raise RuntimeError("HEPData input is neither a valid ZIP nor tar archive.") from exc
 
 
 def _number(x):
@@ -394,7 +430,7 @@ def make_plots(points, summary):
 
 def main():
     OUTPUT.mkdir(parents=True,exist_ok=True)
-    blob=_download_hepdata()
+    blob, archive_path = _load_hepdata_archive()
     raw=parse_hepdata(blob)
     points=evaluate(raw)
 
