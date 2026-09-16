@@ -70,3 +70,27 @@ normalization difference.
   Exclusive Electroproduction of Neutral Meson Cross Section in Hall A of
   JLab with CEBAF at 12 GeV."
 - AAOgen production source: `aao_norad/dsigma.F`, `dvmpw.F`, `dvmpx.F`.
+
+## Accepted RGA AAOgen coverage and model folding
+
+After running the fast eppi0 normalization diagnostic from the parent directory,
+
+    ./dvcs_analysis --eppi0-normalization-only
+
+run
+
+    cd external_pi0_normalization && python3 analyze_rga_aao_coverage.py
+
+The coverage script consumes
+`../output/data_mc_normalization/accepted_aao_population.csv`.  If the CLAS6
+or Hall-A VPK validation CSVs are missing, it automatically runs
+`validate_clas6_bedlinskiy_vpk.py` and/or `validate_aao_pi0_model.py` first.
+
+It produces quantitative 3-D CLAS6 support fractions in `(xB,Q2,-t)`, folds
+point-level external `sigma_U(data)/sigma_U(VPK)` residuals through the accepted
+AAOgen population without extrapolating outside the external-data convex hull,
+and writes PNG coverage/folding figures under `output/rga_coverage/png/`.
+CLAS6-only and CLAS6+Hall-A folds are kept separate.  Candidate single-photon
+FT/FD residuals are written only when the eppi0 photon-topology summary is
+available; they remain diagnostic and include the model-supported AAOgen
+fraction explicitly.
