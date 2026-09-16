@@ -323,6 +323,9 @@ int main(int argc, char* argv[]) {
         norm_opts.write_summary_csv = true;
         norm_opts.summary_csv_path =
             "output/data_mc_normalization/eppi0_normalization_summary.csv";
+        norm_opts.write_accepted_mc_population = true;
+        norm_opts.accepted_mc_population_csv_path =
+            "output/data_mc_normalization/accepted_aao_population.csv";
         norm_opts.max_workers = 7;
 
         std::cout << "[main] Running eppi0 normalization DIAGNOSTIC only. "
