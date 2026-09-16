@@ -76,6 +76,7 @@ BOUNDARY_DISTANCE = 0.10
 TRANSPORT_BANDWIDTH_SCAN = [0.08, 0.12, 0.16, 0.20, 0.25, 0.32, 0.40, 0.55]
 TRANSPORT_K_SCAN = [4, 6, 8, 12, 16, 24, 32, 48]
 MIN_DISTANCE_BIN_COUNT = 8
+UNCERTAINTY_K_SCAN = [2, 3, 4, 5, 6, 8, 10, 12]
 
 
 def ensure_validation_outputs() -> None:
@@ -346,26 +347,121 @@ def calibrate_external_transport(clas6: pd.DataFrame, halla: pd.DataFrame):
     return scan,closure,empirical,bw,k
 
 
-def _empirical_sigma_for_distance(d: np.ndarray, empirical: pd.DataFrame) -> np.ndarray:
-    if empirical.empty: return np.full_like(np.asarray(d,float),np.nan)
-    x=empirical.distance_max.to_numpy(float); y=empirical.rmse.to_numpy(float)
-    # Interpolate within tested distances; beyond the largest withheld-setting
-    # distance, hold the last measured RMS and flag such cells separately.
-    return np.interp(np.asarray(d,float),x,y,left=y[0],right=y[-1])
+def setting_closure_summary(closure: pd.DataFrame) -> pd.DataFrame:
+    """Collapse whole-setting holdout residuals to one empirical observation per setting.
+
+    The RMS here is the error actually made when an entire published kinematic
+    setting was absent from the training sample.  These setting-level errors,
+    rather than individual t points, calibrate the phase-space uncertainty.
+    """
+    g=closure[closure.cv_mode=="setting"].copy()
+    rows=[]
+    for sid,q in g.groupby("setting_id",sort=False):
+        rows.append({
+            "setting_id":sid,
+            "experiment":str(q.experiment.iloc[0]),
+            "xB_mean":float(q.xB.mean()),
+            "Q2_mean_GeV2":float(q.Q2.mean()),
+            "minus_t_mean_GeV2":float(q.minus_t.mean()),
+            "minus_t_min_GeV2":float(q.minus_t.min()),
+            "minus_t_max_GeV2":float(q.minus_t.max()),
+            "n_points":int(len(q)),
+            "mean_signed_residual":float(q.residual.mean()),
+            "rmse_residual":float(np.sqrt(np.mean(q.residual.to_numpy(float)**2))),
+            "mae_residual":float(q.abs_residual.mean()),
+            "p68_abs_residual":float(np.quantile(q.abs_residual,.68)),
+            "nearest_training_distance_median":float(q.nearest_training_distance.median()),
+            "nearest_training_distance_max":float(q.nearest_training_distance.max()),
+        })
+    return pd.DataFrame(rows)
+
+
+def calibrate_phase_space_uncertainty(setting_summary: pd.DataFrame,
+                                      ext: pd.DataFrame):
+    """Calibrate a local uncertainty from held-out *setting* failures.
+
+    No analytic Q2/xB/t dependence is assumed.  For each held-out setting, its
+    uncertainty is predicted from the RMS failures of the k nearest OTHER
+    held-out settings in normalized (xB,Q2,-t) space.  k is selected by a
+    second leave-one-setting-out layer using Gaussian log score.  This asks a
+    direct question: did the uncertainty inferred from neighboring closure
+    failures assign sensible probability to the unseen setting's actual error?
+
+    Beyond the phase-space separation exercised by this second withholding
+    layer, the method falls back to the global setting-holdout RMS.
+    """
+    if setting_summary.empty:
+        return pd.DataFrame(),None,np.nan,np.nan
+    lo,span=_external_scale(ext)
+    X=setting_summary[["xB_mean","Q2_mean_GeV2","minus_t_mean_GeV2"]].to_numpy(float)
+    Xn=(X-lo)/span
+    e=setting_summary.rmse_residual.to_numpy(float)
+    global_sigma=float(np.sqrt(np.mean(e**2)))
+    rows=[]
+    for k0 in UNCERTAINTY_K_SCAN:
+        k=min(int(k0),len(setting_summary)-1)
+        if k<1: continue
+        pred=[]; dnearest=[]
+        for i in range(len(setting_summary)):
+            mask=np.arange(len(setting_summary))!=i
+            dist=np.linalg.norm(Xn[mask]-Xn[i],axis=1)
+            order=np.argsort(dist)[:k]
+            # Equal weights: no additional bandwidth or distance-decay constant.
+            sig=float(np.sqrt(np.mean(e[mask][order]**2)))
+            pred.append(sig); dnearest.append(float(dist[order[0]]))
+        pred=np.asarray(pred); dnearest=np.asarray(dnearest)
+        # Proper Gaussian log score (constant omitted). Lower is better.
+        score=float(np.mean(np.log(pred)+0.5*(e/pred)**2))
+        z=e/pred
+        rows.append({"k_uncertainty_neighbors":k0,"effective_k":k,
+                     "nested_log_score":score,
+                     "standardized_error_rms":float(np.sqrt(np.mean(z**2))),
+                     "fraction_error_below_1sigma":float(np.mean(e<=pred)),
+                     "global_setting_rmse":global_sigma,
+                     "max_tested_nearest_setting_distance":float(np.max(dnearest))})
+    scan=pd.DataFrame(rows).sort_values(["nested_log_score","effective_k"]).reset_index(drop=True)
+    best=int(scan.iloc[0].effective_k)
+    maxdist=float(scan.iloc[0].max_tested_nearest_setting_distance)
+    return scan,best,global_sigma,maxdist
+
+
+def _phase_space_sigma(query_xyz: np.ndarray, setting_summary: pd.DataFrame,
+                       ext: pd.DataFrame, k: int, global_sigma: float,
+                       max_valid_distance: float):
+    lo,span=_external_scale(ext)
+    S=setting_summary[["xB_mean","Q2_mean_GeV2","minus_t_mean_GeV2"]].to_numpy(float)
+    Sn=(S-lo)/span; Qn=(np.asarray(query_xyz,float)-lo)/span
+    tree=cKDTree(Sn)
+    kk=min(int(k),len(Sn))
+    dist,idx=tree.query(Qn,k=kk)
+    if kk==1:
+        dist=np.asarray(dist)[:,None]; idx=np.asarray(idx)[:,None]
+    err=setting_summary.rmse_residual.to_numpy(float)
+    local=np.sqrt(np.mean(err[idx]**2,axis=1))
+    nearest=dist[:,0]
+    fallback=nearest>max_valid_distance
+    sigma=local.copy(); sigma[fallback]=global_sigma
+    return sigma,nearest,fallback
 
 
 def add_local_external_field(a: pd.DataFrame, clas6: pd.DataFrame, halla: pd.DataFrame,
-                             bandwidth: float, k: int, empirical: pd.DataFrame) -> pd.DataFrame:
-    """Apply the transport method selected independently by withheld-data closure."""
+                             bandwidth: float, k: int,
+                             setting_summary: pd.DataFrame,
+                             uncertainty_k: int, global_sigma: float,
+                             max_valid_uncertainty_distance: float) -> pd.DataFrame:
+    """Apply central M transport plus independently calibrated local uncertainty."""
     out=a.copy(); ext=pd.concat([clas6,halla],ignore_index=True)
     lo,span=_external_scale(ext)
-    pred,dnear=_predict_kernel(ext,out[["xB","Q2","minus_t"]].to_numpy(float),lo,span,bandwidth,k)
+    xyz=out[["xB","Q2","minus_t"]].to_numpy(float)
+    pred,dnear=_predict_kernel(ext,xyz,lo,span,bandwidth,k)
+    sigma,dclosure,fallback=_phase_space_sigma(
+        xyz,setting_summary,ext,uncertainty_k,global_sigma,max_valid_uncertainty_distance)
     out["external_nearest_distance_normalized"]=dnear
     out["external_local_M"]=pred
-    out["external_local_M_unc"]=_empirical_sigma_for_distance(dnear,empirical)
+    out["external_local_M_unc"]=sigma
+    out["closure_setting_nearest_distance_normalized"]=dclosure
+    out["external_uncertainty_used_global_fallback"]=fallback
     out["external_local_n_eff"]=np.nan
-    max_test=float(empirical.distance_max.max()) if not empirical.empty else np.nan
-    out["external_distance_within_setting_closure_range"]=(dnear<=max_test) if np.isfinite(max_test) else False
     return out
 
 def local_fold_summary(a: pd.DataFrame) -> pd.DataFrame:
@@ -382,7 +478,8 @@ def local_fold_summary(a: pd.DataFrame) -> pd.DataFrame:
         rows.append({"period":p,"photon_topology":t,"sum_weight":W,
                      "local_M_acc":mean,"local_M_acc_unc":unc,
                      "nearest_distance_p16":qd[0],"nearest_distance_median":qd[1],
-                     "nearest_distance_p84":qd[2],"nearest_distance_p95":qd[3]})
+                     "nearest_distance_p84":qd[2],"nearest_distance_p95":qd[3],
+                     "global_uncertainty_fallback_weight_fraction":float(np.sum(w*g.external_uncertainty_used_global_fallback.to_numpy(bool))/W)})
     return pd.DataFrame(rows)
 
 
@@ -693,6 +790,49 @@ def plot_transport_closure(scan: pd.DataFrame, closure: pd.DataFrame, empirical:
         ax.grid(alpha=.25); fig.tight_layout()
         fig.savefig(PNG/"clas6_to_halla_transport_closure.png",dpi=220); plt.close(fig)
 
+
+def plot_phase_space_uncertainty(setting_summary: pd.DataFrame, uscan: pd.DataFrame,
+                                 a: pd.DataFrame):
+    if setting_summary.empty:return
+    # Setting-level closure errors versus the principal physics coordinates.
+    for x,col,label in [("Q2_mean_GeV2","Q2_mean_GeV2",r"$Q^2$ (GeV$^2$)"),
+                        ("xB_mean","xB_mean",r"$x_B$"),
+                        ("minus_t_mean_GeV2","minus_t_mean_GeV2",r"$-t$ (GeV$^2$)")]:
+        fig,ax=plt.subplots(figsize=(8.2,5.6))
+        for exp,g in setting_summary.groupby("experiment"):
+            ax.scatter(g[col],g.rmse_residual,s=48,label=exp)
+        ax.set_xlabel(label); ax.set_ylabel("Whole-setting holdout RMS in data/VPK M")
+        ax.set_title("Measured transport failure by external-data phase space")
+        ax.grid(alpha=.25); ax.legend(fontsize=8); fig.tight_layout()
+        fig.savefig(PNG/f"external_setting_closure_rmse_vs_{x.replace('_mean_GeV2','').replace('_mean','')}.png",dpi=220); plt.close(fig)
+
+    fig,ax=plt.subplots(figsize=(8.4,5.8))
+    sc=ax.scatter(setting_summary.xB_mean,setting_summary.Q2_mean_GeV2,
+                  c=setting_summary.rmse_residual,s=70)
+    ax.set_xlabel(r"$x_B$"); ax.set_ylabel(r"$Q^2$ (GeV$^2$)")
+    ax.set_title("Whole-setting holdout error across measured π⁰ phase space")
+    cbar=fig.colorbar(sc,ax=ax,pad=.03); cbar.set_label("RMS(predicted − measured M)")
+    fig.tight_layout(); fig.savefig(PNG/"external_setting_closure_rmse_xB_Q2.png",dpi=220); plt.close(fig)
+
+    if not uscan.empty:
+        fig,ax=plt.subplots(figsize=(8.2,5.6))
+        ax.plot(uscan.effective_k,uscan.nested_log_score,marker="o")
+        ax.set_xlabel("Number of neighboring withheld settings used for local uncertainty")
+        ax.set_ylabel("Nested leave-setting-out Gaussian log score (lower is better)")
+        ax.set_title("Phase-space uncertainty complexity selected by withheld data")
+        ax.grid(alpha=.25); fig.tight_layout()
+        fig.savefig(PNG/"external_uncertainty_neighbor_scan.png",dpi=220); plt.close(fig)
+
+    # What uncertainty does the final calibration assign to actual RGA cells?
+    for topology in ["FD-FD","FT-FT"]:
+        g=a[a.photon_topology==topology]
+        fig,ax=plt.subplots(figsize=(8.4,5.8))
+        sc=ax.scatter(g.xB,g.Q2,c=g.external_local_M_unc,s=8,alpha=.55)
+        ax.set_xlabel(r"$x_B$"); ax.set_ylabel(r"$Q^2$ (GeV$^2$)")
+        ax.set_title(f"{topology}: empirically calibrated local VPK-transport uncertainty")
+        cbar=fig.colorbar(sc,ax=ax,pad=.03); cbar.set_label(r"$\delta M_{transport}$")
+        fig.tight_layout(); fig.savefig(PNG/f"accepted_aao_{topology.replace('-','_')}_phase_space_uncertainty.png",dpi=220); plt.close(fig)
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--accepted-aao",type=Path,default=DEFAULT_AAO)
@@ -709,8 +849,14 @@ def main():
     scan.to_csv(OUT/"external_transport_method_scan.csv",index=False)
     closure.to_csv(OUT/"external_transport_closure_predictions.csv",index=False)
     empirical.to_csv(OUT/"external_transport_distance_uncertainty.csv",index=False)
-    print(f"[rga-coverage] empirical transport selected from CLAS6 setting closure: bandwidth={best_bw:g}, k={best_k}")
-    a=add_local_external_field(a,clas6,halla,best_bw,best_k,empirical)
+    setting_summary=setting_closure_summary(closure)
+    setting_summary.to_csv(OUT/"external_transport_setting_closure_summary.csv",index=False)
+    ext_all=pd.concat([clas6,halla],ignore_index=True)
+    uscan,unc_k,global_sigma,max_unc_dist=calibrate_phase_space_uncertainty(setting_summary,ext_all)
+    uscan.to_csv(OUT/"external_transport_uncertainty_model_scan.csv",index=False)
+    print(f"[rga-coverage] central transport selected from CLAS6 setting closure: bandwidth={best_bw:g}, k={best_k}")
+    print(f"[rga-coverage] phase-space uncertainty selected by nested setting closure: k={unc_k}, global RMS={global_sigma:.4f}, fallback beyond d={max_unc_dist:.4f}")
+    a=add_local_external_field(a,clas6,halla,best_bw,best_k,setting_summary,unc_k,global_sigma,max_unc_dist)
 
     cov=coverage_summary(a); fold=fold_summary(a); local_fold=local_fold_summary(a)
     cov.to_csv(OUT/"rga_external_pi0_coverage_summary.csv",index=False)
@@ -740,6 +886,7 @@ def main():
     plot_distance_cdf(a)
     plot_robustness(robust)
     plot_transport_closure(scan,closure,empirical)
+    plot_phase_space_uncertainty(setting_summary,uscan,a)
 
     print("\n=== RGA accepted-AAOgen external pi0 coverage ===")
     show=cov[cov.photon_topology=="ALL"][["period","raw_events","Q2_median_GeV2","clas6_interpolation_fraction","clas6_near_boundary_fraction","clas6_outside_fraction"]]
