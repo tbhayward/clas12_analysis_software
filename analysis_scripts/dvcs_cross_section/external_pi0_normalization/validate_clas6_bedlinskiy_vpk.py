@@ -237,22 +237,54 @@ def _classify_observable(name):
 
 
 def parse_hepdata(blob: bytes) -> pd.DataFrame:
+    """
+    Parse the actual Bedlinskiy HEPData schema.
+
+    Each table carries Q2, xB and -t as three point-by-point independent
+    variables.  They are NOT table-description metadata.  This matters because
+    Q2/xB vary slightly across the t points within a nominal setting.
+    """
     rows = []
     n_tables = 0
+
     for name, doc in _yaml_documents_from_archive(blob):
         if not isinstance(doc, dict) or "dependent_variables" not in doc:
             continue
-        n_tables += 1
-        desc = doc.get("description", "") or ""
-        q2_desc, xb_desc = _setting_from_description(desc)
+
         indeps = doc.get("independent_variables", [])
         if not indeps:
             continue
-        # Bedlinskiy tables are functions of t; use first independent variable.
-        tvar = indeps[0]
+
+        # Map independent-variable arrays by their actual HEPData headers.
+        ivars = {}
+        for iv in indeps:
+            key = str(iv.get("header", {}).get("name", "")).upper().replace(" ", "")
+            ivars[key] = iv
+
+        qvar = next((v for k,v in ivars.items()
+                     if k in ("Q**2","Q^2","Q2")), None)
+        xbvar = next((v for k,v in ivars.items()
+                      if k in ("XB","X_B")), None)
+        tvar = next((v for k,v in ivars.items()
+                     if k in ("-T","-T'","ABS(T)","|T|","T")), None)
+
+        if qvar is None or xbvar is None or tvar is None:
+            # submission.yaml and any non-data documents land here.
+            continue
+
+        qvals = qvar.get("values", [])
+        xbvals = xbvar.get("values", [])
+        tvals = tvar.get("values", [])
+        n = len(tvals)
+        if len(qvals) != n or len(xbvals) != n:
+            raise RuntimeError(
+                f"{name}: independent-variable lengths differ: "
+                f"Q2={len(qvals)}, xB={len(xbvals)}, t={len(tvals)}"
+            )
+
+        n_tables += 1
         tname = str(tvar.get("header", {}).get("name", ""))
         tunit = str(tvar.get("header", {}).get("units", ""))
-        tvals = tvar.get("values", [])
 
         for dep in doc.get("dependent_variables", []):
             obs_name = dep.get("header", {}).get("name", "")
@@ -261,43 +293,49 @@ def parse_hepdata(blob: bytes) -> pd.DataFrame:
             if tag is None:
                 continue
 
-            qual = _qualifier_map(dep)
-            q2 = q2_desc
-            xb = xb_desc
-            for k, v in qual.items():
-                ku = k.replace(" ", "")
-                if ("Q**2" in ku or "Q^2" in ku or ku == "Q2") and not np.isfinite(q2):
-                    q2 = _extract_range(v, ["Q2"])
-                if ku in ("XB", "X_B") and not np.isfinite(xb):
-                    xb = _extract_range(v, ["XB"])
-
             dvals = dep.get("values", [])
-            if len(dvals) != len(tvals):
-                continue
-            for tv, dv in zip(tvals, dvals):
+            if len(dvals) != n:
+                raise RuntimeError(
+                    f"{name} {obs_name}: dependent length {len(dvals)} != {n}"
+                )
+
+            for qv, xbv, tv, dv in zip(qvals, xbvals, tvals, dvals):
+                q2 = _central(qv)
+                xb = _central(xbv)
+                mt = _central(tv)
                 val = _number(dv.get("value"))
-                if not np.isfinite(val):
+                if not all(np.isfinite(z) for z in (q2, xb, mt, val)):
                     continue
+
                 err, labels, percent = _sym_error(dv.get("errors", []))
                 if percent:
-                    # Handle percent errors explicitly.
                     sq = 0.0
                     for e in dv.get("errors", []) or []:
                         if "symerror" in e:
                             raw = str(e["symerror"])
                             z = _number(raw.replace("%", ""))
                             z = abs(val)*z/100.0 if "%" in raw else z
-                            if np.isfinite(z): sq += z*z
+                            if np.isfinite(z):
+                                sq += z*z
+                        elif "asymerror" in e:
+                            plus = abs(_number(e["asymerror"].get("plus")))
+                            minus = abs(_number(e["asymerror"].get("minus")))
+                            z = 0.5*(plus+minus)
+                            if np.isfinite(z):
+                                sq += z*z
                     err = math.sqrt(sq)
 
-                tcen = _central(tv)
+                # HEPData explicitly labels this coordinate "-t"; VPK expects
+                # signed t.  Preserve the published positive -t separately.
+                signed_t = -abs(mt) if "-T" in tname.upper() else (mt if mt < 0 else -mt)
+
                 rows.append({
                     "source_table": name,
-                    "description": desc,
                     "Q2_GeV2": q2,
                     "xB": xb,
                     "Ebeam_GeV": EBEAM_GEV,
-                    "t_published": tcen,
+                    "minus_t_GeV2": abs(mt),
+                    "t_GeV2": signed_t,
                     "t_header": tname,
                     "t_units": tunit,
                     "observable": tag,
@@ -312,27 +350,10 @@ def parse_hepdata(blob: bytes) -> pd.DataFrame:
     if df.empty:
         raise RuntimeError("Parsed HEPData archive but found no Bedlinskiy structure functions.")
 
-    # The HEPData record publishes the horizontal coordinate as -t/|t| in
-    # GeV^2 in the physical positive convention.  Determine sign from header;
-    # for a positive table coordinate, pass signed t=-|t| to VPK.
-    def signed_t(r):
-        z = float(r.t_published)
-        h = str(r.t_header).upper()
-        if "-T" in h or "ABS(T)" in h or "|T|" in h:
-            return -abs(z)
-        # These Bedlinskiy tables use positive -t values. Protect against a
-        # generic HEPData header "T" by checking the actual sign.
-        return z if z < 0 else -z
-
-    df["t_GeV2"] = df.apply(signed_t, axis=1)
-
-    bad = df[~np.isfinite(df.Q2_GeV2) | ~np.isfinite(df.xB)]
-    if len(bad):
-        raise RuntimeError(
-            f"Could not determine Q2/xB for {len(bad)} rows. "
-            "Inspect HEPData format before using ratios."
-        )
-    print(f"[Bedlinskiy] parsed {n_tables} YAML data tables, {len(df)} structure-function rows")
+    print(f"[Bedlinskiy] parsed {n_tables} data tables, {len(df)} structure-function rows")
+    print(f"[Bedlinskiy] Q2 range: {df.Q2_GeV2.min():.3f}--{df.Q2_GeV2.max():.3f} GeV^2")
+    print(f"[Bedlinskiy] xB range: {df.xB.min():.3f}--{df.xB.max():.3f}")
+    print(f"[Bedlinskiy] -t range: {df.minus_t_GeV2.min():.3f}--{df.minus_t_GeV2.max():.3f} GeV^2")
     return df
 
 
@@ -371,17 +392,24 @@ def weighted_setting_summary(points):
     u = points[(points.observable=="U") & points.vpk_kine_valid &
                np.isfinite(points.data_over_vpk) & (points.data_over_vpk_err>0)].copy()
     rows=[]
-    for (q2,xb),g in u.groupby(["Q2_GeV2","xB"],sort=True):
+    for table,g in u.groupby("source_table",sort=True):
         w=1/g.data_over_vpk_err.to_numpy(float)**2
         ratio=float(np.sum(w*g.data_over_vpk)/np.sum(w))
         err=float(math.sqrt(1/np.sum(w)))
         rows.append({
-            "Q2_GeV2":q2, "xB":xb, "n_t_points":len(g),
-            "weighted_data_over_vpk_U":ratio,
-            "weighted_data_over_vpk_U_err":err,
-            "mean_minus_t_GeV2":float(np.mean(-g.t_GeV2)),
+            "source_table": table,
+            "Q2_GeV2": float(np.average(g.Q2_GeV2, weights=w)),
+            "xB": float(np.average(g.xB, weights=w)),
+            "n_t_points": len(g),
+            "weighted_data_over_vpk_U": ratio,
+            "weighted_data_over_vpk_U_err": err,
+            "mean_minus_t_GeV2": float(np.average(g.minus_t_GeV2, weights=w)),
+            "Q2_min_GeV2": float(g.Q2_GeV2.min()),
+            "Q2_max_GeV2": float(g.Q2_GeV2.max()),
+            "xB_min": float(g.xB.min()),
+            "xB_max": float(g.xB.max()),
         })
-    return pd.DataFrame(rows)
+    return pd.DataFrame(rows).sort_values("Q2_GeV2").reset_index(drop=True)
 
 
 def make_plots(points, summary):
@@ -405,7 +433,7 @@ def make_plots(points, summary):
     # Point-level residual versus -t, colored by Q2.
     u=points[(points.observable=="U") & points.vpk_kine_valid].copy()
     fig,ax=plt.subplots(figsize=(8.4,5.6))
-    sc=ax.scatter(-u.t_GeV2,u.data_over_vpk,c=u.Q2_GeV2,s=24)
+    sc=ax.scatter(u.minus_t_GeV2,u.data_over_vpk,c=u.Q2_GeV2,s=24)
     ax.axhline(1,linewidth=1)
     cb=fig.colorbar(sc,ax=ax); cb.set_label(r"$Q^2$ (GeV$^2$)")
     ax.set(xlabel=r"$-t$ (GeV$^2$)",ylabel=r"CLAS6 / VPK",
