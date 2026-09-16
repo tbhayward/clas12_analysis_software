@@ -2050,7 +2050,8 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                                              const TopoCutMap& sigma_cuts,
                                              bool trace_matches,
                                              const CurrentResponseModel* current_model,
-                                             bool use_epg_mc_current_factor_for_eppi0_bkg) {
+                                             bool use_epg_mc_current_factor_for_eppi0_bkg,
+                                             bool apply_neupane_proton_efficiency_correction) {
     WorkCounts out;
 
     if (!tree) {
@@ -2220,7 +2221,9 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                 add_count(topo_dense[topo_idx][r], split_helicity, b.helicity);
             }
             if (apply_current_weights && !current_weight.skip_corrected) {
-                const double proton_weight = is_data ? neupane_proton_data_weight(b) : 1.0;
+                const double proton_weight =
+                    (is_data && apply_neupane_proton_efficiency_correction)
+                    ? neupane_proton_data_weight(b) : 1.0;
                 add_weighted_count(corrected_total_dense[r], split_helicity, b.helicity, current_weight, proton_weight);
                 add_weighted_count(corrected_topo_dense[topo_idx][r], split_helicity, b.helicity, current_weight, proton_weight);
             }
@@ -4448,7 +4451,8 @@ bool update_total_counts_csv(const std::string& csv_path,
                                            cuts,
                                            trace_matches,
                                            current_model_ptr,
-                                           options.use_epg_mc_current_factor_for_eppi0_bkg);
+                                           options.use_epg_mc_current_factor_for_eppi0_bkg,
+                                           options.apply_neupane_proton_efficiency_correction);
 
             std::lock_guard<std::mutex> lock(merge_mutex);
 

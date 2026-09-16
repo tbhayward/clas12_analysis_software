@@ -2553,7 +2553,8 @@ static const CurrentResponseEntry* find_current_response_entry(
     return &ip->second[region];
 }
 
-static double eppi0_event_current_weight(const CurrentResponseModel& model,
+static double event_current_weight(const CurrentResponseModel& model,
+                                         const std::string& channel,
                                          const std::string& period,
                                          const Branches& b,
                                          bool is_data,
@@ -2563,8 +2564,8 @@ static double eppi0_event_current_weight(const CurrentResponseModel& model,
     if (region < 0) fatal("[eppi0_norm] FATAL: cannot determine photon current-response region.");
 
     if (is_data) {
-        const CurrentResponseEntry* e = find_current_response_entry(model.data, "ep->eppi0", period, region);
-        if (!e || !e->valid) fatal("[eppi0_norm] FATAL: missing DATA ep->eppi0 current response for " + period + "/" + current_region_names()[region]);
+        const CurrentResponseEntry* e = find_current_response_entry(model.data, channel, period, region);
+        if (!e || !e->valid) fatal("[eppi0_norm] FATAL: missing DATA " + channel + " current response for " + period + "/" + current_region_names()[region]);
         auto ip = model.run_current_nA.find(period);
         if (ip == model.run_current_nA.end()) fatal("[eppi0_norm] FATAL: missing run-current map for " + period);
         auto ir = ip->second.find(b.runnum);
@@ -2583,8 +2584,8 @@ static double eppi0_event_current_weight(const CurrentResponseModel& model,
         return 1.0 / response;
     }
 
-    const CurrentResponseEntry* e = find_current_response_entry(model.mc, "ep->eppi0", period, region);
-    if (!e || !e->valid || !(e->parameter > 0.0)) fatal("[eppi0_norm] FATAL: missing MC ep->eppi0 current response for " + period + "/" + current_region_names()[region]);
+    const CurrentResponseEntry* e = find_current_response_entry(model.mc, channel, period, region);
+    if (!e || !e->valid || !(e->parameter > 0.0)) fatal("[eppi0_norm] FATAL: missing MC " + channel + " current response for " + period + "/" + current_region_names()[region]);
     return 1.0 / e->parameter;
 }
 
@@ -2694,7 +2695,7 @@ static void fill_eppi0_data_hists_analysis(const ChannelConfig& cfg,
         tree->GetEntry(i);
         if (!passes_event_selection(cfg, tags, data_cuts, b)) continue;
         bool skip = false;
-        const double w = eppi0_event_current_weight(current_model, tags.display, b, true, skip);
+        const double w = event_current_weight(current_model, "ep->eppi0", tags.display, b, true, skip);
         if (skip) { ++n_current_skip; continue; }
         ++n_pass; sum_weight += w; fill_hist_set(hists, b, w);
     }
@@ -2887,7 +2888,7 @@ static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
         tree->GetEntry(i);
         if (!passes_event_selection(cfg, tags, mc_cuts, b)) continue;
         bool skip = false;
-        const double current_w = eppi0_event_current_weight(current_model, tags.display, b, false, skip);
+        const double current_w = event_current_weight(current_model, "ep->eppi0", tags.display, b, false, skip);
         const double w = event_norm * current_w;
         ++n_pass; sum_weight += w; fill_hist_set(hists, b, w);
         if (accepted_population) accepted_population->add(b, w);
@@ -2949,7 +2950,7 @@ static void fill_eppi0_photon_topology_grid(const ChannelConfig& cfg,
         const int cell = TopologyKinematicGrid::index(b.x, b.Q2, std::fabs(b.t1));
         if (cell < 0) continue;
         bool skip = false;
-        const double cw = eppi0_event_current_weight(current_model, tags.display, b, is_data, skip);
+        const double cw = event_current_weight(current_model, "ep->eppi0", tags.display, b, is_data, skip);
         if (skip) continue;
         const double w = is_data ? cw : event_norm * cw;
         TopologyCellAccum& a = grid.cells[topo][cell];
@@ -3070,7 +3071,7 @@ static void fill_eppi0_photon_topology_hists(const ChannelConfig& cfg,
         const std::string topo = photon_pair_topology(b);
         if (topo.empty()) continue;
         bool skip = false;
-        const double cw = eppi0_event_current_weight(current_model, tags.display, b, is_data, skip);
+        const double cw = event_current_weight(current_model, "ep->eppi0", tags.display, b, is_data, skip);
         if (skip) continue;
         const double w = is_data ? cw : event_norm * cw;
         fill_hist_set(out.at(topo), b, w);
@@ -3508,8 +3509,7 @@ static void accumulate_normalized_yields_for_tree(const ChannelConfig& cfg,
                                                   TTree* tree,
                                                   const std::vector<RowBin>& rows,
                                                   const TopoCutMap& data_cuts,
-                                                  double current_factor,
-                                                  double current_factor_stat,
+                                                  const CurrentResponseModel& current_model,
                                                   const PeriodNormalization& norm,
                                                   std::unordered_map<std::string, RowCounts>& out) {
     if (!tree) {
@@ -3562,9 +3562,19 @@ static void accumulate_normalized_yields_for_tree(const ChannelConfig& cfg,
         }
 
         const double ratio_stat = cubic_eval_stat_diag(fit, theta);
-        const double current_rel_stat = (current_factor_stat > 0.0) ? current_factor_stat / current_factor : 0.0;
         const double ratio_rel_stat = (ratio_stat > 0.0) ? ratio_stat / ratio : 0.0;
-        const double weight = 1.0 / (current_factor * ratio);
+
+        bool current_skip = false;
+        const double current_weight = event_current_weight(
+            current_model, cfg.csv_channel, tags.display, b, true, current_skip);
+        if (current_skip) continue;
+        if (!(std::isfinite(current_weight) && current_weight > 0.0)) continue;
+
+        // Pass-1-style empirical eppi0 correction.  R_pi0 = DATA/MC, so the
+        // event is weighted by 1/R_pi0 on top of the production current-response
+        // correction.  Krishna/Neupane is deliberately not applied separately.
+        const double weight = current_weight / ratio;
+        const double current_rel_stat = 0.0; // current calibration uncertainty is propagated separately
         const double phi = b.phi_deg();
         const double tabs = b.t_abs();
 
@@ -3647,13 +3657,12 @@ static void fill_normalized_yields(CSV& csv,
                                    const std::map<std::string, TTree*>& eppi0DataTrees,
                                    const std::vector<PeriodNormalization>& norms,
                                    const TopoCutMap& data_cuts,
+                                   const CurrentResponseModel& current_model,
                                    int max_workers) {
     struct WorkItem {
         ChannelConfig cfg;
         PeriodTags tags;
         TTree* tree = nullptr;
-        double current_factor = 1.0;
-        double current_factor_stat = 0.0;
         PeriodNormalization norm;
     };
 
@@ -3674,8 +3683,6 @@ static void fill_normalized_yields(CSV& csv,
             w.cfg = cfg;
             w.tags = tags;
             w.tree = kv.second;
-            read_current_factor(csv, cfg, "exp", tags.display,
-                                w.current_factor, w.current_factor_stat);
             w.norm = find_norm(norms, tags.display);
 
             items.push_back(w);
@@ -3699,8 +3706,7 @@ static void fill_normalized_yields(CSV& csv,
                                               items[i].tree,
                                               rows,
                                               data_cuts,
-                                              items[i].current_factor,
-                                              items[i].current_factor_stat,
+                                              current_model,
                                               items[i].norm,
                                               results[i]);
     }
@@ -4459,6 +4465,8 @@ bool update_eppi0_normalization_csv(
         const TopoCutMap mc_cuts = load_sigma_cuts(options.combined_cuts_json, "mc");
 
         std::vector<PeriodNormalization> norms;
+        const CurrentResponseModel current_model =
+            load_current_response_model(options.current_response_model_json);
 
         if (options.clean_output_dir && !options.override_to_unity) {
             std::error_code ec;
@@ -4474,8 +4482,6 @@ bool update_eppi0_normalization_csv(
             norms = unity_norms();
         } else {
             mkdir_p(options.output_dir);
-            const CurrentResponseModel current_model =
-                load_current_response_model(options.current_response_model_json);
             std::cout << "[eppi0_norm] Loaded production current-response model: "
                       << options.current_response_model_json << std::endl;
 
@@ -4536,6 +4542,7 @@ bool update_eppi0_normalization_csv(
                                    eppi0DataTrees,
                                    norms,
                                    data_cuts,
+                                   current_model,
                                    options.max_workers);
         } else {
             std::cout << "[eppi0_norm] Diagnostic mode: production normalized raw yields were NOT overwritten.\n";

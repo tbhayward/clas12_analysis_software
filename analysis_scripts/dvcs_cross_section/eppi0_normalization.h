@@ -75,9 +75,13 @@ struct Eppi0NormalizationOptions {
  *   normalized raw yield, ep->epg,   <topo>, exp, <period>, <helicity>
  *   normalized raw yield, ep->eppi0, <topo>, exp, <period>, <helicity>
  *
- * using event weight:
+ * using the same event-by-event current-response correction as total_counts:
  *
- *   w = 1 / (current_efficiency_exp_factor * R_pi0(theta_p)).
+ *   w = w_current(event) / R_pi0(theta_p).
+ *
+ * The separate Krishna/Neupane proton-efficiency correction must be disabled
+ * when these empirical normalized yields are used, because R_pi0 already
+ * contains the proton DATA/MC reconstruction mismatch.
  *
  * If override_to_unity is true, all cubic cells are written as
  * (1,0,0,0), all scalar normalization factor cells as (1,0), and the

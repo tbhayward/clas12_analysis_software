@@ -17,12 +17,12 @@
 // distinct categories.
 //
 // The pre-existing 2.16% charge/target-thickness source is retained explicitly.
-// The Neupane proton-efficiency uncertainty is treated as an OVERALL
-// normalization uncertainty: 2.83% for Fa18 and Sp19, and 11.32% for Sp18
-// pending a dedicated Sp18 reconstruction-version study.  For the combined
-// 10.6-GeV result the proton-efficiency normalization is the accumulated-charge
-// weighted average of the four contributing periods.  It is then combined in
-// quadrature with the existing 2.16% normalization.
+// The separate Neupane proton-efficiency correction/normalization term is
+// disabled in the pass-1-style eppi0-normalized workflow because the empirical
+// eppi0 DATA/MC correction already contains the proton reconstruction mismatch.
+// Until the residual eppi0 normalization uncertainty is finalized, the overall
+// normalization column therefore contains only the pre-existing 2.16%
+// charge/target-thickness term.
 //
 // The authoritative final columns include:
 //

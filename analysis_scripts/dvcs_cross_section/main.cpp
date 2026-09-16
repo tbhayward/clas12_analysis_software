@@ -36,7 +36,6 @@
 #include "pass1_paper_plots.h"
 #include "branch_data_mc_comparison.h"
 #include "pi0_subtracted_kinematics.h"
-#include "external_scripts_runner.h"
 #include "systematics_runner.h"
 #include "cut_variation_runner.h"
 
@@ -48,7 +47,6 @@ struct SystematicRunSelection {
     bool current = true;
     bool acceptance = true;
     bool csv_only = true;
-    bool external_studies = true;
 };
 
 static std::vector<std::string> split_tokens(const std::string& value) {
@@ -79,7 +77,6 @@ static SystematicRunSelection parse_systematic_selection(
             sel.current=false;
             sel.acceptance=false;
             sel.csv_only=false;
-            sel.external_studies=false;
             explicitly_set=true;
             continue;
         }
@@ -94,14 +91,13 @@ static SystematicRunSelection parse_systematic_selection(
             sel.current=false;
             sel.acceptance=false;
             sel.csv_only=false;
-            sel.external_studies=false;
             explicitly_set=true;
 
             for(const std::string& token:split_tokens(argv[++i])){
                 if(token=="all"){
-                    sel.cuts=sel.current=sel.acceptance=sel.csv_only=sel.external_studies=true;
+                    sel.cuts=sel.current=sel.acceptance=sel.csv_only=true;
                 } else if(token=="none"){
-                    sel.cuts=sel.current=sel.acceptance=sel.csv_only=sel.external_studies=false;
+                    sel.cuts=sel.current=sel.acceptance=sel.csv_only=false;
                 } else if(token=="cuts" ||
                           token=="exclusivity" ||
                           token=="fiducial"){
@@ -115,8 +111,7 @@ static SystematicRunSelection parse_systematic_selection(
                     sel.acceptance=true;
                 } else if(token=="csv" || token=="post"){
                     sel.csv_only=true;
-                } else if(token=="external"){
-                    sel.external_studies=true;
+
                 } else {
                     throw std::runtime_error(
                         "unknown --systematics token: "+token);
@@ -168,7 +163,6 @@ int main(int argc, char* argv[]) {
               << " current=" << systematic_selection.current
               << " acceptance=" << systematic_selection.acceptance
               << " csv=" << systematic_selection.csv_only
-              << " external=" << systematic_selection.external_studies
               << std::endl;
 
     // Create necessary output directories
@@ -464,6 +458,10 @@ int main(int argc, char* argv[]) {
         total_count_opts.make_plots = false;
         total_count_opts.make_note_outputs = true;
         total_count_opts.apply_event_level_current_correction = true;
+        // The pass-1-style eppi0 DATA/AAOgen correction applied below already
+        // contains the proton DATA/MC mismatch.  Keep Krishna/Neupane OFF to
+        // avoid correcting the proton inefficiency twice.
+        total_count_opts.apply_neupane_proton_efficiency_correction = false;
         total_count_opts.current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
         total_count_opts.require_sp18_out_epg_e_theta_current_model = true;
         total_count_opts.use_epg_mc_current_factor_for_eppi0_bkg =
@@ -487,27 +485,40 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // // --------- eppi0 AAOGEN data/MC normalization + normalized raw yields ----------
-    // {
-    //     const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-    //
-    //     Eppi0NormalizationOptions norm_opts;
-    //     norm_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-    //     norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-    //     norm_opts.normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
-    //     norm_opts.output_dir = "output/data_mc_normalization";
-    //     norm_opts.override_to_unity = true;
-    //     norm_opts.max_workers = 7;
-    //
-    //     if (!update_eppi0_normalization_csv(csv_main,
-    //                                         dataTrees,
-    //                                         eppi0DataTrees,
-    //                                         eppi0RecMcTrees,
-    //                                         norm_opts)) {
-    //         std::cerr << "[main] ERROR: update_eppi0_normalization_csv failed.\n";
-    //         std::exit(EXIT_FAILURE);
-    //     }
-    // }
+    // --------- pass-1-style eppi0 DATA/AAOGEN normalization ----------
+    // Derive the seven period-dependent proton-theta DATA/MC fits (six FD
+    // sectors + CD) and apply 1/R_pi0(theta_p) event-by-event to both DVCS and
+    // eppi0 DATA normalized yields.  This runs after total_counts so it
+    // deliberately overwrites the current-only normalized DATA yield columns.
+    // Krishna/Neupane is OFF above: the empirical eppi0 correction already
+    // contains that proton DATA/MC inefficiency.
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+
+        Eppi0NormalizationOptions norm_opts;
+        norm_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+        norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+        norm_opts.normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
+        norm_opts.current_response_model_json =
+            "output/dvcs_current_dependence/calibration/current_response_model.json";
+        norm_opts.output_dir = "output/data_mc_normalization";
+        norm_opts.override_to_unity = false;
+        norm_opts.write_normalized_yields = true;
+        norm_opts.write_summary_csv = true;
+        norm_opts.write_accepted_mc_population = true;
+        norm_opts.max_workers = 7;
+
+        if (!update_eppi0_normalization_csv(csv_main,
+                                            dataTrees,
+                                            eppi0DataTrees,
+                                            eppi0RecMcTrees,
+                                            norm_opts)) {
+            std::cerr << "[main] FATAL: pass-1-style eppi0 normalization failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+        std::cout << "[main] Applied pass-1-style eppi0 DATA/AAOgen normalization; "
+                  << "Krishna/Neupane remains disabled.\n";
+    }
 
     // --------- pi0 contamination (helicity-averaged; bin-by-bin) ----------
     {
@@ -1021,28 +1032,9 @@ int main(int argc, char* argv[]) {
             << "[main] Skipping CSV-only systematics by request.\n";
     }
 
-    // --------- External integrated and legacy cross-section studies ----------
-    if (systematic_selection.external_studies) {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-
-        ExternalScriptOptions external_opts;
-        external_opts.scripts_directory = "external_scripts";
-        external_opts.python_executable = "python";
-        external_opts.published_pass1_cross_section_table =
-            "imports/clasdb_E214M1.txt";
-        external_opts.include_bin_to_bin_systematics = true;
-        external_opts.use_simple_clas6_cross_check = true;
-
-        if (!run_external_cross_section_scripts(csv_main, external_opts)) {
-            std::cerr << "[main] FATAL: external cross-section scripts failed.\n";
-            return 1;
-        }
-    }
-
-    else {
-        std::cout
-            << "[main] Skipping external integrated studies by request.\n";
-    }
+    // Hall-A / CLAS6 / world-data comparisons are intentionally not run here.
+    // They are maintained as separate external comparison workflows and were
+    // removed from the nominal chain to avoid duplicated runtime.
 
     std::cout << "All done." << std::endl;
     return 0;

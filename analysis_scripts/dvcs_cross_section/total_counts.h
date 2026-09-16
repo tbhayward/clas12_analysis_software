@@ -37,6 +37,12 @@ struct TotalCountsOptions {
     // counting uncertainty contains only sum(w^2); fitted response-parameter
     // uncertainties are written separately as correlated calibration nuisances.
     bool apply_event_level_current_correction = true;
+
+    // The pass-2 production normalization is now derived empirically from
+    // ep->eppi0 DATA/AAOgen, as in pass-1.  That empirical correction already
+    // contains the proton DATA/MC efficiency mismatch, so applying the separate
+    // Krishna/Neupane proton correction would double count it.
+    bool apply_neupane_proton_efficiency_correction = false;
     std::string current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
 
     // Final-production guard: the reviewed current-dependence study requires

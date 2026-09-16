@@ -646,9 +646,15 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
     //
     // This is an overall normalization category, so the four contributions are
     // not averaged down with 1/sqrt(N) or weighted bin-by-bin by event yield.
-    const double peff_sys_fa18 = 0.0283;
-    const double peff_sys_sp18 = 4.0 * peff_sys_fa18;
-    const double peff_sys_sp19 = peff_sys_fa18;
+    // Krishna/Neupane is not a separate production correction in the current
+    // pass-1-style eppi0-normalized workflow.  The empirical eppi0 DATA/MC fit
+    // contains the proton efficiency mismatch, so retaining the old 2.83/11.32%
+    // terms here would double count it.  A residual eppi0 normalization
+    // uncertainty will be installed after the corrected cross sections are
+    // validated against pass-1/world data.
+    const double peff_sys_fa18 = 0.0;
+    const double peff_sys_sp18 = 0.0;
+    const double peff_sys_sp19 = 0.0;
 
     const double q_sp18_inb_mC = 51.248191;
     const double q_sp18_out_mC = 11.435592;

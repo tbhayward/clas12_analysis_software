@@ -9,10 +9,12 @@ struct CorrelatedScaleSystematicsOptions {
     // Pre-existing target-thickness ⊕ accumulated-charge normalization.
     double uncorrelated_normalization_fraction = 0.021633307652784;
 
-    // Proton-efficiency overall-normalization prescription.
-    double proton_efficiency_fa18_fraction = 0.0283;
-    double proton_efficiency_sp18_fraction = 0.1132;
-    double proton_efficiency_sp19_fraction = 0.0283;
+    // Separate Krishna/Neupane normalization is disabled: the pass-1-style eppi0
+    // empirical correction now contains the proton DATA/MC mismatch.  Keep these
+    // zero until the residual eppi0 normalization uncertainty is quantified.
+    double proton_efficiency_fa18_fraction = 0.0;
+    double proton_efficiency_sp18_fraction = 0.0;
+    double proton_efficiency_sp19_fraction = 0.0;
 
     // Exact accumulated charges for the final Pass-2 10.6-GeV run selection.
     double charge_sp18_inb_mC = 51.248191;
