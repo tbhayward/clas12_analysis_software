@@ -137,9 +137,12 @@ static SystematicRunSelection parse_systematic_selection(
 
 int main(int argc, char* argv[]) {
     bool acceptance_reweighting_only = false;
+    bool eppi0_normalization_only = false;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--acceptance-reweighting-only") {
             acceptance_reweighting_only = true;
+        } else if (std::string(argv[i]) == "--eppi0-normalization-only") {
+            eppi0_normalization_only = true;
         }
     }
     SystematicRunSelection systematic_selection;
@@ -154,7 +157,8 @@ int main(int argc, char* argv[]) {
                   << "  ./dvcs_analysis --systematics acceptance,csv\n"
                   << "  ./dvcs_analysis --systematics csv\n"
                   << "  ./dvcs_analysis --skip-systematics\n"
-                  << "  ./dvcs_analysis --acceptance-reweighting-only\n";
+                  << "  ./dvcs_analysis --acceptance-reweighting-only\n"
+                  << "  ./dvcs_analysis --eppi0-normalization-only\n";
         return 1;
     }
 
@@ -254,7 +258,7 @@ int main(int argc, char* argv[]) {
     exclusivity_opts.nominal_containment = 0.95;
     exclusivity_opts.loose_containment = 0.98;
 
-    if (!acceptance_reweighting_only) {
+    if (!acceptance_reweighting_only && !eppi0_normalization_only) {
         if (!run_python_exclusivity_analysis(exclusivity_opts)) {
             std::cerr << "[main] FATAL: Python exclusivity optimization failed.\n";
             return 1;
@@ -265,8 +269,11 @@ int main(int argc, char* argv[]) {
 
         initialize_pass2_csv("imports/all_bin_v3.csv",
                              "output/csvs/dvcs_pass2_analysis.csv");
-    } else {
+    } else if (acceptance_reweighting_only) {
         std::cout << "[main] Acceptance-reweighting-only mode: reusing existing "
+                  << "combined cuts, current calibration, and analysis CSV.\n";
+    } else {
+        std::cout << "[main] eppi0-normalization-only mode: reusing existing "
                   << "combined cuts, current calibration, and analysis CSV.\n";
     }
 
@@ -301,6 +308,34 @@ int main(int argc, char* argv[]) {
               << currentStudyGenMcTrees.size() << std::endl;
     std::cout << "Current-study reconstructed MC trees loaded: "
               << currentStudyRecMcTrees.size() << std::endl;
+
+    if (eppi0_normalization_only) {
+        Eppi0NormalizationOptions norm_opts;
+        norm_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+        norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+        norm_opts.normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
+        norm_opts.output_dir = "output/data_mc_normalization";
+        norm_opts.override_to_unity = false;
+        norm_opts.write_normalized_yields = false;
+        norm_opts.write_summary_csv = true;
+        norm_opts.summary_csv_path =
+            "output/data_mc_normalization/eppi0_normalization_summary.csv";
+        norm_opts.max_workers = 7;
+
+        std::cout << "[main] Running eppi0 normalization DIAGNOSTIC only. "
+                  << "Krishna/Neupane proton-efficiency weights are not used by this stage, "
+                  << "and production normalized yields will not be overwritten.\n";
+
+        if (!update_eppi0_normalization_csv(
+                "output/csvs/dvcs_pass2_analysis.csv",
+                dataTrees, eppi0DataTrees, eppi0RecMcTrees, norm_opts)) {
+            std::cerr << "[main] FATAL: eppi0 normalization diagnostic failed.\n";
+            return 1;
+        }
+
+        std::cout << "[main] eppi0 normalization diagnostic finished.\n";
+        return 0;
+    }
 
     if (acceptance_reweighting_only) {
         AcceptanceReweightingOptions arw;

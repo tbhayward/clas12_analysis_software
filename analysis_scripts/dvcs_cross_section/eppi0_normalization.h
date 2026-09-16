@@ -13,6 +13,19 @@ struct Eppi0NormalizationOptions {
     std::string output_dir = "output/data_mc_normalization";
     std::string normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
     bool override_to_unity = false;
+
+    // Study mode: derive the pi0 DATA/AAOGEN normalization, write fits,
+    // diagnostic plots, and machine-readable summaries, but do NOT overwrite
+    // the production normalized-yield columns. This is the default while the
+    // absolute pi0-model and photon-efficiency systematics are being validated.
+    bool write_normalized_yields = false;
+
+    // Write one compact CSV containing the period/region integrated ratios and
+    // fitted cubic coefficients. This is intended for fast external studies.
+    bool write_summary_csv = true;
+    std::string summary_csv_path =
+        "output/data_mc_normalization/eppi0_normalization_summary.csv";
+
     int max_workers = 5;
 };
 
@@ -39,7 +52,8 @@ struct Eppi0NormalizationOptions {
  *
  *   R_pi0(theta_p) = a0 + a1 theta + a2 theta^2 + a3 theta^3.
  *
- * Then the function loops over DVCS and eppi0 DATA events and fills:
+ * If options.write_normalized_yields is true, the function then loops over DVCS
+ * and eppi0 DATA events and fills:
  *
  *   normalized raw yield, ep->epg,   <topo>, exp, <period>, <helicity>
  *   normalized raw yield, ep->eppi0, <topo>, exp, <period>, <helicity>

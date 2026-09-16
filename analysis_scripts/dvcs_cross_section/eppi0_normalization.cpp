@@ -155,6 +155,8 @@ struct SummaryRatioCurve {
 
 struct PeriodNormalization {
     std::string period;
+    double integrated_ratio = 1.0;
+    double integrated_ratio_err = 0.0;
     std::map<std::string, RegionNormalization> regions;
     std::map<std::string, SummaryRatioCurve> summary_ratio_curves;
 };
@@ -2718,6 +2720,8 @@ static PeriodNormalization run_period_normalization(const std::string& period,
 
     PeriodNormalization out;
     out.period = period;
+    out.integrated_ratio = ratio;
+    out.integrated_ratio_err = ratio_err;
     out.regions = region_norms;
     out.summary_ratio_curves = summary_ratio_curves;
 
@@ -3567,6 +3571,42 @@ static void save_parent_fit_summary_plots(const std::string& output_dir,
 // CSV output for normalization fits
 // -----------------------------------------------------------------------------
 
+static void write_norm_summary_csv(const std::string& path,
+                                   const std::vector<PeriodNormalization>& norms) {
+    const std::size_t slash = path.find_last_of("/\\");
+    if (slash != std::string::npos) {
+        mkdir_p(path.substr(0, slash));
+    }
+
+    std::ofstream out(path.c_str());
+    if (!out.is_open()) {
+        fatal("[eppi0_norm] FATAL: could not write summary CSV: " + path);
+    }
+
+    out << "period,region,integrated_data_over_mc,integrated_stat_err,"
+           "a0,a1,a2,a3,ea0,ea1,ea2,ea3,theta_min_deg,theta_max_deg,fit_valid\n";
+
+    out << std::setprecision(12);
+    for (const PeriodNormalization& pn : norms) {
+        out << '"' << pn.period << "\",\"ALL\","
+            << pn.integrated_ratio << "," << pn.integrated_ratio_err
+            << ",,,,,,,,,,,0\n";
+        for (const std::string& region : normalization_regions()) {
+            auto it = pn.regions.find(region);
+            if (it == pn.regions.end()) continue;
+            const RegionNormalization& rn = it->second;
+            out << '"' << pn.period << "\",\"" << region << "\"," 
+                << rn.integrated_ratio << "," << rn.integrated_ratio_err;
+            for (int i = 0; i < 4; ++i) out << "," << rn.fit.a[i];
+            for (int i = 0; i < 4; ++i) out << "," << rn.fit.ea[i];
+            out << "," << rn.fit.x_min << "," << rn.fit.x_max << ","
+                << (rn.fit.valid ? 1 : 0) << "\n";
+        }
+    }
+
+    std::cout << "[eppi0_norm] Wrote normalization study summary: " << path << std::endl;
+}
+
 static void write_norms_to_csv(CSV& csv, const std::vector<PeriodNormalization>& norms) {
     for (const std::string& period : CSV_PERIOD_ORDER) {
         const PeriodNormalization& n = find_norm(norms, period);
@@ -3679,17 +3719,25 @@ bool update_eppi0_normalization_csv(
 
         write_norms_to_csv(csv, norms);
 
-        fill_normalized_yields(csv,
-                               rows,
-                               dvcsDataTrees,
-                               eppi0DataTrees,
-                               norms,
-                               data_cuts,
-                               options.max_workers);
+        if (options.write_summary_csv && !options.override_to_unity) {
+            write_norm_summary_csv(options.summary_csv_path, norms);
+        }
+
+        if (options.write_normalized_yields) {
+            fill_normalized_yields(csv,
+                                   rows,
+                                   dvcsDataTrees,
+                                   eppi0DataTrees,
+                                   norms,
+                                   data_cuts,
+                                   options.max_workers);
+        } else {
+            std::cout << "[eppi0_norm] Diagnostic mode: production normalized raw yields were NOT overwritten.\n";
+        }
 
         write_csv_atomic(csv_path, csv);
 
-        std::cout << "[eppi0_norm] Updated eppi0 normalization polynomial columns and normalized raw yields in: "
+        std::cout << "[eppi0_norm] Updated eppi0 normalization diagnostic columns in: "
                   << csv_path << std::endl;
 
         return true;
