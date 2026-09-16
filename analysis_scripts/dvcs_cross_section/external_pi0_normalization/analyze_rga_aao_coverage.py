@@ -1135,6 +1135,166 @@ def plot_phase_space_uncertainty(setting_summary: pd.DataFrame, uscan: pd.DataFr
         cbar=fig.colorbar(sc,ax=ax,pad=.03); cbar.set_label(r"$\delta M_{transport}$")
         fig.tight_layout(); fig.savefig(PNG/f"accepted_aao_{topology.replace('-','_')}_phase_space_uncertainty.png",dpi=220); plt.close(fig)
 
+def _period_ebeam(period: str) -> float:
+    return {"Sp18 Inb":10.594,"Sp18 Out":10.594,"Fa18 Inb":10.604,"Fa18 Out":10.604,"Sp19 Inb":10.200}[period]
+
+
+def _angular_residual_training(clas6_path: Path) -> dict[str,pd.DataFrame]:
+    """Dimensionless additive LT/TT residuals, scaled to VPK sigma_U.
+
+    Ratios data/VPK are deliberately avoided for LT and TT because either
+    interference structure function can cross zero.  The transported quantity
+    is (data-model)/sigma_U(model) at the same published kinematics.
+    """
+    from validate_aao_pi0_model import epsilon, xsigma_t, xsigma_l
+    p=pd.read_csv(clas6_path)
+    out={}
+    for obs in ["LT","TT"]:
+        g=p[(p.observable==obs)&p.vpk_kine_valid].copy()
+        su=[]
+        for r in g.itertuples(index=False):
+            ep=epsilon(float(r.xB),float(r.Q2_GeV2),float(r.Ebeam_GeV))
+            su.append(xsigma_t(float(r.t_GeV2),float(r.xB),float(r.Q2_GeV2),float(r.Ebeam_GeV))+ep*xsigma_l(float(r.t_GeV2),float(r.xB),float(r.Q2_GeV2),float(r.Ebeam_GeV)))
+        su=np.asarray(su,float)
+        g["angular_residual_over_U"]=(pd.to_numeric(g.data_value,errors="coerce").to_numpy(float)-pd.to_numeric(g.vpk_value,errors="coerce").to_numpy(float))/su
+        g["angular_residual_over_U_err"]=pd.to_numeric(g.data_totalerr,errors="coerce").to_numpy(float)/np.abs(su)
+        g=g[np.isfinite(g.angular_residual_over_U)&np.isfinite(g.angular_residual_over_U_err)&(g.angular_residual_over_U_err>0)].copy()
+        out[obs]=g
+    return out
+
+
+def phi_dependent_vpk_acceptance(a: pd.DataFrame, phi_path: Path, clas6_path: Path,
+                                 bandwidth: float, k: int) -> pd.DataFrame:
+    """Fold observed CLAS6 LT/TT residuals through the accepted AAOgen phi population.
+
+    This is a diagnostic of the change relative to the present U-only external
+    correction.  It uses the same externally selected transport bandwidth/k;
+    no additional smoothing choice is introduced here.
+    """
+    if not phi_path.exists():
+        print(f"[rga-coverage] accepted AAOgen phi population missing; skipping phi-dependent VPK diagnostic: {phi_path}")
+        return pd.DataFrame()
+    from validate_aao_pi0_model import epsilon, xsigma_t, xsigma_l, xsigma_tt, xsigma_lt
+    ph=pd.read_csv(phi_path)
+    base=a[["period","photon_topology","ix","iq","it","xB","Q2","minus_t","external_local_M"]].copy()
+    z=ph.merge(base,on=["period","photon_topology","ix","iq","it"],how="inner")
+    trains=_angular_residual_training(clas6_path)
+    ext=pd.concat(list(trains.values()),ignore_index=True).rename(columns={"Q2_GeV2":"Q2","minus_t_GeV2":"minus_t"})
+    lo,scale=_external_scale(ext)
+    for obs in ["LT","TT"]:
+        tr=trains[obs].copy(); xyz=tr[["xB","Q2_GeV2","minus_t_GeV2"]].to_numpy(float)
+        tr2=pd.DataFrame({"xB":tr.xB,"Q2":tr.Q2_GeV2,"minus_t":tr.minus_t_GeV2,
+                          "ratio":tr.angular_residual_over_U,"ratio_err":tr.angular_residual_over_U_err})
+        pred=[]
+        for q in z[["xB","Q2","minus_t"]].to_numpy(float):
+            v,_=_predict_kernel(tr2,np.asarray(q,float)[None,:],lo,scale,bandwidth,k)
+            pred.append(float(v[0]))
+        z[f"delta_{obs}_over_U"]=pred
+    ratios=[]
+    for r in z.itertuples(index=False):
+        x=float(r.xB); q2=float(r.Q2); t=-float(r.minus_t); e=_period_ebeam(str(r.period)); phi=math.radians(0.5*(float(r.phi_low_deg)+float(r.phi_high_deg)))
+        ep=epsilon(x,q2,e); U=xsigma_t(t,x,q2,e)+ep*xsigma_l(t,x,q2,e); TT=xsigma_tt(t,x,q2,e); LT=xsigma_lt(t,x,q2,e)
+        A=math.sqrt(max(0.0,2.0*ep*(1.0+ep)))
+        nom=U + A*LT*math.cos(phi) + ep*TT*math.cos(2.0*phi)
+        cor=float(r.external_local_M)*U + A*(LT+float(r.delta_LT_over_U)*U)*math.cos(phi) + ep*(TT+float(r.delta_TT_over_U)*U)*math.cos(2.0*phi)
+        ratios.append(cor/nom if np.isfinite(nom) and abs(nom)>1e-12 else np.nan)
+    z["full_angular_over_vpk"]=ratios
+    z["u_only_over_vpk"]=z.external_local_M
+    z["angular_relative_to_u_only"]=z.full_angular_over_vpk/z.u_only_over_vpk
+    rows=[]
+    for (period,topo),g in z.groupby(["period","photon_topology"]):
+        good=g[np.isfinite(g.angular_relative_to_u_only)&(g.sum_weight>0)]
+        if good.empty: continue
+        w=good.sum_weight.to_numpy(float); rr=good.angular_relative_to_u_only.to_numpy(float)
+        mean=float(np.sum(w*rr)/np.sum(w))
+        rms=float(np.sqrt(np.sum(w*(rr-mean)**2)/np.sum(w)))
+        rows.append({"period":period,"photon_topology":topo,"angular_over_u_only":mean,
+                     "angular_shift_fraction":mean-1.0,"weighted_cell_phi_rms":rms,
+                     "n_cell_phi_bins":len(good)})
+    return pd.DataFrame(rows).sort_values(["period","photon_topology"])
+
+
+def corrected_kinematic_closure(a: pd.DataFrame, grid_dir: Path) -> tuple[pd.DataFrame,pd.DataFrame]:
+    """Correct coarse eppi0 DATA/MC cells for local VPK and proton terms, then test residual shape.
+
+    The residual is normalized to its own period/topology weighted mean.  Thus
+    this is a shape/closure test, not another determination of the absolute
+    normalization.
+    """
+    files=sorted(grid_dir.glob("*_kinematic_closure_grid.csv"))
+    if not files:
+        print(f"[rga-coverage] no kinematic closure grids found under {grid_dir}; skipping corrected closure")
+        return pd.DataFrame(),pd.DataFrame()
+    g=pd.concat([pd.read_csv(f) for f in files],ignore_index=True)
+    fine=a.copy()
+    fine["cix"]=(fine.xB/0.1).astype(int).clip(0,6); fine["ciq"]=((fine.Q2-1.0)/1.0).astype(int).clip(0,5); fine["cit"]=(fine.minus_t/0.2).astype(int).clip(0,4)
+    rows=[]
+    for key,h in fine.groupby(["period","photon_topology","cix","ciq","cit"]):
+        w=h.sum_weight.to_numpy(float); sw=w.sum()
+        if sw<=0: continue
+        rows.append({"period":key[0],"photon_topology":key[1],"ix":key[2],"iq":key[3],"it":key[4],
+                     "local_M":float(np.sum(w*h.external_local_M.to_numpy(float))/sw),
+                     "proton_ratio":float(np.sum(w*h.proton_efficiency_ratio_mean.to_numpy(float))/sw)})
+    f=pd.DataFrame(rows)
+    z=g.merge(f,on=["period","photon_topology","ix","iq","it"],how="left")
+    z["corrected_two_photon_residual"]=z.data_over_mc/(z.local_M*z.proton_ratio)
+    summaries=[]
+    z["closure_normalized_residual"]=np.nan
+    for (period,topo),idx in z.groupby(["period","photon_topology"]).groups.items():
+        h=z.loc[idx].copy(); good=np.isfinite(h.corrected_two_photon_residual)&np.isfinite(h.stat_err)&(h.stat_err>0)
+        h=h[good]
+        if h.empty: continue
+        # MC-yield weighting asks whether the accepted control-channel population closes as a whole,
+        # while retaining cell-level residuals for trend plots.
+        w=h.mc_sum_weight.to_numpy(float); rr=h.corrected_two_photon_residual.to_numpy(float)
+        cen=float(np.sum(w*rr)/np.sum(w)); nr=rr/cen
+        z.loc[h.index,"closure_normalized_residual"]=nr
+        rms=float(np.sqrt(np.sum(w*(nr-1.0)**2)/np.sum(w)))
+        p90=float(weighted_quantile(np.abs(nr-1.0),w,[0.90])[0])
+        summaries.append({"period":period,"photon_topology":topo,"n_cells":len(h),"central_residual":cen,
+                          "weighted_rms_fraction":rms,"weighted_p90_abs_fraction":p90,
+                          "max_abs_fraction":float(np.max(np.abs(nr-1.0)))})
+    return z,pd.DataFrame(summaries).sort_values(["period","photon_topology"])
+
+
+def plot_phi_acceptance_diagnostic(df: pd.DataFrame) -> None:
+    if df.empty:return
+    q=df[df.photon_topology.isin(["FT-FT","FD-FD"])].copy()
+    fig,ax=plt.subplots(figsize=(9.2,5.8))
+    x=np.arange(len(PERIOD_ORDER)); width=.34
+    for j,topo in enumerate(["FT-FT","FD-FD"]):
+        vals=[]
+        for p in PERIOD_ORDER:
+            h=q[(q.period==p)&(q.photon_topology==topo)]
+            vals.append(100*float(h.angular_shift_fraction.iloc[0]) if len(h) else np.nan)
+        ax.bar(x+(j-.5)*width,vals,width,label=topo)
+    ax.axhline(0,linewidth=1); ax.set_xticks(x,PERIOD_ORDER,rotation=20,ha="right")
+    ax.set_ylabel("Change from U-only external correction (%)")
+    ax.set_title("LT/TT discrepancies folded through accepted AAOgen phi")
+    ax.legend(); ax.grid(axis="y",alpha=.2); fig.tight_layout(); fig.savefig(PNG/"phi_dependent_vpk_acceptance_shift.png",dpi=220); plt.close(fig)
+
+
+def plot_corrected_closure(z: pd.DataFrame) -> None:
+    if z.empty:return
+    for var,label in [("xB_low",r"$x_B$"),("Q2_low_GeV2",r"$Q^2$ (GeV$^2$)"),("minus_t_low_GeV2",r"$-t$ (GeV$^2$)")]:
+        fig,axes=plt.subplots(2,3,figsize=(14,8.5),sharey=True); axes=axes.ravel()
+        for ax,p in zip(axes,PERIOD_ORDER):
+            h=z[(z.period==p)&z.photon_topology.isin(["FT-FT","FD-FD"])&np.isfinite(z.closure_normalized_residual)]
+            for topo,marker in [("FT-FT","o"),("FD-FD","s")]:
+                q=h[h.photon_topology==topo]
+                if q.empty:continue
+                # weighted mean in each displayed coordinate bin
+                pts=[]
+                for xv,g in q.groupby(var):
+                    w=g.mc_sum_weight.to_numpy(float); y=g.closure_normalized_residual.to_numpy(float)
+                    pts.append((xv,float(np.sum(w*y)/np.sum(w))))
+                if pts:
+                    xx,yy=zip(*pts); ax.plot(xx,yy,marker=marker,label=topo)
+            ax.axhline(1,linestyle="--",linewidth=1); ax.set_title(p); ax.grid(alpha=.2)
+        for ax in axes[len(PERIOD_ORDER):]:ax.axis("off")
+        axes[0].legend(); fig.supxlabel(label); fig.supylabel("Corrected eπ0 residual / period-topology mean")
+        fig.suptitle("Corrected eπ0 kinematic closure",y=.995); fig.tight_layout(rect=[0,0,1,.97]); fig.savefig(PNG/f"corrected_eppi0_closure_vs_{var}.png",dpi=220); plt.close(fig)
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--accepted-aao",type=Path,default=DEFAULT_AAO)
@@ -1181,6 +1341,13 @@ def main():
     cov.to_csv(OUT/"rga_external_pi0_coverage_summary.csv",index=False)
     interference=interference_closure(CLAS6_POINTS)
     interference.to_csv(OUT/"clas6_U_TT_LT_closure_summary.csv",index=False)
+    phi_diag=phi_dependent_vpk_acceptance(a, DVCS_DIR/"output"/"data_mc_normalization"/"accepted_aao_phi_population.csv", CLAS6_POINTS, best_bw, best_k)
+    if not phi_diag.empty:
+        phi_diag.to_csv(OUT/"phi_dependent_vpk_acceptance_diagnostic.csv",index=False)
+    closure_cells,closure_summary=corrected_kinematic_closure(a, DVCS_DIR/"output"/"data_mc_normalization"/"photon_topology")
+    if not closure_cells.empty:
+        closure_cells.to_csv(OUT/"corrected_eppi0_kinematic_closure_cells.csv",index=False)
+        closure_summary.to_csv(OUT/"corrected_eppi0_kinematic_closure_summary.csv",index=False)
     fold.to_csv(OUT/"rga_vpk_fold_summary.csv",index=False)
     local_fold.to_csv(OUT/"rga_local_external_model_fold.csv",index=False)
     a.to_csv(OUT/"accepted_aao_population_with_external_support.csv",index=False)
@@ -1209,6 +1376,8 @@ def main():
     plot_topology_model_cancellation(model_ratio)
     plot_krishna_and_relative(proton_fold,relative)
     plot_pass2_normalization_summary(norm_summary)
+    plot_phi_acceptance_diagnostic(phi_diag)
+    plot_corrected_closure(closure_cells)
 
     print("\n=== RGA accepted-AAOgen external pi0 coverage ===")
     show=cov[cov.photon_topology=="ALL"][["period","raw_events","Q2_median_GeV2","clas6_interpolation_fraction","clas6_near_boundary_fraction","clas6_outside_fraction"]]
@@ -1240,6 +1409,12 @@ def main():
               "candidate_norm_vpk_fraction","candidate_norm_krishna_fraction","candidate_norm_quantified_total_fraction","improvement_factor_vs_31pct"]
         print(norm_summary[cols].to_string(index=False))
         print("NOTE: quantified total excludes photon sector/momentum dependence, differential Krishna-map transfer, and phi-dependent VPK acceptance effects.")
+    if not phi_diag.empty:
+        print("\n=== Phi-dependent VPK acceptance diagnostic: LT/TT relative to U-only ===")
+        print(phi_diag[phi_diag.photon_topology.isin(["FT-FT","FD-FD"])].to_string(index=False))
+    if not closure_summary.empty:
+        print("\n=== Corrected eppi0 kinematic closure ===")
+        print(closure_summary[closure_summary.photon_topology.isin(["FT-FT","FD-FD"])].to_string(index=False))
     print(f"\nWrote tables under: {OUT}")
     print(f"Wrote PNG figures under: {PNG}")
 

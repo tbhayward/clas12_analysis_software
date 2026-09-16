@@ -2725,6 +2725,13 @@ struct AcceptedMcCell {
     // the eppi0 normalization weights here.
     double sumw_proton_eff_ratio = 0.0;
     double sumw_proton_data_weight = 0.0;
+    // Accepted pi0 Trento-phi moments.  These let the external analysis fold
+    // sigma_LT*cos(phi) and sigma_TT*cos(2phi) through the actual accepted
+    // AAOgen population without any event reprocessing.
+    double sumw_cos_phi = 0.0;
+    double sumw_cos_2phi = 0.0;
+    std::array<double,12> sumw_phi_bins{};
+    std::array<double,12> sumw2_phi_bins{};
 };
 
 static double eppi0_neupane_proton_efficiency_ratio(double p_gev,
@@ -2805,6 +2812,14 @@ struct AcceptedMcPopulation {
                 proton_ratio = eppi0_neupane_proton_efficiency_ratio(b.p1_p,b.p1_theta,b.p1_phi);
             c.sumw_proton_eff_ratio += w*proton_ratio;
             c.sumw_proton_data_weight += w/proton_ratio;
+            if (b.has_phi2 && std::isfinite(b.phi2)) {
+                c.sumw_cos_phi += w*std::cos(b.phi2);
+                c.sumw_cos_2phi += w*std::cos(2.0*b.phi2);
+                double ph=std::fmod(b.phi2,2.0*M_PI); if(ph<0.0) ph+=2.0*M_PI;
+                int iphi=std::min(11,std::max(0,static_cast<int>(ph/(2.0*M_PI)*12.0)));
+                c.sumw_phi_bins[static_cast<std::size_t>(iphi)] += w;
+                c.sumw2_phi_bins[static_cast<std::size_t>(iphi)] += w*w;
+            }
         }
     }
 };
@@ -2816,7 +2831,7 @@ static void write_accepted_mc_population_csv(
     if (pp.has_parent_path()) mkdir_p(pp.parent_path().string());
     std::ofstream out(path.c_str());
     if (!out.is_open()) fatal("[eppi0_norm] FATAL: cannot write accepted AAOgen population CSV: " + path);
-    out << "period,photon_topology,ix,iq,it,xB_low,xB_high,Q2_low_GeV2,Q2_high_GeV2,minus_t_low_GeV2,minus_t_high_GeV2,raw_events,sum_weight,sum_weight2,xB_weighted_mean,Q2_weighted_mean_GeV2,minus_t_weighted_mean_GeV2,proton_efficiency_ratio_mean,proton_data_weight_mean\n";
+    out << "period,photon_topology,ix,iq,it,xB_low,xB_high,Q2_low_GeV2,Q2_high_GeV2,minus_t_low_GeV2,minus_t_high_GeV2,raw_events,sum_weight,sum_weight2,xB_weighted_mean,Q2_weighted_mean_GeV2,minus_t_weighted_mean_GeV2,proton_efficiency_ratio_mean,proton_data_weight_mean,cos_phi_weighted_mean,cos_2phi_weighted_mean\n";
     out << std::setprecision(12);
     for (const auto& pkv : populations) {
         const std::string& period = pkv.first;
@@ -2836,11 +2851,24 @@ static void write_accepted_mc_population_csv(
                     << c.raw_events << ',' << c.sumw << ',' << c.sumw2 << ','
                     << c.sumw_x/c.sumw << ',' << c.sumw_q2/c.sumw << ',' << c.sumw_t/c.sumw << ','
                     << c.sumw_proton_eff_ratio/c.sumw << ','
-                    << c.sumw_proton_data_weight/c.sumw << '\n';
+                    << c.sumw_proton_data_weight/c.sumw << ','
+                    << c.sumw_cos_phi/c.sumw << ','
+                    << c.sumw_cos_2phi/c.sumw << '\n';
             }
         }
     }
     std::cout << "[eppi0_norm] Wrote accepted AAOgen population grid: " << path << std::endl;
+    const std::string phi_path = pp.has_parent_path() ? (pp.parent_path().string() + "/accepted_aao_phi_population.csv") : "accepted_aao_phi_population.csv";
+    std::ofstream pout(phi_path.c_str());
+    if (!pout.is_open()) fatal("[eppi0_norm] FATAL: cannot write accepted AAOgen phi population CSV: " + phi_path);
+    pout << "period,photon_topology,ix,iq,it,phi_bin,phi_low_deg,phi_high_deg,sum_weight,sum_weight2\n";
+    pout << std::setprecision(12);
+    for (const auto& pkv : populations) for (const auto& tkv : pkv.second.cells) for (const auto& ckv : tkv.second) {
+        const AcceptedMcCell& c=ckv.second; int ix=0,iq=0,it=0; AcceptedMcPopulation::decode(ckv.first,ix,iq,it);
+        for(int ip=0;ip<12;++ip) if(c.sumw_phi_bins[static_cast<std::size_t>(ip)]>0.0)
+            pout << '"' << pkv.first << "\",\"" << tkv.first << "\"," << ix << ',' << iq << ',' << it << ',' << ip << ',' << ip*30.0 << ',' << (ip+1)*30.0 << ',' << c.sumw_phi_bins[static_cast<std::size_t>(ip)] << ',' << c.sumw2_phi_bins[static_cast<std::size_t>(ip)] << '\n';
+    }
+    std::cout << "[eppi0_norm] Wrote accepted AAOgen phi population: " << phi_path << std::endl;
 }
 
 static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
@@ -2992,6 +3020,31 @@ static ControlledTopologyComparison make_controlled_topology_comparison(
     const double rff = out.topologies["FD-FD"].controlled_ratio;
     if (rtt > 0.0 && rff > 0.0) out.closure = rtf * rtf / (rtt * rff);
     return out;
+}
+
+static void write_topology_kinematic_grid_csv(const std::string& path,
+                                               const std::string& period,
+                                               const TopologyKinematicGrid& data,
+                                               const TopologyKinematicGrid& mc) {
+    const std::filesystem::path pp(path);
+    if (pp.has_parent_path()) mkdir_p(pp.parent_path().string());
+    std::ofstream out(path.c_str());
+    if (!out.is_open()) fatal("[eppi0_norm] FATAL: cannot write topology closure grid: " + path);
+    out << "period,photon_topology,ix,iq,it,xB_low,xB_high,Q2_low_GeV2,Q2_high_GeV2,minus_t_low_GeV2,minus_t_high_GeV2,data_raw_events,data_sum_weight,data_sum_weight2,mc_raw_events,mc_sum_weight,mc_sum_weight2,data_over_mc,stat_err\n";
+    out << std::setprecision(12);
+    for (const std::string& topo : photon_pair_topologies()) {
+        for (int ix=0; ix<TopologyKinematicGrid::NX; ++ix) for (int iq=0; iq<TopologyKinematicGrid::NQ; ++iq) for (int it=0; it<TopologyKinematicGrid::NT; ++it) {
+            const int k=(ix*TopologyKinematicGrid::NQ+iq)*TopologyKinematicGrid::NT+it;
+            const auto& d=data.cells.at(topo)[k]; const auto& m=mc.cells.at(topo)[k];
+            if (!(d.sumw>0.0 && m.sumw>0.0)) continue;
+            const double r=d.sumw/m.sumw;
+            const double rel2=d.sumw2/(d.sumw*d.sumw)+m.sumw2/(m.sumw*m.sumw);
+            const double er=std::fabs(r)*std::sqrt(std::max(0.0,rel2));
+            out << '"' << period << "\",\"" << topo << "\"," << ix << ',' << iq << ',' << it << ','
+                << ix*0.1 << ',' << (ix+1)*0.1 << ',' << 1.0+iq << ',' << 2.0+iq << ',' << it*0.2 << ',' << (it+1)*0.2 << ','
+                << d.raw_events << ',' << d.sumw << ',' << d.sumw2 << ',' << m.raw_events << ',' << m.sumw << ',' << m.sumw2 << ',' << r << ',' << er << '\n';
+        }
+    }
 }
 
 static void fill_eppi0_photon_topology_hists(const ChannelConfig& cfg,
@@ -3157,6 +3210,8 @@ static PeriodNormalization run_period_normalization(const std::string& period,
         make_controlled_topology_comparison(topology_grid_data, topology_grid_mc, 10);
     const ControlledTopologyComparison controlled_strict =
         make_controlled_topology_comparison(topology_grid_data, topology_grid_mc, 20);
+    write_topology_kinematic_grid_csv(output_dir + "/photon_topology/" + period_dir(period) + "_kinematic_closure_grid.csv",
+                                      period, topology_grid_data, topology_grid_mc);
 
     std::map<std::string, SummaryRatioCurve> summary_ratio_curves;
 
