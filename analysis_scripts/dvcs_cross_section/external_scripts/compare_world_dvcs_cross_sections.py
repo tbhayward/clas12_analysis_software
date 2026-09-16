@@ -117,7 +117,6 @@ class Pass2UnavailableError(RuntimeError):
 #endclass
 
 
-PASS2_OVERALL_NORM_FRAC = 0.0744342205735
 PASS2_XS_COL = "normed cross sections, ep->epg, exp, 10.6 GeV, unpol"
 PASS2_PTP_COL = "Syst. err (point-to-point total)"
 PASS2_CORR_FRAC_COL = "correlated scale sys frac, 10.6 GeV"
@@ -197,7 +196,7 @@ PANEL_Y_SCALE_MODE = "panel"
 # In the global Lee-anchor normalization study Georges is intentionally left
 # unconstrained, as requested.  All other experiments receive Gaussian
 # multiplicative priors based on their quoted correlated normalization.
-GLOBAL_NORM_FREE_DATASETS = {"georges2022"}
+GLOBAL_NORM_FREE_DATASETS = {"georges2022", "pass2"}
 
 GLOBAL_NORM_SCENARIO_LABELS = {
     "nominal": "nominal",
@@ -780,17 +779,19 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
         out["ptp_sys_abs"],
     )
 
-    # The overall normalization is one experiment-wide publication quantity,
-    # not a per-bin measurement.  If an otherwise physical row has that CSV
-    # field blank, use the finalized global value rather than dropping the row.
+    # The pass-2 overall normalization is intentionally FREE in the present
+    # world-data diagnostic.  Keep the CSV normalization column only as
+    # metadata; it is not used as a Gaussian prior on pass-2.  Missing values
+    # are filled with zero solely so generic table/plot code can retain the
+    # corresponding physical rows.
     n_missing_norm = int(out["norm_frac"].isna().sum())
     if n_missing_norm:
         print(
-            f"[PASS2 HAYWARD] filling {n_missing_norm} blank per-row normalization field(s) "
-            f"with finalized global value {100.0*PASS2_OVERALL_NORM_FRAC:.3f}%",
+            f"[PASS2 HAYWARD] {n_missing_norm} blank per-row normalization field(s); "
+            "filling metadata with 0 because pass-2 overall normalization is free",
             flush=True,
         )
-        out["norm_frac"] = out["norm_frac"].fillna(PASS2_OVERALL_NORM_FRAC)
+        out["norm_frac"] = out["norm_frac"].fillna(0.0)
     #endif
 
     # Do NOT fill missing correlated-scale responses.  Such rows remain valid
@@ -820,23 +821,9 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
         #endif
     #endif
 
-    # Publication-level QA: the normalization column should reproduce the
-    # finalized 2.1633% common charge/target-thickness uncertainty.
-    finite_norm = out["norm_frac"].to_numpy(float)
-    finite_norm = finite_norm[np.isfinite(finite_norm)]
-    if finite_norm.size == 0:
-        raise RuntimeError(
-            "Pass-2 overall-normalization column contains no finite values"
-        )
-    #endif
-    med_norm = float(np.nanmedian(finite_norm))
-    if abs(med_norm - PASS2_OVERALL_NORM_FRAC) > 5e-4:
-        warnings.warn(
-            f"Pass-2 median overall normalization is "
-            f"{100.0 * med_norm:.3f}% instead of expected "
-            f"{100.0 * PASS2_OVERALL_NORM_FRAC:.3f}%"
-        )
-    #endif
+    # No hard-coded pass-2 normalization QA is imposed here.  The purpose of
+    # this diagnostic is precisely to measure the normalization scale preferred
+    # by the world data after the new eppi0 correction, without a pass-2 prior.
 
     out = clean_canonical(out)
 
@@ -1461,7 +1448,9 @@ def fit_pass2_model_publication_nuisances(
     response_names = []
 
     if include_norm:
-        response_columns.append(n * y)
+        # Free pass-2 overall normalization: use a unit fractional response
+        # rather than scaling by the CSV normalization uncertainty.
+        response_columns.append(y)
         response_names.append("norm")
     #endif
 
@@ -1477,8 +1466,15 @@ def fit_pass2_model_publication_nuisances(
         X = np.column_stack(response_columns)
         w = 1.0 / (s * s)
 
-        # (X^T W X + I) beta = -X^T W r0
-        lhs = X.T @ (w[:, None] * X) + np.eye(X.shape[1])
+        # Data normal equations.  The pass-2 overall normalization direction
+        # is free; only the correlated-scale nuisance retains its unit Gaussian
+        # prior.
+        lhs = X.T @ (w[:, None] * X)
+        for j, name in enumerate(response_names):
+            if name == "corr":
+                lhs[j, j] += 1.0
+            #endif
+        #endfor
         rhs = -(X.T @ (w * residual0))
         beta = np.linalg.solve(lhs, rhs)
 
@@ -1491,7 +1487,9 @@ def fit_pass2_model_publication_nuisances(
         #endfor
     #endif
 
-    norm_shift_frac = beta_norm * n if include_norm else np.zeros_like(y)
+    norm_shift_frac = (
+        np.full_like(y, beta_norm) if include_norm else np.zeros_like(y)
+    )
     corr_shift_frac = beta_corr * c if include_corr else np.zeros_like(y)
 
     shifted = y * (1.0 + norm_shift_frac + corr_shift_frac)
@@ -1499,10 +1497,7 @@ def fit_pass2_model_publication_nuisances(
     fitted_pull = fitted_residual / s
 
     chi2_data = float(np.sum(fitted_pull**2))
-    chi2_prior = (
-        (beta_norm**2 if include_norm else 0.0)
-        + (beta_corr**2 if include_corr else 0.0)
-    )
+    chi2_prior = (beta_corr**2 if include_corr else 0.0)
     chi2_total = chi2_data + chi2_prior
 
     # Correlation between the two response directions in the weighted data
@@ -1510,7 +1505,7 @@ def fit_pass2_model_publication_nuisances(
     # overall normalization movement from the assigned kinematic scale shape.
     response_correlation = np.nan
     if include_norm and include_corr:
-        un = n * y / s
+        un = y / s
         uc = c * y / s
         denom = math.sqrt(float(np.sum(un**2) * np.sum(uc**2)))
         if denom > 0.0:
@@ -1563,8 +1558,7 @@ def fit_pass2_model_publication_nuisances(
         "response_correlation_norm_corr": response_correlation,
         "combined_nuisance_excursion_sigma": float(
             math.sqrt(
-                (beta_norm**2 if include_norm else 0.0)
-                + (beta_corr**2 if include_corr else 0.0)
+                (beta_corr**2 if include_corr else 0.0)
             )
         ),
         "chi2_data": chi2_data,
@@ -1594,11 +1588,11 @@ def make_pass2_model_publication_scores(
         stat + point-to-point only;
 
       norm_only:
-        raw + one 2.16% overall normalization nuisance;
+        raw + one FREE pass-2 overall normalization parameter;
 
       norm_plus_corr:
-        raw + one 2.16% normalization nuisance + one finalized bin-dependent
-        correlated-scale nuisance.
+        raw + one FREE pass-2 overall normalization parameter + one finalized
+        bin-dependent correlated-scale nuisance with its Gaussian constraint.
 
     This is the model-comparison table that should be used for pass-2 rather
     than the older one-normalization-only native-model score.
@@ -1738,9 +1732,17 @@ def fit_pass2_pair_publication_nuisances(
 
     norm_a = float(pair["norm_frac_a"].iloc[0])
     norm_b = float(pair["norm_frac_b"].iloc[0])
-    sigma_eta = math.sqrt(
-        math.log1p(max(norm_a, 0.0))**2
-        + math.log1p(max(norm_b, 0.0))**2
+    # pass-2 is intentionally unconstrained in this diagnostic.  Since B is
+    # pass-2 here, the relative A/B normalization is therefore free even when
+    # experiment A has a quoted normalization uncertainty.
+    relative_norm_is_free = "pass2" in GLOBAL_NORM_FREE_DATASETS
+    sigma_eta = (
+        math.inf
+        if relative_norm_is_free
+        else math.sqrt(
+            math.log1p(max(norm_a, 0.0))**2
+            + math.log1p(max(norm_b, 0.0))**2
+        )
     )
 
     # Design columns for [eta_relative, beta_corr].
@@ -1754,7 +1756,7 @@ def fit_pass2_pair_publication_nuisances(
     rhs = -(X.T @ (w*z))
 
     # Gaussian priors: eta/sigma_eta and beta_corr/1.
-    if sigma_eta > 0.0:
+    if np.isfinite(sigma_eta) and sigma_eta > 0.0:
         lhs[0, 0] += 1.0 / (sigma_eta*sigma_eta)
     #endif
     lhs[1, 1] += 1.0
@@ -1767,7 +1769,9 @@ def fit_pass2_pair_publication_nuisances(
     pulls = residual / s
 
     prior = (
-        (eta_rel/sigma_eta)**2 if sigma_eta > 0.0 else 0.0
+        (eta_rel/sigma_eta)**2
+        if np.isfinite(sigma_eta) and sigma_eta > 0.0
+        else 0.0
     ) + beta_corr**2
     chi2_data = float(np.sum(pulls**2))
     chi2_total = chi2_data + float(prior)
@@ -1779,7 +1783,9 @@ def fit_pass2_pair_publication_nuisances(
     return {
         "N": int(len(z)),
         "relative_norm_beta": (
-            eta_rel/sigma_eta if sigma_eta > 0.0 else 0.0
+            eta_rel/sigma_eta
+            if np.isfinite(sigma_eta) and sigma_eta > 0.0
+            else np.nan
         ),
         "relative_scale_a_to_b": float(math.exp(eta_rel)),
         "beta_pass2_corr_scale": beta_corr,
@@ -1787,7 +1793,7 @@ def fit_pass2_pair_publication_nuisances(
             math.sqrt(
                 (
                     (eta_rel / sigma_eta)**2
-                    if sigma_eta > 0.0 else 0.0
+                    if np.isfinite(sigma_eta) and sigma_eta > 0.0 else 0.0
                 )
                 + beta_corr**2
             )
@@ -2052,7 +2058,9 @@ def fit_pair_relative_normalization(
         sigma_b: np.ndarray,
         transport_unc: np.ndarray,
         norm_a: float,
-        norm_b: float) -> Dict[str, float]:
+        norm_b: float,
+        *,
+        relative_norm_free: bool = False) -> Dict[str, float]:
     """
     Fit the *relative* normalization of two matched datasets in log-ratio space.
 
@@ -2126,7 +2134,14 @@ def fit_pair_relative_normalization(
     sigma_eta = math.sqrt(sigma_eta_a**2 + sigma_eta_b**2)
 
     w = 1.0 / (sfrac * sfrac)
-    if sigma_eta > 0.0:
+    if relative_norm_free:
+        # Diagnostic mode used whenever pass-2 participates: determine the
+        # relative scale from the matched data alone, with no pass-2 Gaussian
+        # normalization prior.
+        eta = -float(np.sum(w * z)) / float(np.sum(w))
+        penalty = 0.0
+        beta_relative = np.nan
+    elif sigma_eta > 0.0:
         eta = -float(np.sum(w * z)) / float(np.sum(w) + 1.0 / sigma_eta**2)
         penalty = (eta / sigma_eta)**2
         beta_relative = eta / sigma_eta
@@ -2274,6 +2289,10 @@ def build_pairwise_comparisons(
                 pair["transport_model_unc_abs"].to_numpy(float),
                 float(pair["norm_frac_a"].iloc[0]),
                 float(pair["norm_frac_b"].iloc[0]),
+                relative_norm_free=(
+                    key_a in GLOBAL_NORM_FREE_DATASETS
+                    or key_b in GLOBAL_NORM_FREE_DATASETS
+                ),
             )
             relative_scale = float(relfit["scale_a_to_b"])
             pair["relative_norm_beta"] = float(relfit["beta_relative"])

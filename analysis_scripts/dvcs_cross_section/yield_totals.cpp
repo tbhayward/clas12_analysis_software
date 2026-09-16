@@ -373,6 +373,8 @@ struct RowBin {
 
 struct RegionNormalization {
     std::array<double, 4> cubic = {{0.0, 0.0, 0.0, 0.0}};
+    double theta_min_deg = std::numeric_limits<double>::quiet_NaN();
+    double theta_max_deg = std::numeric_limits<double>::quiet_NaN();
 };
 
 struct PeriodProducts {
@@ -568,6 +570,55 @@ static AnalysisInputs build_analysis_inputs(const CSV& csv) {
         }
 
         in.contamination_by_period[period] = std::move(contamination);
+    }
+
+    // The fit coefficients stored in the main analysis CSV do not include the
+    // theta interval over which each empirical eppi0 fit was constrained.  The
+    // eppi0 stage writes those intervals to this compact summary before
+    // yield_totals runs.  Load them here so production never extrapolates a
+    // polynomial beyond the eppi0 DATA/MC support.
+    {
+        const std::string summary_path =
+            "output/data_mc_normalization/eppi0_normalization_summary.csv";
+        CSV summary;
+        load_csv(summary_path, summary);
+        const int c_period = col(summary, "period");
+        const int c_region = col(summary, "region");
+        const int c_tmin = col(summary, "theta_min_deg");
+        const int c_tmax = col(summary, "theta_max_deg");
+        const int c_valid = col(summary, "fit_valid");
+
+        for (const auto& row : summary.rows) {
+            if (row.size() != summary.header.size()) continue;
+            const std::string& period = row[c_period];
+            const std::string& region = row[c_region];
+            auto pit = in.products_by_period.find(period);
+            if (pit == in.products_by_period.end()) continue;
+            const auto& regions = normalization_regions();
+            auto rit = std::find(regions.begin(), regions.end(), region);
+            if (rit == regions.end()) continue;
+            if (row[c_valid].empty() || std::stoi(row[c_valid]) == 0) continue;
+            RegionNormalization& rn =
+                pit->second.regions[static_cast<size_t>(rit - regions.begin())];
+            rn.theta_min_deg = std::stod(row[c_tmin]);
+            rn.theta_max_deg = std::stod(row[c_tmax]);
+            if (!(std::isfinite(rn.theta_min_deg) && std::isfinite(rn.theta_max_deg) &&
+                  rn.theta_max_deg > rn.theta_min_deg)) {
+                fatal("invalid eppi0 fit theta range for period " + period +
+                      ", region " + region);
+            }
+        }
+
+        for (const auto& pkv : in.products_by_period) {
+            for (size_t ir = 0; ir < normalization_regions().size(); ++ir) {
+                const RegionNormalization& rn = pkv.second.regions[ir];
+                if (!(std::isfinite(rn.theta_min_deg) && std::isfinite(rn.theta_max_deg) &&
+                      rn.theta_max_deg > rn.theta_min_deg)) {
+                    fatal("missing eppi0 fit theta range for period " + pkv.first +
+                          ", region " + normalization_regions()[ir]);
+                }
+            }
+        }
     }
 
     return in;
@@ -1255,6 +1306,8 @@ struct TreeTotals {
     long long events_used = 0;
     long long accepted = 0;
     long long matched = 0;
+    long long eppi0_theta_clamped_low = 0;
+    long long eppi0_theta_clamped_high = 0;
     Long64_t entries = 0;
 };
 
@@ -1322,9 +1375,29 @@ static TreeTotals process_one_tree(const TreeTask& task,
         const int region = normalization_region_index(theta, b.p1_phi_deg());
         if (region < 0) continue;
 
-        const double r_pi0 = eval_cubic(products.regions[static_cast<size_t>(region)].cubic, theta);
+        const RegionNormalization& region_norm =
+            products.regions[static_cast<size_t>(region)];
+        double theta_eval = theta;
+        if (theta_eval < region_norm.theta_min_deg) {
+            theta_eval = region_norm.theta_min_deg;
+            ++result.eppi0_theta_clamped_low;
+        } else if (theta_eval > region_norm.theta_max_deg) {
+            theta_eval = region_norm.theta_max_deg;
+            ++result.eppi0_theta_clamped_high;
+        }
+
+        const double r_pi0 = eval_cubic(region_norm.cubic, theta_eval);
         if (!(std::isfinite(r_pi0) && r_pi0 > 0.0)) {
-            fatal("non-positive regional eppi0 normalization cubic value for period " + result.tags.display);
+            std::ostringstream ss;
+            ss << "non-positive regional eppi0 normalization cubic value INSIDE fitted range"
+               << " for period " << result.tags.display
+               << ", region " << normalization_regions()[static_cast<size_t>(region)]
+               << ", theta_event=" << theta
+               << " deg, theta_eval=" << theta_eval
+               << " deg, fit_range=[" << region_norm.theta_min_deg
+               << "," << region_norm.theta_max_deg << "] deg"
+               << ", R_pi0=" << r_pi0;
+            fatal(ss.str());
         }
 
         int current = 0;
@@ -1413,6 +1486,12 @@ static void process_tree_set(const std::map<std::string, TTree*>& trees,
                   << " entries=" << static_cast<long long>(r.entries) << "\n";
         std::cout << "[yield_totals]   accepted_after_cuts=" << r.accepted
                   << " matched_bins=" << r.matched << "\n";
+        const long long nclamp = r.eppi0_theta_clamped_low + r.eppi0_theta_clamped_high;
+        const double clamp_frac = (r.matched > 0)
+            ? static_cast<double>(nclamp) / static_cast<double>(r.matched) : 0.0;
+        std::cout << "[yield_totals]   eppi0-fit theta boundary clamps: low="
+                  << r.eppi0_theta_clamped_low << " high=" << r.eppi0_theta_clamped_high
+                  << " total=" << nclamp << " fraction_of_matched=" << clamp_frac << "\n";
 
         auto& destination = is_eppi0
             ? totals.eppi0_norm_by_period_current[r.tags.display]
