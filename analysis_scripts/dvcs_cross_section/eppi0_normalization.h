@@ -25,6 +25,12 @@ struct Eppi0NormalizationOptions {
     // absolute pi0-model and photon-efficiency systematics are being validated.
     bool write_normalized_yields = false;
 
+    // Fast pre-production validation: after deriving the regional eppi0 fits,
+    // scan every cubic densely over its fitted theta range and scan the selected
+    // DVCS DATA events through the exact boundary-clamped correction evaluator.
+    // No production normalized yields are written in this mode.
+    bool validate_production_fits = false;
+
     // Write one compact CSV containing the period/region integrated ratios and
     // fitted cubic coefficients. This is intended for fast external studies.
     bool write_summary_csv = true;

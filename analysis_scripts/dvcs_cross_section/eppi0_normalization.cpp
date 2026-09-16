@@ -4389,6 +4389,143 @@ static void write_norm_summary_csv(const std::string& path,
     std::cout << "[eppi0_norm] Wrote normalization study summary: " << path << std::endl;
 }
 
+
+static double quantile_sorted(const std::vector<double>& v, double q) {
+    if (v.empty()) return std::numeric_limits<double>::quiet_NaN();
+    const double pos = q * (double)(v.size() - 1);
+    const std::size_t lo = (std::size_t)std::floor(pos);
+    const std::size_t hi = (std::size_t)std::ceil(pos);
+    if (lo == hi) return v[lo];
+    const double f = pos - (double)lo;
+    return v[lo] * (1.0 - f) + v[hi] * f;
+}
+
+static void validate_eppi0_production_fits(
+    const std::vector<PeriodNormalization>& norms,
+    const std::map<std::string, TTree*>& dvcsDataTrees,
+    const TopoCutMap& data_cuts,
+    const std::string& output_dir) {
+
+    const std::string outdir = output_dir + "/production_fit_test";
+    mkdir_p(outdir);
+    const std::string csv_path = outdir + "/eppi0_production_fit_validation.csv";
+    std::ofstream out(csv_path.c_str());
+    if (!out.is_open()) fatal("[eppi0_norm] FATAL: could not write production-fit validation CSV: " + csv_path);
+    out << "period,region,theta_min_deg,theta_max_deg,fit_min_ratio,fit_min_theta_deg,fit_max_ratio,"
+           "fit_nonpositive,dvcs_selected_region_events,dvcs_clamp_low,dvcs_clamp_high,dvcs_clamp_fraction,"
+           "dvcs_min_ratio,dvcs_max_ratio,dvcs_weight_p05,dvcs_weight_median,dvcs_weight_p95,dvcs_weight_max,"
+           "dvcs_nonpositive_after_clamp\n";
+    out << std::setprecision(12);
+
+    const ChannelConfig dvcs = dvcs_config();
+    bool any_bad_fit = false;
+    bool any_bad_event = false;
+
+    std::cout << "\n[eppi0-production-test] Dense fit scan + selected DVCS event scan\n";
+    std::cout << "[eppi0-production-test] Boundary policy: theta is clamped to the fitted interval; "
+                 "a non-positive value anywhere inside that interval is flagged as a bad fit.\n";
+
+    for (const PeriodNormalization& pn : norms) {
+        TTree* tree = tree_for_period(dvcsDataTrees, pn.period, "DVCS data");
+        PeriodTags tags = parse_period_from_key(pn.period);
+        Branches b;
+        b.bind(tree, false);
+
+        struct EvStats {
+            long long n = 0, low = 0, high = 0, nonpos = 0;
+            double min_ratio = std::numeric_limits<double>::infinity();
+            double max_ratio = -std::numeric_limits<double>::infinity();
+            std::vector<double> weights;
+        };
+        std::map<std::string, EvStats> stats;
+        for (const std::string& r : normalization_regions()) stats[r] = EvStats{};
+
+        const Long64_t N = tree->GetEntries();
+        for (Long64_t i = 0; i < N; ++i) {
+            tree->GetEntry(i);
+            if (!passes_event_selection(dvcs, tags, data_cuts, b)) continue;
+            const std::string region = normalization_region_for_event(b);
+            if (region.empty()) continue;
+            auto ir = pn.regions.find(region);
+            if (ir == pn.regions.end() || !ir->second.fit.valid) continue;
+            const CubicFit& f = ir->second.fit;
+            const double theta = b.p1_theta_deg();
+            double x = theta;
+            EvStats& st = stats[region];
+            ++st.n;
+            if (x < f.x_min) { x = f.x_min; ++st.low; }
+            if (x > f.x_max) { x = f.x_max; ++st.high; }
+            const double ratio = f.eval(x);
+            if (!(std::isfinite(ratio) && ratio > 0.0)) {
+                ++st.nonpos;
+                any_bad_event = true;
+                continue;
+            }
+            st.min_ratio = std::min(st.min_ratio, ratio);
+            st.max_ratio = std::max(st.max_ratio, ratio);
+            st.weights.push_back(1.0 / ratio);
+        }
+
+        for (const std::string& region : normalization_regions()) {
+            auto ir = pn.regions.find(region);
+            if (ir == pn.regions.end()) continue;
+            const CubicFit& f = ir->second.fit;
+            double fit_min = std::numeric_limits<double>::infinity();
+            double fit_max = -std::numeric_limits<double>::infinity();
+            double fit_min_x = f.x_min;
+            bool nonpos = false;
+            const int NSCAN = 10000;
+            for (int j = 0; j <= NSCAN; ++j) {
+                const double x = f.x_min + (f.x_max - f.x_min) * (double)j / (double)NSCAN;
+                const double y = f.eval(x);
+                if (!std::isfinite(y) || y <= 0.0) nonpos = true;
+                if (std::isfinite(y) && y < fit_min) { fit_min = y; fit_min_x = x; }
+                if (std::isfinite(y) && y > fit_max) fit_max = y;
+            }
+            if (nonpos) any_bad_fit = true;
+
+            EvStats& st = stats[region];
+            std::sort(st.weights.begin(), st.weights.end());
+            const double clamp_frac = st.n > 0 ? (double)(st.low + st.high) / (double)st.n : 0.0;
+            const double nan = std::numeric_limits<double>::quiet_NaN();
+            const double emin = std::isfinite(st.min_ratio) ? st.min_ratio : nan;
+            const double emax = std::isfinite(st.max_ratio) ? st.max_ratio : nan;
+            const double w05 = quantile_sorted(st.weights, 0.05);
+            const double w50 = quantile_sorted(st.weights, 0.50);
+            const double w95 = quantile_sorted(st.weights, 0.95);
+            const double wmax = st.weights.empty() ? nan : st.weights.back();
+
+            std::cout << "[eppi0-production-test] " << std::setw(9) << pn.period
+                      << "  " << std::setw(8) << region
+                      << " fit=[" << f.x_min << "," << f.x_max << "]"
+                      << " minR=" << fit_min << "@" << fit_min_x
+                      << " maxR=" << fit_max
+                      << " bad_fit=" << (nonpos ? "YES" : "no")
+                      << " | DVCS N=" << st.n
+                      << " clamp=" << (st.low + st.high) << " (" << 100.0*clamp_frac << "%)"
+                      << " bad_events=" << st.nonpos
+                      << " w50=" << w50 << " w95=" << w95 << " wmax=" << wmax
+                      << "\n";
+
+            out << '"' << pn.period << "\",\"" << region << "\"," << f.x_min << ',' << f.x_max << ','
+                << fit_min << ',' << fit_min_x << ',' << fit_max << ',' << (nonpos ? 1 : 0) << ','
+                << st.n << ',' << st.low << ',' << st.high << ',' << clamp_frac << ','
+                << emin << ',' << emax << ',' << w05 << ',' << w50 << ',' << w95 << ',' << wmax << ','
+                << st.nonpos << '\n';
+        }
+    }
+
+    out.close();
+    std::cout << "[eppi0-production-test] Wrote: " << csv_path << "\n";
+    if (any_bad_fit || any_bad_event) {
+        std::cout << "[eppi0-production-test] RESULT: FAIL -- at least one regional cubic is non-positive "
+                     "inside its fitted interval. Do NOT run full production yet.\n";
+    } else {
+        std::cout << "[eppi0-production-test] RESULT: PASS -- all regional cubics are positive over their "
+                     "fitted intervals and all selected DVCS correction weights are finite/positive.\n";
+    }
+}
+
 static void write_norms_to_csv(CSV& csv, const std::vector<PeriodNormalization>& norms) {
     for (const std::string& period : CSV_PERIOD_ORDER) {
         const PeriodNormalization& n = find_norm(norms, period);
@@ -4533,6 +4670,10 @@ bool update_eppi0_normalization_csv(
 
         if (options.write_summary_csv && !options.override_to_unity) {
             write_norm_summary_csv(options.summary_csv_path, norms);
+        }
+
+        if (options.validate_production_fits && !options.override_to_unity) {
+            validate_eppi0_production_fits(norms, dvcsDataTrees, data_cuts, options.output_dir);
         }
 
         if (options.write_normalized_yields) {
