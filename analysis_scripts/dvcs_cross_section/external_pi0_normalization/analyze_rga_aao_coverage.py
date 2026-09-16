@@ -138,6 +138,12 @@ def load_aao(path: Path) -> pd.DataFrame:
     a["xB"] = a.xB_weighted_mean
     a["Q2"] = a.Q2_weighted_mean_GeV2
     a["minus_t"] = a.minus_t_weighted_mean_GeV2
+    # New eppi0 exporter columns.  epsilon_data/epsilon_MC is the proton
+    # efficiency ratio itself; the production DATA correction is its inverse.
+    if "proton_efficiency_ratio_mean" not in a.columns:
+        a["proton_efficiency_ratio_mean"] = np.nan
+    if "proton_data_weight_mean" not in a.columns:
+        a["proton_data_weight_mean"] = np.nan
     return a
 
 
@@ -481,6 +487,172 @@ def local_fold_summary(a: pd.DataFrame) -> pd.DataFrame:
                      "nearest_distance_p84":qd[2],"nearest_distance_p95":qd[3],
                      "global_uncertainty_fallback_weight_fraction":float(np.sum(w*g.external_uncertainty_used_global_fallback.to_numpy(bool))/W)})
     return pd.DataFrame(rows)
+
+
+def proton_fold_summary(a: pd.DataFrame) -> pd.DataFrame:
+    """Fold Krishna/Neupane epsilon_data/epsilon_MC through each accepted topology.
+
+    The C++ exporter evaluates exactly the production parameterization on each
+    accepted reconstructed-AAOgen proton.  No Krishna weight is applied to the
+    eppi0 yield itself; this table only decomposes the observed DATA/MC ratio.
+    """
+    rows=[]
+    for (p,t),g in a.groupby(["period","photon_topology"],sort=False):
+        w=g.sum_weight.to_numpy(float); W=float(w.sum())
+        pr=pd.to_numeric(g.proton_efficiency_ratio_mean,errors="coerce").to_numpy(float)
+        pw=pd.to_numeric(g.proton_data_weight_mean,errors="coerce").to_numpy(float)
+        good=np.isfinite(pr)&(pr>0)&np.isfinite(w)&(w>0)
+        if not good.any():
+            mean_pr=mean_pw=np.nan
+        else:
+            mean_pr=float(np.sum(w[good]*pr[good])/np.sum(w[good]))
+            goodw=np.isfinite(pw)&good
+            mean_pw=float(np.sum(w[goodw]*pw[goodw])/np.sum(w[goodw])) if goodw.any() else np.nan
+        rows.append({"period":p,"photon_topology":t,"sum_weight":W,
+                     "krishna_epsilon_data_over_mc":mean_pr,
+                     "krishna_production_data_weight":mean_pw})
+    return pd.DataFrame(rows)
+
+
+def topology_model_ratio_jackknife(a: pd.DataFrame, clas6: pd.DataFrame, halla: pd.DataFrame,
+                                   bandwidth: float, k: int) -> tuple[pd.DataFrame,pd.DataFrame]:
+    """Propagate common external-model variations jointly through FT-FT and FD-FD.
+
+    Each published external setting is removed in turn, the central M field is
+    rebuilt from all remaining external measurements, and that SAME varied field
+    is folded through both photon topologies.  The spread of M_FT/M_FD therefore
+    measures the part of external-model transport sensitivity that survives the
+    common-mode cancellation.  This is intentionally reported separately from
+    the absolute phase-space transport uncertainty; it is not obtained by
+    pretending the two ~15% absolute uncertainties are independent.
+    """
+    ext=pd.concat([clas6,halla],ignore_index=True).copy()
+    ext["setting_id"]=_setting_ids(ext).values
+    lo,span=_external_scale(ext)
+    xyz=a[["xB","Q2","minus_t"]].to_numpy(float)
+    nominal,_=_predict_kernel(ext,xyz,lo,span,bandwidth,k)
+    base=a[["period","photon_topology","sum_weight"]].copy(); base["M"]=nominal
+    def folds(frame):
+        rr=[]
+        for (p,t),g in frame.groupby(["period","photon_topology"],sort=False):
+            W=float(g.sum_weight.sum())
+            rr.append((p,t,float(np.sum(g.sum_weight*g.M)/W)))
+        return pd.DataFrame(rr,columns=["period","photon_topology","M"])
+    nom=folds(base)
+    nomp=nom[nom.photon_topology.isin(["FT-FT","FD-FD"])].pivot(index="period",columns="photon_topology",values="M")
+    rows=[]
+    for sid in ext.setting_id.drop_duplicates():
+        train=ext[ext.setting_id!=sid]
+        pred,_=_predict_kernel(train,xyz,lo,span,bandwidth,k)
+        q=a[["period","photon_topology","sum_weight"]].copy(); q["M"]=pred
+        f=folds(q); piv=f[f.photon_topology.isin(["FT-FT","FD-FD"])].pivot(index="period",columns="photon_topology",values="M")
+        for period in piv.index:
+            if not {"FT-FT","FD-FD"}.issubset(piv.columns): continue
+            ratio=float(piv.loc[period,"FT-FT"]/piv.loc[period,"FD-FD"])
+            rows.append({"held_setting":sid,"period":period,
+                         "M_FT_FT":float(piv.loc[period,"FT-FT"]),
+                         "M_FD_FD":float(piv.loc[period,"FD-FD"]),
+                         "M_FT_over_FD":ratio})
+    variants=pd.DataFrame(rows)
+    summary=[]
+    for period,g in variants.groupby("period",sort=False):
+        r0=float(nomp.loc[period,"FT-FT"]/nomp.loc[period,"FD-FD"])
+        d=g.M_FT_over_FD.to_numpy(float)-r0
+        summary.append({"period":period,
+                        "nominal_M_FT_FT":float(nomp.loc[period,"FT-FT"]),
+                        "nominal_M_FD_FD":float(nomp.loc[period,"FD-FD"]),
+                        "nominal_M_FT_over_FD":r0,
+                        "n_setting_omissions":int(len(g)),
+                        "loso_ratio_rms":float(np.sqrt(np.mean(d*d))),
+                        "loso_ratio_max_abs_shift":float(np.max(np.abs(d))),
+                        "loso_ratio_p68_abs_shift":float(np.quantile(np.abs(d),.68))})
+    return pd.DataFrame(summary),variants
+
+
+def relative_photon_efficiency(topology_path: Path, model_ratio: pd.DataFrame,
+                               proton_fold: pd.DataFrame) -> pd.DataFrame:
+    if not topology_path.exists() or model_ratio.empty: return pd.DataFrame()
+    top=pd.read_csv(topology_path)
+    top=top[(top.comparison=="raw") & top.photon_topology.isin(["FT-FT","FD-FD"])].copy()
+    r=top.pivot(index="period",columns="photon_topology",values="data_over_mc")
+    e=top.pivot(index="period",columns="photon_topology",values="stat_err")
+    pp=proton_fold[proton_fold.photon_topology.isin(["FT-FT","FD-FD"])].pivot(index="period",columns="photon_topology",values="krishna_epsilon_data_over_mc")
+    rows=[]
+    for _,m in model_ratio.iterrows():
+        p=m.period
+        if p not in r.index or p not in pp.index: continue
+        Rft=float(r.loc[p,"FT-FT"]); Rfd=float(r.loc[p,"FD-FD"])
+        Pft=float(pp.loc[p,"FT-FT"]); Pfd=float(pp.loc[p,"FD-FD"])
+        Mr=float(m.nominal_M_FT_over_FD)
+        rel=math.sqrt((Rft/Rfd)/(Mr*(Pft/Pfd)))
+        # Statistical uncertainty from the two raw topology ratios only.
+        sft=float(e.loc[p,"FT-FT"]); sfd=float(e.loc[p,"FD-FD"])
+        stat=0.5*rel*math.sqrt((sft/Rft)**2+(sfd/Rfd)**2)
+        # Convert the empirically observed LOSO M-ratio sensitivity to rFT/rFD.
+        model=0.5*rel*float(m.loso_ratio_rms)/Mr
+        rows.append({"period":p,"R_FT_over_FD":Rft/Rfd,
+                     "M_FT_over_FD":Mr,"M_FT_over_FD_loso_rms":float(m.loso_ratio_rms),
+                     "proton_eff_FT_over_FD":Pft/Pfd,
+                     "r_FT_over_r_FD":rel,"stat_err":stat,
+                     "external_model_ratio_sensitivity":model})
+    return pd.DataFrame(rows)
+
+
+def absolute_photon_with_proton(local_fold: pd.DataFrame, topology_path: Path,
+                                proton_fold: pd.DataFrame) -> pd.DataFrame:
+    if not topology_path.exists(): return pd.DataFrame()
+    top=pd.read_csv(topology_path)
+    top=top[(top.comparison=="raw") & top.photon_topology.isin(["FT-FT","FD-FD"])].copy()
+    z=top.merge(local_fold,on=["period","photon_topology"],how="left").merge(
+        proton_fold,on=["period","photon_topology"],how="left",suffixes=("","_p"))
+    P=z.krishna_epsilon_data_over_mc
+    z["candidate_single_photon_ratio_after_krishna"]=np.sqrt(z.data_over_mc/(z.local_M_acc*P))
+    z["candidate_single_photon_ratio_before_krishna"]=np.sqrt(z.data_over_mc/z.local_M_acc)
+    return z[["period","photon_topology","data_over_mc","stat_err","local_M_acc","local_M_acc_unc",
+              "krishna_epsilon_data_over_mc","krishna_production_data_weight",
+              "candidate_single_photon_ratio_before_krishna","candidate_single_photon_ratio_after_krishna"]]
+
+
+def plot_topology_model_cancellation(model_ratio: pd.DataFrame) -> None:
+    if model_ratio.empty: return
+    q=model_ratio.copy(); q["period"]=pd.Categorical(q.period,PERIOD_ORDER,ordered=True); q=q.sort_values("period")
+    x=np.arange(len(q))
+    fig,ax=plt.subplots(figsize=(9.2,5.6))
+    y=q.nominal_M_FT_over_FD.to_numpy(float); e=q.loso_ratio_rms.to_numpy(float)
+    ax.errorbar(x,y,yerr=e,fmt="o",capsize=4,label="M(FT-FT) / M(FD-FD)")
+    ax.axhline(1.0,ls="--",lw=1)
+    ax.set_xticks(x,q.period.astype(str),rotation=25,ha="right")
+    ax.set_ylabel("External-model topology ratio")
+    ax.set_title("Common VPK transport cancellation between photon topologies")
+    ax.legend(frameon=False); fig.tight_layout()
+    fig.savefig(PNG/"topology_model_ratio_common_mode_cancellation.png",dpi=220); plt.close(fig)
+
+
+def plot_krishna_and_relative(proton_fold: pd.DataFrame, relative: pd.DataFrame) -> None:
+    if not proton_fold.empty:
+        q=proton_fold[proton_fold.photon_topology.isin(["FT-FT","FD-FD"])].copy()
+        q["period"]=pd.Categorical(q.period,PERIOD_ORDER,ordered=True); q=q.sort_values(["period","photon_topology"])
+        fig,ax=plt.subplots(figsize=(9.4,5.7))
+        for topo,dx in [("FD-FD",-0.10),("FT-FT",0.10)]:
+            g=q[q.photon_topology==topo]; xx=np.arange(len(g))+dx
+            ax.plot(xx,g.krishna_epsilon_data_over_mc,"o",label=topo)
+        ax.axhline(1.0,ls="--",lw=1); ax.set_xticks(np.arange(len(PERIOD_ORDER)),PERIOD_ORDER,rotation=25,ha="right")
+        ax.set_ylabel("Folded proton efficiency ratio, data / MC")
+        ax.set_title("Krishna/Neupane proton efficiency in accepted eπ⁰ topologies")
+        ax.legend(frameon=False); fig.tight_layout()
+        fig.savefig(PNG/"krishna_proton_efficiency_by_photon_topology.png",dpi=220); plt.close(fig)
+    if not relative.empty:
+        q=relative.copy(); q["period"]=pd.Categorical(q.period,PERIOD_ORDER,ordered=True); q=q.sort_values("period")
+        x=np.arange(len(q)); y=q.r_FT_over_r_FD.to_numpy(float)
+        estat=q.stat_err.to_numpy(float); emod=q.external_model_ratio_sensitivity.to_numpy(float)
+        fig,ax=plt.subplots(figsize=(9.4,5.7))
+        ax.errorbar(x,y,yerr=np.sqrt(estat**2+emod**2),fmt="o",capsize=4,label="stat ⊕ external-model ratio sensitivity")
+        ax.errorbar(x,y,yerr=estat,fmt="none",capsize=3,label="statistical only")
+        ax.axhline(1.0,ls="--",lw=1); ax.set_xticks(x,q.period.astype(str),rotation=25,ha="right")
+        ax.set_ylabel("Relative photon efficiency, FT / FD")
+        ax.set_title("eπ⁰ relative FT-to-FD photon efficiency after proton correction")
+        ax.legend(frameon=False); fig.tight_layout()
+        fig.savefig(PNG/"relative_ft_fd_photon_efficiency.png",dpi=220); plt.close(fig)
 
 
 def robustness_efficiencies(local_fold: pd.DataFrame, topology_path: Path) -> pd.DataFrame:
@@ -859,6 +1031,17 @@ def main():
     a=add_local_external_field(a,clas6,halla,best_bw,best_k,setting_summary,unc_k,global_sigma,max_unc_dist)
 
     cov=coverage_summary(a); fold=fold_summary(a); local_fold=local_fold_summary(a)
+    proton_fold=proton_fold_summary(a)
+    proton_fold.to_csv(OUT/"rga_krishna_proton_efficiency_fold.csv",index=False)
+    model_ratio,model_variants=topology_model_ratio_jackknife(a,clas6,halla,best_bw,best_k)
+    model_ratio.to_csv(OUT/"rga_topology_model_ratio_uncertainty.csv",index=False)
+    model_variants.to_csv(OUT/"rga_topology_model_ratio_setting_omissions.csv",index=False)
+    relative=relative_photon_efficiency(args.topology_summary,model_ratio,proton_fold)
+    if not relative.empty:
+        relative.to_csv(OUT/"rga_relative_ft_fd_photon_efficiency.csv",index=False)
+    absolute_p=absolute_photon_with_proton(local_fold,args.topology_summary,proton_fold)
+    if not absolute_p.empty:
+        absolute_p.to_csv(OUT/"rga_absolute_photon_efficiency_with_krishna.csv",index=False)
     cov.to_csv(OUT/"rga_external_pi0_coverage_summary.csv",index=False)
     interference=interference_closure(CLAS6_POINTS)
     interference.to_csv(OUT/"clas6_U_TT_LT_closure_summary.csv",index=False)
@@ -887,6 +1070,8 @@ def main():
     plot_robustness(robust)
     plot_transport_closure(scan,closure,empirical)
     plot_phase_space_uncertainty(setting_summary,uscan,a)
+    plot_topology_model_cancellation(model_ratio)
+    plot_krishna_and_relative(proton_fold,relative)
 
     print("\n=== RGA accepted-AAOgen external pi0 coverage ===")
     show=cov[cov.photon_topology=="ALL"][["period","raw_events","Q2_median_GeV2","clas6_interpolation_fraction","clas6_near_boundary_fraction","clas6_outside_fraction"]]
@@ -903,6 +1088,15 @@ def main():
     if not cand.empty:
         print("\n=== Candidate single-photon residuals (diagnostic; support fraction shown) ===")
         print(cand.to_string(index=False))
+    if not proton_fold.empty:
+        print("\n=== Krishna proton efficiency folded through accepted AAOgen ===")
+        print(proton_fold[proton_fold.photon_topology.isin(["FT-FT","FD-FD"])].to_string(index=False))
+    if not model_ratio.empty:
+        print("\n=== Common external-model cancellation in M_FT/M_FD ===")
+        print(model_ratio.to_string(index=False))
+    if not relative.empty:
+        print("\n=== Relative photon efficiency after Krishna: r_FT/r_FD ===")
+        print(relative.to_string(index=False))
     print(f"\nWrote tables under: {OUT}")
     print(f"Wrote PNG figures under: {PNG}")
 

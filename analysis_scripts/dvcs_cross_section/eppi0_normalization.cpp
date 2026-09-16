@@ -2719,7 +2719,42 @@ struct AcceptedMcCell {
     double sumw_x = 0.0;
     double sumw_q2 = 0.0;
     double sumw_t = 0.0;
+    // Krishna/Neupane epsilon_data/epsilon_MC proton-efficiency ratio,
+    // evaluated on the accepted reconstructed AAOgen proton kinematics.
+    // This is exported only as a diagnostic moment; it is NOT multiplied into
+    // the eppi0 normalization weights here.
+    double sumw_proton_eff_ratio = 0.0;
+    double sumw_proton_data_weight = 0.0;
 };
+
+static double eppi0_neupane_proton_efficiency_ratio(double p_gev,
+                                                     double theta_rad,
+                                                     double phi_rad) {
+    if (!(std::isfinite(p_gev) && std::isfinite(theta_rad) && std::isfinite(phi_rad))) return 1.0;
+    const double theta_deg = theta_rad * 180.0 / M_PI;
+    double phi_deg = std::fmod(phi_rad * 180.0 / M_PI, 360.0);
+    if (phi_deg < 0.0) phi_deg += 360.0;
+    struct C { double a2, a1, a0; };
+    C c{0.0,0.0,1.0};
+    double p_eval=p_gev;
+    if (theta_deg < 37.0) {
+        static const std::array<C,6> coeff{{
+            {0.04437,-0.14271,1.03439},{0.00490,0.00554,0.91770},
+            {0.03671,-0.11680,1.03002},{0.01863,-0.07756,1.02308},
+            {0.04915,-0.17173,1.11768},{0.01077,-0.01328,0.96242}}};
+        int ib=static_cast<int>(std::floor(phi_deg/60.0)); ib=std::max(0,std::min(5,ib));
+        c=coeff[static_cast<std::size_t>(ib)]; p_eval=std::max(0.4,std::min(4.0,p_eval));
+    } else {
+        static const std::array<C,3> coeff{{
+            {0.20052,-0.79964,1.38699},{0.16842,-0.64970,1.31246},
+            {0.18845,-0.75824,1.41677}}};
+        int ib=static_cast<int>(std::floor(phi_deg/120.0)); ib=std::max(0,std::min(2,ib));
+        c=coeff[static_cast<std::size_t>(ib)]; p_eval=std::max(0.5,std::min(2.2,p_eval));
+    }
+    const double ratio=c.a2*p_eval*p_eval+c.a1*p_eval+c.a0;
+    if (!(std::isfinite(ratio) && ratio>0.20 && ratio<1.80)) return 1.0;
+    return ratio;
+}
 
 struct AcceptedMcPopulation {
     static constexpr double X_MIN = 0.0, X_MAX = 0.8, DX = 0.02;
@@ -2765,6 +2800,11 @@ struct AcceptedMcPopulation {
             ++c.raw_events;
             c.sumw += w; c.sumw2 += w*w;
             c.sumw_x += w*b.x; c.sumw_q2 += w*b.Q2; c.sumw_t += w*mt;
+            double proton_ratio = 1.0;
+            if (b.has_p1_p && b.has_p1_theta && b.has_p1_phi)
+                proton_ratio = eppi0_neupane_proton_efficiency_ratio(b.p1_p,b.p1_theta,b.p1_phi);
+            c.sumw_proton_eff_ratio += w*proton_ratio;
+            c.sumw_proton_data_weight += w/proton_ratio;
         }
     }
 };
@@ -2776,7 +2816,7 @@ static void write_accepted_mc_population_csv(
     if (pp.has_parent_path()) mkdir_p(pp.parent_path().string());
     std::ofstream out(path.c_str());
     if (!out.is_open()) fatal("[eppi0_norm] FATAL: cannot write accepted AAOgen population CSV: " + path);
-    out << "period,photon_topology,ix,iq,it,xB_low,xB_high,Q2_low_GeV2,Q2_high_GeV2,minus_t_low_GeV2,minus_t_high_GeV2,raw_events,sum_weight,sum_weight2,xB_weighted_mean,Q2_weighted_mean_GeV2,minus_t_weighted_mean_GeV2\n";
+    out << "period,photon_topology,ix,iq,it,xB_low,xB_high,Q2_low_GeV2,Q2_high_GeV2,minus_t_low_GeV2,minus_t_high_GeV2,raw_events,sum_weight,sum_weight2,xB_weighted_mean,Q2_weighted_mean_GeV2,minus_t_weighted_mean_GeV2,proton_efficiency_ratio_mean,proton_data_weight_mean\n";
     out << std::setprecision(12);
     for (const auto& pkv : populations) {
         const std::string& period = pkv.first;
@@ -2794,7 +2834,9 @@ static void write_accepted_mc_population_csv(
                     << AcceptedMcPopulation::T_MIN+it*AcceptedMcPopulation::DT << ','
                     << AcceptedMcPopulation::T_MIN+(it+1)*AcceptedMcPopulation::DT << ','
                     << c.raw_events << ',' << c.sumw << ',' << c.sumw2 << ','
-                    << c.sumw_x/c.sumw << ',' << c.sumw_q2/c.sumw << ',' << c.sumw_t/c.sumw << '\n';
+                    << c.sumw_x/c.sumw << ',' << c.sumw_q2/c.sumw << ',' << c.sumw_t/c.sumw << ','
+                    << c.sumw_proton_eff_ratio/c.sumw << ','
+                    << c.sumw_proton_data_weight/c.sumw << '\n';
             }
         }
     }
