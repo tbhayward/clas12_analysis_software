@@ -373,6 +373,7 @@ struct RowBin {
 
 struct RegionNormalization {
     std::array<double, 4> cubic = {{0.0, 0.0, 0.0, 0.0}};
+    bool log_space = false;
     double theta_min_deg = std::numeric_limits<double>::quiet_NaN();
     double theta_max_deg = std::numeric_limits<double>::quiet_NaN();
 };
@@ -587,6 +588,7 @@ static AnalysisInputs build_analysis_inputs(const CSV& csv) {
         const int c_tmin = col(summary, "theta_min_deg");
         const int c_tmax = col(summary, "theta_max_deg");
         const int c_valid = col(summary, "fit_valid");
+        const int c_model = col(summary, "fit_model");
 
         for (const auto& row : summary.rows) {
             if (row.size() != summary.header.size()) continue;
@@ -602,6 +604,11 @@ static AnalysisInputs build_analysis_inputs(const CSV& csv) {
                 pit->second.regions[static_cast<size_t>(rit - regions.begin())];
             rn.theta_min_deg = std::stod(row[c_tmin]);
             rn.theta_max_deg = std::stod(row[c_tmax]);
+            rn.log_space = (row[c_model] == "log_cubic");
+            if (!(rn.log_space || row[c_model] == "cubic")) {
+                fatal("unknown eppi0 fit model for period " + period +
+                      ", region " + region + ": " + row[c_model]);
+            }
             if (!(std::isfinite(rn.theta_min_deg) && std::isfinite(rn.theta_max_deg) &&
                   rn.theta_max_deg > rn.theta_min_deg)) {
                 fatal("invalid eppi0 fit theta range for period " + period +
@@ -1386,10 +1393,11 @@ static TreeTotals process_one_tree(const TreeTask& task,
             ++result.eppi0_theta_clamped_high;
         }
 
-        const double r_pi0 = eval_cubic(region_norm.cubic, theta_eval);
+        const double poly = eval_cubic(region_norm.cubic, theta_eval);
+        const double r_pi0 = region_norm.log_space ? std::exp(poly) : poly;
         if (!(std::isfinite(r_pi0) && r_pi0 > 0.0)) {
             std::ostringstream ss;
-            ss << "non-positive regional eppi0 normalization cubic value INSIDE fitted range"
+            ss << "non-positive regional eppi0 normalization fit value INSIDE fitted range"
                << " for period " << result.tags.display
                << ", region " << normalization_regions()[static_cast<size_t>(region)]
                << ", theta_event=" << theta
@@ -1611,7 +1619,7 @@ static void write_totals(std::ostream& os, const Totals& totals) {
     os << "Definitions:\n";
     os << "  DVCS normalized pi0-subtracted counts = normalized ep->epgamma DATA weights multiplied by (1 - contamination ratio).\n";
     os << "  eppi0 normalized counts = normalized ep->eppi0 DATA weights.\n";
-    os << "  Both quantities use current-efficiency factors and the regional eppi0 AAOGEN p1_theta normalization cubic fits from the CSV.\n\n";
+    os << "  Both quantities use current-efficiency factors and the regional eppi0 AAOGEN p1_theta positive log-cubic fits from the CSV.\n\n";
 
     os << "Raw accepted event counters used only as diagnostics:\n";
     os << "  DVCS events contributing: " << totals.dvcs_events_used << "\n";

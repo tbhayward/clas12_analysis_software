@@ -133,9 +133,11 @@ struct CubicFit {
     double x_min = 0.0;
     double x_max = 0.0;
     bool valid = false;
+    bool log_space = false;
 
     double eval(double x) const {
-        return a[0] + x * (a[1] + x * (a[2] + x * a[3]));
+        const double poly = a[0] + x * (a[1] + x * (a[2] + x * a[3]));
+        return log_space ? std::exp(poly) : poly;
     }
 };
 
@@ -150,6 +152,7 @@ struct QuarticFit {
 struct RegionNormalization {
     std::string region;
     CubicFit fit;
+    CubicFit legacy_raw_cubic;
     double integrated_ratio = 1.0;
     double integrated_ratio_err = 0.0;
 };
@@ -720,7 +723,9 @@ static double cubic_eval_stat_diag(const CubicFit& f, double x) {
         var += basis[i] * basis[i] * f.ea[i] * f.ea[i];
     }
 
-    return (var > 0.0) ? std::sqrt(var) : 0.0;
+    if (!(var > 0.0)) return 0.0;
+    const double sigma_poly = std::sqrt(var);
+    return f.log_space ? f.eval(x) * sigma_poly : sigma_poly;
 }
 
 static std::string tuple3(double a, double b, double c) {
@@ -1685,7 +1690,8 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
                                           const std::string& region,
                                           const std::string& outdir,
                                           TH1D* h_data,
-                                          TH1D* h_mc) {
+                                          TH1D* h_mc,
+                                          CubicFit* legacy_raw_out) {
     CubicFit p;
 
     if (!h_data || !h_mc) {
@@ -1693,6 +1699,7 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
     }
 
     TGraphErrors gr;
+    TGraphErrors gr_ratio;
     int ip = 0;
 
     double fit_xmin = std::numeric_limits<double>::infinity();
@@ -1723,8 +1730,15 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
             er = 1.0;
         }
 
-        gr.SetPoint(ip, x, r);
-        gr.SetPointError(ip, 0.0, er);
+        // Fit ln(DATA/MC), rather than DATA/MC itself.  Exponentiating the
+        // fitted cubic preserves the same smooth four-parameter flexibility
+        // while enforcing the physical requirement DATA/MC > 0 everywhere.
+        // The uncertainty transformation is the first-order propagation
+        // sigma_lnR = sigma_R/R.
+        gr.SetPoint(ip, x, std::log(r));
+        gr.SetPointError(ip, 0.0, er / r);
+        gr_ratio.SetPoint(ip, x, r);
+        gr_ratio.SetPointError(ip, 0.0, er);
         ++ip;
 
         const double low = h_data->GetBinLowEdge(b);
@@ -1740,14 +1754,31 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
         p.x_max = (region == "CD") ? 70.0 : 40.0;
         p.valid = true;
 
+        if (legacy_raw_out) *legacy_raw_out = p;
         std::cout << "[eppi0_norm] WARNING: " << period << " " << region
-                  << " has fewer than four valid data/MC bins. Using unity cubic fit."
+                  << " has fewer than four valid data/MC bins. Using unity fit."
                   << std::endl;
 
         return p;
     }
 
-    TF1 f("f_ratio_pol3", "pol3", fit_xmin, fit_xmax);
+    CubicFit legacy_raw;
+    {
+        TF1 fraw("f_ratio_pol3_legacy", "pol3", fit_xmin, fit_xmax);
+        TFitResultPtr raw_result = gr_ratio.Fit(&fraw, "SQ0", "", fit_xmin, fit_xmax);
+        (void)raw_result;
+        for (int i = 0; i < 4; ++i) {
+            legacy_raw.a[i] = fraw.GetParameter(i);
+            legacy_raw.ea[i] = fraw.GetParError(i);
+        }
+        legacy_raw.x_min = fit_xmin;
+        legacy_raw.x_max = fit_xmax;
+        legacy_raw.valid = true;
+        legacy_raw.log_space = false;
+    }
+    if (legacy_raw_out) *legacy_raw_out = legacy_raw;
+
+    TF1 f("f_log_ratio_pol3", "pol3", fit_xmin, fit_xmax);
     TFitResultPtr fit_result = gr.Fit(&f, "SQ0", "", fit_xmin, fit_xmax);
     (void)fit_result;
 
@@ -1759,6 +1790,7 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
     p.x_min = fit_xmin;
     p.x_max = fit_xmax;
     p.valid = true;
+    p.log_space = true;
 
     const std::string fit_outdir = outdir + "/proton/fits";
     mkdir_p(fit_outdir);
@@ -1787,7 +1819,7 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
     }
 
     TH1D* frame = (TH1D*)gPad->DrawFrame(xframe_min, RATIO_Y_MIN, xframe_max, RATIO_Y_MAX);
-    frame->SetTitle((period + "  " + region + "  ep #rightarrow ep#pi_{0}  p_{1} #theta ratio cubic fit").c_str());
+    frame->SetTitle((period + "  " + region + "  ep #rightarrow ep#pi_{0}  p_{1} #theta ratio positive log-cubic fit").c_str());
     frame->GetXaxis()->SetTitle("p_{1} #theta (deg)");
     frame->GetYaxis()->SetTitle("data / MC");
     frame->GetXaxis()->CenterTitle(true);
@@ -1800,16 +1832,23 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
     unity_line->SetBit(TObject::kCanDelete);
     unity_line->Draw("SAME");
 
-    gr.SetMarkerStyle(20);
-    gr.SetMarkerColor(kBlack);
-    gr.SetLineColor(kBlack);
-    gr.Draw("PE SAME");
+    gr_ratio.SetMarkerStyle(20);
+    gr_ratio.SetMarkerColor(kBlack);
+    gr_ratio.SetLineColor(kBlack);
+    gr_ratio.Draw("PE SAME");
 
-    TF1 fdraw("f_ratio_pol3_draw", "pol3", fit_xmin, fit_xmax);
+    TF1 fdraw("f_log_ratio_pol3_draw", "exp([0]+x*([1]+x*([2]+x*[3])))", fit_xmin, fit_xmax);
 
     for (int i = 0; i < 4; ++i) {
         fdraw.SetParameter(i, p.a[i]);
     }
+
+    TF1 frawdraw("f_ratio_pol3_legacy_draw", "pol3", fit_xmin, fit_xmax);
+    for (int i = 0; i < 4; ++i) frawdraw.SetParameter(i, legacy_raw.a[i]);
+    frawdraw.SetLineColor(kGray + 2);
+    frawdraw.SetLineStyle(2);
+    frawdraw.SetLineWidth(2);
+    frawdraw.Draw("L SAME");
 
     fdraw.SetLineColor(kRed + 1);
     fdraw.SetLineWidth(2);
@@ -1819,11 +1858,12 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
     leg.SetFillColor(kWhite);
     leg.SetFillStyle(1001);
     leg.SetBorderSize(1);
-    leg.AddEntry(&gr, "data / MC", "pe");
-    leg.AddEntry(&fdraw, "cubic fit", "l");
+    leg.AddEntry(&gr_ratio, "data / MC", "pe");
+    leg.AddEntry(&frawdraw, "old raw cubic", "l");
+    leg.AddEntry(&fdraw, "production positive log-cubic", "l");
     leg.Draw();
 
-    c.SaveAs((fit_outdir + "/proton_theta_ratio_cubic_fit_" + safe_region + ".png").c_str());
+    c.SaveAs((fit_outdir + "/proton_theta_ratio_logcubic_fit_" + safe_region + ".png").c_str());
 
     return p;
 }
@@ -3255,11 +3295,13 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     std::map<std::string, RegionNormalization> region_norms;
 
     for (const std::string& region : normalization_regions()) {
+        CubicFit legacy_raw;
         CubicFit fit = fit_p1_theta_ratio_region(period,
                                                  region,
                                                  period_root,
                                                  h_data_fit[region],
-                                                 h_mc_fit[region]);
+                                                 h_mc_fit[region],
+                                                 &legacy_raw);
 
         const double data_int_region = h_data_fit[region]->Integral();
         const double mc_int_region = h_mc_fit[region]->Integral();
@@ -3286,6 +3328,7 @@ static PeriodNormalization run_period_normalization(const std::string& period,
         RegionNormalization rn;
         rn.region = region;
         rn.fit = fit;
+        rn.legacy_raw_cubic = legacy_raw;
         rn.integrated_ratio = ratio_region;
         rn.integrated_ratio_err = ratio_err_region;
 
@@ -3412,7 +3455,7 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     delete_hist_set(ana_mc);
 
     std::cout << "[eppi0_norm] " << period
-              << " regional_cubic_fits=" << region_norms.size()
+              << " regional_positive_fits=" << region_norms.size()
               << " integrated_ratio=" << ratio
               << " +/- " << ratio_err
               << " current_model=event_by_event_regional"
@@ -3555,13 +3598,14 @@ static void accumulate_normalized_yields_for_tree(const ChannelConfig& cfg,
         }
 
         const CubicFit& fit = it_region->second.fit;
-        const double ratio = fit.eval(theta);
+        const double theta_eval = std::max(fit.x_min, std::min(theta, fit.x_max));
+        const double ratio = fit.eval(theta_eval);
 
         if (!(std::isfinite(ratio) && ratio > 0.0)) {
             continue;
         }
 
-        const double ratio_stat = cubic_eval_stat_diag(fit, theta);
+        const double ratio_stat = cubic_eval_stat_diag(fit, theta_eval);
         const double ratio_rel_stat = (ratio_stat > 0.0) ? ratio_stat / ratio : 0.0;
 
         bool current_skip = false;
@@ -3855,7 +3899,7 @@ static void save_all_period_p1_theta_fit_summary(const std::string& output_dir,
             }
 
             TF1* f = new TF1(("f_all_period_" + period_dir(period) + "_" + std::to_string(ipanel)).c_str(),
-                             "pol3",
+                             fit.log_space ? "exp([0]+x*([1]+x*([2]+x*[3])))" : "pol3",
                              fit.x_min,
                              fit.x_max);
 
@@ -3884,7 +3928,7 @@ static void save_all_period_p1_theta_fit_summary(const std::string& output_dir,
     latex.SetTextSize(0.055);
     latex.DrawLatex(0.08, 0.90, "ep #rightarrow ep#pi_{0}");
     latex.DrawLatex(0.08, 0.82, "p_{1} #theta normalization fits");
-    latex.DrawLatex(0.08, 0.74, "Pass-2 cubic fits");
+    latex.DrawLatex(0.08, 0.74, "Pass-2 positive log-cubic fits");
     latex.DrawLatex(0.08, 0.66, "Line ranges: populated data/MC bins only");
 
     TLegend* legend = new TLegend(0.08, 0.20, 0.88, 0.58);
@@ -4022,7 +4066,7 @@ static void save_pass1_pass2_p1_theta_comparison(const std::string& output_dir,
         }
 
         TF1* fpass2 = new TF1(("f_pass2_" + period_dir(period) + "_" + std::to_string(ipanel)).c_str(),
-                              "pol3",
+                              cfit.log_space ? "exp([0]+x*([1]+x*([2]+x*[3])))" : "pol3",
                               cfit.x_min,
                               cfit.x_max);
 
@@ -4071,7 +4115,7 @@ static void save_pass1_pass2_p1_theta_comparison(const std::string& output_dir,
     latex.DrawLatex(0.08, 0.90, period.c_str());
     latex.DrawLatex(0.08, 0.82, "ep #rightarrow ep#pi_{0}");
     latex.DrawLatex(0.08, 0.74, "p_{1} #theta normalization");
-    latex.DrawLatex(0.08, 0.66, "Pass-2 cubic vs pass-1 quartic");
+    latex.DrawLatex(0.08, 0.66, "Pass-2 log-cubic vs pass-1 quartic");
     latex.DrawLatex(0.08, 0.58, "Both lines over pass-2 populated range");
 
     TLegend legend(0.08, 0.30, 0.88, 0.50);
@@ -4091,7 +4135,7 @@ static void save_pass1_pass2_p1_theta_comparison(const std::string& output_dir,
     leg_pass1.SetLineWidth(3);
     leg_pass1.SetLineStyle(2);
 
-    legend.AddEntry(&leg_pass2, "pass-2 cubic", "l");
+    legend.AddEntry(&leg_pass2, "pass-2 log-cubic", "l");
     legend.AddEntry(&leg_pass1, "pass-1 quartic", "l");
     legend.Draw();
 
@@ -4360,18 +4404,18 @@ static void write_norm_summary_csv(const std::string& path,
     }
 
     out << "period,region,integrated_data_over_mc,integrated_stat_err,"
-           "a0,a1,a2,a3,ea0,ea1,ea2,ea3,theta_min_deg,theta_max_deg,fit_valid\n";
+           "a0,a1,a2,a3,ea0,ea1,ea2,ea3,theta_min_deg,theta_max_deg,fit_valid,fit_model\n";
 
     out << std::setprecision(12);
     for (const PeriodNormalization& pn : norms) {
         out << '"' << pn.period << "\",\"ALL\","
             << pn.integrated_ratio << "," << pn.integrated_ratio_err
-            << ",,,,,,,,,,,0\n";
+            << ",,,,,,,,,,,0,none\n";
         auto it_fd = pn.regions.find("FD");
         if (it_fd != pn.regions.end()) {
             out << '"' << pn.period << "\",\"FD\","
                 << it_fd->second.integrated_ratio << "," << it_fd->second.integrated_ratio_err
-                << ",,,,,,,,,,,0\n";
+                << ",,,,,,,,,,,0,none\n";
         }
         for (const std::string& region : normalization_regions()) {
             auto it = pn.regions.find(region);
@@ -4382,7 +4426,7 @@ static void write_norm_summary_csv(const std::string& path,
             for (int i = 0; i < 4; ++i) out << "," << rn.fit.a[i];
             for (int i = 0; i < 4; ++i) out << "," << rn.fit.ea[i];
             out << "," << rn.fit.x_min << "," << rn.fit.x_max << ","
-                << (rn.fit.valid ? 1 : 0) << "\n";
+                << (rn.fit.valid ? 1 : 0) << "," << (rn.fit.log_space ? "log_cubic" : "cubic") << "\n";
         }
     }
 
@@ -4414,16 +4458,16 @@ static void validate_eppi0_production_fits(
     out << "period,region,theta_min_deg,theta_max_deg,fit_min_ratio,fit_min_theta_deg,fit_max_ratio,"
            "fit_nonpositive,dvcs_selected_region_events,dvcs_clamp_low,dvcs_clamp_high,dvcs_clamp_fraction,"
            "dvcs_min_ratio,dvcs_max_ratio,dvcs_weight_p05,dvcs_weight_median,dvcs_weight_p95,dvcs_weight_max,"
-           "dvcs_nonpositive_after_clamp\n";
+           "dvcs_nonpositive_after_clamp,new_over_old_weight_median,new_over_old_weight_p95\n";
     out << std::setprecision(12);
 
     const ChannelConfig dvcs = dvcs_config();
     bool any_bad_fit = false;
     bool any_bad_event = false;
 
-    std::cout << "\n[eppi0-production-test] Dense fit scan + selected DVCS event scan\n";
+    std::cout << "\n[eppi0-production-test] Dense positive-fit scan + selected DVCS event scan\n";
     std::cout << "[eppi0-production-test] Boundary policy: theta is clamped to the fitted interval; "
-                 "a non-positive value anywhere inside that interval is flagged as a bad fit.\n";
+                 "the production fit is exp(cubic), so positivity is guaranteed; extreme weights are still reported.\n";
 
     for (const PeriodNormalization& pn : norms) {
         TTree* tree = tree_for_period(dvcsDataTrees, pn.period, "DVCS data");
@@ -4436,6 +4480,7 @@ static void validate_eppi0_production_fits(
             double min_ratio = std::numeric_limits<double>::infinity();
             double max_ratio = -std::numeric_limits<double>::infinity();
             std::vector<double> weights;
+            std::vector<double> new_over_old_weight;
         };
         std::map<std::string, EvStats> stats;
         for (const std::string& r : normalization_regions()) stats[r] = EvStats{};
@@ -4463,7 +4508,12 @@ static void validate_eppi0_production_fits(
             }
             st.min_ratio = std::min(st.min_ratio, ratio);
             st.max_ratio = std::max(st.max_ratio, ratio);
-            st.weights.push_back(1.0 / ratio);
+            const double wnew = 1.0 / ratio;
+            st.weights.push_back(wnew);
+            const double rold = ir->second.legacy_raw_cubic.eval(x);
+            if (std::isfinite(rold) && rold > 0.0) {
+                st.new_over_old_weight.push_back(wnew / (1.0 / rold));
+            }
         }
 
         for (const std::string& region : normalization_regions()) {
@@ -4486,6 +4536,7 @@ static void validate_eppi0_production_fits(
 
             EvStats& st = stats[region];
             std::sort(st.weights.begin(), st.weights.end());
+            std::sort(st.new_over_old_weight.begin(), st.new_over_old_weight.end());
             const double clamp_frac = st.n > 0 ? (double)(st.low + st.high) / (double)st.n : 0.0;
             const double nan = std::numeric_limits<double>::quiet_NaN();
             const double emin = std::isfinite(st.min_ratio) ? st.min_ratio : nan;
@@ -4494,6 +4545,8 @@ static void validate_eppi0_production_fits(
             const double w50 = quantile_sorted(st.weights, 0.50);
             const double w95 = quantile_sorted(st.weights, 0.95);
             const double wmax = st.weights.empty() ? nan : st.weights.back();
+            const double rel50 = quantile_sorted(st.new_over_old_weight, 0.50);
+            const double rel95 = quantile_sorted(st.new_over_old_weight, 0.95);
 
             std::cout << "[eppi0-production-test] " << std::setw(9) << pn.period
                       << "  " << std::setw(8) << region
@@ -4505,13 +4558,14 @@ static void validate_eppi0_production_fits(
                       << " clamp=" << (st.low + st.high) << " (" << 100.0*clamp_frac << "%)"
                       << " bad_events=" << st.nonpos
                       << " w50=" << w50 << " w95=" << w95 << " wmax=" << wmax
+                      << " new/old_w50=" << rel50 << " new/old_w95=" << rel95
                       << "\n";
 
             out << '"' << pn.period << "\",\"" << region << "\"," << f.x_min << ',' << f.x_max << ','
                 << fit_min << ',' << fit_min_x << ',' << fit_max << ',' << (nonpos ? 1 : 0) << ','
                 << st.n << ',' << st.low << ',' << st.high << ',' << clamp_frac << ','
                 << emin << ',' << emax << ',' << w05 << ',' << w50 << ',' << w95 << ',' << wmax << ','
-                << st.nonpos << '\n';
+                << st.nonpos << ',' << rel50 << ',' << rel95 << '\n';
         }
     }
 
@@ -4521,7 +4575,7 @@ static void validate_eppi0_production_fits(
         std::cout << "[eppi0-production-test] RESULT: FAIL -- at least one regional cubic is non-positive "
                      "inside its fitted interval. Do NOT run full production yet.\n";
     } else {
-        std::cout << "[eppi0-production-test] RESULT: PASS -- all regional cubics are positive over their "
+        std::cout << "[eppi0-production-test] RESULT: PASS -- all regional production fits are positive over their "
                      "fitted intervals and all selected DVCS correction weights are finite/positive.\n";
     }
 }

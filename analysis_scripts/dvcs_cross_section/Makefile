@@ -2,7 +2,7 @@
 
 # Compiler and flags
 CXX = g++
-CXXFLAGS = $(shell root-config --cflags) -O2 -std=c++17 -pthread -fopenmp
+CXXFLAGS = $(shell root-config --cflags) -O2 -std=c++17 -pthread -fopenmp -MMD -MP
 LDFLAGS  = $(shell root-config --libs) -lMinuit2 -pthread -fopenmp
 
 # ---------- dvcs_analysis ----------
@@ -39,8 +39,9 @@ SYSTEMATICS_SRC = main_systematics.cpp pass1_systematics_import.cpp pi0_systemat
 SYSTEMATICS_OBJ = $(SYSTEMATICS_SRC:.cpp=.o)
 SYSTEMATICS_BIN = main_systematics
 
-# Build all by default
-all: $(DVCS_BIN) $(LEE_BIN) $(NORM_SCENARIO_BIN) $(SYSTEMATICS_BIN)
+# Default production build. Legacy cross-check utilities remain available as explicit targets,
+# but are no longer rebuilt every time `make` is run.
+all: $(DVCS_BIN) $(SYSTEMATICS_BIN)
 
 $(DVCS_BIN): $(DVCS_OBJ) $(SYSTEMATICS_BIN)
 >$(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
@@ -58,4 +59,9 @@ $(SYSTEMATICS_BIN): $(SYSTEMATICS_OBJ)
 >$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
->rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN) $(SYSTEMATICS_OBJ) $(SYSTEMATICS_BIN)
+>rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN) $(SYSTEMATICS_OBJ) $(SYSTEMATICS_BIN) $(DEPS)
+
+# Auto-generated header dependencies. This makes ordinary `make` rebuild only
+# translation units affected by a changed header, so `make clean` is normally unnecessary.
+DEPS = $(DVCS_OBJ:.o=.d) $(LEE_OBJ:.o=.d) $(NORM_SCENARIO_OBJ:.o=.d) $(SYSTEMATICS_OBJ:.o=.d)
+-include $(DEPS)
