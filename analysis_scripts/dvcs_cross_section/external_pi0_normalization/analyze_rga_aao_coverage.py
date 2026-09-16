@@ -490,7 +490,7 @@ def local_fold_summary(a: pd.DataFrame) -> pd.DataFrame:
 
 
 def proton_fold_summary(a: pd.DataFrame) -> pd.DataFrame:
-    """Fold Krishna/Neupane epsilon_data/epsilon_MC through each accepted topology.
+    """Fold Krishna Neupane epsilon_data/epsilon_MC through each accepted topology.
 
     The C++ exporter evaluates exactly the production parameterization on each
     accepted reconstructed-AAOgen proton.  No Krishna weight is applied to the
@@ -638,7 +638,7 @@ def plot_krishna_and_relative(proton_fold: pd.DataFrame, relative: pd.DataFrame)
             ax.plot(xx,g.krishna_epsilon_data_over_mc,"o",label=topo)
         ax.axhline(1.0,ls="--",lw=1); ax.set_xticks(np.arange(len(PERIOD_ORDER)),PERIOD_ORDER,rotation=25,ha="right")
         ax.set_ylabel("Folded proton efficiency ratio, data / MC")
-        ax.set_title("Krishna/Neupane proton efficiency in accepted eπ⁰ topologies")
+        ax.set_title("Krishna Neupane proton efficiency in accepted eπ⁰ topologies")
         ax.legend(frameon=False); fig.tight_layout()
         fig.savefig(PNG/"krishna_proton_efficiency_by_photon_topology.png",dpi=220); plt.close(fig)
     if not relative.empty:
@@ -654,6 +654,136 @@ def plot_krishna_and_relative(proton_fold: pd.DataFrame, relative: pd.DataFrame)
         ax.legend(frameon=False); fig.tight_layout()
         fig.savefig(PNG/"relative_ft_fd_photon_efficiency.png",dpi=220); plt.close(fig)
 
+
+
+def krishna_uncertainty_summary(proton_fold: pd.DataFrame) -> pd.DataFrame:
+    """Attach the *existing production* Krishna Neupane normalization uncertainty.
+
+    The DVCS production analysis currently treats Krishna's proton-efficiency
+    uncertainty as an overall normalization source: 2.83% for Fa18 and Sp19,
+    and a deliberately conservative 11.32% transfer uncertainty for Sp18.
+
+    Because that published/production uncertainty is an overall scale on the
+    proton correction, it is 100% common between FT-FT and FD-FD populations
+    of a given period and therefore cancels in the FT/FD *relative* ratio.
+    This does NOT claim that the differential p/theta/phi shape of Krishna's
+    map is known perfectly.  No covariance/variation set for that map is
+    available in this repository, so a topology-dependent Krishna shape
+    uncertainty cannot honestly be manufactured here.
+    """
+    if proton_fold.empty:
+        return pd.DataFrame()
+    def frac(period: str) -> float:
+        return 0.1132 if period in ("Sp18 Inb", "Sp18 Out") else 0.0283
+    q=proton_fold.copy()
+    q["krishna_overall_norm_sys_fraction"]=[frac(str(x)) for x in q.period]
+    q["krishna_relative_ft_fd_sys_fraction_from_overall_scale"]=0.0
+    q["krishna_topology_shape_sys_available"]=False
+    return q
+
+
+def pass2_normalization_summary(local_fold: pd.DataFrame, topology_path: Path,
+                                proton_fold: pd.DataFrame) -> pd.DataFrame:
+    """Build the normalization-focused result that motivated this study.
+
+    For same-detector pi0 topologies,
+
+      R_pi0 = M_VPK * P_proton * r_gamma^2,
+
+    so the inferred single-photon data/MC efficiency is
+
+      r_gamma = sqrt(R_pi0 / (M_VPK P_proton)),
+
+    and the candidate one-photon correction for DVCS is C_gamma=1/r_gamma.
+
+    The table propagates only uncertainty components that are currently
+    quantified and defensible in this repository: pi0 counting statistics,
+    the empirically calibrated absolute VPK transport uncertainty, and the
+    existing production Krishna Neupane overall-normalization uncertainty.
+    The VPK and proton uncertainties are halved in relative size because the
+    pi0 control channel contains two same-detector photons whereas DVCS contains
+    one.  The result is explicitly a candidate normalization uncertainty, not
+    yet the final production assignment: photon sector/momentum dependence and
+    any differential Krishna-map transfer uncertainty remain validation items.
+    """
+    if not topology_path.exists() or local_fold.empty or proton_fold.empty:
+        return pd.DataFrame()
+    top=pd.read_csv(topology_path)
+    top=top[(top.comparison=="raw") & top.photon_topology.isin(["FT-FT","FD-FD"])].copy()
+    pf=krishna_uncertainty_summary(proton_fold)
+    z=top.merge(local_fold,on=["period","photon_topology"],how="left").merge(
+        pf,on=["period","photon_topology"],how="left",suffixes=("","_p"))
+    R=pd.to_numeric(z.data_over_mc,errors="coerce")
+    sR=pd.to_numeric(z.stat_err,errors="coerce")
+    M=pd.to_numeric(z.local_M_acc,errors="coerce")
+    sM=pd.to_numeric(z.local_M_acc_unc,errors="coerce")
+    P=pd.to_numeric(z.krishna_epsilon_data_over_mc,errors="coerce")
+    sPfrac=pd.to_numeric(z.krishna_overall_norm_sys_fraction,errors="coerce")
+    r=np.sqrt(R/(M*P))
+    C=1.0/r
+    stat_frac=0.5*sR/R
+    vpk_frac=0.5*sM/M
+    proton_frac=0.5*sPfrac
+    quantified=np.sqrt(stat_frac**2+vpk_frac**2+proton_frac**2)
+    out=pd.DataFrame({
+        "period":z.period,
+        "photon_detector":np.where(z.photon_topology.eq("FT-FT"),"FT","FD"),
+        "control_topology":z.photon_topology,
+        "raw_eppi0_data_over_mc":R,
+        "vpk_M_acc":M,
+        "vpk_transport_unc_abs":sM,
+        "krishna_proton_eff_data_over_mc":P,
+        "krishna_overall_norm_sys_fraction":sPfrac,
+        "single_photon_eff_data_over_mc":r,
+        "candidate_dvcs_photon_correction":C,
+        "candidate_norm_stat_fraction":stat_frac,
+        "candidate_norm_vpk_fraction":vpk_frac,
+        "candidate_norm_krishna_fraction":proton_frac,
+        "candidate_norm_quantified_total_fraction":quantified,
+        "pass1_reference_norm_fraction":0.31,
+        "improvement_factor_vs_31pct":0.31/quantified,
+        "final_production_ready":False,
+        "remaining_unquantified":"photon sector/momentum dependence; differential Krishna-map transfer; phi-dependent VPK acceptance check",
+    })
+    return out
+
+
+def plot_pass2_normalization_summary(summary: pd.DataFrame) -> None:
+    if summary.empty: return
+    q=summary.copy(); q["period"]=pd.Categorical(q.period,PERIOD_ORDER,ordered=True); q=q.sort_values(["period","photon_detector"])
+    # Candidate one-photon correction.
+    fig,ax=plt.subplots(figsize=(10.0,5.8))
+    for det,dx in [("FD",-0.10),("FT",0.10)]:
+        g=q[q.photon_detector==det]; x=np.arange(len(g))+dx
+        y=g.candidate_dvcs_photon_correction.to_numpy(float)
+        e=y*g.candidate_norm_quantified_total_fraction.to_numpy(float)
+        ax.errorbar(x,y,yerr=e,fmt="o",capsize=4,label=det)
+    ax.axhline(1.0,ls="--",lw=1)
+    ax.set_xticks(np.arange(len(PERIOD_ORDER)),PERIOD_ORDER,rotation=25,ha="right")
+    ax.set_ylabel("Candidate one-photon correction to DVCS yield")
+    ax.set_title("eπ⁰-based pass-2 photon normalization candidate")
+    ax.legend(frameon=False); fig.tight_layout()
+    fig.savefig(PNG/"pass2_candidate_dvcs_photon_normalization.png",dpi=220); plt.close(fig)
+
+    # Uncertainty budget, kept explicit rather than hiding the 31% comparison.
+    fig,ax=plt.subplots(figsize=(10.0,5.8))
+    labels=[]; x=[]; total=[]; vpk=[]; kp=[]
+    ii=0
+    for period in PERIOD_ORDER:
+        for det in ("FD","FT"):
+            g=q[(q.period==period)&(q.photon_detector==det)]
+            if g.empty: continue
+            r=g.iloc[0]; labels.append(f"{period} {det}"); x.append(ii); ii+=1
+            total.append(100*r.candidate_norm_quantified_total_fraction)
+            vpk.append(100*r.candidate_norm_vpk_fraction); kp.append(100*r.candidate_norm_krishna_fraction)
+    ax.plot(x,total,"o",label="currently quantified total")
+    ax.plot(x,vpk,"s",label="VPK transport contribution")
+    ax.plot(x,kp,"^",label="Krishna Neupane contribution")
+    ax.axhline(31.0,ls="--",lw=1,label="pass-1 31% reference")
+    ax.set_xticks(x,labels,rotation=35,ha="right"); ax.set_ylabel("Relative normalization uncertainty (%)")
+    ax.set_title("Pass-2 eπ⁰ normalization: currently quantified uncertainty budget")
+    ax.legend(frameon=False,ncol=2); fig.tight_layout()
+    fig.savefig(PNG/"pass2_candidate_normalization_uncertainty_budget.png",dpi=220); plt.close(fig)
 
 def robustness_efficiencies(local_fold: pd.DataFrame, topology_path: Path) -> pd.DataFrame:
     if not topology_path.exists(): return pd.DataFrame()
@@ -1042,6 +1172,12 @@ def main():
     absolute_p=absolute_photon_with_proton(local_fold,args.topology_summary,proton_fold)
     if not absolute_p.empty:
         absolute_p.to_csv(OUT/"rga_absolute_photon_efficiency_with_krishna.csv",index=False)
+    krishna_unc=krishna_uncertainty_summary(proton_fold)
+    if not krishna_unc.empty:
+        krishna_unc.to_csv(OUT/"rga_krishna_proton_efficiency_with_uncertainty.csv",index=False)
+    norm_summary=pass2_normalization_summary(local_fold,args.topology_summary,proton_fold)
+    if not norm_summary.empty:
+        norm_summary.to_csv(OUT/"pass2_eppi0_normalization_candidate_summary.csv",index=False)
     cov.to_csv(OUT/"rga_external_pi0_coverage_summary.csv",index=False)
     interference=interference_closure(CLAS6_POINTS)
     interference.to_csv(OUT/"clas6_U_TT_LT_closure_summary.csv",index=False)
@@ -1072,6 +1208,7 @@ def main():
     plot_phase_space_uncertainty(setting_summary,uscan,a)
     plot_topology_model_cancellation(model_ratio)
     plot_krishna_and_relative(proton_fold,relative)
+    plot_pass2_normalization_summary(norm_summary)
 
     print("\n=== RGA accepted-AAOgen external pi0 coverage ===")
     show=cov[cov.photon_topology=="ALL"][["period","raw_events","Q2_median_GeV2","clas6_interpolation_fraction","clas6_near_boundary_fraction","clas6_outside_fraction"]]
@@ -1097,6 +1234,12 @@ def main():
     if not relative.empty:
         print("\n=== Relative photon efficiency after Krishna: r_FT/r_FD ===")
         print(relative.to_string(index=False))
+    if not norm_summary.empty:
+        print("\n=== Pass-2 eppi0 normalization candidate (NOT final production assignment) ===")
+        cols=["period","photon_detector","single_photon_eff_data_over_mc","candidate_dvcs_photon_correction",
+              "candidate_norm_vpk_fraction","candidate_norm_krishna_fraction","candidate_norm_quantified_total_fraction","improvement_factor_vs_31pct"]
+        print(norm_summary[cols].to_string(index=False))
+        print("NOTE: quantified total excludes photon sector/momentum dependence, differential Krishna-map transfer, and phi-dependent VPK acceptance effects.")
     print(f"\nWrote tables under: {OUT}")
     print(f"Wrote PNG figures under: {PNG}")
 
