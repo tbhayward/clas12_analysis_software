@@ -70,13 +70,12 @@ BOUNDARY_DISTANCE = 0.10
 # Local smooth residual field. Distances are in coordinates normalized to the
 # combined external-data ranges. The bandwidth is deliberately broad enough
 # that the correction varies smoothly rather than following individual points.
-LOCAL_BANDWIDTH = 0.22
-LOCAL_K = 24
-# Additional uncertainty assigned away from measured kinematics. This is not
-# used to move the central correction; it makes extrapolation visibly less
-# constraining. 0.20 means +20% absolute uncertainty per unit normalized
-# nearest-data distance.
-DISTANCE_UNCERTAINTY_SLOPE = 0.20
+# The transport kernel is no longer fixed by hand.  Candidate bandwidths and
+# neighbor counts are tested by withholding entire published kinematic settings.
+# The selected values are those minimizing the setting-level closure RMSE.
+TRANSPORT_BANDWIDTH_SCAN = [0.08, 0.12, 0.16, 0.20, 0.25, 0.32, 0.40, 0.55]
+TRANSPORT_K_SCAN = [4, 6, 8, 12, 16, 24, 32, 48]
+MIN_DISTANCE_BIN_COUNT = 8
 
 
 def ensure_validation_outputs() -> None:
@@ -205,51 +204,169 @@ def add_model_interpolations(a: pd.DataFrame, clas6: pd.DataFrame, halla: pd.Dat
     return out
 
 
-def add_local_external_field(a: pd.DataFrame, clas6: pd.DataFrame, halla: pd.DataFrame) -> pd.DataFrame:
-    """Smooth external data/VPK residual with continuous support diagnostics.
+def _external_scale(ext: pd.DataFrame):
+    """Return a transparent dimensionless coordinate scaling.
 
-    This is intentionally not a hard-hull extrapolator.  For each AAOgen cell,
-    use nearby CLAS6+Hall-A measurements in normalized (xB,Q2,-t), weighted by
-    their quoted uncertainty and a Gaussian distance kernel.  The reported
-    uncertainty contains the local quoted errors, local point-to-point scatter,
-    and a term that grows continuously with distance from the nearest external
-    measurement.
+    The scale itself is not used to claim an uncertainty: it only defines a
+    distance coordinate.  All transport accuracy versus that distance is then
+    measured by withheld-data closure below.
     """
-    out=a.copy()
-    ext=pd.concat([clas6,halla],ignore_index=True)
     xyz=ext[["xB","Q2","minus_t"]].to_numpy(float)
-    q=out[["xB","Q2","minus_t"]].to_numpy(float)
     lo=xyz.min(axis=0); span=xyz.max(axis=0)-lo
     span=np.where(span>0,span,1.0)
-    xn=(xyz-lo)/span; qn=(q-lo)/span
-    tree=cKDTree(xn)
-    k=min(LOCAL_K,len(ext))
-    dist,idx=tree.query(qn,k=k)
-    if k==1:
-        dist=dist[:,None]; idx=idx[:,None]
-    ratio=ext.ratio.to_numpy(float); err=ext.ratio_err.to_numpy(float)
-    vals=ratio[idx]; errs=err[idx]
-    # Avoid a point with tiny quoted uncertainty dominating the field.
-    finite_err=err[np.isfinite(err)&(err>0)]
-    err_floor=float(np.nanmedian(finite_err))*0.35 if len(finite_err) else 0.02
-    ee=np.where(np.isfinite(errs)&(errs>0),np.maximum(errs,err_floor),err_floor)
-    kw=np.exp(-0.5*(dist/LOCAL_BANDWIDTH)**2)/(ee**2)
-    sw=np.sum(kw,axis=1)
-    M=np.sum(kw*vals,axis=1)/sw
-    # Error of local weighted mean plus observed local residual scatter.
-    meas=np.sqrt(1.0/np.maximum(sw,1e-300))
-    scatter=np.sqrt(np.sum(kw*(vals-M[:,None])**2,axis=1)/np.maximum(sw,1e-300))
-    neff=(sw**2)/np.maximum(np.sum(kw**2,axis=1),1e-300)
-    scatter_mean=scatter/np.sqrt(np.maximum(neff,1.0))
-    dnear=dist[:,0]
-    extrap=DISTANCE_UNCERTAINTY_SLOPE*dnear
-    sigma=np.sqrt(meas**2+scatter_mean**2+extrap**2)
-    out["external_nearest_distance_normalized"]=dnear
-    out["external_local_M"]=M
-    out["external_local_M_unc"]=sigma
-    out["external_local_n_eff"]=neff
-    return out
+    return lo,span
 
+
+def _predict_kernel(train: pd.DataFrame, query_xyz: np.ndarray, lo: np.ndarray,
+                    span: np.ndarray, bandwidth: float, k: int):
+    """Kernel prediction with no uncertainty floor and no imposed distance error."""
+    xyz=train[["xB","Q2","minus_t"]].to_numpy(float)
+    xn=(xyz-lo)/span; qn=(np.asarray(query_xyz,float)-lo)/span
+    tree=cKDTree(xn)
+    kk=min(int(k),len(train))
+    dist,idx=tree.query(qn,k=kk)
+    if kk==1:
+        dist=dist[:,None]; idx=idx[:,None]
+    vals=train.ratio.to_numpy(float)[idx]
+    errs=train.ratio_err.to_numpy(float)[idx]
+    # Published errors are used as published.  Invalid/missing errors simply
+    # remove inverse-variance preference rather than introducing an arbitrary floor.
+    good=np.isfinite(errs)&(errs>0)
+    finite=train.ratio_err.to_numpy(float)
+    finite=finite[np.isfinite(finite)&(finite>0)]
+    fallback=float(np.median(finite)) if len(finite) else 1.0
+    ee=np.where(good,errs,fallback)
+    kw=np.exp(-0.5*(dist/float(bandwidth))**2)/(ee**2)
+    sw=np.sum(kw,axis=1)
+    pred=np.sum(kw*vals,axis=1)/np.maximum(sw,1e-300)
+    return pred,dist[:,0]
+
+
+def _setting_ids(ext: pd.DataFrame) -> pd.Series:
+    # CLAS6 source_table is one published (Q2,xB) setting.  Hall A has four t'
+    # points per (Q2,xB) setting, so construct the corresponding group explicitly.
+    out=[]
+    for _,r in ext.iterrows():
+        if str(r["experiment"]).startswith("CLAS6"):
+            out.append("CLAS6:"+str(r["source_table"]))
+        else:
+            out.append(f"HallA:Q2={float(r.Q2):.3f}:xB={float(r.xB):.3f}")
+    return pd.Series(out,index=ext.index,dtype=str)
+
+
+def _cross_validate_transport(ext: pd.DataFrame, bandwidth: float, k: int,
+                              mode: str) -> pd.DataFrame:
+    """Withhold points or whole kinematic settings and predict them."""
+    lo,span=_external_scale(ext)
+    rows=[]
+    if mode=="point":
+        groups=[[i] for i in ext.index]
+    elif mode=="setting":
+        sid=_setting_ids(ext)
+        groups=[list(ix) for _,ix in sid.groupby(sid).groups.items()]
+    else:
+        raise ValueError(mode)
+    for hold in groups:
+        test=ext.loc[hold]
+        train=ext.drop(index=hold)
+        if len(train)<4: continue
+        pred,dnear=_predict_kernel(train,test[["xB","Q2","minus_t"]].to_numpy(float),lo,span,bandwidth,k)
+        for pos,(idx,r) in enumerate(test.iterrows()):
+            rows.append({"cv_mode":mode,"held_index":int(idx),"experiment":r.experiment,
+                         "setting_id":_setting_ids(test).loc[idx],"xB":r.xB,"Q2":r.Q2,
+                         "minus_t":r.minus_t,"measured_M":r.ratio,"measured_M_err":r.ratio_err,
+                         "predicted_M":pred[pos],"residual":pred[pos]-r.ratio,
+                         "abs_residual":abs(pred[pos]-r.ratio),"nearest_training_distance":dnear[pos],
+                         "bandwidth":bandwidth,"k":k})
+    return pd.DataFrame(rows)
+
+
+def calibrate_external_transport(clas6: pd.DataFrame, halla: pd.DataFrame):
+    """Choose transport settings from withheld-setting closure, not from RGA yields.
+
+    Hyperparameters are selected using CLAS6 leave-one-setting-out closure only.
+    Hall A is retained as a genuinely independent transport test because VPK was
+    fitted to the CLAS6 data.  Point-LOO is reported as a less stringent diagnostic.
+    """
+    ext=pd.concat([clas6,halla],ignore_index=True)
+    scans=[]
+    # Tune only on CLAS6 whole-setting holdout.  This avoids choosing parameters
+    # because they happen to make the RGA or Hall-A result look favorable.
+    for bw in TRANSPORT_BANDWIDTH_SCAN:
+        for k in TRANSPORT_K_SCAN:
+            cv=_cross_validate_transport(clas6,bw,k,"setting")
+            if cv.empty: continue
+            rmse=float(np.sqrt(np.mean(cv.residual.to_numpy(float)**2)))
+            mae=float(np.mean(cv.abs_residual))
+            bias=float(np.mean(cv.residual))
+            scans.append({"bandwidth":bw,"k":k,"clas6_setting_rmse":rmse,
+                          "clas6_setting_mae":mae,"clas6_setting_bias":bias,"n":len(cv)})
+    scan=pd.DataFrame(scans).sort_values(["clas6_setting_rmse","clas6_setting_mae","k","bandwidth"]).reset_index(drop=True)
+    if scan.empty: raise RuntimeError("External transport scan produced no valid closure tests")
+    best=scan.iloc[0]
+    bw=float(best.bandwidth); k=int(best.k)
+
+    # Final closure products.  Combined-data setting holdout measures local
+    # interpolation behavior; CLAS6->HallA is the independent extrapolation test.
+    point=_cross_validate_transport(ext,bw,k,"point")
+    setting=_cross_validate_transport(ext,bw,k,"setting")
+    lo,span=_external_scale(ext)
+    hall_pred,hall_dist=_predict_kernel(clas6,halla[["xB","Q2","minus_t"]].to_numpy(float),lo,span,bw,k)
+    independent=halla.copy()
+    independent["cv_mode"]="CLAS6_to_HallA"
+    independent["held_index"]=np.arange(len(independent))
+    independent["setting_id"]=_setting_ids(independent).values
+    independent["measured_M"]=independent.ratio
+    independent["measured_M_err"]=independent.ratio_err
+    independent["predicted_M"]=hall_pred
+    independent["residual"]=hall_pred-independent.ratio.to_numpy(float)
+    independent["abs_residual"]=np.abs(independent.residual)
+    independent["nearest_training_distance"]=hall_dist
+    independent["bandwidth"]=bw; independent["k"]=k
+    independent=independent[[c for c in point.columns if c in independent.columns]]
+    closure=pd.concat([point,setting,independent],ignore_index=True,sort=False)
+
+    # Empirical transport uncertainty versus distance comes from the stringent
+    # whole-setting holdout.  Use expanding distance thresholds so every estimate
+    # is based on enough actually-withheld measurements.  RMS residual is the
+    # directly observed prediction error; no a*d term is imposed.
+    base=setting.copy().sort_values("nearest_training_distance")
+    dvals=np.unique(np.quantile(base.nearest_training_distance,[0,.15,.30,.45,.60,.75,.90,1]))
+    erows=[]
+    for dmax in dvals[1:]:
+        g=base[base.nearest_training_distance<=dmax]
+        if len(g)<MIN_DISTANCE_BIN_COUNT: continue
+        erows.append({"distance_max":float(dmax),"n":len(g),
+                      "bias":float(np.mean(g.residual)),
+                      "rmse":float(np.sqrt(np.mean(g.residual**2))),
+                      "mae":float(np.mean(g.abs_residual)),
+                      "p68_abs_residual":float(np.quantile(g.abs_residual,.68)),
+                      "p95_abs_residual":float(np.quantile(g.abs_residual,.95))})
+    empirical=pd.DataFrame(erows)
+    return scan,closure,empirical,bw,k
+
+
+def _empirical_sigma_for_distance(d: np.ndarray, empirical: pd.DataFrame) -> np.ndarray:
+    if empirical.empty: return np.full_like(np.asarray(d,float),np.nan)
+    x=empirical.distance_max.to_numpy(float); y=empirical.rmse.to_numpy(float)
+    # Interpolate within tested distances; beyond the largest withheld-setting
+    # distance, hold the last measured RMS and flag such cells separately.
+    return np.interp(np.asarray(d,float),x,y,left=y[0],right=y[-1])
+
+
+def add_local_external_field(a: pd.DataFrame, clas6: pd.DataFrame, halla: pd.DataFrame,
+                             bandwidth: float, k: int, empirical: pd.DataFrame) -> pd.DataFrame:
+    """Apply the transport method selected independently by withheld-data closure."""
+    out=a.copy(); ext=pd.concat([clas6,halla],ignore_index=True)
+    lo,span=_external_scale(ext)
+    pred,dnear=_predict_kernel(ext,out[["xB","Q2","minus_t"]].to_numpy(float),lo,span,bandwidth,k)
+    out["external_nearest_distance_normalized"]=dnear
+    out["external_local_M"]=pred
+    out["external_local_M_unc"]=_empirical_sigma_for_distance(dnear,empirical)
+    out["external_local_n_eff"]=np.nan
+    max_test=float(empirical.distance_max.max()) if not empirical.empty else np.nan
+    out["external_distance_within_setting_closure_range"]=(dnear<=max_test) if np.isfinite(max_test) else False
+    return out
 
 def local_fold_summary(a: pd.DataFrame) -> pd.DataFrame:
     rows=[]
@@ -538,6 +655,44 @@ def plot_distance_cdf(a: pd.DataFrame):
     fig.tight_layout(); fig.savefig(PNG/"external_distance_cdf_by_topology.png",dpi=220); plt.close(fig)
 
 
+def plot_transport_closure(scan: pd.DataFrame, closure: pd.DataFrame, empirical: pd.DataFrame):
+    if scan.empty or closure.empty: return
+    # Method scan: minimum RMSE over k for each bandwidth and vice versa.
+    fig,ax=plt.subplots(figsize=(8.4,5.8))
+    for k,g in scan.groupby("k"):
+        ax.plot(g.bandwidth,g.clas6_setting_rmse,marker="o",ms=3,lw=1,label=f"k={k}")
+    ax.set_xlabel("Gaussian bandwidth in normalized (xB,Q²,-t) distance")
+    ax.set_ylabel("CLAS6 leave-setting-out RMS of predicted − measured M")
+    ax.set_title("Transport-method selection from withheld CLAS6 settings")
+    ax.grid(alpha=.25); ax.legend(ncol=2,fontsize=8)
+    fig.tight_layout(); fig.savefig(PNG/"external_transport_method_scan.png",dpi=220); plt.close(fig)
+
+    fig,ax=plt.subplots(figsize=(8.4,5.8))
+    marks={"point":"o","setting":"s","CLAS6_to_HallA":"^"}
+    for mode,g in closure.groupby("cv_mode"):
+        ax.scatter(g.nearest_training_distance,g.residual,s=18,alpha=.65,marker=marks.get(mode,"o"),label=mode)
+    ax.axhline(0,lw=1)
+    if not empirical.empty:
+        ax.plot(empirical.distance_max,empirical.rmse,"k--",lw=1.5,label="setting-holdout RMS")
+        ax.plot(empirical.distance_max,-empirical.rmse,"k--",lw=1.5)
+    ax.set_xlabel("Distance to nearest retained external measurement")
+    ax.set_ylabel("Predicted M − measured M")
+    ax.set_title("External π⁰ transport closure versus actual kinematic separation")
+    ax.grid(alpha=.25); ax.legend(fontsize=8)
+    fig.tight_layout(); fig.savefig(PNG/"external_transport_closure_vs_distance.png",dpi=220); plt.close(fig)
+
+    ind=closure[closure.cv_mode=="CLAS6_to_HallA"]
+    if not ind.empty:
+        fig,ax=plt.subplots(figsize=(6.4,6.1))
+        ax.errorbar(ind.measured_M,ind.predicted_M,xerr=ind.measured_M_err,fmt="o",ms=4,capsize=2)
+        lo=min(ind.measured_M.min(),ind.predicted_M.min()); hi=max(ind.measured_M.max(),ind.predicted_M.max())
+        ax.plot([lo,hi],[lo,hi],"k--",lw=1)
+        ax.set_xlabel("Measured Hall-A data/VPK M")
+        ax.set_ylabel("Prediction from CLAS6 residuals only")
+        ax.set_title("Independent CLAS6 → Hall-A transport test")
+        ax.grid(alpha=.25); fig.tight_layout()
+        fig.savefig(PNG/"clas6_to_halla_transport_closure.png",dpi=220); plt.close(fig)
+
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--accepted-aao",type=Path,default=DEFAULT_AAO)
@@ -550,7 +705,12 @@ def main():
     a=load_aao(args.accepted_aao)
     a=add_clas6_coverage(a,clas6)
     a=add_model_interpolations(a,clas6,halla)
-    a=add_local_external_field(a,clas6,halla)
+    scan,closure,empirical,best_bw,best_k=calibrate_external_transport(clas6,halla)
+    scan.to_csv(OUT/"external_transport_method_scan.csv",index=False)
+    closure.to_csv(OUT/"external_transport_closure_predictions.csv",index=False)
+    empirical.to_csv(OUT/"external_transport_distance_uncertainty.csv",index=False)
+    print(f"[rga-coverage] empirical transport selected from CLAS6 setting closure: bandwidth={best_bw:g}, k={best_k}")
+    a=add_local_external_field(a,clas6,halla,best_bw,best_k,empirical)
 
     cov=coverage_summary(a); fold=fold_summary(a); local_fold=local_fold_summary(a)
     cov.to_csv(OUT/"rga_external_pi0_coverage_summary.csv",index=False)
@@ -579,6 +739,7 @@ def main():
         plot_local_correction(a,topology)
     plot_distance_cdf(a)
     plot_robustness(robust)
+    plot_transport_closure(scan,closure,empirical)
 
     print("\n=== RGA accepted-AAOgen external pi0 coverage ===")
     show=cov[cov.photon_topology=="ALL"][["period","raw_events","Q2_median_GeV2","clas6_interpolation_fraction","clas6_near_boundary_fraction","clas6_outside_fraction"]]
@@ -590,7 +751,7 @@ def main():
         "clas6_supported_weight_fraction":"{:.3f}".format,"clas6_M_acc_supported":"{:.3f}".format,
         "clas6_halla_supported_weight_fraction":"{:.3f}".format,"clas6_halla_M_acc_supported":"{:.3f}".format}))
     if not robust.empty:
-        print("\n=== Smooth-field robustness test (all accepted kinematics) ===")
+        print("\n=== Empirically calibrated transport robustness test (all accepted kinematics) ===")
         print(robust.to_string(index=False))
     if not cand.empty:
         print("\n=== Candidate single-photon residuals (diagnostic; support fraction shown) ===")
