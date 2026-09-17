@@ -178,9 +178,9 @@ def summary_exact(m):
             median_abs_dt=float(np.nanmedian(abs(d.dt))),median_abs_dphi=float(np.nanmedian(abs(d.dphi))),
             p95_abs_dxB=float(np.nanpercentile(abs(d.dxB),95)),p95_abs_dQ2=float(np.nanpercentile(abs(d.dQ2),95)),
             p95_abs_dt=float(np.nanpercentile(abs(d.dt),95)),p95_abs_dphi=float(np.nanpercentile(abs(d.dphi),95)),
-            median_abs_dxB_binfrac=float(np.nanmedian(abs(d.d_xB_over_bin_width))),
-            median_abs_dQ2_binfrac=float(np.nanmedian(abs(d.d_Q2_over_bin_width))),
-            median_abs_dt_binfrac=float(np.nanmedian(abs(d.d_t_over_bin_width))),
+            median_abs_dxB_binfrac=float(np.nanmedian(abs(d.dxB_over_bin_width))),
+            median_abs_dQ2_binfrac=float(np.nanmedian(abs(d.dQ2_over_bin_width))),
+            median_abs_dt_binfrac=float(np.nanmedian(abs(d.dt_over_bin_width))),
             median_abs_dphi_binfrac=float(np.nanmedian(abs(d.dphi_over_bin_width))),
             median_abs_km15_shift_pct=float(np.nanmedian(abs(d.km15_mean_shift_pct)))))
     return pd.DataFrame(rows)
