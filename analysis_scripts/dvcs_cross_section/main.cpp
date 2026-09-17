@@ -334,7 +334,7 @@ int main(int argc, char* argv[]) {
 
         if (!update_eppi0_normalization_csv(
                 "output/csvs/dvcs_pass2_analysis.csv",
-                dataTrees, eppi0DataTrees, eppi0RecMcTrees, norm_opts)) {
+                dataTrees, eppi0DataTrees, eppi0RecMcTrees, recMcTrees, norm_opts)) {
             std::cerr << "[main] FATAL: eppi0 normalization diagnostic failed.\n";
             return 1;
         }
@@ -470,6 +470,7 @@ int main(int argc, char* argv[]) {
                                             dataTrees,
                                             eppi0DataTrees,
                                             eppi0RecMcTrees,
+                                            recMcTrees,
                                             norm_opts)) {
             std::cerr << "[main] FATAL: pass-1-style eppi0 normalization failed.\n";
             std::exit(EXIT_FAILURE);

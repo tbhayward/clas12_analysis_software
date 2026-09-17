@@ -98,6 +98,7 @@ bool update_eppi0_normalization_csv(
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::map<std::string, TTree*>& eppi0DataTrees,
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
+    const std::map<std::string, TTree*>& dvcsRecMcTrees,
     const Eppi0NormalizationOptions& options);
 
 #endif // EPPI0_NORMALIZATION_H

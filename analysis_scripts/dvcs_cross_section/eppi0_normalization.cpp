@@ -4572,10 +4572,118 @@ static double quantile_sorted(const std::vector<double>& v, double q) {
     return v[lo] * (1.0 - f) + v[hi] * f;
 }
 
+
+static int find_interval_index(const std::vector<std::pair<double,double>>& bins, double x) {
+    for (int i = 0; i < (int)bins.size(); ++i) {
+        if (in_range(x, bins[i].first, bins[i].second)) return i;
+    }
+    return -1;
+}
+
+static void validate_eppi0_acceptance_shift(
+    const std::vector<PeriodNormalization>& norms,
+    const std::map<std::string, TTree*>& dvcsRecMcTrees,
+    const std::vector<RowBin>& rows,
+    const TopoCutMap& mc_cuts,
+    const CurrentResponseModel& current_model,
+    const std::string& output_dir) {
+
+    const std::string outdir = output_dir + "/production_fit_test";
+    mkdir_p(outdir);
+    const std::string csv_path = outdir + "/eppi0_predicted_cross_section_shift.csv";
+    std::ofstream out(csv_path.c_str());
+    if (!out.is_open()) fatal("[eppi0-production-test] FATAL: could not write acceptance-shift CSV: " + csv_path);
+    out << "period,row_index,xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,phimin,phimax,"
+           "rec_raw,rec_theta,rec_theta_p,acceptance_theta_over_raw,acceptance_theta_p_over_raw,"
+           "sigma_theta_over_raw,sigma_theta_p_over_raw,sigma_theta_p_over_theta\n";
+    out << std::setprecision(12);
+
+    // Build the tiny xB/Q2/|t| lookup once.  Only the phi rows are scanned for
+    // each selected event, avoiding an O(Nevent * 1445) validation loop.
+    std::vector<std::pair<double,double>> xbins, qbins, tbins;
+    auto add_unique = [](std::vector<std::pair<double,double>>& v, double lo, double hi) {
+        for (const auto& p : v) if (std::abs(p.first-lo)<1e-12 && std::abs(p.second-hi)<1e-12) return;
+        v.push_back({lo,hi});
+    };
+    for (const RowBin& r : rows) if (r.valid) {
+        add_unique(xbins,r.xBmin,r.xBmax); add_unique(qbins,r.Q2min,r.Q2max); add_unique(tbins,r.tmin,r.tmax);
+    }
+    auto sorter=[](const auto& a,const auto& b){return a.first<b.first;};
+    std::sort(xbins.begin(),xbins.end(),sorter); std::sort(qbins.begin(),qbins.end(),sorter); std::sort(tbins.begin(),tbins.end(),sorter);
+    std::map<int,std::vector<int>> candidates;
+    for (int r=0;r<(int)rows.size();++r) if(rows[r].valid){
+        int ix=find_interval_index(xbins,0.5*(rows[r].xBmin+rows[r].xBmax));
+        int iq=find_interval_index(qbins,0.5*(rows[r].Q2min+rows[r].Q2max));
+        int it=find_interval_index(tbins,0.5*(rows[r].tmin+rows[r].tmax));
+        if(ix>=0&&iq>=0&&it>=0) candidates[(ix*100+iq)*100+it].push_back(r);
+    }
+
+    const ChannelConfig dvcs = dvcs_config();
+    struct Sums { double raw=0.0, theta=0.0, full=0.0; long long n=0; };
+    std::cout << "\n[eppi0-production-test] Predicting cross-section shift from reconstructed-DVCS-MC acceptance numerators.\n";
+    std::cout << "[eppi0-production-test] DATA and generated MC are unchanged; reconstructed MC is compared raw vs theta vs theta*p.\n";
+
+    for (const PeriodNormalization& pn : norms) {
+        TTree* tree = tree_for_period(dvcsRecMcTrees, pn.period, "DVCS reconstructed MC");
+        PeriodTags tags = parse_period_from_key(pn.period);
+        Branches b; b.bind(tree, false);
+        std::vector<Sums> sums(rows.size());
+        Sums total;
+        const Long64_t N=tree->GetEntries();
+        for(Long64_t i=0;i<N;++i){
+            tree->GetEntry(i);
+            if(!passes_event_selection(dvcs,tags,mc_cuts,b)) continue;
+            const std::string region=normalization_region_for_event(b);
+            auto ir=pn.regions.find(region); if(region.empty()||ir==pn.regions.end()) continue;
+            const CubicFit& ft=ir->second.fit; const CubicFit& fp=ir->second.momentum_fit;
+            if(!ft.valid||!fp.valid) fatal("[eppi0-production-test] FATAL: invalid sequential fit for "+pn.period+" "+region);
+            const double rt=ft.eval(std::max(ft.x_min,std::min(ft.x_max,b.p1_theta_deg())));
+            const double rp=fp.eval(std::max(fp.x_min,std::min(fp.x_max,b.p1_p)));
+            if(!(std::isfinite(rt)&&rt>0.0&&std::isfinite(rp)&&rp>0.0)) fatal("[eppi0-production-test] FATAL: nonpositive sequential MC efficiency weight.");
+            bool skip=false;
+            const double cw=event_current_weight(current_model,"ep->epg",tags.display,b,false,skip);
+            if(skip||!(std::isfinite(cw)&&cw>0.0)) continue;
+            const double wr=cw, wt=cw*rt, wf=cw*rt*rp;
+            const double tabs=b.t_abs(), phi=b.phi_deg();
+            int ix=find_interval_index(xbins,b.x), iq=find_interval_index(qbins,b.Q2), it=find_interval_index(tbins,tabs);
+            if(ix<0||iq<0||it<0) continue;
+            auto ic=candidates.find((ix*100+iq)*100+it); if(ic==candidates.end()) continue;
+            for(int r:ic->second){
+                if(!row_accepts_phi(phi,rows[r].pmin,rows[r].pmax)) continue;
+                sums[r].raw+=wr; sums[r].theta+=wt; sums[r].full+=wf; ++sums[r].n;
+                total.raw+=wr; total.theta+=wt; total.full+=wf; ++total.n;
+                break;
+            }
+        }
+        std::vector<double> sig_theta, sig_full, sig_pstep;
+        for(int r=0;r<(int)rows.size();++r){ const Sums& z=sums[r]; if(z.n<=0||z.raw<=0||z.theta<=0||z.full<=0) continue;
+            const double at=z.theta/z.raw, af=z.full/z.raw;
+            const double st=z.raw/z.theta, sf=z.raw/z.full, sp=z.theta/z.full;
+            sig_theta.push_back(st); sig_full.push_back(sf); sig_pstep.push_back(sp);
+            const RowBin& rb=rows[r];
+            out<<'"'<<pn.period<<"\","<<r<<','<<rb.xBmin<<','<<rb.xBmax<<','<<rb.Q2min<<','<<rb.Q2max<<','<<rb.tmin<<','<<rb.tmax<<','<<rb.pmin<<','<<rb.pmax<<','
+               <<z.raw<<','<<z.theta<<','<<z.full<<','<<at<<','<<af<<','<<st<<','<<sf<<','<<sp<<'\n';
+        }
+        std::sort(sig_theta.begin(),sig_theta.end()); std::sort(sig_full.begin(),sig_full.end()); std::sort(sig_pstep.begin(),sig_pstep.end());
+        const double gst=total.raw/total.theta, gsf=total.raw/total.full, gsp=total.theta/total.full;
+        std::cout<<"[eppi0-production-test][XS-SHIFT] "<<std::setw(9)<<pn.period
+                 <<" selected_rec="<<total.n
+                 <<" global sigma(theta)/raw="<<gst
+                 <<" sigma(theta*p)/raw="<<gsf
+                 <<" p-step="<<gsp
+                 <<" | bin median full/raw="<<quantile_sorted(sig_full,0.50)
+                 <<" p05="<<quantile_sorted(sig_full,0.05)
+                 <<" p95="<<quantile_sorted(sig_full,0.95)
+                 <<" | bin median p-step="<<quantile_sorted(sig_pstep,0.50)<<"\n";
+    }
+    out.close();
+    std::cout<<"[eppi0-production-test] Wrote predicted bin-by-bin cross-section shifts: "<<csv_path<<"\n";
+}
+
 static void validate_eppi0_production_fits(
     const std::vector<PeriodNormalization>& norms,
-    const std::map<std::string, TTree*>& dvcsDataTrees,
-    const TopoCutMap& data_cuts,
+    const std::map<std::string, TTree*>& dvcsRecMcTrees,
+    const TopoCutMap& mc_cuts,
     const std::string& output_dir) {
 
     const std::string outdir = output_dir + "/production_fit_test";
@@ -4593,12 +4701,12 @@ static void validate_eppi0_production_fits(
     bool any_bad_fit = false;
     bool any_bad_event = false;
 
-    std::cout << "\n[eppi0-production-test] Dense positive-fit scan + selected DVCS event scan\n";
+    std::cout << "\n[eppi0-production-test] Dense positive-fit scan + selected reconstructed-DVCS-MC event scan\n";
     std::cout << "[eppi0-production-test] Boundary policy: theta is clamped to the fitted interval; "
-                 "the production fit is exp(cubic), so positivity is guaranteed; extreme weights are still reported.\n";
+                 "the sequential production weight is R_theta * R_p on reconstructed DVCS MC; extreme weights are still reported.\n";
 
     for (const PeriodNormalization& pn : norms) {
-        TTree* tree = tree_for_period(dvcsDataTrees, pn.period, "DVCS data");
+        TTree* tree = tree_for_period(dvcsRecMcTrees, pn.period, "DVCS reconstructed MC");
         PeriodTags tags = parse_period_from_key(pn.period);
         Branches b;
         b.bind(tree, false);
@@ -4616,7 +4724,7 @@ static void validate_eppi0_production_fits(
         const Long64_t N = tree->GetEntries();
         for (Long64_t i = 0; i < N; ++i) {
             tree->GetEntry(i);
-            if (!passes_event_selection(dvcs, tags, data_cuts, b)) continue;
+            if (!passes_event_selection(dvcs, tags, mc_cuts, b)) continue;
             const std::string region = normalization_region_for_event(b);
             if (region.empty()) continue;
             auto ir = pn.regions.find(region);
@@ -4629,19 +4737,20 @@ static void validate_eppi0_production_fits(
             if (x < f.x_min) { x = f.x_min; ++st.low; }
             if (x > f.x_max) { x = f.x_max; ++st.high; }
             const double ratio = f.eval(x);
-            if (!(std::isfinite(ratio) && ratio > 0.0)) {
+            const CubicFit& fp = ir->second.momentum_fit;
+            const double p_eval = std::max(fp.x_min, std::min(fp.x_max, b.p1_p));
+            const double pratio = fp.eval(p_eval);
+            if (!(std::isfinite(ratio) && ratio > 0.0 && std::isfinite(pratio) && pratio > 0.0)) {
                 ++st.nonpos;
                 any_bad_event = true;
                 continue;
             }
             st.min_ratio = std::min(st.min_ratio, ratio);
             st.max_ratio = std::max(st.max_ratio, ratio);
-            const double wnew = 1.0 / ratio;
+            const double wtheta = ratio;
+            const double wnew = ratio * pratio;
             st.weights.push_back(wnew);
-            const double rold = ir->second.legacy_raw_cubic.eval(x);
-            if (std::isfinite(rold) && rold > 0.0) {
-                st.new_over_old_weight.push_back(wnew / (1.0 / rold));
-            }
+            st.new_over_old_weight.push_back(wnew / wtheta);
         }
 
         for (const std::string& region : normalization_regions()) {
@@ -4769,6 +4878,7 @@ bool update_eppi0_normalization_csv(
     const std::map<std::string, TTree*>& dvcsDataTrees,
     const std::map<std::string, TTree*>& eppi0DataTrees,
     const std::map<std::string, TTree*>& eppi0RecMcTrees,
+    const std::map<std::string, TTree*>& dvcsRecMcTrees,
     const Eppi0NormalizationOptions& options) {
     try {
         ROOT::EnableThreadSafety();
@@ -4855,7 +4965,8 @@ bool update_eppi0_normalization_csv(
         }
 
         if (options.validate_production_fits && !options.override_to_unity) {
-            validate_eppi0_production_fits(norms, dvcsDataTrees, data_cuts, options.output_dir);
+            validate_eppi0_production_fits(norms, dvcsRecMcTrees, mc_cuts, options.output_dir);
+            validate_eppi0_acceptance_shift(norms, dvcsRecMcTrees, rows, mc_cuts, current_model, options.output_dir);
         }
 
         if (options.write_normalized_yields) {
