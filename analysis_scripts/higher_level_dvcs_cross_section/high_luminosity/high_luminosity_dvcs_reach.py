@@ -147,46 +147,180 @@ def xs_cells(df):
     )
 
 
+def make_high_t_cell_anatomy(xs, clean_ratio, t_min=0.40):
+    """One row per clean high-|t| (xB,Q2,t) cell, with phi coverage and
+    projected point-level statistical precision."""
+    clean = xs[
+        (xs["t_over_Q2"] < clean_ratio) & (xs["abs_t"] >= t_min)
+    ].copy()
+
+    rows = []
+    for bin_id, g in clean.groupby("bin"):
+        row = {
+            "bin": int(bin_id),
+            "xB": g["xB"].median(),
+            "Q2": g["Q2"].median(),
+            "abs_t": g["abs_t"].median(),
+            "t_over_Q2": g["t_over_Q2"].median(),
+            "n_phi": len(g),
+            "phi_min": g["phi"].min(),
+            "phi_max": g["phi"].max(),
+        }
+        for factor in LUMI_FACTORS:
+            rel = g["rel_stat"] / math.sqrt(factor)
+            row[f"median_rel_stat_{factor}x"] = np.nanmedian(rel)
+            row[f"p90_rel_stat_{factor}x"] = np.nanpercentile(rel, 90)
+            for threshold in RELSTAT_THRESHOLDS:
+                key = f"n_phi_le_{int(100*threshold)}pct_{factor}x"
+                row[key] = int((rel <= threshold).sum())
+        rows.append(row)
+
+    return pd.DataFrame(rows).sort_values("abs_t").reset_index(drop=True)
+
+
+def plot_high_t_cell_anatomy(anatomy, outdir):
+    if len(anatomy) == 0:
+        return
+
+    # Plot 1: every high-|t| cell, with marker size proportional to the
+    # number of published phi measurements.
+    fig, ax = plt.subplots(figsize=(10, 6.5))
+    sizes = 25.0 + 10.0 * anatomy["n_phi"]
+
+    for factor in LUMI_FACTORS:
+        ax.scatter(
+            anatomy["abs_t"],
+            100.0 * anatomy[f"median_rel_stat_{factor}x"],
+            s=sizes,
+            alpha=0.75,
+            label=f"{factor}x luminosity",
+        )
+
+    ax.axhline(10.0, linestyle="--", linewidth=1.2, alpha=0.7)
+    ax.axhline(20.0, linestyle="--", linewidth=1.2, alpha=0.7)
+    ax.text(
+        0.405, 10.5, "10% point-level precision",
+        fontsize=9, va="bottom",
+    )
+    ax.text(
+        0.405, 20.5, "20% point-level precision",
+        fontsize=9, va="bottom",
+    )
+    ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+    ax.set_ylabel("Median relative statistical uncertainty per cell (%)")
+    ax.set_title(
+        r"High-$|t|$ cells inside $|t|/Q^2<0.2$"
+        "\n(marker area increases with published phi coverage)"
+    )
+    ax.grid(alpha=0.2)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outdir / "07_high_t_cell_precision.png", dpi=250)
+    plt.close(fig)
+
+    # Plot 2: phi coverage itself. This separates a lack of measured phi
+    # points from large errors on the phi points that do exist.
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.scatter(
+        anatomy["abs_t"],
+        anatomy["n_phi"],
+        s=70,
+        alpha=0.85,
+    )
+    for _, row in anatomy.iterrows():
+        ax.annotate(
+            f"bin {int(row['bin'])}",
+            (row["abs_t"], row["n_phi"]),
+            xytext=(4, 4),
+            textcoords="offset points",
+            fontsize=7,
+            alpha=0.8,
+        )
+    ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+    ax.set_ylabel("Published phi points in cell")
+    ax.set_title(
+        r"Phi coverage of high-$|t|$ cells satisfying $|t|/Q^2<0.2$"
+    )
+    ax.grid(alpha=0.2)
+    fig.tight_layout()
+    fig.savefig(outdir / "08_high_t_phi_coverage.png", dpi=250)
+    plt.close(fig)
+
+
 def plot_q2_t_map(xs, clean_ratio, outdir):
     cells = xs_cells(xs)
     clean = cells["t_over_Q2"] < clean_ratio
 
     fig, ax = plt.subplots(figsize=(9, 7))
 
+    tmax = max(1.05, 1.03 * cells["abs_t"].max())
+    ymax = max(6.0, 1.05 * cells["Q2"].max())
+    tgrid = np.linspace(0.0, tmax, 500)
+    qcut = tgrid / clean_ratio
+
+    # Shade the region selected by |t|/Q^2 < clean_ratio.  The upper
+    # boundary is clipped naturally by the displayed Q^2 range.
+    ax.fill_between(
+        tgrid,
+        np.minimum(qcut, ymax),
+        ymax,
+        where=qcut < ymax,
+        alpha=0.10,
+        label=rf"Preferred region: $|t|/Q^2<{clean_ratio:.1f}$",
+    )
+
+    # Put the preferred points first visually and use the less prominent
+    # styling for rejected cells.
+    ax.scatter(
+        cells.loc[clean, "abs_t"],
+        cells.loc[clean, "Q2"],
+        s=32,
+        alpha=0.85,
+        label="Cells passing preferred cut",
+    )
     ax.scatter(
         cells.loc[~clean, "abs_t"],
         cells.loc[~clean, "Q2"],
         s=24,
-        alpha=0.40,
-        label=rf"$|t|/Q^2 \geq {clean_ratio:.1f}$",
-    )
-    ax.scatter(
-        cells.loc[clean, "abs_t"],
-        cells.loc[clean, "Q2"],
-        s=30,
-        alpha=0.85,
-        label=rf"$|t|/Q^2 < {clean_ratio:.1f}$",
+        alpha=0.28,
+        marker="x",
+        label="Cells outside preferred region",
     )
 
-    tmax = max(1.05, 1.03 * cells["abs_t"].max())
-    tgrid = np.linspace(0.0, tmax, 500)
-
+    line_styles = {0.1: ":", 0.2: "-", 0.3: "--"}
+    line_widths = {0.1: 1.4, 0.2: 2.5, 0.3: 1.4}
     for ratio in RATIO_LINES:
         ax.plot(
             tgrid,
             tgrid / ratio,
-            linewidth=1.5,
+            linestyle=line_styles.get(ratio, "-"),
+            linewidth=line_widths.get(ratio, 1.5),
             label=rf"$|t|/Q^2={ratio:.1f}$",
         )
-    #endfor
+
+    # Direction of the nominal cut: at fixed |t|, larger Q^2 means smaller
+    # |t|/Q^2.  Place the arrow well away from the dense low-Q^2 points.
+    arrow_t = min(0.72, 0.65 * tmax)
+    boundary_q = arrow_t / clean_ratio
+    if boundary_q < 0.80 * ymax:
+        ax.annotate(
+            rf"$|t|/Q^2<{clean_ratio:.1f}$",
+            xy=(arrow_t, min(boundary_q + 1.25, 0.90 * ymax)),
+            xytext=(arrow_t, boundary_q + 0.20),
+            ha="center",
+            va="bottom",
+            fontsize=11,
+            fontweight="bold",
+            arrowprops=dict(arrowstyle="->", linewidth=1.8),
+        )
 
     ax.set_xlim(0.0, tmax)
-    ax.set_ylim(0.8, max(6.0, 1.05 * cells["Q2"].max()))
+    ax.set_ylim(0.0, ymax)
     ax.set_xlabel(r"$|t|$ (GeV$^2$)")
     ax.set_ylabel(r"$Q^2$ (GeV$^2$)")
     ax.set_title("CLAS12 RGA DVCS cross-section kinematic reach")
     ax.grid(alpha=0.2)
-    ax.legend(ncol=2, fontsize=9)
+    ax.legend(ncol=2, fontsize=8.5, loc="upper left")
     fig.tight_layout()
     fig.savefig(outdir / "01_q2_vs_t_ratio_boundaries.png", dpi=250)
     plt.close(fig)
@@ -358,34 +492,70 @@ def make_usability_summary(xs, clean_ratio):
 
 
 def plot_usability(summary, outdir):
-    # Main workshop diagnostic: require six phi points and show several
-    # point-level statistical precision requirements.
-    s = summary[summary["min_usable_phi_points"] == 6]
+    """
+    Show the sensitivity of the exploratory 'usable cell' count to the
+    minimum phi-point requirement.  No particular choice (4, 6, or 8) is
+    treated as physically preferred; the eventual CFF fit should replace
+    this heuristic.
+    """
+    for min_phi in (4, 6, 8):
+        s = summary[summary["min_usable_phi_points"] == min_phi]
 
+        fig, ax = plt.subplots(figsize=(9, 6))
+        for threshold in RELSTAT_THRESHOLDS:
+            g = s[np.isclose(s["rel_stat_threshold"], threshold)]
+            ax.plot(
+                g["luminosity_factor"],
+                g["n_usable_cells"],
+                marker="o",
+                linewidth=1.8,
+                label=f"{100*threshold:.0f}% per phi point",
+            )
+
+        ax.set_xlabel("Luminosity relative to current RGA dataset")
+        ax.set_ylabel(r"Cells passing exploratory criterion")
+        ax.set_title(
+            rf"Cells inside $|t|/Q^2<0.2$: at least {min_phi} phi points"
+            "\n(exploratory statistical criterion, not a CFF-fit requirement)"
+        )
+        ax.set_xticks(LUMI_FACTORS)
+        ax.grid(alpha=0.2)
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(
+            outdir / f"05_usable_cells_minphi{min_phi}_vs_luminosity.png",
+            dpi=250,
+        )
+        plt.close(fig)
+
+    # A second view isolates the strict 10% point-level requirement and
+    # directly exposes dependence on the arbitrary phi-count choice.
+    strict = summary[np.isclose(summary["rel_stat_threshold"], 0.10)]
     fig, ax = plt.subplots(figsize=(9, 6))
-
-    for threshold in RELSTAT_THRESHOLDS:
-        g = s[np.isclose(s["rel_stat_threshold"], threshold)]
+    for min_phi in (4, 6, 8):
+        g = strict[strict["min_usable_phi_points"] == min_phi]
         ax.plot(
             g["luminosity_factor"],
             g["n_usable_cells"],
             marker="o",
             linewidth=1.8,
-            label=f"{100*threshold:.0f}% per phi point",
+            label=rf"$N_\phi\geq{min_phi}$",
         )
-    #endfor
 
     ax.set_xlabel("Luminosity relative to current RGA dataset")
-    ax.set_ylabel(r"Usable $(x_B,Q^2,t)$ cells")
+    ax.set_ylabel(r"Cells with required phi coverage")
     ax.set_title(
-        r"Statistically usable cells inside $|t|/Q^2<0.2$"
-        "\n(require at least six phi points)"
+        r"Sensitivity to phi-coverage requirement"
+        "\n(each counted phi point has projected statistical uncertainty <=10%)"
     )
     ax.set_xticks(LUMI_FACTORS)
     ax.grid(alpha=0.2)
     ax.legend()
     fig.tight_layout()
-    fig.savefig(outdir / "05_usable_cells_vs_luminosity.png", dpi=250)
+    fig.savefig(
+        outdir / "06_usability_sensitivity_to_phi_requirement.png",
+        dpi=250,
+    )
     plt.close(fig)
 
 
@@ -437,7 +607,7 @@ def plot_bsa_xs_coverage(xs, bsa, clean_ratio, outdir):
     ax.grid(alpha=0.2)
     ax.legend(fontsize=9)
     fig.tight_layout()
-    fig.savefig(outdir / "06_bsa_xs_coverage.png", dpi=250)
+    fig.savefig(outdir / "09_bsa_xs_coverage.png", dpi=250)
     plt.close(fig)
 
 
@@ -508,10 +678,14 @@ def main():
     usability = make_usability_summary(xs, args.clean_ratio)
     usability.to_csv(args.output / "xs_usability_vs_luminosity.csv", index=False)
 
+    high_t_anatomy = make_high_t_cell_anatomy(xs, args.clean_ratio, t_min=0.40)
+    high_t_anatomy.to_csv(args.output / "xs_high_t_cell_anatomy.csv", index=False)
+
     plot_q2_t_map(xs, args.clean_ratio, args.output)
     plot_clean_stat_map(xs, args.clean_ratio, args.output)
     plot_t_summary(t_summary, args.output)
     plot_usability(usability, args.output)
+    plot_high_t_cell_anatomy(high_t_anatomy, args.output)
 
     if args.include_bsa:
         bsa = load_bsa(args.bsa)
