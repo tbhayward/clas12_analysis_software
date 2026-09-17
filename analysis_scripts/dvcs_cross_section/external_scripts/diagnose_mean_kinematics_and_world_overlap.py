@@ -76,7 +76,7 @@ def load_pass1_legacy(path):
 def load_pass2(path,label):
     d=pd.read_csv(path,low_memory=False)
     req=["bin index","Bin Name","xBmin","xBmax","Q2min","Q2max","t_abs_min","t_abs_max","phimin","phimax",
-         P2_XS[label],P2_MEAN("xBavg",label),P2_MEAN("Q2avg",label),P2_MEAN("t_abs_avg",label),P2_MEAN("phiavg",label)]
+         P2_XS[label],P2_MEAN("xBavg",label),P2_MEAN("Q2avg",label),P2_MEAN("t_abs_avg",label),P2_MEAN("phiavg",label),P2_MEAN("p_theta",label),P2_MEAN("g_theta",label)]
     miss=[c for c in req if c not in d]
     if miss: raise RuntimeError(f"Pass-2 CSV missing columns for {label}: {miss}")
     vals=[parse_tuple(v) for v in d[P2_XS[label]]]
@@ -85,6 +85,8 @@ def load_pass2(path,label):
     d["Q2_p2"]=pd.to_numeric(d[P2_MEAN("Q2avg",label)],errors="coerce")
     d["t_p2"]=pd.to_numeric(d[P2_MEAN("t_abs_avg",label)],errors="coerce")
     d["phi_p2"]=np.mod(pd.to_numeric(d[P2_MEAN("phiavg",label)],errors="coerce"),360)
+    d["theta_proton_p2"]=pd.to_numeric(d[P2_MEAN("p_theta",label)],errors="coerce")
+    d["theta_gamma_p2"]=pd.to_numeric(d[P2_MEAN("g_theta",label)],errors="coerce")
     return d[np.isfinite(d.xs_p2)&(d.xs_p2>0)].copy()
 
 
@@ -108,10 +110,22 @@ def exact_pass1_pass2(p1,p2,label):
     return m
 
 
+_KM15_CACHE = {}
+
 def km15_one(xB,Q2,t,phi,ebeam,dataset="pass2"):
+    # Dataset is deliberately not part of the cache key: for a fixed physical
+    # (xB,Q2,t,phi,Ebeam) point KM15 predicts the same ep cross section.  This
+    # lets the exact-bin pass reuse predictions in the Jo/Saylor comparisons.
+    key=tuple(round(float(v),10) for v in (xB,Q2,t,phi,ebeam))
+    if key in _KM15_CACHE:
+        return _KM15_CACHE[key]
     from types import SimpleNamespace
     r=SimpleNamespace(dataset=dataset,xB=float(xB),Q2=float(Q2),t_abs=float(t),phi_deg=float(phi))
-    return float(worldmod.evaluate_one_km15(emff,r,float(ebeam))["km15_ep"])
+    val=float(worldmod.evaluate_one_km15(emff,r,float(ebeam))["km15_ep"])
+    if not np.isfinite(val) or val<=0:
+        raise RuntimeError(f"KM15 returned nonpositive/nonfinite value {val} at {key}")
+    _KM15_CACHE[key]=val
+    return val
 
 
 def add_km15_exact(m, ebeam=10.604):
@@ -121,7 +135,10 @@ def add_km15_exact(m, ebeam=10.604):
         try:
             p1.append(km15_one(r.xB_p1,r.Q2_p1,r.t_p1,r.phi_p1,ebeam,"lee2026"))
             p2.append(km15_one(r.xB_p2,r.Q2_p2,r.t_p2,r.phi_p2,ebeam,"pass2"))
-        except Exception: p1.append(np.nan);p2.append(np.nan)
+        except Exception as e:
+            if sum(not np.isfinite(x) for x in p1)<3:
+                print(f"  WARNING KM15 exact failure row {i}: {type(e).__name__}: {e}",flush=True)
+            p1.append(np.nan);p2.append(np.nan)
     m=m.copy(); m["km15_p1_mean"]=p1; m["km15_p2_mean"]=p2
     m["km15_p1_to_p2_factor"]=m.km15_p2_mean/m.km15_p1_mean
     m["km15_mean_shift_pct"]=100*(m.km15_p1_to_p2_factor-1)
@@ -156,13 +173,21 @@ def nearest_world(pass2, ref, name, ebeam_ref, max_norm_dist=2.0):
     for i,r in enumerate(out.itertuples(index=False)):
         if i%100==0: print(f"  KM15 {name} {i}/{len(out)}",flush=True)
         try:
-            kref.append(km15_one(r.ref_xB,r.ref_Q2,r.ref_t,r.ref_phi,r.ref_ebeam,"saylor2018" if "Saylor" in name else "jo2015"))
+            ref_dataset="saylor2018" if "saylor" in name.lower() else "jo2015"
+            kref.append(km15_one(r.ref_xB,r.ref_Q2,r.ref_t,r.ref_phi,r.ref_ebeam,ref_dataset))
             kp2.append(km15_one(r.p2_xB,r.p2_Q2,r.p2_t,r.p2_phi,10.604,"pass2"))
-        except Exception:kref.append(np.nan);kp2.append(np.nan)
+        except Exception as e:
+            if sum(not np.isfinite(x) for x in kref)<3:
+                print(f"  WARNING KM15 {name} failure row {i}: {type(e).__name__}: {e}",flush=True)
+            kref.append(np.nan);kp2.append(np.nan)
     out["km15_ref"]=kref;out["km15_p2"]=kp2;out["km15_ref_to_p2_factor"]=out.km15_p2/out.km15_ref
     out["p2_over_ref_after_km15_transport"]=out.p2_xs/(out.ref_xs*out.km15_ref_to_p2_factor)
     return out
 
+
+def _nanmedian_quiet(x):
+    a=np.asarray(x,float); a=a[np.isfinite(a)]
+    return float(np.median(a)) if len(a) else np.nan
 
 def summary_exact(m):
     rows=[]
@@ -173,7 +198,7 @@ def summary_exact(m):
         if d.empty:continue
         rows.append(dict(comparison=d.comparison.iloc[0],selection=name,N=len(d),
             median_p2_over_p1=float(np.nanmedian(d.p2_over_p1_direct)),
-            median_after_km15=float(np.nanmedian(d.p2_over_p1_after_km15_mean_transport)),
+            median_after_km15=_nanmedian_quiet(d.p2_over_p1_after_km15_mean_transport),
             median_abs_dxB=float(np.nanmedian(abs(d.dxB))),median_abs_dQ2=float(np.nanmedian(abs(d.dQ2))),
             median_abs_dt=float(np.nanmedian(abs(d.dt))),median_abs_dphi=float(np.nanmedian(abs(d.dphi))),
             p95_abs_dxB=float(np.nanpercentile(abs(d.dxB),95)),p95_abs_dQ2=float(np.nanpercentile(abs(d.dQ2),95)),
@@ -182,7 +207,7 @@ def summary_exact(m):
             median_abs_dQ2_binfrac=float(np.nanmedian(np.abs(d["dQ2_over_bin_width"]))),
             median_abs_dt_binfrac=float(np.nanmedian(np.abs(d["dt_over_bin_width"]))),
             median_abs_dphi_binfrac=float(np.nanmedian(np.abs(d["dphi_over_bin_width"]))),
-            median_abs_km15_shift_pct=float(np.nanmedian(np.abs(d["km15_mean_shift_pct"])))))
+            median_abs_km15_shift_pct=_nanmedian_quiet(np.abs(d["km15_mean_shift_pct"]))))
     return pd.DataFrame(rows)
 
 
@@ -200,26 +225,24 @@ def _corr(x,y):
     x=np.asarray(x,float); y=np.asarray(y,float); k=np.isfinite(x)&np.isfinite(y)
     return float(np.corrcoef(x[k],y[k])[0,1]) if k.sum()>=3 else np.nan
 
-def angle_correlation_study(m,out,tag,ebeam=10.604):
-    """Reconstruct exclusive proton/photon polar angles from pass-2 bin means."""
-    d=m.copy(); M=0.9382720813
-    nu=d.Q2_p2/(2*M*d.xB_p2); Ee=ebeam-nu
-    ce=np.clip(1-d.Q2_p2/(2*ebeam*Ee),-1,1); te=np.arccos(ce)
-    qx=-Ee*np.sin(te); qz=ebeam-Ee*np.cos(te); q=np.hypot(qx,qz)
-    qhx=qx/q; qhz=qz/q; e1x=qhz; e1z=-qhx
-    tabs=d.t_p2; ts=-tabs
-    Eg=nu-tabs/(2*M)
-    ca=np.clip((nu-(ts-d.Q2_p2)/(2*Eg))/q,-1,1)
-    sa=np.sqrt(np.maximum(0,1-ca*ca)); ph=np.deg2rad(d.phi_p2)
-    kgx=Eg*(ca*qhx+sa*np.cos(ph)*e1x)
-    kgy=Eg*sa*np.sin(ph)
-    kgz=Eg*(ca*qhz+sa*np.cos(ph)*e1z)
-    d["theta_gamma_p2"]=np.degrees(np.arctan2(np.hypot(kgx,kgy),kgz))
-    ppx=qx-kgx; ppy=-kgy; ppz=qz-kgz
-    d["theta_proton_p2"]=np.degrees(np.arctan2(np.hypot(ppx,ppy),ppz))
-    if (~np.isfinite(d[["theta_gamma_p2","theta_proton_p2"]])).any().any() or (Eg<=0).any():
-        raise RuntimeError(f"{tag}: nonphysical reconstructed angle(s)")
+def _robust_limits(a,lo=1,hi=99,pad=0.03):
+    a=np.asarray(a,float); a=a[np.isfinite(a)]
+    if not len(a): return None
+    x0,x1=np.percentile(a,[lo,hi])
+    if x1<=x0: return None
+    p=pad*(x1-x0)
+    return float(x0-p),float(x1+p)
 
+def angle_correlation_study(m,out,tag):
+    """Use the measured mean proton/photon angles already stored in pass-2 CSV."""
+    d=m.copy()
+    required=["theta_proton_p2","theta_gamma_p2","t_p2","p2_over_p1_direct"]
+    missing=[c for c in required if c not in d.columns]
+    if missing: raise RuntimeError(f"{tag}: missing measured-angle columns: {missing}")
+    bad=(~np.isfinite(d["theta_proton_p2"]))|(~np.isfinite(d["theta_gamma_p2"]))
+    if bad.all(): raise RuntimeError(f"{tag}: no finite measured p_theta/g_theta values")
+
+    tabs=d["t_p2"]
     sels={"all":np.ones(len(d),bool),"|t|<0.15":tabs<.15,
           "0.15<=|t|<0.25":(tabs>=.15)&(tabs<.25),
           "0.25<=|t|<0.40":(tabs>=.25)&(tabs<.40),
@@ -228,52 +251,83 @@ def angle_correlation_study(m,out,tag,ebeam=10.604):
     for n,k in sels.items():
         z=d.loc[k]
         rr.append(dict(comparison=tag,selection=n,N=len(z),
-          corr_t_theta_p=_corr(z.t_p2,z.theta_proton_p2),
-          corr_t_theta_gamma=_corr(z.t_p2,z.theta_gamma_p2),
-          corr_theta_p_theta_gamma=_corr(z.theta_proton_p2,z.theta_gamma_p2),
-          median_theta_p=np.nanmedian(z.theta_proton_p2),
-          median_theta_gamma=np.nanmedian(z.theta_gamma_p2),
-          median_p2_over_p1=np.nanmedian(z.p2_over_p1_direct)))
+          corr_t_theta_p=_corr(z["t_p2"],z["theta_proton_p2"]),
+          corr_t_theta_gamma=_corr(z["t_p2"],z["theta_gamma_p2"]),
+          corr_theta_p_theta_gamma=_corr(z["theta_proton_p2"],z["theta_gamma_p2"]),
+          median_theta_p=float(np.nanmedian(z["theta_proton_p2"])),
+          median_theta_gamma=float(np.nanmedian(z["theta_gamma_p2"])),
+          median_p2_over_p1=float(np.nanmedian(z["p2_over_p1_direct"]))))
     corr=pd.DataFrame(rr)
     corr.to_csv(out/"tables"/f"{tag}_angle_correlations.csv",index=False)
 
-    # Crucial conditional test: angle dependence after holding |t| in narrow slices.
+    # Conditional test in both directions:
+    # (a) angle dependence at approximately fixed |t|;
+    # (b) |t| dependence at approximately fixed detector angle.
     rows=[]
     tb=[(0,.15,"<0.15"),(.15,.25,"0.15-0.25"),(.25,.40,"0.25-0.40"),
         (.40,.60,"0.40-0.60"),(.60,np.inf,">=0.60")]
-    ab=[("theta_gamma_p2",[(0,5.5,"FT"),(5.5,np.inf,"FD")]),
-        ("theta_proton_p2",[(0,35,"<35"),(35,40,"35-40"),(40,np.inf,">=40")])]
+    angle_defs=[
+        ("theta_gamma_p2",[(0,5.5,"FT"),(5.5,10,"5.5-10"),(10,15,"10-15"),(15,np.inf,">=15")]),
+        ("theta_proton_p2",[(0,25,"<25"),(25,35,"25-35"),(35,45,"35-45"),(45,np.inf,">=45")])]
     for tl,th,tn in tb:
         kt=(tabs>=tl)&(tabs<th)
-        for v,bands in ab:
+        for v,bands in angle_defs:
             for al,ah,an in bands:
                 z=d.loc[kt&(d[v]>=al)&(d[v]<ah)]
                 if len(z):
-                    rows.append(dict(comparison=tag,t_bin=tn,angle_variable=v,angle_bin=an,N=len(z),
-                      median_ratio=np.nanmedian(z.p2_over_p1_direct),
-                      p16_ratio=np.nanpercentile(z.p2_over_p1_direct,16),
-                      p84_ratio=np.nanpercentile(z.p2_over_p1_direct,84),
-                      median_t=np.nanmedian(z.t_p2),median_theta_p=np.nanmedian(z.theta_proton_p2),
-                      median_theta_gamma=np.nanmedian(z.theta_gamma_p2)))
+                    rows.append(dict(conditioning="fixed_t",comparison=tag,t_bin=tn,
+                      angle_variable=v,angle_bin=an,N=len(z),
+                      median_ratio=float(np.nanmedian(z["p2_over_p1_direct"])),
+                      p16_ratio=float(np.nanpercentile(z["p2_over_p1_direct"],16)),
+                      p84_ratio=float(np.nanpercentile(z["p2_over_p1_direct"],84)),
+                      median_t=float(np.nanmedian(z["t_p2"])),
+                      median_theta_p=float(np.nanmedian(z["theta_proton_p2"])),
+                      median_theta_gamma=float(np.nanmedian(z["theta_gamma_p2"]))))
     pd.DataFrame(rows).to_csv(out/"tables"/f"{tag}_ratio_conditioned_on_t_and_angle.csv",index=False)
-    d.to_csv(out/"tables"/f"{tag}_points_with_angles.csv",index=False)
 
+    rev=[]
+    for v,bands in angle_defs:
+        for al,ah,an in bands:
+            ka=(d[v]>=al)&(d[v]<ah)
+            for tl,th,tn in tb:
+                z=d.loc[ka&(tabs>=tl)&(tabs<th)]
+                if len(z):
+                    rev.append(dict(comparison=tag,angle_variable=v,angle_bin=an,t_bin=tn,N=len(z),
+                      median_ratio=float(np.nanmedian(z["p2_over_p1_direct"])),
+                      p16_ratio=float(np.nanpercentile(z["p2_over_p1_direct"],16)),
+                      p84_ratio=float(np.nanpercentile(z["p2_over_p1_direct"],84)),
+                      median_t=float(np.nanmedian(z["t_p2"]))))
+    pd.DataFrame(rev).to_csv(out/"tables"/f"{tag}_ratio_conditioned_on_angle_and_t.csv",index=False)
+    d.to_csv(out/"tables"/f"{tag}_points_with_measured_angles.csv",index=False)
+
+    # Robust display limits only; CSVs and correlation calculations retain every point.
+    ratio_lim=_robust_limits(d["p2_over_p1_direct"],2,98)
     for x,y,xl,yl,nm in [
-      ("t_p2","theta_proton_p2",r"$|t|$ (GeV$^2$)",r"$\theta_p$ (deg)","t_vs_theta_p"),
-      ("t_p2","theta_gamma_p2",r"$|t|$ (GeV$^2$)",r"$\theta_\gamma$ (deg)","t_vs_theta_gamma"),
-      ("theta_proton_p2","theta_gamma_p2",r"$\theta_p$ (deg)",r"$\theta_\gamma$ (deg)","theta_p_vs_theta_gamma")]:
+      ("t_p2","theta_proton_p2",r"$|t|$ (GeV$^2$)",r"measured mean $\theta_p$ (deg)","t_vs_theta_p"),
+      ("t_p2","theta_gamma_p2",r"$|t|$ (GeV$^2$)",r"measured mean $\theta_\gamma$ (deg)","t_vs_theta_gamma"),
+      ("theta_proton_p2","theta_gamma_p2",r"measured mean $\theta_p$ (deg)",r"measured mean $\theta_\gamma$ (deg)","theta_p_vs_theta_gamma")]:
         fig,ax=plt.subplots(figsize=(7.2,5.2))
-        sc=ax.scatter(d[x],d[y],c=d.p2_over_p1_direct,s=12)
-        ax.set_xlabel(xl);ax.set_ylabel(yl);fig.colorbar(sc,ax=ax,label="pass-2 / pass-1")
+        kwargs=dict(c=d["p2_over_p1_direct"],s=12)
+        if ratio_lim: kwargs.update(vmin=ratio_lim[0],vmax=ratio_lim[1])
+        sc=ax.scatter(d[x],d[y],**kwargs)
+        xlmt=_robust_limits(d[x]); ylmt=_robust_limits(d[y])
+        if xlmt: ax.set_xlim(*xlmt)
+        if ylmt: ax.set_ylim(*ylmt)
+        ax.set_xlabel(xl);ax.set_ylabel(yl)
+        fig.colorbar(sc,ax=ax,label="pass-2 / pass-1 (2-98% color scale)")
         fig.tight_layout();fig.savefig(out/"figures"/f"{tag}_{nm}_colored_by_ratio.png",dpi=180);plt.close(fig)
-    for x,xl,nm in [("theta_proton_p2",r"$\theta_p$ (deg)","ratio_vs_theta_p"),
-                    ("theta_gamma_p2",r"$\theta_\gamma$ (deg)","ratio_vs_theta_gamma")]:
+    for x,xl,nm in [("theta_proton_p2",r"measured mean $\theta_p$ (deg)","ratio_vs_theta_p"),
+                    ("theta_gamma_p2",r"measured mean $\theta_\gamma$ (deg)","ratio_vs_theta_gamma")]:
         fig,ax=plt.subplots(figsize=(7.2,5.2))
-        sc=ax.scatter(d[x],d.p2_over_p1_direct,c=d.t_p2,s=12)
-        ax.axhline(1,lw=1);ax.set_xlabel(xl);ax.set_ylabel("pass-2 / pass-1")
+        sc=ax.scatter(d[x],d["p2_over_p1_direct"],c=d["t_p2"],s=12)
+        ax.axhline(1,lw=1)
+        xlmt=_robust_limits(d[x]); ylmt=_robust_limits(d["p2_over_p1_direct"],1,99)
+        if xlmt: ax.set_xlim(*xlmt)
+        if ylmt: ax.set_ylim(*ylmt)
+        ax.set_xlabel(xl);ax.set_ylabel("pass-2 / pass-1")
         fig.colorbar(sc,ax=ax,label=r"$|t|$ (GeV$^2$)")
         fig.tight_layout();fig.savefig(out/"figures"/f"{tag}_{nm}_colored_by_t.png",dpi=180);plt.close(fig)
-    print(f"\nANGLE CORRELATIONS [{tag}]\n{corr.to_string(index=False)}",flush=True)
+    print(f"\nANGLE CORRELATIONS FROM MEASURED CSV MEANS [{tag}]\n{corr.to_string(index=False)}",flush=True)
 
 def preflight_validate(args):
     """Fail fast before any expensive KM15 calls."""
@@ -290,7 +344,7 @@ def preflight_validate(args):
     base=["bin index","Bin Name","xBmin","xBmax","Q2min","Q2max","t_abs_min","t_abs_max","phimin","phimax"]
     need=base[:]
     for lab in ("Fa18","10.6 GeV"):
-        need += [P2_XS[lab],P2_MEAN("xBavg",lab),P2_MEAN("Q2avg",lab),P2_MEAN("t_abs_avg",lab),P2_MEAN("phiavg",lab)]
+        need += [P2_XS[lab],P2_MEAN("xBavg",lab),P2_MEAN("Q2avg",lab),P2_MEAN("t_abs_avg",lab),P2_MEAN("phiavg",lab),P2_MEAN("p_theta",lab),P2_MEAN("g_theta",lab)]
     miss=[c for c in need if c not in p2.columns]
     if miss: problems.append(f"pass-2 CSV missing columns: {miss}")
     if problems: raise RuntimeError("PRE-FLIGHT FAILED:\n  - " + "\n  - ".join(problems))
@@ -347,10 +401,11 @@ def main():
                 d=q.loc[mask]
                 if d.empty:continue
                 rows.append(dict(comparison=name,selection=sel,N=len(d),median_geom_distance=np.nanmedian(d.geom_distance),
-                    median_direct_ratio=np.nanmedian(d.p2_over_ref_direct),median_transported_ratio=np.nanmedian(d.p2_over_ref_after_km15_transport),
+                    median_direct_ratio=_nanmedian_quiet(d.p2_over_ref_direct),median_transported_ratio=_nanmedian_quiet(d.p2_over_ref_after_km15_transport),
                     median_abs_dxB=np.nanmedian(abs(d.dxB)),median_abs_dQ2=np.nanmedian(abs(d.dQ2)),median_abs_dt=np.nanmedian(abs(d.dt)),median_abs_dphi=np.nanmedian(abs(d.dphi))))
             pd.DataFrame(rows).to_csv(args.out/"tables"/f"{name}_summary.csv",index=False)
             fig,ax=plt.subplots(figsize=(7.2,5.2));ax.scatter(q.p2_t,q.p2_over_ref_after_km15_transport,s=12);ax.axhline(1,linewidth=1);ax.axvline(.31,linestyle='--',linewidth=1);ax.set_xlabel(r"pass-2 $|t|$ (GeV$^2$)");ax.set_ylabel(f"pass-2 / {name.split('_vs_')[-1]} after KM15 transport");fig.tight_layout();fig.savefig(args.out/"figures"/f"{name}_transported_ratio_vs_t.png",dpi=180);plt.close(fig)
+    print(f"\nKM15 unique evaluations this run: {len(_KM15_CACHE)} (repeated physical points reused from memory).",flush=True)
     print("\nDone. No analysis inputs were modified.",flush=True)
 
 if __name__=="__main__": main()
