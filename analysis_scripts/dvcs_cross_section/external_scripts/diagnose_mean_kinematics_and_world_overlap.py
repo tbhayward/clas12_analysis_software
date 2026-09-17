@@ -112,18 +112,33 @@ def exact_pass1_pass2(p1,p2,label):
 
 _KM15_CACHE = {}
 
-def km15_one(xB,Q2,t,phi,ebeam,dataset="pass2"):
-    # Dataset is deliberately not part of the cache key: for a fixed physical
-    # (xB,Q2,t,phi,Ebeam) point KM15 predicts the same ep cross section.  This
-    # lets the exact-bin pass reuse predictions in the Jo/Saylor comparisons.
-    key=tuple(round(float(v),10) for v in (xB,Q2,t,phi,ebeam))
-    if key in _KM15_CACHE:
-        return _KM15_CACHE[key]
-    from types import SimpleNamespace
-    r=SimpleNamespace(dataset=dataset,xB=float(xB),Q2=float(Q2),t_abs=float(t),phi_deg=float(phi))
+def km15_one(xB,Q2,t,phi,ebeam,dataset="pass2",phi_bmk_rad=None):
+    """Evaluate KM15 with the same dataset-specific phi convention as the world script."""
+    dataset=str(dataset)
+    if dataset in worldmod.GEPARD_BMK_DATASETS:
+        if phi_bmk_rad is None or not np.isfinite(phi_bmk_rad):
+            raise ValueError(f"{dataset} requires its stored phi_bmk_rad; phi_deg is not a safe substitute")
+        convention="bmk"
+        model_phi=float(phi_bmk_rad)
+        key=(convention,)+tuple(round(float(v),10) for v in (xB,Q2,t,model_phi,ebeam))
+        if key in _KM15_CACHE: return _KM15_CACHE[key]
+        from types import SimpleNamespace
+        r=SimpleNamespace(dataset=dataset,xB=float(xB),Q2=float(Q2),t_abs=float(t),
+                          phi_deg=float(phi),phi_bmk_rad=model_phi)
+    elif dataset in worldmod.DIRECT_PHI_DATASETS:
+        convention="direct"
+        model_phi=float(phi)%360.0
+        key=(convention,)+tuple(round(float(v),10) for v in (xB,Q2,t,model_phi,ebeam))
+        if key in _KM15_CACHE: return _KM15_CACHE[key]
+        from types import SimpleNamespace
+        r=SimpleNamespace(dataset=dataset,xB=float(xB),Q2=float(Q2),t_abs=float(t),
+                          phi_deg=model_phi)
+    else:
+        raise KeyError(f"No KM15 phi convention configured for dataset {dataset}")
+
     val=float(worldmod.evaluate_one_km15(emff,r,float(ebeam))["km15_ep"])
     if not np.isfinite(val) or val<=0:
-        raise RuntimeError(f"KM15 returned nonpositive/nonfinite value {val} at {key}")
+        raise RuntimeError(f"KM15 returned nonpositive/nonfinite value {val} for {dataset} at {key}")
     _KM15_CACHE[key]=val
     return val
 
@@ -164,6 +179,7 @@ def nearest_world(pass2, ref, name, ebeam_ref, max_norm_dist=2.0):
         rows.append(dict(comparison=name,pass2_bin_index=p["bin index"],pass2_Bin_Name=p["Bin Name"],
             p2_xB=p.xB_p2,p2_Q2=p.Q2_p2,p2_t=p.t_p2,p2_phi=p.phi_p2,p2_xs=p.xs_p2,p2_stat=p.stat_p2,
             ref_id=q.get("point_id",q.get("source_row",j)),ref_xB=q["xB"],ref_Q2=q["Q2"],ref_t=q["t_abs"],ref_phi=q["phi_deg"],
+            ref_phi_bmk_rad=q.get("phi_bmk_rad",np.nan),
             ref_xs=q["xs"],ref_stat=q["stat_abs"],ref_point_unc=q["point_unc_abs"],
             dxB=p.xB_p2-q["xB"],dQ2=p.Q2_p2-q["Q2"],dt=p.t_p2-q["t_abs"],dphi=float(circdiff(p.phi_p2,q["phi_deg"])),geom_distance=float(dist[j]),
             p2_over_ref_direct=p.xs_p2/q["xs"],ref_ebeam=ebeam_ref))
@@ -174,7 +190,7 @@ def nearest_world(pass2, ref, name, ebeam_ref, max_norm_dist=2.0):
         if i%100==0: print(f"  KM15 {name} {i}/{len(out)}",flush=True)
         try:
             ref_dataset="saylor2018" if "saylor" in name.lower() else "jo2015"
-            kref.append(km15_one(r.ref_xB,r.ref_Q2,r.ref_t,r.ref_phi,r.ref_ebeam,ref_dataset))
+            kref.append(km15_one(r.ref_xB,r.ref_Q2,r.ref_t,r.ref_phi,r.ref_ebeam,ref_dataset,phi_bmk_rad=r.ref_phi_bmk_rad))
             kp2.append(km15_one(r.p2_xB,r.p2_Q2,r.p2_t,r.p2_phi,10.604,"pass2"))
         except Exception as e:
             if sum(not np.isfinite(x) for x in kref)<3:
@@ -329,6 +345,93 @@ def angle_correlation_study(m,out,tag):
         fig.tight_layout();fig.savefig(out/"figures"/f"{tag}_{nm}_colored_by_t.png",dpi=180);plt.close(fig)
     print(f"\nANGLE CORRELATIONS FROM MEASURED CSV MEANS [{tag}]\n{corr.to_string(index=False)}",flush=True)
 
+def compare_eppi0_correction(no_path,eppi0_path,pass1_path,out):
+    """Compare two already-produced pass-2 CSVs bin-by-bin; never modifies either input."""
+    if no_path is None or eppi0_path is None:
+        print("[eppi0 comparison] skipped: provide BOTH --no-eppi0-pass2 and --eppi0-pass2",flush=True)
+        return
+    no_path=Path(no_path); eppi0_path=Path(eppi0_path)
+    if not no_path.exists(): raise FileNotFoundError(f"No-eppi0 CSV not found: {no_path}")
+    if not eppi0_path.exists(): raise FileNotFoundError(f"eppi0 CSV not found: {eppi0_path}")
+
+    all_rows=[]
+    for lab,tag in [("Fa18","fa18"),("10.6 GeV","combined10p6")]:
+        a=load_pass2(no_path,lab).copy()
+        b=load_pass2(eppi0_path,lab).copy()
+        keys=["bin index","Bin Name","xBmin","xBmax","Q2min","Q2max","t_abs_min","t_abs_max","phimin","phimax"]
+        keep=keys+["xs_p2"]
+        z=a.merge(b[keep],on=keys,how="inner",validate="one_to_one",suffixes=("_noeppi0","_eppi0"))
+        # Angles/kinematics come from the no-eppi0 file; these are measured means, not reconstructed.
+        z["theta_proton"]=a.set_index(keys)["theta_proton_p2"].reindex(pd.MultiIndex.from_frame(z[keys])).to_numpy()
+        z["theta_gamma"]=a.set_index(keys)["theta_gamma_p2"].reindex(pd.MultiIndex.from_frame(z[keys])).to_numpy()
+        z["t_mean"]=a.set_index(keys)["t_p2"].reindex(pd.MultiIndex.from_frame(z[keys])).to_numpy()
+        z["eppi0_over_noeppi0"]=z["xs_p2_eppi0"]/z["xs_p2_noeppi0"]
+        z["comparison"]=tag
+        z.to_csv(out/"tables"/f"{tag}_eppi0_correction_by_bin.csv",index=False)
+        all_rows.append(z)
+
+        # Summaries in the same conditional bins used for the pass2/pass1 residual study.
+        tb=[(0,.15,"<0.15"),(.15,.25,"0.15-0.25"),(.25,.40,"0.25-0.40"),
+            (.40,.60,"0.40-0.60"),(.60,np.inf,">=0.60")]
+        angle_defs=[
+          ("theta_gamma",[(0,5.5,"FT"),(5.5,10,"5.5-10"),(10,15,"10-15"),(15,np.inf,">=15")]),
+          ("theta_proton",[(0,25,"<25"),(25,35,"25-35"),(35,45,"35-45"),(45,np.inf,">=45")])]
+        rows=[]
+        for tl,th,tn in tb:
+            kt=(z.t_mean>=tl)&(z.t_mean<th)
+            for v,bands in angle_defs:
+                for al,ah,an in bands:
+                    q=z.loc[kt&(z[v]>=al)&(z[v]<ah)]
+                    if len(q):
+                        rows.append(dict(comparison=tag,t_bin=tn,angle_variable=v,angle_bin=an,N=len(q),
+                          median_correction=float(np.nanmedian(q.eppi0_over_noeppi0)),
+                          p16_correction=float(np.nanpercentile(q.eppi0_over_noeppi0,16)),
+                          p84_correction=float(np.nanpercentile(q.eppi0_over_noeppi0,84))))
+        pd.DataFrame(rows).to_csv(out/"tables"/f"{tag}_eppi0_correction_conditioned_on_t_and_angle.csv",index=False)
+
+        # Directly test whether the correction is largest where no-eppi0 pass2/pass1 is most deficient.
+        p1=load_pass1_legacy(pass1_path)
+        m=exact_pass1_pass2(p1,a,lab)
+        join=m[["bin index","Bin Name","p2_over_p1_direct"]].merge(
+            z[["bin index","Bin Name","eppi0_over_noeppi0","theta_proton","theta_gamma","t_mean"]],
+            on=["bin index","Bin Name"],how="inner",validate="one_to_one")
+        join["predicted_corrected_p2_over_p1"]=join["p2_over_p1_direct"]*join["eppi0_over_noeppi0"]
+        c=_corr(join["p2_over_p1_direct"],join["eppi0_over_noeppi0"])
+        closure_before=np.nanmedian(np.abs(join["p2_over_p1_direct"]-1))
+        closure_after=np.nanmedian(np.abs(join["predicted_corrected_p2_over_p1"]-1))
+        pd.DataFrame([dict(comparison=tag,N=len(join),
+            corr_baseline_ratio_vs_eppi0_correction=c,
+            median_abs_distance_from_unity_before=closure_before,
+            median_abs_distance_from_unity_after=closure_after,
+            median_eppi0_over_noeppi0=np.nanmedian(join["eppi0_over_noeppi0"]))]).to_csv(
+                out/"tables"/f"{tag}_eppi0_differential_closure_summary.csv",index=False)
+        join.to_csv(out/"tables"/f"{tag}_eppi0_vs_pass1_residual_points.csv",index=False)
+
+        # Robust figures: full data retained; percentile limits affect display only.
+        fig,ax=plt.subplots(figsize=(7.2,5.2))
+        sc=ax.scatter(join["p2_over_p1_direct"],join["eppi0_over_noeppi0"],c=join["t_mean"],s=12)
+        ax.axvline(1,lw=1); ax.axhline(1,lw=1)
+        xl=_robust_limits(join["p2_over_p1_direct"],1,99); yl=_robust_limits(join["eppi0_over_noeppi0"],1,99)
+        if xl: ax.set_xlim(*xl)
+        if yl: ax.set_ylim(*yl)
+        ax.set_xlabel("no-eppi0 pass-2 / pass-1")
+        ax.set_ylabel("eppi0 / no-eppi0 cross-section correction")
+        fig.colorbar(sc,ax=ax,label=r"$|t|$ (GeV$^2$)")
+        fig.tight_layout(); fig.savefig(out/"figures"/f"{tag}_eppi0_correction_vs_pass1_residual.png",dpi=180); plt.close(fig)
+
+        fig,ax=plt.subplots(figsize=(7.2,5.2))
+        ax.scatter(join["t_mean"],join["p2_over_p1_direct"],s=10,label="no-eppi0")
+        ax.scatter(join["t_mean"],join["predicted_corrected_p2_over_p1"],s=10,label="with eppi0")
+        ax.axhline(1,lw=1); ax.set_xlabel(r"$|t|$ (GeV$^2$)"); ax.set_ylabel("pass-2 / pass-1")
+        yl=_robust_limits(pd.concat([join["p2_over_p1_direct"],join["predicted_corrected_p2_over_p1"]]),1,99)
+        if yl: ax.set_ylim(*yl)
+        ax.legend(); fig.tight_layout(); fig.savefig(out/"figures"/f"{tag}_pass1_ratio_before_after_eppi0_vs_t.png",dpi=180); plt.close(fig)
+
+        print(f"[eppi0 {tag}] N={len(join)} median correction={np.nanmedian(join.eppi0_over_noeppi0):.4f}; "
+              f"corr(baseline residual, correction)={c:.4f}; median |P2/P1-1| "
+              f"{closure_before:.4f} -> {closure_after:.4f}",flush=True)
+
+
 def preflight_validate(args):
     """Fail fast before any expensive KM15 calls."""
     problems=[]
@@ -366,7 +469,13 @@ def preflight_validate(args):
     print("[preflight] CSV schemas, exact matching, derived columns, and summary contract: OK",flush=True)
 
 def main():
-    ap=argparse.ArgumentParser();ap.add_argument("--pass2",type=Path,default=PASS2);ap.add_argument("--pass1",type=Path,default=PASS1_LEGACY);ap.add_argument("--out",type=Path,default=OUT);ap.add_argument("--skip-km15",action="store_true",help="Fast geometry-only pass")
+    ap=argparse.ArgumentParser()
+    ap.add_argument("--pass2",type=Path,default=PASS2)
+    ap.add_argument("--pass1",type=Path,default=PASS1_LEGACY)
+    ap.add_argument("--out",type=Path,default=OUT)
+    ap.add_argument("--skip-km15",action="store_true",help="Fast geometry-only pass")
+    ap.add_argument("--no-eppi0-pass2",type=Path,default=None,help="Already-produced no-eppi0 pass-2 CSV")
+    ap.add_argument("--eppi0-pass2",type=Path,default=None,help="Already-produced eppi0-corrected pass-2 CSV")
     args=ap.parse_args();args.out.mkdir(parents=True,exist_ok=True);(args.out/"tables").mkdir(exist_ok=True);(args.out/"figures").mkdir(exist_ok=True)
     print(f"PASS1: {args.pass1}\nPASS2: {args.pass2}\nOUT: {args.out}",flush=True)
     preflight_validate(args)
@@ -385,6 +494,8 @@ def main():
     # Direct mean-shift QA across all exact pass1/pass2 bins, independent of xs.
     qa=pd.concat(sums,ignore_index=True);qa.to_csv(args.out/"tables"/"pass1_pass2_mean_kinematics_summary.csv",index=False)
     print("\nMEAN-KINEMATICS SUMMARY\n",qa.to_string(index=False),flush=True)
+
+    compare_eppi0_correction(args.no_eppi0_pass2,args.eppi0_pass2,args.pass1,args.out)
 
     # World comparisons use the same validated loaders as the production world script.
     if not args.skip_km15:
