@@ -178,11 +178,11 @@ def summary_exact(m):
             median_abs_dt=float(np.nanmedian(abs(d.dt))),median_abs_dphi=float(np.nanmedian(abs(d.dphi))),
             p95_abs_dxB=float(np.nanpercentile(abs(d.dxB),95)),p95_abs_dQ2=float(np.nanpercentile(abs(d.dQ2),95)),
             p95_abs_dt=float(np.nanpercentile(abs(d.dt),95)),p95_abs_dphi=float(np.nanpercentile(abs(d.dphi),95)),
-            median_abs_dxB_binfrac=float(np.nanmedian(abs(d.dxB_over_bin_width))),
-            median_abs_dQ2_binfrac=float(np.nanmedian(abs(d.dQ2_over_bin_width))),
-            median_abs_dt_binfrac=float(np.nanmedian(abs(d.dt_over_bin_width))),
-            median_abs_dphi_binfrac=float(np.nanmedian(abs(d.dphi_over_bin_width))),
-            median_abs_km15_shift_pct=float(np.nanmedian(abs(d.km15_mean_shift_pct)))))
+            median_abs_dxB_binfrac=float(np.nanmedian(np.abs(d["dxB_over_bin_width"]))),
+            median_abs_dQ2_binfrac=float(np.nanmedian(np.abs(d["dQ2_over_bin_width"]))),
+            median_abs_dt_binfrac=float(np.nanmedian(np.abs(d["dt_over_bin_width"]))),
+            median_abs_dphi_binfrac=float(np.nanmedian(np.abs(d["dphi_over_bin_width"]))),
+            median_abs_km15_shift_pct=float(np.nanmedian(np.abs(d["km15_mean_shift_pct"])))))
     return pd.DataFrame(rows)
 
 
@@ -191,14 +191,51 @@ def plots_exact(m,outdir,tag):
     specs=[("dxB",r"$\Delta x_B$"),("dQ2",r"$\Delta Q^2$ (GeV$^2$)"),("dt",r"$\Delta |t|$ (GeV$^2$)"),("dphi",r"$\Delta\phi$ (deg)")]
     for col,xlab in specs:
         fig,ax=plt.subplots(figsize=(7.2,5.2)); ax.hist(m[col].dropna(),bins=50); ax.axvline(0,linewidth=1); ax.set_xlabel(xlab);ax.set_ylabel("Matched bins");ax.set_title(f"{tag}: pass-2 minus pass-1 mean kinematics");fig.tight_layout();fig.savefig(outdir/f"{tag}_{col}_distribution.png",dpi=180);plt.close(fig)
-    fig,ax=plt.subplots(figsize=(7.2,5.2)); sc=ax.scatter(m.t_p2,m.p2_over_p1_direct,c=np.abs(m.km15_mean_shift_pct),s=12);ax.axhline(1,linewidth=1);ax.set_xlabel(r"pass-2 mean $|t|$ (GeV$^2$)");ax.set_ylabel("pass-2 / pass-1");cb=fig.colorbar(sc,ax=ax);cb.set_label("|KM15 mean-kinematic effect| (%)");fig.tight_layout();fig.savefig(outdir/f"{tag}_ratio_vs_t_colored_by_km15_shift.png",dpi=180);plt.close(fig)
-    fig,ax=plt.subplots(figsize=(7.2,5.2));ax.scatter(m.km15_mean_shift_pct,100*(m.p2_over_p1_direct-1),s=12);ax.axhline(0,linewidth=1);ax.axvline(0,linewidth=1);ax.set_xlabel("KM15 predicted change from pass-1 mean to pass-2 mean (%)");ax.set_ylabel("Observed pass-2/pass-1 - 1 (%)");fig.tight_layout();fig.savefig(outdir/f"{tag}_observed_vs_predicted_mean_shift.png",dpi=180);plt.close(fig)
+    fig,ax=plt.subplots(figsize=(7.2,5.2)); sc=ax.scatter(m.t_p2,m.p2_over_p1_direct,c=np.abs(m["km15_mean_shift_pct"]),s=12);ax.axhline(1,linewidth=1);ax.set_xlabel(r"pass-2 mean $|t|$ (GeV$^2$)");ax.set_ylabel("pass-2 / pass-1");cb=fig.colorbar(sc,ax=ax);cb.set_label("|KM15 mean-kinematic effect| (%)");fig.tight_layout();fig.savefig(outdir/f"{tag}_ratio_vs_t_colored_by_km15_shift.png",dpi=180);plt.close(fig)
+    fig,ax=plt.subplots(figsize=(7.2,5.2));ax.scatter(m["km15_mean_shift_pct"],100*(m["p2_over_p1_direct"]-1),s=12);ax.axhline(0,linewidth=1);ax.axvline(0,linewidth=1);ax.set_xlabel("KM15 predicted change from pass-1 mean to pass-2 mean (%)");ax.set_ylabel("Observed pass-2/pass-1 - 1 (%)");fig.tight_layout();fig.savefig(outdir/f"{tag}_observed_vs_predicted_mean_shift.png",dpi=180);plt.close(fig)
 
+
+def preflight_validate(args):
+    """Fail fast before any expensive KM15 calls."""
+    problems=[]
+    for label,path in [("pass-1",args.pass1),("pass-2",args.pass2)]:
+        if not path.exists(): problems.append(f"Missing {label} file: {path}")
+    if problems: raise RuntimeError("PRE-FLIGHT FAILED:\n  - " + "\n  - ".join(problems))
+    p1=pd.read_csv(args.pass1,nrows=5,low_memory=False)
+    req1=["Bin Name","xBmin","xBmax","Q2min","Q2max","t_abs_min","t_abs_max","phimin","phimax",
+          "xBavg","Q2avg","t_abs_avg","phiavg","cross sections, ep->epg, exp"]
+    miss=[c for c in req1 if c not in p1.columns]
+    if miss: problems.append(f"pass-1 CSV missing columns: {miss}")
+    p2=pd.read_csv(args.pass2,nrows=5,low_memory=False)
+    base=["bin index","Bin Name","xBmin","xBmax","Q2min","Q2max","t_abs_min","t_abs_max","phimin","phimax"]
+    need=base[:]
+    for lab in ("Fa18","10.6 GeV"):
+        need += [P2_XS[lab],P2_MEAN("xBavg",lab),P2_MEAN("Q2avg",lab),P2_MEAN("t_abs_avg",lab),P2_MEAN("phiavg",lab)]
+    miss=[c for c in need if c not in p2.columns]
+    if miss: problems.append(f"pass-2 CSV missing columns: {miss}")
+    if problems: raise RuntimeError("PRE-FLIGHT FAILED:\n  - " + "\n  - ".join(problems))
+    # Exercise the exact matching + summary + plotting column contract on real rows
+    a=load_pass1_legacy(args.pass1)
+    for lab in ("Fa18","10.6 GeV"):
+        b=load_pass2(args.pass2,lab)
+        m=exact_pass1_pass2(a,b,lab)
+        if m.empty: problems.append(f"No exact pass-1/pass-2 matches for {lab}"); continue
+        required=["dxB","dQ2","dt","dphi","dxB_over_bin_width","dQ2_over_bin_width","dt_over_bin_width","dphi_over_bin_width","p2_over_p1_direct"]
+        missing=[c for c in required if c not in m.columns]
+        if missing: problems.append(f"Internal column-contract failure for {lab}: {missing}")
+        # Add placeholders so summary code itself is tested before KM15.
+        m["km15_mean_shift_pct"]=np.nan
+        m["p2_over_p1_after_km15_mean_transport"]=np.nan
+        try: summary_exact(m.head(min(20,len(m))))
+        except Exception as e: problems.append(f"summary_exact preflight failed for {lab}: {type(e).__name__}: {e}")
+    if problems: raise RuntimeError("PRE-FLIGHT FAILED:\n  - " + "\n  - ".join(problems))
+    print("[preflight] CSV schemas, exact matching, derived columns, and summary contract: OK",flush=True)
 
 def main():
     ap=argparse.ArgumentParser();ap.add_argument("--pass2",type=Path,default=PASS2);ap.add_argument("--pass1",type=Path,default=PASS1_LEGACY);ap.add_argument("--out",type=Path,default=OUT);ap.add_argument("--skip-km15",action="store_true",help="Fast geometry-only pass")
     args=ap.parse_args();args.out.mkdir(parents=True,exist_ok=True);(args.out/"tables").mkdir(exist_ok=True);(args.out/"figures").mkdir(exist_ok=True)
     print(f"PASS1: {args.pass1}\nPASS2: {args.pass2}\nOUT: {args.out}",flush=True)
+    preflight_validate(args)
     p1=load_pass1_legacy(args.pass1)
     exacts=[]; sums=[]
     for lab,tag in [("Fa18","fa18_vs_pass1"),("10.6 GeV","combined10p6_vs_pass1")]:
