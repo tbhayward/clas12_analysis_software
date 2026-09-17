@@ -146,10 +146,10 @@ def nearest_world(pass2, ref, name, ebeam_ref, max_norm_dist=2.0):
         used.add(j); q=ref.iloc[j]
         rows.append(dict(comparison=name,pass2_bin_index=p["bin index"],pass2_Bin_Name=p["Bin Name"],
             p2_xB=p.xB_p2,p2_Q2=p.Q2_p2,p2_t=p.t_p2,p2_phi=p.phi_p2,p2_xs=p.xs_p2,p2_stat=p.stat_p2,
-            ref_id=q.get("point_id",q.get("source_row",j)),ref_xB=q.xB,ref_Q2=q.Q2,ref_t=q.t_abs,ref_phi=q.phi_deg,
-            ref_xs=q.xs,ref_stat=q.stat_abs,ref_point_unc=q.point_unc_abs,
-            dxB=p.xB_p2-q.xB,dQ2=p.Q2_p2-q.Q2,dt=p.t_p2-q.t_abs,dphi=float(circdiff(p.phi_p2,q.phi_deg)),geom_distance=float(dist[j]),
-            p2_over_ref_direct=p.xs_p2/q.xs,ref_ebeam=ebeam_ref))
+            ref_id=q.get("point_id",q.get("source_row",j)),ref_xB=q["xB"],ref_Q2=q["Q2"],ref_t=q["t_abs"],ref_phi=q["phi_deg"],
+            ref_xs=q["xs"],ref_stat=q["stat_abs"],ref_point_unc=q["point_unc_abs"],
+            dxB=p.xB_p2-q["xB"],dQ2=p.Q2_p2-q["Q2"],dt=p.t_p2-q["t_abs"],dphi=float(circdiff(p.phi_p2,q["phi_deg"])),geom_distance=float(dist[j]),
+            p2_over_ref_direct=p.xs_p2/q["xs"],ref_ebeam=ebeam_ref))
     out=pd.DataFrame(rows)
     if out.empty:return out
     kref=[];kp2=[]
