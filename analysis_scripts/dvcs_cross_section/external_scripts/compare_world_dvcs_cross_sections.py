@@ -91,6 +91,7 @@ external_scripts/.
 from __future__ import annotations
 
 import argparse
+import shutil
 import importlib.util
 import math
 import sys
@@ -6529,6 +6530,23 @@ def save_outputs(
     tables.mkdir(parents=True, exist_ok=True)
     figures.mkdir(parents=True, exist_ok=True)
 
+    # Final fail-fast comparison against the pass-2 CSV on disk.  This catches
+    # wrong/stale input files and any accidental reassignment before plots are saved.
+    if have_pass2 and getattr(args, "resolved_pass2_file", None) is not None:
+        _fresh = canonicalize_pass2_csv(Path(args.resolved_pass2_file))
+        _saved = world.loc[world["dataset"].astype(str) == "pass2"].copy()
+        _fresh = _fresh.set_index("point_id").sort_index()
+        _saved = _saved.set_index("point_id").sort_index()
+        if not _fresh.index.equals(_saved.index):
+            raise RuntimeError("PASS2 FINAL QA FAILURE: output pass-2 point IDs do not match the finalized CSV")
+        for _col in ["xs", "stat_abs", "ptp_sys_abs", "point_unc_abs"]:
+            if not np.array_equal(_fresh[_col].to_numpy(float), _saved[_col].to_numpy(float), equal_nan=True):
+                raise RuntimeError(f"PASS2 FINAL QA FAILURE: output column {_col} does not exactly match finalized CSV")
+        print(
+            f"[PASS2 FINAL QA] canonical output exactly matches finalized CSV for "
+            f"{len(_saved):,} pass-2 points", flush=True,
+        )
+
     world.to_csv(tables / "canonical_world_data_with_models.csv", index=False)
     dataset_summary.to_csv(tables / "dataset_summary.csv", index=False)
     model_scores.to_csv(tables / "native_model_scores.csv", index=False)
@@ -7154,6 +7172,13 @@ def main(argv: Optional[List[str]] = None) -> int:
     #endif
     outdir.mkdir(parents=True, exist_ok=True)
 
+    # Never mix a new comparison with stale tables/figures from an earlier run.
+    # Preserve the expensive KM15 cache, but rebuild every user-facing product.
+    for stale_subdir in (outdir / "tables", outdir / "figures"):
+        if stale_subdir.exists():
+            shutil.rmtree(stale_subdir)
+            print(f"[OUTPUT QA] removed stale comparison products: {stale_subdir}", flush=True)
+
     emff_path = resolve_existing(
         Path(args.emff_script),
         [args.script_dir / "extract_emff_from_dvcs_bh.py"],
@@ -7164,6 +7189,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     # 1. Load and canonicalize the six published measurements.
     # ---------------------------------------------------------------------
     world = load_world_data(args, emff)
+
+    # Immutable pass-2 input snapshot.  Later stages are allowed to attach
+    # model columns, but must never alter the measured cross section/errors.
+    _pass2_input_snapshot = (
+        world.loc[world["dataset"].astype(str) == "pass2",
+                  ["point_id", "xs", "stat_abs", "ptp_sys_abs", "point_unc_abs"]]
+        .copy()
+        .set_index("point_id")
+        .sort_index()
+    )
 
     # ---------------------------------------------------------------------
     # 2. Native + common-energy KM15/BH calculations.
@@ -7180,6 +7215,32 @@ def main(argv: Optional[List[str]] = None) -> int:
     # Keep the complete source/cache intact, but use the quality-filtered
     # sample for every nominal score, match, fit, table and figure below.
     world = apply_nominal_data_quality_exclusions(world)
+
+    _pass2_after = (
+        world.loc[world["dataset"].astype(str) == "pass2",
+                  ["point_id", "xs", "stat_abs", "ptp_sys_abs", "point_unc_abs"]]
+        .copy()
+        .set_index("point_id")
+        .sort_index()
+    )
+    if not _pass2_input_snapshot.empty:
+        if not _pass2_after.index.equals(_pass2_input_snapshot.index):
+            raise RuntimeError("PASS2 QA FAILURE: pass-2 point identities changed downstream of CSV loading")
+        for _col in ["xs", "stat_abs", "ptp_sys_abs", "point_unc_abs"]:
+            _a = _pass2_input_snapshot[_col].to_numpy(float)
+            _b = _pass2_after[_col].to_numpy(float)
+            if not np.array_equal(_a, _b, equal_nan=True):
+                _imax = int(np.nanargmax(np.abs(_a - _b)))
+                _pid = _pass2_after.index[_imax]
+                raise RuntimeError(
+                    f"PASS2 QA FAILURE: {_col} changed downstream for {_pid}: "
+                    f"input={_a[_imax]:.12g}, downstream={_b[_imax]:.12g}"
+                )
+        print(
+            f"[PASS2 QA] preserved {len(_pass2_after):,} pass-2 measured values/errors "
+            "exactly through model attachment", flush=True,
+        )
+
     print(
         f"[WORLD] nominal sample after quality exclusions: {len(world):,} points",
         flush=True,
