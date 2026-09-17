@@ -195,6 +195,86 @@ def plots_exact(m,outdir,tag):
     fig,ax=plt.subplots(figsize=(7.2,5.2));ax.scatter(m["km15_mean_shift_pct"],100*(m["p2_over_p1_direct"]-1),s=12);ax.axhline(0,linewidth=1);ax.axvline(0,linewidth=1);ax.set_xlabel("KM15 predicted change from pass-1 mean to pass-2 mean (%)");ax.set_ylabel("Observed pass-2/pass-1 - 1 (%)");fig.tight_layout();fig.savefig(outdir/f"{tag}_observed_vs_predicted_mean_shift.png",dpi=180);plt.close(fig)
 
 
+
+def _corr(x,y):
+    x=np.asarray(x,float); y=np.asarray(y,float); k=np.isfinite(x)&np.isfinite(y)
+    return float(np.corrcoef(x[k],y[k])[0,1]) if k.sum()>=3 else np.nan
+
+def angle_correlation_study(m,out,tag,ebeam=10.604):
+    """Reconstruct exclusive proton/photon polar angles from pass-2 bin means."""
+    d=m.copy(); M=0.9382720813
+    nu=d.Q2_p2/(2*M*d.xB_p2); Ee=ebeam-nu
+    ce=np.clip(1-d.Q2_p2/(2*ebeam*Ee),-1,1); te=np.arccos(ce)
+    qx=-Ee*np.sin(te); qz=ebeam-Ee*np.cos(te); q=np.hypot(qx,qz)
+    qhx=qx/q; qhz=qz/q; e1x=qhz; e1z=-qhx
+    tabs=d.t_p2; ts=-tabs
+    Eg=nu-tabs/(2*M)
+    ca=np.clip((nu-(ts-d.Q2_p2)/(2*Eg))/q,-1,1)
+    sa=np.sqrt(np.maximum(0,1-ca*ca)); ph=np.deg2rad(d.phi_p2)
+    kgx=Eg*(ca*qhx+sa*np.cos(ph)*e1x)
+    kgy=Eg*sa*np.sin(ph)
+    kgz=Eg*(ca*qhz+sa*np.cos(ph)*e1z)
+    d["theta_gamma_p2"]=np.degrees(np.arctan2(np.hypot(kgx,kgy),kgz))
+    ppx=qx-kgx; ppy=-kgy; ppz=qz-kgz
+    d["theta_proton_p2"]=np.degrees(np.arctan2(np.hypot(ppx,ppy),ppz))
+    if (~np.isfinite(d[["theta_gamma_p2","theta_proton_p2"]])).any().any() or (Eg<=0).any():
+        raise RuntimeError(f"{tag}: nonphysical reconstructed angle(s)")
+
+    sels={"all":np.ones(len(d),bool),"|t|<0.15":tabs<.15,
+          "0.15<=|t|<0.25":(tabs>=.15)&(tabs<.25),
+          "0.25<=|t|<0.40":(tabs>=.25)&(tabs<.40),
+          "0.40<=|t|<0.60":(tabs>=.40)&(tabs<.60),"|t|>=0.60":tabs>=.60}
+    rr=[]
+    for n,k in sels.items():
+        z=d.loc[k]
+        rr.append(dict(comparison=tag,selection=n,N=len(z),
+          corr_t_theta_p=_corr(z.t_p2,z.theta_proton_p2),
+          corr_t_theta_gamma=_corr(z.t_p2,z.theta_gamma_p2),
+          corr_theta_p_theta_gamma=_corr(z.theta_proton_p2,z.theta_gamma_p2),
+          median_theta_p=np.nanmedian(z.theta_proton_p2),
+          median_theta_gamma=np.nanmedian(z.theta_gamma_p2),
+          median_p2_over_p1=np.nanmedian(z.p2_over_p1_direct)))
+    corr=pd.DataFrame(rr)
+    corr.to_csv(out/"tables"/f"{tag}_angle_correlations.csv",index=False)
+
+    # Crucial conditional test: angle dependence after holding |t| in narrow slices.
+    rows=[]
+    tb=[(0,.15,"<0.15"),(.15,.25,"0.15-0.25"),(.25,.40,"0.25-0.40"),
+        (.40,.60,"0.40-0.60"),(.60,np.inf,">=0.60")]
+    ab=[("theta_gamma_p2",[(0,5.5,"FT"),(5.5,np.inf,"FD")]),
+        ("theta_proton_p2",[(0,35,"<35"),(35,40,"35-40"),(40,np.inf,">=40")])]
+    for tl,th,tn in tb:
+        kt=(tabs>=tl)&(tabs<th)
+        for v,bands in ab:
+            for al,ah,an in bands:
+                z=d.loc[kt&(d[v]>=al)&(d[v]<ah)]
+                if len(z):
+                    rows.append(dict(comparison=tag,t_bin=tn,angle_variable=v,angle_bin=an,N=len(z),
+                      median_ratio=np.nanmedian(z.p2_over_p1_direct),
+                      p16_ratio=np.nanpercentile(z.p2_over_p1_direct,16),
+                      p84_ratio=np.nanpercentile(z.p2_over_p1_direct,84),
+                      median_t=np.nanmedian(z.t_p2),median_theta_p=np.nanmedian(z.theta_proton_p2),
+                      median_theta_gamma=np.nanmedian(z.theta_gamma_p2)))
+    pd.DataFrame(rows).to_csv(out/"tables"/f"{tag}_ratio_conditioned_on_t_and_angle.csv",index=False)
+    d.to_csv(out/"tables"/f"{tag}_points_with_angles.csv",index=False)
+
+    for x,y,xl,yl,nm in [
+      ("t_p2","theta_proton_p2",r"$|t|$ (GeV$^2$)",r"$\theta_p$ (deg)","t_vs_theta_p"),
+      ("t_p2","theta_gamma_p2",r"$|t|$ (GeV$^2$)",r"$\theta_\gamma$ (deg)","t_vs_theta_gamma"),
+      ("theta_proton_p2","theta_gamma_p2",r"$\theta_p$ (deg)",r"$\theta_\gamma$ (deg)","theta_p_vs_theta_gamma")]:
+        fig,ax=plt.subplots(figsize=(7.2,5.2))
+        sc=ax.scatter(d[x],d[y],c=d.p2_over_p1_direct,s=12)
+        ax.set_xlabel(xl);ax.set_ylabel(yl);fig.colorbar(sc,ax=ax,label="pass-2 / pass-1")
+        fig.tight_layout();fig.savefig(out/"figures"/f"{tag}_{nm}_colored_by_ratio.png",dpi=180);plt.close(fig)
+    for x,xl,nm in [("theta_proton_p2",r"$\theta_p$ (deg)","ratio_vs_theta_p"),
+                    ("theta_gamma_p2",r"$\theta_\gamma$ (deg)","ratio_vs_theta_gamma")]:
+        fig,ax=plt.subplots(figsize=(7.2,5.2))
+        sc=ax.scatter(d[x],d.p2_over_p1_direct,c=d.t_p2,s=12)
+        ax.axhline(1,lw=1);ax.set_xlabel(xl);ax.set_ylabel("pass-2 / pass-1")
+        fig.colorbar(sc,ax=ax,label=r"$|t|$ (GeV$^2$)")
+        fig.tight_layout();fig.savefig(out/"figures"/f"{tag}_{nm}_colored_by_t.png",dpi=180);plt.close(fig)
+    print(f"\nANGLE CORRELATIONS [{tag}]\n{corr.to_string(index=False)}",flush=True)
+
 def preflight_validate(args):
     """Fail fast before any expensive KM15 calls."""
     problems=[]
@@ -246,6 +326,7 @@ def main():
         m.to_csv(args.out/"tables"/f"{tag}_points.csv",index=False); exacts.append(m)
         s=summary_exact(m);s.to_csv(args.out/"tables"/f"{tag}_summary.csv",index=False);sums.append(s)
         plots_exact(m,args.out/"figures",tag)
+        angle_correlation_study(m,args.out,tag)
 
     # Direct mean-shift QA across all exact pass1/pass2 bins, independent of xs.
     qa=pd.concat(sums,ignore_index=True);qa.to_csv(args.out/"tables"/"pass1_pass2_mean_kinematics_summary.csv",index=False)
