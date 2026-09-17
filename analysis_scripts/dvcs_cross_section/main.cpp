@@ -134,6 +134,7 @@ int main(int argc, char* argv[]) {
     bool acceptance_reweighting_only = false;
     bool eppi0_normalization_only = false;
     bool eppi0_production_test = false;
+    bool use_eppi0_production_normalization = true;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--acceptance-reweighting-only") {
             acceptance_reweighting_only = true;
@@ -141,6 +142,8 @@ int main(int argc, char* argv[]) {
             eppi0_normalization_only = true;
         } else if (std::string(argv[i]) == "--eppi0-production-test") {
             eppi0_production_test = true;
+        } else if (std::string(argv[i]) == "--no-eppi0-normalization") {
+            use_eppi0_production_normalization = false;
         }
     }
     SystematicRunSelection systematic_selection;
@@ -157,7 +160,8 @@ int main(int argc, char* argv[]) {
                   << "  ./dvcs_analysis --skip-systematics\n"
                   << "  ./dvcs_analysis --acceptance-reweighting-only\n"
                   << "  ./dvcs_analysis --eppi0-normalization-only\n"
-                  << "  ./dvcs_analysis --eppi0-production-test\n";
+                  << "  ./dvcs_analysis --eppi0-production-test\n"
+                  << "  ./dvcs_analysis --no-eppi0-normalization   # original Krishna normalization\n";
         return 1;
     }
 
@@ -167,6 +171,11 @@ int main(int argc, char* argv[]) {
               << " current=" << systematic_selection.current
               << " acceptance=" << systematic_selection.acceptance
               << " csv=" << systematic_selection.csv_only
+              << std::endl;
+    std::cout << "[main] Production detector normalization: "
+              << (use_eppi0_production_normalization
+                      ? "eppi0 sequential theta*p on reconstructed DVCS MC (Krishna OFF)"
+                      : "Krishna/Neupane proton-efficiency correction (eppi0 OFF)")
               << std::endl;
 
     // Create necessary output directories
@@ -450,7 +459,7 @@ int main(int argc, char* argv[]) {
     // DATA/MC dependence versus proton momentum.  total_counts consumes the
     // resulting sequential theta*p map for reconstructed DVCS MC only.
     // Experimental DVCS DATA and generated DVCS MC are never weighted by it.
-    {
+    if (use_eppi0_production_normalization) {
         const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
         Eppi0NormalizationOptions norm_opts;
@@ -502,11 +511,15 @@ int main(int argc, char* argv[]) {
         total_count_opts.make_plots = false;
         total_count_opts.make_note_outputs = true;
         total_count_opts.apply_event_level_current_correction = true;
-        // Pass-1 architecture: the DVpi0P-derived efficiency map is applied to
-        // reconstructed DVCS MC. Krishna is disabled centrally to avoid applying
-        // a second proton DATA/MC efficiency correction to the same extraction.
-        total_count_opts.apply_neupane_proton_efficiency_correction = false;
-        total_count_opts.apply_eppi0_efficiency_to_dvcs_rec_mc = true;
+        // Mutually exclusive production normalization modes.  Default reproduces
+        // the pass-1 architecture: sequential eppi0 theta*p efficiency weights
+        // act on reconstructed DVCS MC and Krishna is disabled.  The command-line
+        // fallback --no-eppi0-normalization restores the prior pass-2 Krishna
+        // proton-efficiency treatment and applies no eppi0 efficiency map.
+        total_count_opts.apply_neupane_proton_efficiency_correction =
+            !use_eppi0_production_normalization;
+        total_count_opts.apply_eppi0_efficiency_to_dvcs_rec_mc =
+            use_eppi0_production_normalization;
         total_count_opts.eppi0_efficiency_summary_csv =
             "output/data_mc_normalization/eppi0_normalization_summary.csv";
         total_count_opts.current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
@@ -973,6 +986,18 @@ int main(int argc, char* argv[]) {
         cut_variation_opts.max_workers = 7;
         cut_variation_opts.nominal_csv = "output/csvs/dvcs_pass2_analysis.csv";
         cut_variation_opts.output_dir = "output/cut_variation_systematics";
+        // Keep every cut variation on the same detector-normalization branch as
+        // the nominal run.  In eppi0 mode the runner re-derives a fresh theta*p
+        // map under each varied selection; in --no-eppi0-normalization mode it
+        // instead restores Krishna for every variation.
+        cut_variation_opts.use_eppi0_production_normalization =
+            use_eppi0_production_normalization;
+        cut_variation_opts.eppi0_charge_csv_path =
+            "imports/integrated_luminosity/global.csv";
+        cut_variation_opts.eppi0_normalization_json_path =
+            "imports/eppi0_aao_normalization_inputs.json";
+        cut_variation_opts.current_response_model_json =
+            "output/dvcs_current_dependence/calibration/current_response_model.json";
 
         if (!run_automatic_cut_variation_systematics(
                 cut_variation_opts,

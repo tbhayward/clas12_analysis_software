@@ -4,6 +4,7 @@
 #include "bsa.h"
 #include "cross_sections.h"
 #include "cut_variation_systematics.h"
+#include "eppi0_normalization.h"
 #include "python_exclusivity_runner.h"
 #include "global_cuts.h"
 #include "norm_cross_sections.h"
@@ -491,10 +492,59 @@ bool produce_variation(
     const std::string cuts_json =
         prepare_exclusivity_json(spec, options, cfg, base, json_dir);
     stage_done("exclusivity-cut preparation/refit", cuts_t0);
+
+    // Re-derive the pass-1-style eppi0 efficiency map for THIS cut variation.
+    // prepare_exclusivity_json() has already installed cfg as the active global
+    // cut configuration, and cuts_json is the variation-specific exclusivity
+    // definition.  Therefore both fiducial and exclusivity variations propagate
+    // into the eppi0 DATA/AAOgen sample and its sequential theta_p -> residual-p
+    // normalization functions.
+    std::string variation_eppi0_summary;
+    if (options.use_eppi0_production_normalization) {
+        const fs::path eppi0_out = base / "eppi0_normalization";
+        variation_eppi0_summary =
+            (eppi0_out / "eppi0_normalization_summary.csv").string();
+
+        Eppi0NormalizationOptions norm_opts;
+        norm_opts.charge_csv_path = options.eppi0_charge_csv_path;
+        norm_opts.combined_cuts_json = cuts_json;
+        norm_opts.normalization_json_path = options.eppi0_normalization_json_path;
+        norm_opts.current_response_model_json = options.current_response_model_json;
+        norm_opts.output_dir = eppi0_out.string();
+        norm_opts.override_to_unity = false;
+        norm_opts.write_normalized_yields = false;
+        norm_opts.write_summary_csv = true;
+        norm_opts.summary_csv_path = variation_eppi0_summary;
+        // Not needed by the cut-systematic calculation; avoid writing the
+        // external-model population diagnostic four extra times.
+        norm_opts.write_accepted_mc_population = false;
+        norm_opts.max_workers = options.max_workers;
+
+        const auto norm_t0 = stage_start("eppi0 normalization re-derivation");
+        if (!update_eppi0_normalization_csv(csv_path.string(),
+                                            dataTrees,
+                                            eppi0DataTrees,
+                                            eppi0RecMcTrees,
+                                            recMcTrees,
+                                            norm_opts)) {
+            std::cerr << "[cut-variation-runner] ERROR: eppi0 normalization "
+                      << "re-derivation failed for " << spec.name << std::endl;
+            return false;
+        }
+        stage_done("eppi0 normalization re-derivation", norm_t0);
+    }
+
     TotalCountsOptions count_opts;
     count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
     count_opts.make_plots = false;
     count_opts.make_note_outputs = false;
+    count_opts.apply_neupane_proton_efficiency_correction =
+        !options.use_eppi0_production_normalization;
+    count_opts.apply_eppi0_efficiency_to_dvcs_rec_mc =
+        options.use_eppi0_production_normalization;
+    if (options.use_eppi0_production_normalization) {
+        count_opts.eppi0_efficiency_summary_csv = variation_eppi0_summary;
+    }
     const auto counts_t0 = stage_start("total_counts");
     if (!update_total_counts_csv(csv_path.string(), dataTrees, eppi0DataTrees,
                                  genMcTrees, recMcTrees, eppi0GenMcTrees,
