@@ -201,7 +201,10 @@ void update_bsa_cut_systematics(const AutomaticCutVariationOptions& options) {
 
     fs::create_directories(fs::path(options.output_dir) / "bsa");
     std::ofstream diag(fs::path(options.output_dir) / "bsa/bsa_cut_variation_diagnostics.csv");
-    diag << "group,row,A_nominal,A_excl_loose,A_excl_tight,A_fid_loose,A_fid_tight,"
+    diag << "group,row,A_nominal,stat_nominal,A_excl_loose,stat_excl_loose,A_excl_tight,stat_excl_tight,"
+            "A_fid_loose,stat_fid_loose,A_fid_tight,stat_fid_tight,"
+            "delta_excl_loose,delta_excl_tight,delta_fid_loose,delta_fid_tight,"
+            "z_indep_excl_loose,z_indep_excl_tight,z_indep_fid_loose,z_indep_fid_tight,"
             "exclusivity_sys,fiducial_sys,total_cut_sys\n";
 
     const std::vector<std::string> groups = {
@@ -242,8 +245,25 @@ void update_bsa_cut_systematics(const AutomaticCutVariationOptions& options) {
             nominal.rows[r][cex] = std::to_string(sex);
             nominal.rows[r][cfi] = std::to_string(sfi);
             nominal.rows[r][ctot] = std::to_string(stot);
-            diag << group << ',' << r << ',' << n.value << ',' << el.value << ',' << et.value << ','
-                 << fl.value << ',' << ft.value << ',' << sex << ',' << sfi << ',' << stot << '\n';
+            const double del = el.value - n.value;
+            const double det = et.value - n.value;
+            const double dfl = fl.value - n.value;
+            const double dft = ft.value - n.value;
+            auto z_independent = [](double delta, double s0, double s1) {
+                // This deliberately treats the samples as independent, so it is
+                // only a reference scale.  Nominal/varied samples overlap and
+                // therefore have positive statistical covariance; the production
+                // systematic remains the raw pass-1-style BSA displacement above.
+                const double den = std::hypot(s0, s1);
+                return den > 0.0 ? delta / den : 0.0;
+            };
+            diag << group << ',' << r << ',' << n.value << ',' << n.stat << ','
+                 << el.value << ',' << el.stat << ',' << et.value << ',' << et.stat << ','
+                 << fl.value << ',' << fl.stat << ',' << ft.value << ',' << ft.stat << ','
+                 << del << ',' << det << ',' << dfl << ',' << dft << ','
+                 << z_independent(del,n.stat,el.stat) << ',' << z_independent(det,n.stat,et.stat) << ','
+                 << z_independent(dfl,n.stat,fl.stat) << ',' << z_independent(dft,n.stat,ft.stat) << ','
+                 << sex << ',' << sfi << ',' << stot << '\n';
         } //endfor
     } //endfor
     write_csv(options.nominal_csv, nominal);

@@ -625,33 +625,12 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
         "Syst. err (fiducial cuts)"
     };
 
-    // Krishna Neupane's reviewed Fall-2018-inbending proton-efficiency study
-    // quotes a 2.83% systematic on the corrected integrated cross section.
-    // Treat this as a genuine overall-normalization uncertainty, not as
-    // independent bin-to-bin noise.
-    //
-    // Fa18 and Sp19 use the same reconstruction version as the calibration and
-    // therefore receive 2.83%.  Sp18 uses a slightly different reconstruction
-    // version, so until the efficiency study is repeated for Sp18 we assign the
-    // deliberately conservative 4 x 2.83% = 11.32%.
-    //
-    // The combined 10.6-GeV proton-efficiency normalization is the charge-
-    // weighted average of the four contributing run periods, using the exact
-    // final Pass-2 selected charges reported by cross_sections.cpp:
-    //
-    //   Sp18 Inb  51.248191 mC
-    //   Sp18 Out  11.435592 mC
-    //   Fa18 Inb  29.407050 mC
-    //   Fa18 Out  31.900540 mC
-    //
-    // This is an overall normalization category, so the four contributions are
-    // not averaged down with 1/sqrt(N) or weighted bin-by-bin by event yield.
-    // Krishna/Neupane is not a separate production correction in the current
-    // pass-1-style eppi0-normalized workflow.  The empirical eppi0 DATA/MC fit
-    // contains the proton efficiency mismatch, so retaining the old 2.83/11.32%
-    // terms here would double count it.  A residual eppi0 normalization
-    // uncertainty will be installed after the corrected cross sections are
-    // validated against pass-1/world data.
+    // Krishna/Neupane is NOT a production correction in the present
+    // pass-1-style DVpi0P configuration. The sequential empirical efficiency
+    // map already corrects the reconstructed-DVCS-MC proton response, so the
+    // separate Krishna normalization systematic is zeroed here to avoid double
+    // counting. The DVpi0P-map normalization/transport uncertainty must be
+    // assigned as its own systematic after the central-value validation.
     const double peff_sys_fa18 = 0.0;
     const double peff_sys_sp18 = 0.0;
     const double peff_sys_sp19 = 0.0;

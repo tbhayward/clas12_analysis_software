@@ -153,6 +153,7 @@ struct RegionNormalization {
     std::string region;
     CubicFit fit;
     CubicFit legacy_raw_cubic;
+    CubicFit momentum_fit; // residual DATA/(MC*theta_weight), fitted versus p1_p
     double integrated_ratio = 1.0;
     double integrated_ratio_err = 0.0;
 };
@@ -2747,6 +2748,42 @@ static void fill_eppi0_data_hists_analysis(const ChannelConfig& cfg,
 }
 
 
+static void fill_p1_momentum_mc_after_theta(const ChannelConfig& cfg,
+                                               const PeriodTags& tags,
+                                               TTree* tree,
+                                               const TopoCutMap& mc_cuts,
+                                               double event_norm,
+                                               const CurrentResponseModel& current_model,
+                                               const std::map<std::string, RegionNormalization>& regions,
+                                               std::map<std::string, TH1D*>& out) {
+    if (!tree) return;
+    // Clone the production p1_p binning from scratch: 12 FD bins [0,6] and
+    // 23 CD bins [0,3]. This matches make_hist_set/range_for_panel.
+    for (int i=0;i<6;++i) {
+        const std::string r="Sector "+std::to_string(i+1);
+        out[r]=new TH1D(("h_p_resid_mc_"+period_dir(tags.display)+"_S"+std::to_string(i+1)).c_str(),"",12,0.0,6.0);
+        out[r]->SetDirectory(nullptr); out[r]->Sumw2();
+    }
+    out["CD"]=new TH1D(("h_p_resid_mc_"+period_dir(tags.display)+"_CD").c_str(),"",23,0.0,3.0);
+    out["CD"]->SetDirectory(nullptr); out["CD"]->Sumw2();
+    Branches b; b.bind(tree,true);
+    const Long64_t N=tree->GetEntries();
+    for(Long64_t i=0;i<N;++i){
+        tree->GetEntry(i);
+        if(!passes_event_selection(cfg,tags,mc_cuts,b)) continue;
+        const std::string region=normalization_region_for_event(b);
+        auto ir=regions.find(region); if(ir==regions.end() || !ir->second.fit.valid) continue;
+        double th=b.p1_theta_deg();
+        th=std::max(ir->second.fit.x_min,std::min(ir->second.fit.x_max,th));
+        const double wtheta=ir->second.fit.eval(th);
+        if(!(std::isfinite(wtheta)&&wtheta>0.0)) continue;
+        bool skip=false;
+        const double wc=event_current_weight(current_model,"ep->eppi0",tags.display,b,false,skip);
+        if(skip) continue;
+        out[region]->Fill(b.p1_p,event_norm*wc*wtheta);
+    }
+}
+
 // -----------------------------------------------------------------------------
 // Accepted reconstructed-AAOgen population for external pi0-model folding
 // -----------------------------------------------------------------------------
@@ -3335,6 +3372,28 @@ static PeriodNormalization run_period_normalization(const std::string& period,
         region_norms[region] = rn;
     }
 
+    // Pass-1 sequential construction: after applying the theta efficiency map
+    // to reconstructed AAOgen, fit the remaining DATA/MC discrepancy versus
+    // proton momentum. The production MC weight is theta_weight * p_residual.
+    std::map<std::string, TH1D*> h_mc_p_after_theta;
+    fill_p1_momentum_mc_after_theta(epi, tags, rec_tree, mc_cuts, event_norm,
+                                    current_model, region_norms, h_mc_p_after_theta);
+    auto itd_p = ana_data.hists.find("p1_p");
+    if (itd_p == ana_data.hists.end() || itd_p->second.size()!=7)
+        fatal("[eppi0_norm] FATAL: p1_p DATA histograms missing for sequential momentum fit.");
+    for (int panel=0; panel<7; ++panel) {
+        const std::string region=normalization_regions()[panel];
+        TH1D* hd=(TH1D*)itd_p->second[panel]->Clone(("h_p_resid_data_"+period_dir(period)+"_"+std::to_string(panel)).c_str());
+        hd->SetDirectory(nullptr);
+        CubicFit legacy;
+        // Same positive log-cubic representation used for theta, now fitted to
+        // DATA/(MC already weighted by theta). The function is generic in x;
+        // only its diagnostic canvas name retains the historical theta label.
+        region_norms[region].momentum_fit = fit_p1_theta_ratio_region(period, region+"_pResidual", period_root, hd, h_mc_p_after_theta.at(region), &legacy);
+        delete hd;
+    }
+    for(auto& kv:h_mc_p_after_theta) delete kv.second;
+
     // Aggregate all six FD proton sectors separately from CD.  This is the
     // meaningful FD-vs-CD comparison; ALL is often CD dominated.
     {
@@ -3540,7 +3599,12 @@ static inline std::string format_weighted_count_triple(const WeightedCount& c) {
         return "";
     }
 
-    const double var = c.sum_w2 + c.factor_var_sum;
+    // Statistical uncertainty of a weighted event count is sum(w^2).
+    // factor_var_sum contains uncertainty from common fitted correction
+    // functions; that uncertainty is correlated across events and must be
+    // treated as a calibration/systematic uncertainty, not independent
+    // event-counting noise.
+    const double var = c.sum_w2;
     const double stat = (var > 0.0) ? std::sqrt(var) : 0.0;
     return tuple3(c.sum_w, stat, 0.0);
 }
@@ -4404,7 +4468,8 @@ static void write_norm_summary_csv(const std::string& path,
     }
 
     out << "period,region,integrated_data_over_mc,integrated_stat_err,"
-           "a0,a1,a2,a3,ea0,ea1,ea2,ea3,theta_min_deg,theta_max_deg,fit_valid,fit_model\n";
+           "a0,a1,a2,a3,ea0,ea1,ea2,ea3,theta_min_deg,theta_max_deg,fit_valid,fit_model,"
+           "p_a0,p_a1,p_a2,p_a3,p_ea0,p_ea1,p_ea2,p_ea3,p_min_GeV,p_max_GeV,p_fit_valid,p_fit_model\n";
 
     out << std::setprecision(12);
     for (const PeriodNormalization& pn : norms) {
@@ -4426,7 +4491,11 @@ static void write_norm_summary_csv(const std::string& path,
             for (int i = 0; i < 4; ++i) out << "," << rn.fit.a[i];
             for (int i = 0; i < 4; ++i) out << "," << rn.fit.ea[i];
             out << "," << rn.fit.x_min << "," << rn.fit.x_max << ","
-                << (rn.fit.valid ? 1 : 0) << "," << (rn.fit.log_space ? "log_cubic" : "cubic") << "\n";
+                << (rn.fit.valid ? 1 : 0) << "," << (rn.fit.log_space ? "log_cubic" : "cubic");
+            for (int i=0;i<4;++i) out << "," << rn.momentum_fit.a[i];
+            for (int i=0;i<4;++i) out << "," << rn.momentum_fit.ea[i];
+            out << "," << rn.momentum_fit.x_min << "," << rn.momentum_fit.x_max << ","
+                << (rn.momentum_fit.valid?1:0) << "," << (rn.momentum_fit.log_space?"log_cubic":"cubic") << "\n";
         }
     }
 

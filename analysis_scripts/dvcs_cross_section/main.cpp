@@ -444,6 +444,41 @@ int main(int argc, char* argv[]) {
     }
 
 
+    // --------- pass-1-style DVpi0P efficiency-map derivation ----------
+    // Derive the proton-theta DATA/AAOgen map in six FD sectors + CD, then
+    // reweight reconstructed AAOgen by that theta map and fit the residual
+    // DATA/MC dependence versus proton momentum.  total_counts consumes the
+    // resulting sequential theta*p map for reconstructed DVCS MC only.
+    // Experimental DVCS DATA and generated DVCS MC are never weighted by it.
+    {
+        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
+
+        Eppi0NormalizationOptions norm_opts;
+        norm_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
+        norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
+        norm_opts.normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
+        norm_opts.current_response_model_json =
+            "output/dvcs_current_dependence/calibration/current_response_model.json";
+        norm_opts.output_dir = "output/data_mc_normalization";
+        norm_opts.override_to_unity = false;
+        norm_opts.write_normalized_yields = false;
+        norm_opts.write_summary_csv = true;
+        norm_opts.write_accepted_mc_population = true;
+        norm_opts.max_workers = 7;
+
+        if (!update_eppi0_normalization_csv(csv_main,
+                                            dataTrees,
+                                            eppi0DataTrees,
+                                            eppi0RecMcTrees,
+                                            norm_opts)) {
+            std::cerr << "[main] FATAL: pass-1-style eppi0 normalization failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+        std::cout << "[main] Completed eppi0 DATA/AAOgen diagnostic; "
+                  << "sequential theta and residual-p efficiency maps are ready for reconstructed DVCS MC.\n";
+    }
+
+
     // --------- Raw yields + event-level current-corrected yields ----------
     {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
@@ -466,10 +501,13 @@ int main(int argc, char* argv[]) {
         total_count_opts.make_plots = false;
         total_count_opts.make_note_outputs = true;
         total_count_opts.apply_event_level_current_correction = true;
-        // The pass-1-style eppi0 DATA/AAOgen correction applied below already
-        // contains the proton DATA/MC mismatch.  Keep Krishna/Neupane OFF to
-        // avoid correcting the proton inefficiency twice.
+        // Pass-1 architecture: the DVpi0P-derived efficiency map is applied to
+        // reconstructed DVCS MC. Krishna is disabled centrally to avoid applying
+        // a second proton DATA/MC efficiency correction to the same extraction.
         total_count_opts.apply_neupane_proton_efficiency_correction = false;
+        total_count_opts.apply_eppi0_efficiency_to_dvcs_rec_mc = true;
+        total_count_opts.eppi0_efficiency_summary_csv =
+            "output/data_mc_normalization/eppi0_normalization_summary.csv";
         total_count_opts.current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
         total_count_opts.require_sp18_out_epg_e_theta_current_model = true;
         total_count_opts.use_epg_mc_current_factor_for_eppi0_bkg =
@@ -491,41 +529,6 @@ int main(int argc, char* argv[]) {
             std::cerr << "[main] ERROR: update_total_counts_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
-    }
-
-    // --------- pass-1-style eppi0 DATA/AAOGEN normalization ----------
-    // Derive the seven period-dependent proton-theta DATA/MC fits (six FD
-    // sectors + CD) and apply 1/R_pi0(theta_p) event-by-event to both DVCS and
-    // eppi0 DATA normalized yields.  This runs after total_counts so it
-    // deliberately overwrites the current-only normalized DATA yield columns.
-    // Krishna/Neupane is OFF above: the empirical eppi0 correction already
-    // contains that proton DATA/MC inefficiency.
-    {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-
-        Eppi0NormalizationOptions norm_opts;
-        norm_opts.charge_csv_path = "imports/integrated_luminosity/global.csv";
-        norm_opts.combined_cuts_json = "output/jsons/combined_cuts.json";
-        norm_opts.normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
-        norm_opts.current_response_model_json =
-            "output/dvcs_current_dependence/calibration/current_response_model.json";
-        norm_opts.output_dir = "output/data_mc_normalization";
-        norm_opts.override_to_unity = false;
-        norm_opts.write_normalized_yields = true;
-        norm_opts.write_summary_csv = true;
-        norm_opts.write_accepted_mc_population = true;
-        norm_opts.max_workers = 7;
-
-        if (!update_eppi0_normalization_csv(csv_main,
-                                            dataTrees,
-                                            eppi0DataTrees,
-                                            eppi0RecMcTrees,
-                                            norm_opts)) {
-            std::cerr << "[main] FATAL: pass-1-style eppi0 normalization failed.\n";
-            std::exit(EXIT_FAILURE);
-        }
-        std::cout << "[main] Applied pass-1-style eppi0 DATA/AAOgen normalization; "
-                  << "Krishna/Neupane remains disabled.\n";
     }
 
     // --------- pi0 contamination (helicity-averaged; bin-by-bin) ----------

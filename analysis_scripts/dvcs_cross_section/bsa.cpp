@@ -1580,30 +1580,106 @@ static std::string fmt_tuple(double value, double stat) {
     return ss.str();
 }
 
+static bool topology_result_is_usable(const AsymResult& a,
+                                      double min_corrected_events) {
+    const double corrected = a.s_plus + a.s_minus;
+    return a.valid && std::isfinite(a.value) && std::isfinite(a.stat) &&
+           a.stat > 0.0 && a.s_plus > 0.0 && a.s_minus > 0.0 &&
+           corrected >= min_corrected_events;
+}
+
+struct PullAccumulator {
+    int n = 0;
+    int n_abs_gt2 = 0;
+    double sum = 0.0;
+    double sum2 = 0.0;
+    void add(double x) {
+        if (!std::isfinite(x)) return;
+        ++n; sum += x; sum2 += x*x;
+        if (std::abs(x) > 2.0) ++n_abs_gt2;
+    }
+};
+
 static void write_topology_summary_csv(
     const std::string& path,
     const std::vector<RowBin>& rows,
     const std::map<std::string, std::vector<AsymResult>>& fd_results,
-    const std::map<std::string, std::vector<AsymResult>>& ft_results) {
+    const std::map<std::string, std::vector<AsymResult>>& ft_results,
+    double min_corrected_events) {
     const std::filesystem::path p(path);
     std::filesystem::create_directories(p.parent_path());
     std::ofstream out(path);
     if (!out.is_open()) fatal("[bsa] cannot write topology summary CSV: " + path);
     out << "group,row,xBmin,xBmax,Q2min,Q2max,tmin,tmax,phimin,phimax,"
-           "A_FD,stat_FD,A_FT,stat_FT,delta_FD_minus_FT,pull_FD_minus_FT\n";
+           "A_FD,stat_FD,Ncorr_FD,A_FT,stat_FT,Ncorr_FT,"
+           "valid_comparison,delta_FD_minus_FT,pull_FD_minus_FT\n";
+
+    // Keep every row in the diagnostic CSV, but only form a pull when both
+    // topology measurements satisfy the explicit statistics/positivity test.
     for (const std::string& group : output_group_order()) {
         const auto& fd = fd_results.at(group);
         const auto& ft = ft_results.at(group);
         for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
-            if (!rows[r].valid || !fd[r].valid || !ft[r].valid) continue;
-            const double delta = fd[r].value - ft[r].value;
-            const double den = std::hypot(fd[r].stat, ft[r].stat);
-            const double pull = den > 0.0 ? delta / den : 0.0;
+            if (!rows[r].valid) continue;
+            const bool fd_ok = topology_result_is_usable(fd[r], min_corrected_events);
+            const bool ft_ok = topology_result_is_usable(ft[r], min_corrected_events);
+            const bool usable = fd_ok && ft_ok;
+            const double delta = usable ? fd[r].value - ft[r].value
+                                        : std::numeric_limits<double>::quiet_NaN();
+            const double den = usable ? std::hypot(fd[r].stat, ft[r].stat) : 0.0;
+            const double pull = (usable && den > 0.0) ? delta / den
+                                                      : std::numeric_limits<double>::quiet_NaN();
             const RowBin& b = rows[r];
             out << group << ',' << r << ',' << b.xBmin << ',' << b.xBmax << ','
                 << b.Q2min << ',' << b.Q2max << ',' << b.tmin << ',' << b.tmax << ','
-                << b.pmin << ',' << b.pmax << ',' << fd[r].value << ',' << fd[r].stat << ','
-                << ft[r].value << ',' << ft[r].stat << ',' << delta << ',' << pull << '\n';
+                << b.pmin << ',' << b.pmax << ',';
+            if (fd[r].valid) out << fd[r].value << ',' << fd[r].stat << ','
+                                 << (fd[r].s_plus + fd[r].s_minus);
+            out << ',';
+            if (ft[r].valid) out << ft[r].value << ',' << ft[r].stat << ','
+                                 << (ft[r].s_plus + ft[r].s_minus);
+            out << ',' << (usable ? 1 : 0) << ',';
+            if (usable) out << delta << ',' << pull;
+            out << '\n';
+        } //endfor
+    } //endfor
+
+    // Differential pull summary.  This is deliberately a diagnostic rather
+    // than a new systematic: it exposes any FD/FT dependence versus each of
+    // the four analysis coordinates.
+    const std::filesystem::path summary_path = p.parent_path() / "bsa_fd_vs_ft_differential_summary.csv";
+    std::ofstream sum(summary_path);
+    if (!sum.is_open()) fatal("[bsa] cannot write topology differential summary CSV");
+    sum << "group,axis,bin_min,bin_max,n,mean_pull,rms_pull,fraction_abs_pull_gt2\n";
+    for (const std::string& group : output_group_order()) {
+        const auto& fd = fd_results.at(group);
+        const auto& ft = ft_results.at(group);
+        for (int axis = 0; axis < 4; ++axis) {
+            std::map<std::pair<double,double>, PullAccumulator> acc;
+            for (int r = 0; r < static_cast<int>(rows.size()); ++r) {
+                if (!rows[r].valid ||
+                    !topology_result_is_usable(fd[r], min_corrected_events) ||
+                    !topology_result_is_usable(ft[r], min_corrected_events)) continue;
+                const double den = std::hypot(fd[r].stat, ft[r].stat);
+                if (!(den > 0.0)) continue;
+                const double pull = (fd[r].value - ft[r].value) / den;
+                std::pair<double,double> key;
+                if (axis == 0) key = {rows[r].xBmin, rows[r].xBmax};
+                else if (axis == 1) key = {rows[r].Q2min, rows[r].Q2max};
+                else if (axis == 2) key = {rows[r].tmin, rows[r].tmax};
+                else key = {rows[r].pmin, rows[r].pmax};
+                acc[key].add(pull);
+            } //endfor
+            const char* axis_name = axis == 0 ? "xB" : axis == 1 ? "Q2" : axis == 2 ? "t_abs" : "phi";
+            for (const auto& kv : acc) {
+                const PullAccumulator& a = kv.second;
+                if (a.n == 0) continue;
+                const double mean = a.sum / a.n;
+                const double rms = std::sqrt(std::max(0.0, a.sum2 / a.n - mean*mean));
+                sum << group << ',' << axis_name << ',' << kv.first.first << ',' << kv.first.second << ','
+                    << a.n << ',' << mean << ',' << rms << ','
+                    << static_cast<double>(a.n_abs_gt2) / a.n << '\n';
+            } //endfor
         } //endfor
     } //endfor
 }
@@ -2100,7 +2176,8 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
             } //endfor
             const std::filesystem::path topo_csv =
                 std::filesystem::path(options.output_root) / "bsa_studies" / "bsa_fd_vs_ft.csv";
-            write_topology_summary_csv(topo_csv.string(), rows, fd_results, ft_results);
+            write_topology_summary_csv(topo_csv.string(), rows, fd_results, ft_results,
+                                       options.topology_study_min_corrected_events);
             std::cout << "[bsa] Wrote FD-vs-FT photon topology study to "
                       << topo_csv.string() << "\n";
             if (options.make_plots) {
@@ -2157,6 +2234,16 @@ bool write_bsa_helicity_charge_balance(const std::string& output_csv,
         if (!out.is_open()) throw std::runtime_error("cannot write " + output_csv);
         out << "period,Qplus_nC,Qminus_nC,Qplus_over_Qminus,charge_asymmetry\n";
         for (const std::string& period : base_period_order()) {
+            // RGA Sp18 has no reliable helicity-resolved Faraday-cup charge.
+            // Do not let a malformed/non-helicity quantity pass the generic
+            // positive-number validity test (Sp18 Inb previously produced an
+            // unphysical Q+/Q- ~ 230 diagnostic).
+            if (period == "Sp18 Inb" || period == "Sp18 Out") {
+                out << period << ",,,,\n";
+                std::cout << "[bsa] helicity-charge balance " << period
+                          << ": unavailable (no usable helicity-resolved FC charge).\n";
+                continue;
+            } //endif
             auto it = lumi.find(period);
             if (it == lumi.end() || !(it->second.stat > 0.0) || !(it->second.sys > 0.0)) {
                 out << period << ",,,,\n";

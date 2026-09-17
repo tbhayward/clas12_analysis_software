@@ -1853,6 +1853,44 @@ static inline void add_count(HelCounts& h, bool split_helicity, int helicity) {
 
 
 
+
+struct Eppi0EffFit { double a[4]{1,0,0,0}; double xmin=0,xmax=0; bool valid=false; bool logspace=true; };
+struct Eppi0EffPair { Eppi0EffFit theta, mom; };
+using Eppi0EffMap = std::map<std::string,std::map<std::string,Eppi0EffPair>>;
+static double eval_eppi0_fit(const Eppi0EffFit& f,double x){
+    if(!f.valid) return 1.0; x=std::max(f.xmin,std::min(f.xmax,x));
+    const double z=f.a[0]+x*(f.a[1]+x*(f.a[2]+x*f.a[3]));
+    return f.logspace?std::exp(z):z;
+}
+static std::vector<std::string> split_simple_csv(const std::string& line){
+    std::vector<std::string> v; std::string c; bool q=false;
+    for(char ch:line){ if(ch=='"'){q=!q;continue;} if(ch==','&&!q){v.push_back(c);c.clear();}else c+=ch;} v.push_back(c); return v;
+}
+static Eppi0EffMap load_eppi0_efficiency_map(const std::string& path){
+    std::ifstream in(path); if(!in) fatal("[total_counts] FATAL: cannot open eppi0 efficiency summary: "+path);
+    std::string line; if(!std::getline(in,line)) fatal("[total_counts] FATAL: empty eppi0 efficiency summary.");
+    auto h=split_simple_csv(line); std::map<std::string,int> ix; for(int i=0;i<(int)h.size();++i) ix[h[i]]=i;
+    auto req=[&](const std::string& n){if(!ix.count(n)) fatal("[total_counts] FATAL: eppi0 summary missing column "+n); return ix[n];};
+    const int ip=req("period"),ir=req("region"),ia0=req("a0"),itmin=req("theta_min_deg"),itmax=req("theta_max_deg"),itv=req("fit_valid"),itm=req("fit_model"),ipa0=req("p_a0"),ipmin=req("p_min_GeV"),ipmax=req("p_max_GeV"),ipv=req("p_fit_valid"),ipm=req("p_fit_model");
+    Eppi0EffMap out;
+    while(std::getline(in,line)){auto v=split_simple_csv(line); if((int)v.size()<(int)h.size()) continue; if(v[ir]=="ALL"||v[ir]=="FD") continue; Eppi0EffPair p;
+        for(int k=0;k<4;++k){p.theta.a[k]=std::stod(v[ia0+k]); p.mom.a[k]=std::stod(v[ipa0+k]);}
+        p.theta.xmin=std::stod(v[itmin]);p.theta.xmax=std::stod(v[itmax]);p.theta.valid=std::stoi(v[itv])!=0;p.theta.logspace=v[itm].find("log")!=std::string::npos;
+        p.mom.xmin=std::stod(v[ipmin]);p.mom.xmax=std::stod(v[ipmax]);p.mom.valid=std::stoi(v[ipv])!=0;p.mom.logspace=v[ipm].find("log")!=std::string::npos;
+        if(!p.theta.valid||!p.mom.valid) fatal("[total_counts] FATAL: invalid sequential eppi0 fit for "+v[ip]+" "+v[ir]); out[v[ip]][v[ir]]=p; }
+    return out;
+}
+static std::string eppi0_proton_region(const BranchBinder& b){
+    if(!(b.has_p1_theta&&b.has_p1_phi)) return ""; const double th=b.p1_theta*RAD2DEG; double ph=wrap_phi_deg(b.p1_phi*RAD2DEG);
+    if(th>=40&&th<70) return "CD"; if(th<0||th>=40) return ""; int sec=(ph>=330||ph<30)?1:(ph<90)?2:(ph<150)?3:(ph<210)?4:(ph<270)?5:6; return "Sector "+std::to_string(sec);
+}
+static double eppi0_rec_mc_efficiency_weight(const Eppi0EffMap& m,const std::string& period,const BranchBinder& b){
+    if(!(b.has_p1_p&&b.has_p1_theta&&b.has_p1_phi)) fatal("[total_counts] FATAL: eppi0 MC efficiency requires p1_p,p1_theta,p1_phi.");
+    const std::string r=eppi0_proton_region(b); auto a=m.find(period); if(a==m.end()||!a->second.count(r)) fatal("[total_counts] FATAL: missing eppi0 efficiency map for "+period+" "+r);
+    const auto& p=a->second.at(r); const double w=eval_eppi0_fit(p.theta,b.p1_theta*RAD2DEG)*eval_eppi0_fit(p.mom,b.p1_p);
+    if(!(std::isfinite(w)&&w>0.0)) fatal("[total_counts] FATAL: nonpositive eppi0 reconstructed-MC efficiency weight."); return w;
+}
+
 // Krishna Neupane RGA Fall-2018-inbending proton reconstruction-efficiency
 // correction, Eq. (7.1) and Tables 7.2--7.3 of the charged-double-pion note.
 // The tabulated factor is epsilon_data/epsilon_MC.  Since the acceptance already
@@ -2051,7 +2089,8 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                                              bool trace_matches,
                                              const CurrentResponseModel* current_model,
                                              bool use_epg_mc_current_factor_for_eppi0_bkg,
-                                             bool apply_neupane_proton_efficiency_correction) {
+                                             bool apply_neupane_proton_efficiency_correction,
+                                             const Eppi0EffMap* eppi0_eff_map) {
     WorkCounts out;
 
     if (!tree) {
@@ -2221,9 +2260,14 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                 add_count(topo_dense[topo_idx][r], split_helicity, b.helicity);
             }
             if (apply_current_weights && !current_weight.skip_corrected) {
-                const double proton_weight =
-                    (is_data && apply_neupane_proton_efficiency_correction)
-                    ? neupane_proton_data_weight(b) : 1.0;
+                double proton_weight = 1.0;
+                if (is_data && apply_neupane_proton_efficiency_correction)
+                    proton_weight = neupane_proton_data_weight(b);
+                // Pass-1 architecture: the empirical DVpi0P efficiency map
+                // weights reconstructed DVCS MC, never DATA and never generated MC.
+                if (!is_data && !is_gen && eppi0_eff_map &&
+                    work_cfg.channel_cfg.csv_channel == "ep->epg")
+                    proton_weight = eppi0_rec_mc_efficiency_weight(*eppi0_eff_map, tags.period_display, b);
                 add_weighted_count(corrected_total_dense[r], split_helicity, b.helicity, current_weight, proton_weight);
                 add_weighted_count(corrected_topo_dense[topo_idx][r], split_helicity, b.helicity, current_weight, proton_weight);
             }
@@ -4425,6 +4469,16 @@ bool update_total_counts_csv(const std::string& csv_path,
             ensure_collection(item.work_cfg);
         }
 
+        Eppi0EffMap eppi0_eff_map_storage;
+        const Eppi0EffMap* eppi0_eff_map_ptr = nullptr;
+        if (options.apply_eppi0_efficiency_to_dvcs_rec_mc) {
+            if (options.apply_neupane_proton_efficiency_correction)
+                fatal("[total_counts] FATAL: eppi0 reconstructed-MC efficiency and Neupane DATA correction cannot both be enabled.");
+            eppi0_eff_map_storage = load_eppi0_efficiency_map(options.eppi0_efficiency_summary_csv);
+            eppi0_eff_map_ptr = &eppi0_eff_map_storage;
+            std::cout << "[total_counts] Applying sequential eppi0 theta*p efficiency map to reconstructed DVCS MC only.\n";
+        }
+
         std::mutex merge_mutex;
 
         int nth = std::max(1, std::min(7, max_workers));
@@ -4452,7 +4506,8 @@ bool update_total_counts_csv(const std::string& csv_path,
                                            trace_matches,
                                            current_model_ptr,
                                            options.use_epg_mc_current_factor_for_eppi0_bkg,
-                                           options.apply_neupane_proton_efficiency_correction);
+                                           options.apply_neupane_proton_efficiency_correction,
+                                           eppi0_eff_map_ptr);
 
             std::lock_guard<std::mutex> lock(merge_mutex);
 

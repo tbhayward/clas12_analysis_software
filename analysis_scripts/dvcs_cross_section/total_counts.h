@@ -43,6 +43,13 @@ struct TotalCountsOptions {
     // contains the proton DATA/MC efficiency mismatch, so applying the separate
     // Krishna/Neupane proton correction would double count it.
     bool apply_neupane_proton_efficiency_correction = false;
+
+    // Pass-1-style DVpi0P efficiency map: apply the sequential proton-theta
+    // and residual proton-momentum DATA/AAOgen weights to reconstructed DVCS
+    // MC only. Generated MC and experimental DVCS yields remain unchanged.
+    bool apply_eppi0_efficiency_to_dvcs_rec_mc = false;
+    std::string eppi0_efficiency_summary_csv =
+        "output/data_mc_normalization/eppi0_normalization_summary.csv";
     std::string current_response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
 
     // Final-production guard: the reviewed current-dependence study requires

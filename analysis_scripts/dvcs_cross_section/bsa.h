@@ -47,6 +47,12 @@ struct BSAOptions {
     // all-topology BSA written to the main CSV.
     bool make_photon_topology_study = true;
 
+    // Validity requirement for the FD-vs-FT diagnostic.  A topology result is
+    // compared only when the pi0-subtracted signal contains at least this many
+    // events in total and both corrected helicity yields are positive.  This
+    // removes empty/near-empty topology bins without imposing a cut on A_LU.
+    double topology_study_min_corrected_events = 25.0;
+
     // False-asymmetry study. For each replica, every selected event keeps its
     // run and kinematics but its helicity sign is independently randomized with
     // a deterministic hash. This destroys a physical helicity correlation while
