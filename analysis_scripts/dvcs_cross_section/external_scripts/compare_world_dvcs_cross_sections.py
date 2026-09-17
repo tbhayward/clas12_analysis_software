@@ -595,85 +595,46 @@ def _pass2_missing_columns(path: Path) -> List[str]:
 
 
 def resolve_finalized_pass2_csv(requested: Optional[Path], script_dir: Path) -> Optional[Path]:
-    """Resolve a finalized pass-2 CSV independently of where this script lives.
+    """Resolve the pass-2 CSV without searching ambiguous output trees.
 
-    This script is often copied between ``external_scripts`` and the parent
-    analysis directory.  The old default used ``__file__`` alone, so moving the
-    script could silently point it at a stale/different CSV.  Prefer a candidate
-    that actually has the finalized publication-systematics schema.
+    The canonical input for this analysis is
+
+        dvcs_cross_section/output/csvs/dvcs_pass2_analysis.csv
+
+    i.e. ``script_dir.parent / output / csvs`` because this script lives in
+    ``dvcs_cross_section/external_scripts``.  An explicit ``--pass2-file`` may
+    still override that path, but there is deliberately no cwd-based or
+    multi-directory fallback: silently finding an older finalized CSV is more
+    dangerous than failing loudly.
     """
-    candidates: List[Path] = []
+    canonical = (
+        Path(requested).expanduser()
+        if requested is not None
+        else script_dir.parent / "output" / "csvs" / "dvcs_pass2_analysis.csv"
+    )
+    try:
+        canonical = canonical.resolve()
+    except Exception:
+        canonical = canonical.absolute()
+    #endtry
 
-    def add_candidate(x: Optional[Path]) -> None:
-        if x is None:
-            return
-        #endif
-        p = Path(x).expanduser()
-        try:
-            p = p.resolve()
-        except Exception:
-            p = Path(x).expanduser().absolute()
-        #endtry
-        if p not in candidates:
-            candidates.append(p)
-        #endif
-    #enddef
-
-    add_candidate(requested)
-    cwd = Path.cwd()
-    add_candidate(cwd / "output" / "csvs" / "dvcs_pass2_analysis.csv")
-    add_candidate(script_dir / "output" / "csvs" / "dvcs_pass2_analysis.csv")
-    add_candidate(script_dir.parent / "output" / "csvs" / "dvcs_pass2_analysis.csv")
-    add_candidate(script_dir.parent.parent / "output" / "csvs" / "dvcs_pass2_analysis.csv")
-
-    existing = [p for p in candidates if p.exists()]
-    finalized = []
-    for p in existing:
-        missing = _pass2_missing_columns(p)
-        if not missing:
-            finalized.append(p)
-        else:
-            print(
-                f"[PASS2 HAYWARD] candidate is not finalized: {p}\n"
-                f"                 missing: {'; '.join(missing)}",
-                flush=True,
-            )
-        #endif
-    #endfor
-
-    if finalized:
-        chosen = finalized[0]
-        if requested is not None:
-            try:
-                req = Path(requested).expanduser().resolve()
-            except Exception:
-                req = Path(requested).expanduser().absolute()
-            #endtry
-            if chosen != req:
-                print(
-                    f"[PASS2 HAYWARD] requested/default pass-2 path was not usable; "
-                    f"using finalized CSV: {chosen}",
-                    flush=True,
-                )
-            #endif
-        #endif
-        print(f"[PASS2 HAYWARD] resolved finalized pass-2 CSV: {chosen}", flush=True)
-        return chosen
+    if not canonical.exists():
+        print(f"[PASS2 HAYWARD] required pass-2 CSV does not exist: {canonical}", flush=True)
+        return None
     #endif
 
-    if existing:
-        # Return the first existing candidate so canonicalize_pass2_csv can emit
-        # its detailed missing-column error in the usual code path.
-        return existing[0]
+    missing = _pass2_missing_columns(canonical)
+    if missing:
+        print(
+            f"[PASS2 HAYWARD] pass-2 CSV is not finalized: {canonical}\n"
+            f"                 missing: {'; '.join(missing)}",
+            flush=True,
+        )
+        return canonical
     #endif
 
-    if candidates:
-        print("[PASS2 HAYWARD] searched pass-2 CSV candidates:", flush=True)
-        for p in candidates:
-            print(f"  - {p}", flush=True)
-        #endfor
-    #endif
-    return None
+    print(f"[PASS2 HAYWARD] using pass-2 CSV: {canonical}", flush=True)
+    return canonical
 #enddef
 
 
@@ -7121,7 +7082,11 @@ def build_parser() -> argparse.ArgumentParser:
     p.add_argument(
         "--pass2-file",
         default=str(here.parent / "output" / "csvs" / "dvcs_pass2_analysis.csv"),
-        help="Final pass-2 analysis CSV after main_systematics has materialized authoritative systematics.",
+        help=(
+            "Final pass-2 analysis CSV. Default is the canonical "
+            "dvcs_cross_section/output/csvs/dvcs_pass2_analysis.csv; no "
+            "alternate output directories are searched."
+        ),
     )
     p.add_argument("--target-ebeam", type=float, default=TARGET_EBEAM_GEV)
     p.add_argument("--workers", type=int, default=1, help="Reserved for future KM15 multiprocessing; current first pass evaluates serially for model safety")
