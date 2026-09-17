@@ -1075,7 +1075,7 @@ struct Branches {
             ena("weight");
         }
 
-        t->SetCacheSize(0);
+        t->SetCacheSize(16 * 1024 * 1024);
 
         auto bI = [&](const char* name, int* addr, bool& flag) {
             if (t->GetBranch(name)) {
@@ -1692,7 +1692,8 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
                                           const std::string& outdir,
                                           TH1D* h_data,
                                           TH1D* h_mc,
-                                          CubicFit* legacy_raw_out) {
+                                          CubicFit* legacy_raw_out,
+                                          bool momentum_residual = false) {
     CubicFit p;
 
     if (!h_data || !h_mc) {
@@ -1750,9 +1751,16 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
     }
 
     if (ip < 4 || !(fit_xmax > fit_xmin)) {
+        if (momentum_residual) {
+            std::ostringstream ss;
+            ss << "[eppi0_norm] FATAL: " << period << " " << region
+               << " residual proton-momentum fit has only " << ip
+               << " valid DATA/(theta-corrected MC) bins. Refusing silent unity fallback.";
+            fatal(ss.str());
+        }
         p.a[0] = 1.0;
-        p.x_min = (region == "CD") ? 40.0 : 0.0;
-        p.x_max = (region == "CD") ? 70.0 : 40.0;
+        p.x_min = h_data->GetXaxis()->GetXmin();
+        p.x_max = h_data->GetXaxis()->GetXmax();
         p.valid = true;
 
         if (legacy_raw_out) *legacy_raw_out = p;
@@ -1811,17 +1819,13 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
     c.SetBottomMargin(0.13);
     c.SetTopMargin(0.08);
 
-    double xframe_min = 0.0;
-    double xframe_max = 40.0;
-
-    if (region == "CD") {
-        xframe_min = 40.0;
-        xframe_max = 70.0;
-    }
+    const double xframe_min = h_data->GetXaxis()->GetXmin();
+    const double xframe_max = h_data->GetXaxis()->GetXmax();
 
     TH1D* frame = (TH1D*)gPad->DrawFrame(xframe_min, RATIO_Y_MIN, xframe_max, RATIO_Y_MAX);
-    frame->SetTitle((period + "  " + region + "  ep #rightarrow ep#pi_{0}  p_{1} #theta ratio positive log-cubic fit").c_str());
-    frame->GetXaxis()->SetTitle("p_{1} #theta (deg)");
+    const std::string fit_kind = momentum_residual ? "residual p_{1} momentum" : "p_{1} #theta";
+    frame->SetTitle((period + "  " + region + "  ep #rightarrow ep#pi_{0}  " + fit_kind + " ratio positive log-cubic fit").c_str());
+    frame->GetXaxis()->SetTitle(momentum_residual ? "p_{1} momentum (GeV)" : "p_{1} #theta (deg)");
     frame->GetYaxis()->SetTitle("data / MC");
     frame->GetXaxis()->CenterTitle(true);
     frame->GetYaxis()->CenterTitle(true);
@@ -1864,7 +1868,10 @@ static CubicFit fit_p1_theta_ratio_region(const std::string& period,
     leg.AddEntry(&fdraw, "production positive log-cubic", "l");
     leg.Draw();
 
-    c.SaveAs((fit_outdir + "/proton_theta_ratio_logcubic_fit_" + safe_region + ".png").c_str());
+    const std::string fit_filename = momentum_residual
+        ? ("/proton_momentum_residual_ratio_logcubic_fit_" + safe_region + ".png")
+        : ("/proton_theta_ratio_logcubic_fit_" + safe_region + ".png");
+    c.SaveAs((fit_outdir + fit_filename).c_str());
 
     return p;
 }
@@ -2754,18 +2761,27 @@ static void fill_p1_momentum_mc_after_theta(const ChannelConfig& cfg,
                                                const TopoCutMap& mc_cuts,
                                                double event_norm,
                                                const CurrentResponseModel& current_model,
+                                               const HistSet& data_hists,
                                                const std::map<std::string, RegionNormalization>& regions,
                                                std::map<std::string, TH1D*>& out) {
     if (!tree) return;
-    // Clone the production p1_p binning from scratch: 12 FD bins [0,6] and
-    // 23 CD bins [0,3]. This matches make_hist_set/range_for_panel.
-    for (int i=0;i<6;++i) {
-        const std::string r="Sector "+std::to_string(i+1);
-        out[r]=new TH1D(("h_p_resid_mc_"+period_dir(tags.display)+"_S"+std::to_string(i+1)).c_str(),"",12,0.0,6.0);
-        out[r]->SetDirectory(nullptr); out[r]->Sumw2();
+    // IMPORTANT: clone the DATA p1_p histograms and reset them.  The previous
+    // implementation accidentally used 0--6 GeV FD and 0--3 GeV CD MC
+    // histograms while DATA uses the production 0.3--1.3 GeV p1_p range.
+    // fit_p1_theta_ratio_region compares corresponding bin numbers, so that
+    // mismatch made essentially every FD residual fit fall back to unity.
+    auto itp = data_hists.hists.find("p1_p");
+    if (itp == data_hists.hists.end() || itp->second.size() != 7)
+        fatal("[eppi0_norm] FATAL: p1_p DATA templates missing for sequential momentum fit.");
+    const std::vector<std::string> regs = normalization_regions();
+    for (int panel=0; panel<7; ++panel) {
+        const std::string& r = regs[panel];
+        out[r] = (TH1D*)itp->second[panel]->Clone(
+            ("h_p_resid_mc_"+period_dir(tags.display)+"_"+std::to_string(panel)).c_str());
+        out[r]->Reset("ICES");
+        out[r]->SetDirectory(nullptr);
+        out[r]->Sumw2();
     }
-    out["CD"]=new TH1D(("h_p_resid_mc_"+period_dir(tags.display)+"_CD").c_str(),"",23,0.0,3.0);
-    out["CD"]->SetDirectory(nullptr); out["CD"]->Sumw2();
     Branches b; b.bind(tree,true);
     const Long64_t N=tree->GetEntries();
     for(Long64_t i=0;i<N;++i){
@@ -2782,6 +2798,47 @@ static void fill_p1_momentum_mc_after_theta(const ChannelConfig& cfg,
         if(skip) continue;
         out[region]->Fill(b.p1_p,event_norm*wc*wtheta);
     }
+}
+
+static void plot_p1_momentum_sequential_closure(const std::string& period,
+                                                  const std::string& region,
+                                                  const std::string& outdir,
+                                                  TH1D* h_data,
+                                                  TH1D* h_mc_after_theta,
+                                                  const CubicFit& pfit) {
+    if (!h_data || !h_mc_after_theta || !pfit.valid) return;
+    TGraphErrors before, after;
+    int ibefore=0, iafter=0;
+    for (int b=1; b<=h_data->GetNbinsX(); ++b) {
+        const double d=h_data->GetBinContent(b), ed=h_data->GetBinError(b);
+        const double m=h_mc_after_theta->GetBinContent(b), em=h_mc_after_theta->GetBinError(b);
+        if (!(d>0.0 && m>0.0)) continue;
+        const double x=h_data->GetBinCenter(b);
+        const double r0=d/m;
+        const double er0=std::fabs(r0)*std::sqrt((ed/d)*(ed/d)+(em/m)*(em/m));
+        before.SetPoint(ibefore,x,r0); before.SetPointError(ibefore,0.0,er0); ++ibefore;
+        const double xe=std::max(pfit.x_min,std::min(pfit.x_max,x));
+        const double wp=pfit.eval(xe);
+        if (!(std::isfinite(wp)&&wp>0.0)) continue;
+        const double mf=m*wp, emf=em*wp;
+        const double r1=d/mf;
+        const double er1=std::fabs(r1)*std::sqrt((ed/d)*(ed/d)+(emf/mf)*(emf/mf));
+        after.SetPoint(iafter,x,r1); after.SetPointError(iafter,0.0,er1); ++iafter;
+    }
+    const std::string fit_outdir=outdir+"/proton/fits"; mkdir_p(fit_outdir);
+    std::string safe=region; for(char& c:safe) if(c==' ') c='_';
+    TCanvas c(("c_p_seq_closure_"+safe).c_str(),"",1000,750);
+    c.SetGrid(1,1); c.SetLeftMargin(0.14); c.SetRightMargin(0.05); c.SetBottomMargin(0.13); c.SetTopMargin(0.08);
+    const double xmin=h_data->GetXaxis()->GetXmin(), xmax=h_data->GetXaxis()->GetXmax();
+    TH1D* frame=(TH1D*)gPad->DrawFrame(xmin,RATIO_Y_MIN,xmax,RATIO_Y_MAX);
+    frame->SetTitle((period+"  "+region+"  sequential proton-momentum closure").c_str());
+    frame->GetXaxis()->SetTitle("p_{1} momentum (GeV)"); frame->GetYaxis()->SetTitle("data / MC");
+    TLine* unity=new TLine(xmin,1.0,xmax,1.0); unity->SetLineStyle(2); unity->SetLineWidth(2); unity->SetBit(TObject::kCanDelete); unity->Draw("SAME");
+    before.SetMarkerStyle(24); before.Draw("PE SAME");
+    after.SetMarkerStyle(20); after.Draw("PE SAME");
+    TLegend leg(0.52,0.70,0.90,0.86); leg.SetFillStyle(1001); leg.SetBorderSize(1);
+    leg.AddEntry(&before,"after #theta correction","pe"); leg.AddEntry(&after,"after #theta #times residual-p","pe"); leg.Draw();
+    c.SaveAs((fit_outdir+"/proton_momentum_sequential_closure_"+safe+".png").c_str());
 }
 
 // -----------------------------------------------------------------------------
@@ -3377,7 +3434,7 @@ static PeriodNormalization run_period_normalization(const std::string& period,
     // proton momentum. The production MC weight is theta_weight * p_residual.
     std::map<std::string, TH1D*> h_mc_p_after_theta;
     fill_p1_momentum_mc_after_theta(epi, tags, rec_tree, mc_cuts, event_norm,
-                                    current_model, region_norms, h_mc_p_after_theta);
+                                    current_model, ana_data, region_norms, h_mc_p_after_theta);
     auto itd_p = ana_data.hists.find("p1_p");
     if (itd_p == ana_data.hists.end() || itd_p->second.size()!=7)
         fatal("[eppi0_norm] FATAL: p1_p DATA histograms missing for sequential momentum fit.");
@@ -3387,9 +3444,11 @@ static PeriodNormalization run_period_normalization(const std::string& period,
         hd->SetDirectory(nullptr);
         CubicFit legacy;
         // Same positive log-cubic representation used for theta, now fitted to
-        // DATA/(MC already weighted by theta). The function is generic in x;
-        // only its diagnostic canvas name retains the historical theta label.
-        region_norms[region].momentum_fit = fit_p1_theta_ratio_region(period, region+"_pResidual", period_root, hd, h_mc_p_after_theta.at(region), &legacy);
+        // DATA/(MC already weighted by theta), with momentum-specific ranges,
+        // axis labels, filenames, and a post-correction closure plot.
+        region_norms[region].momentum_fit = fit_p1_theta_ratio_region(period, region, period_root, hd, h_mc_p_after_theta.at(region), &legacy, true);
+        plot_p1_momentum_sequential_closure(period, region, period_root, hd,
+                                            h_mc_p_after_theta.at(region), region_norms[region].momentum_fit);
         delete hd;
     }
     for(auto& kv:h_mc_p_after_theta) delete kv.second;
