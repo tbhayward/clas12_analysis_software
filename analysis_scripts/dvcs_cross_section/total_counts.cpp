@@ -319,20 +319,42 @@ static void validate_final_current_response_prescription(
         fatal("[total_counts] FATAL: final current-response prescription requires Sp18 Out ep->epg DATA calibration.");
     }
 
+    // Validate only photon regions that can physically contribute under the
+    // installed global topology selection.  A topology-filtered current model
+    // intentionally omits detector regions excluded by that selection (e.g.
+    // FT for FD-FD/CD-FD, or S1--S6 for CD-FT).
+    const GlobalCutConfig& global_cfg = default_global_cuts();
+    std::vector<std::string> validated_regions;
     for (int ir = 0; ir < kCurrentRegionCount; ++ir) {
+        const bool is_ft = (ir == 0);
+        bool active = true;
+        if (global_cfg.enable_topology_filter) {
+            if (global_cfg.required_detector2 == 0) active = is_ft;
+            else if (global_cfg.required_detector2 == 1) active = !is_ft;
+        }
+        if (!active) continue;
+
         const CurrentResponseEntry& e = ip->second[ir];
         if (!e.valid || !e.has_angular_model ||
             e.angular_variable != "e_theta" ||
             !std::isfinite(e.angular_center) ||
             !std::isfinite(e.angular_gradient) ||
             !std::isfinite(e.angular_gradient_stat)) {
-            fatal("[total_counts] FATAL: final current-response prescription requires a valid centered linear e_theta model for Sp18 Out ep->epg region '" +
+            fatal("[total_counts] FATAL: final current-response prescription requires a valid centered linear e_theta model for active Sp18 Out ep->epg region '" +
                   current_region_names()[ir] + "'. Regenerate current_response_model.json with use_sp18_out_e_theta_response_model=true.");
         }
+        validated_regions.push_back(current_region_names()[ir]);
+    }
+    if (validated_regions.empty()) {
+        fatal("[total_counts] FATAL: topology selection leaves no active photon region for current-response validation.");
     }
 
-    std::cout << "[total_counts] Final current-response prescription validated: "
-              << "Sp18 Out ep->epg uses regional + centered linear e_theta DATA response; "
+    std::cout << "[total_counts] Final current-response prescription validated for active photon regions: ";
+    for (std::size_t i = 0; i < validated_regions.size(); ++i) {
+        if (i) std::cout << ",";
+        std::cout << validated_regions[i];
+    }
+    std::cout << ". Sp18 Out ep->epg uses regional + centered linear e_theta DATA response; "
               << "all other angular extensions remain disabled." << std::endl;
 }
 
