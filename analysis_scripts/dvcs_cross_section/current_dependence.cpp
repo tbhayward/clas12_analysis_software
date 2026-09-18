@@ -5323,6 +5323,25 @@ static const std::vector<PhotonRegionSpec> PHOTON_REGION_ORDER = {
     {"S6", "S6"}
 };
 
+// Return whether a photon region can contribute under the installed global
+// topology selection.  Inclusive/sector studies retain the historical seven
+// regions.  For the three explicit topology selections, detector2 fixes the
+// active neutral-particle detector: FT only (detector2=0) or FD S1--S6 only
+// (detector2=1).
+static bool photon_region_active_for_global_selection(const std::string& key) {
+    const GlobalCutConfig& g = default_global_cuts();
+    if (!g.enable_topology_filter) return true;
+    if (g.required_detector2 == 0) return key == "FT";
+    if (g.required_detector2 == 1) return key != "FT";
+    return true;
+}
+
+static int photon_region_index_from_key(const std::string& key) {
+    for (int i = 0; i < (int)PHOTON_REGION_ORDER.size(); ++i)
+        if (PHOTON_REGION_ORDER[i].key == key) return i;
+    return -1;
+}
+
 static int photon_region_color(int i) {
     static const int colors[] = {
         kBlack,
@@ -5902,10 +5921,14 @@ static PooledRegionThetaSlopeFit fit_pooled_region_theta_relative_slopes(
     const std::vector<RelativeSlopePoint>& pts) {
 
     PooledRegionThetaSlopeFit out;
-    constexpr int NP = 8; // seven region intercepts + one common theta gradient
 
+    // Build the fit only from regions that actually contain valid points.
+    // This is essential for topology-selected samples: FD-FD/CD-FD have no FT
+    // points, while CD-FT has no S1--S6 points.  The historical inclusive fit
+    // is unchanged (seven intercepts + one common theta gradient).
     std::array<double, 7> sw{};
     std::array<double, 7> swx{};
+    std::vector<RelativeSlopePoint> used;
     for (const RelativeSlopePoint& p : pts) {
         if (p.region_index < 0 || p.region_index >= 7 ||
             !std::isfinite(p.x) || !std::isfinite(p.slope) ||
@@ -5913,55 +5936,59 @@ static PooledRegionThetaSlopeFit fit_pooled_region_theta_relative_slopes(
         const double w = 1.0 / (p.slope_err * p.slope_err);
         sw[p.region_index] += w;
         swx[p.region_index] += w * p.x;
+        used.push_back(p);
     }
+
+    std::array<int, 7> par_index{};
+    par_index.fill(-1);
+    int nregions = 0;
     for (int r = 0; r < 7; ++r) {
-        out.region_centers[r] = (sw[r] > 0.0) ? swx[r] / sw[r] : 0.0;
+        if (sw[r] > 0.0) {
+            par_index[r] = nregions++;
+            out.region_centers[r] = swx[r] / sw[r];
+        }
     }
+    if (nregions == 0) return out;
+
+    const int gradient_index = nregions;
+    const int NP = nregions + 1;
+    out.npoints = (int)used.size();
+    if (out.npoints <= NP) return out;
 
     std::vector<std::vector<double>> normal(NP, std::vector<double>(NP, 0.0));
     std::vector<double> rhs(NP, 0.0);
-    std::vector<RelativeSlopePoint> used;
-
-    for (const RelativeSlopePoint& p : pts) {
-        if (p.region_index < 0 || p.region_index >= 7 ||
-            !std::isfinite(p.x) || !std::isfinite(p.slope) ||
-            !std::isfinite(p.slope_err) || !(p.slope_err > 0.0)) continue;
-
+    for (const RelativeSlopePoint& p : used) {
+        const int ip = par_index[p.region_index];
+        if (ip < 0) continue;
         const double w = 1.0 / (p.slope_err * p.slope_err);
-        std::array<double, NP> row{};
-        row[p.region_index] = 1.0;
-        row[7] = p.x - out.region_centers[p.region_index];
-
+        std::vector<double> row(NP, 0.0);
+        row[ip] = 1.0;
+        row[gradient_index] = p.x - out.region_centers[p.region_index];
         for (int i = 0; i < NP; ++i) {
             rhs[i] += w * row[i] * p.slope;
             for (int j = 0; j < NP; ++j) normal[i][j] += w * row[i] * row[j];
         }
-        used.push_back(p);
     }
-
-    out.npoints = (int)used.size();
-    if (out.npoints <= NP) return out;
-    for (int r = 0; r < 7; ++r) if (!(sw[r] > 0.0)) return out;
 
     std::vector<std::vector<double>> cov;
     if (!invert_small_matrix(normal, cov)) return out;
-
     std::vector<double> beta(NP, 0.0);
     for (int i = 0; i < NP; ++i)
         for (int j = 0; j < NP; ++j)
             beta[i] += cov[i][j] * rhs[j];
 
     for (int r = 0; r < 7; ++r) {
-        out.region_intercepts[r] = beta[r];
-        out.region_intercept_err[r] = std::sqrt(std::max(0.0, cov[r][r]));
+        const int ip = par_index[r];
+        if (ip < 0) continue;
+        out.region_intercepts[r] = beta[ip];
+        out.region_intercept_err[r] = std::sqrt(std::max(0.0, cov[ip][ip]));
     }
-    out.theta_gradient = beta[7];
-    out.theta_gradient_err = std::sqrt(std::max(0.0, cov[7][7]));
+    out.theta_gradient = beta[gradient_index];
+    out.theta_gradient_err = std::sqrt(std::max(0.0, cov[gradient_index][gradient_index]));
 
     double chi2 = 0.0;
     for (const RelativeSlopePoint& p : used) {
-        const double pred =
-            out.region_intercepts[p.region_index] +
+        const double pred = out.region_intercepts[p.region_index] +
             out.theta_gradient * (p.x - out.region_centers[p.region_index]);
         const double pull = (p.slope - pred) / p.slope_err;
         chi2 += pull * pull;
@@ -9110,8 +9137,14 @@ static PhotonRegionResults run_photon_region_current_diagnostic(
         return std::chrono::duration<double>(Clock::now() - t0).count();
     };
 
+    std::string active_region_text;
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+        if (!photon_region_active_for_global_selection(spec.key)) continue;
+        if (!active_region_text.empty()) active_region_text += ",";
+        active_region_text += spec.key;
+    }
     std::cout << "[current_dependence] Starting photon-region diagnostic for "
-              << cfg.csv_channel << ": FT + FD sectors 1--6; "
+              << cfg.csv_channel << ": active regions=" << active_region_text << "; "
               << "regional MC scan=" << (process_mc ? "enabled" : "skipped")
               << "." << std::endl;
 #ifdef _OPENMP
@@ -10063,6 +10096,7 @@ static void write_current_response_model_json(
                              const PhotonRegionResults& results,
                              const std::vector<PeriodResult>& integrated) {
         for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+            if (!photon_region_active_for_global_selection(spec.key)) continue;
             auto ir = results.find(spec.key);
             if (ir == results.end()) continue;
             for (const PeriodResult& r : ir->second) {
@@ -10090,8 +10124,7 @@ static void write_current_response_model_json(
                 if (channel == "ep->epg" && r.period == "Sp18 Out" &&
                     use_sp18_out_e_theta_response_model) {
                     auto ia = dvcs_region_e_theta_models.find(r.period);
-                    for (int ir = 0; ir < 7; ++ir)
-                        if (PHOTON_REGION_ORDER[ir].key == spec.key) angular_region = ir;
+                    angular_region = photon_region_index_from_key(spec.key);
                     if (ia != dvcs_region_e_theta_models.end() && ia->second.valid &&
                         angular_region >= 0) {
                         angular_fit = ia->second;

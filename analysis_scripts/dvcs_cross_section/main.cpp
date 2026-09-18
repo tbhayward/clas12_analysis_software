@@ -134,7 +134,6 @@ int main(int argc, char* argv[]) {
     bool acceptance_reweighting_only = false;
     bool eppi0_normalization_only = false;
     bool eppi0_production_test = false;
-    bool prepare_topology_study = false;
     bool use_eppi0_production_normalization = true;
     std::string topology_cli;
     for (int i = 1; i < argc; ++i) {
@@ -146,8 +145,6 @@ int main(int argc, char* argv[]) {
             eppi0_production_test = true;
         } else if (std::string(argv[i]) == "--no-eppi0-normalization") {
             use_eppi0_production_normalization = false;
-        } else if (std::string(argv[i]) == "--prepare-topology-study") {
-            prepare_topology_study = true;
         } else if (std::string(argv[i]) == "--topology") {
             if (i + 1 >= argc) {
                 std::cerr << "[main] FATAL: --topology requires one of FD-FD, CD-FD, CD-FT\n";
@@ -166,11 +163,6 @@ int main(int argc, char* argv[]) {
             }
         }
     }
-    if (prepare_topology_study && !topology_cli.empty()) {
-        std::cerr << "[main] FATAL: --prepare-topology-study and --topology are mutually exclusive.\n";
-        return 1;
-    }
-
     SystematicRunSelection systematic_selection;
     try {
         systematic_selection = parse_systematic_selection(argc, argv);
@@ -444,10 +436,10 @@ int main(int argc, char* argv[]) {
     const bool use_epg_mc_current_factor_for_eppi0_bkg = true;
 
     // --------- Current-response calibration + diagnostics ----------
-    // For topology studies, keep the inclusive production current-response
-    // calibration fixed. Exclusivity cuts and bin means are still rederived
-    // independently above for the selected topology.
-    if (topology_cli.empty()) {
+    // In topology mode the same calibration is rederived on the selected
+    // topology. current_dependence.cpp is region-aware: FD-photon topologies
+    // require only S1--S6, while CD-FT requires only FT.
+    {
         const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
         CurrentDependenceOptions current_opts;
@@ -497,43 +489,6 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    const std::string topology_current_cache =
-        "output/topology_study_baseline/current_response_model.json";
-
-    if (prepare_topology_study) {
-        const std::string production_current_model =
-            "output/dvcs_current_dependence/calibration/current_response_model.json";
-        if (!std::filesystem::exists(production_current_model)) {
-            std::cerr << "[main] FATAL: inclusive current-response calibration did not produce "
-                      << production_current_model << "\n";
-            return 1;
-        }
-        std::filesystem::create_directories("output/topology_study_baseline");
-        std::filesystem::copy_file(production_current_model, topology_current_cache,
-                                   std::filesystem::copy_options::overwrite_existing);
-        std::cout << "[main] Topology-study baseline prepared: cached inclusive current-response model at "
-                  << topology_current_cache << "\n"
-                  << "[main] Exclusivity cuts are NOT cached; each --topology run will rederive them.\n";
-        return 0;
-    }
-
-    if (!topology_cli.empty()) {
-        if (!std::filesystem::exists(topology_current_cache)) {
-            std::cerr << "[main] FATAL: missing cached inclusive current-response model: "
-                      << topology_current_cache << "\n"
-                      << "[main] Run ./dvcs_analysis --prepare-topology-study --skip-systematics first.\n";
-            return 1;
-        }
-        const std::string production_current_model =
-            "output/dvcs_current_dependence/calibration/current_response_model.json";
-        std::filesystem::create_directories(
-            "output/dvcs_current_dependence/calibration");
-        std::filesystem::copy_file(topology_current_cache, production_current_model,
-                                   std::filesystem::copy_options::overwrite_existing);
-        std::cout << "[main] Topology-study mode: restored fixed inclusive current-response model from "
-                  << topology_current_cache << "\n"
-                  << "[main] Topology-specific exclusivity cuts and bin means were rederived normally.\n";
-    }
 
 
     // --------- pass-1-style DVpi0P efficiency-map derivation ----------
