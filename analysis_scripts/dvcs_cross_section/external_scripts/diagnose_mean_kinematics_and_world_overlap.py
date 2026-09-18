@@ -432,6 +432,151 @@ def compare_eppi0_correction(no_path,eppi0_path,pass1_path,out):
               f"{closure_before:.4f} -> {closure_after:.4f}",flush=True)
 
 
+def _tuple_first(v):
+    """Central value from scalar or '(value,stat,...)' CSV cells."""
+    if pd.isna(v): return np.nan
+    text=str(v).strip()
+    if text.startswith("(") and text.endswith(")"):
+        text=text[1:-1].split(",",1)[0].strip()
+    try: return float(text)
+    except Exception: return np.nan
+
+
+def _normalized_dvcs_data_yield(df,period):
+    """Sum the three topology normalized DATA yields, preferring unpol."""
+    prefix="normalized raw yield, ep->epg, "
+    suffix=f", exp, {period}, unpol"
+    cols=[c for c in df.columns if c.startswith(prefix) and c.endswith(suffix)]
+    # Expected topology columns are (FD, FD), (CD, FD), (CD, FT).
+    # Refuse ambiguous aggregate+topology mixtures rather than double count.
+    topo=[c for c in cols if any(t in c for t in ("(FD, FD)","(CD, FD)","(CD, FT)"))]
+    if len(topo)!=3:
+        raise RuntimeError(
+            f"{period}: expected exactly three topology-resolved normalized DVCS DATA "
+            f"unpolarized yield columns, found {len(topo)}: {topo}")
+    arr=np.zeros(len(df),float)
+    valid=np.zeros(len(df),bool)
+    for c in topo:
+        x=np.asarray([_tuple_first(v) for v in df[c]],float)
+        good=np.isfinite(x)
+        arr[good]+=x[good]; valid|=good
+    arr[~valid]=np.nan
+    return arr,topo
+
+
+def compare_krishna_from_completed_outputs(no_path,eppi0_path,pass1_path,out):
+    """Isolate the production Krishna DATA-weight effect from the two completed CSVs.
+
+    In the no-eppi0 production mode Krishna is ON; in the eppi0 production mode
+    Krishna is OFF and the eppi0 correction acts on reconstructed MC. Therefore
+    the ratio of normalized DVCS DATA yields (no-eppi0 / eppi0) isolates the
+    actual binned Krishna yield effect without evaluating the nonlinear map at
+    bin-mean proton kinematics.
+    """
+    if no_path is None or eppi0_path is None:
+        print("[Krishna comparison] skipped: provide BOTH completed pass-2 CSVs",flush=True)
+        return
+    A=pd.read_csv(no_path,low_memory=False)       # Krishna ON
+    B=pd.read_csv(eppi0_path,low_memory=False)   # Krishna OFF
+    keys=["bin index","Bin Name","xBmin","xBmax","Q2min","Q2max",
+          "t_abs_min","t_abs_max","phimin","phimax"]
+    for c in keys:
+        if c not in A or c not in B: raise RuntimeError(f"Krishna comparison missing key column {c}")
+    if len(A)!=len(B): raise RuntimeError("Krishna comparison CSV row counts differ")
+    # Verify row identity before taking any ratio.
+    ka=A[keys].astype(str).agg("|".join,axis=1)
+    kb=B[keys].astype(str).agg("|".join,axis=1)
+    if not np.array_equal(ka.to_numpy(),kb.to_numpy()):
+        raise RuntimeError("Krishna comparison CSV bin ordering/definitions differ")
+
+    periods=["Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out","Sp19 Inb"]
+    per=[]
+    used_columns={}
+    for period in periods:
+        yon,ca=_normalized_dvcs_data_yield(A,period)
+        yoff,cb=_normalized_dvcs_data_yield(B,period)
+        used_columns[period]=(ca,cb)
+        c=np.divide(yon,yoff,out=np.full(len(A),np.nan),where=np.isfinite(yoff)&(yoff>0))
+        per.append(pd.DataFrame({"bin index":A["bin index"],"Bin Name":A["Bin Name"],
+                                 "period":period,"krishna_yield_factor":c,
+                                 "yield_krishna_on":yon,"yield_krishna_off":yoff}))
+    per=pd.concat(per,ignore_index=True)
+    per.to_csv(out/"tables"/"krishna_effect_by_period_and_bin.csv",index=False)
+
+    # Build Fa18 and 10.6-GeV effective factors by summing the underlying
+    # corrected DATA yields before taking the ratio. This is explicitly a
+    # yield-weighted detector diagnostic, not a replacement cross-section combination.
+    groups={"fa18":["Fa18 Inb","Fa18 Out"],
+            "combined10p6":["Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out"]}
+    p1=load_pass1_legacy(pass1_path)
+    summaries=[]
+    for tag,plist in groups.items():
+        q=per[per.period.isin(plist)].groupby(["bin index","Bin Name"],as_index=False)[
+            ["yield_krishna_on","yield_krishna_off"]].sum(min_count=1)
+        q["krishna_yield_factor"]=q.yield_krishna_on/q.yield_krishna_off
+
+        lab="Fa18" if tag=="fa18" else "10.6 GeV"
+        base=load_pass2(no_path,lab)
+        m=exact_pass1_pass2(p1,base,lab)
+        keep=m[["bin index","Bin Name","p2_over_p1_direct","t_p2",
+                "theta_proton_p2","theta_gamma_p2"]]
+        z=keep.merge(q,on=["bin index","Bin Name"],how="inner",validate="one_to_one")
+        z["p2_over_p1_without_krishna_estimate"]=z.p2_over_p1_direct/z.krishna_yield_factor
+        z.to_csv(out/"tables"/f"{tag}_krishna_vs_pass1_residual_points.csv",index=False)
+
+        good=np.isfinite(z.krishna_yield_factor)&(z.krishna_yield_factor>0)
+        zg=z.loc[good]
+        corr=_corr(zg.p2_over_p1_direct,zg.krishna_yield_factor)
+        before=float(np.nanmedian(np.abs(zg.p2_over_p1_direct-1)))
+        removed=float(np.nanmedian(np.abs(zg.p2_over_p1_without_krishna_estimate-1)))
+        summaries.append(dict(comparison=tag,N=len(zg),
+            median_krishna_yield_factor=float(np.nanmedian(zg.krishna_yield_factor)),
+            corr_pass2_pass1_vs_krishna_factor=corr,
+            median_abs_distance_from_unity_with_krishna=before,
+            median_abs_distance_from_unity_without_krishna_estimate=removed))
+
+        # Same t x detector-angle conditioning as the eppi0 study.
+        tb=[(0,.15,"<0.15"),(.15,.25,"0.15-0.25"),(.25,.40,"0.25-0.40"),
+            (.40,.60,"0.40-0.60"),(.60,np.inf,">=0.60")]
+        angle_defs=[
+          ("theta_gamma_p2",[(0,5.5,"FT"),(5.5,10,"5.5-10"),(10,15,"10-15"),(15,np.inf,">=15")]),
+          ("theta_proton_p2",[(0,25,"<25"),(25,35,"25-35"),(35,45,"35-45"),(45,np.inf,">=45")])]
+        rows=[]
+        for tl,th,tn in tb:
+            kt=(zg.t_p2>=tl)&(zg.t_p2<th)
+            for v,bands in angle_defs:
+                for al,ah,an in bands:
+                    x=zg.loc[kt&(zg[v]>=al)&(zg[v]<ah)]
+                    if len(x):
+                        rows.append(dict(comparison=tag,t_bin=tn,angle_variable=v,angle_bin=an,N=len(x),
+                          median_pass2_over_pass1=float(np.nanmedian(x.p2_over_p1_direct)),
+                          median_krishna_factor=float(np.nanmedian(x.krishna_yield_factor)),
+                          p16_krishna_factor=float(np.nanpercentile(x.krishna_yield_factor,16)),
+                          p84_krishna_factor=float(np.nanpercentile(x.krishna_yield_factor,84)),
+                          median_ratio_without_krishna_estimate=float(
+                              np.nanmedian(x.p2_over_p1_without_krishna_estimate))))
+        pd.DataFrame(rows).to_csv(out/"tables"/f"{tag}_krishna_conditioned_on_t_and_angle.csv",index=False)
+
+        fig,ax=plt.subplots(figsize=(7.2,5.2))
+        sc=ax.scatter(zg.p2_over_p1_direct,zg.krishna_yield_factor,c=zg.t_p2,s=12)
+        ax.axvline(1,lw=1); ax.axhline(1,lw=1)
+        xl=_robust_limits(zg.p2_over_p1_direct,1,99); yl=_robust_limits(zg.krishna_yield_factor,1,99)
+        if xl: ax.set_xlim(*xl)
+        if yl: ax.set_ylim(*yl)
+        ax.set_xlabel("no-eppi0 pass-2 / pass-1 (Krishna ON)")
+        ax.set_ylabel("Krishna DATA-yield factor (ON / OFF)")
+        fig.colorbar(sc,ax=ax,label=r"$|t|$ (GeV$^2$)")
+        fig.tight_layout();fig.savefig(out/"figures"/f"{tag}_krishna_factor_vs_pass1_residual.png",dpi=180);plt.close(fig)
+
+        print(f"[Krishna {tag}] N={len(zg)} median yield factor={np.nanmedian(zg.krishna_yield_factor):.4f}; "
+              f"corr(P2/P1, Krishna factor)={corr:.4f}; median |P2/P1-1| with Krishna={before:.4f}, "
+              f"after algebraically removing Krishna={removed:.4f}",flush=True)
+
+    pd.DataFrame(summaries).to_csv(out/"tables"/"krishna_differential_closure_summary.csv",index=False)
+    print("[Krishna comparison] isolated from normalized DATA-yield columns in the two completed outputs; "
+          "no mean-kinematics approximation and no ROOT reprocessing used.",flush=True)
+
+
 def preflight_validate(args):
     """Fail fast before any expensive KM15 calls."""
     problems=[]
@@ -496,6 +641,7 @@ def main():
     print("\nMEAN-KINEMATICS SUMMARY\n",qa.to_string(index=False),flush=True)
 
     compare_eppi0_correction(args.no_eppi0_pass2,args.eppi0_pass2,args.pass1,args.out)
+    compare_krishna_from_completed_outputs(args.no_eppi0_pass2,args.eppi0_pass2,args.pass1,args.out)
 
     # World comparisons use the same validated loaders as the production world script.
     if not args.skip_km15:
