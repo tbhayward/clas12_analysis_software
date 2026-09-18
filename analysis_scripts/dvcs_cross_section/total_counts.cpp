@@ -4734,16 +4734,23 @@ static int arw_find_row(const BranchBinder& b,
     return -1;
 }
 
+static int arw_topology_subdivisions = 2;
+
 static int arw_subcell(const ARWEvent& e,const RowBin& r) {
-    const double xm=0.5*(r.xBmin+r.xBmax);
-    const double qm=0.5*(r.Q2min+r.Q2max);
-    const double tm=0.5*(r.tmin+r.tmax);
-    const double pm=0.5*(r.pmin+r.pmax);
-    const int ix=e.x>=xm;
-    const int iq=e.q2>=qm;
-    const int it=e.tabs>=tm;
-    const int ip=e.phi>=pm;
-    return (((ix*2)+iq)*2+it)*2+ip;
+    const int n=std::max(1,arw_topology_subdivisions);
+    auto ibin=[&](double v,double lo,double hi)->int{
+        if(!(std::isfinite(v)&&std::isfinite(lo)&&std::isfinite(hi)&&hi>lo)) return -1;
+        int i=(int)std::floor((v-lo)/(hi-lo)*n);
+        if(i<0) i=0;
+        if(i>=n) i=n-1;
+        return i;
+    };
+    const int ix=ibin(e.x,r.xBmin,r.xBmax);
+    const int iq=ibin(e.q2,r.Q2min,r.Q2max);
+    const int it=ibin(e.tabs,r.tmin,r.tmax);
+    const int ip=ibin(e.phi,r.pmin,r.pmax);
+    if(ix<0||iq<0||it<0||ip<0) return -1;
+    return (((ix*n)+iq)*n+it)*n+ip;
 }
 
 static std::array<ARWFineAxis,4> arw_build_axes(
@@ -5093,17 +5100,17 @@ static std::map<std::pair<int,int>,ARWBHCell> arw_load_model_grid(
     };
     const int ce=col("energy_tag"),cr=col("row"),cs=col("subcell");
     const int cb=col(xs_column.c_str()),cv=col("volume");
-    if(ce<0||cr<0||cs<0||cb<0||cv<0) return out;
+    if(ce<0||cr<0||cs<0||cb<0) return out;
 
     while(std::getline(in,line)){
         if(line.empty()) continue;
         const auto v=split_csv_line(line);
-        if((int)v.size()<=std::max({ce,cr,cs,cb,cv})) continue;
+        if((int)v.size()<=std::max({ce,cr,cs,cb})) continue;
         if(v[(size_t)ce]!=energy_tag) continue;
         const int r=std::atoi(v[(size_t)cr].c_str());
         const int s=std::atoi(v[(size_t)cs].c_str());
         const double xs=std::atof(v[(size_t)cb].c_str());
-        const double vol=std::atof(v[(size_t)cv].c_str());
+        const double vol=(cv>=0 && cv<(int)v.size())?std::atof(v[(size_t)cv].c_str()):1.0;
         if(!(std::isfinite(xs)&&xs>0.0&&std::isfinite(vol)&&vol>0.0))
             continue;
         out[{r,s}]={true,xs*vol};
@@ -6031,79 +6038,123 @@ bool run_topology_acceptance_model_study(
         TH1::AddDirectory(kFALSE);
         std::filesystem::create_directories(output_dir);
 
-        CSV csv;
-        load_csv(csv_path,csv);
+        CSV csv; load_csv(csv_path,csv);
         const auto rows=load_row_bins_from_csv(csv);
         const auto fast_bins=build_fast_binning(rows);
         const TopoCutMap cuts_mc=load_combined_cuts(combined_cuts_json,"mc");
 
-        const std::string grid_path=(std::filesystem::path(output_dir)/"bh_km15_subcell_grid.csv").string();
-        {
-            std::ostringstream cmd;
-            cmd<<"python3 external_scripts/build_acceptance_bh_reweight_grid.py"
-               <<" --analysis-csv "<<csv_path
-               <<" --output "<<grid_path
-               <<" --workers "<<std::max(1,bh_grid_workers)
-               <<" --subdivisions 2 --force";
-            std::cout<<"[topology-acceptance] Building BH/KM15 2x2x2x2 subcell grid.\n";
-            const int rc=std::system(cmd.str().c_str());
-            if(rc!=0) throw std::runtime_error("BH/KM15 grid helper failed with code "+std::to_string(rc));
-        }
-
         WorkConfig gen_cfg; gen_cfg.channel_cfg=dvcs_config(); gen_cfg.sample_kind=SampleKind::MC_GEN;
         WorkConfig rec_cfg; rec_cfg.channel_cfg=dvcs_config(); rec_cfg.sample_kind=SampleKind::MC_REC;
         AcceptanceReweightingOptions collect_opts;
-        collect_opts.apply_current_correction=false; // isolate finite-bin acceptance-model dependence
+        collect_opts.apply_current_correction=false;
         collect_opts.apply_pi0_signal_fraction_to_data=false;
-
         const std::array<std::string,5> periods={{"Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out","Sp19 Inb"}};
-        const std::string out_csv=(std::filesystem::path(output_dir)/"topology_acceptance_model_study.csv").string();
-        std::ofstream out(out_csv);
-        if(!out.is_open()) throw std::runtime_error("Cannot open output "+out_csv);
-        out<<"topology,period,row,acceptance_nominal,acceptance_bh,acceptance_km15,"
-              "xs_scale_bh,xs_scale_km15,rec_selected,gen_selected\n";
 
-        for(const auto& period:periods){
-            TTree* gt=arw_tree_for_period(dvcsGenMcTrees,period);
-            TTree* rt=arw_tree_for_period(dvcsRecMcTrees,period);
-            if(!gt||!rt){
-                std::cerr<<"[topology-acceptance] WARNING: missing MC tree(s) for "<<period<<".\n";
-                continue;
+        struct PeriodSample { std::string period; std::vector<ARWEvent> gen,rec; };
+
+        for(const int nsub : {2,3}) {
+            arw_topology_subdivisions=nsub;
+            std::vector<PeriodSample> samples;
+            const std::string tag=std::to_string(nsub)+"x"+std::to_string(nsub)+"x"+std::to_string(nsub)+"x"+std::to_string(nsub);
+            const std::string occ_path=(std::filesystem::path(output_dir)/("mc_occupancy_"+tag+".csv")).string();
+            std::ofstream occ(occ_path);
+            if(!occ.is_open()) throw std::runtime_error("Cannot open "+occ_path);
+            occ<<"energy_tag,period,row,subcell,n_gen,sumw_gen,xB_mean,Q2_mean,t_abs_mean,phi_deg_circular_mean\n";
+
+            for(const auto& period:periods){
+                TTree* gt=arw_tree_for_period(dvcsGenMcTrees,period);
+                TTree* rt=arw_tree_for_period(dvcsRecMcTrees,period);
+                if(!gt||!rt){ std::cerr<<"[topology-acceptance] WARNING: missing MC tree(s) for "<<period<<".\n"; continue; }
+                std::string gkey,rkey;
+                for(const auto& kv:dvcsGenMcTrees) if(kv.second==gt){gkey=kv.first;break;}
+                for(const auto& kv:dvcsRecMcTrees) if(kv.second==rt){rkey=kv.first;break;}
+                const PeriodTags gtag=parse_period_tags_from_tree_key(gkey);
+                const PeriodTags rtag=parse_period_tags_from_tree_key(rkey);
+                PeriodSample ps; ps.period=period;
+                ps.gen=arw_collect(gt,gen_cfg,gtag,rows,fast_bins,cuts_mc,nullptr,csv,collect_opts,true);
+                ps.rec=arw_collect(rt,rec_cfg,rtag,rows,fast_bins,cuts_mc,nullptr,csv,collect_opts,false);
+
+                struct Acc { double sw=0,sx=0,sq=0,st=0,ss=0,sc=0; long long n=0; };
+                std::map<std::pair<int,int>,Acc> a;
+                for(const auto& e:ps.gen){
+                    if(e.row<0||e.subcell<0) continue;
+                    auto& z=a[{e.row,e.subcell}]; const double w=e.base_weight;
+                    z.sw+=w; z.sx+=w*e.x; z.sq+=w*e.q2; z.st+=w*e.tabs;
+                    const double pr=e.phi*M_PI/180.0; z.ss+=w*std::sin(pr); z.sc+=w*std::cos(pr); ++z.n;
+                }
+                const std::string etag=(period=="Sp19 Inb")?"10.2":"10.6";
+                for(const auto& kv:a){
+                    const auto& z=kv.second; if(!(z.sw>0)) continue;
+                    double ph=std::atan2(z.ss,z.sc)*180.0/M_PI; if(ph<0) ph+=360.0;
+                    occ<<etag<<','<<period<<','<<kv.first.first<<','<<kv.first.second<<','<<z.n<<','<<z.sw<<','
+                       <<z.sx/z.sw<<','<<z.sq/z.sw<<','<<z.st/z.sw<<','<<ph<<'\n';
+                }
+                samples.push_back(std::move(ps));
             }
-            std::string gkey,rkey;
-            for(const auto& kv:dvcsGenMcTrees) if(kv.second==gt){gkey=kv.first;break;}
-            for(const auto& kv:dvcsRecMcTrees) if(kv.second==rt){rkey=kv.first;break;}
-            const PeriodTags gtag=parse_period_tags_from_tree_key(gkey);
-            const PeriodTags rtag=parse_period_tags_from_tree_key(rkey);
+            occ.close();
 
-            const auto gen=arw_collect(gt,gen_cfg,gtag,rows,fast_bins,cuts_mc,nullptr,csv,collect_opts,true);
-            const auto rec=arw_collect(rt,rec_cfg,rtag,rows,fast_bins,cuts_mc,nullptr,csv,collect_opts,false);
-            const auto a0=arw_acceptance(gen,rec,nullptr,csv.rows.size());
-            const std::string etag=(period=="Sp19 Inb")?"10.2":"10.6";
-            const auto bh_grid=arw_load_model_grid(grid_path,etag,"bh_xs");
-            const auto km_grid=arw_load_model_grid(grid_path,etag,"km15_xs");
-            const auto abh=arw_acceptance_bh(gen,rec,bh_grid,csv.rows.size());
-            const auto akm=arw_acceptance_bh(gen,rec,km_grid,csv.rows.size());
-
-            size_t nvalid=0;
-            std::vector<double> sbh,skm;
-            for(size_t r=0;r<csv.rows.size();++r){
-                if(!(std::isfinite(a0[r])&&a0[r]>0.0)) continue;
-                const double xb=(std::isfinite(abh[r])&&abh[r]>0.0)?a0[r]/abh[r]:std::numeric_limits<double>::quiet_NaN();
-                const double xk=(std::isfinite(akm[r])&&akm[r]>0.0)?a0[r]/akm[r]:std::numeric_limits<double>::quiet_NaN();
-                if(std::isfinite(xb)) sbh.push_back(xb);
-                if(std::isfinite(xk)) skm.push_back(xk);
-                out<<topology_label<<','<<period<<','<<r<<','<<a0[r]<<','<<abh[r]<<','<<akm[r]<<','<<xb<<','<<xk<<','<<rec.size()<<','<<gen.size()<<'\n';
-                ++nvalid;
+            const std::string grid_path=(std::filesystem::path(output_dir)/("bh_km15_occupied_grid_"+tag+".csv")).string();
+            {
+                std::ostringstream cmd;
+                cmd<<"python3 external_scripts/build_acceptance_bh_reweight_grid.py"
+                   <<" --occupancy-csv "<<occ_path<<" --output "<<grid_path
+                   <<" --workers "<<std::max(1,bh_grid_workers)<<" --force";
+                std::cout<<"[topology-acceptance] Evaluating BH/KM15 only at occupied "<<tag<<" MC cells.\n";
+                const int rc=std::system(cmd.str().c_str());
+                if(rc!=0) throw std::runtime_error("BH/KM15 occupied-grid helper failed with code "+std::to_string(rc));
             }
-            std::cout<<"[topology-acceptance] "<<topology_label<<" "<<period
-                     <<": rec="<<rec.size()<<" gen="<<gen.size()<<" valid bins="<<nvalid
-                     <<" median xs scale BH="<<arw_quantile(sbh,.50)
-                     <<" KM15="<<arw_quantile(skm,.50)<<"\n";
+
+            const std::string out_csv=(std::filesystem::path(output_dir)/("topology_acceptance_model_study_"+tag+".csv")).string();
+            std::ofstream out(out_csv);
+            if(!out.is_open()) throw std::runtime_error("Cannot open "+out_csv);
+            out<<"topology,period,row,subdivisions,acceptance_nominal,acceptance_bh,acceptance_km15,xs_scale_bh,xs_scale_km15,gen_model_coverage_bh,rec_model_coverage_bh,gen_model_coverage_km15,rec_model_coverage_km15,valid_model_cells_bh,occupied_gen_cells\n";
+
+            for(const auto& ps:samples){
+                const auto a0=arw_acceptance(ps.gen,ps.rec,nullptr,csv.rows.size());
+                const std::string etag=(ps.period=="Sp19 Inb")?"10.2":"10.6";
+                const auto bh_grid=arw_load_model_grid(grid_path,etag,"bh_xs");
+                const auto km_grid=arw_load_model_grid(grid_path,etag,"km15_xs");
+
+                auto calc=[&](const std::map<std::pair<int,int>,ARWBHCell>& grid){
+                    struct R { std::vector<double>a,gcov,rcov; std::vector<int>vc,oc; } r;
+                    const size_t nr=csv.rows.size(); r.a.assign(nr,NAN); r.gcov.assign(nr,0); r.rcov.assign(nr,0); r.vc.assign(nr,0); r.oc.assign(nr,0);
+                    std::vector<double> gtot(nr,0),rtot(nr,0),gvalid(nr,0),rvalid(nr,0),ng(nr,0),nrec(nr,0);
+                    std::map<std::pair<int,int>,double> gc;
+                    std::map<int,std::set<int>> occcells,validcells;
+                    for(const auto&e:ps.gen){ if(e.row>=0&&e.subcell>=0){gc[{e.row,e.subcell}]+=e.base_weight; gtot[e.row]+=e.base_weight; occcells[e.row].insert(e.subcell);} }
+                    for(const auto&e:ps.rec) if(e.row>=0&&e.subcell>=0) rtot[e.row]+=e.base_weight;
+                    std::map<std::pair<int,int>,double> cw;
+                    for(const auto& kv:gc){ auto it=grid.find(kv.first); if(it!=grid.end()&&it->second.valid&&kv.second>0){cw[kv.first]=it->second.target_mass/kv.second; validcells[kv.first.first].insert(kv.first.second);} }
+                    for(const auto&e:ps.gen){auto it=cw.find({e.row,e.subcell}); if(it!=cw.end()){gvalid[e.row]+=e.base_weight; ng[e.row]+=e.base_weight*it->second;}}
+                    for(const auto&e:ps.rec){auto it=cw.find({e.row,e.subcell}); if(it!=cw.end()){rvalid[e.row]+=e.base_weight; nrec[e.row]+=e.base_weight*it->second;}}
+                    for(size_t i=0;i<nr;++i){
+                        r.gcov[i]=gtot[i]>0?gvalid[i]/gtot[i]:0; r.rcov[i]=rtot[i]>0?rvalid[i]/rtot[i]:0;
+                        r.oc[i]=(int)occcells[(int)i].size(); r.vc[i]=(int)validcells[(int)i].size();
+                        // Never mix reweighted cells with implicit unit weights. Require near-complete generated AND reconstructed coverage.
+                        if(r.gcov[i]>=0.995 && r.rcov[i]>=0.995 && ng[i]>0) r.a[i]=nrec[i]/ng[i];
+                    }
+                    return r;
+                };
+                const auto rb=calc(bh_grid), rk=calc(km_grid);
+                std::vector<double>sbh,skm; size_t usable=0;
+                for(size_t r=0;r<csv.rows.size();++r){
+                    if(!(std::isfinite(a0[r])&&a0[r]>0)) continue;
+                    const double xb=(std::isfinite(rb.a[r])&&rb.a[r]>0)?a0[r]/rb.a[r]:NAN;
+                    const double xk=(std::isfinite(rk.a[r])&&rk.a[r]>0)?a0[r]/rk.a[r]:NAN;
+                    if(std::isfinite(xb)) sbh.push_back(xb); if(std::isfinite(xk)) skm.push_back(xk); if(std::isfinite(xb)&&std::isfinite(xk)) ++usable;
+                    out<<topology_label<<','<<ps.period<<','<<r<<','<<nsub<<','<<a0[r]<<','<<rb.a[r]<<','<<rk.a[r]<<','<<xb<<','<<xk<<','<<rb.gcov[r]<<','<<rb.rcov[r]<<','<<rk.gcov[r]<<','<<rk.rcov[r]<<','<<rb.vc[r]<<','<<rb.oc[r]<<'\n';
+                }
+                std::cout<<"[topology-acceptance] "<<tag<<' '<<topology_label<<' '<<ps.period
+                         <<": rec="<<ps.rec.size()<<" gen="<<ps.gen.size()<<" usable="<<usable
+                         <<" median xs scale BH="<<arw_quantile(sbh,.50)<<" KM15="<<arw_quantile(skm,.50)<<"\n";
+            }
+            std::cout<<"[topology-acceptance] Wrote "<<out_csv<<"\n";
         }
-        std::cout<<"[topology-acceptance] Wrote "<<out_csv<<"\n";
+        arw_topology_subdivisions=2;
+        std::cout<<"[topology-acceptance] Completed 2^4 and 3^4 occupied-cell convergence study. Compare the two CSVs before interpreting any scale.\n";
         return true;
     } catch(const std::exception& e){
+        arw_topology_subdivisions=2;
         std::cerr<<"[topology-acceptance] ERROR: "<<e.what()<<"\n";
         return false;
     }

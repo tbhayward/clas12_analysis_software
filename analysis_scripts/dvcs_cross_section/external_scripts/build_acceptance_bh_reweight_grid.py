@@ -1,158 +1,58 @@
 #!/usr/bin/env python3
+"""Evaluate BH and KM15 only at physically occupied generated-MC cells.
+
+Input representative points come from generated MC itself.  Empty Cartesian
+cells are never evaluated.  Invalid Gepard points are written explicitly as
+invalid and are never silently assigned unit weight by the C++ study.
 """
-Build the pure-BH subcell grid used by the pass-2 acceptance reweighting study.
-
-The production 4D (xB,Q2,|t|,phi) bin is split 2x2x2x2.  The pure BH
-cross section is evaluated at each subcell center with Gepard/KM15's BH term.
-Only BH is evaluated; no VGG model call is made.
-
-The absolute normalization is irrelevant.  The C++ study combines the BH value
-with the subcell phase-space volume and the nominal generated-MC population to
-construct a relative event weight.
-"""
-
 from __future__ import annotations
-import argparse
-import math
-from pathlib import Path
+import argparse, math, warnings
 from concurrent.futures import ProcessPoolExecutor
-import pandas as pd
+from pathlib import Path
 import numpy as np
+import pandas as pd
 
-
-def make_point(g, xB: float, Q2: float, t_abs: float,
-               phi_deg: float, ebeam: float):
-    # Match the convention already used by extract_emff_from_dvcs_bh.py.
-    phi_rad = math.radians(float(phi_deg))
-    phi_trento = math.pi - phi_rad
-    pt = g.DataPoint(
-        xB=float(xB),
-        t=-abs(float(t_abs)),
-        Q2=float(Q2),
-        phi=float(phi_trento),
-        observable="XS",
-        frame="trento",
-        process="ep2epgamma",
-        exptype="fixed target",
-        in1energy=float(ebeam),
-        in1charge=-1,
-        in1polarization=0,
-        in2particle="p",
-    )
-    pt.prepare()
-    return pt
-
+def make_point(g,xB,Q2,t_abs,phi_deg,ebeam):
+    pt=g.DataPoint(xB=float(xB),t=-abs(float(t_abs)),Q2=float(Q2),
+        phi=math.pi-math.radians(float(phi_deg)),observable="XS",frame="trento",
+        process="ep2epgamma",exptype="fixed target",in1energy=float(ebeam),
+        in1charge=-1,in1polarization=0,in2particle="p")
+    pt.prepare(); return pt
 
 def evaluate(task):
-    energy_tag, row_index, subcell, xb, q2, tabs, phi, ebeam, volume = task
+    energy_tag,period,row,subcell,n_gen,sumw,xb,q2,tabs,phi=task
+    ebeam=10.200 if str(energy_tag)=="10.2" else 10.604
+    bh=km=np.nan; valid=False; err=""
     try:
         import gepard as g
         from gepard.fits import th_KM15
-    except Exception as exc:
-        raise RuntimeError(
-            "Could not import gepard/KM15. Run in the same Python environment "
-            "used by the existing BH/EMFF scripts."
-        ) from exc
-
-    pt = make_point(g, xb, q2, tabs, phi, ebeam)
-    th = th_KM15
-    pref = float(th.PreFacSigma(pt))
-    bh = pref * float(th.TBH2unp(pt))
-    km15 = bh + pref * float(th.TINTunp(pt)) + pref * float(th.TDVCS2unp(pt))
-    return {
-        "energy_tag": energy_tag,
-        "row": int(row_index),
-        "subcell": int(subcell),
-        "xB": float(xb),
-        "Q2": float(q2),
-        "t_abs": float(tabs),
-        "phi_deg": float(phi),
-        "ebeam": float(ebeam),
-        "volume": float(volume),
-        "bh_xs": float(bh),
-        "km15_xs": float(km15),
-    }
-
-
-def truthy(v) -> bool:
-    return str(v).strip().lower() in {"1", "1.0", "true"}
-
+        with warnings.catch_warnings():
+            warnings.simplefilter("ignore",RuntimeWarning)
+            pt=make_point(g,xb,q2,tabs,phi,ebeam)
+            pref=float(th_KM15.PreFacSigma(pt)); b=pref*float(th_KM15.TBH2unp(pt))
+            k=b+pref*float(th_KM15.TINTunp(pt))+pref*float(th_KM15.TDVCS2unp(pt))
+        if np.isfinite(b) and b>0 and np.isfinite(k) and k>0:
+            bh,km,valid=float(b),float(k),True
+        else: err="nonfinite_or_nonpositive_model"
+    except Exception as exc: err=type(exc).__name__+":"+str(exc)[:120]
+    return dict(energy_tag=energy_tag,period=period,row=int(row),subcell=int(subcell),
+        n_gen=int(n_gen),sumw_gen=float(sumw),xB=float(xb),Q2=float(q2),t_abs=float(tabs),
+        phi_deg=float(phi),ebeam=ebeam,bh_xs=bh,km15_xs=km,model_valid=int(valid),error=err)
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--analysis-csv",
-                    default="output/csvs/dvcs_pass2_analysis.csv")
-    ap.add_argument("--output",
-                    default="output/systematics/acceptance_reweighting/bh_subcell_grid.csv")
-    ap.add_argument("--workers", type=int, default=7)
-    ap.add_argument("--subdivisions", type=int, default=2)
-    ap.add_argument("--force", action="store_true")
-    args = ap.parse_args()
-
-    out = Path(args.output)
-    if out.exists() and not args.force:
-        print(f"[acceptance-bh-grid] Reusing existing cache: {out}")
-        return 0
-
-    df = pd.read_csv(args.analysis_csv, low_memory=False)
-    required = ["xBmin","xBmax","Q2min","Q2max",
-                "t_abs_min","t_abs_max","phimin","phimax","valid bin"]
-    missing = [c for c in required if c not in df]
-    if missing:
-        raise RuntimeError(f"Missing required columns: {missing}")
-
-    nsub = int(args.subdivisions)
-    if nsub != 2:
-        raise RuntimeError("This first implementation intentionally uses subdivisions=2.")
-
-    tasks = []
-    energy_specs = [
-        ("10.6", 10.604),
-        ("10.2", 10.200),
-    ]
-
-    for row_index, row in df.iterrows():
-        if not truthy(row["valid bin"]):
-            continue
-
-        x0,x1 = float(row.xBmin), float(row.xBmax)
-        q0,q1 = float(row.Q2min), float(row.Q2max)
-        t0,t1 = float(row.t_abs_min), float(row.t_abs_max)
-        p0,p1 = float(row.phimin), float(row.phimax)
-
-        dx=(x1-x0)/2.0
-        dq=(q1-q0)/2.0
-        dt=(t1-t0)/2.0
-        dp=(p1-p0)/2.0
-        volume = dx*dq*dt*math.radians(dp)
-
-        for energy_tag, ebeam in energy_specs:
-            for ix in range(2):
-                for iq in range(2):
-                    for it in range(2):
-                        for ip in range(2):
-                            sub = (((ix*2)+iq)*2+it)*2+ip
-                            xb=x0+(ix+0.5)*dx
-                            q2=q0+(iq+0.5)*dq
-                            tabs=t0+(it+0.5)*dt
-                            phi=p0+(ip+0.5)*dp
-                            tasks.append(
-                                (energy_tag,row_index,sub,xb,q2,tabs,phi,
-                                 ebeam,volume)
-                            )
-
-    print(f"[acceptance-bh-grid] Evaluating {len(tasks)} pure-BH subcell points "
-          f"with {args.workers} worker(s).")
-
-    workers=max(1,min(int(args.workers),16))
-    with ProcessPoolExecutor(max_workers=workers) as ex:
-        rows=list(ex.map(evaluate,tasks,chunksize=64))
-
-    out.parent.mkdir(parents=True,exist_ok=True)
-    pd.DataFrame(rows).to_csv(out,index=False)
-    print(f"[acceptance-bh-grid] Wrote {len(rows)} rows to {out}")
+    ap=argparse.ArgumentParser(); ap.add_argument('--occupancy-csv',required=True); ap.add_argument('--output',required=True)
+    ap.add_argument('--workers',type=int,default=8); ap.add_argument('--force',action='store_true'); a=ap.parse_args()
+    out=Path(a.output)
+    if out.exists() and not a.force: print(f"[acceptance-bh-grid] Reusing {out}"); return 0
+    d=pd.read_csv(a.occupancy_csv)
+    req=['energy_tag','period','row','subcell','n_gen','sumw_gen','xB_mean','Q2_mean','t_abs_mean','phi_deg_circular_mean']
+    miss=[x for x in req if x not in d.columns]
+    if miss: raise RuntimeError(f"Missing occupancy columns: {miss}")
+    tasks=[tuple(x) for x in d[req].itertuples(index=False,name=None) if int(x[4])>0 and float(x[5])>0]
+    print(f"[acceptance-bh-grid] Evaluating {len(tasks)} occupied generated-MC cells with {a.workers} worker(s).")
+    with ProcessPoolExecutor(max_workers=max(1,min(a.workers,16))) as ex: rows=list(ex.map(evaluate,tasks,chunksize=32))
+    z=pd.DataFrame(rows); out.parent.mkdir(parents=True,exist_ok=True); z.to_csv(out,index=False)
+    nv=int(z.model_valid.sum()) if len(z) else 0
+    print(f"[acceptance-bh-grid] Wrote {len(z)} occupied cells to {out}; valid model cells={nv}, invalid={len(z)-nv}.")
     return 0
-
-
-if __name__ == "__main__":
-    raise SystemExit(main())
+if __name__=='__main__': raise SystemExit(main())
