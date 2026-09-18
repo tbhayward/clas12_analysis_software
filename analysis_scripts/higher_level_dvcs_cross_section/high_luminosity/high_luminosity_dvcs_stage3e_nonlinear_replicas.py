@@ -59,6 +59,7 @@ import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 from scipy.optimize import least_squares
+from scipy.special import kv, gamma
 from scipy.special import spherical_jn
 from scipy.integrate import simpson
 
@@ -169,22 +170,69 @@ def d1_curve(C,M2,alpha,t):
     return -0.9*C*(1+t/M2)**(-alpha)
 
 
-def mechanics_batch(C,M2,alpha,r,qmax=40.0,nq=5001,batch=128):
-    """Fast vectorized Simpson transform for many replicas."""
-    q=np.linspace(0,qmax,nq); rq=np.outer(r/HBARC,q)
-    common=q**4
-    Kp=spherical_jn(0,rq)*common
-    Ks=spherical_jn(2,rq)*common
-    P=[]; S=[]
-    for i in range(0,len(C),batch):
-        sl=slice(i,min(i+batch,len(C)))
-        d1=-0.9*C[sl,None]*(1+q[None,:]**2/M2[sl,None])**(-alpha[sl,None])
-        Ip=simpson(d1[:,None,:]*Kp[None,:,:],x=q,axis=2)
-        Is=simpson(d1[:,None,:]*Ks[None,:,:],x=q,axis=2)
-        P.append(-Ip/(15*np.pi**2*MP)*GEV4_TO_GEV_FM3)
-        S.append(-Is/(10*np.pi**2*MP)*GEV4_TO_GEV_FM3)
-    return np.vstack(P),np.vstack(S)
+def mechanics_batch(C,M2,alpha,r_fm,qmax=None,nq=None):
+    """
+    Analytic 3D Breit-frame transform for the generalized multipole.
 
+    d1(-q^2) = -0.9 C (1 + q^2/M^2)^(-alpha)
+    D_Q(t)   = (4/5) d1^Q(t)
+
+    For the full transform,
+      Dtilde(r) = D0 * M^3 /[(2pi)^(3/2) 2^(alpha-1) Gamma(alpha)]
+                  * x^(alpha-3/2) K_(alpha-3/2)(x),  x=M r.
+
+    Pressure and shear are then obtained from radial derivatives of Dtilde.
+    Using Bessel identities gives closed forms, avoiding oscillatory q-space
+    quadrature. qmax/nq are retained in the signature for compatibility but
+    are ignored here: this routine is specifically the full fitted transform.
+    """
+    C=np.asarray(C,float); M2=np.asarray(M2,float); alpha=np.asarray(alpha,float)
+    r_fm=np.asarray(r_fm,float)
+    rr=r_fm/HBARC                         # fm -> GeV^-1
+    M=np.sqrt(M2)
+    D0=(4.0/5.0)*(-0.9*C)
+
+    # Broadcast: replicas x radii.
+    nu=alpha[:,None]-1.5
+    x=M[:,None]*rr[None,:]
+    pref=(D0*M**3/((2*np.pi)**1.5 * 2.0**(alpha-1.0) * gamma(alpha)))[:,None]
+
+    # F(x)=x^nu K_nu(x)
+    # F'=-x^nu K_(nu-1)
+    # F''=x^nu K_(nu-2)-x^(nu-1)K_(nu-1)
+    Fp = -np.power(x,nu)*kv(nu-1.0,x)
+    Fpp= np.power(x,nu)*kv(nu-2.0,x) - np.power(x,nu-1.0)*kv(nu-1.0,x)
+
+    # d/dr and d2/dr2 with r in GeV^-1.
+    d1r=pref*M[:,None]*Fp
+    d2r=pref*(M[:,None]**2)*Fpp
+
+    # p = (D'' + 2D'/r)/(6 m_p)
+    # s = -(D'' - D'/r)/(4 m_p)
+    P_nat=(d2r + 2.0*d1r/rr[None,:])/(6.0*MP)
+    S_nat=-(d2r - d1r/rr[None,:])/(4.0*MP)
+
+    # GeV^4 -> GeV/fm^3.
+    conv=1.0/(HBARC**3)
+    return P_nat*conv, S_nat*conv
+
+
+def mechanics_finite_q(C,M2,alpha,r_fm,qmax,nq=5001):
+    """Finite-q diagnostic only. A hard q cutoff is not a physical pressure distribution."""
+    C=np.asarray(C,float); M2=np.asarray(M2,float); alpha=np.asarray(alpha,float)
+    q=np.linspace(0,float(qmax),int(nq))
+    if len(q)%2==0: q=q[:-1]
+    rr=np.asarray(r_fm,float)/HBARC
+    qr=np.outer(q,rr)
+    j0=np.sinc(qr/np.pi)
+    j2=spherical_jn(2,qr)
+    w=simpson_weights(len(q),q[1]-q[0])
+    d1=(-0.9*C[:,None])*(1+q[None,:]**2/M2[:,None])**(-alpha[:,None])
+    base=d1*(w*q**4)[None,:]
+    P=-(base@j0)/(15*np.pi**2*MP)
+    S=-(base@j2)/(10*np.pi**2*MP)
+    conv=1/(HBARC**3)
+    return P*conv,S*conv
 
 def cumulative_central(C,M2,alpha,r,qcuts,nq_per_GeV=600):
     rows=[]
@@ -356,7 +404,7 @@ def main():
     print(f"replicas/config={args.replicas}; workers={args.workers}; 12 configurations")
     print("nonlinear parameters: C, M^2, alpha; cached local response: active KM15 ImH directions")
     print("correlated nuisances: XS normalization and BSA polarization generated + refitted")
-    print("mechanics: empirical replica percentiles; cumulative-q diagnostic separates data reach from extrapolation")
+    print("mechanics: analytic full generalized-multipole transform; finite-q curves are support diagnostics only")
     rng=np.random.default_rng(args.seed); allrows=[]
     for L in LUMI_FACTORS:
         data=pd.read_csv(s2/f"joint_fit_input_km15_{L}x.csv"); data["bin"]=data["bin"].astype(int)
@@ -477,8 +525,21 @@ def main():
         shear_nonnegative=bool(np.min(S0)>=-1e-8),
         von_laue_integral_GeV=float(np.trapezoid(rcheck**2*P0,rcheck)),
         qmax_GeV=args.qmax,
-        note="full fitted generalized-multipole central truth")])
+        note="analytic full generalized-multipole central truth"])
     central_diag.to_csv(tab/"mechanics_central_stability_check.csv",index=False)
+
+    # Analytic-transform unit test: alpha=1 must reproduce the Yukawa transform.
+    # We test the transform itself independently of pressure/shear derivatives.
+    rtest=np.array([0.2,0.5,1.0])/HBARC
+    Mtest=1.0; atest=1.0; Dtest=1.0
+    nut=atest-1.5; xt=Mtest*rtest
+    analytic=(Dtest*Mtest**3/((2*np.pi)**1.5*2**(atest-1)*gamma(atest))
+              *xt**nut*kv(nut,xt))
+    yukawa=Dtest*Mtest**2*np.exp(-Mtest*rtest)/(4*np.pi*rtest)
+    pd.DataFrame(dict(r_fm=np.array([0.2,0.5,1.0]),
+                      analytic=analytic,yukawa=yukawa,
+                      relative_difference=(analytic-yukawa)/yukawa)
+                 ).to_csv(tab/"mechanics_analytic_transform_unit_test.csv",index=False)
 
     # Simplified support diagnostic: controlled endpoint, 2 GeV, and effectively full.
     qcuts=sorted(set([qdata,2.0,args.qmax]))
@@ -500,7 +561,7 @@ def main():
     print(f"\n[data/Fourier] controlled endpoint q_data=sqrt(tmax)={qdata:.3f} GeV; transforms also evaluated above this to expose model continuation")
     print(f"[output] {out}")
     print("[interpretation] d1 bands use every converged observable fit inside the controlled t range.")
-    print("[interpretation] mechanics headline follows Nature/Volker: full fitted generalized-multipole transform, explicitly model-conditional.")
+    print("[interpretation] mechanics headline follows Nature/Volker using the analytic full generalized-multipole transform.")
     print("[interpretation] hard q_data truncation is used only as a momentum-support diagnostic; it is not interpreted as a physical pressure/shear distribution.")
     if args.run_high_t_ablation:
         print("[high-t ablation] not executed in the main workflow: a real luminosity upgrade improves the full accepted kinematic range.")
