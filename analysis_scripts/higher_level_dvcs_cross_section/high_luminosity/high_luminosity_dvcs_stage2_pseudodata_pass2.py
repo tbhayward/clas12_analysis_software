@@ -74,7 +74,10 @@ def load_pass2(path: Path, clean_ratio: float, ebeam: float) -> pd.DataFrame:
     out = pd.DataFrame(index=raw.index)
 
     out["row_id"] = np.arange(len(raw), dtype=int)
-    out["bin"] = num(raw, "bin")
+    # "Bin Name" is the (xB,Q2,t) cell identifier.  "bin index" is a
+    # unique 4D row index, so using it here would incorrectly make every phi
+    # point its own CFF cell.
+    out["bin"] = num(raw, "Bin Name")
     out["xB"] = num(raw, "xBavg, 10.6 GeV")
     out["Q2"] = num(raw, "Q2avg, 10.6 GeV")
     out["t_abs"] = num(raw, "t_abs_avg, 10.6 GeV")
@@ -96,9 +99,13 @@ def load_pass2(path: Path, clean_ratio: float, ebeam: float) -> pd.DataFrame:
 
     # The combined 10.6-GeV scale uncertainty is stored as a fractional
     # uncertainty and can vary slightly with the run-period combination.
+    # Use only the explicitly correlated scale component for the shared
+    # normalization nuisance.  Do NOT use "... total scale sys" here: that
+    # column contains additional scale-like components and cannot be represented
+    # by one fully correlated beta.
     out["xs_scale_frac"] = num(
         raw,
-        "normed cross sections, ep->epg, exp, 10.6 GeV, unpol, total scale sys",
+        "correlated scale sys frac, 10.6 GeV",
     )
 
     # For BSA, the cut systematic combines exclusivity+fiducial variations.
