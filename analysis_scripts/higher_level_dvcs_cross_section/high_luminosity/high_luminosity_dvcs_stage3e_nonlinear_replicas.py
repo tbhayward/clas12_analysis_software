@@ -242,12 +242,14 @@ def make_plots(rep,bands,mech,cum,figdir,qdata):
     savefig(fig,figdir/"03_M2_alpha_replica_scatter_backup.png")
 
     if len(mech):
-        # Primary mechanics result: only q below the CLAS12 controlled endpoint.
+        # Workshop headline mechanics: full Nature/Volker-style generalized-
+        # multipole transform. These are projections conditional on that
+        # functional continuation, not model-independent pressure/shear.
         for quantity,title,ylabel,fname in [
-            ("r2p_controlled","Pressure contribution constrained by the measured momentum range",
-             "$r^2p(r)$ (GeV fm$^{-1}$)","04_pressure_controlled_replicas.png"),
-            ("shear_controlled","Shear contribution constrained by the measured momentum range",
-             "$s(r)$ (GeV fm$^{-3}$)","05_shear_controlled_replicas.png")]:
+            ("r2p_full","Pressure projection from the full fitted D-term",
+             "$r^2p(r)$ (GeV fm$^{-1}$)","04_pressure_full_replicas.png"),
+            ("r2s_full","Shear-stress projection from the full fitted D-term",
+             "$r^2s(r)$ (GeV fm$^{-1}$)","05_shear_full_replicas.png")]:
             fig,ax=plt.subplots(figsize=(8.8,6))
             for L in LUMI_FACTORS:
                 d=mech[(mech.scenario=="statistics_only")&
@@ -256,17 +258,16 @@ def make_plots(rep,bands,mech,cum,figdir,qdata):
                 ax.fill_between(d.r_fm,d.q16,d.q84,alpha=.13)
                 ax.plot(d.r_fm,d.q50,label=f"{L}x")
             ax.axhline(0,lw=.8,alpha=.5)
-            ax.set(xlabel="r (fm)",ylabel=ylabel,
-                   title=f"{title}  (q < {qdata:.3f} GeV)")
+            ax.set(xlabel="r (fm)",ylabel=ylabel,title=title)
             ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
             savefig(fig,figdir/fname)
 
-        # 10x systematics on the same controlled transform.
+        # Systematics comparison at 10x, again for the full fitted form.
         for quantity,title,ylabel,fname in [
-            ("r2p_controlled","10x controlled-range pressure contribution",
-             "$r^2p(r)$ (GeV fm$^{-1}$)","06_pressure_controlled_systematics_10x.png"),
-            ("shear_controlled","10x controlled-range shear contribution",
-             "$s(r)$ (GeV fm$^{-3}$)","07_shear_controlled_systematics_10x.png")]:
+            ("r2p_full","10x pressure projection: impact of point-to-point systematics",
+             "$r^2p(r)$ (GeV fm$^{-1}$)","06_pressure_full_systematics_10x.png"),
+            ("r2s_full","10x shear-stress projection: impact of point-to-point systematics",
+             "$r^2s(r)$ (GeV fm$^{-1}$)","07_shear_full_systematics_10x.png")]:
             fig,ax=plt.subplots(figsize=(8.8,6))
             for sc in SCENARIOS:
                 d=mech[(mech.scenario==sc)&(mech.luminosity_factor==10)&
@@ -275,10 +276,26 @@ def make_plots(rep,bands,mech,cum,figdir,qdata):
                 ax.fill_between(d.r_fm,d.q16,d.q84,alpha=.11)
                 ax.plot(d.r_fm,d.q50,label=labels[sc])
             ax.axhline(0,lw=.8,alpha=.5)
-            ax.set(xlabel="r (fm)",ylabel=ylabel,
-                   title=f"{title}  (q < {qdata:.3f} GeV)")
+            ax.set(xlabel="r (fm)",ylabel=ylabel,title=title)
             ax.grid(alpha=.2); ax.legend()
             savefig(fig,figdir/fname)
+
+        # Compact stability diagnostics: fractions of full-transform replicas
+        # with Nature-like pressure/shear topology. These are diagnostics, not
+        # hard cuts on the workshop projection.
+        stab=mech[mech.quantity=="stability_summary"].copy()
+        if len(stab):
+            fig,ax=plt.subplots(figsize=(8.8,5.8))
+            d=stab[stab.scenario=="statistics_only"]
+            ax.plot(d.luminosity_factor,100*d.pressure_naturelike_fraction,marker="o",
+                    label="pressure: one + to - crossing")
+            ax.plot(d.luminosity_factor,100*d.shear_positive_fraction,marker="o",
+                    label="shear: non-negative")
+            ax.set(xlabel="Pass-2 exposure factor",ylabel="Replica fraction (%)",
+                   title="Mechanical-shape diagnostic for the full fitted D-term")
+            ax.set_xticks(LUMI_FACTORS); ax.set_ylim(0,105)
+            ax.grid(alpha=.2); ax.legend()
+            savefig(fig,figdir/"08_mechanical_stability_diagnostic.png")
 
     # Simple central-value momentum-support diagnostic: only 3 curves.
     if len(cum):
@@ -289,9 +306,9 @@ def make_plots(rep,bands,mech,cum,figdir,qdata):
         selected=[qdat,qmid,qfull]
         for col,title,fname in [
             ("pressure","Pressure: measured-range contribution versus model continuation",
-             "08_pressure_momentum_support.png"),
+             "09_pressure_momentum_support_diagnostic.png"),
             ("shear","Shear: measured-range contribution versus model continuation",
-             "09_shear_momentum_support.png")]:
+             "10_shear_momentum_support_diagnostic.png")]:
             fig,ax=plt.subplots(figsize=(8.8,6))
             for qc in selected:
                 d=cum[np.isclose(cum.qmax,qc)]
@@ -391,40 +408,77 @@ def main():
                              bound_hit_fraction=float(g.at_bound.mean())))
     pd.DataFrame(sums).to_csv(tab/"replica_parameter_summaries.csv",index=False)
 
-    # Primary mechanics: transform only to q_data=sqrt(tmax). This is the
-    # contribution supported by the controlled measured momentum range, not the
-    # complete physical pressure/shear distribution.
-    qdata=float(np.sqrt(tmax)); rgrid=np.linspace(.10,2.0,96); mrows=[]
+    # Workshop mechanics projection: follow the Nature/Volker procedure and
+    # transform the complete fitted generalized-multipole form.  We retain all
+    # observable-valid replicas for d1(t), but for an unrestricted Fourier
+    # transform we use only replicas that stay away from the deliberately broad
+    # M2/alpha diagnostic bounds.  This is a model-conditional projection.
+    qdata=float(np.sqrt(tmax)); rgrid=np.linspace(.05,2.0,99); mrows=[]
     wanted={("statistics_only",L) for L in LUMI_FACTORS}|{(sc,10) for sc in SCENARIOS}
-    controlled_nq=max(801,int(args.mechanics_nq*qdata/max(args.qmax,1e-9)))
     for sc,L in sorted(wanted,key=lambda x:(x[1],x[0])):
-        g=rep[(rep.scenario==sc)&(rep.luminosity_factor==L)&rep.observable_valid]
+        g=rep[(rep.scenario==sc)&(rep.luminosity_factor==L)&rep.extrapolation_safe]
         if len(g)<20: continue
-        Pc,Sc=mechanics_batch(g.C.to_numpy(),g.dM2.to_numpy(),g.dalpha.to_numpy(),
-                              rgrid,qdata,controlled_nq)
-        for name,A in [("r2p_controlled",Pc*rgrid[None,:]**2),("shear_controlled",Sc)]:
+        P,S=mechanics_batch(g.C.to_numpy(),g.dM2.to_numpy(),g.dalpha.to_numpy(),
+                            rgrid,args.qmax,args.mechanics_nq)
+        R2P=P*rgrid[None,:]**2
+        R2S=S*rgrid[None,:]**2
+        for name,A in [("r2p_full",R2P),("r2s_full",R2S),
+                       ("pressure_full",P),("shear_full",S)]:
             q16,q50,q84=percentile_band(A)
             for k,rv in enumerate(rgrid):
                 mrows.append(dict(scenario=sc,luminosity_factor=L,quantity=name,
                                   r_fm=rv,q16=q16[k],q50=q50[k],q84=q84[k],
-                                  n_replicas=len(g),qmax_GeV=qdata,
-                                  interpretation="controlled-range contribution"))
+                                  n_replicas=len(g),qmax_GeV=args.qmax,
+                                  interpretation="full generalized-multipole projection"))
 
-        # Backup/model diagnostic only: unrestricted multipole continuation is
-        # calculated only for fits that remain away from diagnostic shape bounds.
-        gs=rep[(rep.scenario==sc)&(rep.luminosity_factor==L)&rep.extrapolation_safe]
-        if len(gs)>=20:
-            Pf,Sf=mechanics_batch(gs.C.to_numpy(),gs.dM2.to_numpy(),gs.dalpha.to_numpy(),
-                                  rgrid,args.qmax,args.mechanics_nq)
-            for name,A in [("r2p_full_model_backup",Pf*rgrid[None,:]**2),
-                           ("shear_full_model_backup",Sf)]:
-                q16,q50,q84=percentile_band(A)
-                for k,rv in enumerate(rgrid):
-                    mrows.append(dict(scenario=sc,luminosity_factor=L,quantity=name,
-                                      r_fm=rv,q16=q16[k],q50=q50[k],q84=q84[k],
-                                      n_replicas=len(gs),qmax_GeV=args.qmax,
-                                      interpretation="model-continuation backup"))
-    mech=pd.DataFrame(mrows); mech.to_csv(tab/"mechanics_replica_bands.csv",index=False)
+        # Mechanical-shape sanity checks. Nature-like pressure means positive
+        # at small r and exactly one + -> - crossing before 2 fm. Shear should
+        # remain non-negative over the displayed radial interval. We report,
+        # rather than impose, these conditions.
+        pressure_ok=[]; shear_ok=[]; vonlaue=[]
+        dr=np.gradient(rgrid)
+        for pp,ss in zip(P,S):
+            sig=np.sign(pp)
+            # Ignore numerical zeros; count robust sign changes.
+            cross=np.where(sig[:-1]*sig[1:]<0)[0]
+            naturelike=(pp[0]>0 and len(cross)==1 and pp[-1]<=0)
+            pressure_ok.append(naturelike)
+            shear_ok.append(bool(np.nanmin(ss)>=-1e-8))
+            # Finite-r diagnostic only; full von-Laue check is also written
+            # separately below on an extended r grid.
+            vonlaue.append(float(np.sum(rgrid**2*pp*dr)))
+        mrows.append(dict(scenario=sc,luminosity_factor=L,quantity="stability_summary",
+                          r_fm=np.nan,q16=np.nan,q50=np.nan,q84=np.nan,
+                          n_replicas=len(g),qmax_GeV=args.qmax,
+                          interpretation="mechanical-shape diagnostic",
+                          pressure_naturelike_fraction=float(np.mean(pressure_ok)),
+                          shear_positive_fraction=float(np.mean(shear_ok)),
+                          median_finite_range_vonlaue=float(np.median(vonlaue))))
+
+    mech=pd.DataFrame(mrows)
+    mech.to_csv(tab/"mechanics_replica_bands.csv",index=False)
+
+    # A more direct central-truth sanity check, including a wider r interval for
+    # the von-Laue integral. This verifies the implementation against the
+    # expected Nature-like topology without using it as a fit constraint.
+    rcheck=np.linspace(.01,8.0,800)
+    P0,S0=mechanics_batch(np.array([C0]),np.array([M20]),np.array([ALPHA0]),
+                          rcheck,args.qmax,args.mechanics_nq)
+    P0=P0[0]; S0=S0[0]
+    cross=np.where(np.sign(P0[:-1])*np.sign(P0[1:])<0)[0]
+    zeros=[]
+    for i in cross:
+        x1,x2=rcheck[i],rcheck[i+1]; y1,y2=P0[i],P0[i+1]
+        zeros.append(float(x1-y1*(x2-x1)/(y2-y1)))
+    central_diag=pd.DataFrame([dict(
+        pressure_zero_crossings=len(zeros),
+        first_pressure_zero_fm=(zeros[0] if zeros else np.nan),
+        shear_min_GeV_fm3=float(np.min(S0)),
+        shear_nonnegative=bool(np.min(S0)>=-1e-8),
+        von_laue_integral_GeV=float(np.trapz(rcheck**2*P0,rcheck)),
+        qmax_GeV=args.qmax,
+        note="full fitted generalized-multipole central truth")])
+    central_diag.to_csv(tab/"mechanics_central_stability_check.csv",index=False)
 
     # Simplified support diagnostic: controlled endpoint, 2 GeV, and effectively full.
     qcuts=sorted(set([qdata,2.0,args.qmax]))
@@ -446,7 +500,8 @@ def main():
     print(f"\n[data/Fourier] controlled endpoint q_data=sqrt(tmax)={qdata:.3f} GeV; transforms also evaluated above this to expose model continuation")
     print(f"[output] {out}")
     print("[interpretation] d1 bands use every converged observable fit inside the controlled t range.")
-    print("[interpretation] primary mechanics bands stop at q_data; full high-q transforms are explicitly backup/model-continuation diagnostics.")
+    print("[interpretation] mechanics headline follows Nature/Volker: full fitted generalized-multipole transform, explicitly model-conditional.")
+    print("[interpretation] hard q_data truncation is used only as a momentum-support diagnostic; it is not interpreted as a physical pressure/shear distribution.")
     if args.run_high_t_ablation:
         print("[high-t ablation] not executed in the main workflow: a real luminosity upgrade improves the full accepted kinematic range.")
         print("[high-t ablation] flag retained only so a future targeted diagnostic can be added without changing the main physics projection.")
