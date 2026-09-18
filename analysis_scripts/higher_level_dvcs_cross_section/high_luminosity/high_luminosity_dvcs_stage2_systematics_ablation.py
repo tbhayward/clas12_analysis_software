@@ -85,6 +85,12 @@ def scenario_inputs(
         d["xs_scale_frac"] = float(improved_norm)
         return d
 
+    if name.startswith("ptp_factor_"):
+        factor = float(name.replace("ptp_factor_", ""))
+        d["xs_ptp_sys_pseudo_abs"] *= factor
+        d["bsa_ptp_sys_pseudo_abs"] *= factor
+        return d
+
     if name == "improved_ptp":
         d["xs_ptp_sys_pseudo_abs"] *= float(ptp_factor)
         d["bsa_ptp_sys_pseudo_abs"] *= float(ptp_factor)
@@ -134,17 +140,54 @@ def savefig(fig, path: Path):
 
 
 def make_plots(summary: pd.DataFrame, figures: Path, high_t_min: float):
-    order = [
+    # Main workshop curves: isolate the point-to-point systematic question.
+    main_order = [
         ("statistics_only", "Statistics only"),
-        ("baseline", "Baseline systematics"),
-        ("improved_norm", "Normalization improved"),
-        ("improved_ptp", "Point-to-point improved"),
-        ("improved_both", "Both improved"),
+        ("baseline", "Current point-to-point systematics"),
+        ("ptp_factor_0.667", "Point-to-point systematics / 1.5"),
+        ("improved_ptp", "Point-to-point systematics / 2"),
+        ("ptp_factor_0.333", "Point-to-point systematics / 3"),
     ]
 
-    # High-t ReH precision.
+    for quantity, ylabel, fname, title in [
+        ("high_t_median_rel_ReH_pct",
+         r"Median relative uncertainty on $\mathrm{Re}\,\mathcal{H}$ (%)",
+         "01_high_t_ReH_ptp_luminosity_tradeoff.png",
+         rf"High-$|t|$ CFF precision: $|t|\geq {high_t_min:.1f}$ GeV$^2$"),
+        ("high_t_median_rel_ImH_pct",
+         r"Median relative uncertainty on $\mathrm{Im}\,\mathcal{H}$ (%)",
+         "02_high_t_ImH_ptp_luminosity_tradeoff.png",
+         rf"High-$|t|$ CFF precision: $|t|\geq {high_t_min:.1f}$ GeV$^2$"),
+        ("highest_t_rel_ReH_pct",
+         r"Relative uncertainty on $\mathrm{Re}\,\mathcal{H}$ (%)",
+         "03_highest_t_cell_ReH_ptp_luminosity_tradeoff.png",
+         r"Highest-$|t|$ clean cell"),
+        ("highest_t_rel_ImH_pct",
+         r"Relative uncertainty on $\mathrm{Im}\,\mathcal{H}$ (%)",
+         "04_highest_t_cell_ImH_ptp_luminosity_tradeoff.png",
+         r"Highest-$|t|$ clean cell"),
+    ]:
+        fig, ax = plt.subplots(figsize=(8.8, 6.0))
+        for scenario, label in main_order:
+            d = summary[summary["scenario"] == scenario].sort_values("luminosity_factor")
+            ax.plot(d["luminosity_factor"], d[quantity], marker="o", label=label)
+        ax.set_xscale("log")
+        ax.set_xticks(LUMI_FACTORS, [f"{x}x" for x in LUMI_FACTORS])
+        ax.set_xlabel("Luminosity relative to pass-2 exposure")
+        ax.set_ylabel(ylabel)
+        ax.set_title(title)
+        ax.grid(alpha=0.2)
+        ax.legend()
+        savefig(fig, figures / fname)
+
+    # Explicit normalization diagnostic.  Keep it because the near-overlap is
+    # itself a physics/analysis message: local XS+BSA CFF precision is almost
+    # insensitive to improving the common XS normalization from 10% to 5%.
     fig, ax = plt.subplots(figsize=(8.8, 6.0))
-    for scenario, label in order:
+    for scenario, label in [
+        ("baseline", "10% XS normalization"),
+        ("improved_norm", "5% XS normalization"),
+    ]:
         d = summary[summary["scenario"] == scenario].sort_values("luminosity_factor")
         ax.plot(d["luminosity_factor"], d["high_t_median_rel_ReH_pct"],
                 marker="o", label=label)
@@ -152,56 +195,33 @@ def make_plots(summary: pd.DataFrame, figures: Path, high_t_min: float):
     ax.set_xticks(LUMI_FACTORS, [f"{x}x" for x in LUMI_FACTORS])
     ax.set_xlabel("Luminosity relative to pass-2 exposure")
     ax.set_ylabel(r"Median relative uncertainty on $\mathrm{Re}\,\mathcal{H}$ (%)")
-    ax.set_title(rf"High-$|t|$ cells: $|t|\geq {high_t_min:.1f}$ GeV$^2$")
+    ax.set_title("Overall XS normalization has little impact on local CFF precision")
     ax.grid(alpha=0.2)
     ax.legend()
-    savefig(fig, figures / "01_high_t_ReH_systematics_ablation.png")
+    savefig(fig, figures / "05_normalization_10pct_vs_5pct.png")
 
-    # High-t ImH precision.
+    # Quantify how close each realistic scenario is to the statistics-only
+    # potential at each luminosity.
+    stat = summary[summary["scenario"] == "statistics_only"][
+        ["luminosity_factor", "high_t_median_rel_ReH_pct"]
+    ].rename(columns={"high_t_median_rel_ReH_pct": "stat_only"})
+    q = summary.merge(stat, on="luminosity_factor", how="left")
+    q["ReH_excess_over_stat_only_pct"] = 100.0 * (
+        q["high_t_median_rel_ReH_pct"] / q["stat_only"] - 1.0
+    )
     fig, ax = plt.subplots(figsize=(8.8, 6.0))
-    for scenario, label in order:
-        d = summary[summary["scenario"] == scenario].sort_values("luminosity_factor")
-        ax.plot(d["luminosity_factor"], d["high_t_median_rel_ImH_pct"],
+    for scenario, label in main_order[1:]:
+        d = q[q["scenario"] == scenario].sort_values("luminosity_factor")
+        ax.plot(d["luminosity_factor"], d["ReH_excess_over_stat_only_pct"],
                 marker="o", label=label)
     ax.set_xscale("log")
     ax.set_xticks(LUMI_FACTORS, [f"{x}x" for x in LUMI_FACTORS])
     ax.set_xlabel("Luminosity relative to pass-2 exposure")
-    ax.set_ylabel(r"Median relative uncertainty on $\mathrm{Im}\,\mathcal{H}$ (%)")
-    ax.set_title(rf"High-$|t|$ cells: $|t|\geq {high_t_min:.1f}$ GeV$^2$")
+    ax.set_ylabel("Excess ReH uncertainty above statistics-only limit (%)")
+    ax.set_title("How strongly point-to-point systematics limit luminosity gains")
     ax.grid(alpha=0.2)
     ax.legend()
-    savefig(fig, figures / "02_high_t_ImH_systematics_ablation.png")
-
-    # ReH 25% precision frontier.
-    fig, ax = plt.subplots(figsize=(8.8, 6.0))
-    for scenario, label in order:
-        d = summary[summary["scenario"] == scenario].sort_values("luminosity_factor")
-        ax.plot(d["luminosity_factor"], d["max_t_ReH_lt25pct"],
-                marker="o", label=label)
-    ax.set_xscale("log")
-    ax.set_xticks(LUMI_FACTORS, [f"{x}x" for x in LUMI_FACTORS])
-    ax.set_xlabel("Luminosity relative to pass-2 exposure")
-    ax.set_ylabel(r"Maximum $|t|$ with $\delta\mathrm{Re}\mathcal{H}/|\mathrm{Re}\mathcal{H}|<25\%$ (GeV$^2$)")
-    ax.set_title(r"Precision $|t|$ frontier under $|t|/Q^2<0.2$")
-    ax.grid(alpha=0.2)
-    ax.legend()
-    savefig(fig, figures / "03_ReH_25pct_t_frontier_systematics_ablation.png")
-
-    # Highest-t cell.
-    fig, ax = plt.subplots(figsize=(8.8, 6.0))
-    for scenario, label in order:
-        d = summary[summary["scenario"] == scenario].sort_values("luminosity_factor")
-        ax.plot(d["luminosity_factor"], d["highest_t_rel_ReH_pct"],
-                marker="o", label=label)
-    ax.set_xscale("log")
-    ax.set_xticks(LUMI_FACTORS, [f"{x}x" for x in LUMI_FACTORS])
-    ax.set_xlabel("Luminosity relative to pass-2 exposure")
-    ax.set_ylabel(r"Relative uncertainty on $\mathrm{Re}\,\mathcal{H}$ (%)")
-    ax.set_title(r"Highest-$|t|$ clean cell")
-    ax.grid(alpha=0.2)
-    ax.legend()
-    savefig(fig, figures / "04_highest_t_cell_ReH_systematics_ablation.png")
-
+    savefig(fig, figures / "06_systematics_penalty_relative_to_statistics_only.png")
 
 def main(argv: List[str] | None = None) -> int:
     here = Path(__file__).resolve().parent
@@ -262,7 +282,9 @@ def main(argv: List[str] | None = None) -> int:
         "statistics_only",
         "baseline",
         "improved_norm",
+        "ptp_factor_0.667",
         "improved_ptp",
+        "ptp_factor_0.333",
         "improved_both",
     )
 
@@ -339,8 +361,12 @@ def main(argv: List[str] | None = None) -> int:
     ]].to_string(index=False, float_format=lambda x: f"{x:.3g}"))
 
     print(f"\n[output] {outdir}")
-    print("[interpretation] compare baseline with improved_norm and improved_ptp")
-    print("                 to identify which fixed systematic limits luminosity gains.")
+    print("[interpretation] baseline vs improved_norm tests overall XS normalization.")
+    print("                 baseline vs the PTP-factor scans tests the dominant fixed")
+    print("                 point-to-point limitation and how much improvement is needed.")
+    print("                 If baseline and improved_norm overlap, that is an intended")
+    print("                 result: better absolute normalization is not a major lever")
+    print("                 for this local matched XS+BSA CFF extraction.")
     return 0
 
 
