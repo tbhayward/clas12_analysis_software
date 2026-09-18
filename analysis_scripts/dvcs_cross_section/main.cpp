@@ -135,6 +135,7 @@ int main(int argc, char* argv[]) {
     bool eppi0_normalization_only = false;
     bool eppi0_production_test = false;
     bool use_eppi0_production_normalization = true;
+    std::string topology_cli;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--acceptance-reweighting-only") {
             acceptance_reweighting_only = true;
@@ -144,6 +145,22 @@ int main(int argc, char* argv[]) {
             eppi0_production_test = true;
         } else if (std::string(argv[i]) == "--no-eppi0-normalization") {
             use_eppi0_production_normalization = false;
+        } else if (std::string(argv[i]) == "--topology") {
+            if (i + 1 >= argc) {
+                std::cerr << "[main] FATAL: --topology requires one of FD-FD, CD-FD, CD-FT\n";
+                return 1;
+            }
+            topology_cli = argv[++i];
+            std::transform(topology_cli.begin(), topology_cli.end(), topology_cli.begin(),
+                           [](unsigned char c){ return static_cast<char>(std::toupper(c)); });
+            std::replace(topology_cli.begin(), topology_cli.end(), '_', '-');
+            if (topology_cli != "FD-FD" &&
+                topology_cli != "CD-FD" &&
+                topology_cli != "CD-FT") {
+                std::cerr << "[main] FATAL: invalid --topology '" << topology_cli
+                          << "'. Allowed values: FD-FD, CD-FD, CD-FT\n";
+                return 1;
+            }
         }
     }
     SystematicRunSelection systematic_selection;
@@ -161,7 +178,10 @@ int main(int argc, char* argv[]) {
                   << "  ./dvcs_analysis --acceptance-reweighting-only\n"
                   << "  ./dvcs_analysis --eppi0-normalization-only\n"
                   << "  ./dvcs_analysis --eppi0-production-test\n"
-                  << "  ./dvcs_analysis --no-eppi0-normalization   # original Krishna normalization\n";
+                  << "  ./dvcs_analysis --no-eppi0-normalization   # original Krishna normalization\n"
+                  << "  ./dvcs_analysis --no-eppi0-normalization --skip-systematics --topology FD-FD\n"
+                  << "  ./dvcs_analysis --no-eppi0-normalization --skip-systematics --topology CD-FD\n"
+                  << "  ./dvcs_analysis --no-eppi0-normalization --skip-systematics --topology CD-FT\n";
         return 1;
     }
 
@@ -207,11 +227,22 @@ int main(int argc, char* argv[]) {
     // any topology or particle-sector study switch below is enabled.
     global_cfg.enable_sp18_out_sector_quality_cuts = true;
 
-    // Single-topology study. Enable exactly one topology by setting this true
-    // and editing required_detector1/required_detector2.
-    global_cfg.enable_topology_filter = false;
-    global_cfg.required_detector1 = 2;  // 1 FD proton, 2 CD proton
-    global_cfg.required_detector2 = 0;  // 0 FT photon, 1 FD photon
+    // Optional single-topology study selected from the command line:
+    //   --topology FD-FD
+    //   --topology CD-FD
+    //   --topology CD-FT
+    // With no --topology argument the nominal inclusive configuration is kept.
+    global_cfg.enable_topology_filter = !topology_cli.empty();
+    if (topology_cli == "FD-FD") {
+        global_cfg.required_detector1 = 1;
+        global_cfg.required_detector2 = 1;
+    } else if (topology_cli == "CD-FD") {
+        global_cfg.required_detector1 = 2;
+        global_cfg.required_detector2 = 1;
+    } else if (topology_cli == "CD-FT") {
+        global_cfg.required_detector1 = 2;
+        global_cfg.required_detector2 = 0;
+    }
 
     // Electron FD sector study. Electron is always FD.
     global_cfg.enable_electron_fd_sector_filter = false;
@@ -240,6 +271,9 @@ int main(int argc, char* argv[]) {
 
     set_default_global_cuts(global_cfg);
 
+    std::cout << "[main] Topology selection: "
+              << (topology_cli.empty() ? "inclusive" : topology_cli)
+              << std::endl;
     std::cout << "[main] Global cut analysis tag: "
               << global_cuts_analysis_tag(default_global_cuts()) << std::endl;
 
