@@ -652,7 +652,15 @@ int main(int argc, char* argv[]) {
     // The BSA stage uses helicity-separated measured ep->epgamma and ep->eppi0
     // event counts, plus finalized CSV contamination/normalized-yield columns,
     // to form S+ = G+ - f_pi0 P+ and S- = G- - f_pi0 P-.
-    {
+    if (global_cfg.enable_topology_filter) {
+        // A topology-restricted cross-section run already fixes the photon/proton
+        // detector configuration globally.  The BSA module performs its own
+        // independent FD-vs-FT photon subdivision and helicity diagnostics, so
+        // running it here would create empty forbidden-topology samples and is
+        // unrelated to the topology-resolved unpolarized cross-section study.
+        std::cout << "[main] Topology mode: skipping BSA stage (including the "
+                  << "BSA FD-vs-FT and helicity-scrambling diagnostics).\n";
+    } else {
         const std::string csv_main  = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string cuts_json = "output/jsons/combined_cuts.json";
 
