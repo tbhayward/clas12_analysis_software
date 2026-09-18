@@ -134,6 +134,7 @@ int main(int argc, char* argv[]) {
     bool acceptance_reweighting_only = false;
     bool eppi0_normalization_only = false;
     bool eppi0_production_test = false;
+    bool prepare_topology_study = false;
     bool use_eppi0_production_normalization = true;
     std::string topology_cli;
     for (int i = 1; i < argc; ++i) {
@@ -145,6 +146,8 @@ int main(int argc, char* argv[]) {
             eppi0_production_test = true;
         } else if (std::string(argv[i]) == "--no-eppi0-normalization") {
             use_eppi0_production_normalization = false;
+        } else if (std::string(argv[i]) == "--prepare-topology-study") {
+            prepare_topology_study = true;
         } else if (std::string(argv[i]) == "--topology") {
             if (i + 1 >= argc) {
                 std::cerr << "[main] FATAL: --topology requires one of FD-FD, CD-FD, CD-FT\n";
@@ -163,6 +166,11 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+    if (prepare_topology_study && !topology_cli.empty()) {
+        std::cerr << "[main] FATAL: --prepare-topology-study and --topology are mutually exclusive.\n";
+        return 1;
+    }
+
     SystematicRunSelection systematic_selection;
     try {
         systematic_selection = parse_systematic_selection(argc, argv);
@@ -178,6 +186,7 @@ int main(int argc, char* argv[]) {
                   << "  ./dvcs_analysis --acceptance-reweighting-only\n"
                   << "  ./dvcs_analysis --eppi0-normalization-only\n"
                   << "  ./dvcs_analysis --eppi0-production-test\n"
+                  << "  ./dvcs_analysis --prepare-topology-study --skip-systematics\n"
                   << "  ./dvcs_analysis --no-eppi0-normalization   # original Krishna normalization\n"
                   << "  ./dvcs_analysis --no-eppi0-normalization --skip-systematics --topology FD-FD\n"
                   << "  ./dvcs_analysis --no-eppi0-normalization --skip-systematics --topology CD-FD\n"
@@ -299,7 +308,42 @@ int main(int argc, char* argv[]) {
     exclusivity_opts.nominal_containment = 0.95;
     exclusivity_opts.loose_containment = 0.98;
 
-    if (!acceptance_reweighting_only && !eppi0_normalization_only && !eppi0_production_test) {
+    const std::string topology_baseline_dir = "output/topology_study_baseline";
+    const std::string topology_baseline_csv =
+        topology_baseline_dir + "/dvcs_pass2_after_current_calibration.csv";
+    const std::string topology_baseline_cuts =
+        topology_baseline_dir + "/combined_cuts.json";
+    const std::string topology_baseline_current =
+        topology_baseline_dir + "/current_response_model.json";
+
+    if (!topology_cli.empty()) {
+        // Hold all production calibrations fixed while varying only topology.
+        for (const auto& path : {topology_baseline_csv,
+                                 topology_baseline_cuts,
+                                 topology_baseline_current}) {
+            if (!std::filesystem::exists(path)) {
+                std::cerr << "[main] FATAL: missing topology-study baseline artifact: "
+                          << path << "\n"
+                          << "[main] Run ./dvcs_analysis --prepare-topology-study --skip-systematics first.\n";
+                return 1;
+            }
+        }
+        std::filesystem::create_directories("output/csvs");
+        std::filesystem::create_directories("output/jsons");
+        std::filesystem::create_directories("output/dvcs_current_dependence/calibration");
+        std::filesystem::copy_file(topology_baseline_csv,
+            "output/csvs/dvcs_pass2_analysis.csv",
+            std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::copy_file(topology_baseline_cuts,
+            "output/jsons/combined_cuts.json",
+            std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::copy_file(topology_baseline_current,
+            "output/dvcs_current_dependence/calibration/current_response_model.json",
+            std::filesystem::copy_options::overwrite_existing);
+        std::cout << "[main] Topology-study mode: restored inclusive production "
+                  << "CSV seed, exclusivity cuts, and current-response calibration from "
+                  << topology_baseline_dir << ".\n";
+    } else if (!acceptance_reweighting_only && !eppi0_normalization_only && !eppi0_production_test) {
         if (!run_python_exclusivity_analysis(exclusivity_opts)) {
             std::cerr << "[main] FATAL: Python exclusivity optimization failed.\n";
             return 1;
@@ -436,7 +480,8 @@ int main(int argc, char* argv[]) {
     const bool use_epg_mc_current_factor_for_eppi0_bkg = true;
 
     // --------- Current-response calibration + diagnostics ----------
-    {
+    // Topology runs reuse the inclusive production calibration restored above.
+    if (topology_cli.empty()) {
         const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
 
         CurrentDependenceOptions current_opts;
@@ -484,6 +529,33 @@ int main(int argc, char* argv[]) {
             std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
+    }
+
+    if (prepare_topology_study) {
+        std::filesystem::create_directories(topology_baseline_dir);
+        for (const auto& src : {
+                 std::string("output/csvs/dvcs_pass2_analysis.csv"),
+                 std::string("output/jsons/combined_cuts.json"),
+                 std::string("output/dvcs_current_dependence/calibration/current_response_model.json")}) {
+            if (!std::filesystem::exists(src)) {
+                std::cerr << "[main] FATAL: topology baseline preparation did not produce "
+                          << src << "\n";
+                return 1;
+            }
+        }
+        std::filesystem::copy_file("output/csvs/dvcs_pass2_analysis.csv",
+            topology_baseline_csv, std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::copy_file("output/jsons/combined_cuts.json",
+            topology_baseline_cuts, std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::copy_file(
+            "output/dvcs_current_dependence/calibration/current_response_model.json",
+            topology_baseline_current, std::filesystem::copy_options::overwrite_existing);
+
+        std::cout << "[main] Topology-study baseline prepared successfully in "
+                  << topology_baseline_dir << ".\n"
+                  << "[main] Cached inclusive CSV seed, combined cuts, and current-response model. "
+                  << "Exiting before total-count/cross-section stages.\n";
+        return 0;
     }
 
 
