@@ -679,15 +679,31 @@ static std::array<double, 7> load_data_current_response_slopes(
     }
 
     const auto& block = response_model["data"][channel][period];
+    const GlobalCutConfig& g = default_global_cuts();
+    auto region_is_active = [&](size_t i) {
+        if (!g.enable_topology_filter) return true;
+        if (g.required_detector2 == 0) return i == 0;  // FT only
+        if (g.required_detector2 == 1) return i != 0;  // FD sectors only
+        return true;
+    };
+
+    // In explicit topology mode current_dependence.cpp intentionally writes
+    // only detector regions that can occur in the selected topology.  Keep
+    // inactive entries at zero; no accepted event can index them because the
+    // same GlobalCutConfig is applied below before the response is evaluated.
     for (size_t i = 0; i < names.size(); ++i) {
+        if (!region_is_active(i)) {
+            slopes[i] = 0.0;
+            continue;
+        }
         if (!block.contains(names[i]) ||
             !block[names[i]].contains("relative_slope_per_nA")) {
-            fatal("regional current-response model is missing " + channel + " " +
+            fatal("regional current-response model is missing ACTIVE region " + channel + " " +
                   period + " " + names[i]);
         }
         slopes[i] = block[names[i]]["relative_slope_per_nA"].get<double>();
         if (!std::isfinite(slopes[i])) {
-            fatal("non-finite regional current-response slope for " + channel + " " +
+            fatal("non-finite regional current-response slope for ACTIVE region " + channel + " " +
                   period + " " + names[i]);
         }
     }
