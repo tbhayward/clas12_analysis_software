@@ -475,7 +475,7 @@ def main():
         first_pressure_zero_fm=(zeros[0] if zeros else np.nan),
         shear_min_GeV_fm3=float(np.min(S0)),
         shear_nonnegative=bool(np.min(S0)>=-1e-8),
-        von_laue_integral_GeV=float(np.trapz(rcheck**2*P0,rcheck)),
+        von_laue_integral_GeV=float(np.trapezoid(rcheck**2*P0,rcheck)),
         qmax_GeV=args.qmax,
         note="full fitted generalized-multipole central truth")])
     central_diag.to_csv(tab/"mechanics_central_stability_check.csv",index=False)
