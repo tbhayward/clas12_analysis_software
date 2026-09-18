@@ -658,20 +658,33 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
     ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
     savefig(fig, figures/"01_d1_statistics_only_luminosity.png")
 
-    # 02: direct precision on both free shape parameters.
+    # 02: headline precision on the physical D-term curve, not on the
+    # strongly correlated M^2 and alpha parameterization coordinates.
+    fig, ax = plt.subplots(figsize=(8.8,6.0))
+    for L in LUMI_FACTORS:
+        d = curves[(curves.scenario=="statistics_only") &
+                   (curves.luminosity_factor==L)].sort_values("t_abs")
+        rel = 100.0*d.sigma_d1Q/np.maximum(np.abs(d.d1Q), 1e-12)
+        ax.plot(d.t_abs, rel, label=f"{L}x")
+    ax.set_xlim(0.0, 0.95)
+    ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+    ax.set_ylabel(r"Relative uncertainty on $d_1^Q(t)$ (%)")
+    ax.set_title("Statistical precision on the D-term across the measured range")
+    ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
+    savefig(fig, figures/"02_d1_relative_precision_statistics_only.png")
+
+    # 02b: retain the individual M^2/alpha result as a diagnostic only.
     fig, ax = plt.subplots(figsize=(8.8,6.0))
     d = pars[pars.scenario=="statistics_only"].sort_values("luminosity_factor")
-    ax.plot(d.luminosity_factor, 100*d.sigma_dM2/abs(d.dM2),
-            marker="o", label=r"$M^2$")
-    ax.plot(d.luminosity_factor, 100*d.sigma_dalpha/abs(d.dalpha),
-            marker="o", label=r"$\alpha$")
+    ax.plot(d.luminosity_factor, 100*d.sigma_dM2/abs(d.dM2), marker="o", label=r"$M^2$")
+    ax.plot(d.luminosity_factor, 100*d.sigma_dalpha/abs(d.dalpha), marker="o", label=r"$\alpha$")
     ax.set_xscale("log")
     ax.set_xticks(LUMI_FACTORS, [f"{L}x" for L in LUMI_FACTORS])
     ax.set_xlabel("Luminosity relative to pass-2 exposure")
     ax.set_ylabel("Relative parameter uncertainty (%)")
-    ax.set_title("Statistical precision on the D-term shape")
+    ax.set_title("Diagnostic: individual generalized-multipole parameters")
     ax.grid(alpha=.2); ax.legend()
-    savefig(fig, figures/"02_shape_parameters_statistics_only.png")
+    savefig(fig, figures/"02b_shape_parameters_diagnostic.png")
 
     # 03: then introduce the realistic systematic limitation at 10x.
     fig, ax = plt.subplots(figsize=(8.8,6.0))
@@ -686,6 +699,20 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
     ax.set_title("What limits the 10x D-term projection?")
     ax.grid(alpha=.2); ax.legend()
     savefig(fig, figures/"03_d1_systematics_10x.png")
+
+    # 03b: direct statement of what limits the high-luminosity endpoint.
+    fig, ax = plt.subplots(figsize=(8.8,6.0))
+    for scenario in SCENARIOS:
+        d = curves[(curves.scenario==scenario) &
+                   (curves.luminosity_factor==10)].sort_values("t_abs")
+        rel = 100.0*d.sigma_d1Q/np.maximum(np.abs(d.d1Q), 1e-12)
+        ax.plot(d.t_abs, rel, label=labels[scenario])
+    ax.set_xlim(0.0, 0.95)
+    ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+    ax.set_ylabel(r"Relative uncertainty on $d_1^Q(t)$ (%)")
+    ax.set_title("Systematic limitation of the 10x D-term projection")
+    ax.grid(alpha=.2); ax.legend()
+    savefig(fig, figures/"03b_d1_relative_precision_systematics_10x.png")
 
     # 04: show how systematics alter the luminosity progression of alpha.
     fig, ax = plt.subplots(figsize=(8.8,6.0))
@@ -804,7 +831,7 @@ def main():
     print("\nFinite-step stability (active parameters):")
     print(stability.to_string(index=False, float_format=lambda x:f"{x:.3g}"))
 
-    all_pars, all_curves, all_diag = [], [], []
+    all_pars, all_curves, all_diag, all_dterm_cov = [], [], [], []
     tgrid = np.linspace(0.0, 0.95, 191)
 
     for L in LUMI_FACTORS:
@@ -826,6 +853,17 @@ def main():
             corr_C_a = cov[idx["C"],idx["dalpha"]] / max(sC*sa,1e-300)
             corr_M_a = cov[idx["dM2"],idx["dalpha"]] / max(sm*sa,1e-300)
 
+            # Persist the full 3x3 D-term covariance for Stage 3D.  This is
+            # essential: pressure/shear must preserve the very strong M^2-alpha
+            # covariance rather than treating curve points as independent.
+            for pi in ("C", "dM2", "dalpha"):
+                for pj in ("C", "dM2", "dalpha"):
+                    all_dterm_cov.append({
+                        "scenario": scenario, "luminosity_factor": L,
+                        "parameter_i": pi, "parameter_j": pj,
+                        "covariance": float(cov[idx[pi], idx[pj]]),
+                    })
+
             all_pars.append({
                 "scenario":scenario, "luminosity_factor":L,
                 "C":C, "sigma_C":sC,
@@ -845,8 +883,10 @@ def main():
     pars = pd.DataFrame(all_pars)
     curves = pd.concat(all_curves, ignore_index=True)
     diags = pd.DataFrame(all_diag)
+    dterm_cov = pd.DataFrame(all_dterm_cov)
     pars.to_csv(tables/"dr_parameter_uncertainties.csv", index=False)
     curves.to_csv(tables/"ch_d1_bands.csv", index=False)
+    dterm_cov.to_csv(tables/"dterm_parameter_covariances.csv", index=False)
     diags.to_csv(tables/"global_fit_diagnostics.csv", index=False)
     make_plots(curves, pars, figures, clas12_tmin, clas12_tmax)
 
