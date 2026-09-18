@@ -525,7 +525,7 @@ def main():
         shear_nonnegative=bool(np.min(S0)>=-1e-8),
         von_laue_integral_GeV=float(np.trapezoid(rcheck**2*P0,rcheck)),
         qmax_GeV=args.qmax,
-        note="analytic full generalized-multipole central truth"])
+        note="analytic full generalized-multipole central truth")])
     central_diag.to_csv(tab/"mechanics_central_stability_check.csv",index=False)
 
     # Analytic-transform unit test: alpha=1 must reproduce the Yukawa transform.
