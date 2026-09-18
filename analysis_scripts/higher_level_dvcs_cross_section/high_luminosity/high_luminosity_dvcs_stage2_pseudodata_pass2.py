@@ -19,7 +19,7 @@ The tuple-valued CSV columns are parsed as (value, statistical error, ...).
 For the XS projection:
   stat uncertainty      -> scales as 1/sqrt(L)
   point-to-point syst   -> fixed
-  correlated scale      -> fixed; per-point fractional scale column retained
+  correlated norm       -> fixed 10% common scale (conservative provisional budget)
 
 For the BSA projection:
   stat uncertainty      -> scales as 1/sqrt(L)
@@ -47,6 +47,7 @@ LUMI_FACTORS = (1, 2, 5, 10)
 DEFAULT_CLEAN_RATIO = 0.20
 DEFAULT_EBEAM = 10.604
 DEFAULT_BSA_SCALE_FRAC = 0.04
+DEFAULT_XS_NORM_FRAC = 0.10
 
 
 def tuple_component(series: pd.Series, index: int) -> np.ndarray:
@@ -99,14 +100,13 @@ def load_pass2(path: Path, clean_ratio: float, ebeam: float) -> pd.DataFrame:
 
     # The combined 10.6-GeV scale uncertainty is stored as a fractional
     # uncertainty and can vary slightly with the run-period combination.
-    # Use only the explicitly correlated scale component for the shared
-    # normalization nuisance.  Do NOT use "... total scale sys" here: that
-    # column contains additional scale-like components and cannot be represented
-    # by one fully correlated beta.
-    out["xs_scale_frac"] = num(
-        raw,
-        "correlated scale sys frac, 10.6 GeV",
-    )
+    # The final pass-2 overall normalization uncertainty is not yet fully
+    # quantified.  For this workshop projection use a conservative 10% common
+    # normalization uncertainty for every XS point.  This intentionally
+    # subsumes the known 2.163% target-thickness/Faraday-cup contribution and
+    # leaves margin for the remaining normalization budget.  Do not add the
+    # 2.163% term again: it is already contained in this conservative 10%.
+    out["xs_scale_frac"] = float(DEFAULT_XS_NORM_FRAC)
 
     # For BSA, the cut systematic combines exclusivity+fiducial variations.
     # pi0 subtraction is a separate point-to-point contribution.
@@ -189,8 +189,8 @@ def main(argv: Optional[list[str]] = None) -> int:
         f"{np.nanmedian(d['bsa_ptp_sys_abs']):.4f}"
     )
     print(
-        f"median XS scale prior           : "
-        f"{100*np.nanmedian(d['xs_scale_frac']):.2f}%"
+        f"conservative XS norm prior      : "
+        f"{100*np.nanmedian(d['xs_scale_frac']):.2f}% (fully correlated)"
     )
     print(f"BSA beam-polarization prior     : {100*DEFAULT_BSA_SCALE_FRAC:.2f}%")
 
@@ -216,7 +216,7 @@ def main(argv: Optional[list[str]] = None) -> int:
     print("  1x = existing pass-2 RGA exposure represented by this CSV")
     print("  2x/5x/10x = same exposure time at higher luminosity")
     print("  statistical errors scale as 1/sqrt(L)")
-    print("  point-to-point and correlated systematics are fixed")
+    print("  point-to-point systematics and the 10% XS normalization prior are fixed")
     print("  unpublished pass-2 central values are NOT used as pseudo-truth")
     return 0
 

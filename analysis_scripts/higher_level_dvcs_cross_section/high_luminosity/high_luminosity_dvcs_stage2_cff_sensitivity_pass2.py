@@ -25,8 +25,8 @@ A global sign convention does not affect the projected covariance because it
 multiplies both BSA derivatives by the same sign.
 
 Nuisances:
-  * one shared XS scale nuisance, with the per-point fractional scale prior
-    supplied by the pass-2 CSV;
+  * one shared XS normalization nuisance; the Stage-2A input supplies the
+    provisional conservative 10% common normalization fraction;
   * one shared 4% BSA beam-polarization scale nuisance.
 
 The pseudo-data equal KM15, so all best-fit CFF shifts are zero.  This stage
@@ -241,7 +241,8 @@ def covariance(df, deriv, cell_meta, mode):
         v[idx[(b, "ReH")]] = r.d_xs_d_ReH
         if mode != "ReH_only":
             v[idx[(b, "ImH")]] = r.d_xs_d_ImH
-        # beta=1 corresponds to the quoted per-point correlated scale shift.
+        # beta=1 corresponds to the common provisional XS normalization shift
+        # (10% in the current Stage-2A projection).
         v[idx[(-1, "xs_scale_beta")]] = r.xs_scale_frac * r.xs_km15
         s = math.hypot(r.xs_stat_pseudo_abs, r.xs_ptp_sys_pseudo_abs)
         if np.isfinite(s) and s > 0:
