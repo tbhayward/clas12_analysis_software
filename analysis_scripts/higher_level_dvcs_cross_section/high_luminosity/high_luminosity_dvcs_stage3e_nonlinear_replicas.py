@@ -21,11 +21,15 @@ Each pseudo-experiment:
   2. refits C, M^2 and alpha *nonlinearly*, simultaneously with the independent
      active KM15 ImH directions and the two correlated experimental nuisances;
   3. stores d1(t) from the fitted nonlinear parameters;
-  4. for the configurations used in the mechanics plots, Fourier transforms
-     every accepted replica to p(r) and s(r), producing empirical percentile
-     bands rather than linear error propagation;
-  5. diagnoses how much of p(r) and s(r) comes from q below the controlled
-     CLAS12 endpoint versus the assumed high-q continuation of the multipole.
+  4. separates a valid observable refit from a safe unrestricted high-q
+     extrapolation. Fits that converge at a broad M^2/alpha diagnostic bound
+     are retained for measured-range d1(t), rather than silently discarded;
+  5. Fourier transforms every valid replica only up to the controlled CLAS12
+     endpoint q_data=sqrt(|t|max). These are the primary, data-anchored
+     mechanical bands;
+  6. treats the unrestricted generalized-multipole transform as a separate
+     model-continuation diagnostic, using only fits away from shape bounds;
+  7. provides a simple cumulative-q comparison (data endpoint, 2 GeV, full).
 
 Performance strategy
 --------------------
@@ -196,47 +200,114 @@ def cumulative_central(C,M2,alpha,r,qcuts,nq_per_GeV=600):
 def savefig(fig,p): fig.tight_layout(); fig.savefig(p,dpi=250,bbox_inches="tight"); plt.close(fig)
 
 
-def make_plots(rep,bands,mech,cum,figdir):
-    # Nonlinear empirical d1 precision: statistical luminosity progression.
+def make_plots(rep,bands,mech,cum,figdir,qdata):
+    labels={"statistics_only":"Statistics only",
+            "ptp_half":"Point-to-point systematics / 2",
+            "baseline":"Current point-to-point systematics"}
+
     fig,ax=plt.subplots(figsize=(8.8,6))
     for L in LUMI_FACTORS:
         d=bands[(bands.scenario=="statistics_only")&(bands.luminosity_factor==L)]
         rel=50*(d.q84-d.q16)/np.maximum(np.abs(d.q50),1e-12)
         ax.plot(d.t_abs,rel,label=f"{L}x")
-    ax.set(xlabel=r"$|t|$ (GeV$^2$)",ylabel=r"Empirical 68% relative half-width on $d_1^Q(t)$ (%)",
-           title="Nonlinear-replica D-term precision")
-    ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure"); savefig(fig,figdir/"01_d1_replica_relative_precision.png")
-    # Systematics at 10x.
-    labels={"statistics_only":"Statistics only","ptp_half":"Point-to-point systematics / 2","baseline":"Current point-to-point systematics"}
+    ax.set(xlabel=r"$|t|$ (GeV$^2$)",
+           ylabel=r"68% uncertainty on $d_1^Q(t)$ (%)",
+           title="Nonlinear-replica D-term precision in the controlled CLAS12 range")
+    ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
+    savefig(fig,figdir/"01_d1_replica_relative_precision.png")
+
     fig,ax=plt.subplots(figsize=(8.8,6))
     for sc in SCENARIOS:
         d=bands[(bands.scenario==sc)&(bands.luminosity_factor==10)]
-        rel=50*(d.q84-d.q16)/np.maximum(np.abs(d.q50),1e-12); ax.plot(d.t_abs,rel,label=labels[sc])
-    ax.set(xlabel=r"$|t|$ (GeV$^2$)",ylabel=r"Empirical 68% relative half-width on $d_1^Q(t)$ (%)",
-           title="Nonlinear-replica systematics limitation at 10x")
-    ax.grid(alpha=.2); ax.legend(); savefig(fig,figdir/"02_d1_replica_systematics_10x.png")
-    # Parameter scatter demonstrates nonlinear M2-alpha degeneracy.
-    d=rep[(rep.scenario=="statistics_only")&(rep.luminosity_factor==10)&rep.accepted]
-    fig,ax=plt.subplots(figsize=(7,6)); ax.scatter(d.dM2,d.dalpha,s=8,alpha=.25)
-    ax.scatter([M20],[ALPHA0],marker="*",s=100,label="truth"); ax.set(xlabel=r"$M^2$ (GeV$^2$)",ylabel=r"$\alpha$",title="10x statistics-only nonlinear shape degeneracy")
-    ax.grid(alpha=.2); ax.legend(); savefig(fig,figdir/"03_M2_alpha_replica_scatter.png")
+        rel=50*(d.q84-d.q16)/np.maximum(np.abs(d.q50),1e-12)
+        ax.plot(d.t_abs,rel,label=labels[sc])
+    ax.set(xlabel=r"$|t|$ (GeV$^2$)",
+           ylabel=r"68% uncertainty on $d_1^Q(t)$ (%)",
+           title="Systematic limitation of the 10x D-term projection")
+    ax.grid(alpha=.2); ax.legend()
+    savefig(fig,figdir/"02_d1_replica_systematics_10x.png")
+
+    # Backup only: demonstrates that M2 and alpha are poor coordinates for
+    # describing the experimentally constrained D-term curve.
+    d=rep[(rep.scenario=="statistics_only")&(rep.luminosity_factor==10)&rep.observable_valid]
+    fig,ax=plt.subplots(figsize=(7,6))
+    interior=d[~d.at_bound]; edge=d[d.at_bound]
+    ax.scatter(interior.dM2,interior.dalpha,s=8,alpha=.22,label="interior fits")
+    if len(edge):
+        ax.scatter(edge.dM2,edge.dalpha,s=14,alpha=.45,marker="x",label="diagnostic-bound fits")
+    ax.scatter([M20],[ALPHA0],marker="*",s=100,label="truth")
+    ax.set(xlabel=r"$M^2$ (GeV$^2$)",ylabel=r"$\alpha$",
+           title="Backup diagnostic: nonlinear shape-parameter degeneracy")
+    ax.grid(alpha=.2); ax.legend()
+    savefig(fig,figdir/"03_M2_alpha_replica_scatter_backup.png")
+
     if len(mech):
-        # pressure/shear empirical bands for stats luminosity progression
-        for quantity,title,ylabel,fname in [("r2p","Pressure","$r^2p(r)$ (GeV fm$^{-1}$)","04_pressure_replicas.png"),("shear","Shear","$s(r)$ (GeV fm$^{-3}$)","05_shear_replicas.png")]:
+        # Primary mechanics result: only q below the CLAS12 controlled endpoint.
+        for quantity,title,ylabel,fname in [
+            ("r2p_controlled","Pressure contribution constrained by the measured momentum range",
+             "$r^2p(r)$ (GeV fm$^{-1}$)","04_pressure_controlled_replicas.png"),
+            ("shear_controlled","Shear contribution constrained by the measured momentum range",
+             "$s(r)$ (GeV fm$^{-3}$)","05_shear_controlled_replicas.png")]:
             fig,ax=plt.subplots(figsize=(8.8,6))
             for L in LUMI_FACTORS:
-                d=mech[(mech.scenario=="statistics_only")&(mech.luminosity_factor==L)]
-                ax.fill_between(d.r_fm,d.q16,d.q84,alpha=.15); ax.plot(d.r_fm,d.q50,label=f"{L}x")
-            ax.axhline(0,lw=.8,alpha=.5); ax.set(xlabel="r (fm)",ylabel=ylabel,title=f"{title}: nonlinear replica projection")
-            ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure"); savefig(fig,figdir/fname)
-    # cumulative q support central diagnostic
-    if len(cum):
-        for col,title,fname in [("pressure","Pressure transform: cumulative momentum support","06_pressure_cumulative_q.png"),("shear","Shear transform: cumulative momentum support","07_shear_cumulative_q.png")]:
+                d=mech[(mech.scenario=="statistics_only")&
+                       (mech.luminosity_factor==L)&(mech.quantity==quantity)]
+                if not len(d): continue
+                ax.fill_between(d.r_fm,d.q16,d.q84,alpha=.13)
+                ax.plot(d.r_fm,d.q50,label=f"{L}x")
+            ax.axhline(0,lw=.8,alpha=.5)
+            ax.set(xlabel="r (fm)",ylabel=ylabel,
+                   title=f"{title}  (q < {qdata:.3f} GeV)")
+            ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
+            savefig(fig,figdir/fname)
+
+        # 10x systematics on the same controlled transform.
+        for quantity,title,ylabel,fname in [
+            ("r2p_controlled","10x controlled-range pressure contribution",
+             "$r^2p(r)$ (GeV fm$^{-1}$)","06_pressure_controlled_systematics_10x.png"),
+            ("shear_controlled","10x controlled-range shear contribution",
+             "$s(r)$ (GeV fm$^{-3}$)","07_shear_controlled_systematics_10x.png")]:
             fig,ax=plt.subplots(figsize=(8.8,6))
-            for qc in sorted(cum.qmax.unique()):
-                d=cum[cum.qmax==qc]; ax.plot(d.r_fm,d[col],label=f"q < {qc:g} GeV")
-            ax.axhline(0,lw=.8,alpha=.5); ax.set(xlabel="r (fm)",ylabel=("p(r) (GeV fm$^{-3}$)" if col=="pressure" else "s(r) (GeV fm$^{-3}$)"),title=title)
-            ax.grid(alpha=.2); ax.legend(ncol=2); savefig(fig,figdir/fname)
+            for sc in SCENARIOS:
+                d=mech[(mech.scenario==sc)&(mech.luminosity_factor==10)&
+                       (mech.quantity==quantity)]
+                if not len(d): continue
+                ax.fill_between(d.r_fm,d.q16,d.q84,alpha=.11)
+                ax.plot(d.r_fm,d.q50,label=labels[sc])
+            ax.axhline(0,lw=.8,alpha=.5)
+            ax.set(xlabel="r (fm)",ylabel=ylabel,
+                   title=f"{title}  (q < {qdata:.3f} GeV)")
+            ax.grid(alpha=.2); ax.legend()
+            savefig(fig,figdir/fname)
+
+    # Simple central-value momentum-support diagnostic: only 3 curves.
+    if len(cum):
+        qvals=sorted(cum.qmax.unique())
+        qfull=max(qvals)
+        qmid=min(qvals,key=lambda x:abs(x-2.0))
+        qdat=min(qvals,key=lambda x:abs(x-qdata))
+        selected=[qdat,qmid,qfull]
+        for col,title,fname in [
+            ("pressure","Pressure: measured-range contribution versus model continuation",
+             "08_pressure_momentum_support.png"),
+            ("shear","Shear: measured-range contribution versus model continuation",
+             "09_shear_momentum_support.png")]:
+            fig,ax=plt.subplots(figsize=(8.8,6))
+            for qc in selected:
+                d=cum[np.isclose(cum.qmax,qc)]
+                if np.isclose(qc,qdat):
+                    lab=f"Controlled CLAS12 contribution (q < {qc:.3f} GeV)"
+                elif np.isclose(qc,qmid):
+                    lab="Extended to q < 2 GeV"
+                else:
+                    lab=f"Full assumed multipole (q < {qc:g} GeV)"
+                ax.plot(d.r_fm,d[col],label=lab)
+            ax.axhline(0,lw=.8,alpha=.5)
+            ax.set(xlabel="r (fm)",
+                   ylabel=("p(r) (GeV fm$^{-3}$)" if col=="pressure" else "s(r) (GeV fm$^{-3}$)"),
+                   title=title)
+            ax.grid(alpha=.2); ax.legend()
+            savefig(fig,figdir/fname)
 
 
 def main():
@@ -251,6 +322,8 @@ def main():
     ap.add_argument("--max-nfev",type=int,default=350)
     ap.add_argument("--qmax",type=float,default=40.0)
     ap.add_argument("--mechanics-nq",type=int,default=5001)
+    ap.add_argument("--run-high-t-ablation",action="store_true",
+                    help="reserved backup diagnostic; not part of the main luminosity projection")
     args=ap.parse_args()
     s2=Path(args.stage2)
     if not s2.exists():
@@ -280,46 +353,102 @@ def main():
             else: vals=[one_replica(x) for x in payload]
             for v in vals:
                 row=dict(zip(["seed","success","chi2","nfev","at_bound","C","dM2","dalpha",*IMH_NAMES,"beta_xs_norm","beta_bsa_pol","beta_xs_true","beta_bsa_true"],v))
-                row.update(scenario=sc,luminosity_factor=L); row["accepted"]=bool(row["success"] and not row["at_bound"] and np.isfinite(row["chi2"]))
+                row.update(scenario=sc,luminosity_factor=L)
+                # Hitting a deliberately broad shape bound is not an observable
+                # fit failure. Keep it for d1(t) inside the controlled range,
+                # but do not use it for unrestricted high-q continuation.
+                row["observable_valid"]=bool(row["success"] and np.isfinite(row["chi2"]))
+                row["extrapolation_safe"]=bool(row["observable_valid"] and not row["at_bound"])
+                row["accepted"]=row["observable_valid"]  # compatibility with old tables
                 allrows.append(row)
-            acc=sum(r["accepted"] for r in allrows if r["scenario"]==sc and r["luminosity_factor"]==L)
-            print(f"[replicas] {sc:15s} {L:2d}x: accepted {acc}/{args.replicas}")
+            subset=[r for r in allrows if r["scenario"]==sc and r["luminosity_factor"]==L]
+            nvalid=sum(r["observable_valid"] for r in subset)
+            nsafe=sum(r["extrapolation_safe"] for r in subset)
+            print(f"[replicas] {sc:15s} {L:2d}x: observable-valid {nvalid}/{args.replicas}; "
+                  f"interior/high-q-safe {nsafe}/{args.replicas}")
     rep=pd.DataFrame(allrows); rep.to_csv(tab/"replica_fit_results.csv",index=False)
-    # Empirical D-term bands.
-    tg=np.linspace(0,0.95,191); brows=[]
-    for (sc,L),g in rep[rep.accepted].groupby(["scenario","luminosity_factor"]):
+
+    # D-term bands: restrict the displayed/result grid to the actually controlled
+    # CLAS12 t range. All converged observable fits contribute, including fits
+    # whose arbitrary M2/alpha coordinates land at a diagnostic bound.
+    tmin=float(deriv.t_abs.min()); tmax=float(deriv.t_abs.max())
+    tg=np.linspace(tmin,tmax,181); brows=[]
+    for (sc,L),g in rep[rep.observable_valid].groupby(["scenario","luminosity_factor"]):
         vals=np.array([d1_curve(r.C,r.dM2,r.dalpha,tg) for r in g.itertuples(index=False)])
         q16,q50,q84=percentile_band(vals)
-        for k,t in enumerate(tg): brows.append(dict(scenario=sc,luminosity_factor=L,t_abs=t,q16=q16[k],q50=q50[k],q84=q84[k],n_replicas=len(g)))
+        for k,t in enumerate(tg):
+            brows.append(dict(scenario=sc,luminosity_factor=L,t_abs=t,
+                              q16=q16[k],q50=q50[k],q84=q84[k],
+                              n_replicas=len(g),controlled_tmin=tmin,controlled_tmax=tmax))
     bands=pd.DataFrame(brows); bands.to_csv(tab/"d1_replica_bands.csv",index=False)
-    # Parameter summaries and coverage around truth.
+
     sums=[]
-    for (sc,L),g in rep[rep.accepted].groupby(["scenario","luminosity_factor"]):
+    for (sc,L),g in rep[rep.observable_valid].groupby(["scenario","luminosity_factor"]):
         for p,truth in [("C",C0),("dM2",M20),("dalpha",ALPHA0)]:
-            q=np.percentile(g[p],[16,50,84]); sums.append(dict(scenario=sc,luminosity_factor=L,parameter=p,truth=truth,q16=q[0],median=q[1],q84=q[2],n=len(g)))
+            q=np.percentile(g[p],[16,50,84])
+            sums.append(dict(scenario=sc,luminosity_factor=L,parameter=p,truth=truth,
+                             q16=q[0],median=q[1],q84=q[2],n=len(g),
+                             bound_hit_fraction=float(g.at_bound.mean())))
     pd.DataFrame(sums).to_csv(tab/"replica_parameter_summaries.csv",index=False)
-    # Mechanics only for the six configurations needed by the talk: stats all L + all scenarios at 10x.
-    rgrid=np.linspace(.10,2.0,96); mrows=[]
+
+    # Primary mechanics: transform only to q_data=sqrt(tmax). This is the
+    # contribution supported by the controlled measured momentum range, not the
+    # complete physical pressure/shear distribution.
+    qdata=float(np.sqrt(tmax)); rgrid=np.linspace(.10,2.0,96); mrows=[]
     wanted={("statistics_only",L) for L in LUMI_FACTORS}|{(sc,10) for sc in SCENARIOS}
+    controlled_nq=max(801,int(args.mechanics_nq*qdata/max(args.qmax,1e-9)))
     for sc,L in sorted(wanted,key=lambda x:(x[1],x[0])):
-        g=rep[(rep.scenario==sc)&(rep.luminosity_factor==L)&rep.accepted]
+        g=rep[(rep.scenario==sc)&(rep.luminosity_factor==L)&rep.observable_valid]
         if len(g)<20: continue
-        P,S=mechanics_batch(g.C.to_numpy(),g.dM2.to_numpy(),g.dalpha.to_numpy(),rgrid,args.qmax,args.mechanics_nq)
-        R2P=P*rgrid[None,:]**2
-        for name,A in [("r2p",R2P),("shear",S)]:
+        Pc,Sc=mechanics_batch(g.C.to_numpy(),g.dM2.to_numpy(),g.dalpha.to_numpy(),
+                              rgrid,qdata,controlled_nq)
+        for name,A in [("r2p_controlled",Pc*rgrid[None,:]**2),("shear_controlled",Sc)]:
             q16,q50,q84=percentile_band(A)
-            for k,rv in enumerate(rgrid): mrows.append(dict(scenario=sc,luminosity_factor=L,quantity=name,r_fm=rv,q16=q16[k],q50=q50[k],q84=q84[k],n_replicas=len(g)))
+            for k,rv in enumerate(rgrid):
+                mrows.append(dict(scenario=sc,luminosity_factor=L,quantity=name,
+                                  r_fm=rv,q16=q16[k],q50=q50[k],q84=q84[k],
+                                  n_replicas=len(g),qmax_GeV=qdata,
+                                  interpretation="controlled-range contribution"))
+
+        # Backup/model diagnostic only: unrestricted multipole continuation is
+        # calculated only for fits that remain away from diagnostic shape bounds.
+        gs=rep[(rep.scenario==sc)&(rep.luminosity_factor==L)&rep.extrapolation_safe]
+        if len(gs)>=20:
+            Pf,Sf=mechanics_batch(gs.C.to_numpy(),gs.dM2.to_numpy(),gs.dalpha.to_numpy(),
+                                  rgrid,args.qmax,args.mechanics_nq)
+            for name,A in [("r2p_full_model_backup",Pf*rgrid[None,:]**2),
+                           ("shear_full_model_backup",Sf)]:
+                q16,q50,q84=percentile_band(A)
+                for k,rv in enumerate(rgrid):
+                    mrows.append(dict(scenario=sc,luminosity_factor=L,quantity=name,
+                                      r_fm=rv,q16=q16[k],q50=q50[k],q84=q84[k],
+                                      n_replicas=len(gs),qmax_GeV=args.qmax,
+                                      interpretation="model-continuation backup"))
     mech=pd.DataFrame(mrows); mech.to_csv(tab/"mechanics_replica_bands.csv",index=False)
-    # Cumulative-q central diagnostic. q_data is sqrt(max controlled |t|) from derivative cache.
-    qdata=float(np.sqrt(deriv.t_abs.max())); qcuts=sorted(set([qdata,1.25,1.5,2.,3.,5.,10.,args.qmax]))
-    cum=cumulative_central(C0,M20,ALPHA0,rgrid,qcuts); cum["q_data_endpoint_GeV"]=qdata; cum.to_csv(tab/"mechanics_cumulative_q_support.csv",index=False)
-    make_plots(rep,bands,mech,cum,fig)
-    # Compact diagnostics.
-    diag=rep.groupby(["scenario","luminosity_factor"]).agg(attempted=("accepted","size"),accepted=("accepted","sum"),median_nfev=("nfev","median"),bound_hits=("at_bound","sum")).reset_index()
-    diag["accepted_fraction"]=diag.accepted/diag.attempted; diag.to_csv(tab/"replica_diagnostics.csv",index=False)
+
+    # Simplified support diagnostic: controlled endpoint, 2 GeV, and effectively full.
+    qcuts=sorted(set([qdata,2.0,args.qmax]))
+    cum=cumulative_central(C0,M20,ALPHA0,rgrid,qcuts)
+    cum["q_data_endpoint_GeV"]=qdata
+    cum.to_csv(tab/"mechanics_cumulative_q_support.csv",index=False)
+    make_plots(rep,bands,mech,cum,fig,qdata)
+
+    diag=rep.groupby(["scenario","luminosity_factor"]).agg(
+        attempted=("observable_valid","size"),
+        observable_valid=("observable_valid","sum"),
+        extrapolation_safe=("extrapolation_safe","sum"),
+        median_nfev=("nfev","median"),
+        bound_hits=("at_bound","sum")).reset_index()
+    diag["observable_valid_fraction"]=diag.observable_valid/diag.attempted
+    diag["extrapolation_safe_fraction"]=diag.extrapolation_safe/diag.attempted
+    diag.to_csv(tab/"replica_diagnostics.csv",index=False)
     print("\nReplica diagnostics:"); print(diag.to_string(index=False))
     print(f"\n[data/Fourier] controlled endpoint q_data=sqrt(tmax)={qdata:.3f} GeV; transforms also evaluated above this to expose model continuation")
     print(f"[output] {out}")
-    print("[interpretation] use empirical d1/p/shear bands only after checking acceptance, bound hits, and nonlinear parameter tails.")
+    print("[interpretation] d1 bands use every converged observable fit inside the controlled t range.")
+    print("[interpretation] primary mechanics bands stop at q_data; full high-q transforms are explicitly backup/model-continuation diagnostics.")
+    if args.run_high_t_ablation:
+        print("[high-t ablation] not executed in the main workflow: a real luminosity upgrade improves the full accepted kinematic range.")
+        print("[high-t ablation] flag retained only so a future targeted diagnostic can be added without changing the main physics projection.")
 
 if __name__=="__main__": main()
