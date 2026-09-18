@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stage 3B v3: validated KM15 fixed-t dispersion-relation projection.
+Stage 3B v4: validated KM15 fixed-t dispersion-relation projection.
 
 This is the first stage in which the subtraction function is fitted *inside*
 the same dispersion-relation model that generates ImH and ReH.
@@ -51,7 +51,7 @@ Scenarios:
   statistics_only statistical errors only
 
 Outputs:
-  output_stage3b_dr_dterm_v3_parallel/
+  output_stage3b_dr_dterm_v4_parallel/
     tables/dr_parameter_uncertainties.csv
     tables/ch_d1_bands.csv
     tables/global_fit_diagnostics.csv
@@ -68,6 +68,7 @@ import argparse
 import copy
 import math
 import os
+import time
 import multiprocessing as mp
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
@@ -164,12 +165,19 @@ class _Row:
         self.ebeam = r.get("ebeam", 10.6041)
 
 
-def _predict_records(model, records):
+def _predict_records(model, records, progress_label=None, progress_every=100):
     xs, bsa = [], []
-    for rec in records:
+    n = len(records)
+    t0 = time.time()
+    for i, rec in enumerate(records, 1):
         x, a = predict_xs_bsa(model, _Row(rec))
         xs.append(x)
         bsa.append(a)
+        if progress_label and (i % progress_every == 0 or i == n):
+            dt = time.time() - t0
+            rate = i / dt if dt > 0 else 0.0
+            eta = (n-i)/rate if rate > 0 else float("nan")
+            print(f"[{progress_label}] {i}/{n}  elapsed={dt:.1f}s  ETA={eta:.1f}s", flush=True)
     return np.asarray(xs), np.asarray(bsa)
 
 
@@ -204,7 +212,7 @@ def _parameter_worker(payload):
 
 def _central_worker(records):
     model = copy.deepcopy(th_KM15)
-    return _predict_records(model, records)
+    return _predict_records(model, records, progress_label="central", progress_every=100)
 
 
 def finite_derivatives(
@@ -401,6 +409,72 @@ def classify_active_parameters(
 
 
 
+
+def remove_exact_response_degeneracies(
+    deriv: pd.DataFrame,
+    parameters: List[str],
+    mandatory=("C", "mC2"),
+    collinearity_tol: float = 1e-10,
+) -> Tuple[List[str], pd.DataFrame]:
+    """
+    Remove parameter directions whose observable derivative is exactly
+    collinear with one already retained.
+
+    This is not an arbitrary numerical regularization.  For the Gepard
+    DispersionFixedPoleCFF ansatz, for example, the valence normalization
+    enters ImH as Nv*rv, so Nv and rv cannot both be independently determined
+    by these observables.  We retain one representative normalization
+    parameter and document the removed direction.
+    """
+    kept = []
+    rows = []
+
+    # Prefer mandatory subtraction parameters, then preserve original order.
+    ordered = list(mandatory) + [p for p in parameters if p not in mandatory]
+
+    for p in ordered:
+        v = np.concatenate([
+            np.asarray(deriv[f"d_xs_d_{p}"], dtype=float),
+            np.asarray(deriv[f"d_bsa_d_{p}"], dtype=float),
+        ])
+        nv = np.linalg.norm(v)
+        redundant_with = None
+        cosine = np.nan
+
+        for q in kept:
+            w = np.concatenate([
+                np.asarray(deriv[f"d_xs_d_{q}"], dtype=float),
+                np.asarray(deriv[f"d_bsa_d_{q}"], dtype=float),
+            ])
+            nw = np.linalg.norm(w)
+            if nv == 0 or nw == 0:
+                continue
+            c = float(np.dot(v, w)/(nv*nw))
+            # Exact same or opposite response direction.
+            if abs(abs(c)-1.0) < collinearity_tol:
+                residual = np.linalg.norm(v - (np.dot(v,w)/np.dot(w,w))*w) / nv
+                if residual < collinearity_tol:
+                    redundant_with = q
+                    cosine = c
+                    break
+
+        if redundant_with is None:
+            kept.append(p)
+            rows.append({
+                "parameter": p, "kept": True,
+                "redundant_with": "", "cosine": np.nan,
+                "reason": "independent observable-response direction",
+            })
+        else:
+            rows.append({
+                "parameter": p, "kept": False,
+                "redundant_with": redundant_with, "cosine": cosine,
+                "reason": f"exactly redundant observable response with {redundant_with}",
+            })
+
+    return kept, pd.DataFrame(rows)
+
+
 def scenario_input(d: pd.DataFrame, scenario: str) -> pd.DataFrame:
     q = d.copy()
     if scenario == "baseline":
@@ -588,7 +662,7 @@ def main():
     here = Path(__file__).resolve().parent
     ap = argparse.ArgumentParser()
     ap.add_argument("--input-dir", default=str(here/"output_stage2_pass2"/"tables"))
-    ap.add_argument("--outdir", default=str(here/"output_stage3b_dr_dterm_v3_parallel"))
+    ap.add_argument("--outdir", default=str(here/"output_stage3b_dr_dterm_v4_parallel"))
     ap.add_argument("--force-derivatives", action="store_true")
     ap.add_argument(
         "--workers", type=int, default=min(8, os.cpu_count() or 1),
@@ -611,7 +685,7 @@ def main():
     ]
 
     print("="*96)
-    print("STAGE 3B v3: VALIDATED KM15 FIXED-t DISPERSION-RELATION PROJECTION")
+    print("STAGE 3B v4: VALIDATED KM15 FIXED-t DISPERSION-RELATION PROJECTION")
     print("="*96)
     print("Gepard relation : ReH = DR[ImH] - C/(1-t/mC2)^2")
     print(f"KM15 C          : {central['C']:.10g}")
@@ -642,10 +716,18 @@ def main():
         "parameter","active","activity_response",
         "step_fraction_of_parameter_scale","reason"
     ]].to_string(index=False, float_format=lambda x:f"{x:.3g}"))
-    print("\nACTIVE FIT PARAMETERS:", ", ".join(parameters))
+    print("\nACTIVE PARAMETERS BEFORE DEGENERACY CHECK:", ", ".join(parameters))
+
+    parameters, degeneracy = remove_exact_response_degeneracies(
+        deriv, parameters
+    )
+    degeneracy.to_csv(tables/"parameter_degeneracies.csv", index=False)
+    print("\nExact observable-response degeneracy check:")
+    print(degeneracy.to_string(index=False))
+    print("\nFINAL INDEPENDENT FIT PARAMETERS:", ", ".join(parameters))
 
     # The parallel derivative pass already computed h/2 and 2h.  Report only
-    # the parameters that survive the activity filter.
+    # the parameters that survive activity + exact-degeneracy filtering.
     stability = stability[stability["parameter"].isin(parameters)].copy()
     stability.to_csv(tables/"finite_difference_stability.csv", index=False)
     print("\nFinite-step stability (active parameters):")
@@ -662,9 +744,11 @@ def main():
             cov, layout, diag = covariance(q, deriv, parameters, central)
             if diag["rank_deficit"] != 0:
                 raise RuntimeError(
-                    f"Rank-deficient validated fit for {scenario} {L}x: "
+                    f"Rank-deficient fit remains after explicit activity and "
+                    f"degeneracy filtering for {scenario} {L}x: "
                     f"{diag['rank']}/{diag['n_parameters']}. "
-                    "Do not interpret D-term uncertainties until resolved."
+                    "This is now an unexpected degeneracy and should be diagnosed, "
+                    "not regularized with a pseudoinverse."
                 )
             idx = {p:i for i,p in enumerate(layout)}
 
