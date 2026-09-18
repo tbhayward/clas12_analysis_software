@@ -55,7 +55,7 @@ PARTONS execution
 The default farm setup is:
 
     SIF:      partons_v4.sif
-    project:  /scratch/thayward/partons-example
+    project:  /work/clas12/thayward/partons/partons-example
     binary:   ./bin/PARTONS_example
 
 The SIF filename is historical; the executable reports PARTONS 5.0.0.
@@ -127,7 +127,7 @@ DEFAULT_OUTDIR = "/work/clas12/thayward/CLAS12_exclusive/dvcs/model_predictions"
 DEFAULT_KINEMATICS_CACHE = "output/emff_from_bh_paper_method/bh_model_selection/bh_model_kinematics.csv"
 DEFAULT_THRESHOLDS = [0.01 * i for i in range(1, 11)]
 DEFAULT_PARTONS_SIF = "partons_v4.sif"
-DEFAULT_PARTONS_PROJECT = "/scratch/thayward/partons-example"
+DEFAULT_PARTONS_PROJECT = "/work/clas12/thayward/partons/partons-example"
 DEFAULT_PARTONS_EXECUTABLE = "./bin/PARTONS_example"
 DEFAULT_PARTONS_WORKERS = 4
 DEFAULT_PARTONS_CHUNK_SIZE = 200
@@ -332,7 +332,6 @@ def locate_partons(sif: Path, project: Path, executable: str) -> None:
     print(f"  SIF       : {sif}")
     print(f"  project   : {project}")
     print(f"  executable: {executable}")
-    print(f"  /scratch  : {'present' if Path('/scratch').exists() else 'NOT FOUND'}")
 
     failures = []
     if shutil.which("apptainer") is None:
@@ -344,8 +343,16 @@ def locate_partons(sif: Path, project: Path, executable: str) -> None:
     if not project.exists():
         failures.append(f"PARTONS project copy does not exist: {project}")
     #endif
+    executable_path = project / executable.removeprefix("./")
+    if not executable_path.exists():
+        failures.append(f"PARTONS executable does not exist: {executable_path}")
+    elif not os.access(executable_path, os.X_OK):
+        failures.append(f"PARTONS executable is not executable: {executable_path}")
+    #endif
     if not (project / "bin" / "tmp").exists():
         failures.append(f"writable PARTONS logger directory missing: {project / 'bin' / 'tmp'}")
+    elif not os.access(project / "bin" / "tmp", os.W_OK):
+        failures.append(f"PARTONS logger directory is not writable: {project / 'bin' / 'tmp'}")
     #endif
 
     if failures:
@@ -607,23 +614,27 @@ def _run_partons_chunk(job: dict) -> dict:
     stdout_path = Path(job["stdout_path"])
     stderr_path = Path(job["stderr_path"])
 
-    # The generated XML lives under the analysis output tree, which is not
-    # necessarily visible inside the PARTONS container.  Bind the XML directory
-    # at the identical absolute path in addition to /scratch.
-    xml_bind = f"{xml_path.parent.resolve()}:{xml_path.parent.resolve()}"
-    cmd = [
-        "apptainer",
-        "exec",
-        "--bind",
-        "/scratch:/scratch",
-        "--bind",
-        xml_bind,
+    # The generated XML and the writable PARTONS project may live on JLab
+    # shared /work storage.  Apptainer does not guarantee that those mounts are
+    # visible inside the image, so bind both paths explicitly at their resolved
+    # absolute locations.  This avoids the old host-local /scratch dependency.
+    xml_dir = xml_path.parent.resolve()
+    project_dir = Path(job["project"]).resolve()
+    binds = [
+        f"{project_dir}:{project_dir}",
+        f"{xml_dir}:{xml_dir}",
+    ]
+    cmd = ["apptainer", "exec"]
+    for bind in binds:
+        cmd.extend(["--bind", bind])
+    #endfor
+    cmd.extend([
         "--pwd",
-        job["project"],
+        str(project_dir),
         job["sif"],
         job["executable"],
         str(xml_path.resolve()),
-    ]
+    ])
 
     run_env = os.environ.copy()
     # We parallelize explicitly with independent PARTONS OS processes.  Keep
