@@ -195,4 +195,17 @@ bool run_acceptance_reweighting_study(
     const AcceptanceReweightingOptions& options =
         AcceptanceReweightingOptions());
 
+// Topology-specific acceptance stress test.  Reweights the existing generated
+// and reconstructed DVCS MC inside each nominal 4D bin to pure BH and KM15
+// subcell populations, while keeping the generated denominator topology-
+// inclusive.  This is a diagnostic only and never modifies the production CSV.
+bool run_topology_acceptance_model_study(
+    const std::string& csv_path,
+    const std::map<std::string, TTree*>& dvcsGenMcTrees,
+    const std::map<std::string, TTree*>& dvcsRecMcTrees,
+    const std::string& topology_label,
+    const std::string& output_dir,
+    const std::string& combined_cuts_json = "output/jsons/combined_cuts.json",
+    int bh_grid_workers = 7);
+
 #endif // TOTAL_COUNTS_H

@@ -132,6 +132,8 @@ static SystematicRunSelection parse_systematic_selection(
 
 int main(int argc, char* argv[]) {
     bool acceptance_reweighting_only = false;
+    bool topology_acceptance_study = false;
+    std::string topology_study_csv;
     bool eppi0_normalization_only = false;
     bool eppi0_production_test = false;
     bool use_eppi0_production_normalization = true;
@@ -139,6 +141,11 @@ int main(int argc, char* argv[]) {
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--acceptance-reweighting-only") {
             acceptance_reweighting_only = true;
+        } else if (std::string(argv[i]) == "--topology-acceptance-study") {
+            topology_acceptance_study = true;
+        } else if (std::string(argv[i]) == "--topology-study-csv") {
+            if (i + 1 >= argc) { std::cerr << "[main] FATAL: --topology-study-csv requires a path\n"; return 1; }
+            topology_study_csv = argv[++i];
         } else if (std::string(argv[i]) == "--eppi0-normalization-only") {
             eppi0_normalization_only = true;
         } else if (std::string(argv[i]) == "--eppi0-production-test") {
@@ -299,7 +306,20 @@ int main(int argc, char* argv[]) {
     exclusivity_opts.nominal_containment = 0.95;
     exclusivity_opts.loose_containment = 0.98;
 
-    if (!acceptance_reweighting_only && !eppi0_normalization_only && !eppi0_production_test) {
+    if (topology_acceptance_study) {
+        if (topology_cli.empty() || topology_study_csv.empty()) {
+            std::cerr << "[main] FATAL: --topology-acceptance-study requires --topology and --topology-study-csv.\n";
+            return 1;
+        }
+        // Re-derive the cuts for this topology so the reconstructed-MC sample
+        // exactly matches the topology extraction.  Do NOT initialize/overwrite
+        // the production CSV in this diagnostic mode.
+        if (!run_python_exclusivity_analysis(exclusivity_opts)) {
+            std::cerr << "[main] FATAL: topology-specific exclusivity optimization failed.\n";
+            return 1;
+        }
+        std::cout << "[main] Topology-acceptance study: topology-specific cuts rederived; production CSV untouched.\n";
+    } else if (!acceptance_reweighting_only && !eppi0_normalization_only && !eppi0_production_test) {
         if (!run_python_exclusivity_analysis(exclusivity_opts)) {
             std::cerr << "[main] FATAL: Python exclusivity optimization failed.\n";
             return 1;
@@ -349,6 +369,19 @@ int main(int argc, char* argv[]) {
               << currentStudyGenMcTrees.size() << std::endl;
     std::cout << "Current-study reconstructed MC trees loaded: "
               << currentStudyRecMcTrees.size() << std::endl;
+
+    if (topology_acceptance_study) {
+        const std::string topo_tag = topology_cli;
+        const std::string outdir = "output/topology_acceptance_model/" + topo_tag;
+        if (!run_topology_acceptance_model_study(
+                topology_study_csv, genMcTrees, recMcTrees, topo_tag, outdir,
+                "output/jsons/combined_cuts.json", 8)) {
+            std::cerr << "[main] FATAL: topology acceptance-model study failed.\n";
+            return 1;
+        }
+        std::cout << "[main] Topology acceptance-model study finished. No production CSV was modified.\n";
+        return 0;
+    }
 
     if (eppi0_normalization_only || eppi0_production_test) {
         Eppi0NormalizationOptions norm_opts;

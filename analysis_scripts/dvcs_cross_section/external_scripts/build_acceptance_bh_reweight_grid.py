@@ -58,6 +58,7 @@ def evaluate(task):
     th = th_KM15
     pref = float(th.PreFacSigma(pt))
     bh = pref * float(th.TBH2unp(pt))
+    km15 = bh + pref * float(th.TINTunp(pt)) + pref * float(th.TDVCS2unp(pt))
     return {
         "energy_tag": energy_tag,
         "row": int(row_index),
@@ -69,6 +70,7 @@ def evaluate(task):
         "ebeam": float(ebeam),
         "volume": float(volume),
         "bh_xs": float(bh),
+        "km15_xs": float(km15),
     }
 
 
