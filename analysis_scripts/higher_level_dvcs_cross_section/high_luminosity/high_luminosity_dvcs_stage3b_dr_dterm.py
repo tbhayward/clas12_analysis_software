@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stage 3B v4: validated KM15 fixed-t dispersion-relation projection.
+Stage 3B v5: validated KM15 fixed-t dispersion-relation projection.
 
 This is the first stage in which the subtraction function is fitted *inside*
 the same dispersion-relation model that generates ImH and ReH.
@@ -51,7 +51,7 @@ Scenarios:
   statistics_only statistical errors only
 
 Outputs:
-  output_stage3b_dr_dterm_v4_parallel/
+  output_stage3b_dr_dterm_v5_lever_arm/
     tables/dr_parameter_uncertainties.csv
     tables/ch_d1_bands.csv
     tables/global_fit_diagnostics.csv
@@ -91,6 +91,16 @@ SCENARIOS = ("baseline", "ptp_half", "statistics_only")
 # context; it is NOT digitized C_H(t) data and is not used in the fit.
 CLAS6_DTERM_TMIN = 0.11
 CLAS6_DTERM_TMAX = 0.45
+
+# Present pass-2 theory-controlled sample (|t|/Q^2 < 0.2).  The exact
+# endpoints are recomputed from the Stage-2 input at runtime; these values are
+# only fallbacks for labels before input is loaded.
+CLAS12_CONTROLLED_TMIN_FALLBACK = 0.129
+CLAS12_CONTROLLED_TMAX_FALLBACK = 0.912
+
+# Progressive t-lever-arm ablation.  0.45 GeV^2 is included deliberately as
+# the approximate upper edge of the historical CLAS6 D-term input range.
+TMAX_ABLATION = (0.35, 0.45, 0.50, 0.70, 0.91)
 
 # Parameters entering DispersionFixedPoleCFF.ImH in Gepard.
 IMH_PARAMETER_CANDIDATES = (
@@ -582,23 +592,162 @@ def propagate_curve(cov, layout, central, tgrid, scenario, lumi):
 
 
 def savefig(fig, path):
-    fig.tight_layout()
-    fig.savefig(path, dpi=250)
+    # Leave room for any annotations intentionally drawn above the axes.
+    fig.tight_layout(rect=(0, 0, 1, 0.88) if len(fig.axes) and
+                     any(t.get_position()[1] > 1.0 for t in fig.axes[0].texts)
+                     else None)
+    fig.savefig(path, dpi=250, bbox_inches="tight")
     plt.close(fig)
 
 
-def add_clas6_context(ax):
-    ax.axvspan(
-        CLAS6_DTERM_TMIN, CLAS6_DTERM_TMAX,
-        alpha=0.10, zorder=0,
-        label=r"CLAS6 D-term analysis input $|t|$ range"
+def add_t_range_context(ax, clas12_tmin, clas12_tmax):
+    """
+    Add unobtrusive range brackets above the axes.
+
+    These are kinematic/context ranges, not uncertainty bands.  Drawing them
+    outside the plotting area avoids visually confusing them with projected
+    C_H or d1 uncertainty bands.
+    """
+    trans = ax.get_xaxis_transform()
+
+    def bracket(x0, x1, y, text):
+        ax.annotate(
+            "", xy=(x1, y), xytext=(x0, y),
+            xycoords=trans, textcoords=trans,
+            arrowprops=dict(arrowstyle="|-|", lw=1.15),
+            annotation_clip=False,
+        )
+        ax.text(
+            0.5*(x0+x1), y+0.018, text,
+            transform=trans, ha="center", va="bottom", fontsize=9,
+            clip_on=False,
+        )
+
+    bracket(
+        CLAS6_DTERM_TMIN, CLAS6_DTERM_TMAX, 1.035,
+        r"CLAS6 D-term input range"
+    )
+    bracket(
+        clas12_tmin, clas12_tmax, 1.105,
+        r"CLAS12 pass-2 controlled range ($|t|/Q^2<0.2$)"
     )
 
 
-def make_plots(curves, pars, figures):
+def _validated_covariance(q, deriv, parameters, central, label="fit"):
+    cov, layout, diag = covariance(q, deriv, parameters, central)
+    if diag["rank_deficit"] != 0:
+        raise RuntimeError(
+            f"Rank-deficient {label}: {diag['rank']}/{diag['n_parameters']}. "
+            "Do not regularize this projection with a pseudoinverse."
+        )
+    return cov, layout, diag
+
+
+def run_tmax_ablation(inp, deriv, parameters, central, tables):
+    """
+    Quantify how much the large-|t| lever arm contributes to the D-term shape.
+
+    For each luminosity, progressively truncate the otherwise identical
+    theory-controlled pass-2 sample.  This cleanly separates "more precise
+    points" from "access to a longer t lever arm".
+    """
+    rows = []
+    for L in LUMI_FACTORS:
+        data = pd.read_csv(inp/f"joint_fit_input_km15_{L}x.csv")
+        data["bin"] = data["bin"].astype(int)
+
+        for tmax in TMAX_ABLATION:
+            q = scenario_input(data[data["t_abs"] <= tmax].copy(), "baseline")
+            if len(q) == 0:
+                continue
+            cov, layout, diag = _validated_covariance(
+                q, deriv, parameters, central,
+                label=f"tmax ablation baseline {L}x tmax={tmax}"
+            )
+            idx = {p:i for i,p in enumerate(layout)}
+            C = central["C"]; m = central["mC2"]
+            sC = math.sqrt(max(cov[idx["C"],idx["C"]],0))
+            sm = math.sqrt(max(cov[idx["mC2"],idx["mC2"]],0))
+            corr = cov[idx["C"],idx["mC2"]] / max(sC*sm,1e-300)
+
+            # Propagate to a common reference point at |t|=0.90.  For
+            # truncated samples this is intentionally an extrapolation: its
+            # degradation directly measures loss of shape leverage.
+            tref = np.asarray([0.90])
+            ch, dC, dm = ch_and_gradient(tref, C, m)
+            grad = np.zeros(len(layout))
+            grad[idx["C"]] = dC[0]
+            grad[idx["mC2"]] = dm[0]
+            sch90 = math.sqrt(max(float(grad @ cov @ grad),0))
+
+            rows.append({
+                "luminosity_factor": L,
+                "tmax_cut": tmax,
+                "n_points": len(q),
+                "n_cells": q["bin"].nunique(),
+                "actual_tmax": float(q["t_abs"].max()),
+                "sigma_CH0": sC,
+                "sigma_mC2": sm,
+                "relative_sigma_mC2_pct": 100*sm/abs(m),
+                "corr_C_mC2": corr,
+                "CH_at_0p90": float(ch[0]),
+                "sigma_CH_at_0p90": sch90,
+                "rank": diag["rank"],
+                "n_parameters": diag["n_parameters"],
+                "condition_number_effective": diag["condition_number_effective"],
+            })
+
+    out = pd.DataFrame(rows)
+    out.to_csv(tables/"tmax_lever_arm_ablation.csv", index=False)
+    return out
+
+
+def make_tmax_ablation_plots(ablation, figures):
+    # Shape-scale precision versus retained t lever arm.
+    fig, ax = plt.subplots(figsize=(8.8,6.0))
+    for L in LUMI_FACTORS:
+        d = ablation[ablation.luminosity_factor==L].sort_values("actual_tmax")
+        ax.plot(d.actual_tmax, d.relative_sigma_mC2_pct, marker="o", label=f"{L}x")
+    ax.axvline(CLAS6_DTERM_TMAX, ls="--", lw=1.0,
+               label=r"CLAS6 historical upper edge")
+    ax.set_xlabel(r"Maximum retained $|t|$ (GeV$^2$)")
+    ax.set_ylabel(r"Relative uncertainty on $m_C^2$ (%)")
+    ax.set_title(r"Large-$|t|$ lever arm and D-term shape precision")
+    ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
+    savefig(fig, figures/"05_tmax_ablation_mC2.png")
+
+    # Same study expressed as uncertainty of the fitted shape extrapolated to
+    # a common high-|t| point.
+    fig, ax = plt.subplots(figsize=(8.8,6.0))
+    for L in LUMI_FACTORS:
+        d = ablation[ablation.luminosity_factor==L].sort_values("actual_tmax")
+        ax.plot(d.actual_tmax, d.sigma_CH_at_0p90, marker="o", label=f"{L}x")
+    ax.axvline(CLAS6_DTERM_TMAX, ls="--", lw=1.0,
+               label=r"CLAS6 historical upper edge")
+    ax.set_xlabel(r"Maximum retained $|t|$ (GeV$^2$)")
+    ax.set_ylabel(r"Projected uncertainty on $C_H(|t|=0.90\ {\rm GeV}^2)$")
+    ax.set_title(r"High-$|t|$ D-term information gained from the lever arm")
+    ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
+    savefig(fig, figures/"06_tmax_ablation_CH_0p90.png")
+
+    # Correlation is useful diagnostically: high-t data should help break the
+    # C versus mC2 normalization/shape tradeoff.
+    fig, ax = plt.subplots(figsize=(8.8,6.0))
+    for L in LUMI_FACTORS:
+        d = ablation[ablation.luminosity_factor==L].sort_values("actual_tmax")
+        ax.plot(d.actual_tmax, d.corr_C_mC2, marker="o", label=f"{L}x")
+    ax.axvline(CLAS6_DTERM_TMAX, ls="--", lw=1.0)
+    ax.set_xlabel(r"Maximum retained $|t|$ (GeV$^2$)")
+    ax.set_ylabel(r"Correlation of $C$ and $m_C^2$")
+    ax.set_title(r"Does the large-$|t|$ lever arm break the normalization--shape tradeoff?")
+    ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
+    savefig(fig, figures/"07_tmax_ablation_C_mC2_correlation.png")
+
+
+def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
     # CH(t), baseline luminosity evolution.
     fig, ax = plt.subplots(figsize=(8.8,6.0))
-    add_clas6_context(ax)
+    add_t_range_context(ax, clas12_tmin, clas12_tmax)
     for L in LUMI_FACTORS:
         d = curves[(curves.scenario=="baseline") &
                    (curves.luminosity_factor==L)].sort_values("t_abs")
@@ -608,11 +757,12 @@ def make_plots(curves, pars, figures):
     ax.set_ylabel(r"$C_H(t)$")
     ax.set_title(r"DR-constrained subtraction function: luminosity projection")
     ax.grid(alpha=.2); ax.legend(title="Luminosity")
+    fig.subplots_adjust(top=0.82)
     savefig(fig, figures/"01_CH_t_luminosity.png")
 
     # d1(t) in Volker convention.
     fig, ax = plt.subplots(figsize=(8.8,6.0))
-    add_clas6_context(ax)
+    add_t_range_context(ax, clas12_tmin, clas12_tmax)
     for L in LUMI_FACTORS:
         d = curves[(curves.scenario=="baseline") &
                    (curves.luminosity_factor==L)].sort_values("t_abs")
@@ -622,11 +772,12 @@ def make_plots(curves, pars, figures):
     ax.set_ylabel(r"$d_1^Q(t)=0.9\,C_H(t)$")
     ax.set_title(r"Projected quark D-term form factor")
     ax.grid(alpha=.2); ax.legend(title="Luminosity")
+    fig.subplots_adjust(top=0.82)
     savefig(fig, figures/"02_d1_t_luminosity.png")
 
     # 10x systematic comparison.
     fig, ax = plt.subplots(figsize=(8.8,6.0))
-    add_clas6_context(ax)
+    add_t_range_context(ax, clas12_tmin, clas12_tmax)
     labels = {
         "baseline":"Current point-to-point systematics",
         "ptp_half":"Point-to-point systematics / 2",
@@ -641,6 +792,7 @@ def make_plots(curves, pars, figures):
     ax.set_ylabel(r"$C_H(t)$")
     ax.set_title(r"Systematic limitation on $C_H(t)$ at 10x")
     ax.grid(alpha=.2); ax.legend()
+    fig.subplots_adjust(top=0.82)
     savefig(fig, figures/"03_CH_t_systematics_10x.png")
 
     # mC2 is the direct shape/large-|t| lever-arm parameter.
@@ -662,7 +814,7 @@ def main():
     here = Path(__file__).resolve().parent
     ap = argparse.ArgumentParser()
     ap.add_argument("--input-dir", default=str(here/"output_stage2_pass2"/"tables"))
-    ap.add_argument("--outdir", default=str(here/"output_stage3b_dr_dterm_v4_parallel"))
+    ap.add_argument("--outdir", default=str(here/"output_stage3b_dr_dterm_v5_lever_arm"))
     ap.add_argument("--force-derivatives", action="store_true")
     ap.add_argument(
         "--workers", type=int, default=min(8, os.cpu_count() or 1),
@@ -677,6 +829,8 @@ def main():
 
     base1 = pd.read_csv(inp/"joint_fit_input_km15_1x.csv")
     base1["bin"] = base1["bin"].astype(int)
+    clas12_tmin = float(base1["t_abs"].min())
+    clas12_tmax = float(base1["t_abs"].max())
 
     # The installed KM15 model is the authority for central parameter values.
     central = copy.deepcopy(th_KM15.parameters)
@@ -685,7 +839,7 @@ def main():
     ]
 
     print("="*96)
-    print("STAGE 3B v4: VALIDATED KM15 FIXED-t DISPERSION-RELATION PROJECTION")
+    print("STAGE 3B v5: VALIDATED KM15 FIXED-t DISPERSION-RELATION PROJECTION")
     print("="*96)
     print("Gepard relation : ReH = DR[ImH] - C/(1-t/mC2)^2")
     print(f"KM15 C          : {central['C']:.10g}")
@@ -697,6 +851,8 @@ def main():
     print("pseudo-data     : KM15 only; unpublished pass-2 central values are not used")
     print(f"CLAS6 context   : historical input range |t|={CLAS6_DTERM_TMIN:.2f}"
           f"--{CLAS6_DTERM_TMAX:.2f} GeV^2 (plot context only)")
+    print(f"CLAS12 context  : pass-2 controlled range |t|={clas12_tmin:.3f}"
+          f"--{clas12_tmax:.3f} GeV^2")
 
     cache = tables/"km15_observable_parameter_derivatives.csv"
     if args.force_derivatives and cache.exists():
@@ -741,15 +897,10 @@ def main():
         data["bin"] = data["bin"].astype(int)
         for scenario in SCENARIOS:
             q = scenario_input(data, scenario)
-            cov, layout, diag = covariance(q, deriv, parameters, central)
-            if diag["rank_deficit"] != 0:
-                raise RuntimeError(
-                    f"Rank-deficient fit remains after explicit activity and "
-                    f"degeneracy filtering for {scenario} {L}x: "
-                    f"{diag['rank']}/{diag['n_parameters']}. "
-                    "This is now an unexpected degeneracy and should be diagnosed, "
-                    "not regularized with a pseudoinverse."
-                )
+            cov, layout, diag = _validated_covariance(
+                q, deriv, parameters, central,
+                label=f"{scenario} {L}x"
+            )
             idx = {p:i for i,p in enumerate(layout)}
 
             C = central["C"]; m = central["mC2"]
@@ -776,7 +927,11 @@ def main():
     pars.to_csv(tables/"dr_parameter_uncertainties.csv", index=False)
     curves.to_csv(tables/"ch_d1_bands.csv", index=False)
     diags.to_csv(tables/"global_fit_diagnostics.csv", index=False)
-    make_plots(curves, pars, figures)
+    make_plots(curves, pars, figures, clas12_tmin, clas12_tmax)
+
+    print("\n[t-lever-arm] running progressive |t|max ablation")
+    ablation = run_tmax_ablation(inp, deriv, parameters, central, tables)
+    make_tmax_ablation_plots(ablation, figures)
 
     print("\nC_H(0), d1^Q(0), and t-shape precision:")
     show = pars[["scenario","luminosity_factor","CH0","sigma_CH0",
@@ -791,6 +946,12 @@ def main():
     print(high[["scenario","luminosity_factor","t_abs","CH","sigma_CH"]]
           .sort_values(["scenario","luminosity_factor"])
           .to_string(index=False,float_format=lambda x:f"{x:.4g}"))
+
+    print("\nLarge-|t| lever-arm ablation (baseline systematics):")
+    print(ablation[[
+        "luminosity_factor","tmax_cut","n_points","actual_tmax",
+        "relative_sigma_mC2_pct","sigma_CH_at_0p90","corr_C_mC2"
+    ]].to_string(index=False, float_format=lambda x:f"{x:.4g}"))
 
     print("\nValidated global-fit diagnostics:")
     print(diags[[
