@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Stage 3B: genuine KM15 fixed-t dispersion-relation projection.
+Stage 3B v3: validated KM15 fixed-t dispersion-relation projection.
 
 This is the first stage in which the subtraction function is fitted *inside*
 the same dispersion-relation model that generates ImH and ReH.
@@ -51,7 +51,7 @@ Scenarios:
   statistics_only statistical errors only
 
 Outputs:
-  output_stage3b_dr_dterm/
+  output_stage3b_dr_dterm_v3_parallel/
     tables/dr_parameter_uncertainties.csv
     tables/ch_d1_bands.csv
     tables/global_fit_diagnostics.csv
@@ -67,6 +67,9 @@ from __future__ import annotations
 import argparse
 import copy
 import math
+import os
+import multiprocessing as mp
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from pathlib import Path
 from typing import Dict, List, Tuple
 
@@ -80,6 +83,13 @@ from gepard.fits import th_KM15
 
 LUMI_FACTORS = (1, 2, 5, 10)
 SCENARIOS = ("baseline", "ptp_half", "statistics_only")
+
+# Historical CLAS6 input range used in the 2018 D-term analysis chain.
+# The public dterm18 CLAS files used by Kumericki contain -t values from
+# 0.11 through 0.45 GeV^2.  We show this only as historical kinematic
+# context; it is NOT digitized C_H(t) data and is not used in the fit.
+CLAS6_DTERM_TMIN = 0.11
+CLAS6_DTERM_TMAX = 0.45
 
 # Parameters entering DispersionFixedPoleCFF.ImH in Gepard.
 IMH_PARAMETER_CANDIDATES = (
@@ -132,78 +142,263 @@ def choose_step(name: str, value: float, limits: Dict) -> float:
     return max(step, 1e-6)
 
 
-def finite_derivatives(base: pd.DataFrame, model, parameters: List[str],
-                       cache_csv: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    if cache_csv.exists():
+
+def _rows_to_records(base: pd.DataFrame):
+    """Small, picklable representation of the kinematics sent to workers."""
+    cols = ["point_id", "bin", "xB", "Q2", "t_abs", "phi_deg"]
+    if "ebeam" in base.columns:
+        cols.append("ebeam")
+    return base[cols].to_dict("records")
+
+
+class _Row:
+    """Attribute-style view used by predict_xs_bsa without pandas overhead."""
+    __slots__ = ("point_id", "bin", "xB", "Q2", "t_abs", "phi_deg", "ebeam")
+    def __init__(self, r):
+        self.point_id = r["point_id"]
+        self.bin = r["bin"]
+        self.xB = r["xB"]
+        self.Q2 = r["Q2"]
+        self.t_abs = r["t_abs"]
+        self.phi_deg = r["phi_deg"]
+        self.ebeam = r.get("ebeam", 10.6041)
+
+
+def _predict_records(model, records):
+    xs, bsa = [], []
+    for rec in records:
+        x, a = predict_xs_bsa(model, _Row(rec))
+        xs.append(x)
+        bsa.append(a)
+    return np.asarray(xs), np.asarray(bsa)
+
+
+def _parameter_worker(payload):
+    """
+    One process owns one independent KM15 copy and computes all finite-step
+    information for one parameter.  Parallelizing by parameter is deliberate:
+    Gepard model mutation is never shared between processes, and each worker
+    gets a large enough block of work that process overhead is negligible.
+    """
+    par, value, h0, records, do_stability = payload
+    model = copy.deepcopy(th_KM15)
+
+    results = {"parameter": par, "value": value, "step": h0}
+
+    factors = (1.0, 0.5, 2.0) if do_stability else (1.0,)
+    for factor in factors:
+        h = h0 * factor
+
+        model.parameters[par] = value + h
+        px, pa = _predict_records(model, records)
+
+        model.parameters[par] = value - h
+        mx, ma = _predict_records(model, records)
+
+        model.parameters[par] = value
+        results[f"dx_{factor:g}"] = (px - mx) / (2*h)
+        results[f"da_{factor:g}"] = (pa - ma) / (2*h)
+
+    return results
+
+
+def _central_worker(records):
+    model = copy.deepcopy(th_KM15)
+    return _predict_records(model, records)
+
+
+def finite_derivatives(
+    base: pd.DataFrame,
+    model,
+    parameters: List[str],
+    cache_csv: Path,
+    workers: int = 1,
+    compute_stability: bool = True,
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+    """
+    Compute central predictions and finite derivatives.
+
+    Expensive parameter variations are parallelized across independent
+    processes.  Each process owns its own KM15 object; no mutable Gepard state
+    is shared.  The same worker also computes h/2 and 2h derivatives, avoiding
+    a second complete validation pass.
+    """
+    steps_path = cache_csv.with_name("finite_difference_steps.csv")
+    stability_path = cache_csv.with_name("finite_difference_stability.csv")
+
+    if cache_csv.exists() and steps_path.exists():
         d = pd.read_csv(cache_csv)
         needed = {"point_id", "xs0", "bsa0"}
         for p in parameters:
             needed |= {f"d_xs_d_{p}", f"d_bsa_d_{p}"}
         if needed.issubset(d.columns) and len(d) == len(base):
-            steps_path = cache_csv.with_name("finite_difference_steps.csv")
-            steps = pd.read_csv(steps_path) if steps_path.exists() else pd.DataFrame()
-            print(f"[cache] using {cache_csv}")
-            return d, steps
+            steps = pd.read_csv(steps_path)
+            if stability_path.exists():
+                stability = pd.read_csv(stability_path)
+                print(f"[cache] using derivatives + stability from {cache_csv.parent}")
+                return d, steps, stability
+            if not compute_stability:
+                return d, steps, pd.DataFrame()
 
     central = copy.deepcopy(model.parameters)
     limits = getattr(model, "parameters_limits", {})
-    steps_rows = []
-    out = base[["point_id", "bin", "xB", "Q2", "t_abs", "phi_deg"]].copy()
+    records = _rows_to_records(base)
 
+    print(f"[performance] workers={workers}; parallel unit=KM15 parameter")
     print(f"[derivatives] central predictions for {len(base)} points")
-    xs0, a0 = [], []
-    for i, row in enumerate(base.itertuples(index=False), 1):
-        x, a = predict_xs_bsa(model, row)
-        xs0.append(x); a0.append(a)
-        if i % 100 == 0:
-            print(f"  central {i}/{len(base)}")
+    xs0, a0 = _central_worker(records)
+
+    out = base[["point_id", "bin", "xB", "Q2", "t_abs", "phi_deg"]].copy()
     out["xs0"] = xs0
     out["bsa0"] = a0
 
-    for ip, par in enumerate(parameters, 1):
+    payloads = []
+    step_info = {}
+    for par in parameters:
         val = float(central[par])
         h = choose_step(par, val, limits)
-        print(f"[derivatives] {ip}/{len(parameters)} {par}: value={val:.8g}, step={h:.4g}")
+        step_info[par] = (val, h)
+        payloads.append((par, val, h, records, compute_stability))
 
-        plus_xs, plus_a, minus_xs, minus_a = [], [], [], []
+    results = {}
+    if workers <= 1:
+        for i, payload in enumerate(payloads, 1):
+            par = payload[0]
+            print(f"[derivatives] {i}/{len(payloads)} {par}")
+            results[par] = _parameter_worker(payload)
+    else:
+        # Linux ifarm: fork is both fast and compatible with the existing
+        # scientific Python/Gepard environment.  Explicit context also avoids
+        # Python-version-dependent defaults.
+        ctx = mp.get_context("fork")
+        with ProcessPoolExecutor(max_workers=workers, mp_context=ctx) as ex:
+            futures = {ex.submit(_parameter_worker, x): x[0] for x in payloads}
+            done = 0
+            for fut in as_completed(futures):
+                par = futures[fut]
+                results[par] = fut.result()
+                done += 1
+                print(f"[derivatives] completed {done}/{len(payloads)} {par}")
 
-        model.parameters[par] = val + h
-        for row in base.itertuples(index=False):
-            x, a = predict_xs_bsa(model, row)
-            plus_xs.append(x); plus_a.append(a)
+    steps_rows = []
+    stability_rows = []
 
-        model.parameters[par] = val - h
-        for row in base.itertuples(index=False):
-            x, a = predict_xs_bsa(model, row)
-            minus_xs.append(x); minus_a.append(a)
+    for par in parameters:
+        r = results[par]
+        val, h = step_info[par]
+        dx = r["dx_1"]
+        da = r["da_1"]
+        out[f"d_xs_d_{par}"] = dx
+        out[f"d_bsa_d_{par}"] = da
 
-        model.parameters[par] = val
-        out[f"d_xs_d_{par}"] = (
-            np.asarray(plus_xs) - np.asarray(minus_xs)
-        ) / (2*h)
-        out[f"d_bsa_d_{par}"] = (
-            np.asarray(plus_a) - np.asarray(minus_a)
-        ) / (2*h)
-
-        # A simple finite-step stability indicator: response relative to central.
-        rel_x = np.nanmedian(
-            np.abs(np.asarray(plus_xs) - np.asarray(minus_xs)) /
-            np.maximum(2*np.abs(np.asarray(xs0)), 1e-30)
-        )
-        abs_a = np.nanmedian(
-            np.abs(np.asarray(plus_a) - np.asarray(minus_a)) / 2
-        )
+        rel_x = np.nanmedian(np.abs(dx*h) / np.maximum(np.abs(xs0), 1e-30))
+        abs_a = np.nanmedian(np.abs(da*h))
         steps_rows.append({
             "parameter": par, "central_value": val, "step": h,
             "median_fractional_XS_half_response": rel_x,
             "median_absolute_BSA_half_response": abs_a,
         })
 
-    model.parameters.update(central)
-    out.to_csv(cache_csv, index=False)
+        if compute_stability:
+            ref = np.concatenate([dx, da])
+            ref_norm = float(np.linalg.norm(ref))
+            half = np.concatenate([r["dx_0.5"], r["da_0.5"]])
+            double = np.concatenate([r["dx_2"], r["da_2"]])
+            dh = float(np.linalg.norm(half-ref) / max(ref_norm, 1e-300))
+            dd = float(np.linalg.norm(double-ref) / max(ref_norm, 1e-300))
+            stability_rows.append({
+                "parameter": par,
+                "central_step": h,
+                "half_step_relative_vector_change": dh,
+                "double_step_relative_vector_change": dd,
+                "max_relative_vector_change": max(dh, dd),
+            })
+
     steps = pd.DataFrame(steps_rows)
-    steps.to_csv(cache_csv.with_name("finite_difference_steps.csv"), index=False)
-    return out, steps
+    stability = pd.DataFrame(stability_rows)
+    out.to_csv(cache_csv, index=False)
+    steps.to_csv(steps_path, index=False)
+    if compute_stability:
+        stability.to_csv(stability_path, index=False)
+    return out, steps, stability
+
+
+def classify_active_parameters(
+    deriv: pd.DataFrame,
+    steps: pd.DataFrame,
+    requested: List[str],
+    mandatory=("C", "mC2"),
+    response_threshold: float = 1e-8,
+    boundary_step_fraction: float = 1e-4,
+) -> Tuple[List[str], pd.DataFrame]:
+    """
+    Keep only genuine local directions of the installed KM15 solution.
+
+    A candidate ImH parameter is excluded when:
+      1) its finite change produces essentially zero XS and BSA response, or
+      2) the available symmetric step has collapsed against a parameter
+         boundary (the bv situation in KM15).
+
+    C and mC2 are mandatory because they define the subtraction function.
+    """
+    step_map = steps.set_index("parameter").to_dict("index")
+    rows = []
+    active = []
+
+    for p in requested:
+        info = step_map.get(p, {})
+        value = float(info.get("central_value", np.nan))
+        step = float(info.get("step", np.nan))
+        scale = max(abs(value), 0.1) if np.isfinite(value) else 1.0
+        step_fraction = step / scale if np.isfinite(step) else np.nan
+
+        dx = np.asarray(deriv[f"d_xs_d_{p}"], dtype=float)
+        da = np.asarray(deriv[f"d_bsa_d_{p}"], dtype=float)
+        xs0 = np.maximum(np.abs(np.asarray(deriv["xs0"], dtype=float)), 1e-30)
+
+        # Translate derivative back to the actual response produced by the
+        # finite step, and use the 90th percentile so parameters that matter
+        # only in part of phase space are not discarded by a zero median.
+        rel_xs = np.abs(dx * step) / xs0
+        abs_bsa = np.abs(da * step)
+        p90_xs = float(np.nanpercentile(rel_xs, 90))
+        p90_bsa = float(np.nanpercentile(abs_bsa, 90))
+        response = max(p90_xs, p90_bsa)
+
+        boundary_limited = (
+            p not in mandatory
+            and np.isfinite(step_fraction)
+            and step_fraction < boundary_step_fraction
+        )
+        zero_response = p not in mandatory and response < response_threshold
+        keep = (p in mandatory) or (not boundary_limited and not zero_response)
+
+        if keep:
+            active.append(p)
+
+        if p in mandatory:
+            reason = "mandatory subtraction parameter"
+        elif boundary_limited:
+            reason = "excluded: symmetric step collapsed at/near parameter boundary"
+        elif zero_response:
+            reason = "excluded: no observable response around installed KM15 point"
+        else:
+            reason = "active"
+
+        rows.append({
+            "parameter": p,
+            "central_value": value,
+            "step": step,
+            "step_fraction_of_parameter_scale": step_fraction,
+            "p90_fractional_XS_step_response": p90_xs,
+            "p90_absolute_BSA_step_response": p90_bsa,
+            "activity_response": response,
+            "active": keep,
+            "reason": reason,
+        })
+
+    return active, pd.DataFrame(rows)
+
 
 
 def scenario_input(d: pd.DataFrame, scenario: str) -> pd.DataFrame:
@@ -318,9 +513,18 @@ def savefig(fig, path):
     plt.close(fig)
 
 
+def add_clas6_context(ax):
+    ax.axvspan(
+        CLAS6_DTERM_TMIN, CLAS6_DTERM_TMAX,
+        alpha=0.10, zorder=0,
+        label=r"CLAS6 D-term analysis input $|t|$ range"
+    )
+
+
 def make_plots(curves, pars, figures):
     # CH(t), baseline luminosity evolution.
     fig, ax = plt.subplots(figsize=(8.8,6.0))
+    add_clas6_context(ax)
     for L in LUMI_FACTORS:
         d = curves[(curves.scenario=="baseline") &
                    (curves.luminosity_factor==L)].sort_values("t_abs")
@@ -334,6 +538,7 @@ def make_plots(curves, pars, figures):
 
     # d1(t) in Volker convention.
     fig, ax = plt.subplots(figsize=(8.8,6.0))
+    add_clas6_context(ax)
     for L in LUMI_FACTORS:
         d = curves[(curves.scenario=="baseline") &
                    (curves.luminosity_factor==L)].sort_values("t_abs")
@@ -347,6 +552,7 @@ def make_plots(curves, pars, figures):
 
     # 10x systematic comparison.
     fig, ax = plt.subplots(figsize=(8.8,6.0))
+    add_clas6_context(ax)
     labels = {
         "baseline":"Current point-to-point systematics",
         "ptp_half":"Point-to-point systematics / 2",
@@ -382,8 +588,12 @@ def main():
     here = Path(__file__).resolve().parent
     ap = argparse.ArgumentParser()
     ap.add_argument("--input-dir", default=str(here/"output_stage2_pass2"/"tables"))
-    ap.add_argument("--outdir", default=str(here/"output_stage3b_dr_dterm"))
+    ap.add_argument("--outdir", default=str(here/"output_stage3b_dr_dterm_v3_parallel"))
     ap.add_argument("--force-derivatives", action="store_true")
+    ap.add_argument(
+        "--workers", type=int, default=min(8, os.cpu_count() or 1),
+        help="Parallel KM15 parameter workers (default: min(8, available CPUs))."
+    )
     args = ap.parse_args()
 
     inp = Path(args.input_dir).resolve()
@@ -396,24 +606,50 @@ def main():
 
     # The installed KM15 model is the authority for central parameter values.
     central = copy.deepcopy(th_KM15.parameters)
-    parameters = [p for p in TARGET_PARAMETERS + IMH_PARAMETER_CANDIDATES if p in central]
+    candidate_parameters = [
+        p for p in TARGET_PARAMETERS + IMH_PARAMETER_CANDIDATES if p in central
+    ]
 
     print("="*96)
-    print("STAGE 3B: GENUINE KM15 FIXED-t DISPERSION-RELATION PROJECTION")
+    print("STAGE 3B v3: VALIDATED KM15 FIXED-t DISPERSION-RELATION PROJECTION")
     print("="*96)
     print("Gepard relation : ReH = DR[ImH] - C/(1-t/mC2)^2")
     print(f"KM15 C          : {central['C']:.10g}")
     print(f"KM15 mC2        : {central['mC2']:.10g} GeV^2")
     print(f"Volker C_H(0)   : {-central['C']:.10g}")
     print(f"Volker d1^Q(0)  : {-0.9*central['C']:.10g}")
-    print("fit parameters  :", ", ".join(parameters))
+    print("candidate pars  :", ", ".join(candidate_parameters))
     print("important       : ImH parameters propagate into ReH through Gepard's DR")
     print("pseudo-data     : KM15 only; unpublished pass-2 central values are not used")
+    print(f"CLAS6 context   : historical input range |t|={CLAS6_DTERM_TMIN:.2f}"
+          f"--{CLAS6_DTERM_TMAX:.2f} GeV^2 (plot context only)")
 
     cache = tables/"km15_observable_parameter_derivatives.csv"
     if args.force_derivatives and cache.exists():
         cache.unlink()
-    deriv, steps = finite_derivatives(base1, th_KM15, parameters, cache)
+    deriv, steps, stability = finite_derivatives(
+        base1, th_KM15, candidate_parameters, cache,
+        workers=max(1, args.workers), compute_stability=True
+    )
+
+    parameters, activity = classify_active_parameters(
+        deriv, steps, candidate_parameters
+    )
+    activity.to_csv(tables/"parameter_activity.csv", index=False)
+
+    print("\nParameter activity:")
+    print(activity[[
+        "parameter","active","activity_response",
+        "step_fraction_of_parameter_scale","reason"
+    ]].to_string(index=False, float_format=lambda x:f"{x:.3g}"))
+    print("\nACTIVE FIT PARAMETERS:", ", ".join(parameters))
+
+    # The parallel derivative pass already computed h/2 and 2h.  Report only
+    # the parameters that survive the activity filter.
+    stability = stability[stability["parameter"].isin(parameters)].copy()
+    stability.to_csv(tables/"finite_difference_stability.csv", index=False)
+    print("\nFinite-step stability (active parameters):")
+    print(stability.to_string(index=False, float_format=lambda x:f"{x:.3g}"))
 
     all_pars, all_curves, all_diag = [], [], []
     tgrid = np.linspace(0.0, 0.95, 191)
@@ -424,6 +660,12 @@ def main():
         for scenario in SCENARIOS:
             q = scenario_input(data, scenario)
             cov, layout, diag = covariance(q, deriv, parameters, central)
+            if diag["rank_deficit"] != 0:
+                raise RuntimeError(
+                    f"Rank-deficient validated fit for {scenario} {L}x: "
+                    f"{diag['rank']}/{diag['n_parameters']}. "
+                    "Do not interpret D-term uncertainties until resolved."
+                )
             idx = {p:i for i,p in enumerate(layout)}
 
             C = central["C"]; m = central["mC2"]
@@ -465,6 +707,12 @@ def main():
     print(high[["scenario","luminosity_factor","t_abs","CH","sigma_CH"]]
           .sort_values(["scenario","luminosity_factor"])
           .to_string(index=False,float_format=lambda x:f"{x:.4g}"))
+
+    print("\nValidated global-fit diagnostics:")
+    print(diags[[
+        "scenario","luminosity_factor","n_parameters","rank",
+        "rank_deficit","condition_number_effective"
+    ]].to_string(index=False, float_format=lambda x:f"{x:.4g}"))
 
     print("\n[output]", out)
     print("[next] Inspect rank/conditioning and finite-step responses before")
