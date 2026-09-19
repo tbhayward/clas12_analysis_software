@@ -5330,6 +5330,8 @@ static const std::vector<PhotonRegionSpec> PHOTON_REGION_ORDER = {
 // (detector2=1).
 static bool photon_region_active_for_global_selection(const std::string& key) {
     const GlobalCutConfig& g = default_global_cuts();
+    if (g.enable_photon_fd_sector_filter)
+        return key == ("S" + std::to_string(g.photon_fd_sector));
     if (!g.enable_topology_filter) return true;
     if (g.required_detector2 == 0) return key == "FT";
     if (g.required_detector2 == 1) return key != "FT";

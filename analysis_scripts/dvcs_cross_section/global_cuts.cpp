@@ -70,7 +70,7 @@ bool global_cuts_apply_sp18_out_sector_quality_cuts(const GlobalCutConfig& cfg) 
         cfg.enable_electron_fd_sector_filter ||
         cfg.enable_proton_fd_sector_filter ||
         cfg.enable_proton_cd_sector_filter ||
-        cfg.enable_photon_fd_sector_filter;
+        (cfg.enable_photon_fd_sector_filter && !cfg.enable_topology_filter);
 
     return cfg.enable_sp18_out_sector_quality_cuts && !sector_diagnostic_study_active;
 }

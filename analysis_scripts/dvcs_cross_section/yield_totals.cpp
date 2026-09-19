@@ -681,6 +681,8 @@ static std::array<double, 7> load_data_current_response_slopes(
     const auto& block = response_model["data"][channel][period];
     const GlobalCutConfig& g = default_global_cuts();
     auto region_is_active = [&](size_t i) {
+        if (g.enable_photon_fd_sector_filter)
+            return i == static_cast<size_t>(g.photon_fd_sector);
         if (!g.enable_topology_filter) return true;
         if (g.required_detector2 == 0) return i == 0;  // FT only
         if (g.required_detector2 == 1) return i != 0;  // FD sectors only

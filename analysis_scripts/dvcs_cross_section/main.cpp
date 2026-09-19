@@ -138,6 +138,7 @@ int main(int argc, char* argv[]) {
     bool eppi0_production_test = false;
     bool use_eppi0_production_normalization = true;
     std::string topology_cli;
+    int photon_sector_cli = 0;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--acceptance-reweighting-only") {
             acceptance_reweighting_only = true;
@@ -152,6 +153,13 @@ int main(int argc, char* argv[]) {
             eppi0_production_test = true;
         } else if (std::string(argv[i]) == "--no-eppi0-normalization") {
             use_eppi0_production_normalization = false;
+        } else if (std::string(argv[i]) == "--photon-sector") {
+            if (i + 1 >= argc) { std::cerr << "[main] FATAL: --photon-sector requires an integer 1--6\n"; return 1; }
+            try { photon_sector_cli = std::stoi(argv[++i]); }
+            catch (...) { std::cerr << "[main] FATAL: --photon-sector requires an integer 1--6\n"; return 1; }
+            if (photon_sector_cli < 1 || photon_sector_cli > 6) {
+                std::cerr << "[main] FATAL: --photon-sector must be in [1,6]\n"; return 1;
+            }
         } else if (std::string(argv[i]) == "--topology") {
             if (i + 1 >= argc) {
                 std::cerr << "[main] FATAL: --topology requires one of FD-FD, CD-FD, CD-FT\n";
@@ -263,9 +271,15 @@ int main(int argc, char* argv[]) {
     global_cfg.enable_proton_cd_sector_filter = false;
     global_cfg.proton_cd_sector = 1;
 
-    // Photon FD sector study. This automatically keeps only CD-FD and FD-FD events.
-    global_cfg.enable_photon_fd_sector_filter = false;
-    global_cfg.photon_fd_sector = 1;
+    // Optional FD-photon sector selection.  For the controlled topology study
+    // use this together with --topology CD-FD so the proton remains CD while
+    // the photon is restricted to one FD sector.
+    if (photon_sector_cli != 0 && topology_cli != "CD-FD" && topology_cli != "FD-FD") {
+        std::cerr << "[main] FATAL: --photon-sector requires an FD-photon topology (CD-FD or FD-FD).\n";
+        return 1;
+    }
+    global_cfg.enable_photon_fd_sector_filter = (photon_sector_cli != 0);
+    global_cfg.photon_fd_sector = (photon_sector_cli != 0 ? photon_sector_cli : 1);
 
     // Auxiliary fiducial cuts. Enable this single switch to apply the additional
     // FD-sector separation, particle-angle, and FT-photon momentum cuts
@@ -280,6 +294,7 @@ int main(int argc, char* argv[]) {
 
     std::cout << "[main] Topology selection: "
               << (topology_cli.empty() ? "inclusive" : topology_cli)
+              << (photon_sector_cli ? (" photon-S" + std::to_string(photon_sector_cli)) : "")
               << std::endl;
     std::cout << "[main] Global cut analysis tag: "
               << global_cuts_analysis_tag(default_global_cuts()) << std::endl;
@@ -371,7 +386,8 @@ int main(int argc, char* argv[]) {
               << currentStudyRecMcTrees.size() << std::endl;
 
     if (topology_acceptance_study) {
-        const std::string topo_tag = topology_cli;
+        const std::string topo_tag = topology_cli +
+            (photon_sector_cli ? ("-S" + std::to_string(photon_sector_cli)) : "");
         const std::string outdir = "output/topology_acceptance_model/" + topo_tag;
         if (!run_topology_acceptance_model_study(
                 topology_study_csv, genMcTrees, recMcTrees, topo_tag, outdir,

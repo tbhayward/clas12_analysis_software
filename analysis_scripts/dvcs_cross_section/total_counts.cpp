@@ -328,7 +328,9 @@ static void validate_final_current_response_prescription(
     for (int ir = 0; ir < kCurrentRegionCount; ++ir) {
         const bool is_ft = (ir == 0);
         bool active = true;
-        if (global_cfg.enable_topology_filter) {
+        if (global_cfg.enable_photon_fd_sector_filter) {
+            active = (!is_ft && ir == global_cfg.photon_fd_sector);
+        } else if (global_cfg.enable_topology_filter) {
             if (global_cfg.required_detector2 == 0) active = is_ft;
             else if (global_cfg.required_detector2 == 1) active = !is_ft;
         }
