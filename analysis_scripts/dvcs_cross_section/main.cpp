@@ -518,7 +518,15 @@ int main(int argc, char* argv[]) {
         //   - plus one common centered linear electron-angle term for
         //     Sp18 Out ep->epg only,
         //   - no legacy post-binning current correction.
-        current_opts.use_sp18_out_e_theta_response_model = true;
+        // For single-FD-photon-sector extractions the final event-level current
+        // calibration is inherited verbatim from the parent CD-FD extraction
+        // below.  Do not attempt to promote a sector-only Sp18-Out theta_e fit
+        // into the temporary diagnostic model produced in this block.
+        const bool single_fd_photon_sector_run =
+            (global_cfg.enable_photon_fd_sector_filter &&
+             global_cfg.enable_topology_filter &&
+             global_cfg.required_detector2 == 1);
+        current_opts.use_sp18_out_e_theta_response_model = !single_fd_photon_sector_run;
         current_opts.use_e_theta_linear_data_current_efficiency = false;
         current_opts.response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
         current_opts.apply_legacy_binned_current_corrections = false;
@@ -534,6 +542,72 @@ int main(int argc, char* argv[]) {
                                                    eppi0RecMcTrees,
                                                    current_opts)) {
             std::cerr << "[main] ERROR: update_current_dependence_factors_csv failed.\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        // -----------------------------------------------------------------
+        // Controlled FD-photon-sector studies inherit ONE current-response
+        // calibration from the parent CD-FD extraction.  Current efficiency is
+        // a detector calibration; it must not be silently re-fit after S1--S6
+        // is selected.  In particular, this preserves exactly the parent
+        // Sp18-Out regional intercepts + pooled centered theta_e gradient.
+        //
+        // Workflow:
+        //   1) run --topology CD-FD (no --photon-sector) once; this snapshots
+        //      its complete event-level model;
+        //   2) every CD-FD-Si run may make its own diagnostics above, but before
+        //      any corrected event yields are accumulated we restore the exact
+        //      parent model.
+        //
+        // The snapshot lives outside output/dvcs_current_dependence because
+        // that directory is intentionally cleaned by each calibration run.
+        // -----------------------------------------------------------------
+        const std::filesystem::path current_model =
+            "output/dvcs_current_dependence/calibration/current_response_model.json";
+        const std::filesystem::path parent_dir =
+            "output/topology_sector_calibration";
+        const std::filesystem::path parent_model =
+            parent_dir / "CD-FD_parent_current_response_model.json";
+
+        const bool parent_cd_fd_run =
+            (global_cfg.enable_topology_filter &&
+             global_cfg.required_detector1 == 2 &&
+             global_cfg.required_detector2 == 1 &&
+             !global_cfg.enable_photon_fd_sector_filter);
+        const bool sector_cd_fd_run =
+            (global_cfg.enable_topology_filter &&
+             global_cfg.required_detector1 == 2 &&
+             global_cfg.required_detector2 == 1 &&
+             global_cfg.enable_photon_fd_sector_filter);
+
+        try {
+            if (parent_cd_fd_run) {
+                std::filesystem::create_directories(parent_dir);
+                std::filesystem::copy_file(
+                    current_model, parent_model,
+                    std::filesystem::copy_options::overwrite_existing);
+                std::cout << "[main] Saved parent CD-FD current-response calibration: "
+                          << parent_model.string() << "\n";
+            } else if (sector_cd_fd_run) {
+                if (!std::filesystem::exists(parent_model)) {
+                    std::cerr
+                        << "[main] FATAL: photon-sector extraction requires the parent "
+                        << "CD-FD current-response calibration. Run --topology CD-FD "
+                        << "without --photon-sector first. Missing: "
+                        << parent_model.string() << "\n";
+                    std::exit(EXIT_FAILURE);
+                }
+                std::filesystem::copy_file(
+                    parent_model, current_model,
+                    std::filesystem::copy_options::overwrite_existing);
+                std::cout
+                    << "[main] Photon-sector S" << global_cfg.photon_fd_sector
+                    << ": restored exact parent CD-FD current-response calibration "
+                    << "before event-level yield accumulation.\n";
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[main] FATAL: failed to snapshot/restore parent CD-FD "
+                      << "current-response calibration: " << e.what() << "\n";
             std::exit(EXIT_FAILURE);
         }
     }
