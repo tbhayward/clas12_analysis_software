@@ -170,7 +170,7 @@ def d1_curve(C,M2,alpha,t):
     return -0.9*C*(1+t/M2)**(-alpha)
 
 
-def mechanics_batch(C,M2,alpha,r_fm,qmax=None,nq=None):
+def full_analytic_mechanics(C,M2,alpha,r_fm):
     """
     Analytic 3D Breit-frame transform for the generalized multipole.
 
@@ -181,10 +181,9 @@ def mechanics_batch(C,M2,alpha,r_fm,qmax=None,nq=None):
       Dtilde(r) = D0 * M^3 /[(2pi)^(3/2) 2^(alpha-1) Gamma(alpha)]
                   * x^(alpha-3/2) K_(alpha-3/2)(x),  x=M r.
 
-    Pressure and shear are then obtained from radial derivatives of Dtilde.
-    Using Bessel identities gives closed forms, avoiding oscillatory q-space
-    quadrature. qmax/nq are retained in the signature for compatibility but
-    are ignored here: this routine is specifically the full fitted transform.
+    Pressure and shear are obtained analytically from radial derivatives of
+    Dtilde. This function has no q cutoff and no numerical Fourier integration:
+    it is the full Nature/Volker-style generalized-multipole transform.
     """
     C=np.asarray(C,float); M2=np.asarray(M2,float); alpha=np.asarray(alpha,float)
     r_fm=np.asarray(r_fm,float)
@@ -217,7 +216,7 @@ def mechanics_batch(C,M2,alpha,r_fm,qmax=None,nq=None):
     return P_nat*conv, S_nat*conv
 
 
-def mechanics_finite_q(C,M2,alpha,r_fm,qmax,nq=5001):
+def finite_q_support_diagnostic(C,M2,alpha,r_fm,qmax,nq=5001):
     """Finite-q diagnostic only. A hard q cutoff is not a physical pressure distribution."""
     C=np.asarray(C,float); M2=np.asarray(M2,float); alpha=np.asarray(alpha,float)
     q=np.linspace(0,float(qmax),int(nq))
@@ -233,6 +232,65 @@ def mechanics_finite_q(C,M2,alpha,r_fm,qmax,nq=5001):
     S=-(base@j2)/(10*np.pi**2*MP)
     conv=1/(HBARC**3)
     return P*conv,S*conv
+
+
+def robust_zero_crossings(r,y,relative_floor=1e-8):
+    """Zero crossings after discarding the numerically negligible far tail."""
+    r=np.asarray(r,float); y=np.asarray(y,float)
+    floor=relative_floor*max(float(np.nanmax(np.abs(y))),1e-300)
+    active=np.abs(y)>floor
+    if not np.any(active):
+        return []
+    last=np.where(active)[0][-1]
+    rr=r[:last+1]; yy=y[:last+1]
+    cross=np.where(np.sign(yy[:-1])*np.sign(yy[1:])<0)[0]
+    zeros=[]
+    for i in cross:
+        x1,x2=rr[i],rr[i+1]; y1,y2=yy[i],yy[i+1]
+        zeros.append(float(x1-y1*(x2-x1)/(y2-y1)))
+    return zeros
+
+
+def validate_analytic_mechanics():
+    """
+    Cheap preflight run before any replicas.
+
+    Checks:
+      1) analytic transform normalization using the alpha=1 Yukawa limit;
+      2) Volker/Nature central truth has one robust pressure crossing;
+      3) central shear stays positive over the workshop plotting range.
+    """
+    # Transform normalization test.
+    rtest_fm=np.array([0.2,0.5,1.0])
+    rr=rtest_fm/HBARC
+    M=1.0; alpha=1.0; D0=1.0
+    nu=alpha-1.5; x=M*rr
+    analytic=(D0*M**3/((2*np.pi)**1.5*2**(alpha-1)*gamma(alpha))
+              *x**nu*kv(nu,x))
+    yukawa=D0*M**2*np.exp(-M*rr)/(4*np.pi*rr)
+    rel=np.max(np.abs((analytic-yukawa)/yukawa))
+
+    # Central mechanical topology over the range actually shown in the talk.
+    r=np.linspace(0.01,2.0,500)
+    P,S=full_analytic_mechanics(np.array([C0]),np.array([M20]),
+                                np.array([ALPHA0]),r)
+    P=P[0]; S=S[0]
+    zeros=robust_zero_crossings(r,P)
+    shear_floor=-1e-10*max(float(np.max(np.abs(S))),1.0)
+    shear_ok=bool(np.min(S)>=shear_floor)
+    pressure_ok=bool(len(zeros)==1 and P[0]>0 and P[-1]<0)
+
+    result=dict(
+        yukawa_max_relative_difference=float(rel),
+        pressure_zero_crossings=len(zeros),
+        first_pressure_zero_fm=(zeros[0] if zeros else np.nan),
+        pressure_naturelike=pressure_ok,
+        shear_min_GeV_fm3=float(np.min(S)),
+        shear_nonnegative=shear_ok,
+    )
+    ok=bool(rel<1e-10 and pressure_ok and shear_ok)
+    return ok,result
+
 
 def cumulative_central(C,M2,alpha,r,qcuts,nq_per_GeV=600):
     rows=[]
@@ -405,6 +463,25 @@ def main():
     print("nonlinear parameters: C, M^2, alpha; cached local response: active KM15 ImH directions")
     print("correlated nuisances: XS normalization and BSA polarization generated + refitted")
     print("mechanics: analytic full generalized-multipole transform; finite-q curves are support diagnostics only")
+
+    # Validate the mechanics implementation before spending time on replicas.
+    preflight_ok,preflight=validate_analytic_mechanics()
+    print("\n[analytic mechanics preflight]")
+    print(f"Yukawa transform check : max rel. diff = {preflight['yukawa_max_relative_difference']:.3e}")
+    print(f"pressure crossings     : {preflight['pressure_zero_crossings']}")
+    print(f"first pressure zero    : {preflight['first_pressure_zero_fm']:.3f} fm")
+    print(f"minimum shear          : {preflight['shear_min_GeV_fm3']:.3e} GeV/fm^3")
+    print(f"Nature-like topology   : {'PASS' if preflight['pressure_naturelike'] else 'FAIL'}")
+    print(f"positive shear         : {'PASS' if preflight['shear_nonnegative'] else 'FAIL'}")
+    pd.DataFrame([preflight]).to_csv(tab/"mechanics_analytic_preflight.csv",index=False)
+    if not preflight_ok:
+        raise RuntimeError("Analytic mechanics preflight failed; replicas were NOT started.")
+    print("analytic mechanics     : PASS -- starting replicas\n")
+
+    # Remove stale figures so an old mechanics plot cannot be mistaken for this run.
+    for old_png in fig.glob("*.png"):
+        old_png.unlink()
+
     rng=np.random.default_rng(args.seed); allrows=[]
     for L in LUMI_FACTORS:
         data=pd.read_csv(s2/f"joint_fit_input_km15_{L}x.csv"); data["bin"]=data["bin"].astype(int)
@@ -466,8 +543,8 @@ def main():
     for sc,L in sorted(wanted,key=lambda x:(x[1],x[0])):
         g=rep[(rep.scenario==sc)&(rep.luminosity_factor==L)&rep.extrapolation_safe]
         if len(g)<20: continue
-        P,S=mechanics_batch(g.C.to_numpy(),g.dM2.to_numpy(),g.dalpha.to_numpy(),
-                            rgrid,args.qmax,args.mechanics_nq)
+        P,S=full_analytic_mechanics(g.C.to_numpy(),g.dM2.to_numpy(),g.dalpha.to_numpy(),
+                            rgrid)
         R2P=P*rgrid[None,:]**2
         R2S=S*rgrid[None,:]**2
         for name,A in [("r2p_full",R2P),("r2s_full",R2S),
@@ -486,12 +563,11 @@ def main():
         pressure_ok=[]; shear_ok=[]; vonlaue=[]
         dr=np.gradient(rgrid)
         for pp,ss in zip(P,S):
-            sig=np.sign(pp)
-            # Ignore numerical zeros; count robust sign changes.
-            cross=np.where(sig[:-1]*sig[1:]<0)[0]
-            naturelike=(pp[0]>0 and len(cross)==1 and pp[-1]<=0)
+            zeros_rep=robust_zero_crossings(rgrid,pp)
+            naturelike=(pp[0]>0 and len(zeros_rep)==1 and pp[-1]<=0)
             pressure_ok.append(naturelike)
-            shear_ok.append(bool(np.nanmin(ss)>=-1e-8))
+            shear_tol=-1e-10*max(float(np.nanmax(np.abs(ss))),1.0)
+            shear_ok.append(bool(np.nanmin(ss)>=shear_tol))
             # Finite-r diagnostic only; full von-Laue check is also written
             # separately below on an extended r grid.
             vonlaue.append(float(np.sum(rgrid**2*pp*dr)))
@@ -510,21 +586,17 @@ def main():
     # the von-Laue integral. This verifies the implementation against the
     # expected Nature-like topology without using it as a fit constraint.
     rcheck=np.linspace(.01,8.0,800)
-    P0,S0=mechanics_batch(np.array([C0]),np.array([M20]),np.array([ALPHA0]),
-                          rcheck,args.qmax,args.mechanics_nq)
+    P0,S0=full_analytic_mechanics(np.array([C0]),np.array([M20]),np.array([ALPHA0]),
+                          rcheck)
     P0=P0[0]; S0=S0[0]
-    cross=np.where(np.sign(P0[:-1])*np.sign(P0[1:])<0)[0]
-    zeros=[]
-    for i in cross:
-        x1,x2=rcheck[i],rcheck[i+1]; y1,y2=P0[i],P0[i+1]
-        zeros.append(float(x1-y1*(x2-x1)/(y2-y1)))
+    zeros=robust_zero_crossings(rcheck,P0)
     central_diag=pd.DataFrame([dict(
         pressure_zero_crossings=len(zeros),
         first_pressure_zero_fm=(zeros[0] if zeros else np.nan),
         shear_min_GeV_fm3=float(np.min(S0)),
-        shear_nonnegative=bool(np.min(S0)>=-1e-8),
+        shear_nonnegative=bool(np.min(S0)>=-1e-10*max(float(np.max(np.abs(S0))),1.0)),
         von_laue_integral_GeV=float(np.trapezoid(rcheck**2*P0,rcheck)),
-        qmax_GeV=args.qmax,
+        qmax_GeV=np.inf,
         note="analytic full generalized-multipole central truth")])
     central_diag.to_csv(tab/"mechanics_central_stability_check.csv",index=False)
 
