@@ -439,204 +439,144 @@ def main():
     ap.add_argument("--stage2",default=str(here/"output"/"stage2"/"tables"))
     ap.add_argument("--stage3c",default=str(here/"output"/"stage3c"/"tables"))
     ap.add_argument("--outdir",default=str(here/"output"/"stage3e"))
-    ap.add_argument("--replicas",type=int,default=300,help="replicas per luminosity/scenario (default 300)")
+    ap.add_argument("--replicas",type=int,default=100000)
     ap.add_argument("--workers",type=int,default=min(8,os.cpu_count() or 1))
     ap.add_argument("--seed",type=int,default=381902)
     ap.add_argument("--max-nfev",type=int,default=350)
     ap.add_argument("--qmax",type=float,default=40.0)
     ap.add_argument("--mechanics-nq",type=int,default=5001)
-    ap.add_argument("--run-high-t-ablation",action="store_true",
-                    help="reserved backup diagnostic; not part of the main luminosity projection")
+    ap.add_argument("--summary-sample",type=int,default=100000,
+                    help="max replicas/config used for d1/mechanics percentile bands")
+    ap.add_argument("--scatter-sample",type=int,default=20000)
+    ap.add_argument("--save-replica-sample",type=int,default=0,
+                    help="save at most N fitted replicas/config; default 0 = no raw replica table")
     args=ap.parse_args()
-    s2=Path(args.stage2)
-    if not s2.exists():
-        legacy=here/"output_stage2_pass2"/"tables"
-        if legacy.exists(): print(f"[input] using legacy Stage-2 directory {legacy}"); s2=legacy
-    s3=Path(args.stage3c); out=Path(args.outdir); tab=out/"tables"; fig=out/"figures"; tab.mkdir(parents=True,exist_ok=True); fig.mkdir(parents=True,exist_ok=True)
+
+    s2=Path(args.stage2); s3=Path(args.stage3c)
+    out=Path(args.outdir); tab=out/"tables"; fig=out/"figures"
+    tab.mkdir(parents=True,exist_ok=True); fig.mkdir(parents=True,exist_ok=True)
+    if not s2.exists(): raise FileNotFoundError(f"Missing Stage-2 input: {s2}")
+    if not s3.exists(): raise FileNotFoundError(f"Missing Stage-3C input: {s3}")
     deriv=pd.read_csv(s3/"volker_observable_parameter_derivatives.csv")
-    try:
-        from gepard.fits import th_KM15
-        central_imh={p:float(th_KM15.parameters[p]) for p in IMH_NAMES}
-    except Exception as e: raise RuntimeError("Stage 3E needs the same Gepard environment as Stage 3C to read KM15 central parameters") from e
-    print("="*96); print("STAGE 3E: NONLINEAR D-TERM REFIT REPLICAS + MECHANICAL-STRUCTURE VALIDATION"); print("="*96)
-    print(f"replicas/config={args.replicas}; workers={args.workers}; 12 configurations")
-    print("nonlinear parameters: C, M^2, alpha; cached local response: active KM15 ImH directions")
-    print("correlated nuisances: XS normalization and BSA polarization generated + refitted")
-    print("mechanics: analytic full generalized-multipole transform; finite-q curves are support diagnostics only")
+    from gepard.fits import th_KM15
+    central_imh={p:float(th_KM15.parameters[p]) for p in IMH_NAMES}
 
-    # Validate the mechanics implementation before spending time on replicas.
-    preflight_ok,preflight=validate_analytic_mechanics()
-    print("\n[analytic mechanics preflight]")
-    print(f"Yukawa transform check : max rel. diff = {preflight['yukawa_max_relative_difference']:.3e}")
-    print(f"pressure crossings     : {preflight['pressure_zero_crossings']}")
-    print(f"first pressure zero    : {preflight['first_pressure_zero_fm']:.3f} fm")
-    print(f"minimum shear          : {preflight['shear_min_GeV_fm3']:.3e} GeV/fm^3")
-    print(f"Nature-like topology   : {'PASS' if preflight['pressure_naturelike'] else 'FAIL'}")
-    print(f"positive shear         : {'PASS' if preflight['shear_nonnegative'] else 'FAIL'}")
-    pd.DataFrame([preflight]).to_csv(tab/"mechanics_analytic_preflight.csv",index=False)
-    if not preflight_ok:
-        raise RuntimeError("Analytic mechanics preflight failed; replicas were NOT started.")
-    print("analytic mechanics     : PASS -- starting replicas\n")
+    print("="*96); print("STAGE 3E: STREAMED NONLINEAR REPLICA PROJECTION"); print("="*96)
+    print(f"replicas/config={args.replicas:,}; workers={args.workers}; 12 configurations")
+    print("disk policy: no per-replica CSV by default; only compact summaries and figures")
 
-    # Remove stale figures so an old mechanics plot cannot be mistaken for this run.
-    for old_png in fig.glob("*.png"):
-        old_png.unlink()
+    ok,pre=validate_analytic_mechanics()
+    pd.DataFrame([pre]).to_csv(tab/"mechanics_analytic_preflight.csv",index=False)
+    print(f"[preflight] Yukawa rel.diff={pre['yukawa_max_relative_difference']:.3e}; "
+          f"pressure crossings={pre['pressure_zero_crossings']}; "
+          f"zero={pre['first_pressure_zero_fm']:.3f} fm; "
+          f"topology={'PASS' if pre['pressure_naturelike'] else 'FAIL'}; "
+          f"shear={'PASS' if pre['shear_nonnegative'] else 'FAIL'}")
+    if not ok: raise RuntimeError("Analytic mechanics preflight failed.")
+    for f in fig.glob("*.png"): f.unlink()
 
-    rng=np.random.default_rng(args.seed); allrows=[]
+    tmin=float(deriv.t_abs.min()); tmax=float(deriv.t_abs.max())
+    tg=np.linspace(tmin,tmax,181); qdata=float(np.sqrt(tmax)); rgrid=np.linspace(.05,2.0,99)
+    rng=np.random.default_rng(args.seed)
+    brows=[]; sums=[]; mrows=[]; diagrows=[]; plotrows=[]; saverows=[]
+    wanted={("statistics_only",L) for L in LUMI_FACTORS}|{(sc,10) for sc in SCENARIOS}
+
     for L in LUMI_FACTORS:
         data=pd.read_csv(s2/f"joint_fit_input_km15_{L}x.csv"); data["bin"]=data["bin"].astype(int)
         for sc in SCENARIOS:
             cfg=prepare_config(data,deriv,sc,central_imh)
             seeds=rng.integers(1,2**63-1,size=args.replicas,dtype=np.int64)
-            payload=[(int(x),cfg,args.max_nfev) for x in seeds]
+            C=np.empty(args.replicas); M2=np.empty(args.replicas); A=np.empty(args.replicas)
+            valid=np.zeros(args.replicas,dtype=bool); safe=np.zeros(args.replicas,dtype=bool)
+            nfev=np.empty(args.replicas,dtype=np.int16)
+            payload=((int(seed),cfg,args.max_nfev) for seed in seeds)
             if args.workers>1:
                 ctx=mp.get_context("spawn")
-                with ProcessPoolExecutor(max_workers=args.workers,mp_context=ctx) as ex: vals=list(ex.map(one_replica,payload,chunksize=max(1,args.replicas//(args.workers*4))))
-            else: vals=[one_replica(x) for x in payload]
-            for v in vals:
-                row=dict(zip(["seed","success","chi2","nfev","at_bound","C","dM2","dalpha",*IMH_NAMES,"beta_xs_norm","beta_bsa_pol","beta_xs_true","beta_bsa_true"],v))
-                row.update(scenario=sc,luminosity_factor=L)
-                # Hitting a deliberately broad shape bound is not an observable
-                # fit failure. Keep it for d1(t) inside the controlled range,
-                # but do not use it for unrestricted high-q continuation.
-                row["observable_valid"]=bool(row["success"] and np.isfinite(row["chi2"]))
-                row["extrapolation_safe"]=bool(row["observable_valid"] and not row["at_bound"])
-                row["accepted"]=row["observable_valid"]  # compatibility with old tables
-                allrows.append(row)
-            subset=[r for r in allrows if r["scenario"]==sc and r["luminosity_factor"]==L]
-            nvalid=sum(r["observable_valid"] for r in subset)
-            nsafe=sum(r["extrapolation_safe"] for r in subset)
-            print(f"[replicas] {sc:15s} {L:2d}x: observable-valid {nvalid}/{args.replicas}; "
-                  f"interior/high-q-safe {nsafe}/{args.replicas}")
-    rep=pd.DataFrame(allrows); rep.to_csv(tab/"replica_fit_results.csv",index=False)
+                with ProcessPoolExecutor(max_workers=args.workers,mp_context=ctx) as ex:
+                    it=ex.map(one_replica,payload,chunksize=max(1,min(5000,args.replicas//(args.workers*8))))
+                    for i,v in enumerate(it):
+                        _,success,chi2,nf,at_bound,c,m2,a,*_=v
+                        good=bool(success and np.isfinite(chi2))
+                        C[i]=c; M2[i]=m2; A[i]=a; valid[i]=good; safe[i]=good and not at_bound; nfev[i]=nf
+            else:
+                for i,x in enumerate(payload):
+                    v=one_replica(x); _,success,chi2,nf,at_bound,c,m2,a,*_=v
+                    good=bool(success and np.isfinite(chi2))
+                    C[i]=c; M2[i]=m2; A[i]=a; valid[i]=good; safe[i]=good and not at_bound; nfev[i]=nf
 
-    # D-term bands: restrict the displayed/result grid to the actually controlled
-    # CLAS12 t range. All converged observable fits contribute, including fits
-    # whose arbitrary M2/alpha coordinates land at a diagnostic bound.
-    tmin=float(deriv.t_abs.min()); tmax=float(deriv.t_abs.max())
-    tg=np.linspace(tmin,tmax,181); brows=[]
-    for (sc,L),g in rep[rep.observable_valid].groupby(["scenario","luminosity_factor"]):
-        vals=np.array([d1_curve(r.C,r.dM2,r.dalpha,tg) for r in g.itertuples(index=False)])
-        q16,q50,q84=percentile_band(vals)
-        for k,t in enumerate(tg):
-            brows.append(dict(scenario=sc,luminosity_factor=L,t_abs=t,
-                              q16=q16[k],q50=q50[k],q84=q84[k],
-                              n_replicas=len(g),controlled_tmin=tmin,controlled_tmax=tmax))
-    bands=pd.DataFrame(brows); bands.to_csv(tab/"d1_replica_bands.csv",index=False)
+            iv=np.flatnonzero(valid); isafe=np.flatnonzero(safe)
+            diagrows.append(dict(scenario=sc,luminosity_factor=L,attempted=args.replicas,
+                observable_valid=len(iv),extrapolation_safe=len(isafe),median_nfev=float(np.median(nfev)),
+                bound_hits=len(iv)-len(isafe),observable_valid_fraction=len(iv)/args.replicas,
+                extrapolation_safe_fraction=len(isafe)/args.replicas))
+            print(f"[replicas] {sc:15s} {L:2d}x: valid {len(iv):,}/{args.replicas:,}; high-q-safe {len(isafe):,}")
 
-    sums=[]
-    for (sc,L),g in rep[rep.observable_valid].groupby(["scenario","luminosity_factor"]):
-        for p,truth in [("C",C0),("dM2",M20),("dalpha",ALPHA0)]:
-            q=np.percentile(g[p],[16,50,84])
-            sums.append(dict(scenario=sc,luminosity_factor=L,parameter=p,truth=truth,
-                             q16=q[0],median=q[1],q84=q[2],n=len(g),
-                             bound_hit_fraction=float(g.at_bound.mean())))
-    pd.DataFrame(sums).to_csv(tab/"replica_parameter_summaries.csv",index=False)
+            for name,arr,truth in [("C",C,C0),("dM2",M2,M20),("dalpha",A,ALPHA0)]:
+                q=np.percentile(arr[iv],[16,50,84])
+                sums.append(dict(scenario=sc,luminosity_factor=L,parameter=name,truth=truth,
+                    q16=q[0],median=q[1],q84=q[2],n=len(iv),bound_hit_fraction=1-len(isafe)/len(iv)))
 
-    # Workshop mechanics projection: follow the Nature/Volker procedure and
-    # transform the complete fitted generalized-multipole form.  We retain all
-    # observable-valid replicas for d1(t), but for an unrestricted Fourier
-    # transform we use only replicas that stay away from the deliberately broad
-    # M2/alpha diagnostic bounds.  This is a model-conditional projection.
-    qdata=float(np.sqrt(tmax)); rgrid=np.linspace(.05,2.0,99); mrows=[]
-    wanted={("statistics_only",L) for L in LUMI_FACTORS}|{(sc,10) for sc in SCENARIOS}
-    for sc,L in sorted(wanted,key=lambda x:(x[1],x[0])):
-        g=rep[(rep.scenario==sc)&(rep.luminosity_factor==L)&rep.extrapolation_safe]
-        if len(g)<20: continue
-        P,S=full_analytic_mechanics(g.C.to_numpy(),g.dM2.to_numpy(),g.dalpha.to_numpy(),
-                            rgrid)
-        R2P=P*rgrid[None,:]**2
-        R2S=S*rgrid[None,:]**2
-        for name,A in [("r2p_full",R2P),("r2s_full",R2S),
-                       ("pressure_full",P),("shear_full",S)]:
-            q16,q50,q84=percentile_band(A)
-            for k,rv in enumerate(rgrid):
-                mrows.append(dict(scenario=sc,luminosity_factor=L,quantity=name,
-                                  r_fm=rv,q16=q16[k],q50=q50[k],q84=q84[k],
-                                  n_replicas=len(g),qmax_GeV=args.qmax,
-                                  interpretation="full generalized-multipole projection"))
+            take=min(args.summary_sample,len(iv))
+            sel=iv if take==len(iv) else rng.choice(iv,take,replace=False)
+            V=d1_curve(C[sel,None],M2[sel,None],A[sel,None],tg[None,:])
+            q16,q50,q84=percentile_band(V)
+            for k,t in enumerate(tg):
+                brows.append(dict(scenario=sc,luminosity_factor=L,t_abs=t,q16=q16[k],q50=q50[k],q84=q84[k],
+                    n_replicas=take,controlled_tmin=tmin,controlled_tmax=tmax))
+            del V
 
-        # Mechanical-shape sanity checks. Nature-like pressure means positive
-        # at small r and exactly one + -> - crossing before 2 fm. Shear should
-        # remain non-negative over the displayed radial interval. We report,
-        # rather than impose, these conditions.
-        pressure_ok=[]; shear_ok=[]; vonlaue=[]
-        dr=np.gradient(rgrid)
-        for pp,ss in zip(P,S):
-            zeros_rep=robust_zero_crossings(rgrid,pp)
-            naturelike=(pp[0]>0 and len(zeros_rep)==1 and pp[-1]<=0)
-            pressure_ok.append(naturelike)
-            shear_tol=-1e-10*max(float(np.nanmax(np.abs(ss))),1.0)
-            shear_ok.append(bool(np.nanmin(ss)>=shear_tol))
-            # Finite-r diagnostic only; full von-Laue check is also written
-            # separately below on an extended r grid.
-            vonlaue.append(float(np.sum(rgrid**2*pp*dr)))
-        mrows.append(dict(scenario=sc,luminosity_factor=L,quantity="stability_summary",
-                          r_fm=np.nan,q16=np.nan,q50=np.nan,q84=np.nan,
-                          n_replicas=len(g),qmax_GeV=args.qmax,
-                          interpretation="mechanical-shape diagnostic",
-                          pressure_naturelike_fraction=float(np.mean(pressure_ok)),
-                          shear_positive_fraction=float(np.mean(shear_ok)),
-                          median_finite_range_vonlaue=float(np.median(vonlaue))))
+            nplot=min(args.scatter_sample,len(iv)); psel=iv if nplot==len(iv) else rng.choice(iv,nplot,replace=False)
+            plotrows.extend(dict(scenario=sc,luminosity_factor=L,C=C[j],dM2=M2[j],dalpha=A[j],
+                                 observable_valid=True,at_bound=not safe[j]) for j in psel)
+            if args.save_replica_sample:
+                nk=min(args.save_replica_sample,len(iv)); ksel=iv if nk==len(iv) else rng.choice(iv,nk,replace=False)
+                saverows.extend(dict(scenario=sc,luminosity_factor=L,C=C[j],dM2=M2[j],dalpha=A[j],
+                                     extrapolation_safe=bool(safe[j])) for j in ksel)
 
-    mech=pd.DataFrame(mrows)
+            if (sc,L) in wanted and len(isafe)>=20:
+                nm=min(args.summary_sample,len(isafe)); msel=isafe if nm==len(isafe) else rng.choice(isafe,nm,replace=False)
+                P,S=full_analytic_mechanics(C[msel],M2[msel],A[msel],rgrid)
+                for name,X in [("r2p_full",P*rgrid[None,:]**2),("r2s_full",S*rgrid[None,:]**2),
+                               ("pressure_full",P),("shear_full",S)]:
+                    q16,q50,q84=percentile_band(X)
+                    for k,r in enumerate(rgrid):
+                        mrows.append(dict(scenario=sc,luminosity_factor=L,quantity=name,r_fm=r,
+                            q16=q16[k],q50=q50[k],q84=q84[k],n_replicas=nm,qmax_GeV=np.inf,
+                            interpretation="full generalized-multipole projection"))
+                pok=[]; sok=[]
+                for pp,ss in zip(P,S):
+                    z=robust_zero_crossings(rgrid,pp)
+                    pok.append(pp[0]>0 and len(z)==1 and pp[-1]<=0)
+                    sok.append(np.nanmin(ss)>=-1e-10*max(float(np.nanmax(np.abs(ss))),1.0))
+                mrows.append(dict(scenario=sc,luminosity_factor=L,quantity="stability_summary",
+                    r_fm=np.nan,q16=np.nan,q50=np.nan,q84=np.nan,n_replicas=nm,qmax_GeV=np.inf,
+                    interpretation="mechanical-shape diagnostic",
+                    pressure_naturelike_fraction=float(np.mean(pok)),shear_positive_fraction=float(np.mean(sok))))
+                del P,S
+            del C,M2,A,valid,safe,nfev
+
+    bands=pd.DataFrame(brows); pars=pd.DataFrame(sums); mech=pd.DataFrame(mrows); diag=pd.DataFrame(diagrows)
+    bands.to_csv(tab/"d1_replica_bands.csv",index=False)
+    pars.to_csv(tab/"replica_parameter_summaries.csv",index=False)
     mech.to_csv(tab/"mechanics_replica_bands.csv",index=False)
-
-    # A more direct central-truth sanity check, including a wider r interval for
-    # the von-Laue integral. This verifies the implementation against the
-    # expected Nature-like topology without using it as a fit constraint.
-    rcheck=np.linspace(.01,8.0,800)
-    P0,S0=full_analytic_mechanics(np.array([C0]),np.array([M20]),np.array([ALPHA0]),
-                          rcheck)
-    P0=P0[0]; S0=S0[0]
-    zeros=robust_zero_crossings(rcheck,P0)
-    central_diag=pd.DataFrame([dict(
-        pressure_zero_crossings=len(zeros),
-        first_pressure_zero_fm=(zeros[0] if zeros else np.nan),
-        shear_min_GeV_fm3=float(np.min(S0)),
-        shear_nonnegative=bool(np.min(S0)>=-1e-10*max(float(np.max(np.abs(S0))),1.0)),
-        von_laue_integral_GeV=float(np.trapezoid(rcheck**2*P0,rcheck)),
-        qmax_GeV=np.inf,
-        note="analytic full generalized-multipole central truth")])
-    central_diag.to_csv(tab/"mechanics_central_stability_check.csv",index=False)
-
-    # Analytic-transform unit test: alpha=1 must reproduce the Yukawa transform.
-    # We test the transform itself independently of pressure/shear derivatives.
-    rtest=np.array([0.2,0.5,1.0])/HBARC
-    Mtest=1.0; atest=1.0; Dtest=1.0
-    nut=atest-1.5; xt=Mtest*rtest
-    analytic=(Dtest*Mtest**3/((2*np.pi)**1.5*2**(atest-1)*gamma(atest))
-              *xt**nut*kv(nut,xt))
-    yukawa=Dtest*Mtest**2*np.exp(-Mtest*rtest)/(4*np.pi*rtest)
-    pd.DataFrame(dict(r_fm=np.array([0.2,0.5,1.0]),
-                      analytic=analytic,yukawa=yukawa,
-                      relative_difference=(analytic-yukawa)/yukawa)
-                 ).to_csv(tab/"mechanics_analytic_transform_unit_test.csv",index=False)
-
-    # Simplified support diagnostic: controlled endpoint, 2 GeV, and effectively full.
-    qcuts=sorted(set([qdata,2.0,args.qmax]))
-    cum=cumulative_central(C0,M20,ALPHA0,rgrid,qcuts)
-    cum["q_data_endpoint_GeV"]=qdata
-    cum.to_csv(tab/"mechanics_cumulative_q_support.csv",index=False)
-    make_plots(rep,bands,mech,cum,fig,qdata)
-
-    diag=rep.groupby(["scenario","luminosity_factor"]).agg(
-        attempted=("observable_valid","size"),
-        observable_valid=("observable_valid","sum"),
-        extrapolation_safe=("extrapolation_safe","sum"),
-        median_nfev=("nfev","median"),
-        bound_hits=("at_bound","sum")).reset_index()
-    diag["observable_valid_fraction"]=diag.observable_valid/diag.attempted
-    diag["extrapolation_safe_fraction"]=diag.extrapolation_safe/diag.attempted
     diag.to_csv(tab/"replica_diagnostics.csv",index=False)
+    if args.save_replica_sample: pd.DataFrame(saverows).to_csv(tab/"replica_fit_sample.csv",index=False)
+
+    rcheck=np.linspace(.01,8.0,800)
+    P0,S0=full_analytic_mechanics(np.array([C0]),np.array([M20]),np.array([ALPHA0]),rcheck); P0=P0[0]; S0=S0[0]
+    zeros=robust_zero_crossings(rcheck,P0)
+    pd.DataFrame([dict(pressure_zero_crossings=len(zeros),first_pressure_zero_fm=zeros[0] if zeros else np.nan,
+        shear_min_GeV_fm3=float(np.min(S0)),shear_nonnegative=bool(np.min(S0)>=-1e-10*max(float(np.max(np.abs(S0))),1.0)),
+        von_laue_integral_GeV=float(np.trapezoid(rcheck**2*P0,rcheck)),qmax_GeV=np.inf,
+        note="analytic full generalized-multipole central truth")]).to_csv(tab/"mechanics_central_stability_check.csv",index=False)
+
+    qcuts=sorted(set([qdata,2.0,args.qmax])); cum=cumulative_central(C0,M20,ALPHA0,rgrid,qcuts)
+    cum["q_data_endpoint_GeV"]=qdata; cum.to_csv(tab/"mechanics_cumulative_q_support.csv",index=False)
+    make_plots(pd.DataFrame(plotrows),bands,mech,cum,fig,qdata)
     print("\nReplica diagnostics:"); print(diag.to_string(index=False))
-    print(f"\n[data/Fourier] controlled endpoint q_data=sqrt(tmax)={qdata:.3f} GeV; transforms also evaluated above this to expose model continuation")
-    print(f"[output] {out}")
-    print("[interpretation] d1 bands use every converged observable fit inside the controlled t range.")
-    print("[interpretation] mechanics headline follows Nature/Volker using the analytic full generalized-multipole transform.")
-    print("[interpretation] hard q_data truncation is used only as a momentum-support diagnostic; it is not interpreted as a physical pressure/shear distribution.")
-    if args.run_high_t_ablation:
-        print("[high-t ablation] not executed in the main workflow: a real luminosity upgrade improves the full accepted kinematic range.")
-        print("[high-t ablation] flag retained only so a future targeted diagnostic can be added without changing the main physics projection.")
+    print(f"\n[output] {out}")
+    print("[disk] no raw per-replica table written." if not args.save_replica_sample else
+          f"[disk] compact sample only: <= {args.save_replica_sample:,} replicas/config.")
+
 
 if __name__=="__main__": main()
