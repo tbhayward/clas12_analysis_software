@@ -262,8 +262,13 @@ def numeric(series: pd.Series) -> pd.Series:
     # endif
 
     s = series.astype("string").str.strip()
+
+    # ROOT/CSV tuple quantities are serialized with an additional literal
+    # quote character, e.g. '"(83221,288.48,0)"'.  Search for the first
+    # numeric token anywhere in the field rather than requiring the number
+    # to follow '(' immediately.
     first = s.str.extract(
-        r"^\s*[\(\[]?\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)",
+        r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)",
         expand=False,
     )
     return pd.to_numeric(first, errors="coerce")
