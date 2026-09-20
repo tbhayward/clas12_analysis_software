@@ -61,18 +61,12 @@ int cd_sector_from_phi_rad(double phi_rad) {
 }
 
 bool global_cuts_apply_sp18_out_sector_quality_cuts(const GlobalCutConfig& cfg) {
-    // Topology-filtered extractions are now intended to be directly comparable
-    // with the nominal production analysis, so keep the nominal Sp18 Out
-    // detector-quality exclusions active in topology mode.  Only the explicit
-    // single-particle sector diagnostic filters suspend these exclusions, since
-    // those studies may intentionally inspect the affected detector regions.
-    const bool sector_diagnostic_study_active =
-        cfg.enable_electron_fd_sector_filter ||
-        cfg.enable_proton_fd_sector_filter ||
-        cfg.enable_proton_cd_sector_filter ||
-        (cfg.enable_photon_fd_sector_filter && !cfg.enable_topology_filter);
-
-    return cfg.enable_sp18_out_sector_quality_cuts && !sector_diagnostic_study_active;
+    // Controlled topology/particle-sector extractions must remain directly
+    // comparable with production.  Therefore the nominal Sp18 Out detector-
+    // quality exclusions stay active under every sector filter as well.
+    // Consequence: electron S3 is intentionally empty for Sp18 Out, and the
+    // established S5 exclusions remain visible in the affected combinations.
+    return cfg.enable_sp18_out_sector_quality_cuts;
 }
 
 bool global_cuts_require_sector_phi(const GlobalCutConfig& cfg) {

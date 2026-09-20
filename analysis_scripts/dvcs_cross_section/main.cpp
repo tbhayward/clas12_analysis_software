@@ -139,6 +139,9 @@ int main(int argc, char* argv[]) {
     bool use_eppi0_production_normalization = true;
     std::string topology_cli;
     int photon_sector_cli = 0;
+    int electron_sector_cli = 0;
+    int proton_fd_sector_cli = 0;
+    int proton_cd_sector_cli = 0;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--acceptance-reweighting-only") {
             acceptance_reweighting_only = true;
@@ -153,6 +156,27 @@ int main(int argc, char* argv[]) {
             eppi0_production_test = true;
         } else if (std::string(argv[i]) == "--no-eppi0-normalization") {
             use_eppi0_production_normalization = false;
+        } else if (std::string(argv[i]) == "--electron-sector") {
+            if (i + 1 >= argc) { std::cerr << "[main] FATAL: --electron-sector requires an integer 1--6\n"; return 1; }
+            try { electron_sector_cli = std::stoi(argv[++i]); }
+            catch (...) { std::cerr << "[main] FATAL: --electron-sector requires an integer 1--6\n"; return 1; }
+            if (electron_sector_cli < 1 || electron_sector_cli > 6) {
+                std::cerr << "[main] FATAL: --electron-sector must be in [1,6]\n"; return 1;
+            }
+        } else if (std::string(argv[i]) == "--proton-fd-sector") {
+            if (i + 1 >= argc) { std::cerr << "[main] FATAL: --proton-fd-sector requires an integer 1--6\n"; return 1; }
+            try { proton_fd_sector_cli = std::stoi(argv[++i]); }
+            catch (...) { std::cerr << "[main] FATAL: --proton-fd-sector requires an integer 1--6\n"; return 1; }
+            if (proton_fd_sector_cli < 1 || proton_fd_sector_cli > 6) {
+                std::cerr << "[main] FATAL: --proton-fd-sector must be in [1,6]\n"; return 1;
+            }
+        } else if (std::string(argv[i]) == "--proton-cd-sector") {
+            if (i + 1 >= argc) { std::cerr << "[main] FATAL: --proton-cd-sector requires an integer 1--3\n"; return 1; }
+            try { proton_cd_sector_cli = std::stoi(argv[++i]); }
+            catch (...) { std::cerr << "[main] FATAL: --proton-cd-sector requires an integer 1--3\n"; return 1; }
+            if (proton_cd_sector_cli < 1 || proton_cd_sector_cli > 3) {
+                std::cerr << "[main] FATAL: --proton-cd-sector must be in [1,3]\n"; return 1;
+            }
         } else if (std::string(argv[i]) == "--photon-sector") {
             if (i + 1 >= argc) { std::cerr << "[main] FATAL: --photon-sector requires an integer 1--6\n"; return 1; }
             try { photon_sector_cli = std::stoi(argv[++i]); }
@@ -178,6 +202,15 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+    const int n_particle_sector_filters =
+        (electron_sector_cli != 0) + (proton_fd_sector_cli != 0) +
+        (proton_cd_sector_cli != 0) + (photon_sector_cli != 0);
+    if (n_particle_sector_filters > 1) {
+        std::cerr << "[main] FATAL: choose only one of --electron-sector, --proton-fd-sector, "
+                  << "--proton-cd-sector, or --photon-sector per run.\n";
+        return 1;
+    }
+
     SystematicRunSelection systematic_selection;
     try {
         systematic_selection = parse_systematic_selection(argc, argv);
@@ -260,16 +293,16 @@ int main(int argc, char* argv[]) {
     }
 
     // Electron FD sector study. Electron is always FD.
-    global_cfg.enable_electron_fd_sector_filter = false;
-    global_cfg.electron_fd_sector = 1;
+    global_cfg.enable_electron_fd_sector_filter = (electron_sector_cli != 0);
+    global_cfg.electron_fd_sector = (electron_sector_cli != 0 ? electron_sector_cli : 1);
 
     // Proton FD sector study. This automatically keeps only FD-FD events.
-    global_cfg.enable_proton_fd_sector_filter = false;
-    global_cfg.proton_fd_sector = 1;
+    global_cfg.enable_proton_fd_sector_filter = (proton_fd_sector_cli != 0);
+    global_cfg.proton_fd_sector = (proton_fd_sector_cli != 0 ? proton_fd_sector_cli : 1);
 
     // Proton CD sector study. This automatically keeps only CD-FD and CD-FT events.
-    global_cfg.enable_proton_cd_sector_filter = false;
-    global_cfg.proton_cd_sector = 1;
+    global_cfg.enable_proton_cd_sector_filter = (proton_cd_sector_cli != 0);
+    global_cfg.proton_cd_sector = (proton_cd_sector_cli != 0 ? proton_cd_sector_cli : 1);
 
     // Optional FD-photon sector selection.  For the controlled topology study
     // use this together with --topology CD-FD so the proton remains CD while
@@ -295,6 +328,9 @@ int main(int argc, char* argv[]) {
     std::cout << "[main] Topology selection: "
               << (topology_cli.empty() ? "inclusive" : topology_cli)
               << (photon_sector_cli ? (" photon-S" + std::to_string(photon_sector_cli)) : "")
+              << (electron_sector_cli ? (" electron-S" + std::to_string(electron_sector_cli)) : "")
+              << (proton_fd_sector_cli ? (" proton-FD-S" + std::to_string(proton_fd_sector_cli)) : "")
+              << (proton_cd_sector_cli ? (" proton-CD-S" + std::to_string(proton_cd_sector_cli)) : "")
               << std::endl;
     std::cout << "[main] Global cut analysis tag: "
               << global_cuts_analysis_tag(default_global_cuts()) << std::endl;
@@ -522,11 +558,16 @@ int main(int argc, char* argv[]) {
         // calibration is inherited verbatim from the parent CD-FD extraction
         // below.  Do not attempt to promote a sector-only Sp18-Out theta_e fit
         // into the temporary diagnostic model produced in this block.
+        const bool any_single_particle_sector_run =
+            global_cfg.enable_photon_fd_sector_filter ||
+            global_cfg.enable_electron_fd_sector_filter ||
+            global_cfg.enable_proton_fd_sector_filter ||
+            global_cfg.enable_proton_cd_sector_filter;
         const bool single_fd_photon_sector_run =
             (global_cfg.enable_photon_fd_sector_filter &&
              global_cfg.enable_topology_filter &&
              global_cfg.required_detector2 == 1);
-        current_opts.use_sp18_out_e_theta_response_model = !single_fd_photon_sector_run;
+        current_opts.use_sp18_out_e_theta_response_model = !any_single_particle_sector_run;
         current_opts.use_e_theta_linear_data_current_efficiency = false;
         current_opts.response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
         current_opts.apply_legacy_binned_current_corrections = false;
@@ -607,6 +648,52 @@ int main(int argc, char* argv[]) {
             }
         } catch (const std::exception& e) {
             std::cerr << "[main] FATAL: failed to snapshot/restore parent CD-FD "
+                      << "current-response calibration: " << e.what() << "\n";
+            std::exit(EXIT_FAILURE);
+        }
+
+        // Generic single-particle sector diagnostics (electron, proton-FD,
+        // proton-CD) inherit the exact inclusive parent current calibration.
+        // This prevents the detector-sector selection from redefining the
+        // current-efficiency correction being tested.  Run one inclusive
+        // parent extraction first to create the protected snapshot.
+        const std::filesystem::path inclusive_parent_model =
+            parent_dir / "inclusive_parent_current_response_model.json";
+        const bool no_particle_sector_filter =
+            !global_cfg.enable_photon_fd_sector_filter &&
+            !global_cfg.enable_electron_fd_sector_filter &&
+            !global_cfg.enable_proton_fd_sector_filter &&
+            !global_cfg.enable_proton_cd_sector_filter;
+        const bool inclusive_parent_run =
+            !global_cfg.enable_topology_filter && no_particle_sector_filter;
+        const bool generic_particle_sector_run =
+            global_cfg.enable_electron_fd_sector_filter ||
+            global_cfg.enable_proton_fd_sector_filter ||
+            global_cfg.enable_proton_cd_sector_filter;
+        try {
+            if (inclusive_parent_run) {
+                std::filesystem::create_directories(parent_dir);
+                std::filesystem::copy_file(
+                    current_model, inclusive_parent_model,
+                    std::filesystem::copy_options::overwrite_existing);
+                std::cout << "[main] Saved inclusive parent current-response calibration: "
+                          << inclusive_parent_model.string() << "\n";
+            } else if (generic_particle_sector_run) {
+                if (!std::filesystem::exists(inclusive_parent_model)) {
+                    std::cerr << "[main] FATAL: particle-sector extraction requires the inclusive "
+                              << "parent current-response calibration. Run the same command once "
+                              << "without a sector option first. Missing: "
+                              << inclusive_parent_model.string() << "\n";
+                    std::exit(EXIT_FAILURE);
+                }
+                std::filesystem::copy_file(
+                    inclusive_parent_model, current_model,
+                    std::filesystem::copy_options::overwrite_existing);
+                std::cout << "[main] Restored exact inclusive parent current-response calibration "
+                          << "for particle-sector extraction.\n";
+            }
+        } catch (const std::exception& e) {
+            std::cerr << "[main] FATAL: failed to snapshot/restore inclusive parent "
                       << "current-response calibration: " << e.what() << "\n";
             std::exit(EXIT_FAILURE);
         }
