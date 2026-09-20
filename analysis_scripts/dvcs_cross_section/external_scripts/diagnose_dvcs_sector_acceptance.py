@@ -222,8 +222,51 @@ def columns_for_period(df: pd.DataFrame, period: str) -> Dict[str, Optional[str]
     }
 
 
+def require_period_columns(df: pd.DataFrame, period: str, context: str) -> Dict[str, str]:
+    cols = columns_for_period(df, period)
+    missing = [key for key, col in cols.items() if col is None]
+    if missing:
+        raise RuntimeError(
+            f"{context}, {period}: missing exact expected columns: {', '.join(missing)}"
+        )
+    # endif
+    return {key: str(col) for key, col in cols.items()}
+
+
+def topology_columns(df: pd.DataFrame, period: str) -> Dict[str, Optional[str]]:
+    return {
+        "FD_FD": find_column(
+            df, [f"reconstructed yield, ep->epg, (FD, FD), mc, {period}"]
+        ),
+        "CD_FD": find_column(
+            df, [f"reconstructed yield, ep->epg, (CD, FD), mc, {period}"]
+        ),
+        "CD_FT": find_column(
+            df, [f"reconstructed yield, ep->epg, (CD, FT), mc, {period}"]
+        ),
+    }
+
+
 def numeric(series: pd.Series) -> pd.Series:
-    return pd.to_numeric(series, errors="coerce")
+    """
+    Convert a DVCS CSV quantity to its central numerical value.
+
+    The production CSV commonly stores quantities as tuple-like strings,
+    e.g. "(12.34,0.56)" or "(12.34,0.56,...)", rather than plain scalars.
+    pd.to_numeric() alone therefore turns valid physics entries into NaN.
+    This parser extracts the first tuple component and also accepts ordinary
+    numeric/scalar strings.
+    """
+    if pd.api.types.is_numeric_dtype(series):
+        return pd.to_numeric(series, errors="coerce")
+    # endif
+
+    s = series.astype("string").str.strip()
+    first = s.str.extract(
+        r"^\s*[\(\[]?\s*([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)",
+        expand=False,
+    )
+    return pd.to_numeric(first, errors="coerce")
 
 
 def finite_positive(series: pd.Series, threshold: float = 0.0) -> pd.Series:
@@ -762,7 +805,10 @@ def plot_data_mc_sector_fraction(
         "Sector / parent fraction",
         f"{group_title}: DATA and reconstructed MC",
     )
-    axes[0].legend(ncol=2, fontsize=8)
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        axes[0].legend(ncol=2, fontsize=8)
+    # endif
 
     axes[1].axhline(1.0, linestyle="--", linewidth=1.0)
     setup_axis(
@@ -771,7 +817,10 @@ def plot_data_mc_sector_fraction(
         "(DATA sector fraction) / (MC sector fraction)",
         f"{group_title}: DATA/MC population ratio",
     )
-    axes[1].legend(ncol=2, fontsize=8)
+    handles, labels = axes[1].get_legend_handles_labels()
+    if handles:
+        axes[1].legend(ncol=2, fontsize=8)
+    # endif
 
     fig.suptitle(f"{period}", y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.96))
@@ -970,7 +1019,10 @@ def plot_generated_reconstructed_acceptance(
         setup_axis(ax, r"$|t|$ (GeV$^2$)", ylabel, group_title)
     # endfor
 
-    axes[0].legend(ncol=2, fontsize=8)
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        axes[0].legend(ncol=2, fontsize=8)
+    # endif
     fig.suptitle(f"MC population and acceptance — {period}", y=0.995)
     fig.tight_layout(rect=(0, 0, 1, 0.95))
     fig.savefig(
@@ -1016,11 +1068,394 @@ def plot_focus_geometry(
     plt.close(fig)
 
 
+
+def write_numerical_audit(
+    parent: pd.DataFrame,
+    datasets: Dict[str, pd.DataFrame],
+    period: str,
+    group_name: str,
+    outdir: Path,
+) -> pd.DataFrame:
+    """
+    Write one row per sector with explicit counts at every stage of the chain.
+    Counts are evaluated on bins with a finite, positive parent cross section.
+    """
+    pc = require_period_columns(parent, period, f"{group_name} parent")
+    rows = []
+
+    for sector_name, sector in datasets.items():
+        sc = require_period_columns(sector, period, f"{group_name} {sector_name}")
+
+        keep_p = ["bin index", pc["xs"]]
+        keep_s = [
+            "bin index",
+            sc["generated"],
+            sc["reconstructed"],
+            sc["acceptance"],
+            sc["signal"],
+            sc["xs"],
+        ]
+        m = sector[keep_s].merge(
+            parent[keep_p],
+            on="bin index",
+            how="outer",
+            suffixes=("_sector", "_parent"),
+        )
+
+        p_xs = numeric(m[f"{pc['xs']}_parent"])
+        gen = numeric(m[f"{sc['generated']}_sector"])
+        rec = numeric(m[f"{sc['reconstructed']}_sector"])
+        acc = numeric(m[f"{sc['acceptance']}_sector"])
+        sig = numeric(m[f"{sc['signal']}_sector"])
+        xs = numeric(m[f"{sc['xs']}_sector"])
+
+        base = np.isfinite(p_xs) & (p_xs > 0)
+        gen_ok = base & np.isfinite(gen) & (gen > 0)
+        rec_ok = gen_ok & np.isfinite(rec) & (rec > 0)
+        acc_ok = rec_ok & np.isfinite(acc) & (acc > 0)
+        sig_ok = acc_ok & np.isfinite(sig) & (sig > 0)
+        xs_ok = sig_ok & np.isfinite(xs) & (xs > 0)
+
+        rows.append(
+            {
+                "group": group_name,
+                "period": period,
+                "sector": sector_name,
+                "parent_positive_xs_bins": int(base.sum()),
+                "sector_positive_generated_mc": int(gen_ok.sum()),
+                "lost_at_generated_mc": int(base.sum() - gen_ok.sum()),
+                "sector_positive_reconstructed_mc": int(rec_ok.sum()),
+                "lost_at_reconstructed_mc": int(gen_ok.sum() - rec_ok.sum()),
+                "sector_positive_acceptance": int(acc_ok.sum()),
+                "lost_at_acceptance": int(rec_ok.sum() - acc_ok.sum()),
+                "sector_positive_data_signal": int(sig_ok.sum()),
+                "lost_at_data_signal": int(acc_ok.sum() - sig_ok.sum()),
+                "sector_positive_xs": int(xs_ok.sum()),
+                "lost_at_cross_section": int(sig_ok.sum() - xs_ok.sum()),
+            }
+        )
+    # endfor
+
+    audit = pd.DataFrame(rows)
+    audit.to_csv(outdir / f"numerical_chain_audit_{sanitize(period)}.csv", index=False)
+    return audit
+
+
+def plot_chain_survival(
+    audit: pd.DataFrame,
+    period: str,
+    group_title: str,
+    outdir: Path,
+    dpi: int,
+) -> None:
+    stages = [
+        ("parent_positive_xs_bins", "Parent XS"),
+        ("sector_positive_generated_mc", "Ngen"),
+        ("sector_positive_reconstructed_mc", "Nrec"),
+        ("sector_positive_acceptance", "Acceptance"),
+        ("sector_positive_data_signal", "DATA signal"),
+        ("sector_positive_xs", "Sector XS"),
+    ]
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    x = np.arange(len(stages))
+    plotted = False
+
+    for _, row in audit.iterrows():
+        y = [row[col] for col, _ in stages]
+        ax.plot(x, y, marker="o", linewidth=1.5, label=row["sector"])
+        plotted = True
+    # endfor
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([label for _, label in stages])
+    ax.set_ylabel("Number of bins")
+    ax.set_xlabel("Sequential analysis stage")
+    ax.set_title(f"{group_title}: bin survival chain — {period}")
+    ax.grid(alpha=0.25)
+    if plotted:
+        ax.legend(ncol=2)
+    # endif
+    fig.tight_layout()
+    fig.savefig(outdir / f"bin_survival_chain_{sanitize(period)}.png", dpi=dpi)
+    plt.close(fig)
+
+
+def plot_exact_stage_ratios(
+    parent: pd.DataFrame,
+    datasets: Dict[str, pd.DataFrame],
+    period: str,
+    group_name: str,
+    group_title: str,
+    outdir: Path,
+    dpi: int,
+) -> None:
+    """
+    Plot exact sector/parent ratios for Ngen, Nrec, acceptance, signal, and XS
+    versus |t|. No assumption is made that sector and parent Ngen are equal.
+    """
+    pc = require_period_columns(parent, period, f"{group_name} parent")
+    stages = [
+        ("generated", r"$N_{\rm gen,s}/N_{\rm gen,p}$"),
+        ("reconstructed", r"$N_{\rm rec,s}/N_{\rm rec,p}$"),
+        ("acceptance", r"$A_s/A_p$"),
+        ("signal", r"$N_{\rm sig,s}^{DATA}/N_{\rm sig,p}^{DATA}$"),
+        ("xs", r"$\sigma_s/\sigma_p$"),
+    ]
+
+    fig, axes = plt.subplots(3, 2, figsize=(14, 13))
+    axes = axes.ravel()
+
+    for iax, (key, ylabel) in enumerate(stages):
+        ax = axes[iax]
+        plotted = False
+
+        for sector_name, sector in datasets.items():
+            sc = require_period_columns(sector, period, f"{group_name} {sector_name}")
+            tcol = f"t_abs_avg, {period}"
+            if tcol not in sector.columns:
+                raise RuntimeError(f"{group_name} {sector_name}, {period}: missing {tcol}")
+            # endif
+
+            m = sector[["bin index", tcol, sc[key]]].merge(
+                parent[["bin index", pc[key]]],
+                on="bin index",
+                how="inner",
+                suffixes=("_sector", "_parent"),
+            )
+            ratio = safe_ratio(
+                m[f"{sc[key]}_sector"],
+                m[f"{pc[key]}_parent"],
+            )
+            xc, med, _, _ = binned_median(numeric(m[tcol]), ratio)
+            if len(xc):
+                ax.plot(xc, med, marker="o", markersize=3, linewidth=1.2, label=sector_name)
+                plotted = True
+            # endif
+        # endfor
+
+        ax.axhline(1.0, linestyle="--", linewidth=1.0)
+        setup_axis(ax, r"$|t|$ (GeV$^2$)", ylabel, "")
+        if plotted:
+            ax.legend(ncol=2, fontsize=8)
+        else:
+            raise RuntimeError(
+                f"{group_name}, {period}: no plottable values for exact {key} ratio"
+            )
+        # endif
+    # endfor
+
+    axes[-1].axis("off")
+    fig.suptitle(f"{group_title}: exact sector/parent analysis chain — {period}", y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(outdir / f"exact_stage_ratios_vs_t_{sanitize(period)}.png", dpi=dpi)
+    plt.close(fig)
+
+
+def plot_absolute_mc_diagnostics(
+    datasets: Dict[str, pd.DataFrame],
+    period: str,
+    group_name: str,
+    group_title: str,
+    outdir: Path,
+    dpi: int,
+) -> None:
+    """
+    Show the absolute Ngen, Nrec, and acceptance values versus |t|.
+    Also show Nrec versus Ngen bin-by-bin to expose empty/low-stat MC bins.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+    axes = axes.ravel()
+    plotted = [False, False, False, False]
+
+    for sector_name, df in datasets.items():
+        c = require_period_columns(df, period, f"{group_name} {sector_name}")
+        tcol = f"t_abs_avg, {period}"
+        if tcol not in df.columns:
+            raise RuntimeError(f"{group_name} {sector_name}, {period}: missing {tcol}")
+        # endif
+
+        x = numeric(df[tcol])
+        gen = numeric(df[c["generated"]])
+        rec = numeric(df[c["reconstructed"]])
+        acc = numeric(df[c["acceptance"]])
+
+        for i, (vals, ylabel) in enumerate(
+            [
+                (gen, "Generated MC yield"),
+                (rec, "Reconstructed MC yield"),
+                (acc, "Acceptance"),
+            ]
+        ):
+            xc, med, _, _ = binned_median(x, vals)
+            if len(xc):
+                axes[i].plot(xc, med, marker="o", markersize=3, linewidth=1.2, label=sector_name)
+                plotted[i] = True
+            # endif
+        # endfor
+
+        good = np.isfinite(gen) & np.isfinite(rec) & (gen >= 0) & (rec >= 0)
+        if good.any():
+            axes[3].scatter(gen[good], rec[good], s=8, alpha=0.25, label=sector_name)
+            plotted[3] = True
+        # endif
+    # endfor
+
+    setup_axis(axes[0], r"$|t|$ (GeV$^2$)", "Generated MC yield", "")
+    setup_axis(axes[1], r"$|t|$ (GeV$^2$)", "Reconstructed MC yield", "")
+    setup_axis(axes[2], r"$|t|$ (GeV$^2$)", "Acceptance", "")
+    setup_axis(axes[3], "Generated MC yield", "Reconstructed MC yield", "")
+
+    for i, ax in enumerate(axes):
+        if not plotted[i]:
+            raise RuntimeError(
+                f"{group_name}, {period}: absolute MC diagnostic panel {i} has no values"
+            )
+        # endif
+        ax.legend(ncol=2, fontsize=8)
+    # endfor
+
+    fig.suptitle(f"{group_title}: absolute MC population and acceptance — {period}", y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.97))
+    fig.savefig(outdir / f"absolute_mc_acceptance_{sanitize(period)}.png", dpi=dpi)
+    plt.close(fig)
+
+
+def plot_topology_fractions(
+    datasets: Dict[str, pd.DataFrame],
+    period: str,
+    group_name: str,
+    group_title: str,
+    outdir: Path,
+    dpi: int,
+) -> None:
+    """
+    Decompose reconstructed epg MC into (FD,FD), (CD,FD), and (CD,FT)
+    topology fractions versus |t| for each sector-restricted extraction.
+    """
+    topology_labels = {
+        "FD_FD": "(FD, FD)",
+        "CD_FD": "(CD, FD)",
+        "CD_FT": "(CD, FT)",
+    }
+
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5.5))
+    plotted = [False, False, False]
+
+    for sector_name, df in datasets.items():
+        tc = topology_columns(df, period)
+        if any(col is None for col in tc.values()):
+            missing = [k for k, col in tc.items() if col is None]
+            raise RuntimeError(
+                f"{group_name} {sector_name}, {period}: missing topology columns {missing}"
+            )
+        # endif
+
+        tcol = f"t_abs_avg, {period}"
+        if tcol not in df.columns:
+            raise RuntimeError(f"{group_name} {sector_name}, {period}: missing {tcol}")
+        # endif
+
+        vals = {key: numeric(df[col]) for key, col in tc.items()}
+        total = vals["FD_FD"] + vals["CD_FD"] + vals["CD_FT"]
+
+        for i, key in enumerate(["FD_FD", "CD_FD", "CD_FT"]):
+            frac = safe_ratio(vals[key], total)
+            xc, med, _, _ = binned_median(numeric(df[tcol]), frac)
+            if len(xc):
+                axes[i].plot(xc, med, marker="o", markersize=3, linewidth=1.2, label=sector_name)
+                plotted[i] = True
+            # endif
+        # endfor
+    # endfor
+
+    for i, key in enumerate(["FD_FD", "CD_FD", "CD_FT"]):
+        setup_axis(
+            axes[i],
+            r"$|t|$ (GeV$^2$)",
+            "Fraction of reconstructed epγ MC",
+            topology_labels[key],
+        )
+        axes[i].set_ylim(0.0, 1.0)
+        if plotted[i]:
+            axes[i].legend(ncol=2, fontsize=8)
+        else:
+            raise RuntimeError(
+                f"{group_name}, {period}: no plottable topology fraction for {key}"
+            )
+        # endif
+    # endfor
+
+    fig.suptitle(f"{group_title}: reconstructed-MC topology composition — {period}", y=0.995)
+    fig.tight_layout(rect=(0, 0, 1, 0.96))
+    fig.savefig(outdir / f"topology_fractions_vs_t_{sanitize(period)}.png", dpi=dpi)
+    plt.close(fig)
+
+
+def plot_failure_reason_maps_colored(
+    classified: pd.DataFrame,
+    sector: str,
+    period: str,
+    group_title: str,
+    outdir: Path,
+    dpi: int,
+) -> None:
+    """
+    Four phase-space maps with points separated by the actual sequential
+    failure stage. This is intentionally categorical rather than binary.
+    """
+    pairs = [
+        ("xB", "Q2", r"$x_B$", r"$Q^2$ (GeV$^2$)"),
+        ("xB", "t", r"$x_B$", r"$|t|$ (GeV$^2$)"),
+        ("Q2", "t", r"$Q^2$ (GeV$^2$)", r"$|t|$ (GeV$^2$)"),
+        ("phi", "t", r"$\phi$ (deg)", r"$|t|$ (GeV$^2$)"),
+    ]
+
+    fig, axes = plt.subplots(2, 2, figsize=(14, 11))
+    axes = axes.ravel()
+
+    reasons = [
+        r for r in FAILURE_ORDER
+        if r != "parent_xs_invalid" and (classified["failure_reason"] == r).any()
+    ]
+
+    for ax, (xkey, ykey, xlabel, ylabel) in zip(axes, pairs):
+        for reason in reasons:
+            sub = classified[classified["failure_reason"] == reason]
+            ax.scatter(
+                numeric(sub[xkey]),
+                numeric(sub[ykey]),
+                s=14,
+                alpha=0.55,
+                label=reason,
+            )
+        # endfor
+        setup_axis(ax, xlabel, ylabel, "")
+    # endfor
+
+    handles, labels = axes[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, labels, loc="upper center", ncol=3, fontsize=8)
+    # endif
+    fig.suptitle(
+        f"{group_title} {sector}: exact failure-stage geography — {period}",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0, 1, 0.93))
+    fig.savefig(
+        outdir / f"failure_stage_maps_{sanitize(sector)}_{sanitize(period)}.png",
+        dpi=dpi,
+    )
+    plt.close(fig)
+
 def write_readme(output_dir: Path) -> None:
     text = """DVCS sector acceptance diagnostics
 
 Interpretation rules
 ====================
+0. Production quantities stored as tuple-like strings are parsed using their
+   first component as the central value. This is required for these CSVs;
+   plain pd.to_numeric() would incorrectly convert them to NaN.
 1. A bin is classified sequentially. The first failed stage wins.
 2. "generated_mc_zero" means the CSV explicitly contains a finite generated MC
    yield <= the configured threshold. It does NOT mean the script inferred the
@@ -1148,6 +1583,59 @@ def main() -> None:
             # endfor
 
             if classifications:
+                audit = write_numerical_audit(
+                    parent,
+                    members,
+                    period,
+                    group_name,
+                    period_dir,
+                )
+                plot_chain_survival(
+                    audit,
+                    period,
+                    spec["title"],
+                    period_dir,
+                    args.dpi,
+                )
+                plot_exact_stage_ratios(
+                    parent,
+                    members,
+                    period,
+                    group_name,
+                    spec["title"],
+                    period_dir,
+                    args.dpi,
+                )
+                plot_absolute_mc_diagnostics(
+                    members,
+                    period,
+                    group_name,
+                    spec["title"],
+                    period_dir,
+                    args.dpi,
+                )
+                plot_topology_fractions(
+                    members,
+                    period,
+                    group_name,
+                    spec["title"],
+                    period_dir,
+                    args.dpi,
+                )
+
+                if period == args.focus_period:
+                    for label, cdf in classifications.items():
+                        plot_failure_reason_maps_colored(
+                            cdf,
+                            label,
+                            period,
+                            spec["title"],
+                            period_dir,
+                            args.dpi,
+                        )
+                    # endfor
+                # endif
+
                 failure_summary = plot_failure_counts(
                     classifications,
                     period,
