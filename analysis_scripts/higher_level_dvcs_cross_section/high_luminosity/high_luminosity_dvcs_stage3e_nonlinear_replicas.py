@@ -445,12 +445,16 @@ def main():
     ap.add_argument("--max-nfev",type=int,default=350)
     ap.add_argument("--qmax",type=float,default=40.0)
     ap.add_argument("--mechanics-nq",type=int,default=5001)
-    ap.add_argument("--summary-sample",type=int,default=100000,
+    ap.add_argument("--summary-sample",type=int,default=None,
                     help="max replicas/config used for d1/mechanics percentile bands")
     ap.add_argument("--scatter-sample",type=int,default=20000)
+    ap.add_argument("--mechanics-chunk",type=int,default=25000,
+                    help="replicas per mechanics transform chunk")
     ap.add_argument("--save-replica-sample",type=int,default=0,
                     help="save at most N fitted replicas/config; default 0 = no raw replica table")
     args=ap.parse_args()
+    if args.summary_sample is None:
+        args.summary_sample=args.replicas
 
     s2=Path(args.stage2); s3=Path(args.stage3c)
     out=Path(args.outdir); tab=out/"tables"; fig=out/"figures"
@@ -535,24 +539,44 @@ def main():
 
             if (sc,L) in wanted and len(isafe)>=20:
                 nm=min(args.summary_sample,len(isafe)); msel=isafe if nm==len(isafe) else rng.choice(isafe,nm,replace=False)
-                P,S=full_analytic_mechanics(C[msel],M2[msel],A[msel],rgrid)
-                for name,X in [("r2p_full",P*rgrid[None,:]**2),("r2s_full",S*rgrid[None,:]**2),
-                               ("pressure_full",P),("shear_full",S)]:
-                    q16,q50,q84=percentile_band(X)
-                    for k,r in enumerate(rgrid):
-                        mrows.append(dict(scenario=sc,luminosity_factor=L,quantity=name,r_fm=r,
-                            q16=q16[k],q50=q50[k],q84=q84[k],n_replicas=nm,qmax_GeV=np.inf,
-                            interpretation="full generalized-multipole projection"))
-                pok=[]; sok=[]
-                for pp,ss in zip(P,S):
-                    z=robust_zero_crossings(rgrid,pp)
-                    pok.append(pp[0]>0 and len(z)==1 and pp[-1]<=0)
-                    sok.append(np.nanmin(ss)>=-1e-10*max(float(np.nanmax(np.abs(ss))),1.0))
-                mrows.append(dict(scenario=sc,luminosity_factor=L,quantity="stability_summary",
-                    r_fm=np.nan,q16=np.nan,q50=np.nan,q84=np.nan,n_replicas=nm,qmax_GeV=np.inf,
-                    interpretation="mechanical-shape diagnostic",
-                    pressure_naturelike_fraction=float(np.mean(pok)),shear_positive_fraction=float(np.mean(sok))))
-                del P,S
+                # Stream the expensive mechanics transform in chunks.  The completed
+                # arrays live in temporary memmaps under /tmp rather than /u/home, so a
+                # million-replica run does not require multi-GB RAM or home-directory disk.
+                import tempfile
+                with tempfile.TemporaryDirectory(prefix="dvcs_mechanics_") as td:
+                    pfile=Path(td)/"pressure.dat"; sfile=Path(td)/"shear.dat"
+                    Pmap=np.memmap(pfile,dtype="float64",mode="w+",shape=(nm,len(rgrid)))
+                    Smap=np.memmap(sfile,dtype="float64",mode="w+",shape=(nm,len(rgrid)))
+                    pok_count=0; sok_count=0
+                    for lo in range(0,nm,args.mechanics_chunk):
+                        hi=min(lo+args.mechanics_chunk,nm)
+                        idx=msel[lo:hi]
+                        Pc,Sc=full_analytic_mechanics(C[idx],M2[idx],A[idx],rgrid)
+                        Pmap[lo:hi,:]=Pc; Smap[lo:hi,:]=Sc
+                        for pp,ss in zip(Pc,Sc):
+                            z=robust_zero_crossings(rgrid,pp)
+                            pok_count += int(pp[0]>0 and len(z)==1 and pp[-1]<=0)
+                            sok_count += int(np.nanmin(ss)>=-1e-10*max(float(np.nanmax(np.abs(ss))),1.0))
+                        del Pc,Sc
+                    Pmap.flush(); Smap.flush()
+
+                    # Percentiles are evaluated one radial point at a time.  This uses all
+                    # requested replicas while keeping working RAM O(Nrep), not O(Nrep*Nr).
+                    for name,base,scale in [
+                        ("pressure_full",Pmap,None),("shear_full",Smap,None),
+                        ("r2p_full",Pmap,rgrid**2),("r2s_full",Smap,rgrid**2)]:
+                        for k,r in enumerate(rgrid):
+                            col=np.asarray(base[:,k])
+                            if scale is not None: col=col*scale[k]
+                            q16,q50,q84=np.percentile(col,[16,50,84])
+                            mrows.append(dict(scenario=sc,luminosity_factor=L,quantity=name,r_fm=r,
+                                q16=q16,q50=q50,q84=q84,n_replicas=nm,qmax_GeV=np.inf,
+                                interpretation="full generalized-multipole projection"))
+                    mrows.append(dict(scenario=sc,luminosity_factor=L,quantity="stability_summary",
+                        r_fm=np.nan,q16=np.nan,q50=np.nan,q84=np.nan,n_replicas=nm,qmax_GeV=np.inf,
+                        interpretation="mechanical-shape diagnostic",
+                        pressure_naturelike_fraction=pok_count/nm,shear_positive_fraction=sok_count/nm))
+                    del Pmap,Smap
             del C,M2,A,valid,safe,nfev
 
     bands=pd.DataFrame(brows); pars=pd.DataFrame(sums); mech=pd.DataFrame(mrows); diag=pd.DataFrame(diagrows)

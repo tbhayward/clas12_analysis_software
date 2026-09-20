@@ -12,7 +12,8 @@ def main():
     p=argparse.ArgumentParser()
     p.add_argument("--replicas",type=int,default=100000)
     p.add_argument("--workers",type=int,default=8)
-    p.add_argument("--summary-sample",type=int,default=100000)
+    p.add_argument("--summary-sample",type=int,default=None,
+                   help="defaults to --replicas")
     p.add_argument("--scatter-sample",type=int,default=20000)
     p.add_argument("--save-replica-sample",type=int,default=0)
     p.add_argument("--skip-stage1",action="store_true")
@@ -33,8 +34,9 @@ def main():
     run(c)
     run([py,here/"high_luminosity_dvcs_stage3e_nonlinear_replicas.py",
          "--stage2",out/"stage2"/"tables","--stage3c",out/"stage3c"/"tables","--outdir",out/"stage3e",
-         "--replicas",a.replicas,"--workers",a.workers,"--summary-sample",a.summary_sample,
-         "--scatter-sample",a.scatter_sample,"--save-replica-sample",a.save_replica_sample])
+         "--replicas",a.replicas,"--workers",a.workers,
+         "--scatter-sample",a.scatter_sample,"--save-replica-sample",a.save_replica_sample] +
+        ([] if a.summary_sample is None else ["--summary-sample",a.summary_sample]))
     print(f"\n[done] {out}  elapsed={(time.time()-t)/60:.1f} min")
 
 if __name__=="__main__": main()
