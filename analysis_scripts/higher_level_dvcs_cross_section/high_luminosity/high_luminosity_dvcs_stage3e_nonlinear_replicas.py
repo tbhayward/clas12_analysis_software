@@ -307,6 +307,11 @@ def savefig(fig,p): fig.tight_layout(); fig.savefig(p,dpi=250,bbox_inches="tight
 
 
 def make_plots(rep,bands,mech,cum,figdir,qdata):
+    # Common plotting ranges shared with Stage 3C for direct comparison.
+    D1_REL_YLIM = (0.0, 50.0)
+    R2P_YLIM = (-0.010, 0.020)
+    R2S_YLIM = (0.0, 0.30)
+
     labels={"statistics_only":"Statistics only",
             "ptp_half":"Point-to-point systematics / 2",
             "baseline":"Current point-to-point systematics"}
@@ -319,6 +324,7 @@ def make_plots(rep,bands,mech,cum,figdir,qdata):
     ax.set(xlabel=r"$|t|$ (GeV$^2$)",
            ylabel=r"68% uncertainty on $d_1^Q(t)$ (%)",
            title="Nonlinear-replica D-term precision in the controlled CLAS12 range")
+    ax.set_ylim(*D1_REL_YLIM)
     ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
     savefig(fig,figdir/"01_d1_replica_relative_precision.png")
 
@@ -330,6 +336,7 @@ def make_plots(rep,bands,mech,cum,figdir,qdata):
     ax.set(xlabel=r"$|t|$ (GeV$^2$)",
            ylabel=r"68% uncertainty on $d_1^Q(t)$ (%)",
            title="Systematic limitation of the 10x D-term projection")
+    ax.set_ylim(*D1_REL_YLIM)
     ax.grid(alpha=.2); ax.legend()
     savefig(fig,figdir/"02_d1_replica_systematics_10x.png")
 
@@ -365,6 +372,7 @@ def make_plots(rep,bands,mech,cum,figdir,qdata):
                 ax.plot(d.r_fm,d.q50,label=f"{L}x")
             ax.axhline(0,lw=.8,alpha=.5)
             ax.set(xlabel="r (fm)",ylabel=ylabel,title=title)
+            ax.set_ylim(*(R2P_YLIM if quantity == "r2p_full" else R2S_YLIM))
             ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
             savefig(fig,figdir/fname)
 
@@ -383,6 +391,7 @@ def make_plots(rep,bands,mech,cum,figdir,qdata):
                 ax.plot(d.r_fm,d.q50,label=labels[sc])
             ax.axhline(0,lw=.8,alpha=.5)
             ax.set(xlabel="r (fm)",ylabel=ylabel,title=title)
+            ax.set_ylim(*(R2P_YLIM if quantity == "r2p_full" else R2S_YLIM))
             ax.grid(alpha=.2); ax.legend()
             savefig(fig,figdir/fname)
 

@@ -637,6 +637,11 @@ def _validated_covariance(q, deriv, parameters, central, label="fit"):
 
 
 
+# Common plotting ranges for direct comparison across Stage 3C/3E.
+D1_YLIM = (-3.5, 0.0)
+D1_REL_YLIM = (0.0, 50.0)
+
+
 def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
     labels = {
         "baseline":"Current point-to-point systematics",
@@ -655,6 +660,7 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
     ax.set_xlabel(r"$|t|$ (GeV$^2$)")
     ax.set_ylabel(r"$d_1^Q(t)$")
     ax.set_title("Statistical potential of increased luminosity")
+    ax.set_ylim(*D1_YLIM)
     ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
     savefig(fig, figures/"01_d1_statistics_only_luminosity.png")
 
@@ -670,6 +676,7 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
     ax.set_xlabel(r"$|t|$ (GeV$^2$)")
     ax.set_ylabel(r"Relative uncertainty on $d_1^Q(t)$ (%)")
     ax.set_title("Statistical precision on the D-term across the measured range")
+    ax.set_ylim(*D1_REL_YLIM)
     ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
     savefig(fig, figures/"02_d1_relative_precision_statistics_only.png")
 
@@ -697,6 +704,7 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
     ax.set_xlabel(r"$|t|$ (GeV$^2$)")
     ax.set_ylabel(r"$d_1^Q(t)$")
     ax.set_title("What limits the 10x D-term projection?")
+    ax.set_ylim(*D1_YLIM)
     ax.grid(alpha=.2); ax.legend()
     savefig(fig, figures/"03_d1_systematics_10x.png")
 
@@ -711,6 +719,7 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
     ax.set_xlabel(r"$|t|$ (GeV$^2$)")
     ax.set_ylabel(r"Relative uncertainty on $d_1^Q(t)$ (%)")
     ax.set_title("Systematic limitation of the 10x D-term projection")
+    ax.set_ylim(*D1_REL_YLIM)
     ax.grid(alpha=.2); ax.legend()
     savefig(fig, figures/"03b_d1_relative_precision_systematics_10x.png")
 
@@ -739,6 +748,7 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
     ax.set_xlabel(r"$|t|$ (GeV$^2$)")
     ax.set_ylabel(r"$d_1^Q(t)$")
     ax.set_title("D-term projection with current point-to-point systematics")
+    ax.set_ylim(*D1_YLIM)
     ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
     savefig(fig, figures/"05_d1_baseline_luminosity.png")
 
