@@ -1095,19 +1095,31 @@ def write_numerical_audit(
             sc["signal"],
             sc["xs"],
         ]
-        m = sector[keep_s].merge(
-            parent[keep_p],
+        # Rename before merging.  Pandas only applies merge suffixes to
+        # overlapping column names.  Here parent contributes only its XS
+        # column, so generated/reconstructed/acceptance/signal from the sector
+        # would otherwise retain their unsuffixed names.
+        sector_map = {
+            sc["generated"]: "sector_generated",
+            sc["reconstructed"]: "sector_reconstructed",
+            sc["acceptance"]: "sector_acceptance",
+            sc["signal"]: "sector_signal",
+            sc["xs"]: "sector_xs",
+        }
+        parent_map = {pc["xs"]: "parent_xs"}
+
+        m = sector[keep_s].rename(columns=sector_map).merge(
+            parent[keep_p].rename(columns=parent_map),
             on="bin index",
             how="outer",
-            suffixes=("_sector", "_parent"),
         )
 
-        p_xs = numeric(m[f"{pc['xs']}_parent"])
-        gen = numeric(m[f"{sc['generated']}_sector"])
-        rec = numeric(m[f"{sc['reconstructed']}_sector"])
-        acc = numeric(m[f"{sc['acceptance']}_sector"])
-        sig = numeric(m[f"{sc['signal']}_sector"])
-        xs = numeric(m[f"{sc['xs']}_sector"])
+        p_xs = numeric(m["parent_xs"])
+        gen = numeric(m["sector_generated"])
+        rec = numeric(m["sector_reconstructed"])
+        acc = numeric(m["sector_acceptance"])
+        sig = numeric(m["sector_signal"])
+        xs = numeric(m["sector_xs"])
 
         base = np.isfinite(p_xs) & (p_xs > 0)
         gen_ok = base & np.isfinite(gen) & (gen > 0)
