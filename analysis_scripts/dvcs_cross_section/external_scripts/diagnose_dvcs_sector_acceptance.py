@@ -1631,14 +1631,25 @@ def main() -> None:
                     period_dir,
                     args.dpi,
                 )
-                plot_topology_fractions(
-                    members,
-                    period,
-                    group_name,
-                    spec["title"],
-                    period_dir,
-                    args.dpi,
-                )
+                # Topology-resolved reconstructed-yield columns are optional.
+                # Some sector CSVs contain the schema but no usable values.
+                # Do not let this auxiliary diagnostic abort the core
+                # Ngen/Nrec/acceptance/signal/cross-section analysis.
+                try:
+                    plot_topology_fractions(
+                        members,
+                        period,
+                        group_name,
+                        spec["title"],
+                        period_dir,
+                        args.dpi,
+                    )
+                except RuntimeError as exc:
+                    print(
+                        f"[skip] {group_name:<10s} {period}: "
+                        f"topology fractions unavailable ({exc})"
+                    )
+                # endif
 
                 if period == args.focus_period:
                     for label, cdf in classifications.items():
