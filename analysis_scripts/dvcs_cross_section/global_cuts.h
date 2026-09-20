@@ -62,9 +62,10 @@ struct GlobalCutConfig {
     //   2. events with the electron in FD sector 5 and an FD photon;
     //   3. events with the electron in FD sector 5 and an FD proton.
     //
-    // The exclusions are automatically suspended whenever any topology or
-    // particle-sector study filter below is enabled, so diagnostic studies can
-    // still inspect the affected detector regions without manual reconfiguration.
+    // Nominal production keeps these enabled. They remain active under
+    // topology/particle-sector filters unless the caller explicitly disables
+    // this flag. This permits controlled parent/daughter comparisons with one
+    // common Sp18-Out selection.
     bool enable_sp18_out_sector_quality_cuts = true;
 
     // Optional single-topology filter.

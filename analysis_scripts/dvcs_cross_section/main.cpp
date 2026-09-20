@@ -142,6 +142,7 @@ int main(int argc, char* argv[]) {
     int electron_sector_cli = 0;
     int proton_fd_sector_cli = 0;
     int proton_cd_sector_cli = 0;
+    bool disable_sp18_out_sector_quality_cuts = false;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--acceptance-reweighting-only") {
             acceptance_reweighting_only = true;
@@ -156,6 +157,8 @@ int main(int argc, char* argv[]) {
             eppi0_production_test = true;
         } else if (std::string(argv[i]) == "--no-eppi0-normalization") {
             use_eppi0_production_normalization = false;
+        } else if (std::string(argv[i]) == "--disable-sp18-out-sector-quality-cuts") {
+            disable_sp18_out_sector_quality_cuts = true;
         } else if (std::string(argv[i]) == "--electron-sector") {
             if (i + 1 >= argc) { std::cerr << "[main] FATAL: --electron-sector requires an integer 1--6\n"; return 1; }
             try { electron_sector_cli = std::stoi(argv[++i]); }
@@ -227,6 +230,7 @@ int main(int argc, char* argv[]) {
                   << "  ./dvcs_analysis --eppi0-normalization-only\n"
                   << "  ./dvcs_analysis --eppi0-production-test\n"
                   << "  ./dvcs_analysis --no-eppi0-normalization   # original Krishna normalization\n"
+                  << "  ./dvcs_analysis --skip-systematics --disable-sp18-out-sector-quality-cuts\n"
                   << "  ./dvcs_analysis --no-eppi0-normalization --skip-systematics --topology FD-FD\n"
                   << "  ./dvcs_analysis --no-eppi0-normalization --skip-systematics --topology CD-FD\n"
                   << "  ./dvcs_analysis --no-eppi0-normalization --skip-systematics --topology CD-FT\n";
@@ -270,10 +274,18 @@ int main(int argc, char* argv[]) {
     // -------------------------------------------------------------------------
     GlobalCutConfig global_cfg;
 
-    // Integrated-analysis detector-quality exclusions for Sp18 Out. These are
-    // enabled by default in GlobalCutConfig and are automatically suspended if
-    // any topology or particle-sector study switch below is enabled.
-    global_cfg.enable_sp18_out_sector_quality_cuts = true;
+    // Integrated-analysis detector-quality exclusions for Sp18 Out.
+    //
+    // Nominal production keeps these ON. The diagnostic command-line switch
+    // --disable-sp18-out-sector-quality-cuts turns them OFF globally so the
+    // inclusive parent, topology parents, and every particle-sector extraction
+    // use the same unrestricted Sp18-Out detector population.
+    //
+    // This is deliberately explicit rather than automatically tied to a sector
+    // filter: an ON/OFF study must use one common setting for the parent and all
+    // daughter extractions.
+    global_cfg.enable_sp18_out_sector_quality_cuts =
+        !disable_sp18_out_sector_quality_cuts;
 
     // Optional single-topology study selected from the command line:
     //   --topology FD-FD
@@ -331,6 +343,11 @@ int main(int argc, char* argv[]) {
               << (electron_sector_cli ? (" electron-S" + std::to_string(electron_sector_cli)) : "")
               << (proton_fd_sector_cli ? (" proton-FD-S" + std::to_string(proton_fd_sector_cli)) : "")
               << (proton_cd_sector_cli ? (" proton-CD-S" + std::to_string(proton_cd_sector_cli)) : "")
+              << std::endl;
+    std::cout << "[main] Sp18 Out detector-quality sector exclusions: "
+              << (global_cfg.enable_sp18_out_sector_quality_cuts
+                      ? "ON (nominal)"
+                      : "OFF (diagnostic)")
               << std::endl;
     std::cout << "[main] Global cut analysis tag: "
               << global_cuts_analysis_tag(default_global_cuts()) << std::endl;
