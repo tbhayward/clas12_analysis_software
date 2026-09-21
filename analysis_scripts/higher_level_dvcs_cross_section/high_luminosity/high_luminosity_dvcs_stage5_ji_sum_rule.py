@@ -65,7 +65,7 @@ DEFAULT_ALPHA_D = 0.55
 
 RGB_XS_DEFAULT = Path("import/ndvcs_clas12_preliminary_unpolarized.txt")
 RGB_BSA_DEFAULT = Path("import/ndvcs_rgb_published_bsa_digitized_t_projection.csv")
-RGA_PASS2_DEFAULT = None  # resolved from __file__ exactly as in Stage 2
+RGA_PASS2_DEFAULT = None  # resolved relative to this script below
 OUT_DEFAULT = Path("output/stage5_ji")
 
 
@@ -405,8 +405,8 @@ def bsa_4d_feasibility(bsa: pd.DataFrame, figdir: Path, tabdir: Path):
     return out
 
 
-def tuple_component(series: pd.Series, index: int) -> np.ndarray:
-    """Parse one component of tuple-valued CSV cells, matching Stage 2."""
+def _tuple_component_stage5(series: pd.Series, index: int) -> np.ndarray:
+    """Extract a numeric component from tuple-valued pass-2 CSV cells."""
     import ast
     out = np.full(len(series), np.nan, dtype=float)
     for i, value in enumerate(series):
@@ -417,18 +417,17 @@ def tuple_component(series: pd.Series, index: int) -> np.ndarray:
             if isinstance(parsed, (tuple, list)) and len(parsed) > index:
                 out[i] = float(parsed[index])
         except Exception:
-            pass
+            continue
     return out
 
 
 def load_rga_pass2_bsa(path: Path):
-    """Load RGA pass-2 4D BSA precision exactly as Stage 2 does.
+    """Load current pass-2 RGA 4D BSA and its statistical uncertainty.
 
-    The pass-2 CSV stores `BSA, counts, 10.6 GeV` as a tuple:
-      component 0 = measured BSA
-      component 1 = absolute statistical uncertainty.
-    For this experimental precision benchmark we use all valid pass-2 BSA
-    points; no |t|/Q2 theory-control cut is imposed.
+    The source column `BSA, counts, 10.6 GeV` contains tuple-valued cells.
+    As in the existing pass-2 projection analysis:
+      tuple[0] = BSA
+      tuple[1] = absolute statistical uncertainty.
     """
     if not path.exists():
         return None
@@ -436,27 +435,33 @@ def load_rga_pass2_bsa(path: Path):
     raw = pd.read_csv(path, low_memory=False)
     bsa_col = "BSA, counts, 10.6 GeV"
     if bsa_col not in raw.columns:
-        raise KeyError(f"{path}: missing required column {bsa_col!r}")
+        raise KeyError(
+            f"{path}: required pass-2 column {bsa_col!r} not found. "
+            f"First columns: {list(raw.columns[:20])}"
+        )
 
-    bsa = tuple_component(raw[bsa_col], 0)
-    stat = tuple_component(raw[bsa_col], 1)
+    bsa = _tuple_component_stage5(raw[bsa_col], 0)
+    stat = _tuple_component_stage5(raw[bsa_col], 1)
 
-    # Retain useful kinematics for the audit table when available.
     out = pd.DataFrame(index=raw.index)
-    for src, dst in [
+    for old, new in [
         ("Bin Name", "bin"),
         ("xBavg, 10.6 GeV", "xB"),
         ("Q2avg, 10.6 GeV", "Q2"),
         ("t_abs_avg, 10.6 GeV", "t_abs"),
         ("phiavg, 10.6 GeV", "phi_deg"),
     ]:
-        if src in raw.columns:
-            out[dst] = pd.to_numeric(raw[src], errors="coerce")
+        if old in raw.columns:
+            out[new] = pd.to_numeric(raw[old], errors="coerce")
 
     out["BSA_pass2"] = bsa
     out["stat_error"] = stat
-    mask = np.isfinite(out["BSA_pass2"]) & np.isfinite(out["stat_error"]) & (out["stat_error"] > 0)
-    out = out.loc[mask].reset_index(drop=True)
+    good = (
+        np.isfinite(out["BSA_pass2"])
+        & np.isfinite(out["stat_error"])
+        & (out["stat_error"] > 0)
+    )
+    out = out.loc[good].reset_index(drop=True)
     out.attrs["bsa_column"] = bsa_col
     out.attrs["stat_column"] = f"{bsa_col} tuple component 1"
     return out
@@ -553,15 +558,23 @@ def main():
         "--rga-pass2",
         type=Path,
         default=None,
-        help="Pass-2 dvcs_pass2_analysis.csv; default is ../import/dvcs_pass2_analysis.csv relative to this script.",
+        help="Pass-2 CSV; default: ../higher_level_dvcs_cross_section/import/dvcs_pass2_analysis.csv relative to this script.",
     )
     ap.add_argument("--output", type=Path, default=OUT_DEFAULT)
     args = ap.parse_args()
     here = Path(__file__).resolve().parent
     if args.rga_pass2 is None:
-        args.rga_pass2 = (here.parent / "import" / "dvcs_pass2_analysis.csv").resolve()
+        args.rga_pass2 = (
+            here.parent
+            / "higher_level_dvcs_cross_section"
+            / "import"
+            / "dvcs_pass2_analysis.csv"
+        ).resolve()
     else:
         args.rga_pass2 = args.rga_pass2.expanduser().resolve()
+
+    print(f"[Stage5] RGA pass-2 CSV path: {args.rga_pass2}")
+    print(f"[Stage5] RGA pass-2 CSV exists: {args.rga_pass2.exists()}")
 
     figdir = args.output / "figures"
     tabdir = args.output / "tables"
@@ -601,7 +614,7 @@ def main():
         precision_comparison = None
 
     print("=" * 100)
-    print("STAGE 5 v6 — PASS-2 RGA/RGB BSA PRECISION BENCHMARK + RGB COVARIANCE + DFJK/Ji FRAMEWORK")
+    print("STAGE 5 v7 — PASS-2 RGA/RGB BSA PRECISION BENCHMARK + RGB COVARIANCE + DFJK/Ji FRAMEWORK")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
