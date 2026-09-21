@@ -86,15 +86,163 @@ DEFAULT_ABS_STEP = 0.05
 DEFAULT_RELATIVE_FLOOR = 0.10
 SVD_RTOL = 1.0e-11
 
-# First-pass RGC A_UL precision model:
-# existing polarized-target statistics ~= 1/10 of RGA, so an asymmetry measured
-# in the same kinematic/phi bin is assigned sqrt(10) times the current RGA BSA
-# statistical error.  This A_UL information is held FIXED while RGA luminosity
-# is increased.  The scan factors below ask how much better/worse than that
-# existing-RGC estimate is required to break the H/Htilde degeneracy.
-DEFAULT_RGC_STAT_FRACTION_OF_RGA = 0.10
+# RGC A_UL precision model calibrated to Samy Polcher Rafael's preliminary
+# Summer-2022 target-spin asymmetry, thesis Fig. 5.10.  The values below are
+# digitized directly from the vector error bars in that figure.  The thesis says
+# those bars contain DVCS-yield counting statistics plus the statistical part of
+# the pi0 subtraction uncertainty; several final systematics were not yet included.
+#
+# Projection convention requested for the workshop:
+#   Su22 thesis sample = S
+#   already collected RGC data = 3 S (conservative allowance for Fa22 FTOFF)
+#   remaining approved beam time at nominal performance = another 3 S
+# Therefore the future remaining-time scenarios 0.5x, 1x, 2x give total
+# statistics 4.5 S, 6 S, 9 S, respectively.
+DEFAULT_CURRENT_EQUIV_SU22 = 3.0
 DEFAULT_AUL_SCALE_FRAC = 0.05
-AUL_PRECISION_FACTORS = (0.5, 1.0, 2.0)
+RGC_REMAINING_FACTORS = (0.5, 1.0, 2.0)
+
+SAMY_SU22_AUL_ERRORS = [
+    (3.25, 0.24, 0.24, 7.61, 0.08008),
+    (3.25, 0.24, 0.24, 22.25, 0.08341),
+    (3.25, 0.24, 0.24, 36.98, 0.10208),
+    (3.25, 0.24, 0.24, 53.52, 0.12695),
+    (3.25, 0.24, 0.24, 87.43, 0.11771),
+    (3.25, 0.24, 0.24, 193.87, 0.11655),
+    (3.25, 0.24, 0.24, 305.36, 0.13115),
+    (3.25, 0.24, 0.24, 325.67, 0.10923),
+    (3.25, 0.24, 0.24, 347.10, 0.06266),
+    (3.61, 0.31, 0.42, 7.45, 0.09003),
+    (3.61, 0.31, 0.42, 22.42, 0.09114),
+    (3.61, 0.31, 0.42, 37.12, 0.11304),
+    (3.61, 0.31, 0.42, 59.08, 0.13470),
+    (3.61, 0.31, 0.42, 94.51, 0.14624),
+    (3.61, 0.31, 0.42, 140.55, 0.14577),
+    (3.61, 0.31, 0.42, 209.27, 0.14317),
+    (3.61, 0.31, 0.42, 285.09, 0.14624),
+    (3.61, 0.31, 0.42, 320.41, 0.14583),
+    (3.61, 0.31, 0.42, 335.24, 0.10530),
+    (3.61, 0.31, 0.42, 351.52, 0.08206),
+    (4.01, 0.40, 1.05, 7.35, 0.09926),
+    (4.01, 0.40, 1.05, 22.31, 0.11677),
+    (4.01, 0.40, 1.05, 39.09, 0.16151),
+    (4.01, 0.40, 1.05, 67.57, 0.17079),
+    (4.01, 0.40, 1.05, 102.24, 0.20688),
+    (4.01, 0.40, 1.05, 135.08, 0.18231),
+    (4.01, 0.40, 1.05, 174.46, 0.19173),
+    (4.01, 0.40, 1.05, 222.65, 0.20515),
+    (4.01, 0.40, 1.05, 266.20, 0.23513),
+    (4.01, 0.40, 1.05, 301.09, 0.17832),
+    (4.01, 0.40, 1.05, 324.59, 0.15486),
+    (4.01, 0.40, 1.05, 347.40, 0.07766),
+    (2.57, 0.17, 0.22, 7.52, 0.10494),
+    (2.57, 0.17, 0.22, 22.68, 0.09016),
+    (2.57, 0.17, 0.22, 37.21, 0.08875),
+    (2.57, 0.17, 0.22, 51.62, 0.11146),
+    (2.57, 0.17, 0.22, 71.15, 0.13341),
+    (2.57, 0.17, 0.22, 199.22, 0.11598),
+    (2.57, 0.17, 0.22, 301.79, 0.13649),
+    (2.57, 0.17, 0.22, 316.23, 0.09362),
+    (2.57, 0.17, 0.22, 330.76, 0.09213),
+    (2.57, 0.17, 0.22, 348.65, 0.08667),
+    (2.71, 0.19, 0.40, 7.86, 0.11820),
+    (2.71, 0.19, 0.40, 23.31, 0.09997),
+    (2.71, 0.19, 0.40, 37.48, 0.09604),
+    (2.71, 0.19, 0.40, 51.01, 0.14097),
+    (2.71, 0.19, 0.40, 114.13, 0.12890),
+    (2.71, 0.19, 0.40, 242.75, 0.11942),
+    (2.71, 0.19, 0.40, 309.08, 0.13570),
+    (2.71, 0.19, 0.40, 323.38, 0.09301),
+    (2.71, 0.19, 0.40, 343.45, 0.07664),
+    (2.90, 0.21, 0.85, 8.11, 0.13511),
+    (2.90, 0.21, 0.85, 23.04, 0.09521),
+    (2.90, 0.21, 0.85, 36.45, 0.10682),
+    (2.90, 0.21, 0.85, 84.86, 0.14699),
+    (2.90, 0.21, 0.85, 190.97, 0.15889),
+    (2.90, 0.21, 0.85, 283.94, 0.14984),
+    (2.90, 0.21, 0.85, 319.22, 0.12172),
+    (2.90, 0.21, 0.85, 333.20, 0.08476),
+    (2.90, 0.21, 0.85, 348.60, 0.10004),
+    (1.96, 0.17, 0.20, 7.87, 0.08792),
+    (1.96, 0.17, 0.20, 22.17, 0.08825),
+    (1.96, 0.17, 0.20, 36.49, 0.10972),
+    (1.96, 0.17, 0.20, 52.48, 0.15289),
+    (1.96, 0.17, 0.20, 91.12, 0.14054),
+    (1.96, 0.17, 0.20, 187.31, 0.13188),
+    (1.96, 0.17, 0.20, 304.56, 0.17063),
+    (1.96, 0.17, 0.20, 322.42, 0.12384),
+    (1.96, 0.17, 0.20, 336.97, 0.09912),
+    (1.96, 0.17, 0.20, 352.19, 0.09169),
+    (1.95, 0.20, 0.33, 7.86, 0.09480),
+    (1.95, 0.20, 0.33, 21.98, 0.09441),
+    (1.95, 0.20, 0.33, 36.09, 0.13678),
+    (1.95, 0.20, 0.33, 69.26, 0.17604),
+    (1.95, 0.20, 0.33, 128.66, 0.16172),
+    (1.95, 0.20, 0.33, 201.92, 0.15759),
+    (1.95, 0.20, 0.33, 299.31, 0.17113),
+    (1.95, 0.20, 0.33, 328.70, 0.12915),
+    (1.95, 0.20, 0.33, 347.63, 0.07397),
+    (1.92, 0.22, 0.78, 7.72, 0.10620),
+    (1.92, 0.22, 0.78, 21.80, 0.11549),
+    (1.92, 0.22, 0.78, 45.31, 0.16601),
+    (1.92, 0.22, 0.78, 103.39, 0.17649),
+    (1.92, 0.22, 0.78, 164.88, 0.17447),
+    (1.92, 0.22, 0.78, 241.71, 0.20191),
+    (1.92, 0.22, 0.78, 291.36, 0.18799),
+    (1.92, 0.22, 0.78, 321.02, 0.14555),
+    (1.92, 0.22, 0.78, 345.62, 0.06871),
+    (1.64, 0.11, 0.19, 10.54, 0.12171),
+    (1.64, 0.11, 0.19, 27.60, 0.10130),
+    (1.64, 0.11, 0.19, 42.33, 0.08750),
+    (1.64, 0.11, 0.19, 56.63, 0.09607),
+    (1.64, 0.11, 0.19, 71.33, 0.11542),
+    (1.64, 0.11, 0.19, 105.15, 0.12415),
+    (1.64, 0.11, 0.19, 247.05, 0.12274),
+    (1.64, 0.11, 0.19, 291.06, 0.11709),
+    (1.64, 0.11, 0.19, 305.59, 0.08419),
+    (1.64, 0.11, 0.19, 319.54, 0.08766),
+    (1.64, 0.11, 0.19, 340.37, 0.08580),
+    (1.69, 0.12, 0.32, 15.91, 0.14339),
+    (1.69, 0.12, 0.32, 33.53, 0.09154),
+    (1.69, 0.12, 0.32, 46.97, 0.08426),
+    (1.69, 0.12, 0.32, 61.58, 0.12184),
+    (1.69, 0.12, 0.32, 112.27, 0.13310),
+    (1.69, 0.12, 0.32, 243.03, 0.12962),
+    (1.69, 0.12, 0.32, 299.75, 0.12393),
+    (1.69, 0.12, 0.32, 314.20, 0.08059),
+    (1.69, 0.12, 0.32, 332.51, 0.07933),
+    (1.71, 0.12, 0.68, 9.21, 0.17690),
+    (1.71, 0.12, 0.68, 26.41, 0.09579),
+    (1.71, 0.12, 0.68, 38.64, 0.08503),
+    (1.71, 0.12, 0.68, 56.38, 0.14516),
+    (1.71, 0.12, 0.68, 159.59, 0.15565),
+    (1.71, 0.12, 0.68, 280.68, 0.14461),
+    (1.71, 0.12, 0.68, 315.85, 0.11232),
+    (1.71, 0.12, 0.68, 329.18, 0.08057),
+    (1.71, 0.12, 0.68, 344.58, 0.11960),
+]
+
+
+def samy_su22_sigma_aul(Q2, xB, t_abs, phi_deg):
+    """Nearest-cell/nearest-phi empirical Su22 A_UL uncertainty from thesis Fig. 5.10."""
+    a = np.asarray(SAMY_SU22_AUL_ERRORS, dtype=float)
+    # First choose the nearest of Samy's 12 (Q2,xB,|t|) cells.  Scales roughly
+    # reflect the spacing of the published cells so no one coordinate dominates.
+    cells = np.unique(a[:, :3], axis=0)
+    d2 = ((cells[:,0]-Q2)/1.0)**2 + ((cells[:,1]-xB)/0.10)**2 + ((cells[:,2]-t_abs)/0.30)**2
+    q, x, t = cells[np.argmin(d2)]
+    m = (np.isclose(a[:,0],q) & np.isclose(a[:,1],x) & np.isclose(a[:,2],t))
+    b = a[m]
+    # Use nearest measured phi rather than interpolating across large phi gaps;
+    # this is deliberately conservative and keeps the input tied to a real error bar.
+    dphi = np.abs((b[:,3] - phi_deg + 180.0) % 360.0 - 180.0)
+    return float(b[np.argmin(dphi),4]), (float(q),float(x),float(t),float(b[np.argmin(dphi),3]))
+
+def rgc_scenarios(current_equiv_su22=DEFAULT_CURRENT_EQUIV_SU22):
+    out = [("Su22 thesis", 1.0), ("current collected", current_equiv_su22)]
+    for f in RGC_REMAINING_FACTORS:
+        out.append((f"remaining {f:g}x", current_equiv_su22 * (1.0 + f)))
+    return out
 
 
 def make_point(g, row, helicity: int = 0):
@@ -381,8 +529,8 @@ def covariance(
     cell_meta,
     mode,
     include_aul=False,
-    aul_precision_factor=1.0,
-    rgc_stat_fraction=DEFAULT_RGC_STAT_FRACTION_OF_RGA,
+    aul_stats_multiplier=1.0,
+    aul_scenario="none",
     aul_scale_frac=DEFAULT_AUL_SCALE_FRAC,
 ):
     use = df.merge(deriv, on=["point_id", "bin", "phi_deg"], how="inner")
@@ -416,19 +564,17 @@ def covariance(
             sigmas.append(srow)
 
     if include_aul:
-        # IMPORTANT: derive the fixed existing-RGC estimate from the *1x RGA*
-        # BSA statistical precision, not from the luminosity-scaled RGA error.
-        # Stage 2 preserves the unscaled current-RGA statistical error as bsa_stat_abs.
-        stat_scale = math.sqrt(1.0 / rgc_stat_fraction) * aul_precision_factor
+        # Empirical Su22 precision from Samy's thesis Fig. 5.10.  Statistical
+        # precision scales as 1/sqrt(N); it is independent of the RGA luminosity
+        # factor used for the unpolarized XS+BSA projection.
         for r in use.itertuples(index=False):
             v = np.zeros(npar)
             b = int(r.bin)
             for name in cffs:
                 v[idx[(b, name)]] = getattr(r, f"d_aul_d_{name}")
             v[idx[(-1, "aul_scale_beta")]] = aul_scale_frac * r.aul_km15
-            # First estimate: statistics only for the point-to-point A_UL error.
-            # A common target-polarization scale is represented separately.
-            srow = stat_scale * r.bsa_stat_abs
+            su22_sigma, _ = samy_su22_sigma_aul(r.Q2, r.xB, r.t_abs, r.phi_deg)
+            srow = su22_sigma / math.sqrt(aul_stats_multiplier)
             if np.isfinite(srow) and srow > 0:
                 rows.append(v)
                 sigmas.append(srow)
@@ -466,8 +612,8 @@ def covariance(
     diag = {
         "fit_mode": mode,
         "include_aul": bool(include_aul),
-        "aul_precision_factor": float(aul_precision_factor) if include_aul else np.nan,
-        "rgc_stat_fraction_of_rga": float(rgc_stat_fraction) if include_aul else np.nan,
+        "aul_stats_multiplier_vs_su22": float(aul_stats_multiplier) if include_aul else np.nan,
+        "aul_scenario": str(aul_scenario) if include_aul else "none",
         "aul_scale_frac": float(aul_scale_frac) if include_aul else np.nan,
         "n_measurement_rows": len(A),
         "n_parameters": npar,
@@ -758,10 +904,10 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--relative-step", type=float, default=DEFAULT_REL_STEP)
     p.add_argument("--absolute-step", type=float, default=DEFAULT_ABS_STEP)
     p.add_argument(
-        "--rgc-stat-fraction",
+        "--current-rgc-equiv-su22",
         type=float,
-        default=DEFAULT_RGC_STAT_FRACTION_OF_RGA,
-        help="Existing RGC statistics relative to RGA; default 0.10.",
+        default=DEFAULT_CURRENT_EQUIV_SU22,
+        help="Effective already-collected RGC statistics in units of Samy's Su22 sample; default 3.",
     )
     p.add_argument(
         "--aul-scale-frac",
@@ -864,15 +1010,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                 cell_meta, cov, layout, unresolved, mode, factor, args.relative_floor
             )
             rr["observable_set"] = "XS+BSA"
-            rr["aul_precision_factor"] = np.nan
+            rr["aul_scenario"] = "none"
+            rr["aul_stats_multiplier_vs_su22"] = np.nan
             result_frames.append(rr)
 
             # A_UL scan is most relevant once Htilde is released.
             if "ImHt" in FIT_MODES[mode]:
-                for apf in AUL_PRECISION_FACTORS:
+                for scenario, n_su22 in rgc_scenarios(args.current_rgc_equiv_su22):
                     print(
                         f"[fit] mode={mode:7s} luminosity={factor}x  "
-                        f"XS+BSA+AUL  AULerr={apf:g}xRGC"
+                        f"XS+BSA+AUL  {scenario} ({n_su22:g}xSu22 stats)"
                     )
                     cov, layout, unresolved, diag = covariance(
                         inputs[factor],
@@ -880,8 +1027,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                         cell_meta,
                         mode,
                         include_aul=True,
-                        aul_precision_factor=apf,
-                        rgc_stat_fraction=args.rgc_stat_fraction,
+                        aul_stats_multiplier=n_su22,
+                        aul_scenario=scenario,
                         aul_scale_frac=args.aul_scale_frac,
                     )
                     diag["luminosity_factor"] = factor
@@ -891,7 +1038,8 @@ def main(argv: Optional[List[str]] = None) -> int:
                         args.relative_floor
                     )
                     rr["observable_set"] = "XS+BSA+AUL"
-                    rr["aul_precision_factor"] = apf
+                    rr["aul_scenario"] = scenario
+                    rr["aul_stats_multiplier_vs_su22"] = n_su22
                     result_frames.append(rr)
 
     results = pd.concat(result_frames, ignore_index=True)
@@ -912,101 +1060,67 @@ def main(argv: Optional[List[str]] = None) -> int:
         tables / "ImHt_direct_observable_sensitivity.csv", index=False
     )
 
-    # Focused A_UL figures; the old giant relative-error scatter plots are
-    # intentionally not produced because the local XS+BSA extraction is so
-    # degenerate that they are not human-readable.
+    # Focused A_UL figures using the empirical Su22 precision calibration.
+    scenarios = rgc_scenarios(args.current_rgc_equiv_su22)
     for mode in ("H_Ht", "H_Ht_E"):
         fig, ax = plt.subplots(figsize=(8.8, 6.0))
-        base = results[
-            (results.fit_mode == mode) &
-            (results.observable_set == "XS+BSA")
-        ]
+        base = results[(results.fit_mode == mode) & (results.observable_set == "XS+BSA")]
         med = base.groupby("luminosity_factor").sigma_ImHt.median()
-        ax.plot(med.index, med.values, marker="o", label="XS+BSA")
-        for apf in AUL_PRECISION_FACTORS:
-            d = results[
-                (results.fit_mode == mode) &
-                (results.observable_set == "XS+BSA+AUL") &
-                (results.aul_precision_factor == apf)
-            ]
+        ax.plot(med.index, med.values, marker="o", label="XS+BSA only")
+        for scenario, n_su22 in scenarios:
+            d = results[(results.fit_mode == mode) &
+                        (results.observable_set == "XS+BSA+AUL") &
+                        (results.aul_scenario == scenario)]
             med = d.groupby("luminosity_factor").sigma_ImHt.median()
-            lab = f"+ AUL ({apf:g}x estimated RGC error)"
-            ax.plot(med.index, med.values, marker="o", label=lab)
-        ax.set_xscale("log")
-        ax.set_yscale("log")
-        ax.set_xticks(LUMI_FACTORS)
-        ax.set_xticklabels([f"{x}x" for x in LUMI_FACTORS])
+            ax.plot(med.index, med.values, marker="o", label=f"+ AUL: {scenario}")
+        ax.set_xscale("log"); ax.set_yscale("log")
+        ax.set_xticks(LUMI_FACTORS); ax.set_xticklabels([f"{x}x" for x in LUMI_FACTORS])
         ax.set_xlabel("Unpolarized RGA luminosity")
         ax.set_ylabel(r"Median absolute uncertainty on $\mathrm{Im}\,\widetilde{\mathcal{H}}$")
-        ax.set_title(f"{mode}: fixed polarized-target AUL constraint")
-        ax.grid(alpha=.2)
-        ax.legend()
-        savefig(fig, figures / f"AUL_scan_{mode}_median_sigma_ImHt.png")
+        ax.set_title(f"{mode}: Samy-Su22-calibrated polarized-target constraint")
+        ax.grid(alpha=.2); ax.legend(fontsize=8)
+        savefig(fig, figures / f"AUL_SamySu22_scan_{mode}_median_sigma_ImHt.png")
 
+        # At 10x RGA, isolate the polarized-target running leverage.
         fig, ax = plt.subplots(figsize=(8.8, 6.0))
-        for obs, apf, label in [
-            ("XS+BSA", np.nan, "XS+BSA"),
-            ("XS+BSA+AUL", 1.0, "+ AUL (estimated existing RGC)"),
-        ]:
-            if obs == "XS+BSA":
-                d = results[
-                    (results.fit_mode == mode) &
-                    (results.observable_set == obs) &
-                    (results.luminosity_factor == 10)
-                ]
-            else:
-                d = results[
-                    (results.fit_mode == mode) &
-                    (results.observable_set == obs) &
-                    (results.aul_precision_factor == apf) &
-                    (results.luminosity_factor == 10)
-                ]
-            ax.scatter(d.xB, d.sigma_ImHt, s=32, alpha=.72, label=label)
-        ax.set_yscale("log")
-        ax.set_xlabel(r"$x_B$")
-        ax.set_ylabel(r"Absolute uncertainty on $\mathrm{Im}\,\widetilde{\mathcal{H}}$")
-        ax.set_title(f"{mode}: effect of existing-RGC-scale AUL at 10x RGA")
+        labels=[]; vals=[]
+        for scenario, n_su22 in scenarios:
+            d = results[(results.fit_mode == mode) &
+                        (results.observable_set == "XS+BSA+AUL") &
+                        (results.luminosity_factor == 10) &
+                        (results.aul_scenario == scenario)]
+            labels.append(scenario); vals.append(np.nanmedian(d.sigma_ImHt))
+        ax.plot(range(len(vals)), vals, marker="o")
+        ax.set_xticks(range(len(labels))); ax.set_xticklabels(labels, rotation=20, ha="right")
+        ax.set_ylabel(r"Median absolute uncertainty on $\mathrm{Im}\,\widetilde{\mathcal{H}}$")
+        ax.set_title(f"{mode}: polarized-target leverage at 10x RGA")
         ax.grid(alpha=.2)
-        ax.legend()
-        savefig(fig, figures / f"AUL_effect_{mode}_10x_vs_xB.png")
+        savefig(fig, figures / f"AUL_SamySu22_{mode}_polarized_running_at_10xRGA.png")
 
-    # Compact console summary dedicated to the A_UL question.
-    print("\n" + "=" * 116)
-    print("A_UL CONSTRAINT SCAN: FIXED POLARIZED-TARGET PRECISION WHILE RGA LUMINOSITY INCREASES")
-    print("=" * 116)
-    print(
-        f"Assumption: existing RGC has {args.rgc_stat_fraction:.3g} of RGA statistics; "
-        f"AUL stat error = sqrt(1/f) x current-RGA BSA stat error."
-    )
-    print(
-        f"AUL scale nuisance = {100*args.aul_scale_frac:.2f}%; "
-        "AUL point-to-point systematics not yet included in this first estimate."
-    )
+    print("\n" + "=" * 124)
+    print("A_UL CONSTRAINT: SAMY SU22 PRECISION + CONSERVATIVE RGC RUNNING PROJECTION")
+    print("=" * 124)
+    print(f"Already-collected RGC effective statistics = {args.current_rgc_equiv_su22:g} x Samy Su22.")
+    print("Remaining approved beam time is taken equal to the already-collected half at nominal performance.")
+    print("Remaining-time factors 0.5x, 1x, 2x therefore add 0.5, 1, 2 times the current effective statistics.")
+    print(f"AUL common scale nuisance = {100*args.aul_scale_frac:.2f}%.")
+    print("Su22 point errors are digitized from thesis Fig. 5.10; they contain yield statistics plus statistical pi0-subtraction uncertainty.")
     rows = []
     for mode in ("H_Ht", "H_Ht_E"):
         for factor in LUMI_FACTORS:
-            configs = [("XS+BSA", np.nan, "none")]
-            configs += [("XS+BSA+AUL", x, f"{x:g}xRGCerr") for x in AUL_PRECISION_FACTORS]
-            for obs, apf, label in configs:
-                q = (
-                    (results.fit_mode == mode) &
-                    (results.observable_set == obs) &
-                    (results.luminosity_factor == factor)
-                )
-                if obs == "XS+BSA+AUL":
-                    q &= results.aul_precision_factor == apf
-                d = results[q]
-                dg = diagnostics[
-                    (diagnostics.fit_mode == mode) &
-                    (diagnostics.luminosity_factor == factor) &
-                    (diagnostics.include_aul == (obs == "XS+BSA+AUL"))
-                ]
-                if obs == "XS+BSA+AUL":
-                    dg = dg[dg.aul_precision_factor == apf]
+            for scenario, n_su22 in scenarios:
+                d = results[(results.fit_mode == mode) &
+                            (results.observable_set == "XS+BSA+AUL") &
+                            (results.luminosity_factor == factor) &
+                            (results.aul_scenario == scenario)]
+                dg = diagnostics[(diagnostics.fit_mode == mode) &
+                                 (diagnostics.luminosity_factor == factor) &
+                                 (diagnostics.include_aul == True) &
+                                 (diagnostics.aul_scenario == scenario)]
                 rows.append({
-                    "mode": mode,
-                    "RGA_L": f"{factor}x",
-                    "AUL": label,
+                    "mode": mode, "RGA_L": f"{factor}x", "RGC_scenario": scenario,
+                    "N/Su22": n_su22,
+                    "AUL_err/Su22": 1/math.sqrt(n_su22),
                     "med_sigma_ImHt": np.nanmedian(d.sigma_ImHt),
                     "med_rel_ImHt_%": 100*np.nanmedian(d.relative_sigma_ImHt),
                     "med_maxcorr_ImHt": np.nanmedian(d.max_abs_corr_ImHt),
@@ -1015,16 +1129,16 @@ def main(argv: Optional[List[str]] = None) -> int:
                 })
     print(pd.DataFrame(rows).to_string(index=False, float_format=lambda x: f"{x:.4g}"))
 
-    print("\n[output]", outdir)
     print("[interpretation]")
     print("  H       : optimistic H-dominance reference.")
     print("  H_Ht    : asks whether XS+BSA can separate Htilde once H is free.")
     print("  H_Ht_E  : asks how much that conclusion survives when E is also free.")
     print("  Absolute errors remain meaningful near CFF zero crossings.")
     print("  Relative errors are suppressed below the configured truth floor.")
-    print("  AUL is held fixed as RGA luminosity increases; it is NOT scaled with RGA.")
-    print("  1xRGCerr means the first estimate based on RGC having 1/10 the RGA statistics.")
-    print("  0.5x and 2x scan whether twice-better or twice-worse AUL precision is required.")
+    print("  AUL precision is calibrated to Samy's Su22 thesis Fig. 5.10, not to RGA BSA errors.")
+    print("  Current collected RGC is conservatively treated as 3x Su22 effective statistics.")
+    print("  Remaining 0.5x/1x/2x scenarios give final 4.5x/6x/9x Su22 statistics.")
+    print("  Polarized-target precision is independent of the RGA unpolarized luminosity factor.")
     print("  Any nonzero rank deficit is a warning that the corresponding fit")
     print("  contains an exactly unresolved CFF combination and must not be")
     print("  interpreted from pseudoinverse errors alone.")
