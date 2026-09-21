@@ -1,0 +1,25 @@
+projection,bin,phi_deg,Q2_GeV2,xB,t_abs_GeV2,ALU_digitized,stat_digitized,source,use
+t,1,22.5,2.2,0.15,0.21,0.018,0.014,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,1,67.5,2.2,0.15,0.21,0.043,0.012,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,1,112.5,2.2,0.15,0.21,0.048,0.015,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,1,157.5,2.2,0.15,0.21,0.031,0.017,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,1,202.5,2.2,0.15,0.21,-0.01,0.019,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,1,247.5,2.2,0.15,0.21,-0.072,0.021,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,1,292.5,2.2,0.15,0.21,-0.036,0.017,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,1,337.5,2.2,0.15,0.21,-0.026,0.014,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,2,22.5,2.5,0.19,0.39,0.038,0.016,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,2,67.5,2.5,0.19,0.39,0.025,0.017,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,2,112.5,2.5,0.19,0.39,-0.003,0.025,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,2,157.5,2.5,0.19,0.39,0.075,0.054,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,2,202.5,2.5,0.19,0.39,0.018,0.027,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,2,247.5,2.5,0.19,0.39,-0.045,0.023,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,2,292.5,2.5,0.19,0.39,-0.038,0.02,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,2,337.5,2.5,0.19,0.39,-0.02,0.016,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,3,22.5,2.8,0.27,0.83,0.018,0.018,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,3,67.5,2.8,0.27,0.83,0.052,0.026,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,3,112.5,2.8,0.27,0.83,0.044,0.027,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,3,157.5,2.8,0.27,0.83,0.006,0.028,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,3,202.5,2.8,0.27,0.83,-0.048,0.033,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,3,247.5,2.8,0.27,0.83,-0.034,0.037,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,3,292.5,2.8,0.27,0.83,-0.02,0.028,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only
+t,3,337.5,2.8,0.27,0.83,-0.019,0.021,"Hobart et al. PRL 133 211903 (2024), Fig. 4 top row",temporary statistical-precision template only

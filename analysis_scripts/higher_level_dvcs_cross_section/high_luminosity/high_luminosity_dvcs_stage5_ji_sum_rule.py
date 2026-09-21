@@ -1,242 +1,422 @@
 #!/usr/bin/env python3
 """
-high_luminosity_dvcs_stage5_ji_sum_rule.py
+Stage 5 — neutron DVCS / flavor separation / Ji-sum-rule preparation.
 
-Stage 5, v1: CLAS12 high-luminosity flavor separation / Ji-sum-rule framework.
+This is a standalone Stage-5 script.  The present revision does three things:
 
-This first version deliberately does three things before attempting a global fit:
-  1. Loads and audits the preliminary RGB neutron unpolarized cross-section table.
-  2. Builds 1x/2x/5x/10x RGB statistical projections while holding quoted systematics fixed.
-  3. Implements the DFJK-inspired zero-skewness valence E^u_v,E^d_v model and computes
-     B20^{u_v}, B20^{d_v}; it also provides the bookkeeping needed for A20 and J.
+  1. parses the preliminary RGB neutron unpolarized cross-section table;
+  2. treats the preliminary systematic uncertainty honestly as an *unresolved
+     covariance problem*, rather than automatically converting the quoted total
+     into independent point-to-point noise;
+  3. keeps the DFJK-inspired E_v moment map that will become the parameter space
+     for the proton+neutron fit.
 
-The next version will connect these parameters to finite-skewness proton/neutron DVCS
-observables through Gepard and add the published RGB neutron BSA.
+The preliminary RGB note (v0.0, 22 Apr 2026) constructs the quoted systematic
+uncertainty from analysis variations.  Several sources are intrinsically
+coherent across phi bins (and, in some cases, across broader kinematics).
+Therefore the table's single total systematic error per point does not determine
+a covariance matrix.
 
-Physics scope:
-  * workshop projection, not a precision global GPD extraction;
-  * valence-dominated H/E model;
-  * E zeroth moments fixed by proton/neutron anomalous magnetic moments;
-  * finite-skewness double-distribution profile will be fixed, not floated, in v2;
-  * RGA and RGB unpolarized luminosities scale together in the high-L scenarios;
-  * polarized-target RGC/RGH precision is NOT scaled with RGA/RGB luminosity.
+For projections we consequently show three *brackets*, not three claims:
+  - statistics only;
+  - quoted total systematic treated as diagonal (maximally conservative for
+    shape information);
+  - quoted total systematic treated as fully correlated within each
+    (Q2,xB,t) cell (optimistic shape-information bracket).
 
-Expected input beside this script:
-  import/ndvcs_clas12_preliminary_unpolarized.txt
+Neither systematic bracket is the production covariance model.  A production
+model requires the individual signed shifts from the seven systematic studies.
 
-Canonical output:
+Published RGB nDVCS BSA:
+  If import/ndvcs_rgb_published_bsa.txt is present, it is detected and audited.
+  The next fit revision will consume it.  We deliberately do not digitize the
+  PRL figure in this script.
+
+Output:
   output/stage5_ji/
 """
 
 from __future__ import annotations
+
 import argparse
 import math
+import re
 from pathlib import Path
+
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-LUMI = (1, 2, 5, 10)
+# ---------------------------------------------------------------------------
+# Constants
+# ---------------------------------------------------------------------------
+
+LUMI_FACTORS = (1, 2, 5, 10)
+
 KAPPA_P = 1.79284734463
 KAPPA_N = -1.91304273
-# Flavor Pauli zeroth moments, neglecting strange:
-# kappa_p = 2/3 kappa_u - 1/3 kappa_d
-# kappa_n = 2/3 kappa_d - 1/3 kappa_u
 KAPPA_U = 2.0 * KAPPA_P + KAPPA_N
 KAPPA_D = KAPPA_P + 2.0 * KAPPA_N
 
+# Simple beta-family seed used only to map the E_v moment freedom.
+# e_v^q(x) = N_q x^{-alpha} (1-x)^beta, with N_q fixed by kappa_q.
+DEFAULT_ALPHA_U = 0.55
+DEFAULT_ALPHA_D = 0.55
+
+RGB_XS_DEFAULT = Path("import/ndvcs_clas12_preliminary_unpolarized.txt")
+RGB_BSA_DEFAULT = Path("import/ndvcs_rgb_published_bsa_digitized_t_projection.csv")
+OUT_DEFAULT = Path("output/stage5_ji")
+
+
+# ---------------------------------------------------------------------------
+# Utilities
+# ---------------------------------------------------------------------------
+
 def beta_fn(a: float, b: float) -> float:
-    return math.exp(math.lgamma(a) + math.lgamma(b) - math.lgamma(a + b))
+    return math.gamma(a) * math.gamma(b) / math.gamma(a + b)
 
-def normalized_e_valence(x, kappa_q, alpha_q, beta_q):
-    """e_v^q(x)=N x^{-alpha}(1-x)^beta with integral fixed to kappa_q."""
-    x = np.asarray(x, dtype=float)
-    norm = kappa_q / beta_fn(1.0-alpha_q, 1.0+beta_q)
-    return norm * np.power(x, -alpha_q) * np.power(1.0-x, beta_q)
 
-def b20_valence(kappa_q: float, alpha_q: float, beta_q: float) -> float:
-    """Integral_0^1 dx x E_v^q(x,0,0), analytic for the chosen forward limit."""
-    return kappa_q * beta_fn(2.0-alpha_q, 1.0+beta_q) / beta_fn(1.0-alpha_q, 1.0+beta_q)
+def b20_from_beta(kappa: float, alpha: float, beta: float) -> float:
+    """B20 = integral dx x E_v(x), with integral E_v = kappa."""
+    den = beta_fn(1.0 - alpha, beta + 1.0)
+    num = beta_fn(2.0 - alpha, beta + 1.0)
+    return kappa * num / den
 
-def load_ndvcs_xs(path: Path) -> pd.DataFrame:
-    names = ["kin_bin","phi_deg","Q2_GeV2","xB","t_abs_GeV2",
-             "xs_pb_GeV4","stat_pb_GeV4","sys_pb_GeV4",
-             "xs_nb_GeV4","stat_nb_GeV4","sys_nb_GeV4"]
-    df = pd.read_csv(path, comment="#", sep=r"\s+", names=names, engine="python")
-    for c in names:
+
+def _float_tokens(line: str):
+    vals = []
+    for tok in re.split(r"[\s,]+", line.strip()):
+        try:
+            vals.append(float(tok))
+        except ValueError:
+            pass
+    return vals
+
+
+def load_rgb_xs(path: Path) -> pd.DataFrame:
+    """
+    Parse the Stage-5 RGB text table.
+
+    Preferred format:
+      kin_bin phi_deg Q2_GeV2 xB t_abs_GeV2 xs_pb_GeV4 stat_pb_GeV4 sys_pb_GeV4
+
+    Comment/header lines are ignored.  A whitespace table with >=8 numeric
+    columns is also accepted.
+    """
+    if not path.exists():
+        raise FileNotFoundError(f"{path} not found")
+
+    rows = []
+    with path.open() as f:
+        for line in f:
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            vals = _float_tokens(s)
+            if len(vals) < 8:
+                continue
+            rows.append(vals[:8])
+
+    if not rows:
+        raise RuntimeError(f"No 8-column RGB cross-section rows found in {path}")
+
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "kin_bin", "phi_deg", "Q2_GeV2", "xB", "t_abs_GeV2",
+            "xs_pb_GeV4", "stat_pb_GeV4", "sys_pb_GeV4",
+        ],
+    )
+    df["kin_bin"] = df["kin_bin"].astype(int)
+    for c in df.columns[1:]:
         df[c] = pd.to_numeric(df[c], errors="coerce")
     df = df.dropna().reset_index(drop=True)
-    if len(df) == 0:
-        raise RuntimeError(f"No neutron cross-section rows parsed from {path}")
+    df["rel_stat"] = np.abs(df["stat_pb_GeV4"] / df["xs_pb_GeV4"])
+    df["rel_sys"] = np.abs(df["sys_pb_GeV4"] / df["xs_pb_GeV4"])
     return df
 
-def make_rgb_projection_table(df):
-    out = []
-    for L in LUMI:
-        d = df.copy()
-        d["luminosity_factor"] = L
-        d["stat_projected_nb_GeV4"] = d["stat_nb_GeV4"] / np.sqrt(L)
-        d["sys_held_fixed_nb_GeV4"] = d["sys_nb_GeV4"]
-        d["total_projected_nb_GeV4"] = np.hypot(
-            d["stat_projected_nb_GeV4"], d["sys_held_fixed_nb_GeV4"])
-        d["rel_stat_projected"] = d["stat_projected_nb_GeV4"] / d["xs_nb_GeV4"].abs()
-        d["rel_total_projected"] = d["total_projected_nb_GeV4"] / d["xs_nb_GeV4"].abs()
-        out.append(d)
-    return pd.concat(out, ignore_index=True)
 
-def summarize_rgb(proj):
+def load_optional_bsa(path: Path):
+    """
+    Audit an optional user-supplied published RGB BSA table.
+
+    Accepted rows must contain at least:
+      phi  Q2  xB  |t|  ALU  stat
+    with an optional seventh column for systematic uncertainty.
+
+    This loader is intentionally permissive because the exact CLAS-database
+    export format may differ.  It does not silently fabricate missing errors.
+    """
+    if not path.exists():
+        return None
+
+    if path.suffix.lower() == ".csv":
+        df = pd.read_csv(path)
+        required = {"phi_deg", "Q2_GeV2", "xB", "t_abs_GeV2", "stat_digitized"}
+        missing = required - set(df.columns)
+        if missing:
+            raise RuntimeError(f"{path}: missing required BSA columns {sorted(missing)}")
+        return df
+
     rows = []
-    for L in LUMI:
-        d = proj[proj.luminosity_factor == L]
-        rows.append(dict(
-            luminosity=f"{L}x",
-            N=len(d),
-            N_kin_bins=d.kin_bin.nunique(),
-            median_rel_stat_pct=100*np.median(d.rel_stat_projected),
-            median_rel_total_pct=100*np.median(d.rel_total_projected),
-            p90_rel_stat_pct=100*np.quantile(d.rel_stat_projected, .90),
-            p90_rel_total_pct=100*np.quantile(d.rel_total_projected, .90),
-            stat_dominated_fraction=float(np.mean(
-                d.stat_projected_nb_GeV4 > d.sys_held_fixed_nb_GeV4)),
-        ))
+    with path.open() as f:
+        for line in f:
+            s = line.strip()
+            if not s or s.startswith("#"):
+                continue
+            vals = _float_tokens(s)
+            if len(vals) >= 6:
+                rows.append(vals[:7])
+
+    if not rows:
+        raise RuntimeError(f"{path} exists but no >=6-column numeric BSA rows were found")
+
+    ncol = max(len(r) for r in rows)
+    rows = [r + [np.nan] * (ncol - len(r)) for r in rows]
+    cols = ["phi_deg", "Q2_GeV2", "xB", "t_abs_GeV2", "ALU", "stat"]
+    if ncol >= 7:
+        cols.append("sys")
+    df = pd.DataFrame(rows, columns=cols)
+    return df
+
+
+# ---------------------------------------------------------------------------
+# RGB systematic-covariance audit
+# ---------------------------------------------------------------------------
+
+def make_rgb_projection_table(df: pd.DataFrame) -> pd.DataFrame:
+    rows = []
+    for L in LUMI_FACTORS:
+        stat = df["stat_pb_GeV4"].to_numpy() / math.sqrt(L)
+        sys = df["sys_pb_GeV4"].to_numpy()
+        xs = np.abs(df["xs_pb_GeV4"].to_numpy())
+
+        rel_stat = np.abs(stat / xs)
+        rel_diag = np.sqrt(stat**2 + sys**2) / xs
+
+        rows.append({
+            "luminosity": f"{L}x",
+            "N": len(df),
+            "N_kin_bins": df["kin_bin"].nunique(),
+            "median_rel_stat_pct": 100*np.median(rel_stat),
+            "median_rel_total_diag_pct": 100*np.median(rel_diag),
+            "p90_rel_stat_pct": 100*np.quantile(rel_stat, 0.90),
+            "p90_rel_total_diag_pct": 100*np.quantile(rel_diag, 0.90),
+            "stat_dominated_fraction_diag": float(np.mean(stat > sys)),
+        })
     return pd.DataFrame(rows)
 
-def plot_rgb_precision(summary, figdir):
-    L = np.array([1,2,5,10], float)
-    fig, ax = plt.subplots(figsize=(7.4,5.2))
-    ax.plot(L, summary.median_rel_stat_pct, "o-", label="statistical only")
-    ax.plot(L, summary.median_rel_total_pct, "s-", label="quoted systematics held fixed")
-    ax.set_xscale("log")
-    ax.set_xticks(L, [f"{int(v)}x" for v in L])
+
+def cell_shape_precision(df: pd.DataFrame, L: float, mode: str) -> np.ndarray:
+    """
+    Return a simple per-cell fractional *shape* precision diagnostic.
+
+    We remove one arbitrary normalization direction in each phi distribution.
+    This is not a physics fit; it only illustrates how covariance assumptions
+    change the amount of relative-phi information.
+
+    mode:
+      stat          -> diagonal statistical covariance
+      sys_diagonal  -> stat + quoted total systematic diagonal
+      sys_cellcorr  -> stat diagonal + quoted total systematic represented as
+                       a single coherent cell-scale direction.
+
+    For the correlated bracket, the point-dependent quoted sys magnitudes are
+    used to construct one rank-1 shift vector s_i s_j.  This is deliberately an
+    optimistic bracket, not the production covariance.
+    """
+    out = []
+    for _, g in df.groupby("kin_bin"):
+        y = g["xs_pb_GeV4"].to_numpy(float)
+        st = g["stat_pb_GeV4"].to_numpy(float) / math.sqrt(L)
+        sy = g["sys_pb_GeV4"].to_numpy(float)
+        n = len(g)
+        if n < 3:
+            continue
+
+        if mode == "stat":
+            C = np.diag(st**2)
+        elif mode == "sys_diagonal":
+            C = np.diag(st**2 + sy**2)
+        elif mode == "sys_cellcorr":
+            C = np.diag(st**2) + np.outer(sy, sy)
+        else:
+            raise ValueError(mode)
+
+        # Remove one normalization-like direction.  Work in fractional units.
+        scale = np.maximum(np.abs(y), 1e-30)
+        Cf = C / np.outer(scale, scale)
+        one = np.ones(n)
+        try:
+            W = np.linalg.pinv(Cf, rcond=1e-12)
+            denom = one @ W @ one
+            P = W - np.outer(W @ one, W @ one) / denom if denom > 0 else W
+            # Effective average uncertainty of the n-1 relative-shape directions.
+            evals = np.linalg.eigvalsh((P + P.T)/2)
+            pos = evals[evals > max(evals.max(initial=0)*1e-10, 1e-14)]
+            if len(pos):
+                out.append(math.sqrt(np.mean(1.0/pos)))
+        except np.linalg.LinAlgError:
+            pass
+    return np.asarray(out)
+
+
+def plot_rgb_precision_brackets(df: pd.DataFrame, outdir: Path):
+    xs = np.arange(len(LUMI_FACTORS))
+    med_stat, med_diag, med_corr = [], [], []
+
+    for L in LUMI_FACTORS:
+        a = cell_shape_precision(df, L, "stat")
+        b = cell_shape_precision(df, L, "sys_diagonal")
+        c = cell_shape_precision(df, L, "sys_cellcorr")
+        med_stat.append(100*np.median(a))
+        med_diag.append(100*np.median(b))
+        med_corr.append(100*np.median(c))
+
+    fig, ax = plt.subplots(figsize=(8.2, 5.4))
+    ax.plot(xs, med_stat, "o-", label="statistics only")
+    ax.plot(xs, med_diag, "s-", label="quoted total sys treated point-to-point")
+    ax.plot(xs, med_corr, "^-", label="quoted total sys correlated within cell")
+    ax.set_xticks(xs, [f"{L}x" for L in LUMI_FACTORS])
     ax.set_xlabel("RGB unpolarized luminosity")
-    ax.set_ylabel("Median relative cross-section uncertainty (%)")
-    ax.set_title("RGB neutron DVCS: where additional luminosity stops helping")
-    ax.grid(alpha=.25)
-    ax.legend()
+    ax.set_ylabel("Median relative-phi shape uncertainty (%)")
+    ax.set_title("RGB neutron DVCS: covariance assumption controls the luminosity projection")
+    ax.grid(alpha=0.25)
+    ax.legend(frameon=True)
     fig.tight_layout()
-    fig.savefig(figdir/"rgb_precision_vs_luminosity.png", dpi=220)
+    fig.savefig(outdir / "rgb_shape_precision_covariance_brackets.png", dpi=180)
     plt.close(fig)
 
-def plot_rgb_kinematic_map(df, figdir):
-    # One point per preliminary kin_bin, using means over phi rows.
-    g = df.groupby("kin_bin", as_index=False).agg(
-        xB=("xB","mean"), Q2=("Q2_GeV2","mean"), tabs=("t_abs_GeV2","mean"),
-        med_rel_stat=("stat_nb_GeV4", lambda x: np.nan))
-    # compute relative stat correctly from original groups
-    vals=[]
-    for k, d in df.groupby("kin_bin"):
-        vals.append((k, np.median(d.stat_nb_GeV4/d.xs_nb_GeV4.abs())))
-    rel=dict(vals)
-    g["med_rel_stat"]=g.kin_bin.map(rel)
-    fig, ax = plt.subplots(figsize=(7.2,5.4))
-    sc=ax.scatter(g.xB, g.Q2, s=80+350*g.tabs, c=100*g.med_rel_stat)
-    for _,r in g.iterrows():
-        ax.annotate(f"|t|={r.tabs:.2f}", (r.xB,r.Q2), xytext=(5,5),
-                    textcoords="offset points", fontsize=8)
-    cb=fig.colorbar(sc, ax=ax)
+    return pd.DataFrame({
+        "luminosity": [f"{L}x" for L in LUMI_FACTORS],
+        "shape_stat_only_pct": med_stat,
+        "shape_sys_diagonal_pct": med_diag,
+        "shape_sys_cellcorr_pct": med_corr,
+    })
+
+
+def plot_rgb_kinematics(df: pd.DataFrame, outdir: Path):
+    # One marker per kinematic cell; labels deliberately omitted to avoid the
+    # clutter in v1.  Color = current median statistical uncertainty in that cell.
+    cells = []
+    for k, g in df.groupby("kin_bin"):
+        cells.append({
+            "kin_bin": k,
+            "xB": g["xB"].mean(),
+            "Q2": g["Q2_GeV2"].mean(),
+            "t": g["t_abs_GeV2"].mean(),
+            "stat": 100*np.median(g["rel_stat"]),
+        })
+    c = pd.DataFrame(cells)
+
+    fig, ax = plt.subplots(figsize=(8.0, 6.0))
+    sc = ax.scatter(c["xB"], c["Q2"], c=c["stat"], s=55 + 110*c["t"])
+    cb = fig.colorbar(sc, ax=ax)
     cb.set_label("Median current statistical uncertainty (%)")
     ax.set_xlabel(r"$x_B$")
     ax.set_ylabel(r"$Q^2$ (GeV$^2$)")
     ax.set_title("Preliminary RGB neutron-DVCS kinematic leverage")
-    ax.grid(alpha=.2)
+    ax.grid(alpha=0.25)
     fig.tight_layout()
-    fig.savefig(figdir/"rgb_kinematic_leverage.png", dpi=220)
+    fig.savefig(outdir / "rgb_kinematic_leverage.png", dpi=180)
     plt.close(fig)
 
-def make_dfjk_seed_scan():
-    """
-    Workshop-level seed scan, not a fit.
-    alpha_E is held common here only to visualize how beta_u,beta_d move B20.
-    v2 will use the actual observable likelihood.
-    """
-    alpha = 0.55
-    bu = np.linspace(2.0, 8.0, 121)
-    bd = np.linspace(2.0, 10.0, 161)
-    rows=[]
-    for u in bu:
-        for d in bd:
-            rows.append((u,d,b20_valence(KAPPA_U,alpha,u),
-                         b20_valence(KAPPA_D,alpha,d)))
-    return pd.DataFrame(rows, columns=["beta_u","beta_d","B20_uv","B20_dv"])
 
-def plot_dfjk_map(scan, figdir):
-    fig, ax = plt.subplots(figsize=(7.0,5.4))
-    sc=ax.scatter(scan.B20_uv, scan.B20_dv, c=scan.beta_u, s=5, alpha=.25)
-    cb=fig.colorbar(sc, ax=ax)
+# ---------------------------------------------------------------------------
+# DFJK-inspired moment map
+# ---------------------------------------------------------------------------
+
+def make_b20_prior_map(outdir: Path):
+    beta_u = np.linspace(2.0, 8.0, 121)
+    beta_d = np.linspace(2.0, 8.0, 121)
+    rows = []
+    for bu in beta_u:
+        B_u = b20_from_beta(KAPPA_U, DEFAULT_ALPHA_U, bu)
+        for bd in beta_d:
+            B_d = b20_from_beta(KAPPA_D, DEFAULT_ALPHA_D, bd)
+            rows.append((bu, bd, B_u, B_d))
+    df = pd.DataFrame(rows, columns=["beta_u_E", "beta_d_E", "B20_uv", "B20_dv"])
+    df.to_csv(outdir / "dfjk_B20_prior_map.csv", index=False)
+
+    fig, ax = plt.subplots(figsize=(8.0, 6.0))
+    sc = ax.scatter(df["B20_uv"], df["B20_dv"], c=df["beta_u_E"], s=7, alpha=0.65)
+    cb = fig.colorbar(sc, ax=ax)
     cb.set_label(r"$\beta_u^E$ (seed scan)")
     ax.set_xlabel(r"$B_{20}^{u_v}(0)=\int dx\,xE_v^u$")
     ax.set_ylabel(r"$B_{20}^{d_v}(0)=\int dx\,xE_v^d$")
     ax.set_title("DFJK-inspired E-sector parameter space (prior map, not data constraint)")
-    ax.grid(alpha=.2)
+    ax.grid(alpha=0.25)
     fig.tight_layout()
-    fig.savefig(figdir/"dfjk_B20_parameter_map_prior_only.png", dpi=220)
+    fig.savefig(outdir / "dfjk_B20_parameter_map_prior_only.png", dpi=180)
     plt.close(fig)
+    return df
 
-def check_gepard():
-    try:
-        import gepard
-        return True, getattr(gepard, "__file__", "available")
-    except Exception as e:
-        return False, str(e)
+
+# ---------------------------------------------------------------------------
+# Main
+# ---------------------------------------------------------------------------
 
 def main():
-    ap=argparse.ArgumentParser()
-    ap.add_argument("--ndvcs-xs", default="import/ndvcs_clas12_preliminary_unpolarized.txt")
-    ap.add_argument("--output", default="output/stage5_ji")
-    args=ap.parse_args()
+    ap = argparse.ArgumentParser()
+    ap.add_argument("--rgb-xs", type=Path, default=RGB_XS_DEFAULT)
+    ap.add_argument("--rgb-bsa", type=Path, default=RGB_BSA_DEFAULT)
+    ap.add_argument("--output", type=Path, default=OUT_DEFAULT)
+    args = ap.parse_args()
 
-    out=Path(args.output)
-    tab=out/"tables"; fig=out/"figures"
-    tab.mkdir(parents=True, exist_ok=True); fig.mkdir(parents=True, exist_ok=True)
+    args.output.mkdir(parents=True, exist_ok=True)
 
-    xs_path=Path(args.ndvcs_xs)
-    if not xs_path.exists():
-        raise FileNotFoundError(
-            f"{xs_path} not found. Put ndvcs_clas12_preliminary_unpolarized.txt "
-            "in the import directory beside the high-luminosity scripts."
-        )
+    xs = load_rgb_xs(args.rgb_xs)
+    proj = make_rgb_projection_table(xs)
+    proj.to_csv(args.output / "rgb_xs_luminosity_projection.csv", index=False)
 
-    df=load_ndvcs_xs(xs_path)
-    proj=make_rgb_projection_table(df)
-    summ=summarize_rgb(proj)
-    scan=make_dfjk_seed_scan()
+    brackets = plot_rgb_precision_brackets(xs, args.output)
+    brackets.to_csv(args.output / "rgb_xs_covariance_brackets.csv", index=False)
 
-    df.to_csv(tab/"rgb_ndvcs_xs_input_audit.csv", index=False)
-    proj.to_csv(tab/"rgb_ndvcs_xs_luminosity_projections.csv", index=False)
-    summ.to_csv(tab/"rgb_ndvcs_xs_projection_summary.csv", index=False)
-    scan.to_csv(tab/"dfjk_B20_seed_scan_prior_only.csv", index=False)
+    plot_rgb_kinematics(xs, args.output)
+    make_b20_prior_map(args.output)
 
-    plot_rgb_precision(summ, fig)
-    plot_rgb_kinematic_map(df, fig)
-    plot_dfjk_map(scan, fig)
+    bsa = load_optional_bsa(args.rgb_bsa)
+    if bsa is not None:
+        bsa.to_csv(args.output / "rgb_published_bsa_audit.csv", index=False)
 
-    gp_ok,gp_msg=check_gepard()
-
-    print("="*100)
-    print("STAGE 5 v1 — RGB + DFJK/Ji FRAMEWORK")
-    print("="*100)
-    print(f"RGB neutron XS: {len(df)} phi points in {df.kin_bin.nunique()} kinematic bins")
-    print(f"xB range      : {df.xB.min():.3f} -- {df.xB.max():.3f}")
-    print(f"Q2 range      : {df.Q2_GeV2.min():.3f} -- {df.Q2_GeV2.max():.3f} GeV^2")
-    print(f"|t| range     : {df.t_abs_GeV2.min():.3f} -- {df.t_abs_GeV2.max():.3f} GeV^2")
+    print("=" * 100)
+    print("STAGE 5 v2 — RGB SYSTEMATIC-COVARIANCE AUDIT + DFJK/Ji FRAMEWORK")
+    print("=" * 100)
+    print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
+    print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
+    print(f"Q2 range      : {xs.Q2_GeV2.min():.3f} -- {xs.Q2_GeV2.max():.3f} GeV^2")
+    print(f"|t| range     : {xs.t_abs_GeV2.min():.3f} -- {xs.t_abs_GeV2.max():.3f} GeV^2")
     print()
-    print(summ.to_string(index=False, float_format=lambda x:f"{x:.4g}"))
+    print(proj.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
+    print()
+    print("IMPORTANT SYSTEMATICS INTERPRETATION:")
+    print("  The preliminary note's total systematic error is NOT a measured point-to-point covariance.")
+    print("  It is the quadrature sum of analysis-variation sources.")
+    print("  v2 therefore keeps diagonal-total and cell-correlated treatments only as projection brackets.")
+    print("  The production p+n GPD fit should use source-by-source signed shifts/covariances if available.")
+    print()
+    print("RGB covariance-bracket shape diagnostic:")
+    print(brackets.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
     print()
     print("DFJK-inspired E normalization from anomalous magnetic moments:")
     print(f"  kappa_u = 2*kappa_p + kappa_n = {KAPPA_U:+.6f}")
     print(f"  kappa_d = kappa_p + 2*kappa_n = {KAPPA_D:+.6f}")
-    print("  B20 is computed analytically from the x-weighted E_v moment.")
     print()
-    print(f"Gepard available: {gp_ok} ({gp_msg})")
+    if bsa is None:
+        print(f"Published RGB BSA: not yet present ({args.rgb_bsa})")
+        print("  Put the CLAS-database export there; v2 will audit it automatically.")
+    else:
+        print(f"Published RGB BSA template: loaded {len(bsa)} rows from {args.rgb_bsa}")
+        print("  Columns:", ", ".join(bsa.columns))
     print()
-    print("NEXT IMPLEMENTATION STEP (v2):")
-    print("  1) add published RGB nDVCS BSA input;")
-    print("  2) implement fixed-profile double-distribution skewness for DFJK H/E;")
-    print("  3) predict p/n XS and BSA through Gepard;")
-    print("  4) fit p(1x) -> p(1x)+n(1x) -> p(10x)+n(10x);")
-    print("  5) propagate replicas to B20_uv,B20_dv and then Ju,Jd.")
+    print("NEXT FIT STEP:")
+    print("  Use the published neutron BSA + proton XS/BSA + preliminary neutron XS in a")
+    print("  finite-skewness H/E model, then compare p(1x), p(1x)+n(1x), p(10x),")
+    print("  and p(10x)+n(10x) directly in the B20_uv-B20_dv plane.")
     print()
-    print(f"Wrote: {out}")
+    print(f"Wrote: {args.output}")
+    return 0
+
 
 if __name__ == "__main__":
     raise SystemExit(main())
