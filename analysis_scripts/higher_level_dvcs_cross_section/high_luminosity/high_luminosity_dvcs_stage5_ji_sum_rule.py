@@ -65,6 +65,7 @@ DEFAULT_ALPHA_D = 0.55
 
 RGB_XS_DEFAULT = Path("import/ndvcs_clas12_preliminary_unpolarized.txt")
 RGB_BSA_DEFAULT = Path("import/ndvcs_rgb_published_bsa_digitized_t_projection.csv")
+RGA_BSA_DEFAULT = Path("import/rga_prl_bsa.txt")
 OUT_DEFAULT = Path("output/stage5_ji")
 
 
@@ -403,6 +404,141 @@ def bsa_4d_feasibility(bsa: pd.DataFrame, figdir: Path, tabdir: Path):
     plt.close(fig)
     return out
 
+
+def load_rga_prl_bsa(path: Path):
+    """Load the published RGA proton-DVCS BSA table and extract statistical errors.
+
+    The parser first uses a header when present.  It deliberately refuses to guess
+    an unlabeled column ordering: this comparison is meant to use the published
+    statistical uncertainty, not an accidentally selected systematic/kinematic column.
+    """
+    if not path.exists():
+        return None
+
+    # Inspect non-comment lines for a textual header.
+    lines = [ln.strip() for ln in path.read_text().splitlines()
+             if ln.strip() and not ln.lstrip().startswith("#")]
+    if not lines:
+        raise RuntimeError(f"{path} is empty")
+
+    first = lines[0]
+    has_text_header = bool(re.search(r"[A-Za-z]", first))
+    if has_text_header:
+        # Accept comma-separated or arbitrary whitespace-separated tables.
+        sep = "," if "," in first else r"\s+"
+        df = pd.read_csv(path, comment="#", sep=sep, engine="python")
+        clean = {c: re.sub(r"[^a-z0-9]+", "", str(c).lower()) for c in df.columns}
+
+        # Header aliases seen in CLAS/CLAS12 data tables.
+        exact_aliases = {
+            "stat", "staterr", "staterror", "statunc", "statuncertainty",
+            "dastat", "aluerrstat", "bsaerrstat", "errstat", "sigmaalu"
+        }
+        candidates = [c for c, k in clean.items() if k in exact_aliases]
+        if not candidates:
+            candidates = [
+                c for c, k in clean.items()
+                if "stat" in k and any(x in k for x in ("err", "unc", "sigma", "alu", "bsa"))
+            ]
+        if len(candidates) != 1:
+            raise RuntimeError(
+                f"{path}: could not uniquely identify the RGA BSA statistical-error column. "
+                f"Columns are: {list(df.columns)}"
+            )
+        stat_col = candidates[0]
+        stat = pd.to_numeric(df[stat_col], errors="coerce")
+        out = df.loc[np.isfinite(stat) & (stat > 0)].copy()
+        out["stat_error"] = pd.to_numeric(out[stat_col], errors="coerce")
+        out.attrs["stat_column"] = str(stat_col)
+        return out
+
+    raise RuntimeError(
+        f"{path}: table has no textual header, so v4 will not guess which numeric "
+        "column is the published statistical BSA uncertainty. Add a header or pass "
+        "a headered copy with --rga-bsa."
+    )
+
+
+def compare_rgb_to_rga_bsa(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame,
+                           feasibility: pd.DataFrame, figdir: Path, tabdir: Path):
+    """Compare RGB projected neutron BSA precision with achieved RGA 4D proton BSA precision."""
+    rgb_stat = rgb_bsa["stat_digitized"].to_numpy(float)
+    p_stat = rga_bsa["stat_error"].to_numpy(float)
+
+    p_med = float(np.median(p_stat))
+    p_p16, p_p84 = np.quantile(p_stat, [0.16, 0.84])
+    n1_med = float(np.median(rgb_stat))
+
+    rows = [{
+        "sample": "RGA proton published 4D",
+        "luminosity": "measured",
+        "subcells_per_published_RGB_bin": np.nan,
+        "N_points": len(p_stat),
+        "median_sigma_ALU": p_med,
+        "p16_sigma_ALU": p_p16,
+        "p84_sigma_ALU": p_p84,
+        "ratio_to_RGA_median": 1.0,
+        "ratio_to_current_RGB_1D_median": p_med / n1_med,
+    }, {
+        "sample": "RGB neutron published 1D",
+        "luminosity": "1x",
+        "subcells_per_published_RGB_bin": 1,
+        "N_points": len(rgb_stat),
+        "median_sigma_ALU": n1_med,
+        "p16_sigma_ALU": float(np.quantile(rgb_stat, 0.16)),
+        "p84_sigma_ALU": float(np.quantile(rgb_stat, 0.84)),
+        "ratio_to_RGA_median": n1_med / p_med,
+        "ratio_to_current_RGB_1D_median": 1.0,
+    }]
+
+    for S in [1, 2, 4, 6, 8, 10]:
+        e = rgb_stat * np.sqrt(S / 10.0)
+        rows.append({
+            "sample": f"RGB neutron projected 10x, {S}-way split",
+            "luminosity": "10x",
+            "subcells_per_published_RGB_bin": S,
+            "N_points": len(e),
+            "median_sigma_ALU": float(np.median(e)),
+            "p16_sigma_ALU": float(np.quantile(e, 0.16)),
+            "p84_sigma_ALU": float(np.quantile(e, 0.84)),
+            "ratio_to_RGA_median": float(np.median(e) / p_med),
+            "ratio_to_current_RGB_1D_median": float(np.median(e) / n1_med),
+        })
+
+    comp = pd.DataFrame(rows)
+    comp.to_csv(tabdir / "rga_rgb_bsa_precision_comparison.csv", index=False)
+
+    # Main-talk candidate: spend luminosity on multidimensionality.
+    q10 = feasibility[feasibility["luminosity"] == "10x"].copy()
+    fig, ax = plt.subplots(figsize=(8.4, 5.5))
+    ax.plot(q10["subcells_per_published_bin"], q10["median_sigma_ALU"],
+            marker="o", linewidth=2.2, label="RGB neutron, projected 10x")
+    ax.axhline(n1_med, linestyle="--", linewidth=2.0,
+               label="RGB neutron, current published 1D")
+    ax.axhline(p_med, linestyle=":", linewidth=2.2,
+               label="RGA proton, current published 4D median")
+    ax.fill_between([1, 10], p_p16, p_p84, alpha=0.10,
+                    label="RGA proton central 68% of statistical errors")
+    ax.scatter([10], [n1_med], s=85, zorder=5)
+    ax.annotate(
+        "10x luminosity → ~10 equal-statistics subcells\n"
+        "at the current RGB 1D median precision",
+        xy=(10, n1_med), xytext=(5.2, n1_med * 1.35),
+        arrowprops=dict(arrowstyle="->"),
+        ha="center", va="bottom"
+    )
+    ax.set_xlabel("Equal-statistics subcells per current published neutron bin")
+    ax.set_ylabel(r"Median statistical $\sigma(A_{LU})$")
+    ax.set_title("What 10x luminosity buys for neutron-DVCS BSA binning")
+    ax.set_xlim(0.7, 10.3)
+    ax.grid(alpha=0.25)
+    ax.legend(fontsize=9)
+    fig.tight_layout()
+    fig.savefig(figdir / "rga_rgb_bsa_precision_benchmark.png", dpi=180)
+    plt.close(fig)
+
+    return comp
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -411,6 +547,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rgb-xs", type=Path, default=RGB_XS_DEFAULT)
     ap.add_argument("--rgb-bsa", type=Path, default=RGB_BSA_DEFAULT)
+    ap.add_argument("--rga-bsa", type=Path, default=RGA_BSA_DEFAULT)
     ap.add_argument("--output", type=Path, default=OUT_DEFAULT)
     args = ap.parse_args()
 
@@ -439,11 +576,20 @@ def main():
     if bsa is not None:
         bsa.to_csv(tabdir / "rgb_published_bsa_audit.csv", index=False)
         feasibility = bsa_4d_feasibility(bsa, figdir, tabdir)
+        rga_bsa = load_rga_prl_bsa(args.rga_bsa)
+        if rga_bsa is not None:
+            rga_bsa.to_csv(tabdir / "rga_prl_bsa_audit.csv", index=False)
+            precision_comparison = compare_rgb_to_rga_bsa(
+                bsa, rga_bsa, feasibility, figdir, tabdir)
+        else:
+            precision_comparison = None
     else:
         feasibility = None
+        rga_bsa = None
+        precision_comparison = None
 
     print("=" * 100)
-    print("STAGE 5 v3 — RGB COVARIANCE + MULTIDIMENSIONAL-BSA FEASIBILITY + DFJK/Ji FRAMEWORK")
+    print("STAGE 5 v4 — RGA/RGB BSA PRECISION BENCHMARK + RGB COVARIANCE + DFJK/Ji FRAMEWORK")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -478,6 +624,25 @@ def main():
                 feasibility["subcells_per_published_bin"].isin([1, 4, 8])
             ]
             print(sel.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
+        if precision_comparison is None:
+            print()
+            print(f"RGA proton BSA benchmark: not loaded ({args.rga_bsa})")
+        else:
+            p = precision_comparison.iloc[0]
+            n = precision_comparison.iloc[1]
+            n10 = precision_comparison[
+                precision_comparison["sample"] == "RGB neutron projected 10x, 10-way split"
+            ].iloc[0]
+            print()
+            print("RGA proton vs RGB neutron BSA statistical-precision benchmark:")
+            print(f"  RGA published 4D proton: N={int(p.N_points)}, median sigma(A_LU)={p.median_sigma_ALU:.5f}")
+            print(f"  RGB published 1D neutron: N={int(n.N_points)}, median sigma(A_LU)={n.median_sigma_ALU:.5f}")
+            print(f"  RGB 10x with 10-way subdivision: median sigma(A_LU)={n10.median_sigma_ALU:.5f}")
+            print(f"  neutron 10x/10-way divided by RGA proton median = {n10.ratio_to_RGA_median:.3f}")
+            print(f"  neutron 10x/10-way divided by current RGB 1D median = {n10.ratio_to_current_RGB_1D_median:.3f}")
+            print("  KEY RESULT: 10x luminosity permits ~10 equal-statistics subcells per current")
+            print("              RGB projected bin while retaining approximately the current")
+            print("              published neutron-BSA median statistical precision.")
     print()
     print("NEXT FIT STEP:")
     print("  Use the published neutron BSA + proton XS/BSA + preliminary neutron XS in a")
