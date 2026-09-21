@@ -136,7 +136,7 @@ int main(int argc, char* argv[]) {
     std::string topology_study_csv;
     bool eppi0_normalization_only = false;
     bool eppi0_production_test = false;
-    bool use_eppi0_production_normalization = true;
+    bool use_eppi0_production_normalization = false;
     std::string topology_cli;
     int photon_sector_cli = 0;
     int electron_sector_cli = 0;
@@ -155,7 +155,10 @@ int main(int argc, char* argv[]) {
             eppi0_normalization_only = true;
         } else if (std::string(argv[i]) == "--eppi0-production-test") {
             eppi0_production_test = true;
+        } else if (std::string(argv[i]) == "--eppi0-normalization") {
+            use_eppi0_production_normalization = true;
         } else if (std::string(argv[i]) == "--no-eppi0-normalization") {
+            // Backward-compatible explicit spelling of the production default.
             use_eppi0_production_normalization = false;
         } else if (std::string(argv[i]) == "--disable-sp18-out-sector-quality-cuts") {
             disable_sp18_out_sector_quality_cuts = true;
@@ -229,7 +232,8 @@ int main(int argc, char* argv[]) {
                   << "  ./dvcs_analysis --acceptance-reweighting-only\n"
                   << "  ./dvcs_analysis --eppi0-normalization-only\n"
                   << "  ./dvcs_analysis --eppi0-production-test\n"
-                  << "  ./dvcs_analysis --no-eppi0-normalization   # original Krishna normalization\n"
+                  << "  ./dvcs_analysis --eppi0-normalization      # optional eppi0 detector-normalization study\n"
+                  << "  ./dvcs_analysis --no-eppi0-normalization   # explicit spelling of default Krishna normalization\n"
                   << "  ./dvcs_analysis --skip-systematics --disable-sp18-out-sector-quality-cuts\n"
                   << "  ./dvcs_analysis --no-eppi0-normalization --skip-systematics --topology FD-FD\n"
                   << "  ./dvcs_analysis --no-eppi0-normalization --skip-systematics --topology CD-FD\n"
@@ -687,6 +691,12 @@ int main(int argc, char* argv[]) {
             global_cfg.enable_electron_fd_sector_filter ||
             global_cfg.enable_proton_fd_sector_filter ||
             global_cfg.enable_proton_cd_sector_filter;
+        // Topology-resolved extractions are detector-population diagnostics, not
+        // independent current-efficiency calibrations.  They must inherit the
+        // exact same event-level current-response model as the inclusive parent.
+        // This also makes FD-FD/CD-FD/CD-FT directly comparable and avoids a
+        // topology selection silently changing the calibration being tested.
+        const bool topology_diagnostic_run = global_cfg.enable_topology_filter;
         try {
             if (inclusive_parent_run) {
                 std::filesystem::create_directories(parent_dir);
@@ -695,11 +705,11 @@ int main(int argc, char* argv[]) {
                     std::filesystem::copy_options::overwrite_existing);
                 std::cout << "[main] Saved inclusive parent current-response calibration: "
                           << inclusive_parent_model.string() << "\n";
-            } else if (generic_particle_sector_run) {
+            } else if (generic_particle_sector_run || topology_diagnostic_run) {
                 if (!std::filesystem::exists(inclusive_parent_model)) {
-                    std::cerr << "[main] FATAL: particle-sector extraction requires the inclusive "
+                    std::cerr << "[main] FATAL: detector-subset extraction requires the inclusive "
                               << "parent current-response calibration. Run the same command once "
-                              << "without a sector option first. Missing: "
+                              << "without --topology or a sector option first. Missing: "
                               << inclusive_parent_model.string() << "\n";
                     std::exit(EXIT_FAILURE);
                 }
@@ -707,7 +717,8 @@ int main(int argc, char* argv[]) {
                     inclusive_parent_model, current_model,
                     std::filesystem::copy_options::overwrite_existing);
                 std::cout << "[main] Restored exact inclusive parent current-response calibration "
-                          << "for particle-sector extraction.\n";
+                          << (topology_diagnostic_run ? "for topology extraction.\n"
+                                                     : "for particle-sector extraction.\n");
             }
         } catch (const std::exception& e) {
             std::cerr << "[main] FATAL: failed to snapshot/restore inclusive parent "
@@ -776,11 +787,11 @@ int main(int argc, char* argv[]) {
         total_count_opts.make_plots = false;
         total_count_opts.make_note_outputs = true;
         total_count_opts.apply_event_level_current_correction = true;
-        // Mutually exclusive production normalization modes.  Default reproduces
-        // the pass-1 architecture: sequential eppi0 theta*p efficiency weights
-        // act on reconstructed DVCS MC and Krishna is disabled.  The command-line
-        // fallback --no-eppi0-normalization restores the prior pass-2 Krishna
-        // proton-efficiency treatment and applies no eppi0 efficiency map.
+        // Mutually exclusive detector-normalization modes.  Production default:
+        // eppi0 normalization OFF and Krishna/Neupane proton-efficiency correction
+        // ON.  --eppi0-normalization is an explicit diagnostic alternative that
+        // applies the sequential eppi0 theta*p efficiency map to reconstructed
+        // DVCS MC and disables the Krishna/Neupane correction.
         total_count_opts.apply_neupane_proton_efficiency_correction =
             !use_eppi0_production_normalization;
         total_count_opts.apply_eppi0_efficiency_to_dvcs_rec_mc =
