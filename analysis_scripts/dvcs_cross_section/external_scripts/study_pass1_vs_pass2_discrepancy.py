@@ -151,7 +151,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default="output/study_pass1_vs_pass2_discrepancy",
+        default=str(Path(__file__).resolve().parent.parent / "output" / "study_pass1_vs_pass2_discrepancy"),
         help="Output directory.",
     )
     parser.add_argument(
@@ -868,6 +868,10 @@ def read_authoritative_pass1(path: Path) -> pd.DataFrame:
         subset=["xB", "Q2", "t", "phi", "xs_pass1", "stat_pass1", "syst_pass1"]
     )
     df = df[df["xs_pass1"] > 0].reset_index(drop=True)
+    # Unique identifier for an individual released (xB,Q2,t,phi) point.
+    # The CLAS database `bin` value is shared by all phi points in a 3-D bin,
+    # so it must NOT be used by itself for topology closure matching.
+    df["pass1_row_id"] = np.arange(len(df), dtype=int)
 
     print(
         f"[pass1/pass2] authoritative pass-1: loaded {len(df):,} positive points "
@@ -922,6 +926,7 @@ def match_to_authoritative_pass1(
             "t_pass2": row.t,
             "phi_pass2": row.phi,
             "xs_pass2": row.xs_pass2,
+            "pass1_row_id": int(ref["pass1_row_id"]),
             "pass1_bin": ref["bin"],
             "xB_pass1": ref["xB"],
             "Q2_pass1": ref["Q2"],
@@ -969,21 +974,29 @@ def discrepancy_summary(matched: pd.DataFrame, edges: List[float], labels: List[
 
 
 def direct_topology_closure(matched: pd.DataFrame, a: str, b: str) -> pd.DataFrame:
-    """Direct pass-2 topology ratio in bins sharing the same released pass-1 point."""
+    """Direct pass-2 topology ratio for the same released pass-1 (xB,Q2,t,phi) point."""
     aa = matched[matched["topology"] == a].copy()
     bb = matched[matched["topology"] == b].copy()
     if aa.empty or bb.empty:
         return pd.DataFrame()
     #endif
 
-    aa = aa.sort_values(["pass1_bin", "dt", "dQ2", "dxB", "dphi"]).drop_duplicates("pass1_bin")
-    bb = bb.sort_values(["pass1_bin", "dt", "dQ2", "dxB", "dphi"]).drop_duplicates("pass1_bin")
-    keep_a = ["pass1_bin", "xB_pass1", "Q2_pass1", "t_pass1", "phi_pass1", "xs_pass1", "xs_pass2", "pass2_over_pass1"]
-    keep_b = ["pass1_bin", "xs_pass2", "pass2_over_pass1"]
-    out = aa[keep_a].merge(bb[keep_b], on="pass1_bin", suffixes=(f"_{a}", f"_{b}"))
+    # `pass1_bin` alone is NOT unique: it contains many phi points.  Use the
+    # unique released-row identifier assigned by read_authoritative_pass1().
+    sort_cols = ["pass1_row_id", "dt", "dQ2", "dxB", "dphi"]
+    aa = aa.sort_values(sort_cols).drop_duplicates("pass1_row_id")
+    bb = bb.sort_values(sort_cols).drop_duplicates("pass1_row_id")
+
+    keep_a = [
+        "pass1_row_id", "pass1_bin", "xB_pass1", "Q2_pass1", "t_pass1",
+        "phi_pass1", "xs_pass1", "xs_pass2", "pass2_over_pass1"
+    ]
+    keep_b = ["pass1_row_id", "xs_pass2", "pass2_over_pass1"]
+    out = aa[keep_a].merge(
+        bb[keep_b], on="pass1_row_id", suffixes=(f"_{a}", f"_{b}")
+    )
     out[f"xs_{a}_over_{b}"] = out[f"xs_pass2_{a}"] / out[f"xs_pass2_{b}"]
     return out
-
 
 def plot_pass1_ratios(summary: pd.DataFrame, output: Path) -> None:
     if summary.empty:
@@ -1036,7 +1049,8 @@ def run_pass1_pass2_study(args: argparse.Namespace, output_dir: Path, edges: Lis
         return
     #endif
 
-    files = resolve_pass2_files(args)
+    csv_dir = Path(args.csv_dir)
+    files = resolve_pass2_files(args, csv_dir)
     if not files:
         print("[pass1/pass2] WARNING: no pass-2 CSVs resolved; skipping CSV comparison.")
         return
