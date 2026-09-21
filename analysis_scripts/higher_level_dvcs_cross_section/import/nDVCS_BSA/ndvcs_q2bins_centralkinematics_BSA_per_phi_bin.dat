@@ -1,0 +1,24 @@
+<Q2> 1.60996 <xb> 0.127791 <t> -0.399298 <phi> 26.9011 BSA 0.0129924   BSA_error_stat 0.0136986 BSA_error_syst 0.00732952
+<Q2> 1.59661 <xb> 0.113476 <t> -0.281453 <phi> 71.9517 BSA 0.0549768   BSA_error_stat 0.0199304 BSA_error_syst 0.0165577 
+<Q2> 1.63804 <xb> 0.171955 <t> -0.411151 <phi> 129.894 BSA 0.0311117   BSA_error_stat 0.0430537 BSA_error_syst 0.0106868 
+<Q2> 1.64577 <xb> 0.180493 <t> -0.505593 <phi> 177.599 BSA 0.00258181  BSA_error_stat 0.0506054 BSA_error_syst 0.00342626
+<Q2> 1.63385 <xb> 0.170296 <t> -0.409475 <phi> 230.649 BSA 0.00121812  BSA_error_stat 0.054365  BSA_error_syst 0.0129061 
+<Q2> 1.58579 <xb> 0.112861 <t> -0.308094 <phi> 289.375 BSA -0.0269679  BSA_error_stat 0.021877  BSA_error_syst 0.00915246
+<Q2> 1.61054 <xb> 0.12786  <t> -0.403268 <phi> 331.743 BSA -0.0323581  BSA_error_stat 0.0144779 BSA_error_syst 0.0110608 
+
+<Q2> 2.32763 <xb> 0.17519  <t> -0.400756 <phi> 26.0951 BSA 0.032576    BSA_error_stat 0.0123729 BSA_error_syst 0.0069708 
+<Q2> 2.32203 <xb> 0.175037 <t> -0.320296 <phi> 71.1161 BSA 0.0444287   BSA_error_stat 0.02092   BSA_error_syst 0.0120084 
+<Q2> 2.34501 <xb> 0.266502 <t> -0.606704 <phi> 130.019 BSA 0.0359422   BSA_error_stat 0.0440037 BSA_error_syst 0.0110415 
+<Q2> 2.35765 <xb> 0.256528 <t> -0.619464 <phi> 178.386 BSA -0.00858886 BSA_error_stat 0.0459189 BSA_error_syst 0.00626969
+<Q2> 2.36054 <xb> 0.26005  <t> -0.600834 <phi> 230.878 BSA -0.0610168  BSA_error_stat 0.0486971 BSA_error_syst 0.00686374
+<Q2> 2.3312  <xb> 0.169863 <t> -0.344254 <phi> 289.38  BSA -0.0313887  BSA_error_stat 0.0229532 BSA_error_syst 0.0111883 
+<Q2> 2.32678 <xb> 0.174655 <t> -0.405209 <phi> 333.123 BSA -0.012897   BSA_error_stat 0.0131454 BSA_error_syst 0.00658088
+
+<Q2> 3.78888 <xb> 0.260332 <t> -0.471153 <phi> 25.1936 BSA 0.0341741   BSA_error_stat 0.0158753 BSA_error_syst 0.00825815
+<Q2> 3.99901 <xb> 0.3216   <t> -0.571534 <phi> 74.4928 BSA 0.0291453   BSA_error_stat 0.033552  BSA_error_syst 0.00872318
+<Q2> 4.10106 <xb> 0.391376 <t> -0.816081 <phi> 129.966 BSA 0.06508     BSA_error_stat 0.0534012 BSA_error_syst 0.0105105 
+<Q2> 4.0382  <xb> 0.365174 <t> -0.831158 <phi> 177.878 BSA -0.00559244 BSA_error_stat 0.0550406 BSA_error_syst 0.0117411 
+<Q2> 4.00422 <xb> 0.386461 <t> -0.842419 <phi> 230.905 BSA -0.112338   BSA_error_stat 0.0644363 BSA_error_syst 0.0111901 
+<Q2> 3.86794 <xb> 0.302899 <t> -0.537446 <phi> 286.649 BSA -0.0346924  BSA_error_stat 0.0367964 BSA_error_syst 0.0094769 
+<Q2> 3.80832 <xb> 0.261032 <t> -0.467643 <phi> 334.872 BSA -0.0248159  BSA_error_stat 0.0169401 BSA_error_syst 0.00778486
+

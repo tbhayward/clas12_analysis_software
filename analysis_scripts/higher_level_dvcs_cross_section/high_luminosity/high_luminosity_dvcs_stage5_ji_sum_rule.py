@@ -39,6 +39,7 @@ Output:
 from __future__ import annotations
 
 import argparse
+import re
 import math
 import re
 from pathlib import Path
@@ -64,7 +65,7 @@ DEFAULT_ALPHA_U = 0.55
 DEFAULT_ALPHA_D = 0.55
 
 RGB_XS_DEFAULT = Path("import/ndvcs_clas12_preliminary_unpolarized.txt")
-RGB_BSA_DEFAULT = Path("import/ndvcs_rgb_published_bsa_digitized_t_projection.csv")
+RGB_BSA_DIR_DEFAULT = Path("import/nDVCS_BSA")
 RGA_PASS2_DEFAULT = None  # resolved relative to this script below
 OUT_DEFAULT = Path("output/stage5_ji")
 
@@ -137,48 +138,62 @@ def load_rgb_xs(path: Path) -> pd.DataFrame:
     return df
 
 
-def load_optional_bsa(path: Path):
+def load_actual_rgb_bsa_directory(path: Path) -> pd.DataFrame:
+    """Load the actual published nDVCS per-phi BSA points from Adam/Silvia.
+
+    The three per-phi files are alternative 1D projections of the same event
+    sample (xB, Q2, and t). They are retained with a `projection` label and
+    MUST NOT be combined as statistically independent measurements.
     """
-    Audit an optional user-supplied published RGB BSA table.
+    files = {
+        "xB": path / "ndvcs_xbbins_centralkinematics_BSA_per_phi_bin.dat",
+        "Q2": path / "ndvcs_q2bins_centralkinematics_BSA_per_phi_bin.dat",
+        "t":  path / "ndvcs_tbins_centralkinematics_BSA_per_phi_bin.dat",
+    }
+    missing = [str(p) for p in files.values() if not p.exists()]
+    if missing:
+        raise FileNotFoundError(
+            "Missing actual nDVCS BSA per-phi files:\n  " + "\n  ".join(missing)
+        )
 
-    Accepted rows must contain at least:
-      phi  Q2  xB  |t|  ALU  stat
-    with an optional seventh column for systematic uncertainty.
-
-    This loader is intentionally permissive because the exact CLAS-database
-    export format may differ.  It does not silently fabricate missing errors.
-    """
-    if not path.exists():
-        return None
-
-    if path.suffix.lower() == ".csv":
-        df = pd.read_csv(path)
-        required = {"phi_deg", "Q2_GeV2", "xB", "t_abs_GeV2", "stat_digitized"}
-        missing = required - set(df.columns)
-        if missing:
-            raise RuntimeError(f"{path}: missing required BSA columns {sorted(missing)}")
-        return df
-
-    rows = []
-    with path.open() as f:
-        for line in f:
-            s = line.strip()
-            if not s or s.startswith("#"):
+    pat = re.compile(
+        r"<Q2>\s*([-+0-9.eE]+)\s+"
+        r"<xb>\s*([-+0-9.eE]+)\s+"
+        r"<t>\s*([-+0-9.eE]+)\s+"
+        r"<phi>\s*([-+0-9.eE]+)\s+"
+        r"BSA\s*([-+0-9.eE]+)\s+"
+        r"BSA_error_stat\s*([-+0-9.eE]+)\s+"
+        r"BSA_error_syst\s*([-+0-9.eE]+)"
+    )
+    frames = []
+    for projection, fpath in files.items():
+        rows = []
+        for line in fpath.read_text().splitlines():
+            m = pat.search(line)
+            if not m:
                 continue
-            vals = _float_tokens(s)
-            if len(vals) >= 6:
-                rows.append(vals[:7])
+            Q2, xb, t, phi, alu, estat, esys = map(float, m.groups())
+            rows.append({
+                "projection": projection,
+                "Q2_GeV2": Q2,
+                "xB": xb,
+                "t_abs_GeV2": abs(t),
+                "phi_deg": phi,
+                "ALU": alu,
+                "stat": estat,
+                "sys": esys,
+                "source_file": fpath.name,
+            })
+        if not rows:
+            raise RuntimeError(f"No nDVCS BSA rows parsed from {fpath}")
+        df = pd.DataFrame(rows)
+        # Adam/Silvia files contain 3 projected bins x 7 phi bins = 21 rows.
+        df["projected_bin"] = np.repeat(
+            np.arange(1, 1 + int(np.ceil(len(df) / 7))), 7
+        )[:len(df)]
+        frames.append(df)
 
-    if not rows:
-        raise RuntimeError(f"{path} exists but no >=6-column numeric BSA rows were found")
-
-    ncol = max(len(r) for r in rows)
-    rows = [r + [np.nan] * (ncol - len(r)) for r in rows]
-    cols = ["phi_deg", "Q2_GeV2", "xB", "t_abs_GeV2", "ALU", "stat"]
-    if ncol >= 7:
-        cols.append("sys")
-    df = pd.DataFrame(rows, columns=cols)
-    return df
+    return pd.concat(frames, ignore_index=True)
 
 
 # ---------------------------------------------------------------------------
@@ -354,57 +369,6 @@ def make_b20_prior_map(figdir: Path, tabdir: Path):
 
 
 
-def bsa_4d_feasibility(bsa: pd.DataFrame, figdir: Path, tabdir: Path):
-    """
-    Workshop-level feasibility diagnostic for replacing the published 1D neutron
-    BSA projections by multidimensional binning.
-
-    If a published bin is subdivided into S equally populated multidimensional
-    cells, the statistical uncertainty scales approximately as sqrt(S/L).
-    We therefore propagate the *measured published statistical error bars* as
-
-        sigma_4D = sigma_published * sqrt(S / L).
-
-    S is a split factor, not a proposed final binning.  This deliberately avoids
-    claiming that 10x luminosity guarantees a particular 4D grid.
-    """
-    if "stat_digitized" not in bsa.columns:
-        return None
-
-    split_factors = [1, 2, 4, 6, 8, 10]
-    rows = []
-    stat0 = bsa["stat_digitized"].to_numpy(float)
-    for L in LUMI_FACTORS:
-        for S in split_factors:
-            e = stat0 * np.sqrt(float(S) / float(L))
-            rows.append({
-                "luminosity": f"{L}x",
-                "subcells_per_published_bin": S,
-                "median_sigma_ALU": np.median(e),
-                "p90_sigma_ALU": np.quantile(e, 0.90),
-                "fraction_sigma_below_0p03": np.mean(e < 0.03),
-                "fraction_sigma_below_0p05": np.mean(e < 0.05),
-                "fraction_sigma_below_0p10": np.mean(e < 0.10),
-            })
-    out = pd.DataFrame(rows)
-    out.to_csv(tabdir / "rgb_bsa_multidimensional_feasibility.csv", index=False)
-
-    fig, ax = plt.subplots(figsize=(8.2, 5.4))
-    for L in LUMI_FACTORS:
-        q = out[out["luminosity"] == f"{L}x"]
-        ax.plot(q["subcells_per_published_bin"], q["median_sigma_ALU"],
-                marker="o", label=f"{L}x")
-    ax.set_xlabel("Equal-statistics subcells per published 1D bin")
-    ax.set_ylabel(r"Median projected statistical $\sigma(A_{LU})$")
-    ax.set_title("RGB neutron BSA: statistical cost of multidimensional binning")
-    ax.grid(alpha=0.25)
-    ax.legend(title="Luminosity")
-    fig.tight_layout()
-    fig.savefig(figdir / "rgb_bsa_multidimensional_feasibility.png", dpi=180)
-    plt.close(fig)
-    return out
-
-
 def _tuple_component_stage5(series: pd.Series, index: int) -> np.ndarray:
     """Extract a numeric component from tuple-valued pass-2 CSV cells."""
     import ast
@@ -422,23 +386,14 @@ def _tuple_component_stage5(series: pd.Series, index: int) -> np.ndarray:
 
 
 def load_rga_pass2_bsa(path: Path):
-    """Load current pass-2 RGA 4D BSA and its statistical uncertainty.
-
-    The source column `BSA, counts, 10.6 GeV` contains tuple-valued cells.
-    As in the existing pass-2 projection analysis:
-      tuple[0] = BSA
-      tuple[1] = absolute statistical uncertainty.
-    """
+    """Load current pass-2 RGA 4D BSA and its statistical uncertainty."""
     if not path.exists():
         return None
 
     raw = pd.read_csv(path, low_memory=False)
     bsa_col = "BSA, counts, 10.6 GeV"
     if bsa_col not in raw.columns:
-        raise KeyError(
-            f"{path}: required pass-2 column {bsa_col!r} not found. "
-            f"First columns: {list(raw.columns[:20])}"
-        )
+        raise KeyError(f"{path}: missing required column {bsa_col!r}")
 
     bsa = _tuple_component_stage5(raw[bsa_col], 0)
     stat = _tuple_component_stage5(raw[bsa_col], 1)
@@ -453,98 +408,128 @@ def load_rga_pass2_bsa(path: Path):
     ]:
         if old in raw.columns:
             out[new] = pd.to_numeric(raw[old], errors="coerce")
-
     out["BSA_pass2"] = bsa
     out["stat_error"] = stat
-    good = (
-        np.isfinite(out["BSA_pass2"])
-        & np.isfinite(out["stat_error"])
-        & (out["stat_error"] > 0)
-    )
+    good = np.isfinite(out["BSA_pass2"]) & np.isfinite(out["stat_error"]) & (out["stat_error"] > 0)
     out = out.loc[good].reset_index(drop=True)
     out.attrs["bsa_column"] = bsa_col
     out.attrs["stat_column"] = f"{bsa_col} tuple component 1"
     return out
 
-def compare_rgb_to_rga_bsa(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame,
-                           feasibility: pd.DataFrame, figdir: Path, tabdir: Path):
-    """Compare RGB projected neutron BSA precision with achieved RGA 4D proton BSA precision."""
-    rgb_stat = rgb_bsa["stat_digitized"].to_numpy(float)
-    p_stat = rga_bsa["stat_error"].to_numpy(float)
 
-    p_med = float(np.median(p_stat))
-    p_p16, p_p84 = np.quantile(p_stat, [0.16, 0.84])
-    n1_med = float(np.median(rgb_stat))
+def rga_binning_transfer_projection(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame,
+                                    figdir: Path, tabdir: Path,
+                                    reference_projection: str = "t"):
+    """Project RGB BSA precision into the *actual RGA pass-2 4D bin pattern*.
 
-    rows = [{
-        "sample": "RGA proton pass-2 4D",
-        "luminosity": "measured",
-        "subcells_per_published_RGB_bin": np.nan,
-        "N_points": len(p_stat),
-        "median_sigma_ALU": p_med,
-        "p16_sigma_ALU": p_p16,
-        "p84_sigma_ALU": p_p84,
-        "ratio_to_RGA_median": 1.0,
-        "ratio_to_current_RGB_1D_median": p_med / n1_med,
-    }, {
-        "sample": "RGB neutron published 1D",
-        "luminosity": "1x",
-        "subcells_per_published_RGB_bin": 1,
-        "N_points": len(rgb_stat),
-        "median_sigma_ALU": n1_med,
-        "p16_sigma_ALU": float(np.quantile(rgb_stat, 0.16)),
-        "p84_sigma_ALU": float(np.quantile(rgb_stat, 0.84)),
-        "ratio_to_RGA_median": n1_med / p_med,
-        "ratio_to_current_RGB_1D_median": 1.0,
-    }]
+    Workshop assumption requested by the user:
+      neutron and proton accepted phase-space populations have the same shape.
 
-    for S in [1, 2, 4, 6, 8, 10]:
-        e = rgb_stat * np.sqrt(S / 10.0)
-        rows.append({
-            "sample": f"RGB neutron projected 10x, {S}-way split",
-            "luminosity": "10x",
-            "subcells_per_published_RGB_bin": S,
-            "N_points": len(e),
-            "median_sigma_ALU": float(np.median(e)),
-            "p16_sigma_ALU": float(np.quantile(e, 0.16)),
-            "p84_sigma_ALU": float(np.quantile(e, 0.84)),
-            "ratio_to_RGA_median": float(np.median(e) / p_med),
-            "ratio_to_current_RGB_1D_median": float(np.median(e) / n1_med),
+    We use the RGA point-by-point statistical-error pattern as the empirical
+    relative occupancy template.  Since statistical information scales
+    approximately as 1/sigma^2, define RGA weights w_i proportional to
+    1/sigma_RGA,i^2.
+
+    The absolute RGB information budget is obtained from ONE published neutron
+    projection only (default: t), because xB/Q2/t projection files are three
+    views of the same events and cannot be added as independent statistics.
+
+    For luminosity factor L:
+        I_RGB(L) = L * sum_j 1/sigma_RGB,j^2
+        I_i      = I_RGB(L) * w_i
+        sigma_i  = 1/sqrt(I_i)
+
+    This deliberately assumes identical p/n phase-space shape and ignores
+    possible differences in analyzing power, beam polarization, efficiency,
+    backgrounds, and migration.  It is a workshop-level binning/statistics
+    projection, not a detector simulation.
+    """
+    nref = rgb_bsa[rgb_bsa["projection"] == reference_projection].copy()
+    if nref.empty:
+        raise RuntimeError(f"No RGB BSA rows for reference projection {reference_projection!r}")
+
+    nstat = nref["stat"].to_numpy(float)
+    pstat = rga_bsa["stat_error"].to_numpy(float)
+    nstat = nstat[np.isfinite(nstat) & (nstat > 0)]
+    pstat = pstat[np.isfinite(pstat) & (pstat > 0)]
+
+    I_rgb_1x = float(np.sum(1.0 / nstat**2))
+    raw_w = 1.0 / pstat**2
+    w = raw_w / np.sum(raw_w)
+
+    summary_rows = []
+    point_tables = []
+    for L in [1, 2, 5, 10]:
+        sigma = 1.0 / np.sqrt((L * I_rgb_1x) * w)
+        pt = rga_bsa.copy()
+        pt["projection_luminosity"] = L
+        pt["rgb_projected_stat_error"] = sigma
+        pt["ratio_rgb_projected_to_rga_stat"] = sigma / pt["stat_error"].to_numpy(float)
+        point_tables.append(pt)
+
+        summary_rows.append({
+            "luminosity": f"{L}x",
+            "N_RGA_like_4D_points": len(sigma),
+            "median_projected_sigma_ALU": float(np.median(sigma)),
+            "p16_projected_sigma_ALU": float(np.quantile(sigma, 0.16)),
+            "p84_projected_sigma_ALU": float(np.quantile(sigma, 0.84)),
+            "median_current_RGA_sigma_ALU": float(np.median(pstat)),
+            "median_ratio_projected_RGB_to_current_RGA": float(np.median(sigma) / np.median(pstat)),
+            "fraction_projected_better_than_current_RGA_point": float(np.mean(sigma < pstat)),
+            "RGB_reference_projection": reference_projection,
+            "RGB_reference_points": len(nstat),
+            "RGB_reference_median_sigma_ALU": float(np.median(nstat)),
         })
 
-    comp = pd.DataFrame(rows)
-    comp.to_csv(tabdir / "pass2_rga_rgb_bsa_precision_comparison.csv", index=False)
+    summary = pd.DataFrame(summary_rows)
+    points = pd.concat(point_tables, ignore_index=True)
+    summary.to_csv(tabdir / "rgb_on_rga_4d_binning_summary.csv", index=False)
+    points.to_csv(tabdir / "rgb_on_rga_4d_binning_points.csv", index=False)
 
-    # Main-talk candidate: spend luminosity on multidimensionality.
-    q10 = feasibility[feasibility["luminosity"] == "10x"].copy()
-    fig, ax = plt.subplots(figsize=(8.4, 5.5))
-    ax.plot(q10["subcells_per_published_bin"], q10["median_sigma_ALU"],
-            marker="o", linewidth=2.2, label="RGB neutron, projected 10x")
-    ax.axhline(n1_med, linestyle="--", linewidth=2.0,
-               label="RGB neutron, current published 1D")
-    ax.axhline(p_med, linestyle=":", linewidth=2.2,
-               label="RGA proton, current pass-2 4D median")
-    ax.fill_between([1, 10], p_p16, p_p84, alpha=0.10,
-                    label="RGA pass-2 proton central 68% of statistical errors")
-    ax.scatter([10], [n1_med], s=85, zorder=5)
-    ax.annotate(
-        "10x luminosity → ~10 equal-statistics subcells\n"
-        "at the current RGB 1D median precision",
-        xy=(10, n1_med), xytext=(5.2, n1_med * 1.35),
-        arrowprops=dict(arrowstyle="->"),
-        ha="center", va="bottom"
+    # Clean main-talk plot: distributions for current RGA and projected RGB at 10x.
+    rgb10 = points[points["projection_luminosity"] == 10]["rgb_projected_stat_error"].to_numpy(float)
+    bins = np.linspace(
+        0.0,
+        max(np.quantile(pstat, 0.95), np.quantile(rgb10, 0.95)) * 1.08,
+        34,
     )
-    ax.set_xlabel("Equal-statistics subcells per current published neutron bin")
-    ax.set_ylabel(r"Median statistical $\sigma(A_{LU})$")
-    ax.set_title("What 10x luminosity buys for neutron-DVCS BSA binning")
-    ax.set_xlim(0.7, 10.3)
-    ax.grid(alpha=0.25)
+    fig, ax = plt.subplots(figsize=(8.2, 5.4))
+    ax.hist(pstat, bins=bins, histtype="step", linewidth=2.2,
+            label=f"Current RGA proton 4D (N={len(pstat)})")
+    ax.hist(rgb10, bins=bins, histtype="step", linewidth=2.2,
+            label=f"RGB neutron projected 10x on same 4D pattern (N={len(rgb10)})")
+    ax.axvline(np.median(pstat), linestyle=":", linewidth=2.0,
+               label=f"RGA median = {np.median(pstat):.3f}")
+    ax.axvline(np.median(rgb10), linestyle="--", linewidth=2.0,
+               label=f"RGB 10x median = {np.median(rgb10):.3f}")
+    ax.set_xlabel(r"Statistical $\sigma(A_{LU})$")
+    ax.set_ylabel("Number of 4D points")
+    ax.set_title("Neutron BSA projected onto the actual RGA pass-2 4D bin pattern")
+    ax.grid(alpha=0.20)
     ax.legend(fontsize=9)
     fig.tight_layout()
-    fig.savefig(figdir / "pass2_rga_rgb_bsa_precision_benchmark.png", dpi=180)
+    fig.savefig(figdir / "rgb_10x_on_rga_4d_binning_precision.png", dpi=180)
     plt.close(fig)
 
-    return comp
+    # Luminosity progression in the same fixed RGA 4D binning.
+    fig, ax = plt.subplots(figsize=(7.7, 5.2))
+    ax.plot([1, 2, 5, 10], summary["median_projected_sigma_ALU"],
+            marker="o", linewidth=2.2, label="Projected RGB neutron")
+    ax.axhline(np.median(pstat), linestyle=":", linewidth=2.0,
+               label="Current RGA proton median")
+    ax.set_xscale("log")
+    ax.set_xticks([1, 2, 5, 10])
+    ax.set_xticklabels(["1x", "2x", "5x", "10x"])
+    ax.set_xlabel("RGB luminosity factor")
+    ax.set_ylabel(r"Median statistical $\sigma(A_{LU})$")
+    ax.set_title("Precision at fixed RGA-like 4D granularity")
+    ax.grid(alpha=0.20)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(figdir / "rgb_rga_4d_binning_luminosity_progression.png", dpi=180)
+    plt.close(fig)
+
+    return summary, points
 
 # ---------------------------------------------------------------------------
 # Main
@@ -553,7 +538,7 @@ def compare_rgb_to_rga_bsa(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame,
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rgb-xs", type=Path, default=RGB_XS_DEFAULT)
-    ap.add_argument("--rgb-bsa", type=Path, default=RGB_BSA_DEFAULT)
+    ap.add_argument("--rgb-bsa-dir", type=Path, default=RGB_BSA_DIR_DEFAULT)
     ap.add_argument(
         "--rga-pass2",
         type=Path,
@@ -596,24 +581,21 @@ def main():
     plot_rgb_kinematics(xs, figdir)
     make_b20_prior_map(figdir, tabdir)
 
-    bsa = load_optional_bsa(args.rgb_bsa)
-    if bsa is not None:
-        bsa.to_csv(tabdir / "rgb_published_bsa_audit.csv", index=False)
-        feasibility = bsa_4d_feasibility(bsa, figdir, tabdir)
-        rga_bsa = load_rga_pass2_bsa(args.rga_pass2)
-        if rga_bsa is not None:
-            rga_bsa.to_csv(tabdir / "rga_pass2_bsa_audit.csv", index=False)
-            precision_comparison = compare_rgb_to_rga_bsa(
-                bsa, rga_bsa, feasibility, figdir, tabdir)
-        else:
-            precision_comparison = None
+    bsa = load_actual_rgb_bsa_directory(args.rgb_bsa_dir)
+    bsa.to_csv(tabdir / "rgb_published_bsa_actual_points.csv", index=False)
+
+    rga_bsa = load_rga_pass2_bsa(args.rga_pass2)
+    if rga_bsa is not None:
+        rga_bsa.to_csv(tabdir / "rga_pass2_bsa_audit.csv", index=False)
+        transfer_summary, transfer_points = rga_binning_transfer_projection(
+            bsa, rga_bsa, figdir, tabdir, reference_projection="t"
+        )
     else:
-        feasibility = None
-        rga_bsa = None
-        precision_comparison = None
+        transfer_summary = None
+        transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v9 — PASS-2 RGA/RGB BSA PRECISION BENCHMARK + RGB COVARIANCE + DFJK/Ji FRAMEWORK")
+    print("STAGE 5 v10 — ACTUAL RGB BSA + RGA-LIKE 4D BINNING TRANSFER + DFJK/Ji FRAMEWORK")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -635,41 +617,36 @@ def main():
     print(f"  kappa_u = 2*kappa_p + kappa_n = {KAPPA_U:+.6f}")
     print(f"  kappa_d = kappa_p + 2*kappa_n = {KAPPA_D:+.6f}")
     print()
-    if bsa is None:
-        print(f"Published RGB BSA: not yet present ({args.rgb_bsa})")
-        print("  Put the CLAS-database export there; v2 will audit it automatically.")
+    print(f"Actual published RGB BSA: loaded {len(bsa)} rows from {args.rgb_bsa_dir}")
+    for projection in ["xB", "Q2", "t"]:
+        q = bsa[bsa["projection"] == projection]
+        p16, p84 = np.quantile(q["stat"], [0.16, 0.84])
+        print(
+            f"  {projection:>2s} projection: N={len(q):2d}, "
+            f"median sigma(A_LU)={np.median(q['stat']):.5f}, "
+            f"central 68%={p16:.5f}--{p84:.5f}"
+        )
+    print("  NOTE: xB, Q2, and t files are alternative projections of the same event sample;")
+    print("        they are NOT summed as independent statistics.")
+    print()
+
+    if transfer_summary is None:
+        print(f"RGA proton pass-2 BSA benchmark: not loaded ({args.rga_pass2})")
     else:
-        print(f"Published RGB BSA template: loaded {len(bsa)} rows from {args.rgb_bsa}")
-        print("  Columns:", ", ".join(bsa.columns))
-        if feasibility is not None:
-            print()
-            print("Multidimensional-BSA feasibility (selected rows):")
-            sel = feasibility[
-                feasibility["subcells_per_published_bin"].isin([1, 4, 8])
-            ]
-            print(sel.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
-        if precision_comparison is None:
-            print()
-            print(f"RGA proton pass-2 BSA benchmark: not loaded ({args.rga_pass2})")
-        else:
-            p = precision_comparison.iloc[0]
-            n = precision_comparison.iloc[1]
-            n10 = precision_comparison[
-                precision_comparison["sample"] == "RGB neutron projected 10x, 10-way split"
-            ].iloc[0]
-            print()
-            print("RGA proton vs RGB neutron BSA statistical-precision benchmark:")
-            print(f"  pass-2 source: {args.rga_pass2}")
-            print(f"  BSA column   : {rga_bsa.attrs.get('bsa_column', 'unknown')}")
-            print(f"  stat column  : {rga_bsa.attrs.get('stat_column', 'unknown')}")
-            print(f"  RGA pass-2 4D proton: N={int(p.N_points)}, median sigma(A_LU)={p.median_sigma_ALU:.5f}")
-            print(f"  RGB published 1D neutron: N={int(n.N_points)}, median sigma(A_LU)={n.median_sigma_ALU:.5f}")
-            print(f"  RGB 10x with 10-way subdivision: median sigma(A_LU)={n10.median_sigma_ALU:.5f}")
-            print(f"  neutron 10x/10-way divided by RGA proton median = {n10.ratio_to_RGA_median:.3f}")
-            print(f"  neutron 10x/10-way divided by current RGB 1D median = {n10.ratio_to_current_RGB_1D_median:.3f}")
-            print("  KEY RESULT: 10x luminosity permits ~10 equal-statistics subcells per current")
-            print("              RGB projected bin while retaining approximately the current")
-            print("              published neutron-BSA median statistical precision.")
+        q10 = transfer_summary[transfer_summary["luminosity"] == "10x"].iloc[0]
+        print("RGA-like 4D neutron-BSA projection:")
+        print("  Workshop assumption: neutron and proton accepted phase-space populations")
+        print("                       have the same shape.")
+        print(f"  RGA template: {len(rga_bsa)} actual pass-2 4D phi points")
+        print("  RGB normalization: actual published t-projection only (21 disjoint t/phi points)")
+        print(f"  Current RGA median sigma(A_LU)       = {q10.median_current_RGA_sigma_ALU:.5f}")
+        print(f"  Projected RGB 10x median on RGA bins = {q10.median_projected_sigma_ALU:.5f}")
+        print(f"  Ratio RGB(10x)/RGA(current) median   = {q10.median_ratio_projected_RGB_to_current_RGA:.3f}")
+        print(f"  Fraction of RGA-like bins where projected RGB 10x has smaller stat error")
+        print(f"                                        = {q10.fraction_projected_better_than_current_RGA_point:.3f}")
+        print()
+        print("Luminosity progression at fixed RGA-like 4D granularity:")
+        print(transfer_summary.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
     print()
     print("NEXT FIT STEP:")
     print("  Use the published neutron BSA + proton XS/BSA + preliminary neutron XS in a")
