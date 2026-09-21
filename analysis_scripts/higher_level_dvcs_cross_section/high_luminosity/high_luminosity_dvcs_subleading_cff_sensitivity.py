@@ -918,59 +918,112 @@ def make_plots(results, cell_meta, deriv, figures):
 
 
 def make_presentation_cff_band_figure(results, figures):
-    """Presentation figure: observable complementarity versus luminosity.
+    """Presentation figure: constraint collapse from complementary observables.
 
-    Uses the full six-CFF local fit and a representative |t|~0.5 GeV^2 slice.
-    The filled envelopes are guides through the discrete cell-by-cell 68%
-    intervals; they are not a continuous CFF fit.  Thin/dashed = 1x RGA,
-    opaque/solid = 10x RGA.  Polarized scenarios use nominal completion
-    (remaining 1x = 6 Su22-equivalent statistics).
+    This deliberately does *not* connect independent local CFF fits into a
+    pseudo-continuous CFF band.  Each panel summarizes the distribution over
+    all controlled kinematic cells.  Points are medians and vertical bars are
+    the central 68% of the cell-by-cell projected uncertainties.
+
+    ImH and ImHt use sigma/|truth| where the KM15 truth is safely nonzero.
+    ImE uses absolute sigma because KM15 has ImE=0 in these cells.
+    Polarized scenarios use nominal completion (remaining 1x = 6 Su22-equivalent
+    statistics).  For each observable set, 1x and 10x RGA are shown side by side.
+    """
+    specs = [
+        ("XS+BSA", "none", "none", r"$\sigma+A_{LU}$"),
+        ("XS+BSA+AUL", "remaining 1x", "none", r"$+A_{UL}$"),
+        ("XS+BSA+AUL+AUT", "remaining 1x", "RGH same as remaining 1x", r"$+A_{UT}$"),
+    ]
+    panels = [
+        ("sigma_ImH", "ImH_KM15", True, r"$\mathrm{Im}\,\mathcal{H}$", "Relative uncertainty (%)"),
+        ("sigma_ImHt", "ImHt_KM15", True, r"$\mathrm{Im}\,\widetilde{\mathcal{H}}$", "Relative uncertainty (%)"),
+        ("sigma_ImE", "ImE_KM15", False, r"$\mathrm{Im}\,\mathcal{E}$", "Absolute uncertainty"),
+    ]
+    fig, axes = plt.subplots(1, 3, figsize=(14.8, 4.9))
+    xpos = np.arange(len(specs), dtype=float)
+    offsets = {1: -0.11, 10: +0.11}
+    markers = {1: "o", 10: "s"}
+
+    for ax, (sig_col, truth_col, relative, title, ylabel) in zip(axes, panels):
+        for L in (1, 10):
+            meds=[]; lo=[]; hi=[]
+            for obs, aul, aut, _ in specs:
+                d = results[(results.fit_mode == "H_Ht_E") &
+                            (results.observable_set == obs) &
+                            (results.luminosity_factor == L) &
+                            (results.aul_scenario == aul) &
+                            (results.aut_scenario == aut)].copy()
+                vals = d[sig_col].to_numpy(float)
+                if relative:
+                    truth = np.abs(d[truth_col].to_numpy(float))
+                    good = np.isfinite(vals) & np.isfinite(truth) & (truth >= RELATIVE_TRUTH_FLOOR)
+                    vals = 100.0 * vals[good] / truth[good]
+                else:
+                    vals = vals[np.isfinite(vals)]
+                if len(vals):
+                    q16,q50,q84=np.percentile(vals,[16,50,84])
+                else:
+                    q16=q50=q84=np.nan
+                meds.append(q50); lo.append(q50-q16); hi.append(q84-q50)
+            x=xpos+offsets[L]
+            ax.errorbar(x, meds, yerr=np.vstack([lo,hi]), fmt=markers[L], ms=6,
+                        capsize=4, lw=1.5, label=f"RGA {L}x")
+        ax.set_xticks(xpos)
+        ax.set_xticklabels([q[3] for q in specs])
+        ax.set_title(title)
+        ax.set_ylabel(ylabel)
+        ax.grid(axis="y", alpha=.18)
+        ax.legend(frameon=False, fontsize=9)
+    fig.suptitle(r"Complementary observables break CFF degeneracies; luminosity then improves precision")
+    fig.text(.5,.012,
+             r"Full local $H+\widetilde H+E$ fit. Points: median across controlled cells; bars: central 68% of cell-by-cell projected uncertainties. "
+             r"RGC/RGH use nominal completed polarized-target precision (6$\times$ Su22-equivalent).",
+             ha="center", fontsize=8.5)
+    fig.tight_layout(rect=(0,.06,1,.94))
+    fig.savefig(figures / "presentation_CFF_constraint_collapse_1x_vs_10x.png", dpi=300)
+    plt.close(fig)
+
+
+def make_representative_low_t_cff_band_diagnostic(results, figures):
+    """Optional diagnostic only: same old envelope idea in 0.20<|t|<0.40.
+
+    Kept because this is the high-precision region requested for inspection,
+    but it is explicitly labelled as a diagnostic: the cells differ in Q2 and t
+    and therefore do not define a continuous CFF-vs-xi function.
     """
     base = results[(results.fit_mode == "H_Ht_E") &
-                   (results.t_abs >= 0.40) & (results.t_abs <= 0.60)].copy()
+                   (results.t_abs >= 0.20) & (results.t_abs <= 0.40)].copy()
     specs = [
         ("XS+BSA", "none", "none", r"$\sigma+A_{LU}$"),
         ("XS+BSA+AUL", "remaining 1x", "none", r"$+A_{UL}$ (RGC)"),
         ("XS+BSA+AUL+AUT", "remaining 1x", "RGH same as remaining 1x", r"$+A_{UT}$ (RGH)"),
     ]
-    cffs = [
-        ("ImH_KM15", "sigma_ImH", r"$\mathrm{Im}\,\mathcal{H}$"),
-        ("ImHt_KM15", "sigma_ImHt", r"$\mathrm{Im}\,\widetilde{\mathcal{H}}$"),
-        ("ImE_KM15", "sigma_ImE", r"$\mathrm{Im}\,\mathcal{E}$"),
-    ]
-    fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.9), sharex=True)
-    for ax, (truth_col, sig_col, title) in zip(axes, cffs):
-        for obs, aul, aut, label in specs:
-            for L, alpha, ls, suffix in [(1, .13, "--", "1x"), (10, .30, "-", "10x")]:
-                d = base[(base.observable_set == obs) &
-                         (base.luminosity_factor == L) &
-                         (base.aul_scenario == aul) &
-                         (base.aut_scenario == aut)].sort_values("xi")
-                d = d[np.isfinite(d[truth_col]) & np.isfinite(d[sig_col])]
-                if d.empty:
-                    continue
+    cffs = [("ImH_KM15","sigma_ImH",r"$\mathrm{Im}\,\mathcal{H}$"),
+            ("ImHt_KM15","sigma_ImHt",r"$\mathrm{Im}\,\widetilde{\mathcal{H}}$"),
+            ("ImE_KM15","sigma_ImE",r"$\mathrm{Im}\,\mathcal{E}$")]
+    fig,axes=plt.subplots(1,3,figsize=(15,4.9),sharex=True)
+    for ax,(truth_col,sig_col,title) in zip(axes,cffs):
+        for obs,aul,aut,label in specs:
+            for L,alpha,ls in [(1,.10,"--"),(10,.25,"-")]:
+                d=base[(base.observable_set==obs)&(base.luminosity_factor==L)&
+                       (base.aul_scenario==aul)&(base.aut_scenario==aut)].sort_values("xi")
+                d=d[np.isfinite(d[truth_col])&np.isfinite(d[sig_col])]
+                if d.empty: continue
                 x=d.xi.to_numpy(float); y=d[truth_col].to_numpy(float); e=d[sig_col].to_numpy(float)
-                # The central pseudo-truth is common; draw it only once below.
-                ax.fill_between(x, y-e, y+e, alpha=alpha, linewidth=0, label=(f"{label}, {suffix}" if L==10 else None))
-                ax.plot(x, y-e, ls=ls, lw=.8, alpha=.65)
-                ax.plot(x, y+e, ls=ls, lw=.8, alpha=.65)
-        # common KM15 pseudo-truth from the 10x full-observable rows
-        d0=base[(base.observable_set=="XS+BSA+AUL+AUT") & (base.luminosity_factor==10) &
+                ax.fill_between(x,y-e,y+e,alpha=alpha,linewidth=0,label=(f"{label}, {L}x" if L==10 else None))
+                ax.plot(x,y-e,ls=ls,lw=.7,alpha=.55); ax.plot(x,y+e,ls=ls,lw=.7,alpha=.55)
+        d0=base[(base.observable_set=="XS+BSA+AUL+AUT")&(base.luminosity_factor==10)&
                 (base.aul_scenario=="remaining 1x")].sort_values("xi")
-        ax.plot(d0.xi, d0[truth_col], marker="o", ms=3.2, lw=1.5, label="KM15 pseudo-truth")
-        ax.axhline(0, lw=.6, alpha=.35)
-        ax.set_title(title); ax.set_xlabel(r"$\xi \simeq x_B/(2-x_B)$")
-        ax.grid(alpha=.16)
+        ax.plot(d0.xi,d0[truth_col],"o-",ms=3,lw=1.2,label="KM15 pseudo-truth")
+        ax.set_title(title); ax.set_xlabel(r"$\xi \simeq x_B/(2-x_B)$"); ax.grid(alpha=.15)
     axes[0].set_ylabel("CFF value with projected 68% interval")
-    # A compact legend on the right-most panel.  Filled bands are the key visual.
-    h,l=axes[-1].get_legend_handles_labels()
-    axes[-1].legend(h,l,fontsize=8,loc="best")
-    fig.suptitle(r"Observable complementarity cannot be replaced by luminosity: full local $H+\widetilde H+E$ fit")
-    fig.text(.5,.01, r"Representative $0.40<|t|<0.60$ GeV$^2$ slice.  Envelopes connect discrete cell-by-cell 68% intervals; not a continuous CFF fit.", ha="center", fontsize=9)
+    axes[-1].legend(fontsize=8)
+    fig.suptitle(r"Diagnostic only: local CFF intervals in the high-precision $0.20<|t|<0.40$ GeV$^2$ region")
+    fig.text(.5,.01,r"Cells differ in $Q^2$ and $t$; connected envelopes are visual guides only, not a continuous CFF fit.",ha="center",fontsize=9)
     fig.tight_layout(rect=(0,.045,1,.94))
-    fig.savefig(figures / "presentation_CFF_bands_observable_complementarity_1x_vs_10x.png", dpi=300)
+    fig.savefig(figures / "diagnostic_CFF_bands_t0p2_0p4_1x_vs_10x.png",dpi=300)
     plt.close(fig)
-
 
 def print_summary(results, diagnostics):
     print("\n" + "=" * 108)
@@ -1328,6 +1381,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     savefig(fig, figures / "AUT_RGH_H_Ht_E_polarized_running_at_10xRGA.png")
 
     make_presentation_cff_band_figure(results, figures)
+    make_representative_low_t_cff_band_diagnostic(results, figures)
 
     print("\n" + "=" * 124)
     print("A_UL CONSTRAINT: SAMY SU22 PRECISION + CONSERVATIVE RGC RUNNING PROJECTION")
