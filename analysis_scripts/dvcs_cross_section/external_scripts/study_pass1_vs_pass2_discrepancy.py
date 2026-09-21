@@ -194,6 +194,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--match-dq2", type=float, default=0.35, help="Maximum |Delta Q2| (GeV^2) for released pass-1 matching.")
     parser.add_argument("--match-dt", type=float, default=0.03, help="Maximum |Delta |t|| (GeV^2) for released pass-1 matching.")
     parser.add_argument("--match-dphi", type=float, default=8.0, help="Maximum circular |Delta phi| (deg) for released pass-1 matching.")
+    parser.add_argument("--min-bin-events", type=float, default=50.0,
+                        help="Minimum pass-2 signal yield AND reconstructed-MC yield for a bin to enter the primary comparison. Default: 50.")
+    parser.add_argument("--valerii-map", default=None,
+                        help="Optional FD Valerii cell-validity CSV (FD_valerii_momentum_cell_validity_2sigma.csv). Invalid/out-of-range cells receive no correction and are reported as uncovered.")
     parser.add_argument("--skip-event-map", action="store_true", help="Skip the ROOT-tree topology/kinematic map and run only the existing-CSV comparison.")
     return parser.parse_args()
 
@@ -827,6 +831,10 @@ def read_pass2_csv(path: Path, label: str) -> pd.DataFrame:
     })
     out["topology"] = label
     out["source_file"] = str(path)
+    out["valid_statistics_50"] = (
+        np.isfinite(out["N_data_signal"]) & np.isfinite(out["N_mc_rec"])
+        & (out["N_data_signal"] >= 50.0) & (out["N_mc_rec"] >= 50.0)
+    )
     out = out.replace([np.inf, -np.inf], np.nan)
     out = out.dropna(subset=["xB", "Q2", "t", "phi", "xs_pass2"])
     out = out[out["xs_pass2"] > 0].reset_index(drop=True)
@@ -1014,6 +1022,7 @@ def match_to_authoritative_pass1(
             "N_mc_gen": row.N_mc_gen,
             "acceptance_counts": row.acceptance_counts,
             "mc_acceptance_frac_stat": row.mc_acceptance_frac_stat,
+            "valid_statistics_50": bool(row.valid_statistics_50),
         })
     #endfor
     return pd.DataFrame(rows)
@@ -1303,16 +1312,27 @@ def run_pass1_pass2_study(args: argparse.Namespace, output_dir: Path, edges: Lis
     #endif
 
     all_matched = pd.concat(matched_frames, ignore_index=True)
-    all_matched.to_csv(comparison_dir / "pass2_vs_authoritative_pass1_matched_points.csv", index=False)
+    all_matched.to_csv(comparison_dir / "pass2_vs_authoritative_pass1_matched_points_all_statistics.csv", index=False)
     run_statistics_stability_study(all_matched, comparison_dir, edges, labels)
-    summary = discrepancy_summary(all_matched, edges, labels)
+
+    primary = all_matched[
+        (all_matched["N_data_signal"] >= args.min_bin_events)
+        & (all_matched["N_mc_rec"] >= args.min_bin_events)
+    ].copy()
+    primary.to_csv(comparison_dir / "pass2_vs_authoritative_pass1_matched_points.csv", index=False)
+    print(
+        f"[pass1/pass2] primary validity: signal yield >= {args.min_bin_events:g} "
+        f"AND reconstructed MC >= {args.min_bin_events:g}; "
+        f"kept {len(primary):,}/{len(all_matched):,} matched topology-points"
+    )
+    summary = discrepancy_summary(primary, edges, labels)
     summary.to_csv(comparison_dir / "pass2_over_pass1_summary_vs_t.csv", index=False)
     plot_pass1_ratios(summary, comparison_dir / "pass2_over_pass1_by_topology_vs_t.png")
 
     pairs = [("CD-FD", "CD-FT"), ("FD-FD", "CD-FD"), ("Inclusive", "CD-FD"), ("Inclusive", "CD-FT")]
     closure_summaries = []
     for a, b in pairs:
-        closure = direct_topology_closure(all_matched, a, b)
+        closure = direct_topology_closure(primary, a, b)
         if closure.empty:
             continue
         #endif
@@ -1330,18 +1350,161 @@ def run_pass1_pass2_study(args: argparse.Namespace, output_dir: Path, edges: Lis
     print("[pass1/pass2] key plot: pass2_over_pass1_by_topology_vs_t.png")
     print("[pass1/pass2] key direct closure: direct_CD_FD_over_CD_FT_vs_t.png")
 
-    correction_dir = output_dir / "correction_folding"
-    correction_dir.mkdir(parents=True, exist_ok=True)
-    (correction_dir / "README.txt").write_text(
-        "Correction-folding study order:\n"
-        "  1. Sangbaek/pass-1 additional proton normalization\n"
-        "  2. Krishna Neupane proton reconstruction-efficiency correction\n"
-        "  3. Valerii photon-efficiency map (Fa18 only; CD-FD versus CD-FT and polarity separated)\n\n"
-        "This script does not fabricate these correction parameterizations.  The DATA/MC statistics\n"
-        "study is implemented now.  Folding is enabled only after the authoritative numerical\n"
-        "parameterization/map for each correction is supplied or read from the production code.\n"
-    )
 
+
+def neupane_efficiency_ratio(p_gev: np.ndarray, theta_deg: np.ndarray, phi_deg: np.ndarray) -> np.ndarray:
+    """Exact production parameterization from total_counts.cpp."""
+    p = np.asarray(p_gev, float)
+    th = np.asarray(theta_deg, float)
+    ph = np.mod(np.asarray(phi_deg, float), 360.0)
+    out = np.ones_like(p)
+
+    fd_coeff = np.asarray([
+        [0.04437, -0.14271, 1.03439], [0.00490, 0.00554, 0.91770],
+        [0.03671, -0.11680, 1.03002], [0.01863, -0.07756, 1.02308],
+        [0.04915, -0.17173, 1.11768], [0.01077, -0.01328, 0.96242],
+    ])
+    cd_coeff = np.asarray([
+        [0.20052, -0.79964, 1.38699], [0.16842, -0.64970, 1.31246],
+        [0.18845, -0.75824, 1.41677],
+    ])
+    finite = np.isfinite(p) & np.isfinite(th) & np.isfinite(ph)
+    fd = finite & (th < 37.0)
+    cd = finite & ~fd
+    for mask, coeff, width, plo, phi in [(fd, fd_coeff, 60.0, 0.4, 4.0), (cd, cd_coeff, 120.0, 0.5, 2.2)]:
+        if not np.any(mask):
+            continue
+        #endif
+        sec = np.floor(ph[mask] / width).astype(int)
+        sec = np.clip(sec, 0, len(coeff) - 1)
+        pe = np.clip(p[mask], plo, phi)
+        c = coeff[sec]
+        ratio = c[:, 0] * pe * pe + c[:, 1] * pe + c[:, 2]
+        good = np.isfinite(ratio) & (ratio > 0.20) & (ratio < 1.80)
+        vals = np.ones_like(ratio)
+        vals[good] = ratio[good]
+        out[mask] = vals
+    #endfor
+    return out
+
+
+def load_valerii_cells(path: Path) -> pd.DataFrame:
+    v = pd.read_csv(path)
+    required = ["p_low_GeV", "p_high_GeV", "theta_low_deg", "theta_high_deg",
+                "phi_low_deg", "phi_high_deg", "joint_valid", "data_eff", "mc_eff"]
+    missing = [c for c in required if c not in v.columns]
+    if missing:
+        raise RuntimeError("Valerii map is missing columns: " + ", ".join(missing))
+    #endif
+    v["correction"] = pd.to_numeric(v["mc_eff"], errors="coerce") / pd.to_numeric(v["data_eff"], errors="coerce")
+    return v
+
+
+def fold_valerii_on_events(df: pd.DataFrame, cells: pd.DataFrame) -> pd.DataFrame:
+    """Fold the 2-sigma FD map through reconstructed DVCS photons; no extrapolation."""
+    work = df[df["period"].isin(["Fa18 Inb", "Fa18 Out"])].copy()
+    work["valerii_correction"] = 1.0
+    work["valerii_covered"] = False
+    # Valerii wrapped phi is [-30,330), unlike our stored [0,360).
+    wphi = np.where(work["g_phi_deg"].to_numpy(float) >= 330.0,
+                    work["g_phi_deg"].to_numpy(float) - 360.0,
+                    work["g_phi_deg"].to_numpy(float))
+    gp = work["g_p"].to_numpy(float)
+    gt = work["g_theta_deg"].to_numpy(float)
+    is_fd = work["photon_region"].to_numpy() == "FD"
+    corr = np.ones(len(work), float)
+    covered = np.zeros(len(work), bool)
+    for row in cells.itertuples(index=False):
+        joint = str(row.joint_valid).strip().lower() in {"1", "1.0", "true"}
+        c = float(row.correction)
+        if not joint or not np.isfinite(c) or c <= 0:
+            continue
+        #endif
+        mask = (is_fd & (gp >= float(row.p_low_GeV)) & (gp < float(row.p_high_GeV))
+                & (gt >= float(row.theta_low_deg)) & (gt < float(row.theta_high_deg))
+                & (wphi >= float(row.phi_low_deg)) & (wphi < float(row.phi_high_deg)))
+        corr[mask] = c
+        covered[mask] = True
+    #endfor
+    work["valerii_correction"] = corr
+    work["valerii_covered"] = covered
+    return work
+
+
+def correction_summary_from_events(df: pd.DataFrame, labels: List[str]) -> pd.DataFrame:
+    work = df.copy()
+    ratio = neupane_efficiency_ratio(work["p_p"].to_numpy(float), work["p_theta_deg"].to_numpy(float), work["p_phi_deg"].to_numpy(float))
+    work["neupane_weight"] = 1.0 / ratio
+    work["neupane_p_clamped_low"] = ((work["proton_region"] == "CD") & (work["p_p"] < 0.5)) | ((work["proton_region"] == "FD") & (work["p_p"] < 0.4))
+    rows = []
+    for sample, sub in [("Combined", work)] + [(p, work[work["period"] == p]) for p in PERIOD_ORDER]:
+        for tlabel in labels:
+            z = sub[sub["t_bin"] == tlabel]
+            if z.empty:
+                continue
+            #endif
+            rows.append({"sample": sample, "t_bin": tlabel, "N": len(z),
+                         "mean_neupane_yield_multiplier": z["neupane_weight"].mean(),
+                         "median_neupane_yield_multiplier": z["neupane_weight"].median(),
+                         "fraction_neupane_low_p_clamped": z["neupane_p_clamped_low"].mean()})
+        #endfor
+    #endfor
+    return pd.DataFrame(rows)
+
+
+def summarize_sangbaek_pass2(repo_root: Path, edges: List[float], labels: List[str]) -> pd.DataFrame:
+    path = repo_root / "output" / "data_mc_normalization" / "production_fit_test" / "eppi0_predicted_cross_section_shift.csv"
+    if not path.exists():
+        print(f"[correction-folding] pass-2 Sangbaek-style prediction not found: {path}")
+        print("[correction-folding] run the existing eppi0 normalization validation that writes production_fit_test; not fabricating a replacement.")
+        return pd.DataFrame()
+    #endif
+    x = pd.read_csv(path)
+    x["t_center"] = 0.5 * (x["t_abs_min"] + x["t_abs_max"])
+    x["t_bin"] = pd.cut(x["t_center"], bins=edges, labels=labels, right=False)
+    rows=[]
+    for (period,tbin), z in x.groupby(["period","t_bin"], observed=True):
+        good=z[np.isfinite(z["sigma_theta_p_over_raw"]) & (z["rec_raw"]>0)]
+        if good.empty: continue
+        #endif
+        w=good["rec_raw"].to_numpy(float); c=good["sigma_theta_p_over_raw"].to_numpy(float)
+        rows.append({"period":period,"t_bin":str(tbin),"N_bins":len(good),"rec_mc_weighted_xs_multiplier":np.average(c,weights=w),"median_xs_multiplier":np.median(c)})
+    #endfor
+    return pd.DataFrame(rows)
+
+
+def run_correction_folding(df: pd.DataFrame, args: argparse.Namespace, output_dir: Path, edges: List[float], labels: List[str]) -> None:
+    out = output_dir / "correction_folding"
+    out.mkdir(parents=True, exist_ok=True)
+    neu = correction_summary_from_events(df, labels)
+    neu.to_csv(out / "krishna_neupane_correction_vs_t.csv", index=False)
+
+    repo_root = Path(__file__).resolve().parent.parent
+    sang = summarize_sangbaek_pass2(repo_root, edges, labels)
+    if not sang.empty:
+        sang.to_csv(out / "pass2_sangbaek_style_correction_vs_t.csv", index=False)
+    #endif
+
+    if args.valerii_map:
+        vp = Path(args.valerii_map)
+        cells = load_valerii_cells(vp)
+        vf = fold_valerii_on_events(df, cells)
+        rows=[]
+        for (period,tbin,topo), z in vf.groupby(["period","t_bin","topology"], observed=True):
+            fd = z[z["photon_region"] == "FD"]
+            rows.append({"period":period,"t_bin":tbin,"topology":topo,"N_events":len(z),"N_FD_photon":len(fd),
+                         "fraction_all_events_map_covered":z["valerii_covered"].mean(),
+                         "fraction_FD_events_map_covered":fd["valerii_covered"].mean() if len(fd) else np.nan,
+                         "mean_multiplier_all_events":z["valerii_correction"].mean(),
+                         "mean_multiplier_covered_FD":fd.loc[fd["valerii_covered"],"valerii_correction"].mean() if np.any(fd["valerii_covered"]) else np.nan})
+        #endfor
+        pd.DataFrame(rows).to_csv(out / "valerii_fa18_fold_vs_t_topology.csv", index=False)
+        vf[["period","t_bin","topology","tabs","g_p","g_theta_deg","g_phi_deg","valerii_covered","valerii_correction"]].to_csv(out / "valerii_fa18_event_fold.csv", index=False)
+        print(f"[correction-folding] Valerii map folded from {vp}")
+    else:
+        print("[correction-folding] --valerii-map not supplied; Krishna Neupane and available pass-2 Sangbaek-style outputs were still evaluated.")
+    #endif
+    print(f"[correction-folding] wrote outputs to {out}")
 
 def main() -> None:
     args = parse_args()
@@ -1389,6 +1552,8 @@ def main() -> None:
 
     df = pd.concat(frames, ignore_index=True)
     print(f"[map] total selected events in requested |t| range: {len(df):,}")
+
+    run_correction_folding(df, args, output_dir, edges, labels)
 
     proton_table = fraction_table(
         df, labels, "proton_region", ["FD", "CD", "other"]
