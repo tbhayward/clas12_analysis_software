@@ -486,27 +486,65 @@ def rga_binning_transfer_projection(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame
     summary.to_csv(tabdir / "rgb_on_rga_4d_binning_summary.csv", index=False)
     points.to_csv(tabdir / "rgb_on_rga_4d_binning_points.csv", index=False)
 
-    # Clean main-talk plot: distributions for current RGA and projected RGB at 10x.
+    # Main-talk distribution plot: current RGA plus projected RGB at 2x, 5x, and 10x.
+    # RGA is deliberately black; the three RGB luminosity cases use distinct colors.
+    rgb2 = points[points["projection_luminosity"] == 2]["rgb_projected_stat_error"].to_numpy(float)
+    rgb5 = points[points["projection_luminosity"] == 5]["rgb_projected_stat_error"].to_numpy(float)
     rgb10 = points[points["projection_luminosity"] == 10]["rgb_projected_stat_error"].to_numpy(float)
+
     bins = np.linspace(
         0.0,
-        max(np.quantile(pstat, 0.95), np.quantile(rgb10, 0.95)) * 1.08,
-        34,
+        max(
+            np.quantile(pstat, 0.95),
+            np.quantile(rgb2, 0.95),
+            np.quantile(rgb5, 0.95),
+            np.quantile(rgb10, 0.95),
+        ) * 1.08,
+        40,
     )
+
     fig, ax = plt.subplots(figsize=(8.2, 5.4))
-    ax.hist(pstat, bins=bins, histtype="step", linewidth=2.2,
-            label=f"Current RGA proton 4D (N={len(pstat)})")
-    ax.hist(rgb10, bins=bins, histtype="step", linewidth=2.2,
-            label=f"RGB neutron projected 10x on same 4D pattern (N={len(rgb10)})")
-    ax.axvline(np.median(pstat), linestyle=":", linewidth=2.0,
-               label=f"RGA median = {np.median(pstat):.3f}")
-    ax.axvline(np.median(rgb10), linestyle="--", linewidth=2.0,
-               label=f"RGB 10x median = {np.median(rgb10):.3f}")
+    ax.hist(
+        pstat, bins=bins, histtype="step", linewidth=2.6, color="black",
+        label=f"Current RGA proton 4D (N={len(pstat)})"
+    )
+    ax.hist(
+        rgb2, bins=bins, histtype="step", linewidth=2.2,
+        label=f"RGB neutron 2x (N={len(rgb2)})"
+    )
+    ax.hist(
+        rgb5, bins=bins, histtype="step", linewidth=2.2,
+        label=f"RGB neutron 5x (N={len(rgb5)})"
+    )
+    ax.hist(
+        rgb10, bins=bins, histtype="step", linewidth=2.2,
+        label=f"RGB neutron 10x (N={len(rgb10)})"
+    )
+
+    # Median markers: black for RGA, matching each RGB histogram for 2x/5x/10x.
+    ax.axvline(
+        np.median(pstat), color="black", linestyle=":", linewidth=2.0,
+        label=f"RGA median = {np.median(pstat):.3f}"
+    )
+    rgb_lines = ax.get_lines()
+    # Histograms do not populate get_lines(), so use the default matplotlib
+    # color cycle explicitly for the median markers to match the RGB cases.
+    cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
+    for arr, lum, color in [
+        (rgb2, 2, cycle[0]),
+        (rgb5, 5, cycle[1]),
+        (rgb10, 10, cycle[2]),
+    ]:
+        ax.axvline(
+            np.median(arr), color=color, linestyle="--", linewidth=1.8,
+            label=f"RGB {lum}x median = {np.median(arr):.3f}"
+        )
+
     ax.set_xlabel(r"Statistical $\sigma(A_{LU})$")
     ax.set_ylabel("Number of 4D points")
     ax.set_title("Neutron BSA projected onto the actual RGA pass-2 4D bin pattern")
     ax.grid(alpha=0.20)
-    ax.legend(fontsize=9)
+    ax.legend(fontsize=8.3)
     fig.tight_layout()
     fig.savefig(figdir / "rgb_10x_on_rga_4d_binning_precision.png", dpi=180)
     plt.close(fig)
@@ -644,7 +682,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v12 — ACTUAL RGB BSA + RGA-LIKE 4D BINNING TRANSFER + DFJK/Ji FRAMEWORK")
+    print("STAGE 5 v13 — ACTUAL RGB BSA + RGA-LIKE 4D BINNING TRANSFER + DFJK/Ji FRAMEWORK")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
