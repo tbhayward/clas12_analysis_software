@@ -961,7 +961,12 @@ int main(int argc, char* argv[]) {
     // }
 
     // --------- Yield totals by current ----------
-    {
+    // This legacy diagnostic is defined in terms of the pass-1-style eppi0
+    // DATA/MC normalization map R_pi0(theta_p).  In nominal production that
+    // normalization is OFF and the Krishna/Neupane proton-efficiency correction
+    // is applied directly in total_counts instead.  Do not require or consume
+    // eppi0_normalization_summary.csv in that nominal mode.
+    if (use_eppi0_production_normalization) {
         const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string cuts_json = "output/jsons/combined_cuts.json";
         const std::string output_txt = "output/yield_totals/yield_totals_by_current.txt";
@@ -973,6 +978,9 @@ int main(int argc, char* argv[]) {
             std::cerr << "[main] ERROR: compute_yield_totals failed.\n";
             std::exit(EXIT_FAILURE);
         }
+    } else {
+        std::cout << "[main] Skipping legacy eppi0-normalized yield_totals diagnostic "
+                  << "(eppi0 normalization OFF; Krishna/Neupane production mode).\n";
     }
 
     // // // // --------- Data/MC comparison ----------
