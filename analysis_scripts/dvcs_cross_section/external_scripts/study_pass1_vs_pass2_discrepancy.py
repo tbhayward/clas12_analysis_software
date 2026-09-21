@@ -195,9 +195,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--match-dt", type=float, default=0.03, help="Maximum |Delta |t|| (GeV^2) for released pass-1 matching.")
     parser.add_argument("--match-dphi", type=float, default=8.0, help="Maximum circular |Delta phi| (deg) for released pass-1 matching.")
     parser.add_argument("--min-bin-events", type=float, default=50.0,
-                        help="Minimum pass-2 signal yield AND reconstructed-MC yield for a bin to enter the primary comparison. Default: 50.")
+                        help="Require reconstructed DVCS-MC yield strictly greater than this value for a bin to enter the primary comparison; DATA yield is unrestricted. Default: 50.")
     parser.add_argument("--valerii-map", default=None,
-                        help="Optional FD Valerii cell-validity CSV (FD_valerii_momentum_cell_validity_2sigma.csv). Invalid/out-of-range cells receive no correction and are reported as uncovered.")
+                        help="Optional FD Valerii reproduction CSV (valerii_fd_results.csv; legacy cell-validity schema also accepted). Invalid/out-of-range cells receive no correction and are reported as uncovered.")
     parser.add_argument("--skip-event-map", action="store_true", help="Skip the ROOT-tree topology/kinematic map and run only the existing-CSV comparison.")
     return parser.parse_args()
 
@@ -831,9 +831,11 @@ def read_pass2_csv(path: Path, label: str) -> pd.DataFrame:
     })
     out["topology"] = label
     out["source_file"] = str(path)
+    # Production-quality acceptance requirement: reconstructed MC strictly > 50.
+    # DATA yield is deliberately unrestricted; its statistical uncertainty carries
+    # the information from low-statistics DATA bins.
     out["valid_statistics_50"] = (
-        np.isfinite(out["N_data_signal"]) & np.isfinite(out["N_mc_rec"])
-        & (out["N_data_signal"] >= 50.0) & (out["N_mc_rec"] >= 50.0)
+        np.isfinite(out["N_mc_rec"]) & (out["N_mc_rec"] > 50.0)
     )
     out = out.replace([np.inf, -np.inf], np.nan)
     out = out.dropna(subset=["xB", "Q2", "t", "phi", "xs_pass2"])
@@ -1316,13 +1318,13 @@ def run_pass1_pass2_study(args: argparse.Namespace, output_dir: Path, edges: Lis
     run_statistics_stability_study(all_matched, comparison_dir, edges, labels)
 
     primary = all_matched[
-        (all_matched["N_data_signal"] >= args.min_bin_events)
-        & (all_matched["N_mc_rec"] >= args.min_bin_events)
+        np.isfinite(all_matched["N_mc_rec"])
+        & (all_matched["N_mc_rec"] > args.min_bin_events)
     ].copy()
     primary.to_csv(comparison_dir / "pass2_vs_authoritative_pass1_matched_points.csv", index=False)
     print(
-        f"[pass1/pass2] primary validity: signal yield >= {args.min_bin_events:g} "
-        f"AND reconstructed MC >= {args.min_bin_events:g}; "
+        f"[pass1/pass2] primary validity: reconstructed MC > {args.min_bin_events:g}; "
+        f"no DATA-yield threshold; "
         f"kept {len(primary):,}/{len(all_matched):,} matched topology-points"
     )
     summary = discrepancy_summary(primary, edges, labels)
@@ -1389,23 +1391,57 @@ def neupane_efficiency_ratio(p_gev: np.ndarray, theta_deg: np.ndarray, phi_deg: 
 
 
 def load_valerii_cells(path: Path) -> pd.DataFrame:
+    """Load either the current mode-6 reproduction or the legacy Valerii-map schema.
+
+    Internal ``correction`` is always the cross-section multiplier epsilon_MC/epsilon_DATA.
+    The current mode-6 ``corr_2s`` column is epsilon_DATA/epsilon_MC, so it is inverted.
+    """
     v = pd.read_csv(path)
-    required = ["p_low_GeV", "p_high_GeV", "theta_low_deg", "theta_high_deg",
-                "phi_low_deg", "phi_high_deg", "joint_valid", "data_eff", "mc_eff"]
-    missing = [c for c in required if c not in v.columns]
-    if missing:
-        raise RuntimeError("Valerii map is missing columns: " + ", ".join(missing))
+    current = {"p_lo", "p_hi", "theta_lo", "theta_hi", "phi_lo", "phi_hi",
+               "data_fit_valid", "mc_fit_valid", "corr_2s"}
+    legacy = {"p_low_GeV", "p_high_GeV", "theta_low_deg", "theta_high_deg",
+              "phi_low_deg", "phi_high_deg", "joint_valid", "data_eff", "mc_eff"}
+
+    if current.issubset(v.columns):
+        v = v.copy()
+        v["p_low_GeV"] = pd.to_numeric(v["p_lo"], errors="coerce")
+        v["p_high_GeV"] = pd.to_numeric(v["p_hi"], errors="coerce")
+        v["theta_low_deg"] = pd.to_numeric(v["theta_lo"], errors="coerce")
+        v["theta_high_deg"] = pd.to_numeric(v["theta_hi"], errors="coerce")
+        v["phi_low_deg"] = pd.to_numeric(v["phi_lo"], errors="coerce")
+        v["phi_high_deg"] = pd.to_numeric(v["phi_hi"], errors="coerce")
+        de = pd.to_numeric(v["data_eff_2s"], errors="coerce") if "data_eff_2s" in v else np.nan
+        me = pd.to_numeric(v["mc_eff_2s"], errors="coerce") if "mc_eff_2s" in v else np.nan
+        ratio = pd.to_numeric(v["corr_2s"], errors="coerce")
+        v["joint_valid"] = (pd.to_numeric(v["data_fit_valid"], errors="coerce") == 1) & (pd.to_numeric(v["mc_fit_valid"], errors="coerce") == 1)
+        v["data_eff"] = de
+        v["mc_eff"] = me
+        v["eff_data_over_mc"] = ratio
+        v["correction"] = 1.0 / ratio
+        v["partial_rel_unc"] = pd.to_numeric(v.get("partial_rel_unc", np.nan), errors="coerce")
+    elif legacy.issubset(v.columns):
+        v = v.copy()
+        v["data_eff"] = pd.to_numeric(v["data_eff"], errors="coerce")
+        v["mc_eff"] = pd.to_numeric(v["mc_eff"], errors="coerce")
+        v["eff_data_over_mc"] = v["data_eff"] / v["mc_eff"]
+        v["correction"] = v["mc_eff"] / v["data_eff"]
+        if "partial_rel_unc" not in v:
+            v["partial_rel_unc"] = np.nan
+        #endif
+    else:
+        raise RuntimeError("Unrecognized Valerii map schema. Expected mode-6 valerii_fd_results.csv or legacy cell-validity CSV.")
     #endif
-    v["correction"] = pd.to_numeric(v["mc_eff"], errors="coerce") / pd.to_numeric(v["data_eff"], errors="coerce")
     return v
 
-
 def fold_valerii_on_events(df: pd.DataFrame, cells: pd.DataFrame) -> pd.DataFrame:
-    """Fold the 2-sigma FD map through reconstructed DVCS photons; no extrapolation."""
+    """Fold the FD map through reconstructed Fa18 DVCS photons with no extrapolation."""
     work = df[df["period"].isin(["Fa18 Inb", "Fa18 Out"])].copy()
     work["valerii_correction"] = 1.0
+    work["valerii_eff_data_over_mc"] = np.nan
+    work["valerii_partial_rel_unc"] = np.nan
     work["valerii_covered"] = False
-    # Valerii wrapped phi is [-30,330), unlike our stored [0,360).
+    work["valerii_coverage_reason"] = np.where(work["photon_region"] == "FD", "invalid_or_uncovered_cell", "not_FD")
+
     wphi = np.where(work["g_phi_deg"].to_numpy(float) >= 330.0,
                     work["g_phi_deg"].to_numpy(float) - 360.0,
                     work["g_phi_deg"].to_numpy(float))
@@ -1413,7 +1449,16 @@ def fold_valerii_on_events(df: pd.DataFrame, cells: pd.DataFrame) -> pd.DataFram
     gt = work["g_theta_deg"].to_numpy(float)
     is_fd = work["photon_region"].to_numpy() == "FD"
     corr = np.ones(len(work), float)
+    effratio = np.full(len(work), np.nan, float)
+    relunc = np.full(len(work), np.nan, float)
     covered = np.zeros(len(work), bool)
+
+    pmin = float(pd.to_numeric(cells["p_low_GeV"], errors="coerce").min())
+    pmax = float(pd.to_numeric(cells["p_high_GeV"], errors="coerce").max())
+    reasons = work["valerii_coverage_reason"].to_numpy(object)
+    reasons[is_fd & (gp < pmin)] = "p_below_map"
+    reasons[is_fd & (gp >= pmax)] = "p_above_map"
+
     for row in cells.itertuples(index=False):
         joint = str(row.joint_valid).strip().lower() in {"1", "1.0", "true"}
         c = float(row.correction)
@@ -1424,12 +1469,21 @@ def fold_valerii_on_events(df: pd.DataFrame, cells: pd.DataFrame) -> pd.DataFram
                 & (gt >= float(row.theta_low_deg)) & (gt < float(row.theta_high_deg))
                 & (wphi >= float(row.phi_low_deg)) & (wphi < float(row.phi_high_deg)))
         corr[mask] = c
+        effratio[mask] = float(row.eff_data_over_mc)
+        try:
+            relunc[mask] = float(row.partial_rel_unc)
+        except (TypeError, ValueError):
+            pass
+        #endtry
         covered[mask] = True
+        reasons[mask] = "covered"
     #endfor
     work["valerii_correction"] = corr
+    work["valerii_eff_data_over_mc"] = effratio
+    work["valerii_partial_rel_unc"] = relunc
     work["valerii_covered"] = covered
+    work["valerii_coverage_reason"] = reasons
     return work
-
 
 def correction_summary_from_events(df: pd.DataFrame, labels: List[str]) -> pd.DataFrame:
     work = df.copy()
@@ -1492,14 +1546,21 @@ def run_correction_folding(df: pd.DataFrame, args: argparse.Namespace, output_di
         rows=[]
         for (period,tbin,topo), z in vf.groupby(["period","t_bin","topology"], observed=True):
             fd = z[z["photon_region"] == "FD"]
+            cov = fd[fd["valerii_covered"]]
             rows.append({"period":period,"t_bin":tbin,"topology":topo,"N_events":len(z),"N_FD_photon":len(fd),
+                         "N_FD_covered":len(cov),
                          "fraction_all_events_map_covered":z["valerii_covered"].mean(),
                          "fraction_FD_events_map_covered":fd["valerii_covered"].mean() if len(fd) else np.nan,
-                         "mean_multiplier_all_events":z["valerii_correction"].mean(),
-                         "mean_multiplier_covered_FD":fd.loc[fd["valerii_covered"],"valerii_correction"].mean() if np.any(fd["valerii_covered"]) else np.nan})
+                         "fraction_FD_p_above_map":(fd["valerii_coverage_reason"] == "p_above_map").mean() if len(fd) else np.nan,
+                         "fraction_FD_invalid_or_uncovered":(fd["valerii_coverage_reason"] == "invalid_or_uncovered_cell").mean() if len(fd) else np.nan,
+                         "mean_multiplier_all_events_no_extrapolation":z["valerii_correction"].mean(),
+                         "mean_multiplier_covered_FD":cov["valerii_correction"].mean() if len(cov) else np.nan,
+                         "median_multiplier_covered_FD":cov["valerii_correction"].median() if len(cov) else np.nan,
+                         "mean_eff_data_over_mc_covered_FD":cov["valerii_eff_data_over_mc"].mean() if len(cov) else np.nan,
+                         "fraction_covered_FD_partial_rel_unc_gt30pct":(cov["valerii_partial_rel_unc"] > 0.30).mean() if len(cov) else np.nan})
         #endfor
         pd.DataFrame(rows).to_csv(out / "valerii_fa18_fold_vs_t_topology.csv", index=False)
-        vf[["period","t_bin","topology","tabs","g_p","g_theta_deg","g_phi_deg","valerii_covered","valerii_correction"]].to_csv(out / "valerii_fa18_event_fold.csv", index=False)
+        vf[["period","t_bin","topology","tabs","g_p","g_theta_deg","g_phi_deg","valerii_covered","valerii_coverage_reason","valerii_eff_data_over_mc","valerii_partial_rel_unc","valerii_correction"]].to_csv(out / "valerii_fa18_event_fold.csv", index=False)
         print(f"[correction-folding] Valerii map folded from {vp}")
     else:
         print("[correction-folding] --valerii-map not supplied; Krishna Neupane and available pass-2 Sangbaek-style outputs were still evaluated.")
