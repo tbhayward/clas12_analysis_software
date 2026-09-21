@@ -918,72 +918,99 @@ def make_plots(results, cell_meta, deriv, figures):
 
 
 def make_presentation_cff_band_figure(results, figures, relative_floor=DEFAULT_RELATIVE_FLOOR):
-    """Presentation figure: constraint collapse from complementary observables.
+    """Presentation figure: cell-by-cell uncertainty-reduction factors.
 
-    This deliberately does *not* connect independent local CFF fits into a
-    pseudo-continuous CFF band.  Each panel summarizes the distribution over
-    all controlled kinematic cells.  Points are medians and vertical bars are
-    the central 68% of the cell-by-cell projected uncertainties.
+    The reference is always the full six-CFF local fit using XS+BSA only.
+    For each controlled (xB,Q2,t) cell we form
 
-    ImH and ImHt use sigma/|truth| where the KM15 truth is safely nonzero.
-    ImE uses absolute sigma because KM15 has ImE=0 in these cells.
-    Polarized scenarios use nominal completion (remaining 1x = 6 Su22-equivalent
-    statistics).  For each observable set, 1x and 10x RGA are shown side by side.
+        R_UL = sigma(XS+BSA) / sigma(XS+BSA+AUL)
+        R_UT = sigma(XS+BSA) / sigma(XS+BSA+AUL+AUT)
+
+    for ImH, ImHt, and ImE.  A value of one means that the added observable
+    supplied no improvement; 10 means a tenfold smaller projected uncertainty.
+    Points show the median cell-by-cell reduction factor and bars the central
+    68% spread.  The polarized-target scenarios use nominal completed RGC/RGH
+    precision (6 x Su22-equivalent).  RGA 1x and 10x are shown side-by-side.
+
+    Ratios use absolute sigma values, so they remain well-defined for ImE even
+    though the KM15 pseudo-truth has ImE=0.  No CFF truth-floor cut is needed.
     """
-    specs = [
-        ("XS+BSA", "none", "none", r"$\sigma+A_{LU}$"),
-        ("XS+BSA+AUL", "remaining 1x", "none", r"$+A_{UL}$"),
-        ("XS+BSA+AUL+AUT", "remaining 1x", "RGH same as remaining 1x", r"$+A_{UT}$"),
+    targets = [
+        ("XS+BSA+AUL", "remaining 1x", "none", r"add $A_{UL}$"),
+        ("XS+BSA+AUL+AUT", "remaining 1x", "RGH same as remaining 1x",
+         r"add $A_{UL}+A_{UT}$"),
     ]
     panels = [
-        ("sigma_ImH", "ImH_KM15", True, r"$\mathrm{Im}\,\mathcal{H}$", "Relative uncertainty (%)"),
-        ("sigma_ImHt", "ImHt_KM15", True, r"$\mathrm{Im}\,\widetilde{\mathcal{H}}$", "Relative uncertainty (%)"),
-        ("sigma_ImE", "ImE_KM15", False, r"$\mathrm{Im}\,\mathcal{E}$", "Absolute uncertainty"),
+        ("sigma_ImH", r"$\mathrm{Im}\,\mathcal{H}$"),
+        ("sigma_ImHt", r"$\mathrm{Im}\,\widetilde{\mathcal{H}}$"),
+        ("sigma_ImE", r"$\mathrm{Im}\,\mathcal{E}$"),
     ]
-    fig, axes = plt.subplots(1, 3, figsize=(14.8, 4.9))
-    xpos = np.arange(len(specs), dtype=float)
-    offsets = {1: -0.11, 10: +0.11}
+
+    fig, axes = plt.subplots(1, 3, figsize=(14.8, 4.9), sharey=False)
+    xpos = np.arange(len(targets), dtype=float)
+    offsets = {1: -0.10, 10: +0.10}
     markers = {1: "o", 10: "s"}
 
-    for ax, (sig_col, truth_col, relative, title, ylabel) in zip(axes, panels):
+    for ax, (sig_col, title) in zip(axes, panels):
+        all_plotted = []
         for L in (1, 10):
-            meds=[]; lo=[]; hi=[]
-            for obs, aul, aut, _ in specs:
-                d = results[(results.fit_mode == "H_Ht_E") &
-                            (results.observable_set == obs) &
-                            (results.luminosity_factor == L) &
-                            (results.aul_scenario == aul) &
-                            (results.aut_scenario == aut)].copy()
-                vals = d[sig_col].to_numpy(float)
-                if relative:
-                    truth = np.abs(d[truth_col].to_numpy(float))
-                    good = np.isfinite(vals) & np.isfinite(truth) & (truth >= relative_floor)
-                    vals = 100.0 * vals[good] / truth[good]
+            base = results[(results.fit_mode == "H_Ht_E") &
+                           (results.observable_set == "XS+BSA") &
+                           (results.luminosity_factor == L) &
+                           (results.aul_scenario == "none") &
+                           (results.aut_scenario == "none")][["bin", sig_col]].copy()
+            base = base.rename(columns={sig_col: "sigma_base"})
+
+            meds, lo, hi = [], [], []
+            for obs, aul, aut, _ in targets:
+                targ = results[(results.fit_mode == "H_Ht_E") &
+                               (results.observable_set == obs) &
+                               (results.luminosity_factor == L) &
+                               (results.aul_scenario == aul) &
+                               (results.aut_scenario == aut)][["bin", sig_col]].copy()
+                targ = targ.rename(columns={sig_col: "sigma_target"})
+                m = base.merge(targ, on="bin", how="inner")
+                good = (np.isfinite(m.sigma_base.to_numpy(float)) &
+                        np.isfinite(m.sigma_target.to_numpy(float)) &
+                        (m.sigma_base.to_numpy(float) > 0.0) &
+                        (m.sigma_target.to_numpy(float) > 0.0))
+                ratios = (m.sigma_base.to_numpy(float)[good] /
+                          m.sigma_target.to_numpy(float)[good])
+                if len(ratios):
+                    q16, q50, q84 = np.percentile(ratios, [16, 50, 84])
                 else:
-                    vals = vals[np.isfinite(vals)]
-                if len(vals):
-                    q16,q50,q84=np.percentile(vals,[16,50,84])
-                else:
-                    q16=q50=q84=np.nan
-                meds.append(q50); lo.append(q50-q16); hi.append(q84-q50)
-            x=xpos+offsets[L]
-            ax.errorbar(x, meds, yerr=np.vstack([lo,hi]), fmt=markers[L], ms=6,
+                    q16 = q50 = q84 = np.nan
+                meds.append(q50)
+                lo.append(q50 - q16)
+                hi.append(q84 - q50)
+                all_plotted.extend(ratios[np.isfinite(ratios)].tolist())
+
+            x = xpos + offsets[L]
+            ax.errorbar(x, meds, yerr=np.vstack([lo, hi]), fmt=markers[L], ms=7,
                         capsize=4, lw=1.5, label=f"RGA {L}x")
+
+        ax.axhline(1.0, color="0.45", ls="--", lw=1.1, zorder=0)
         ax.set_xticks(xpos)
-        ax.set_xticklabels([q[3] for q in specs])
+        ax.set_xticklabels([q[3] for q in targets])
         ax.set_title(title)
-        ax.set_ylabel(ylabel)
+        ax.set_ylabel("Uncertainty reduction factor")
         ax.grid(axis="y", alpha=.18)
         ax.legend(frameon=False, fontsize=9)
-    fig.suptitle(r"Complementary observables break CFF degeneracies; luminosity then improves precision")
-    fig.text(.5,.012,
-             r"Full local $H+\widetilde H+E$ fit. Points: median across controlled cells; bars: central 68% of cell-by-cell projected uncertainties. "
-             r"RGC/RGH use nominal completed polarized-target precision (6$\times$ Su22-equivalent).",
-             ha="center", fontsize=8.5)
-    fig.tight_layout(rect=(0,.06,1,.94))
-    fig.savefig(figures / "presentation_CFF_constraint_collapse_1x_vs_10x.png", dpi=300)
-    plt.close(fig)
 
+        # Reduction factors can span orders of magnitude.  Use a logarithmic
+        # axis only when the actual plotted cell-by-cell range warrants it.
+        finite_pos = np.asarray([v for v in all_plotted if np.isfinite(v) and v > 0.0])
+        if finite_pos.size and np.nanmax(finite_pos) / max(np.nanmin(finite_pos), 1e-300) > 30.0:
+            ax.set_yscale("log")
+
+    fig.suptitle(r"Polarized observables collapse otherwise unresolved local CFF directions")
+    fig.text(.5, .012,
+             r"Full local $H+\widetilde H+E$ fit.  Reduction factor = $\sigma_{\rm XS+BSA}/\sigma_{\rm added\ observables}$.  "
+             r"Points: median across controlled cells; bars: central 68%.  RGC/RGH use nominal completed precision (6$\times$ Su22-equivalent).",
+             ha="center", fontsize=8.5)
+    fig.tight_layout(rect=(0, .06, 1, .94))
+    fig.savefig(figures / "presentation_CFF_uncertainty_reduction_1x_vs_10x.png", dpi=300)
+    plt.close(fig)
 
 def make_representative_low_t_cff_band_diagnostic(results, figures):
     """Optional diagnostic only: same old envelope idea in 0.20<|t|<0.40.
