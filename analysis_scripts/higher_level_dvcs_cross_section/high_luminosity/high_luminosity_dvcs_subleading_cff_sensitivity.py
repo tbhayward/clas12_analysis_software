@@ -50,6 +50,7 @@ global CFF extraction.
 from __future__ import annotations
 
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
 import contextlib
 import math
 from pathlib import Path
@@ -327,6 +328,41 @@ def build_derivatives(df, th, g, rel_step, abs_step, min_nphi):
     return pd.DataFrame(point_rows), pd.DataFrame(cell_rows)
 
 
+def _derivative_worker(payload):
+    """Process one chunk of cells with an independent Gepard model instance."""
+    chunk, rel_step, abs_step, min_nphi = payload
+    import gepard as g
+    from gepard.fits import th_KM15
+    return build_derivatives(chunk, th_KM15, g, rel_step, abs_step, min_nphi)
+
+
+def build_derivatives_parallel(df, rel_step, abs_step, min_nphi, workers):
+    """Split complete kinematic cells across independent processes."""
+    workers = max(1, min(int(workers), 4))
+    if workers == 1:
+        import gepard as g
+        from gepard.fits import th_KM15
+        return build_derivatives(df, th_KM15, g, rel_step, abs_step, min_nphi)
+
+    bins = sorted(df["bin"].astype(int).unique())
+    chunks = []
+    for ib in np.array_split(np.asarray(bins, dtype=int), workers):
+        if len(ib):
+            chunks.append(df[df["bin"].isin(ib.tolist())].copy())
+    print(f"[CFF separation] distributing {len(bins)} cells across {len(chunks)} workers")
+    point_parts, cell_parts = [], []
+    payloads = [(c, rel_step, abs_step, min_nphi) for c in chunks]
+    with ProcessPoolExecutor(max_workers=len(chunks)) as ex:
+        futs = [ex.submit(_derivative_worker, x) for x in payloads]
+        for i, fut in enumerate(as_completed(futs), 1):
+            a, b = fut.result()
+            point_parts.append(a); cell_parts.append(b)
+            print(f"[CFF separation] worker chunk {i}/{len(futs)} complete")
+    points = pd.concat(point_parts, ignore_index=True).sort_values(["bin","phi_deg"]).reset_index(drop=True)
+    cells = pd.concat(cell_parts, ignore_index=True).sort_values("bin").reset_index(drop=True)
+    return points, cells
+
+
 def layout_for(cell_meta, mode, include_aul=False):
     cffs = FIT_MODES[mode]
     pars = []
@@ -382,7 +418,7 @@ def covariance(
     if include_aul:
         # IMPORTANT: derive the fixed existing-RGC estimate from the *1x RGA*
         # BSA statistical precision, not from the luminosity-scaled RGA error.
-        # Caller passes df containing bsa_stat_data_abs, which Stage 2 preserves.
+        # Stage 2 preserves the unscaled current-RGA statistical error as bsa_stat_abs.
         stat_scale = math.sqrt(1.0 / rgc_stat_fraction) * aul_precision_factor
         for r in use.itertuples(index=False):
             v = np.zeros(npar)
@@ -392,7 +428,7 @@ def covariance(
             v[idx[(-1, "aul_scale_beta")]] = aul_scale_frac * r.aul_km15
             # First estimate: statistics only for the point-to-point A_UL error.
             # A common target-polarization scale is represented separately.
-            srow = stat_scale * r.bsa_stat_data_abs
+            srow = stat_scale * r.bsa_stat_abs
             if np.isfinite(srow) and srow > 0:
                 rows.append(v)
                 sigmas.append(srow)
@@ -717,6 +753,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         default=str(here / "output" / "stage4_cff_separation"),
     )
     p.add_argument("--min-nphi", type=int, default=DEFAULT_MIN_NPHI)
+    p.add_argument("--workers", type=int, default=1, choices=(1,2,3,4), help="Processes for Gepard derivative calculation (max 4).")
+    p.add_argument("--force-derivatives", action="store_true", help="Recompute Gepard derivatives even if cached tables exist.")
     p.add_argument("--relative-step", type=float, default=DEFAULT_REL_STEP)
     p.add_argument("--absolute-step", type=float, default=DEFAULT_ABS_STEP)
     p.add_argument(
@@ -791,16 +829,25 @@ def main(argv: Optional[List[str]] = None) -> int:
             f"AUL change={ul1-base_ul:+.4g}"
         )
 
-    deriv, cell_meta = build_derivatives(
-        one,
-        th,
-        g,
-        args.relative_step,
-        args.absolute_step,
-        args.min_nphi,
-    )
-    deriv.to_csv(tables / "point_xs_bsa_allcff_derivatives.csv", index=False)
-    cell_meta.to_csv(tables / "cell_km15_allcffs.csv", index=False)
+    deriv_path = tables / "point_xs_bsa_allcff_derivatives.csv"
+    cell_path = tables / "cell_km15_allcffs.csv"
+    required_deriv_cols = {"aul_km15", "d_aul_d_ReH", "d_aul_d_ImHt", "d_aul_d_ImE"}
+    can_reuse = deriv_path.exists() and cell_path.exists() and not args.force_derivatives
+    if can_reuse:
+        deriv = pd.read_csv(deriv_path)
+        cell_meta = pd.read_csv(cell_path)
+        if not required_deriv_cols.issubset(deriv.columns):
+            can_reuse = False
+            print("[cache] derivative table predates AUL support; recomputing")
+    if can_reuse:
+        print(f"[cache] reusing {deriv_path} ({len(deriv)} points); skipping Gepard derivative pass")
+    else:
+        deriv, cell_meta = build_derivatives_parallel(
+            one, args.relative_step, args.absolute_step, args.min_nphi, args.workers
+        )
+        deriv.to_csv(deriv_path, index=False)
+        cell_meta.to_csv(cell_path, index=False)
+        print(f"[cache] saved derivatives for future reruns: {deriv_path}")
 
     result_frames = []
     diag_rows = []
