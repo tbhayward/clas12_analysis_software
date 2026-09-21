@@ -54,6 +54,7 @@ python3 external_scripts/study_pass1_vs_pass2_discrepancy.py
 import argparse
 import math
 import os
+import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
@@ -814,11 +815,11 @@ def resolve_pass2_files(args: argparse.Namespace) -> Dict[str, Path]:
         "CD-FT": args.cd_ft_csv,
         "FD-FD": args.fd_fd_csv,
     }
-    patterns = {
-        "Inclusive": (["inclusive"], []),
-        "CD-FD": (["cdfd"], ["sector", "s1", "s2", "s3", "s4", "s5", "s6"]),
-        "CD-FT": (["cdft"], ["sector", "s1", "s2", "s3", "s4", "s5", "s6"]),
-        "FD-FD": (["fdfd"], ["sector", "s1", "s2", "s3", "s4", "s5", "s6"]),
+    expected_names = {
+        "Inclusive": "dvcs_pass2_INCLUSIVE.csv",
+        "CD-FD": "dvcs_pass2_CD-FD.csv",
+        "CD-FT": "dvcs_pass2_CD-FT.csv",
+        "FD-FD": "dvcs_pass2_FD-FD.csv",
     }
 
     resolved = {}
@@ -826,8 +827,8 @@ def resolve_pass2_files(args: argparse.Namespace) -> Dict[str, Path]:
         if explicit[label]:
             path = Path(explicit[label])
         else:
-            inc, exc = patterns[label]
-            path = discover_csv(csv_dir, inc, exc)
+            expected = csv_dir / expected_names[label]
+            path = expected if expected.exists() else None
         #endif
 
         if path is None or not path.exists():
