@@ -770,13 +770,26 @@ def read_pass2_csv(path: Path, label: str) -> pd.DataFrame:
 
 
 def discover_csv(csv_dir: Path, include_tokens: List[str], exclude_tokens: List[str] | None = None) -> Path | None:
+    """
+    Discover a pass-2 CSV without assuming one exact filename convention.
+
+    The analysis suite has used names containing forms such as CD-FD, CD_FD,
+    CDFD, etc.  Compare both a separator-preserving lowercase name and a
+    fully normalized alphanumeric name.
+    """
     files = sorted(csv_dir.glob("*.csv"))
     include = [normalized_name(x) for x in include_tokens]
     exclude = [normalized_name(x) for x in (exclude_tokens or [])]
     matches = []
+
     for path in files:
-        key = normalized_name(path.stem)
-        if all(token in key for token in include) and not any(token in key for token in exclude):
+        raw_key = path.stem.lower()
+        norm_key = normalized_name(path.stem)
+
+        include_ok = all(token in norm_key for token in include)
+        exclude_hit = any(token in norm_key for token in exclude)
+
+        if include_ok and not exclude_hit:
             matches.append(path)
         #endif
     #endfor
@@ -786,10 +799,12 @@ def discover_csv(csv_dir: Path, include_tokens: List[str], exclude_tokens: List[
     #endif
     if len(matches) > 1:
         print(f"[pass1/pass2] WARNING: multiple files match {include_tokens}: {[p.name for p in matches]}")
-        return matches[-1]
+        # Prefer the shortest basename: parent topology files are normally
+        # shorter than sector-resolved derivatives.
+        matches = sorted(matches, key=lambda p: (len(p.stem), p.name))
+        return matches[0]
     #endif
     return None
-
 
 def resolve_pass2_files(args: argparse.Namespace) -> Dict[str, Path]:
     csv_dir = Path(args.csv_dir)
@@ -817,6 +832,13 @@ def resolve_pass2_files(args: argparse.Namespace) -> Dict[str, Path]:
 
         if path is None or not path.exists():
             print(f"[pass1/pass2] WARNING: no {label} CSV found; skipping it.")
+            if label != "Inclusive":
+                available = [p.name for p in sorted(csv_dir.glob("*.csv"))]
+                print(f"[pass1/pass2] Available CSVs in {csv_dir}:")
+                for fname in available:
+                    print(f"    {fname}")
+                #endfor
+            #endif
             continue
         #endif
         resolved[label] = path
@@ -825,30 +847,54 @@ def resolve_pass2_files(args: argparse.Namespace) -> Dict[str, Path]:
 
 
 def read_authoritative_pass1(path: Path) -> pd.DataFrame:
-    # Released clasdb_E214M1 format: bin, x, Q2, t, phi, xs, stat, syst.
-    df = pd.read_csv(
-        path,
-        sep=r"\s+|,",
-        engine="python",
-        comment="#",
-        header=None,
+    """
+    Read the released CLAS database E214M1 text file.
+
+    The file begins with title/author/header/unit lines followed by
+    whitespace-separated rows:
+      bin x Q2 t_average phi xs stat syst
+
+    Parse only lines containing exactly eight numeric fields.  This avoids
+    treating the human-readable header as a variable-width CSV.
+    """
+    number = re.compile(
+        r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$"
     )
-    df = df.dropna(axis=1, how="all")
-    if df.shape[1] < 8:
-        raise RuntimeError(f"{path}: expected at least 8 columns; found {df.shape[1]}")
+    rows = []
+
+    with path.open("r", errors="replace") as handle:
+        for line in handle:
+            fields = line.strip().split()
+            if len(fields) != 8:
+                continue
+            #endif
+            if not all(number.match(field) for field in fields):
+                continue
+            #endif
+            rows.append([float(field) for field in fields])
+        #endfor
+    #endwith
+
+    if not rows:
+        raise RuntimeError(f"{path}: found no eight-column numeric pass-1 rows")
     #endif
-    df = df.iloc[:, :8].copy()
-    df.columns = ["bin", "xB", "Q2", "t", "phi", "xs_pass1", "stat_pass1", "syst_pass1"]
-    for col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    #endfor
+
+    df = pd.DataFrame(
+        rows,
+        columns=["bin", "xB", "Q2", "t", "phi", "xs_pass1", "stat_pass1", "syst_pass1"],
+    )
+    df["bin"] = df["bin"].astype(int)
     df["t"] = df["t"].abs()
     df["phi"] = np.mod(df["phi"], 360.0)
+    df = df.replace([np.inf, -np.inf], np.nan)
     df = df.dropna(subset=["xB", "Q2", "t", "phi", "xs_pass1"])
     df = df[df["xs_pass1"] > 0].reset_index(drop=True)
-    print(f"[pass1/pass2] authoritative pass-1: loaded {len(df):,} positive points from {path.name}")
-    return df
 
+    print(
+        f"[pass1/pass2] authoritative pass-1: loaded {len(df):,} positive points "
+        f"from {path.name}"
+    )
+    return df
 
 def phi_distance(a: np.ndarray, b: float) -> np.ndarray:
     d = np.abs(a - b)
