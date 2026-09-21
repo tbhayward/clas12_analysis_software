@@ -56,6 +56,7 @@ import math
 import os
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
+import re
 
 os.environ.setdefault("MPLBACKEND", "Agg")
 os.environ.setdefault("MPLCONFIGDIR", f"/tmp/matplotlib-{os.getuid()}")
@@ -786,62 +787,92 @@ def discover_csv(csv_dir: Path, include_tokens: List[str], exclude_tokens: List[
     return None
 
 
-def resolve_pass2_files(args: argparse.Namespace) -> Dict[str, Path]:
-    csv_dir = Path(args.csv_dir)
-    explicit = {
-        "Inclusive": args.inclusive_csv,
-        "CD-FD": args.cd_fd_csv,
-        "CD-FT": args.cd_ft_csv,
-        "FD-FD": args.fd_fd_csv,
-    }
-    patterns = {
-        "Inclusive": (["inclusive"], []),
-        "CD-FD": (["cdfd"], ["sector", "s1", "s2", "s3", "s4", "s5", "s6"]),
-        "CD-FT": (["cdft"], ["sector", "s1", "s2", "s3", "s4", "s5", "s6"]),
-        "FD-FD": (["fdfd"], ["sector", "s1", "s2", "s3", "s4", "s5", "s6"]),
+def resolve_pass2_files(args, csv_dir: Path) -> Dict[str, Path]:
+    """Resolve the four parent pass-2 CSVs using their exact production filenames."""
+    exact = {
+        "Inclusive": csv_dir / "dvcs_pass2_INCLUSIVE.csv",
+        "CD-FD": csv_dir / "dvcs_pass2_CD-FD.csv",
+        "CD-FT": csv_dir / "dvcs_pass2_CD-FT.csv",
+        "FD-FD": csv_dir / "dvcs_pass2_FD-FD.csv",
     }
 
     resolved = {}
-    for label in ["Inclusive", "CD-FD", "CD-FT", "FD-FD"]:
-        if explicit[label]:
-            path = Path(explicit[label])
-        else:
-            inc, exc = patterns[label]
-            path = discover_csv(csv_dir, inc, exc)
-        #endif
-
-        if path is None or not path.exists():
-            print(f"[pass1/pass2] WARNING: no {label} CSV found; skipping it.")
-            continue
+    for label, path in exact.items():
+        if not path.exists():
+            raise FileNotFoundError(
+                f"Required {label} CSV not found at exact path: {path}"
+            )
         #endif
         resolved[label] = path
+        print(f"[pass1/pass2] {label}: {path.name}")
     #endfor
+
     return resolved
 
 
 def read_authoritative_pass1(path: Path) -> pd.DataFrame:
-    # Released clasdb_E214M1 format: bin, x, Q2, t, phi, xs, stat, syst.
-    df = pd.read_csv(
-        path,
-        sep=r"\s+|,",
-        engine="python",
-        comment="#",
-        header=None,
+    """
+    Read imports/clasdb_E214M1.txt.
+
+    The file has human-readable metadata/header lines followed by numerical
+    rows with exactly:
+        bin  xB  Q2  t  phi  xs  stat  syst
+
+    Do not ask pandas to infer the mixed-format header.  Keep only lines
+    containing exactly eight numeric fields.
+    """
+    numeric = re.compile(
+        r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$"
     )
-    df = df.dropna(axis=1, how="all")
-    if df.shape[1] < 8:
-        raise RuntimeError(f"{path}: expected at least 8 columns; found {df.shape[1]}")
+    rows = []
+
+    with path.open("r", encoding="utf-8", errors="replace") as handle:
+        for line in handle:
+            fields = line.strip().split()
+            if len(fields) != 8:
+                continue
+            #endif
+            if not all(numeric.fullmatch(field) for field in fields):
+                continue
+            #endif
+            rows.append([float(field) for field in fields])
+        #endfor
+    #endwith
+
+    if not rows:
+        raise RuntimeError(
+            f"No 8-column numerical rows found in authoritative pass-1 file: {path}"
+        )
     #endif
-    df = df.iloc[:, :8].copy()
-    df.columns = ["bin", "xB", "Q2", "t", "phi", "xs_pass1", "stat_pass1", "syst_pass1"]
-    for col in df.columns:
-        df[col] = pd.to_numeric(df[col], errors="coerce")
-    #endfor
+
+    df = pd.DataFrame(
+        rows,
+        columns=[
+            "bin",
+            "xB",
+            "Q2",
+            "t",
+            "phi",
+            "xs_pass1",
+            "stat_pass1",
+            "syst_pass1",
+        ],
+    )
+
+    df["bin"] = df["bin"].astype(int)
     df["t"] = df["t"].abs()
     df["phi"] = np.mod(df["phi"], 360.0)
-    df = df.dropna(subset=["xB", "Q2", "t", "phi", "xs_pass1"])
+
+    df = df.replace([np.inf, -np.inf], np.nan)
+    df = df.dropna(
+        subset=["xB", "Q2", "t", "phi", "xs_pass1", "stat_pass1", "syst_pass1"]
+    )
     df = df[df["xs_pass1"] > 0].reset_index(drop=True)
-    print(f"[pass1/pass2] authoritative pass-1: loaded {len(df):,} positive points from {path.name}")
+
+    print(
+        f"[pass1/pass2] authoritative pass-1: loaded {len(df):,} positive points "
+        f"from {path.name}"
+    )
     return df
 
 
