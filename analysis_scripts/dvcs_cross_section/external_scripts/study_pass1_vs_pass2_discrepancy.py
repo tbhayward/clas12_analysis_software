@@ -54,7 +54,6 @@ python3 external_scripts/study_pass1_vs_pass2_discrepancy.py
 import argparse
 import math
 import os
-import re
 from pathlib import Path
 from typing import Dict, Iterable, List, Tuple
 
@@ -717,36 +716,31 @@ def find_column(df: pd.DataFrame, candidates: List[str], contains: List[str] | N
 
 
 def find_kinematic_columns(df: pd.DataFrame) -> Dict[str, str]:
-    return {
-        "xB": find_column(df, ["xB", "x_B", "x", "<xB>", "<x_B>"], ["xb"]),
-        "Q2": find_column(df, ["Q2", "Q^2", "<Q2>", "q2"], ["q2"]),
-        "t": find_column(df, ["t", "-t", "|t|", "<t>"], None),
-        "phi": find_column(df, ["phi", "phi_deg", "phi (deg)", "<phi>"], ["phi"]),
+    # Canonical combined-pass2 kinematic columns. Do not guess among the
+    # period-specific averages: the cross section used below is the combined
+    # 10.6-GeV result, so use the matching combined bin averages.
+    columns = {
+        "xB": "xBavg, 10.6 GeV",
+        "Q2": "Q2avg, 10.6 GeV",
+        "t": "t_abs_avg, 10.6 GeV",
+        "phi": "phiavg, 10.6 GeV",
     }
+    missing = [name for name in columns.values() if name not in df.columns]
+    if missing:
+        raise RuntimeError(
+            "Missing expected canonical pass-2 kinematic column(s): "
+            + ", ".join(missing)
+        )
+    #endif
+    return columns
 
 
 def combined_xs_column(df: pd.DataFrame) -> str:
-    preferred = "cross sections, ep->epg, exp, 10.6 GeV, unpol"
-    if preferred in df.columns:
-        return preferred
+    column = "cross sections, ep->epg, exp, 10.6 GeV, unpol"
+    if column not in df.columns:
+        raise RuntimeError(f"Missing expected canonical pass-2 cross-section column: {column}")
     #endif
-
-    matches = [
-        c for c in df.columns
-        if "crosssections" in normalized_name(c)
-        and "epepg" in normalized_name(c)
-        and "exp" in normalized_name(c)
-        and "unpol" in normalized_name(c)
-        and "106gev" in normalized_name(c)
-    ]
-    if len(matches) == 1:
-        return matches[0]
-    #endif
-
-    raise RuntimeError(
-        "Could not uniquely identify combined 10.6-GeV unpolarized DVCS cross-section column. "
-        f"Candidates found: {matches[:12]}"
-    )
+    return column
 
 
 def read_pass2_csv(path: Path, label: str) -> pd.DataFrame:
@@ -771,26 +765,13 @@ def read_pass2_csv(path: Path, label: str) -> pd.DataFrame:
 
 
 def discover_csv(csv_dir: Path, include_tokens: List[str], exclude_tokens: List[str] | None = None) -> Path | None:
-    """
-    Discover a pass-2 CSV without assuming one exact filename convention.
-
-    The analysis suite has used names containing forms such as CD-FD, CD_FD,
-    CDFD, etc.  Compare both a separator-preserving lowercase name and a
-    fully normalized alphanumeric name.
-    """
     files = sorted(csv_dir.glob("*.csv"))
     include = [normalized_name(x) for x in include_tokens]
     exclude = [normalized_name(x) for x in (exclude_tokens or [])]
     matches = []
-
     for path in files:
-        raw_key = path.stem.lower()
-        norm_key = normalized_name(path.stem)
-
-        include_ok = all(token in norm_key for token in include)
-        exclude_hit = any(token in norm_key for token in exclude)
-
-        if include_ok and not exclude_hit:
+        key = normalized_name(path.stem)
+        if all(token in key for token in include) and not any(token in key for token in exclude):
             matches.append(path)
         #endif
     #endfor
@@ -800,12 +781,10 @@ def discover_csv(csv_dir: Path, include_tokens: List[str], exclude_tokens: List[
     #endif
     if len(matches) > 1:
         print(f"[pass1/pass2] WARNING: multiple files match {include_tokens}: {[p.name for p in matches]}")
-        # Prefer the shortest basename: parent topology files are normally
-        # shorter than sector-resolved derivatives.
-        matches = sorted(matches, key=lambda p: (len(p.stem), p.name))
-        return matches[0]
+        return matches[-1]
     #endif
     return None
+
 
 def resolve_pass2_files(args: argparse.Namespace) -> Dict[str, Path]:
     csv_dir = Path(args.csv_dir)
@@ -815,11 +794,11 @@ def resolve_pass2_files(args: argparse.Namespace) -> Dict[str, Path]:
         "CD-FT": args.cd_ft_csv,
         "FD-FD": args.fd_fd_csv,
     }
-    expected_names = {
-        "Inclusive": "dvcs_pass2_INCLUSIVE.csv",
-        "CD-FD": "dvcs_pass2_CD-FD.csv",
-        "CD-FT": "dvcs_pass2_CD-FT.csv",
-        "FD-FD": "dvcs_pass2_FD-FD.csv",
+    patterns = {
+        "Inclusive": (["inclusive"], []),
+        "CD-FD": (["cdfd"], ["sector", "s1", "s2", "s3", "s4", "s5", "s6"]),
+        "CD-FT": (["cdft"], ["sector", "s1", "s2", "s3", "s4", "s5", "s6"]),
+        "FD-FD": (["fdfd"], ["sector", "s1", "s2", "s3", "s4", "s5", "s6"]),
     }
 
     resolved = {}
@@ -827,19 +806,12 @@ def resolve_pass2_files(args: argparse.Namespace) -> Dict[str, Path]:
         if explicit[label]:
             path = Path(explicit[label])
         else:
-            expected = csv_dir / expected_names[label]
-            path = expected if expected.exists() else None
+            inc, exc = patterns[label]
+            path = discover_csv(csv_dir, inc, exc)
         #endif
 
         if path is None or not path.exists():
             print(f"[pass1/pass2] WARNING: no {label} CSV found; skipping it.")
-            if label != "Inclusive":
-                available = [p.name for p in sorted(csv_dir.glob("*.csv"))]
-                print(f"[pass1/pass2] Available CSVs in {csv_dir}:")
-                for fname in available:
-                    print(f"    {fname}")
-                #endfor
-            #endif
             continue
         #endif
         resolved[label] = path
@@ -848,54 +820,30 @@ def resolve_pass2_files(args: argparse.Namespace) -> Dict[str, Path]:
 
 
 def read_authoritative_pass1(path: Path) -> pd.DataFrame:
-    """
-    Read the released CLAS database E214M1 text file.
-
-    The file begins with title/author/header/unit lines followed by
-    whitespace-separated rows:
-      bin x Q2 t_average phi xs stat syst
-
-    Parse only lines containing exactly eight numeric fields.  This avoids
-    treating the human-readable header as a variable-width CSV.
-    """
-    number = re.compile(
-        r"^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?$"
+    # Released clasdb_E214M1 format: bin, x, Q2, t, phi, xs, stat, syst.
+    df = pd.read_csv(
+        path,
+        sep=r"\s+|,",
+        engine="python",
+        comment="#",
+        header=None,
     )
-    rows = []
-
-    with path.open("r", errors="replace") as handle:
-        for line in handle:
-            fields = line.strip().split()
-            if len(fields) != 8:
-                continue
-            #endif
-            if not all(number.match(field) for field in fields):
-                continue
-            #endif
-            rows.append([float(field) for field in fields])
-        #endfor
-    #endwith
-
-    if not rows:
-        raise RuntimeError(f"{path}: found no eight-column numeric pass-1 rows")
+    df = df.dropna(axis=1, how="all")
+    if df.shape[1] < 8:
+        raise RuntimeError(f"{path}: expected at least 8 columns; found {df.shape[1]}")
     #endif
-
-    df = pd.DataFrame(
-        rows,
-        columns=["bin", "xB", "Q2", "t", "phi", "xs_pass1", "stat_pass1", "syst_pass1"],
-    )
-    df["bin"] = df["bin"].astype(int)
+    df = df.iloc[:, :8].copy()
+    df.columns = ["bin", "xB", "Q2", "t", "phi", "xs_pass1", "stat_pass1", "syst_pass1"]
+    for col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    #endfor
     df["t"] = df["t"].abs()
     df["phi"] = np.mod(df["phi"], 360.0)
-    df = df.replace([np.inf, -np.inf], np.nan)
     df = df.dropna(subset=["xB", "Q2", "t", "phi", "xs_pass1"])
     df = df[df["xs_pass1"] > 0].reset_index(drop=True)
-
-    print(
-        f"[pass1/pass2] authoritative pass-1: loaded {len(df):,} positive points "
-        f"from {path.name}"
-    )
+    print(f"[pass1/pass2] authoritative pass-1: loaded {len(df):,} positive points from {path.name}")
     return df
+
 
 def phi_distance(a: np.ndarray, b: float) -> np.ndarray:
     d = np.abs(a - b)
