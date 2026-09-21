@@ -486,21 +486,45 @@ def rga_binning_transfer_projection(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame
     summary.to_csv(tabdir / "rgb_on_rga_4d_binning_summary.csv", index=False)
     points.to_csv(tabdir / "rgb_on_rga_4d_binning_points.csv", index=False)
 
-    # Main-talk distribution plot: current RGA plus projected RGB at 2x, 5x, and 10x.
-    # RGA is deliberately black; the three RGB luminosity cases use distinct colors.
-    rgb2 = points[points["projection_luminosity"] == 2]["rgb_projected_stat_error"].to_numpy(float)
-    rgb5 = points[points["projection_luminosity"] == 5]["rgb_projected_stat_error"].to_numpy(float)
-    rgb10 = points[points["projection_luminosity"] == 10]["rgb_projected_stat_error"].to_numpy(float)
+    # Main-talk distribution plot:
+    #   - current RGA at its full 1444-point 4D granularity;
+    #   - RGB at 2x luminosity with FOUR RGA-like points combined per projected
+    #     neutron bin (~1/4 as many bins);
+    #   - RGB at 10x luminosity at the full RGA-like 1444-point granularity.
+    #
+    # For the 2x/coarser case, combine consecutive groups of four entries after
+    # sorting by the actual RGA kinematic coordinates. Statistical information
+    # adds, so sigma_group = 1/sqrt(sum_k 1/sigma_k^2). This preserves the total
+    # 2x RGB information budget while spending it on ~361 rather than 1444 bins.
+    rgb2_full = points[
+        points["projection_luminosity"] == 2
+    ].copy()
+    rgb10 = points[
+        points["projection_luminosity"] == 10
+    ]["rgb_projected_stat_error"].to_numpy(float)
 
+    sort_cols = [c for c in ["bin", "xB", "Q2", "t_abs", "phi_deg"] if c in rgb2_full.columns]
+    if sort_cols:
+        rgb2_full = rgb2_full.sort_values(sort_cols).reset_index(drop=True)
+
+    rgb2_sigma_full = rgb2_full["rgb_projected_stat_error"].to_numpy(float)
+    rgb2_coarse = []
+    for i in range(0, len(rgb2_sigma_full), 4):
+        group = rgb2_sigma_full[i:i + 4]
+        group = group[np.isfinite(group) & (group > 0)]
+        if len(group):
+            rgb2_coarse.append(1.0 / np.sqrt(np.sum(1.0 / group**2)))
+    rgb2_coarse = np.asarray(rgb2_coarse, dtype=float)
+
+    # Common bin edges for a direct visual comparison.
     bins = np.linspace(
         0.0,
         max(
-            np.quantile(pstat, 0.95),
-            np.quantile(rgb2, 0.95),
-            np.quantile(rgb5, 0.95),
-            np.quantile(rgb10, 0.95),
+            np.quantile(pstat, 0.99),
+            np.quantile(rgb2_coarse, 0.99),
+            np.quantile(rgb10, 0.99),
         ) * 1.08,
-        40,
+        36,
     )
 
     fig, ax = plt.subplots(figsize=(8.2, 5.4))
@@ -509,45 +533,41 @@ def rga_binning_transfer_projection(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame
         label=f"Current RGA proton 4D (N={len(pstat)})"
     )
     ax.hist(
-        rgb2, bins=bins, histtype="step", linewidth=2.2,
-        label=f"RGB neutron 2x (N={len(rgb2)})"
-    )
-    ax.hist(
-        rgb5, bins=bins, histtype="step", linewidth=2.2,
-        label=f"RGB neutron 5x (N={len(rgb5)})"
+        rgb2_coarse, bins=bins, histtype="step", linewidth=2.2,
+        label=f"RGB neutron 2x, 1/4 RGA granularity (N={len(rgb2_coarse)})"
     )
     ax.hist(
         rgb10, bins=bins, histtype="step", linewidth=2.2,
-        label=f"RGB neutron 10x (N={len(rgb10)})"
+        label=f"RGB neutron 10x, full RGA granularity (N={len(rgb10)})"
     )
 
-    # Median markers: black for RGA, matching each RGB histogram for 2x/5x/10x.
+    cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
     ax.axvline(
         np.median(pstat), color="black", linestyle=":", linewidth=2.0,
         label=f"RGA median = {np.median(pstat):.3f}"
     )
-    rgb_lines = ax.get_lines()
-    # Histograms do not populate get_lines(), so use the default matplotlib
-    # color cycle explicitly for the median markers to match the RGB cases.
-    cycle = plt.rcParams["axes.prop_cycle"].by_key()["color"]
-    for arr, lum, color in [
-        (rgb2, 2, cycle[0]),
-        (rgb5, 5, cycle[1]),
-        (rgb10, 10, cycle[2]),
-    ]:
-        ax.axvline(
-            np.median(arr), color=color, linestyle="--", linewidth=1.8,
-            label=f"RGB {lum}x median = {np.median(arr):.3f}"
-        )
+    ax.axvline(
+        np.median(rgb2_coarse), color=cycle[0], linestyle="--", linewidth=1.8,
+        label=f"RGB 2x coarse median = {np.median(rgb2_coarse):.3f}"
+    )
+    ax.axvline(
+        np.median(rgb10), color=cycle[1], linestyle="--", linewidth=1.8,
+        label=f"RGB 10x median = {np.median(rgb10):.3f}"
+    )
 
     ax.set_xlabel(r"Statistical $\sigma(A_{LU})$")
-    ax.set_ylabel("Number of 4D points")
-    ax.set_title("Neutron BSA projected onto the actual RGA pass-2 4D bin pattern")
+    ax.set_ylabel("Number of bins")
+    ax.set_title("Neutron BSA projected onto RGA-like multidimensional binning")
     ax.grid(alpha=0.20)
-    ax.legend(fontsize=8.3)
+    ax.legend(fontsize=8.5)
     fig.tight_layout()
     fig.savefig(figdir / "rgb_10x_on_rga_4d_binning_precision.png", dpi=180)
     plt.close(fig)
+
+    # Audit the coarser 2x scenario explicitly.
+    pd.DataFrame({
+        "rgb_2x_coarse_stat_error": rgb2_coarse
+    }).to_csv(tabdir / "rgb_2x_quarter_rga_granularity.csv", index=False)
 
     # Luminosity progression in the same fixed RGA 4D binning.
     #
@@ -682,7 +702,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v13 — ACTUAL RGB BSA + RGA-LIKE 4D BINNING TRANSFER + DFJK/Ji FRAMEWORK")
+    print("STAGE 5 v14 — ACTUAL RGB BSA + RGA-LIKE 4D BINNING TRANSFER + DFJK/Ji FRAMEWORK")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
