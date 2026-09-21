@@ -300,10 +300,12 @@ def make_aut_point(g, row):
     """
     Transverse-target A_UT point at the same RGA kinematics.
 
-    Gepard uses in2polarizationvector="T" for A_UT.  When varFTn is not
-    supplied, DataPoint.prepare() selects the dominant sine-varphi target-spin
-    harmonic (varFTn=-1).  This is the E-sensitive transverse-target handle
-    used for the RGH sensitivity projection.
+    Gepard uses in2polarizationvector="T" for A_UT.  We explicitly set
+    varFTn=-1, selecting Gepard's dominant sine(varphi) transverse-spin
+    component while retaining phi, so the observable is still evaluated at
+    each measured DVCS azimuth.  In Gepard's BMK implementation this sets
+    varphi=pi/2 inside the transverse-target cross section.  This is the
+    E-sensitive transverse-target handle used for the RGH projection.
     """
     phi_trento = math.pi - math.radians(float(row.phi_deg))
     pt = g.DataPoint(
@@ -321,6 +323,11 @@ def make_aut_point(g, row):
         in2particle="p",
         in2polarization=1,
         in2polarizationvector="T",
+        # Gepard transverse-target convention: varFTn=-1 selects the
+        # dominant sine(varphi) component.  With phi retained, AUT remains
+        # differential in the DVCS azimuth phi; internally Gepard evaluates
+        # the transverse-spin term at varphi=pi/2 (BMK convention).
+        varFTn=-1,
     )
     pt.prepare()
     return pt
@@ -1032,6 +1039,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ut = make_aut_point(g, row)
 
     print("[preflight] representative KM15 point")
+    print("[preflight] AUT convention: transverse target, varFTn=-1 (sine-varphi); "
+          "Gepard BMK sets varphi=pi/2 while retaining differential phi")
     print(
         f"[preflight] xB={row.xB:.4g}, Q2={row.Q2:.4g}, "
         f"|t|={row.t_abs:.4g}, phi={row.phi_deg:.4g}"
