@@ -917,7 +917,7 @@ def make_plots(results, cell_meta, deriv, figures):
 
 
 
-def make_presentation_cff_band_figure(results, figures):
+def make_presentation_cff_band_figure(results, figures, relative_floor=DEFAULT_RELATIVE_FLOOR):
     """Presentation figure: constraint collapse from complementary observables.
 
     This deliberately does *not* connect independent local CFF fits into a
@@ -957,7 +957,7 @@ def make_presentation_cff_band_figure(results, figures):
                 vals = d[sig_col].to_numpy(float)
                 if relative:
                     truth = np.abs(d[truth_col].to_numpy(float))
-                    good = np.isfinite(vals) & np.isfinite(truth) & (truth >= RELATIVE_TRUTH_FLOOR)
+                    good = np.isfinite(vals) & np.isfinite(truth) & (truth >= relative_floor)
                     vals = 100.0 * vals[good] / truth[good]
                 else:
                     vals = vals[np.isfinite(vals)]
@@ -1380,7 +1380,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     ax.grid(alpha=.2); ax.legend()
     savefig(fig, figures / "AUT_RGH_H_Ht_E_polarized_running_at_10xRGA.png")
 
-    make_presentation_cff_band_figure(results, figures)
+    make_presentation_cff_band_figure(results, figures, args.relative_floor)
     make_representative_low_t_cff_band_diagnostic(results, figures)
 
     print("\n" + "=" * 124)
