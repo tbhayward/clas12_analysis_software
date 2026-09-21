@@ -151,7 +151,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--output-dir",
-        default=str(Path(__file__).resolve().parent.parent / "output" / "study_pass1_vs_pass2_discrepancy"),
+        default=str(Path(__file__).resolve().parent / "output" / "study_pass1_vs_pass2_discrepancy"),
         help="Output directory.",
     )
     parser.add_argument(
@@ -744,17 +744,86 @@ def combined_xs_column(df: pd.DataFrame) -> str:
     return column
 
 
+PASS2_PERIODS = ["Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb"]
+STAT_THRESHOLDS = [0, 5, 10, 20, 30, 50, 100, 200, 500]
+
+
+def sum_exact_period_columns(raw: pd.DataFrame, template: str, quantity: str) -> pd.Series:
+    """Sum an exact per-period analysis quantity, preserving NaN when no period contributes."""
+    values = []
+    missing = []
+    for period in PASS2_PERIODS:
+        column = template.format(period=period)
+        if column not in raw.columns:
+            missing.append(column)
+            continue
+        #endif
+        values.append(parse_numeric(raw[column]))
+    #endfor
+
+    if missing:
+        raise RuntimeError(
+            f"Missing expected pass-2 {quantity} column(s) in statistics study: "
+            + "; ".join(missing)
+        )
+    #endif
+    frame = pd.concat(values, axis=1)
+    return frame.sum(axis=1, min_count=1)
+
+
+def extract_pass2_bin_statistics(raw: pd.DataFrame) -> pd.DataFrame:
+    """Extract the DATA and MC populations entering each combined pass-2 bin."""
+    n_data = sum_exact_period_columns(
+        raw,
+        "signal yield, ep->epg, exp, {period}, unpol",
+        "signal-yield",
+    )
+    n_rec = sum_exact_period_columns(
+        raw,
+        "reconstructed yield, ep->epg, mc, {period}",
+        "reconstructed-MC",
+    )
+    n_gen = sum_exact_period_columns(
+        raw,
+        "generated yield, ep->epg, mc, {period}",
+        "generated-MC",
+    )
+
+    out = pd.DataFrame({
+        "N_data_signal": n_data,
+        "N_mc_rec": n_rec,
+        "N_mc_gen": n_gen,
+    })
+    out["acceptance_counts"] = out["N_mc_rec"] / out["N_mc_gen"]
+    # Binomial counting approximation.  This is a diagnostic of MC-counting
+    # stability, not a replacement for the production acceptance uncertainty.
+    a = out["acceptance_counts"].to_numpy(float)
+    ngen = out["N_mc_gen"].to_numpy(float)
+    with np.errstate(divide="ignore", invalid="ignore"):
+        sigma_a = np.sqrt(np.clip(a * (1.0 - a), 0.0, None) / ngen)
+        frac = sigma_a / a
+    #endwith
+    out["mc_acceptance_frac_stat"] = frac
+    return out
+
+
 def read_pass2_csv(path: Path, label: str) -> pd.DataFrame:
     raw = pd.read_csv(path, low_memory=False)
     kin = find_kinematic_columns(raw)
     xs_col = combined_xs_column(raw)
 
+    stats = extract_pass2_bin_statistics(raw)
     out = pd.DataFrame({
         "xB": parse_numeric(raw[kin["xB"]]),
         "Q2": parse_numeric(raw[kin["Q2"]]),
         "t": parse_numeric(raw[kin["t"]]).abs(),
         "phi": np.mod(parse_numeric(raw[kin["phi"]]), 360.0),
         "xs_pass2": parse_numeric(raw[xs_col]),
+        "N_data_signal": stats["N_data_signal"],
+        "N_mc_rec": stats["N_mc_rec"],
+        "N_mc_gen": stats["N_mc_gen"],
+        "acceptance_counts": stats["acceptance_counts"],
+        "mc_acceptance_frac_stat": stats["mc_acceptance_frac_stat"],
     })
     out["topology"] = label
     out["source_file"] = str(path)
@@ -940,6 +1009,11 @@ def match_to_authoritative_pass1(
             "dt": ddt[j],
             "dphi": ddp[j],
             "pass2_over_pass1": row.xs_pass2 / ref["xs_pass1"],
+            "N_data_signal": row.N_data_signal,
+            "N_mc_rec": row.N_mc_rec,
+            "N_mc_gen": row.N_mc_gen,
+            "acceptance_counts": row.acceptance_counts,
+            "mc_acceptance_frac_stat": row.mc_acceptance_frac_stat,
         })
     #endfor
     return pd.DataFrame(rows)
@@ -971,6 +1045,156 @@ def discrepancy_summary(matched: pd.DataFrame, edges: List[float], labels: List[
         #endfor
     #endfor
     return pd.DataFrame(rows)
+
+
+def threshold_scan(
+    matched: pd.DataFrame,
+    edges: List[float],
+    labels: List[str],
+    variable: str,
+    thresholds: List[int],
+) -> pd.DataFrame:
+    """Scan a minimum pass-2 DATA or reconstructed-MC population requirement."""
+    rows = []
+    for topology in matched["topology"].drop_duplicates():
+        top = matched[matched["topology"] == topology]
+        for i, t_label in enumerate(labels):
+            lo, hi = edges[i], edges[i + 1]
+            tsub = top[(top["t_pass2"] >= lo) & (top["t_pass2"] < hi)]
+            for threshold in thresholds:
+                sub = tsub[tsub[variable] >= threshold]
+                ratio = sub["pass2_over_pass1"].to_numpy(float)
+                ratio = ratio[np.isfinite(ratio) & (ratio > 0)]
+                if len(ratio) == 0:
+                    rows.append({
+                        "topology": topology, "t_bin": t_label,
+                        "threshold_variable": variable, "minimum": threshold,
+                        "N": 0, "median": np.nan, "q16": np.nan, "q84": np.nan,
+                    })
+                    continue
+                #endif
+                q16, med, q84 = np.percentile(ratio, [16, 50, 84])
+                rows.append({
+                    "topology": topology, "t_bin": t_label,
+                    "threshold_variable": variable, "minimum": threshold,
+                    "N": len(ratio), "median": med, "q16": q16, "q84": q84,
+                })
+            #endfor
+        #endfor
+    #endfor
+    return pd.DataFrame(rows)
+
+
+def binned_ratio_vs_statistics(matched: pd.DataFrame, variable: str) -> pd.DataFrame:
+    """Robust pass-2/pass-1 summaries in logarithmic DATA/MC-statistics bins."""
+    positive = matched[np.isfinite(matched[variable]) & (matched[variable] > 0)].copy()
+    if positive.empty:
+        return pd.DataFrame()
+    #endif
+    edges = np.array([1, 3, 5, 10, 20, 30, 50, 100, 200, 500, 1000, 3000, 10000, np.inf], float)
+    rows = []
+    for topology in positive["topology"].drop_duplicates():
+        top = positive[positive["topology"] == topology]
+        for lo, hi in zip(edges[:-1], edges[1:]):
+            sub = top[(top[variable] >= lo) & (top[variable] < hi)]
+            ratio = sub["pass2_over_pass1"].to_numpy(float)
+            ratio = ratio[np.isfinite(ratio) & (ratio > 0)]
+            if len(ratio) == 0:
+                continue
+            #endif
+            q16, med, q84 = np.percentile(ratio, [16, 50, 84])
+            x = np.median(sub[variable].to_numpy(float))
+            rows.append({
+                "topology": topology, "variable": variable,
+                "bin_low": lo, "bin_high": hi, "x_median": x, "N": len(ratio),
+                "median": med, "q16": q16, "q84": q84,
+            })
+        #endfor
+    #endfor
+    return pd.DataFrame(rows)
+
+
+def plot_ratio_vs_statistics(table: pd.DataFrame, variable: str, output: Path) -> None:
+    if table.empty:
+        return
+    #endif
+    fig, ax = plt.subplots(figsize=(8.5, 6.0))
+    for topology in table["topology"].drop_duplicates():
+        sub = table[table["topology"] == topology]
+        x = sub["x_median"].to_numpy(float)
+        y = sub["median"].to_numpy(float)
+        lo = y - sub["q16"].to_numpy(float)
+        hi = sub["q84"].to_numpy(float) - y
+        ax.errorbar(x, y, yerr=np.vstack([lo, hi]), marker="o", capsize=2, linewidth=1.0, label=topology)
+    #endfor
+    ax.axhline(1.0, linewidth=1.0, linestyle="--")
+    ax.set_xscale("log")
+    ax.set_ylim(0.0, 1.6)
+    ax.set_xlabel("pass-2 signal yield" if variable == "N_data_signal" else "pass-2 reconstructed MC events")
+    ax.set_ylabel(r"median $\sigma_{\rm pass2}/\sigma_{\rm pass1}$")
+    ax.set_title("Pass-2 / pass-1 stability versus bin statistics")
+    ax.grid(alpha=0.25)
+    ax.legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(output, dpi=180)
+    plt.close(fig)
+
+
+def plot_threshold_scan(scan: pd.DataFrame, variable: str, output: Path) -> None:
+    if scan.empty:
+        return
+    #endif
+    topologies = [x for x in ["Inclusive", "CD-FT", "CD-FD", "FD-FD"] if x in set(scan["topology"])]
+    fig, axes = plt.subplots(2, 2, figsize=(11.0, 8.0), sharex=True, sharey=True)
+    for ax, topology in zip(axes.flat, topologies):
+        top = scan[scan["topology"] == topology]
+        for t_bin in top["t_bin"].drop_duplicates():
+            sub = top[top["t_bin"] == t_bin]
+            ax.plot(sub["minimum"], sub["median"], marker="o", linewidth=1.2, label=t_bin)
+        #endfor
+        ax.axhline(1.0, linewidth=1.0, linestyle="--")
+        ax.set_title(topology)
+        ax.set_ylim(0.0, 1.5)
+        ax.grid(alpha=0.25)
+    #endfor
+    for ax in axes[-1, :]:
+        ax.set_xlabel("minimum signal yield" if variable == "N_data_signal" else "minimum reconstructed MC events")
+    #endfor
+    for ax in axes[:, 0]:
+        ax.set_ylabel(r"median $\sigma_{\rm pass2}/\sigma_{\rm pass1}$")
+    #endfor
+    handles, leglabels = axes.flat[0].get_legend_handles_labels()
+    if handles:
+        fig.legend(handles, leglabels, loc="upper center", ncol=min(4, len(handles)), frameon=False)
+    #endif
+    fig.suptitle("Threshold stability of pass-2 / pass-1", y=0.985)
+    fig.tight_layout(rect=[0, 0, 1, 0.94])
+    fig.savefig(output, dpi=180)
+    plt.close(fig)
+
+
+def run_statistics_stability_study(matched: pd.DataFrame, comparison_dir: Path, edges: List[float], labels: List[str]) -> None:
+    stats_dir = comparison_dir / "statistics_stability"
+    stats_dir.mkdir(parents=True, exist_ok=True)
+
+    columns = [
+        "topology", "pass1_row_id", "pass1_bin", "t_pass2", "pass2_over_pass1",
+        "N_data_signal", "N_mc_rec", "N_mc_gen", "acceptance_counts", "mc_acceptance_frac_stat",
+    ]
+    matched[columns].to_csv(stats_dir / "matched_bin_statistics.csv", index=False)
+
+    for variable, stem in [("N_data_signal", "data_signal"), ("N_mc_rec", "mc_reconstructed")]:
+        binned = binned_ratio_vs_statistics(matched, variable)
+        binned.to_csv(stats_dir / f"pass2_over_pass1_vs_{stem}_statistics.csv", index=False)
+        plot_ratio_vs_statistics(binned, variable, stats_dir / f"pass2_over_pass1_vs_{stem}_statistics.png")
+
+        scan = threshold_scan(matched, edges, labels, variable, STAT_THRESHOLDS)
+        scan.to_csv(stats_dir / f"threshold_scan_{stem}.csv", index=False)
+        plot_threshold_scan(scan, variable, stats_dir / f"threshold_scan_{stem}.png")
+    #endfor
+
+    print(f"[statistics] wrote DATA/MC stability study to {stats_dir}")
+    print("[statistics] no minimum-statistics cut is imposed; threshold scans are diagnostic only")
 
 
 def direct_topology_closure(matched: pd.DataFrame, a: str, b: str) -> pd.DataFrame:
@@ -1080,6 +1304,7 @@ def run_pass1_pass2_study(args: argparse.Namespace, output_dir: Path, edges: Lis
 
     all_matched = pd.concat(matched_frames, ignore_index=True)
     all_matched.to_csv(comparison_dir / "pass2_vs_authoritative_pass1_matched_points.csv", index=False)
+    run_statistics_stability_study(all_matched, comparison_dir, edges, labels)
     summary = discrepancy_summary(all_matched, edges, labels)
     summary.to_csv(comparison_dir / "pass2_over_pass1_summary_vs_t.csv", index=False)
     plot_pass1_ratios(summary, comparison_dir / "pass2_over_pass1_by_topology_vs_t.png")
@@ -1104,6 +1329,18 @@ def run_pass1_pass2_study(args: argparse.Namespace, output_dir: Path, edges: Lis
     print(f"[pass1/pass2] wrote comparison outputs to {comparison_dir}")
     print("[pass1/pass2] key plot: pass2_over_pass1_by_topology_vs_t.png")
     print("[pass1/pass2] key direct closure: direct_CD_FD_over_CD_FT_vs_t.png")
+
+    correction_dir = output_dir / "correction_folding"
+    correction_dir.mkdir(parents=True, exist_ok=True)
+    (correction_dir / "README.txt").write_text(
+        "Correction-folding study order:\n"
+        "  1. Sangbaek/pass-1 additional proton normalization\n"
+        "  2. Krishna Neupane proton reconstruction-efficiency correction\n"
+        "  3. Valerii photon-efficiency map (Fa18 only; CD-FD versus CD-FT and polarity separated)\n\n"
+        "This script does not fabricate these correction parameterizations.  The DATA/MC statistics\n"
+        "study is implemented now.  Folding is enabled only after the authoritative numerical\n"
+        "parameterization/map for each correction is supplied or read from the production code.\n"
+    )
 
 
 def main() -> None:
