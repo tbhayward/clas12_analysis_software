@@ -1099,12 +1099,12 @@ static void draw_signal_yield_canvases(const std::string& period_label,
 
 static bool apply_minimum_bin_statistics_validity(CsvDoc& csv,
                                                   const SignalCache& signal_cache) {
-    // Production-quality validity requirement established from the dedicated
-    // pass-1/pass-2 stability scan: require at least 50 pi0-subtracted DATA
-    // signal-yield events and 50 reconstructed DVCS-MC events in the combined
-    // bin.  The threshold is applied only after the signal yields exist and
-    // before acceptance/cross-section stages consume "valid bin".
-    constexpr double kMinEvents = 50.0;
+    // Production acceptance-statistics validity requirement: require strictly
+    // more than 50 reconstructed DVCS-MC events in the combined bin.  No
+    // minimum DATA signal-yield requirement is imposed; sparse DATA bins are
+    // represented by their statistical uncertainties.
+    (void)signal_cache;
+    constexpr double kMinMcEvents = 50.0;
     const int c_valid = csv.col_index("valid bin");
     if (c_valid < 0) {
         std::cerr << "[pi0_corrected] ERROR: missing valid bin column while applying minimum-statistics validity.\n";
@@ -1122,21 +1122,13 @@ static bool apply_minimum_bin_statistics_validity(CsvDoc& csv,
         mc_cols.push_back(c);
     }
 
-    long long n_before = 0, n_after = 0, n_fail_data = 0, n_fail_mc = 0;
+    long long n_before = 0, n_after = 0, n_fail_mc = 0;
     for (int r = 0; r < csv.nrows(); ++r) {
         const std::string old_valid = csv.rows[r][c_valid];
-        const bool was_valid = (old_valid == "1" || old_valid == "1.0" || old_valid == "true" || old_valid == "TRUE");
+        const bool was_valid = (old_valid == "1" || old_valid == "1.0" ||
+                                old_valid == "true" || old_valid == "TRUE");
         if (!was_valid) continue;
         ++n_before;
-
-        double n_data = 0.0;
-        bool have_data = false;
-        for (const auto& per : kPeriods) {
-            const auto it = signal_cache.find(signal_cache_key(per, "unpol"));
-            if (it == signal_cache.end() || r >= (int)it->second.size()) continue;
-            const double v = it->second[r].value;
-            if (std::isfinite(v)) { n_data += v; have_data = true; }
-        }
 
         double n_mc = 0.0;
         bool have_mc = false;
@@ -1148,23 +1140,20 @@ static bool apply_minimum_bin_statistics_validity(CsvDoc& csv,
             }
         }
 
-        const bool pass_data = have_data && n_data >= kMinEvents;
-        const bool pass_mc = have_mc && n_mc >= kMinEvents;
-        if (!pass_data) ++n_fail_data;
-        if (!pass_mc) ++n_fail_mc;
-        if (pass_data && pass_mc) {
+        const bool pass_mc = have_mc && n_mc > kMinMcEvents;
+        if (pass_mc) {
             csv.rows[r][c_valid] = "1";
             ++n_after;
         } else {
             csv.rows[r][c_valid] = "0";
+            ++n_fail_mc;
         }
     }
 
-    std::cout << "[pi0_corrected][BIN-VALIDITY] require signal DATA >= " << kMinEvents
-              << " and reconstructed MC >= " << kMinEvents
-              << ": kept " << n_after << "/" << n_before
-              << " previously valid bins; fail_DATA=" << n_fail_data
-              << " fail_MC=" << n_fail_mc << "\n";
+    std::cout << "[pi0_corrected][BIN-VALIDITY] require reconstructed MC > "
+              << kMinMcEvents << " (no DATA-yield threshold): kept "
+              << n_after << "/" << n_before
+              << " previously valid bins; fail_MC=" << n_fail_mc << "\n";
     return true;
 }
 
