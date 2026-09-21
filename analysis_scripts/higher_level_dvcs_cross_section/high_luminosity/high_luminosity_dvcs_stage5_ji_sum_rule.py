@@ -326,7 +326,7 @@ def plot_rgb_kinematics(df: pd.DataFrame, outdir: Path):
 # DFJK-inspired moment map
 # ---------------------------------------------------------------------------
 
-def make_b20_prior_map(outdir: Path):
+def make_b20_prior_map(figdir: Path, tabdir: Path):
     beta_u = np.linspace(2.0, 8.0, 121)
     beta_d = np.linspace(2.0, 8.0, 121)
     rows = []
@@ -336,7 +336,7 @@ def make_b20_prior_map(outdir: Path):
             B_d = b20_from_beta(KAPPA_D, DEFAULT_ALPHA_D, bd)
             rows.append((bu, bd, B_u, B_d))
     df = pd.DataFrame(rows, columns=["beta_u_E", "beta_d_E", "B20_uv", "B20_dv"])
-    df.to_csv(outdir / "dfjk_B20_prior_map.csv", index=False)
+    df.to_csv(tabdir / "dfjk_B20_prior_map.csv", index=False)
 
     fig, ax = plt.subplots(figsize=(8.0, 6.0))
     sc = ax.scatter(df["B20_uv"], df["B20_dv"], c=df["beta_u_E"], s=7, alpha=0.65)
@@ -347,10 +347,61 @@ def make_b20_prior_map(outdir: Path):
     ax.set_title("DFJK-inspired E-sector parameter space (prior map, not data constraint)")
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    fig.savefig(outdir / "dfjk_B20_parameter_map_prior_only.png", dpi=180)
+    fig.savefig(figdir / "dfjk_B20_parameter_map_prior_only.png", dpi=180)
     plt.close(fig)
     return df
 
+
+
+def bsa_4d_feasibility(bsa: pd.DataFrame, figdir: Path, tabdir: Path):
+    """
+    Workshop-level feasibility diagnostic for replacing the published 1D neutron
+    BSA projections by multidimensional binning.
+
+    If a published bin is subdivided into S equally populated multidimensional
+    cells, the statistical uncertainty scales approximately as sqrt(S/L).
+    We therefore propagate the *measured published statistical error bars* as
+
+        sigma_4D = sigma_published * sqrt(S / L).
+
+    S is a split factor, not a proposed final binning.  This deliberately avoids
+    claiming that 10x luminosity guarantees a particular 4D grid.
+    """
+    if "stat_digitized" not in bsa.columns:
+        return None
+
+    split_factors = [1, 2, 4, 6, 8, 10]
+    rows = []
+    stat0 = bsa["stat_digitized"].to_numpy(float)
+    for L in LUMI_FACTORS:
+        for S in split_factors:
+            e = stat0 * np.sqrt(float(S) / float(L))
+            rows.append({
+                "luminosity": f"{L}x",
+                "subcells_per_published_bin": S,
+                "median_sigma_ALU": np.median(e),
+                "p90_sigma_ALU": np.quantile(e, 0.90),
+                "fraction_sigma_below_0p03": np.mean(e < 0.03),
+                "fraction_sigma_below_0p05": np.mean(e < 0.05),
+                "fraction_sigma_below_0p10": np.mean(e < 0.10),
+            })
+    out = pd.DataFrame(rows)
+    out.to_csv(tabdir / "rgb_bsa_multidimensional_feasibility.csv", index=False)
+
+    fig, ax = plt.subplots(figsize=(8.2, 5.4))
+    for L in LUMI_FACTORS:
+        q = out[out["luminosity"] == f"{L}x"]
+        ax.plot(q["subcells_per_published_bin"], q["median_sigma_ALU"],
+                marker="o", label=f"{L}x")
+    ax.set_xlabel("Equal-statistics subcells per published 1D bin")
+    ax.set_ylabel(r"Median projected statistical $\sigma(A_{LU})$")
+    ax.set_title("RGB neutron BSA: statistical cost of multidimensional binning")
+    ax.grid(alpha=0.25)
+    ax.legend(title="Luminosity")
+    fig.tight_layout()
+    fig.savefig(figdir / "rgb_bsa_multidimensional_feasibility.png", dpi=180)
+    plt.close(fig)
+    return out
 
 # ---------------------------------------------------------------------------
 # Main
@@ -363,24 +414,36 @@ def main():
     ap.add_argument("--output", type=Path, default=OUT_DEFAULT)
     args = ap.parse_args()
 
-    args.output.mkdir(parents=True, exist_ok=True)
+    figdir = args.output / "figures"
+    tabdir = args.output / "tables"
+    figdir.mkdir(parents=True, exist_ok=True)
+    tabdir.mkdir(parents=True, exist_ok=True)
+
+    # Remove obsolete v2 root-level products so output/stage5_ji has only
+    # figures/ and tables/ after a successful run.
+    for stale in args.output.glob("*"):
+        if stale.is_file():
+            stale.unlink()
 
     xs = load_rgb_xs(args.rgb_xs)
     proj = make_rgb_projection_table(xs)
-    proj.to_csv(args.output / "rgb_xs_luminosity_projection.csv", index=False)
+    proj.to_csv(tabdir / "rgb_xs_luminosity_projection.csv", index=False)
 
-    brackets = plot_rgb_precision_brackets(xs, args.output)
-    brackets.to_csv(args.output / "rgb_xs_covariance_brackets.csv", index=False)
+    brackets = plot_rgb_precision_brackets(xs, figdir)
+    brackets.to_csv(tabdir / "rgb_xs_covariance_brackets.csv", index=False)
 
-    plot_rgb_kinematics(xs, args.output)
-    make_b20_prior_map(args.output)
+    plot_rgb_kinematics(xs, figdir)
+    make_b20_prior_map(figdir, tabdir)
 
     bsa = load_optional_bsa(args.rgb_bsa)
     if bsa is not None:
-        bsa.to_csv(args.output / "rgb_published_bsa_audit.csv", index=False)
+        bsa.to_csv(tabdir / "rgb_published_bsa_audit.csv", index=False)
+        feasibility = bsa_4d_feasibility(bsa, figdir, tabdir)
+    else:
+        feasibility = None
 
     print("=" * 100)
-    print("STAGE 5 v2 — RGB SYSTEMATIC-COVARIANCE AUDIT + DFJK/Ji FRAMEWORK")
+    print("STAGE 5 v3 — RGB COVARIANCE + MULTIDIMENSIONAL-BSA FEASIBILITY + DFJK/Ji FRAMEWORK")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -408,12 +471,23 @@ def main():
     else:
         print(f"Published RGB BSA template: loaded {len(bsa)} rows from {args.rgb_bsa}")
         print("  Columns:", ", ".join(bsa.columns))
+        if feasibility is not None:
+            print()
+            print("Multidimensional-BSA feasibility (selected rows):")
+            sel = feasibility[
+                feasibility["subcells_per_published_bin"].isin([1, 4, 8])
+            ]
+            print(sel.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
     print()
     print("NEXT FIT STEP:")
     print("  Use the published neutron BSA + proton XS/BSA + preliminary neutron XS in a")
     print("  finite-skewness H/E model, then compare p(1x), p(1x)+n(1x), p(10x),")
     print("  and p(10x)+n(10x) directly in the B20_uv-B20_dv plane.")
     print()
+    print()
+    print("OUTPUT LAYOUT:")
+    print(f"  figures -> {figdir}")
+    print(f"  tables  -> {tabdir}")
     print(f"Wrote: {args.output}")
     return 0
 
