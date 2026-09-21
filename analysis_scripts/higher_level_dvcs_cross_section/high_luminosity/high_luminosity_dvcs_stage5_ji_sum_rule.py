@@ -65,7 +65,7 @@ DEFAULT_ALPHA_D = 0.55
 
 RGB_XS_DEFAULT = Path("import/ndvcs_clas12_preliminary_unpolarized.txt")
 RGB_BSA_DEFAULT = Path("import/ndvcs_rgb_published_bsa_digitized_t_projection.csv")
-RGA_BSA_DEFAULT = Path("import/rga_prl_bsa.txt")
+RGA_PASS2_DEFAULT = Path("../higher_level_dvcs_cross_section/import/dvcs_pass2_analysis.csv")
 OUT_DEFAULT = Path("output/stage5_ji")
 
 
@@ -405,59 +405,87 @@ def bsa_4d_feasibility(bsa: pd.DataFrame, figdir: Path, tabdir: Path):
     return out
 
 
-def load_rga_prl_bsa(path: Path):
-    """Load the published RGA proton-DVCS BSA table and extract statistical errors.
+def load_rga_pass2_bsa(path: Path):
+    """Load current RGA pass-2 4D BSA statistical uncertainties.
 
-    The parser first uses a header when present.  It deliberately refuses to guess
-    an unlabeled column ordering: this comparison is meant to use the published
-    statistical uncertainty, not an accidentally selected systematic/kinematic column.
+    Uses the same dvcs_pass2_analysis.csv source as the Stage-2 projection.
+    Tuple-like CSV headers are matched by their semantic tokens rather than a
+    hard-coded pandas-mangled spelling.
     """
     if not path.exists():
         return None
 
-    # Inspect non-comment lines for a textual header.
-    lines = [ln.strip() for ln in path.read_text().splitlines()
-             if ln.strip() and not ln.lstrip().startswith("#")]
-    if not lines:
-        raise RuntimeError(f"{path} is empty")
+    df = pd.read_csv(path)
 
-    first = lines[0]
-    has_text_header = bool(re.search(r"[A-Za-z]", first))
-    if has_text_header:
-        # Accept comma-separated or arbitrary whitespace-separated tables.
-        sep = "," if "," in first else r"\s+"
-        df = pd.read_csv(path, comment="#", sep=sep, engine="python")
-        clean = {c: re.sub(r"[^a-z0-9]+", "", str(c).lower()) for c in df.columns}
+    def norm(c):
+        return re.sub(r"[^a-z0-9]+", " ", str(c).lower()).strip()
 
-        # Header aliases seen in CLAS/CLAS12 data tables.
-        exact_aliases = {
-            "stat", "staterr", "staterror", "statunc", "statuncertainty",
-            "dastat", "aluerrstat", "bsaerrstat", "errstat", "sigmaalu"
-        }
-        candidates = [c for c, k in clean.items() if k in exact_aliases]
-        if not candidates:
-            candidates = [
-                c for c, k in clean.items()
-                if "stat" in k and any(x in k for x in ("err", "unc", "sigma", "alu", "bsa"))
-            ]
-        if len(candidates) != 1:
-            raise RuntimeError(
-                f"{path}: could not uniquely identify the RGA BSA statistical-error column. "
-                f"Columns are: {list(df.columns)}"
-            )
-        stat_col = candidates[0]
-        stat = pd.to_numeric(df[stat_col], errors="coerce")
-        out = df.loc[np.isfinite(stat) & (stat > 0)].copy()
-        out["stat_error"] = pd.to_numeric(out[stat_col], errors="coerce")
-        out.attrs["stat_column"] = str(stat_col)
-        return out
+    # Locate the pass-2 BSA value column.
+    bsa_candidates = []
+    for c in df.columns:
+        k = norm(c)
+        if "bsa" in k and "10 6 gev" in k and "counts" in k:
+            bsa_candidates.append(c)
+    if len(bsa_candidates) != 1:
+        # Slightly looser fallback, still requiring BSA and 10.6.
+        bsa_candidates = [
+            c for c in df.columns
+            if "bsa" in norm(c) and "10 6 gev" in norm(c)
+            and not any(x in norm(c) for x in ("sys", "syst", "cut", "pi0", "pol"))
+        ]
+    if len(bsa_candidates) != 1:
+        raise RuntimeError(
+            f"{path}: could not uniquely identify pass-2 BSA column. "
+            f"Candidates: {bsa_candidates}"
+        )
+    bsa_col = bsa_candidates[0]
 
-    raise RuntimeError(
-        f"{path}: table has no textual header, so v4 will not guess which numeric "
-        "column is the published statistical BSA uncertainty. Add a header or pass "
-        "a headered copy with --rga-bsa."
-    )
+    # Statistical uncertainty should be the matching BSA/stat column.  Prefer a
+    # column explicitly labeled stat; otherwise inspect adjacent columns and
+    # refuse to guess if no unique match exists.
+    stat_candidates = []
+    for c in df.columns:
+        k = norm(c)
+        if "bsa" in k and "stat" in k and "10 6 gev" in k:
+            stat_candidates.append(c)
 
+    if len(stat_candidates) != 1:
+        # Some exports encode the tuple as BSA/counts/10.6 and put the error in
+        # an immediately adjacent unnamed/mangled tuple field.  Use numeric
+        # adjacency only if it is uniquely identifiable by positive finite data
+        # and a plausible asymmetry-error scale.
+        idx = list(df.columns).index(bsa_col)
+        nearby = list(df.columns)[max(0, idx-3):min(len(df.columns), idx+4)]
+        plausible = []
+        for c in nearby:
+            if c == bsa_col:
+                continue
+            v = pd.to_numeric(df[c], errors="coerce")
+            good = v[np.isfinite(v) & (v > 0)]
+            if len(good) > 0 and float(good.median()) < 0.5:
+                plausible.append(c)
+        if len(plausible) == 1:
+            stat_candidates = plausible
+
+    if len(stat_candidates) != 1:
+        raise RuntimeError(
+            f"{path}: found pass-2 BSA column {bsa_col!r}, but could not uniquely "
+            f"identify its statistical-error column. Explicit stat candidates: "
+            f"{stat_candidates}. Nearby columns: "
+            f"{list(df.columns)[max(0,list(df.columns).index(bsa_col)-3):list(df.columns).index(bsa_col)+4]}"
+        )
+
+    stat_col = stat_candidates[0]
+    stat = pd.to_numeric(df[stat_col], errors="coerce")
+    bsa = pd.to_numeric(df[bsa_col], errors="coerce")
+    mask = np.isfinite(stat) & (stat > 0) & np.isfinite(bsa)
+
+    out = df.loc[mask].copy()
+    out["BSA_pass2"] = bsa.loc[mask]
+    out["stat_error"] = stat.loc[mask]
+    out.attrs["bsa_column"] = str(bsa_col)
+    out.attrs["stat_column"] = str(stat_col)
+    return out
 
 def compare_rgb_to_rga_bsa(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame,
                            feasibility: pd.DataFrame, figdir: Path, tabdir: Path):
@@ -470,7 +498,7 @@ def compare_rgb_to_rga_bsa(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame,
     n1_med = float(np.median(rgb_stat))
 
     rows = [{
-        "sample": "RGA proton published 4D",
+        "sample": "RGA proton pass-2 4D",
         "luminosity": "measured",
         "subcells_per_published_RGB_bin": np.nan,
         "N_points": len(p_stat),
@@ -506,7 +534,7 @@ def compare_rgb_to_rga_bsa(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame,
         })
 
     comp = pd.DataFrame(rows)
-    comp.to_csv(tabdir / "rga_rgb_bsa_precision_comparison.csv", index=False)
+    comp.to_csv(tabdir / "pass2_rga_rgb_bsa_precision_comparison.csv", index=False)
 
     # Main-talk candidate: spend luminosity on multidimensionality.
     q10 = feasibility[feasibility["luminosity"] == "10x"].copy()
@@ -516,9 +544,9 @@ def compare_rgb_to_rga_bsa(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame,
     ax.axhline(n1_med, linestyle="--", linewidth=2.0,
                label="RGB neutron, current published 1D")
     ax.axhline(p_med, linestyle=":", linewidth=2.2,
-               label="RGA proton, current published 4D median")
+               label="RGA proton, current pass-2 4D median")
     ax.fill_between([1, 10], p_p16, p_p84, alpha=0.10,
-                    label="RGA proton central 68% of statistical errors")
+                    label="RGA pass-2 proton central 68% of statistical errors")
     ax.scatter([10], [n1_med], s=85, zorder=5)
     ax.annotate(
         "10x luminosity → ~10 equal-statistics subcells\n"
@@ -534,7 +562,7 @@ def compare_rgb_to_rga_bsa(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame,
     ax.grid(alpha=0.25)
     ax.legend(fontsize=9)
     fig.tight_layout()
-    fig.savefig(figdir / "rga_rgb_bsa_precision_benchmark.png", dpi=180)
+    fig.savefig(figdir / "pass2_rga_rgb_bsa_precision_benchmark.png", dpi=180)
     plt.close(fig)
 
     return comp
@@ -547,7 +575,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rgb-xs", type=Path, default=RGB_XS_DEFAULT)
     ap.add_argument("--rgb-bsa", type=Path, default=RGB_BSA_DEFAULT)
-    ap.add_argument("--rga-bsa", type=Path, default=RGA_BSA_DEFAULT)
+    ap.add_argument("--rga-pass2", type=Path, default=RGA_PASS2_DEFAULT)
     ap.add_argument("--output", type=Path, default=OUT_DEFAULT)
     args = ap.parse_args()
 
@@ -576,9 +604,9 @@ def main():
     if bsa is not None:
         bsa.to_csv(tabdir / "rgb_published_bsa_audit.csv", index=False)
         feasibility = bsa_4d_feasibility(bsa, figdir, tabdir)
-        rga_bsa = load_rga_prl_bsa(args.rga_bsa)
+        rga_bsa = load_rga_pass2_bsa(args.rga_pass2)
         if rga_bsa is not None:
-            rga_bsa.to_csv(tabdir / "rga_prl_bsa_audit.csv", index=False)
+            rga_bsa.to_csv(tabdir / "rga_pass2_bsa_audit.csv", index=False)
             precision_comparison = compare_rgb_to_rga_bsa(
                 bsa, rga_bsa, feasibility, figdir, tabdir)
         else:
@@ -589,7 +617,7 @@ def main():
         precision_comparison = None
 
     print("=" * 100)
-    print("STAGE 5 v4 — RGA/RGB BSA PRECISION BENCHMARK + RGB COVARIANCE + DFJK/Ji FRAMEWORK")
+    print("STAGE 5 v5 — PASS-2 RGA/RGB BSA PRECISION BENCHMARK + RGB COVARIANCE + DFJK/Ji FRAMEWORK")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -626,7 +654,7 @@ def main():
             print(sel.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
         if precision_comparison is None:
             print()
-            print(f"RGA proton BSA benchmark: not loaded ({args.rga_bsa})")
+            print(f"RGA proton pass-2 BSA benchmark: not loaded ({args.rga_pass2})")
         else:
             p = precision_comparison.iloc[0]
             n = precision_comparison.iloc[1]
@@ -635,7 +663,10 @@ def main():
             ].iloc[0]
             print()
             print("RGA proton vs RGB neutron BSA statistical-precision benchmark:")
-            print(f"  RGA published 4D proton: N={int(p.N_points)}, median sigma(A_LU)={p.median_sigma_ALU:.5f}")
+            print(f"  pass-2 source: {args.rga_pass2}")
+            print(f"  BSA column   : {rga_bsa.attrs.get('bsa_column', 'unknown')}")
+            print(f"  stat column  : {rga_bsa.attrs.get('stat_column', 'unknown')}")
+            print(f"  RGA pass-2 4D proton: N={int(p.N_points)}, median sigma(A_LU)={p.median_sigma_ALU:.5f}")
             print(f"  RGB published 1D neutron: N={int(n.N_points)}, median sigma(A_LU)={n.median_sigma_ALU:.5f}")
             print(f"  RGB 10x with 10-way subdivision: median sigma(A_LU)={n10.median_sigma_ALU:.5f}")
             print(f"  neutron 10x/10-way divided by RGA proton median = {n10.ratio_to_RGA_median:.3f}")
