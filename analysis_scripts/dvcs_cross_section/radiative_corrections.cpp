@@ -356,7 +356,6 @@ static GlobalCutConfig load_global_cut_config(const std::string& path) {
     require_bool("enable_dvcsgen_ycol_cut", cfg.enable_dvcsgen_ycol_cut);
     require_number("dvcsgen_ycol_cut", cfg.dvcsgen_ycol_cut);
 
-    if (auto it = j.find("enable_sp18_out_sector_quality_cuts"); it != j.end()) cfg.enable_sp18_out_sector_quality_cuts = it->get<bool>();
     if (auto it = j.find("enable_auxiliary_fiducial_cuts"); it != j.end()) cfg.enable_auxiliary_fiducial_cuts = it->get<bool>();
     if (auto it = j.find("auxiliary_require_distinct_fd_sectors"); it != j.end()) cfg.auxiliary_require_distinct_fd_sectors = it->get<bool>();
     if (auto it = j.find("auxiliary_e_theta_min_deg"); it != j.end()) cfg.auxiliary_e_theta_min_deg = it->get<double>();
@@ -413,8 +412,6 @@ static GlobalCutConfig load_global_cut_config(const std::string& path) {
               << " pTmiss_max=" << cfg.pTmiss_max << "\n";
     std::cout << "          enable_dvcsgen_ycol_cut=" << (cfg.enable_dvcsgen_ycol_cut ? "true" : "false")
               << " dvcsgen_ycol_cut=" << cfg.dvcsgen_ycol_cut << "\n";
-    std::cout << "          enable_sp18_out_sector_quality_cuts=" << (cfg.enable_sp18_out_sector_quality_cuts ? "true" : "false")
-              << " active=" << (global_cuts_apply_sp18_out_sector_quality_cuts(cfg) ? "true" : "false") << "\n";
     std::cout << "          enable_auxiliary_fiducial_cuts=" << (cfg.enable_auxiliary_fiducial_cuts ? "true" : "false") << "\n";
     std::cout << "          enable_topology_filter=" << (cfg.enable_topology_filter ? "true" : "false")
               << " required_detector1=" << cfg.required_detector1

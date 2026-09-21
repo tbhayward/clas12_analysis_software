@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """
-map_dvcs_topology_vs_t.py
+study_pass1_vs_pass2_discrepancy.py
 
-Standalone event-level diagnostic for the CLAS12 pass-2 DVCS analysis.
+Standalone pass-1/pass-2 discrepancy and detector-topology diagnostic for CLAS12 DVCS.
 
 Purpose
 -------
@@ -46,10 +46,9 @@ Python 3, numpy, pandas, matplotlib, uproot
 
 Example
 -------
-python3 external_scripts/map_dvcs_topology_vs_t.py
+python3 external_scripts/study_pass1_vs_pass2_discrepancy.py
 
-python3 external_scripts/map_dvcs_topology_vs_t.py \
-    --output-dir output/topology_vs_t_map
+python3 external_scripts/study_pass1_vs_pass2_discrepancy.py
 """
 
 import argparse
@@ -147,11 +146,11 @@ VARIABLES = {
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
-        description="Map DVCS proton/photon detector topology and kinematics versus |t|."
+        description="Study the pass-1/pass-2 DVCS discrepancy and map detector topology versus |t|."
     )
     parser.add_argument(
         "--output-dir",
-        default="output/topology_vs_t_map",
+        default="output/study_pass1_vs_pass2_discrepancy",
         help="Output directory.",
     )
     parser.add_argument(
@@ -183,6 +182,18 @@ def parse_args() -> argparse.Namespace:
         default=None,
         help="Optional per-period event cap for quick tests.",
     )
+    parser.add_argument("--csv-dir", default=str(Path(__file__).resolve().parent.parent / "output" / "csvs"), help="Directory containing existing pass-2 CSV outputs.")
+    parser.add_argument("--imports-dir", default=str(Path(__file__).resolve().parent.parent / "imports"), help="Directory containing pass-1 imports.")
+    parser.add_argument("--pass1-authoritative", default=str(Path(__file__).resolve().parent.parent / "imports" / "clasdb_E214M1.txt"), help="Released pass-1 cross-section table.")
+    parser.add_argument("--inclusive-csv", default=None, help="Explicit inclusive pass-2 CSV; otherwise auto-discover.")
+    parser.add_argument("--cd-fd-csv", default=None, help="Explicit CD-FD pass-2 CSV; otherwise auto-discover.")
+    parser.add_argument("--cd-ft-csv", default=None, help="Explicit CD-FT pass-2 CSV; otherwise auto-discover.")
+    parser.add_argument("--fd-fd-csv", default=None, help="Explicit FD-FD pass-2 CSV; otherwise auto-discover.")
+    parser.add_argument("--match-dx", type=float, default=0.015, help="Maximum |Delta xB| for released pass-1 matching.")
+    parser.add_argument("--match-dq2", type=float, default=0.35, help="Maximum |Delta Q2| (GeV^2) for released pass-1 matching.")
+    parser.add_argument("--match-dt", type=float, default=0.03, help="Maximum |Delta |t|| (GeV^2) for released pass-1 matching.")
+    parser.add_argument("--match-dphi", type=float, default=8.0, help="Maximum circular |Delta phi| (deg) for released pass-1 matching.")
+    parser.add_argument("--skip-event-map", action="store_true", help="Skip the ROOT-tree topology/kinematic map and run only the existing-CSV comparison.")
     return parser.parse_args()
 
 
@@ -652,6 +663,409 @@ PNG outputs:
     (output_dir / "README.txt").write_text(text)
 
 
+
+# -----------------------------------------------------------------------------
+# Pass-1 versus pass-2 cross-section comparison
+# -----------------------------------------------------------------------------
+
+ANALYSIS_ROOT = Path(__file__).resolve().parent.parent
+DEFAULT_CSV_DIR = ANALYSIS_ROOT / "output" / "csvs"
+DEFAULT_IMPORTS_DIR = ANALYSIS_ROOT / "imports"
+
+
+def parse_numeric(series: pd.Series) -> pd.Series:
+    """Parse both ordinary numbers and the analysis CSV object-string format."""
+    s = series.astype("string").str.strip()
+    first = s.str.extract(
+        r"([+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)",
+        expand=False,
+    )
+    return pd.to_numeric(first, errors="coerce")
+
+
+def normalized_name(name: str) -> str:
+    return "".join(ch.lower() for ch in str(name) if ch.isalnum())
+
+
+def find_column(df: pd.DataFrame, candidates: List[str], contains: List[str] | None = None) -> str:
+    by_norm = {normalized_name(c): c for c in df.columns}
+    for candidate in candidates:
+        key = normalized_name(candidate)
+        if key in by_norm:
+            return by_norm[key]
+        #endif
+    #endfor
+
+    if contains:
+        tokens = [normalized_name(x) for x in contains]
+        matches = [
+            c for c in df.columns
+            if all(token in normalized_name(c) for token in tokens)
+        ]
+        if len(matches) == 1:
+            return matches[0]
+        #endif
+        if len(matches) > 1:
+            raise RuntimeError(f"Ambiguous column search {contains}: {matches[:12]}")
+        #endif
+    #endif
+
+    raise RuntimeError(
+        "Could not identify required column. Tried: " + ", ".join(candidates)
+    )
+
+
+def find_kinematic_columns(df: pd.DataFrame) -> Dict[str, str]:
+    return {
+        "xB": find_column(df, ["xB", "x_B", "x", "<xB>", "<x_B>"], ["xb"]),
+        "Q2": find_column(df, ["Q2", "Q^2", "<Q2>", "q2"], ["q2"]),
+        "t": find_column(df, ["t", "-t", "|t|", "<t>"], None),
+        "phi": find_column(df, ["phi", "phi_deg", "phi (deg)", "<phi>"], ["phi"]),
+    }
+
+
+def combined_xs_column(df: pd.DataFrame) -> str:
+    preferred = "cross sections, ep->epg, exp, 10.6 GeV, unpol"
+    if preferred in df.columns:
+        return preferred
+    #endif
+
+    matches = [
+        c for c in df.columns
+        if "crosssections" in normalized_name(c)
+        and "epepg" in normalized_name(c)
+        and "exp" in normalized_name(c)
+        and "unpol" in normalized_name(c)
+        and "106gev" in normalized_name(c)
+    ]
+    if len(matches) == 1:
+        return matches[0]
+    #endif
+
+    raise RuntimeError(
+        "Could not uniquely identify combined 10.6-GeV unpolarized DVCS cross-section column. "
+        f"Candidates found: {matches[:12]}"
+    )
+
+
+def read_pass2_csv(path: Path, label: str) -> pd.DataFrame:
+    raw = pd.read_csv(path, low_memory=False)
+    kin = find_kinematic_columns(raw)
+    xs_col = combined_xs_column(raw)
+
+    out = pd.DataFrame({
+        "xB": parse_numeric(raw[kin["xB"]]),
+        "Q2": parse_numeric(raw[kin["Q2"]]),
+        "t": parse_numeric(raw[kin["t"]]).abs(),
+        "phi": np.mod(parse_numeric(raw[kin["phi"]]), 360.0),
+        "xs_pass2": parse_numeric(raw[xs_col]),
+    })
+    out["topology"] = label
+    out["source_file"] = str(path)
+    out = out.replace([np.inf, -np.inf], np.nan)
+    out = out.dropna(subset=["xB", "Q2", "t", "phi", "xs_pass2"])
+    out = out[out["xs_pass2"] > 0].reset_index(drop=True)
+    print(f"[pass1/pass2] {label}: loaded {len(out):,} positive pass-2 cross sections from {path.name}")
+    return out
+
+
+def discover_csv(csv_dir: Path, include_tokens: List[str], exclude_tokens: List[str] | None = None) -> Path | None:
+    files = sorted(csv_dir.glob("*.csv"))
+    include = [normalized_name(x) for x in include_tokens]
+    exclude = [normalized_name(x) for x in (exclude_tokens or [])]
+    matches = []
+    for path in files:
+        key = normalized_name(path.stem)
+        if all(token in key for token in include) and not any(token in key for token in exclude):
+            matches.append(path)
+        #endif
+    #endfor
+
+    if len(matches) == 1:
+        return matches[0]
+    #endif
+    if len(matches) > 1:
+        print(f"[pass1/pass2] WARNING: multiple files match {include_tokens}: {[p.name for p in matches]}")
+        return matches[-1]
+    #endif
+    return None
+
+
+def resolve_pass2_files(args: argparse.Namespace) -> Dict[str, Path]:
+    csv_dir = Path(args.csv_dir)
+    explicit = {
+        "Inclusive": args.inclusive_csv,
+        "CD-FD": args.cd_fd_csv,
+        "CD-FT": args.cd_ft_csv,
+        "FD-FD": args.fd_fd_csv,
+    }
+    patterns = {
+        "Inclusive": (["inclusive"], []),
+        "CD-FD": (["cdfd"], ["sector", "s1", "s2", "s3", "s4", "s5", "s6"]),
+        "CD-FT": (["cdft"], ["sector", "s1", "s2", "s3", "s4", "s5", "s6"]),
+        "FD-FD": (["fdfd"], ["sector", "s1", "s2", "s3", "s4", "s5", "s6"]),
+    }
+
+    resolved = {}
+    for label in ["Inclusive", "CD-FD", "CD-FT", "FD-FD"]:
+        if explicit[label]:
+            path = Path(explicit[label])
+        else:
+            inc, exc = patterns[label]
+            path = discover_csv(csv_dir, inc, exc)
+        #endif
+
+        if path is None or not path.exists():
+            print(f"[pass1/pass2] WARNING: no {label} CSV found; skipping it.")
+            continue
+        #endif
+        resolved[label] = path
+    #endfor
+    return resolved
+
+
+def read_authoritative_pass1(path: Path) -> pd.DataFrame:
+    # Released clasdb_E214M1 format: bin, x, Q2, t, phi, xs, stat, syst.
+    df = pd.read_csv(
+        path,
+        sep=r"\s+|,",
+        engine="python",
+        comment="#",
+        header=None,
+    )
+    df = df.dropna(axis=1, how="all")
+    if df.shape[1] < 8:
+        raise RuntimeError(f"{path}: expected at least 8 columns; found {df.shape[1]}")
+    #endif
+    df = df.iloc[:, :8].copy()
+    df.columns = ["bin", "xB", "Q2", "t", "phi", "xs_pass1", "stat_pass1", "syst_pass1"]
+    for col in df.columns:
+        df[col] = pd.to_numeric(df[col], errors="coerce")
+    #endfor
+    df["t"] = df["t"].abs()
+    df["phi"] = np.mod(df["phi"], 360.0)
+    df = df.dropna(subset=["xB", "Q2", "t", "phi", "xs_pass1"])
+    df = df[df["xs_pass1"] > 0].reset_index(drop=True)
+    print(f"[pass1/pass2] authoritative pass-1: loaded {len(df):,} positive points from {path.name}")
+    return df
+
+
+def phi_distance(a: np.ndarray, b: float) -> np.ndarray:
+    d = np.abs(a - b)
+    return np.minimum(d, 360.0 - d)
+
+
+def match_to_authoritative_pass1(
+    p2: pd.DataFrame,
+    p1: pd.DataFrame,
+    dx: float,
+    dq2: float,
+    dt: float,
+    dphi: float,
+) -> pd.DataFrame:
+    """Nearest 4-D kinematic match, with explicit maximum differences in each coordinate."""
+    p1x = p1["xB"].to_numpy(float)
+    p1q = p1["Q2"].to_numpy(float)
+    p1t = p1["t"].to_numpy(float)
+    p1p = p1["phi"].to_numpy(float)
+
+    rows = []
+    for row in p2.itertuples(index=False):
+        ddx = np.abs(p1x - row.xB)
+        ddq = np.abs(p1q - row.Q2)
+        ddt = np.abs(p1t - row.t)
+        ddp = phi_distance(p1p, row.phi)
+        allowed = (ddx <= dx) & (ddq <= dq2) & (ddt <= dt) & (ddp <= dphi)
+        if not np.any(allowed):
+            continue
+        #endif
+
+        idxs = np.flatnonzero(allowed)
+        metric = (
+            (ddx[idxs] / dx) ** 2
+            + (ddq[idxs] / dq2) ** 2
+            + (ddt[idxs] / dt) ** 2
+            + (ddp[idxs] / dphi) ** 2
+        )
+        j = idxs[int(np.argmin(metric))]
+        ref = p1.iloc[j]
+        rows.append({
+            "topology": row.topology,
+            "xB_pass2": row.xB,
+            "Q2_pass2": row.Q2,
+            "t_pass2": row.t,
+            "phi_pass2": row.phi,
+            "xs_pass2": row.xs_pass2,
+            "pass1_bin": ref["bin"],
+            "xB_pass1": ref["xB"],
+            "Q2_pass1": ref["Q2"],
+            "t_pass1": ref["t"],
+            "phi_pass1": ref["phi"],
+            "xs_pass1": ref["xs_pass1"],
+            "stat_pass1": ref["stat_pass1"],
+            "syst_pass1": ref["syst_pass1"],
+            "dxB": ddx[j],
+            "dQ2": ddq[j],
+            "dt": ddt[j],
+            "dphi": ddp[j],
+            "pass2_over_pass1": row.xs_pass2 / ref["xs_pass1"],
+        })
+    #endfor
+    return pd.DataFrame(rows)
+
+
+def discrepancy_summary(matched: pd.DataFrame, edges: List[float], labels: List[str]) -> pd.DataFrame:
+    rows = []
+    for topology in matched["topology"].drop_duplicates():
+        top = matched[matched["topology"] == topology]
+        for i, t_label in enumerate(labels):
+            lo, hi = edges[i], edges[i + 1]
+            sub = top[(top["t_pass2"] >= lo) & (top["t_pass2"] < hi)]
+            ratio = sub["pass2_over_pass1"].to_numpy(float)
+            ratio = ratio[np.isfinite(ratio) & (ratio > 0)]
+            if len(ratio) == 0:
+                continue
+            #endif
+            q16, med, q84 = np.percentile(ratio, [16, 50, 84])
+            rows.append({
+                "topology": topology,
+                "t_bin": t_label,
+                "N": len(ratio),
+                "mean_t_GeV2": sub["t_pass2"].mean(),
+                "median_pass2_over_pass1": med,
+                "q16_pass2_over_pass1": q16,
+                "q84_pass2_over_pass1": q84,
+                "mean_pass2_over_pass1": np.mean(ratio),
+            })
+        #endfor
+    #endfor
+    return pd.DataFrame(rows)
+
+
+def direct_topology_closure(matched: pd.DataFrame, a: str, b: str) -> pd.DataFrame:
+    """Direct pass-2 topology ratio in bins sharing the same released pass-1 point."""
+    aa = matched[matched["topology"] == a].copy()
+    bb = matched[matched["topology"] == b].copy()
+    if aa.empty or bb.empty:
+        return pd.DataFrame()
+    #endif
+
+    aa = aa.sort_values(["pass1_bin", "dt", "dQ2", "dxB", "dphi"]).drop_duplicates("pass1_bin")
+    bb = bb.sort_values(["pass1_bin", "dt", "dQ2", "dxB", "dphi"]).drop_duplicates("pass1_bin")
+    keep_a = ["pass1_bin", "xB_pass1", "Q2_pass1", "t_pass1", "phi_pass1", "xs_pass1", "xs_pass2", "pass2_over_pass1"]
+    keep_b = ["pass1_bin", "xs_pass2", "pass2_over_pass1"]
+    out = aa[keep_a].merge(bb[keep_b], on="pass1_bin", suffixes=(f"_{a}", f"_{b}"))
+    out[f"xs_{a}_over_{b}"] = out[f"xs_pass2_{a}"] / out[f"xs_pass2_{b}"]
+    return out
+
+
+def plot_pass1_ratios(summary: pd.DataFrame, output: Path) -> None:
+    if summary.empty:
+        return
+    #endif
+    fig, ax = plt.subplots(figsize=(8.5, 6.0))
+    for topology in summary["topology"].drop_duplicates():
+        sub = summary[summary["topology"] == topology]
+        x = sub["mean_t_GeV2"].to_numpy(float)
+        y = sub["median_pass2_over_pass1"].to_numpy(float)
+        lo = y - sub["q16_pass2_over_pass1"].to_numpy(float)
+        hi = sub["q84_pass2_over_pass1"].to_numpy(float) - y
+        ax.errorbar(x, y, yerr=np.vstack([lo, hi]), marker="o", capsize=3, linewidth=1.2, label=topology)
+    #endfor
+    ax.axhline(1.0, linewidth=1.0, linestyle="--")
+    ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+    ax.set_ylabel(r"median $\sigma_{\rm pass2}/\sigma_{\rm pass1}$")
+    ax.set_title("Pass-2 / released pass-1 cross section by detector topology")
+    ax.grid(alpha=0.25)
+    ax.legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(output, dpi=180)
+    plt.close(fig)
+
+
+def plot_direct_closure(closure: pd.DataFrame, a: str, b: str, output: Path) -> None:
+    if closure.empty:
+        return
+    #endif
+    ycol = f"xs_{a}_over_{b}"
+    fig, ax = plt.subplots(figsize=(8.5, 6.0))
+    ax.scatter(closure["t_pass1"], closure[ycol], s=18, alpha=0.55)
+    ax.axhline(1.0, linewidth=1.0, linestyle="--")
+    ax.set_xlabel(r"$|t|$ (GeV$^2$)")
+    ax.set_ylabel(rf"$\sigma_{{{a}}}/\sigma_{{{b}}}$")
+    ax.set_title(f"Direct pass-2 topology closure: {a} versus {b}")
+    ax.grid(alpha=0.25)
+    fig.tight_layout()
+    fig.savefig(output, dpi=180)
+    plt.close(fig)
+
+
+def run_pass1_pass2_study(args: argparse.Namespace, output_dir: Path, edges: List[float], labels: List[str]) -> None:
+    comparison_dir = output_dir / "pass1_vs_pass2_topology"
+    comparison_dir.mkdir(parents=True, exist_ok=True)
+
+    pass1_path = Path(args.pass1_authoritative)
+    if not pass1_path.exists():
+        print(f"[pass1/pass2] WARNING: authoritative pass-1 file not found: {pass1_path}; skipping CSV comparison.")
+        return
+    #endif
+
+    files = resolve_pass2_files(args)
+    if not files:
+        print("[pass1/pass2] WARNING: no pass-2 CSVs resolved; skipping CSV comparison.")
+        return
+    #endif
+
+    p1 = read_authoritative_pass1(pass1_path)
+    matched_frames = []
+    for label, path in files.items():
+        p2 = read_pass2_csv(path, label)
+        matched = match_to_authoritative_pass1(
+            p2, p1,
+            dx=args.match_dx,
+            dq2=args.match_dq2,
+            dt=args.match_dt,
+            dphi=args.match_dphi,
+        )
+        print(f"[pass1/pass2] {label}: matched {len(matched):,}/{len(p2):,} pass-2 points to released pass-1")
+        if not matched.empty:
+            matched_frames.append(matched)
+        #endif
+    #endfor
+
+    if not matched_frames:
+        print("[pass1/pass2] WARNING: no pass-1/pass-2 matches survived.")
+        return
+    #endif
+
+    all_matched = pd.concat(matched_frames, ignore_index=True)
+    all_matched.to_csv(comparison_dir / "pass2_vs_authoritative_pass1_matched_points.csv", index=False)
+    summary = discrepancy_summary(all_matched, edges, labels)
+    summary.to_csv(comparison_dir / "pass2_over_pass1_summary_vs_t.csv", index=False)
+    plot_pass1_ratios(summary, comparison_dir / "pass2_over_pass1_by_topology_vs_t.png")
+
+    pairs = [("CD-FD", "CD-FT"), ("FD-FD", "CD-FD"), ("Inclusive", "CD-FD"), ("Inclusive", "CD-FT")]
+    closure_summaries = []
+    for a, b in pairs:
+        closure = direct_topology_closure(all_matched, a, b)
+        if closure.empty:
+            continue
+        #endif
+        safe = f"{a}_over_{b}".replace("-", "_")
+        closure.to_csv(comparison_dir / f"direct_{safe}_matched_bins.csv", index=False)
+        plot_direct_closure(closure, a, b, comparison_dir / f"direct_{safe}_vs_t.png")
+        ratio = closure[f"xs_{a}_over_{b}"].to_numpy(float)
+        finite = np.isfinite(ratio) & (ratio > 0)
+        q16, med, q84 = np.percentile(ratio[finite], [16, 50, 84])
+        closure_summaries.append({"ratio": f"{a}/{b}", "N": int(np.count_nonzero(finite)), "median": med, "q16": q16, "q84": q84})
+    #endfor
+    pd.DataFrame(closure_summaries).to_csv(comparison_dir / "direct_topology_closure_summary.csv", index=False)
+
+    print(f"[pass1/pass2] wrote comparison outputs to {comparison_dir}")
+    print("[pass1/pass2] key plot: pass2_over_pass1_by_topology_vs_t.png")
+    print("[pass1/pass2] key direct closure: direct_CD_FD_over_CD_FT_vs_t.png")
+
+
 def main() -> None:
     args = parse_args()
 
@@ -665,6 +1079,16 @@ def main() -> None:
 
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
+
+    run_pass1_pass2_study(args, output_dir, edges, labels)
+
+    if args.skip_event_map:
+        print(f"[study] CSV-only study complete: {output_dir}")
+        return
+    #endif
+
+    topology_output_dir = output_dir / "topology_vs_t_map"
+    topology_output_dir.mkdir(parents=True, exist_ok=True)
 
     frames = []
     for period in periods:
@@ -701,37 +1125,37 @@ def main() -> None:
     )
     kin_table = kinematic_summary(df, labels)
 
-    proton_table.to_csv(output_dir / "proton_region_fractions_vs_t.csv", index=False)
-    photon_table.to_csv(output_dir / "photon_region_fractions_vs_t.csv", index=False)
-    topology_table.to_csv(output_dir / "joint_topology_fractions_vs_t.csv", index=False)
-    kin_table.to_csv(output_dir / "kinematic_summary_vs_t.csv", index=False)
+    proton_table.to_csv(topology_output_dir / "proton_region_fractions_vs_t.csv", index=False)
+    photon_table.to_csv(topology_output_dir / "photon_region_fractions_vs_t.csv", index=False)
+    topology_table.to_csv(topology_output_dir / "joint_topology_fractions_vs_t.csv", index=False)
+    kin_table.to_csv(topology_output_dir / "kinematic_summary_vs_t.csv", index=False)
 
     plot_fraction_vs_t(
         proton_table,
         edges,
         ["FD", "CD"],
-        output_dir / "proton_region_fractions_vs_t.png",
+        topology_output_dir / "proton_region_fractions_vs_t.png",
         "Proton detector-region fractions versus |t|",
     )
     plot_fraction_vs_t(
         photon_table,
         edges,
         ["FT", "FD"],
-        output_dir / "photon_region_fractions_vs_t.png",
+        topology_output_dir / "photon_region_fractions_vs_t.png",
         "Photon detector-region fractions versus |t|",
     )
     plot_fraction_vs_t(
         topology_table,
         edges,
         topology_categories[:-1],
-        output_dir / "joint_topology_fractions_vs_t.png",
+        topology_output_dir / "joint_topology_fractions_vs_t.png",
         "Joint proton-photon topology fractions versus |t|",
     )
     plot_period_topology_fractions(
         topology_table,
         edges,
         topology_categories[:-1],
-        output_dir / "joint_topology_fractions_by_period.png",
+        topology_output_dir / "joint_topology_fractions_by_period.png",
     )
 
     output_names = {
@@ -748,18 +1172,18 @@ def main() -> None:
             df,
             labels,
             variable,
-            output_dir / filename,
+            topology_output_dir / filename,
         )
     #endfor
 
     plot_joint_theta_map(
         df,
-        output_dir / "proton_photon_theta_correlation.png",
+        topology_output_dir / "proton_photon_theta_correlation.png",
     )
 
-    write_readme(output_dir, args, periods, labels)
+    write_readme(topology_output_dir, args, periods, labels)
 
-    print(f"[map] wrote outputs to {output_dir}")
+    print(f"[map] wrote outputs to {topology_output_dir}")
     print("[map] key first-look file: joint_topology_fractions_vs_t.csv")
     print("[map] key first-look plot: joint_topology_fractions_by_period.png")
 

@@ -446,20 +446,6 @@ def cd_sector_from_phi(phi_rad):
 #enddef
 
 
-def global_sector_quality_active(cfg):
-    diagnostic_active = any(
-        bool(cfg.get(name, False))
-        for name in (
-            "enable_topology_filter",
-            "enable_electron_fd_sector_filter",
-            "enable_proton_fd_sector_filter",
-            "enable_proton_cd_sector_filter",
-            "enable_photon_fd_sector_filter",
-        )
-    )
-    return bool(cfg.get("enable_sp18_out_sector_quality_cuts", False)) and not diagnostic_active
-#enddef
-
 
 def required_branches(global_cfg, tree_keys, apply_global_kinematics, apply_auxiliary, apply_3sigma):
     required = {"runnum", "detector1", "detector2"}
@@ -592,7 +578,7 @@ def apply_global_cuts(period_label, arrays, cfg, apply_global_kinematics, apply_
             "enable_proton_cd_sector_filter",
             "enable_photon_fd_sector_filter",
         )
-    ) or global_sector_quality_active(cfg) or (
+    ) or (
         apply_auxiliary
         and bool(cfg.get("auxiliary_require_distinct_fd_sectors", False))
     )
@@ -603,12 +589,6 @@ def apply_global_cuts(period_label, arrays, cfg, apply_global_kinematics, apply_
         p_cd_sector = cd_sector_from_phi(arrays["p1_phi"])
         g_sector = fd_sector_from_phi(arrays["p2_phi"])
 
-        if global_sector_quality_active(cfg) and period_label == "rga_sp18_out":
-            mask &= e_sector >= 1
-            mask &= e_sector != 3
-            mask &= ~((e_sector == 5) & (detector2 == 1))
-            mask &= ~((e_sector == 5) & (detector1 == 1))
-        #endif
 
         if bool(cfg.get("enable_electron_fd_sector_filter", False)):
             mask &= e_sector == int(cfg["electron_fd_sector"])

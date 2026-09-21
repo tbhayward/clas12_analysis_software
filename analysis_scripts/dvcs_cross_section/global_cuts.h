@@ -56,17 +56,6 @@ struct GlobalCutConfig {
 
     double auxiliary_ft_photon_p_min_GeV = 4.0;
 
-    // Sp18 Out detector-quality exclusions for the integrated production analysis.
-    // These reject:
-    //   1. every event with the electron in FD sector 3;
-    //   2. events with the electron in FD sector 5 and an FD photon;
-    //   3. events with the electron in FD sector 5 and an FD proton.
-    //
-    // Nominal production keeps these enabled. They remain active under
-    // topology/particle-sector filters unless the caller explicitly disables
-    // this flag. This permits controlled parent/daughter comparisons with one
-    // common Sp18-Out selection.
-    bool enable_sp18_out_sector_quality_cuts = true;
 
     // Optional single-topology filter.
     // required_detector1/2 set as (p-region, gamma-region):
@@ -111,7 +100,6 @@ void set_default_global_cuts(const GlobalCutConfig& cfg);
 // Convenience diagnostics.
 bool global_cuts_require_sector_phi(const GlobalCutConfig& cfg = default_global_cuts());
 bool global_cuts_require_auxiliary_kinematics(const GlobalCutConfig& cfg = default_global_cuts());
-bool global_cuts_apply_sp18_out_sector_quality_cuts(const GlobalCutConfig& cfg = default_global_cuts());
 std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg = default_global_cuts());
 
 // Sector helpers. Input phi is in radians.
