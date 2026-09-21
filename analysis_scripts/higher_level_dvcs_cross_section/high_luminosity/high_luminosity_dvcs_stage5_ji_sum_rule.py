@@ -565,7 +565,7 @@ def main():
     here = Path(__file__).resolve().parent
     if args.rga_pass2 is None:
         args.rga_pass2 = (
-            here
+            here.parent
             / "import"
             / "dvcs_pass2_analysis.csv"
         ).resolve()
@@ -613,7 +613,7 @@ def main():
         precision_comparison = None
 
     print("=" * 100)
-    print("STAGE 5 v8 — PASS-2 RGA/RGB BSA PRECISION BENCHMARK + RGB COVARIANCE + DFJK/Ji FRAMEWORK")
+    print("STAGE 5 v9 — PASS-2 RGA/RGB BSA PRECISION BENCHMARK + RGB COVARIANCE + DFJK/Ji FRAMEWORK")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
