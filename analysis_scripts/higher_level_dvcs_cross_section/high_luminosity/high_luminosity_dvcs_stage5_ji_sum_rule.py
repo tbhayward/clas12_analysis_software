@@ -65,7 +65,7 @@ DEFAULT_ALPHA_U = 0.55
 DEFAULT_ALPHA_D = 0.55
 
 RGB_XS_DEFAULT = Path("import/ndvcs_clas12_preliminary_unpolarized.txt")
-RGB_BSA_DIR_DEFAULT = Path("import/nDVCS_BSA")
+RGB_BSA_DIR_DEFAULT = None  # resolved relative to this script in main()
 RGA_PASS2_DEFAULT = None  # resolved relative to this script below
 OUT_DEFAULT = Path("output/stage5_ji")
 
@@ -538,7 +538,12 @@ def rga_binning_transfer_projection(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rgb-xs", type=Path, default=RGB_XS_DEFAULT)
-    ap.add_argument("--rgb-bsa-dir", type=Path, default=RGB_BSA_DIR_DEFAULT)
+    ap.add_argument(
+        "--rgb-bsa-dir",
+        type=Path,
+        default=None,
+        help="Actual published nDVCS BSA directory; default is ../import/nDVCS_BSA relative to this script.",
+    )
     ap.add_argument(
         "--rga-pass2",
         type=Path,
@@ -559,6 +564,14 @@ def main():
 
     print(f"[Stage5] RGA pass-2 CSV path: {args.rga_pass2}")
     print(f"[Stage5] RGA pass-2 CSV exists: {args.rga_pass2.exists()}")
+
+    if args.rgb_bsa_dir is None:
+        args.rgb_bsa_dir = (here.parent / "import" / "nDVCS_BSA").resolve()
+    else:
+        args.rgb_bsa_dir = args.rgb_bsa_dir.expanduser().resolve()
+
+    print(f"[Stage5] RGB BSA directory: {args.rgb_bsa_dir}")
+    print(f"[Stage5] RGB BSA directory exists: {args.rgb_bsa_dir.exists()}")
 
     figdir = args.output / "figures"
     tabdir = args.output / "tables"
@@ -595,7 +608,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v10 — ACTUAL RGB BSA + RGA-LIKE 4D BINNING TRANSFER + DFJK/Ji FRAMEWORK")
+    print("STAGE 5 v11 — ACTUAL RGB BSA + RGA-LIKE 4D BINNING TRANSFER + DFJK/Ji FRAMEWORK")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
