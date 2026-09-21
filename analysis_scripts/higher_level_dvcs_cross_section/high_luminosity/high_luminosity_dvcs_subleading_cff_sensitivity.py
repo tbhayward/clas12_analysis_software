@@ -85,6 +85,16 @@ DEFAULT_ABS_STEP = 0.05
 DEFAULT_RELATIVE_FLOOR = 0.10
 SVD_RTOL = 1.0e-11
 
+# First-pass RGC A_UL precision model:
+# existing polarized-target statistics ~= 1/10 of RGA, so an asymmetry measured
+# in the same kinematic/phi bin is assigned sqrt(10) times the current RGA BSA
+# statistical error.  This A_UL information is held FIXED while RGA luminosity
+# is increased.  The scan factors below ask how much better/worse than that
+# existing-RGC estimate is required to break the H/Htilde degeneracy.
+DEFAULT_RGC_STAT_FRACTION_OF_RGA = 0.10
+DEFAULT_AUL_SCALE_FRAC = 0.05
+AUL_PRECISION_FACTORS = (0.5, 1.0, 2.0)
+
 
 def make_point(g, row, helicity: int = 0):
     phi_trento = math.pi - math.radians(float(row.phi_deg))
@@ -104,6 +114,36 @@ def make_point(g, row, helicity: int = 0):
     )
     pt.prepare()
     return pt
+
+
+def make_aul_point(g, row):
+    """Longitudinal-target A_UL point at the same RGA kinematics."""
+    phi_trento = math.pi - math.radians(float(row.phi_deg))
+    pt = g.DataPoint(
+        xB=float(row.xB),
+        t=-abs(float(row.t_abs)),
+        Q2=float(row.Q2),
+        phi=float(phi_trento),
+        observable="TSA",
+        frame="trento",
+        process="ep2epgamma",
+        exptype="fixed target",
+        in1energy=float(row.ebeam),
+        in1charge=-1,
+        in1polarization=0,
+        in2particle="p",
+        in2polarization=1,
+        in2polarizationvector="L",
+    )
+    pt.prepare()
+    return pt
+
+
+def aul_value(th, pt) -> float:
+    """Gepard longitudinal target-spin asymmetry."""
+    if hasattr(th, "AUL"):
+        return float(th.AUL(pt))
+    return float(th.predict(pt))
 
 
 def cff_owner(th, name: str):
@@ -165,6 +205,8 @@ def finite_derivative(
     def evaluate():
         if observable == "xs":
             return np.asarray([pred(th, p) for p in points], dtype=float)
+        if observable == "aul":
+            return np.asarray([aul_value(th, p) for p in points], dtype=float)
         return np.asarray(
             [bsa_from_points(th, pair[0], pair[1]) for pair in points],
             dtype=float,
@@ -211,19 +253,24 @@ def build_derivatives(df, th, g, rel_step, abs_step, min_nphi):
             (make_point(g, r, +1), make_point(g, r, -1))
             for r in cell.itertuples(index=False)
         ]
+        aul_pts = [make_aul_point(g, r) for r in cell.itertuples(index=False)]
         pt0 = xs_pts[0]
 
         cff0 = {name: cff_value(th, name, pt0) for name in ALL_CFFS}
         xs0 = np.asarray([pred(th, p) for p in xs_pts], dtype=float)
         a0 = np.asarray([bsa_from_points(th, p, m) for p, m in bsa_pts], dtype=float)
+        aul0 = np.asarray([aul_value(th, p) for p in aul_pts], dtype=float)
 
-        dx, da, steps = {}, {}, {}
+        dx, da, dul, steps = {}, {}, {}, {}
         for name in ALL_CFFS:
             dx[name], steps[name] = finite_derivative(
                 th, xs_pts, "xs", name, cff0[name], rel_step, abs_step
             )
             da[name], _ = finite_derivative(
                 th, bsa_pts, "bsa", name, cff0[name], rel_step, abs_step
+            )
+            dul[name], _ = finite_derivative(
+                th, aul_pts, "aul", name, cff0[name], rel_step, abs_step
             )
 
         # A transparent observable-level diagnostic: response to a +10% change
@@ -243,12 +290,14 @@ def build_derivatives(df, th, g, rel_step, abs_step, min_nphi):
                 "phi_deg": float(row.phi_deg),
                 "xs_km15": float(xs0[j]),
                 "bsa_km15": float(a0[j]),
+                "aul_km15": float(aul0[j]),
                 "xs_frac_response_to_10pct_ImHt": float(xs_frac_response_10[j]),
                 "bsa_abs_response_to_10pct_ImHt": float(bsa_abs_response_10[j]),
             }
             for name in ALL_CFFS:
                 rec[f"d_xs_d_{name}"] = float(dx[name][j])
                 rec[f"d_bsa_d_{name}"] = float(da[name][j])
+                rec[f"d_aul_d_{name}"] = float(dul[name][j])
             point_rows.append(rec)
 
         xi = float(np.median(cell["xB"])) / (2.0 - float(np.median(cell["xB"])))
@@ -278,19 +327,30 @@ def build_derivatives(df, th, g, rel_step, abs_step, min_nphi):
     return pd.DataFrame(point_rows), pd.DataFrame(cell_rows)
 
 
-def layout_for(cell_meta, mode):
+def layout_for(cell_meta, mode, include_aul=False):
     cffs = FIT_MODES[mode]
     pars = []
     for b in cell_meta["bin"].astype(int):
         for name in cffs:
             pars.append((b, name))
     pars += [(-1, "xs_scale_beta"), (-1, "bsa_scale_beta")]
+    if include_aul:
+        pars += [(-1, "aul_scale_beta")]
     return pars
 
 
-def covariance(df, deriv, cell_meta, mode):
+def covariance(
+    df,
+    deriv,
+    cell_meta,
+    mode,
+    include_aul=False,
+    aul_precision_factor=1.0,
+    rgc_stat_fraction=DEFAULT_RGC_STAT_FRACTION_OF_RGA,
+    aul_scale_frac=DEFAULT_AUL_SCALE_FRAC,
+):
     use = df.merge(deriv, on=["point_id", "bin", "phi_deg"], how="inner")
-    layout = layout_for(cell_meta, mode)
+    layout = layout_for(cell_meta, mode, include_aul=include_aul)
     idx = {k: i for i, k in enumerate(layout)}
     npar = len(layout)
     cffs = FIT_MODES[mode]
@@ -303,10 +363,10 @@ def covariance(df, deriv, cell_meta, mode):
         for name in cffs:
             v[idx[(b, name)]] = getattr(r, f"d_xs_d_{name}")
         v[idx[(-1, "xs_scale_beta")]] = r.xs_scale_frac * r.xs_km15
-        s = math.hypot(r.xs_stat_pseudo_abs, r.xs_ptp_sys_pseudo_abs)
-        if np.isfinite(s) and s > 0:
+        srow = math.hypot(r.xs_stat_pseudo_abs, r.xs_ptp_sys_pseudo_abs)
+        if np.isfinite(srow) and srow > 0:
             rows.append(v)
-            sigmas.append(s)
+            sigmas.append(srow)
 
     for r in use.itertuples(index=False):
         v = np.zeros(npar)
@@ -314,25 +374,43 @@ def covariance(df, deriv, cell_meta, mode):
         for name in cffs:
             v[idx[(b, name)]] = getattr(r, f"d_bsa_d_{name}")
         v[idx[(-1, "bsa_scale_beta")]] = r.bsa_scale_frac * r.bsa_km15
-        s = math.hypot(r.bsa_stat_pseudo_abs, r.bsa_ptp_sys_pseudo_abs)
-        if np.isfinite(s) and s > 0:
+        srow = math.hypot(r.bsa_stat_pseudo_abs, r.bsa_ptp_sys_pseudo_abs)
+        if np.isfinite(srow) and srow > 0:
             rows.append(v)
-            sigmas.append(s)
+            sigmas.append(srow)
+
+    if include_aul:
+        # IMPORTANT: derive the fixed existing-RGC estimate from the *1x RGA*
+        # BSA statistical precision, not from the luminosity-scaled RGA error.
+        # Caller passes df containing bsa_stat_data_abs, which Stage 2 preserves.
+        stat_scale = math.sqrt(1.0 / rgc_stat_fraction) * aul_precision_factor
+        for r in use.itertuples(index=False):
+            v = np.zeros(npar)
+            b = int(r.bin)
+            for name in cffs:
+                v[idx[(b, name)]] = getattr(r, f"d_aul_d_{name}")
+            v[idx[(-1, "aul_scale_beta")]] = aul_scale_frac * r.aul_km15
+            # First estimate: statistics only for the point-to-point A_UL error.
+            # A common target-polarization scale is represented separately.
+            srow = stat_scale * r.bsa_stat_data_abs
+            if np.isfinite(srow) and srow > 0:
+                rows.append(v)
+                sigmas.append(srow)
 
     A = np.asarray(rows, dtype=float)
-    s = np.asarray(sigmas, dtype=float)
-    B = A / s[:, None]
+    sigmas = np.asarray(sigmas, dtype=float)
+    B = A / sigmas[:, None]
 
-    # Unit Gaussian priors only on the two experimental scale nuisances.
+    prior_keys = [(-1, "xs_scale_beta"), (-1, "bsa_scale_beta")]
+    if include_aul:
+        prior_keys.append((-1, "aul_scale_beta"))
     priors = []
-    for key in [(-1, "xs_scale_beta"), (-1, "bsa_scale_beta")]:
+    for key in prior_keys:
         p = np.zeros(npar)
         p[idx[key]] = 1.0
         priors.append(p)
     B = np.vstack([B] + priors)
 
-    # Explicit SVD so we never silently interpret an unconstrained null
-    # direction as a zero uncertainty.
     U, sv, Vt = np.linalg.svd(B, full_matrices=False)
     tol = max(sv[0], 1.0) * SVD_RTOL
     keep = sv > tol
@@ -343,17 +421,18 @@ def covariance(df, deriv, cell_meta, mode):
     inv_s2[keep] = 1.0 / (sv[keep] ** 2)
     cov = (Vt.T * inv_s2) @ Vt
 
-    # Fraction of each parameter basis vector lying in unresolved SVD modes.
-    # This is zero for a fully identified fit.
     unresolved_fraction = np.zeros(npar)
     if rank_deficit > 0:
         null = Vt[~keep, :]
         unresolved_fraction = np.sum(null * null, axis=0)
 
     cond = float(sv[keep][0] / sv[keep][-1]) if rank > 1 else np.inf
-
     diag = {
         "fit_mode": mode,
+        "include_aul": bool(include_aul),
+        "aul_precision_factor": float(aul_precision_factor) if include_aul else np.nan,
+        "rgc_stat_fraction_of_rga": float(rgc_stat_fraction) if include_aul else np.nan,
+        "aul_scale_frac": float(aul_scale_frac) if include_aul else np.nan,
         "n_measurement_rows": len(A),
         "n_parameters": npar,
         "rank": rank,
@@ -641,6 +720,18 @@ def main(argv: Optional[List[str]] = None) -> int:
     p.add_argument("--relative-step", type=float, default=DEFAULT_REL_STEP)
     p.add_argument("--absolute-step", type=float, default=DEFAULT_ABS_STEP)
     p.add_argument(
+        "--rgc-stat-fraction",
+        type=float,
+        default=DEFAULT_RGC_STAT_FRACTION_OF_RGA,
+        help="Existing RGC statistics relative to RGA; default 0.10.",
+    )
+    p.add_argument(
+        "--aul-scale-frac",
+        type=float,
+        default=DEFAULT_AUL_SCALE_FRAC,
+        help="Common fractional A_UL scale uncertainty; default 0.05.",
+    )
+    p.add_argument(
         "--relative-floor",
         type=float,
         default=DEFAULT_RELATIVE_FLOOR,
@@ -671,6 +762,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     xs0 = make_point(g, row, 0)
     bp = make_point(g, row, +1)
     bm = make_point(g, row, -1)
+    ul = make_aul_point(g, row)
 
     print("[preflight] representative KM15 point")
     print(
@@ -679,20 +771,24 @@ def main(argv: Optional[List[str]] = None) -> int:
     )
     print(
         f"[preflight] XS={pred(th,xs0):.8g}, "
-        f"BSA={bsa_from_points(th,bp,bm):+.8g}"
+        f"BSA={bsa_from_points(th,bp,bm):+.8g}, "
+        f"AUL={aul_value(th,ul):+.8g}"
     )
     for name in ALL_CFFS:
         val = cff_value(th, name, xs0)
         step = max(args.absolute_step, args.relative_step * max(abs(val), 1.0))
         base_xs = pred(th, xs0)
         base_a = bsa_from_points(th, bp, bm)
+        base_ul = aul_value(th, ul)
         with shifted_cff(th, name, step):
             xs1 = pred(th, xs0)
             a1 = bsa_from_points(th, bp, bm)
+            ul1 = aul_value(th, ul)
         print(
             f"[preflight] {name:4s}: value={val:+.6g}, step={step:.4g}, "
             f"XS response={100*(xs1/base_xs-1):+.4g}%, "
-            f"BSA change={a1-base_a:+.4g}"
+            f"BSA change={a1-base_a:+.4g}, "
+            f"AUL change={ul1-base_ul:+.4g}"
         )
 
     deriv, cell_meta = build_derivatives(
@@ -711,23 +807,45 @@ def main(argv: Optional[List[str]] = None) -> int:
 
     for mode in FIT_MODES:
         for factor in LUMI_FACTORS:
-            print(f"[fit] mode={mode:7s} luminosity={factor}x")
+            print(f"[fit] mode={mode:7s} luminosity={factor}x  XS+BSA")
             cov, layout, unresolved, diag = covariance(
-                inputs[factor], deriv, cell_meta, mode
+                inputs[factor], deriv, cell_meta, mode, include_aul=False
             )
             diag["luminosity_factor"] = factor
             diag_rows.append(diag)
-            result_frames.append(
-                summarize(
-                    cell_meta,
-                    cov,
-                    layout,
-                    unresolved,
-                    mode,
-                    factor,
-                    args.relative_floor,
-                )
+            rr = summarize(
+                cell_meta, cov, layout, unresolved, mode, factor, args.relative_floor
             )
+            rr["observable_set"] = "XS+BSA"
+            rr["aul_precision_factor"] = np.nan
+            result_frames.append(rr)
+
+            # A_UL scan is most relevant once Htilde is released.
+            if "ImHt" in FIT_MODES[mode]:
+                for apf in AUL_PRECISION_FACTORS:
+                    print(
+                        f"[fit] mode={mode:7s} luminosity={factor}x  "
+                        f"XS+BSA+AUL  AULerr={apf:g}xRGC"
+                    )
+                    cov, layout, unresolved, diag = covariance(
+                        inputs[factor],
+                        deriv,
+                        cell_meta,
+                        mode,
+                        include_aul=True,
+                        aul_precision_factor=apf,
+                        rgc_stat_fraction=args.rgc_stat_fraction,
+                        aul_scale_frac=args.aul_scale_frac,
+                    )
+                    diag["luminosity_factor"] = factor
+                    diag_rows.append(diag)
+                    rr = summarize(
+                        cell_meta, cov, layout, unresolved, mode, factor,
+                        args.relative_floor
+                    )
+                    rr["observable_set"] = "XS+BSA+AUL"
+                    rr["aul_precision_factor"] = apf
+                    result_frames.append(rr)
 
     results = pd.concat(result_frames, ignore_index=True)
     diagnostics = pd.DataFrame(diag_rows)
@@ -747,8 +865,108 @@ def main(argv: Optional[List[str]] = None) -> int:
         tables / "ImHt_direct_observable_sensitivity.csv", index=False
     )
 
-    make_plots(results, cell_meta, deriv, figures)
-    print_summary(results, diagnostics)
+    # Focused A_UL figures; the old giant relative-error scatter plots are
+    # intentionally not produced because the local XS+BSA extraction is so
+    # degenerate that they are not human-readable.
+    for mode in ("H_Ht", "H_Ht_E"):
+        fig, ax = plt.subplots(figsize=(8.8, 6.0))
+        base = results[
+            (results.fit_mode == mode) &
+            (results.observable_set == "XS+BSA")
+        ]
+        med = base.groupby("luminosity_factor").sigma_ImHt.median()
+        ax.plot(med.index, med.values, marker="o", label="XS+BSA")
+        for apf in AUL_PRECISION_FACTORS:
+            d = results[
+                (results.fit_mode == mode) &
+                (results.observable_set == "XS+BSA+AUL") &
+                (results.aul_precision_factor == apf)
+            ]
+            med = d.groupby("luminosity_factor").sigma_ImHt.median()
+            lab = f"+ AUL ({apf:g}x estimated RGC error)"
+            ax.plot(med.index, med.values, marker="o", label=lab)
+        ax.set_xscale("log")
+        ax.set_yscale("log")
+        ax.set_xticks(LUMI_FACTORS)
+        ax.set_xticklabels([f"{x}x" for x in LUMI_FACTORS])
+        ax.set_xlabel("Unpolarized RGA luminosity")
+        ax.set_ylabel(r"Median absolute uncertainty on $\mathrm{Im}\,\widetilde{\mathcal{H}}$")
+        ax.set_title(f"{mode}: fixed polarized-target AUL constraint")
+        ax.grid(alpha=.2)
+        ax.legend()
+        savefig(fig, figures / f"AUL_scan_{mode}_median_sigma_ImHt.png")
+
+        fig, ax = plt.subplots(figsize=(8.8, 6.0))
+        for obs, apf, label in [
+            ("XS+BSA", np.nan, "XS+BSA"),
+            ("XS+BSA+AUL", 1.0, "+ AUL (estimated existing RGC)"),
+        ]:
+            if obs == "XS+BSA":
+                d = results[
+                    (results.fit_mode == mode) &
+                    (results.observable_set == obs) &
+                    (results.luminosity_factor == 10)
+                ]
+            else:
+                d = results[
+                    (results.fit_mode == mode) &
+                    (results.observable_set == obs) &
+                    (results.aul_precision_factor == apf) &
+                    (results.luminosity_factor == 10)
+                ]
+            ax.scatter(d.xB, d.sigma_ImHt, s=32, alpha=.72, label=label)
+        ax.set_yscale("log")
+        ax.set_xlabel(r"$x_B$")
+        ax.set_ylabel(r"Absolute uncertainty on $\mathrm{Im}\,\widetilde{\mathcal{H}}$")
+        ax.set_title(f"{mode}: effect of existing-RGC-scale AUL at 10x RGA")
+        ax.grid(alpha=.2)
+        ax.legend()
+        savefig(fig, figures / f"AUL_effect_{mode}_10x_vs_xB.png")
+
+    # Compact console summary dedicated to the A_UL question.
+    print("\n" + "=" * 116)
+    print("A_UL CONSTRAINT SCAN: FIXED POLARIZED-TARGET PRECISION WHILE RGA LUMINOSITY INCREASES")
+    print("=" * 116)
+    print(
+        f"Assumption: existing RGC has {args.rgc_stat_fraction:.3g} of RGA statistics; "
+        f"AUL stat error = sqrt(1/f) x current-RGA BSA stat error."
+    )
+    print(
+        f"AUL scale nuisance = {100*args.aul_scale_frac:.2f}%; "
+        "AUL point-to-point systematics not yet included in this first estimate."
+    )
+    rows = []
+    for mode in ("H_Ht", "H_Ht_E"):
+        for factor in LUMI_FACTORS:
+            configs = [("XS+BSA", np.nan, "none")]
+            configs += [("XS+BSA+AUL", x, f"{x:g}xRGCerr") for x in AUL_PRECISION_FACTORS]
+            for obs, apf, label in configs:
+                q = (
+                    (results.fit_mode == mode) &
+                    (results.observable_set == obs) &
+                    (results.luminosity_factor == factor)
+                )
+                if obs == "XS+BSA+AUL":
+                    q &= results.aul_precision_factor == apf
+                d = results[q]
+                dg = diagnostics[
+                    (diagnostics.fit_mode == mode) &
+                    (diagnostics.luminosity_factor == factor) &
+                    (diagnostics.include_aul == (obs == "XS+BSA+AUL"))
+                ]
+                if obs == "XS+BSA+AUL":
+                    dg = dg[dg.aul_precision_factor == apf]
+                rows.append({
+                    "mode": mode,
+                    "RGA_L": f"{factor}x",
+                    "AUL": label,
+                    "med_sigma_ImHt": np.nanmedian(d.sigma_ImHt),
+                    "med_rel_ImHt_%": 100*np.nanmedian(d.relative_sigma_ImHt),
+                    "med_maxcorr_ImHt": np.nanmedian(d.max_abs_corr_ImHt),
+                    "rank_def": int(dg.iloc[0].rank_deficit),
+                    "cond": dg.iloc[0].condition_number_effective,
+                })
+    print(pd.DataFrame(rows).to_string(index=False, float_format=lambda x: f"{x:.4g}"))
 
     print("\n[output]", outdir)
     print("[interpretation]")
@@ -757,6 +975,9 @@ def main(argv: Optional[List[str]] = None) -> int:
     print("  H_Ht_E  : asks how much that conclusion survives when E is also free.")
     print("  Absolute errors remain meaningful near CFF zero crossings.")
     print("  Relative errors are suppressed below the configured truth floor.")
+    print("  AUL is held fixed as RGA luminosity increases; it is NOT scaled with RGA.")
+    print("  1xRGCerr means the first estimate based on RGC having 1/10 the RGA statistics.")
+    print("  0.5x and 2x scan whether twice-better or twice-worse AUL precision is required.")
     print("  Any nonzero rank deficit is a warning that the corresponding fit")
     print("  contains an exactly unresolved CFF combination and must not be")
     print("  interpreted from pseudoinverse errors alone.")
