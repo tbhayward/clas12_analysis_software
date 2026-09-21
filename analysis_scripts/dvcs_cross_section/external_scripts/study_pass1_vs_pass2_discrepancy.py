@@ -1485,6 +1485,62 @@ def fold_valerii_on_events(df: pd.DataFrame, cells: pd.DataFrame) -> pd.DataFram
     work["valerii_coverage_reason"] = reasons
     return work
 
+def write_cdfd_high_p_study(vf: pd.DataFrame, out: Path, labels: List[str]) -> None:
+    """Quantify where Fa18 CDp-FDg photons lie relative to the old 6 GeV map edge."""
+    zall = vf[(vf["topology"] == "CDp-FDg") & (vf["photon_region"] == "FD")].copy()
+    rows = []
+    p_ranges = [(0.0, 6.0, "lt6"), (6.0, 7.0, "6to7"), (7.0, 8.0, "7to8"),
+                (8.0, 9.0, "8to9"), (9.0, 10.6, "9to10p6"), (10.6, np.inf, "ge10p6")]
+    for period in ["Fa18 Inb", "Fa18 Out"]:
+        for tlabel in labels:
+            z = zall[(zall["period"] == period) & (zall["t_bin"] == tlabel)]
+            if z.empty:
+                continue
+            #endif
+            gp = z["g_p"].to_numpy(float)
+            row = {
+                "period": period, "t_bin": tlabel, "N_CDp_FDg": len(z),
+                "p_gamma_mean_GeV": np.mean(gp), "p_gamma_median_GeV": np.median(gp),
+                "p_gamma_q16_GeV": np.quantile(gp, 0.16), "p_gamma_q84_GeV": np.quantile(gp, 0.84),
+                "p_gamma_q95_GeV": np.quantile(gp, 0.95), "p_gamma_max_GeV": np.max(gp),
+            }
+            for lo, hi, tag in p_ranges:
+                m = (gp >= lo) & (gp < hi)
+                row[f"N_{tag}_GeV"] = int(m.sum())
+                row[f"fraction_{tag}_GeV"] = float(m.mean())
+            #endfor
+            rows.append(row)
+        #endfor
+    #endfor
+    pd.DataFrame(rows).to_csv(out / "cdfd_photon_momentum_above6_vs_t.csv", index=False)
+
+    bins = np.arange(0.0, 10.6001, 0.25)
+    for period in ["Fa18 Inb", "Fa18 Out"]:
+        fig, ax = plt.subplots(figsize=(8.0, 5.5))
+        zp = zall[zall["period"] == period]
+        for tlabel in labels:
+            vals = zp.loc[zp["t_bin"] == tlabel, "g_p"].to_numpy(float)
+            if len(vals) == 0:
+                continue
+            #endif
+            hist, edges = np.histogram(vals, bins=bins)
+            width = np.diff(edges)
+            density = hist / (hist.sum() * width) if hist.sum() else hist.astype(float)
+            centers = 0.5 * (edges[:-1] + edges[1:])
+            ax.step(centers, density, where="mid", label=f"{tlabel} (N={len(vals)})")
+        #endfor
+        ax.axvline(6.0, linestyle="--", linewidth=1.4, label="Previous map limit: 6 GeV")
+        ax.set_xlim(0.0, 10.6)
+        ax.set_xlabel(r"$p_\gamma$ (GeV)")
+        ax.set_ylabel("Normalized event density (1/GeV)")
+        ax.set_title(f"{period}: CD-FD photon momentum by |t|")
+        ax.legend(fontsize=8)
+        fig.tight_layout()
+        tag = period.lower().replace(" ", "_")
+        fig.savefig(out / f"cdfd_photon_momentum_by_t_{tag}.png", dpi=180)
+        plt.close(fig)
+    #endfor
+
 def correction_summary_from_events(df: pd.DataFrame, labels: List[str]) -> pd.DataFrame:
     work = df.copy()
     ratio = neupane_efficiency_ratio(work["p_p"].to_numpy(float), work["p_theta_deg"].to_numpy(float), work["p_phi_deg"].to_numpy(float))
@@ -1560,6 +1616,7 @@ def run_correction_folding(df: pd.DataFrame, args: argparse.Namespace, output_di
                          "fraction_covered_FD_partial_rel_unc_gt30pct":(cov["valerii_partial_rel_unc"] > 0.30).mean() if len(cov) else np.nan})
         #endfor
         pd.DataFrame(rows).to_csv(out / "valerii_fa18_fold_vs_t_topology.csv", index=False)
+        write_cdfd_high_p_study(vf, out, labels)
         vf[["period","t_bin","topology","tabs","g_p","g_theta_deg","g_phi_deg","valerii_covered","valerii_coverage_reason","valerii_eff_data_over_mc","valerii_partial_rel_unc","valerii_correction"]].to_csv(out / "valerii_fa18_event_fold.csv", index=False)
         print(f"[correction-folding] Valerii map folded from {vp}")
     else:
