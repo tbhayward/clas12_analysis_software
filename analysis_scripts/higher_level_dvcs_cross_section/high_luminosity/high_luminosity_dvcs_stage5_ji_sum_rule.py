@@ -65,7 +65,7 @@ DEFAULT_ALPHA_D = 0.55
 
 RGB_XS_DEFAULT = Path("import/ndvcs_clas12_preliminary_unpolarized.txt")
 RGB_BSA_DEFAULT = Path("import/ndvcs_rgb_published_bsa_digitized_t_projection.csv")
-RGA_PASS2_DEFAULT = Path("../higher_level_dvcs_cross_section/import/dvcs_pass2_analysis.csv")
+RGA_PASS2_DEFAULT = None  # resolved from __file__ exactly as in Stage 2
 OUT_DEFAULT = Path("output/stage5_ji")
 
 
@@ -405,86 +405,60 @@ def bsa_4d_feasibility(bsa: pd.DataFrame, figdir: Path, tabdir: Path):
     return out
 
 
-def load_rga_pass2_bsa(path: Path):
-    """Load current RGA pass-2 4D BSA statistical uncertainties.
+def tuple_component(series: pd.Series, index: int) -> np.ndarray:
+    """Parse one component of tuple-valued CSV cells, matching Stage 2."""
+    import ast
+    out = np.full(len(series), np.nan, dtype=float)
+    for i, value in enumerate(series):
+        if pd.isna(value):
+            continue
+        try:
+            parsed = ast.literal_eval(str(value).strip())
+            if isinstance(parsed, (tuple, list)) and len(parsed) > index:
+                out[i] = float(parsed[index])
+        except Exception:
+            pass
+    return out
 
-    Uses the same dvcs_pass2_analysis.csv source as the Stage-2 projection.
-    Tuple-like CSV headers are matched by their semantic tokens rather than a
-    hard-coded pandas-mangled spelling.
+
+def load_rga_pass2_bsa(path: Path):
+    """Load RGA pass-2 4D BSA precision exactly as Stage 2 does.
+
+    The pass-2 CSV stores `BSA, counts, 10.6 GeV` as a tuple:
+      component 0 = measured BSA
+      component 1 = absolute statistical uncertainty.
+    For this experimental precision benchmark we use all valid pass-2 BSA
+    points; no |t|/Q2 theory-control cut is imposed.
     """
     if not path.exists():
         return None
 
-    df = pd.read_csv(path)
+    raw = pd.read_csv(path, low_memory=False)
+    bsa_col = "BSA, counts, 10.6 GeV"
+    if bsa_col not in raw.columns:
+        raise KeyError(f"{path}: missing required column {bsa_col!r}")
 
-    def norm(c):
-        return re.sub(r"[^a-z0-9]+", " ", str(c).lower()).strip()
+    bsa = tuple_component(raw[bsa_col], 0)
+    stat = tuple_component(raw[bsa_col], 1)
 
-    # Locate the pass-2 BSA value column.
-    bsa_candidates = []
-    for c in df.columns:
-        k = norm(c)
-        if "bsa" in k and "10 6 gev" in k and "counts" in k:
-            bsa_candidates.append(c)
-    if len(bsa_candidates) != 1:
-        # Slightly looser fallback, still requiring BSA and 10.6.
-        bsa_candidates = [
-            c for c in df.columns
-            if "bsa" in norm(c) and "10 6 gev" in norm(c)
-            and not any(x in norm(c) for x in ("sys", "syst", "cut", "pi0", "pol"))
-        ]
-    if len(bsa_candidates) != 1:
-        raise RuntimeError(
-            f"{path}: could not uniquely identify pass-2 BSA column. "
-            f"Candidates: {bsa_candidates}"
-        )
-    bsa_col = bsa_candidates[0]
+    # Retain useful kinematics for the audit table when available.
+    out = pd.DataFrame(index=raw.index)
+    for src, dst in [
+        ("Bin Name", "bin"),
+        ("xBavg, 10.6 GeV", "xB"),
+        ("Q2avg, 10.6 GeV", "Q2"),
+        ("t_abs_avg, 10.6 GeV", "t_abs"),
+        ("phiavg, 10.6 GeV", "phi_deg"),
+    ]:
+        if src in raw.columns:
+            out[dst] = pd.to_numeric(raw[src], errors="coerce")
 
-    # Statistical uncertainty should be the matching BSA/stat column.  Prefer a
-    # column explicitly labeled stat; otherwise inspect adjacent columns and
-    # refuse to guess if no unique match exists.
-    stat_candidates = []
-    for c in df.columns:
-        k = norm(c)
-        if "bsa" in k and "stat" in k and "10 6 gev" in k:
-            stat_candidates.append(c)
-
-    if len(stat_candidates) != 1:
-        # Some exports encode the tuple as BSA/counts/10.6 and put the error in
-        # an immediately adjacent unnamed/mangled tuple field.  Use numeric
-        # adjacency only if it is uniquely identifiable by positive finite data
-        # and a plausible asymmetry-error scale.
-        idx = list(df.columns).index(bsa_col)
-        nearby = list(df.columns)[max(0, idx-3):min(len(df.columns), idx+4)]
-        plausible = []
-        for c in nearby:
-            if c == bsa_col:
-                continue
-            v = pd.to_numeric(df[c], errors="coerce")
-            good = v[np.isfinite(v) & (v > 0)]
-            if len(good) > 0 and float(good.median()) < 0.5:
-                plausible.append(c)
-        if len(plausible) == 1:
-            stat_candidates = plausible
-
-    if len(stat_candidates) != 1:
-        raise RuntimeError(
-            f"{path}: found pass-2 BSA column {bsa_col!r}, but could not uniquely "
-            f"identify its statistical-error column. Explicit stat candidates: "
-            f"{stat_candidates}. Nearby columns: "
-            f"{list(df.columns)[max(0,list(df.columns).index(bsa_col)-3):list(df.columns).index(bsa_col)+4]}"
-        )
-
-    stat_col = stat_candidates[0]
-    stat = pd.to_numeric(df[stat_col], errors="coerce")
-    bsa = pd.to_numeric(df[bsa_col], errors="coerce")
-    mask = np.isfinite(stat) & (stat > 0) & np.isfinite(bsa)
-
-    out = df.loc[mask].copy()
-    out["BSA_pass2"] = bsa.loc[mask]
-    out["stat_error"] = stat.loc[mask]
-    out.attrs["bsa_column"] = str(bsa_col)
-    out.attrs["stat_column"] = str(stat_col)
+    out["BSA_pass2"] = bsa
+    out["stat_error"] = stat
+    mask = np.isfinite(out["BSA_pass2"]) & np.isfinite(out["stat_error"]) & (out["stat_error"] > 0)
+    out = out.loc[mask].reset_index(drop=True)
+    out.attrs["bsa_column"] = bsa_col
+    out.attrs["stat_column"] = f"{bsa_col} tuple component 1"
     return out
 
 def compare_rgb_to_rga_bsa(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame,
@@ -575,9 +549,19 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--rgb-xs", type=Path, default=RGB_XS_DEFAULT)
     ap.add_argument("--rgb-bsa", type=Path, default=RGB_BSA_DEFAULT)
-    ap.add_argument("--rga-pass2", type=Path, default=RGA_PASS2_DEFAULT)
+    ap.add_argument(
+        "--rga-pass2",
+        type=Path,
+        default=None,
+        help="Pass-2 dvcs_pass2_analysis.csv; default is ../import/dvcs_pass2_analysis.csv relative to this script.",
+    )
     ap.add_argument("--output", type=Path, default=OUT_DEFAULT)
     args = ap.parse_args()
+    here = Path(__file__).resolve().parent
+    if args.rga_pass2 is None:
+        args.rga_pass2 = (here.parent / "import" / "dvcs_pass2_analysis.csv").resolve()
+    else:
+        args.rga_pass2 = args.rga_pass2.expanduser().resolve()
 
     figdir = args.output / "figures"
     tabdir = args.output / "tables"
@@ -617,7 +601,7 @@ def main():
         precision_comparison = None
 
     print("=" * 100)
-    print("STAGE 5 v5 — PASS-2 RGA/RGB BSA PRECISION BENCHMARK + RGB COVARIANCE + DFJK/Ji FRAMEWORK")
+    print("STAGE 5 v6 — PASS-2 RGA/RGB BSA PRECISION BENCHMARK + RGB COVARIANCE + DFJK/Ji FRAMEWORK")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
