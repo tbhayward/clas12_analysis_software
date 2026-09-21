@@ -100,6 +100,7 @@ SVD_RTOL = 1.0e-11
 # statistics 4.5 S, 6 S, 9 S, respectively.
 DEFAULT_CURRENT_EQUIV_SU22 = 3.0
 DEFAULT_AUL_SCALE_FRAC = 0.05
+DEFAULT_AUT_SCALE_FRAC = 0.05
 RGC_REMAINING_FACTORS = (0.5, 1.0, 2.0)
 
 SAMY_SU22_AUL_ERRORS = [
@@ -295,6 +296,43 @@ def aul_value(th, pt) -> float:
     return float(th.predict(pt))
 
 
+def make_aut_point(g, row):
+    """
+    Transverse-target A_UT point at the same RGA kinematics.
+
+    Gepard uses in2polarizationvector="T" for A_UT.  When varFTn is not
+    supplied, DataPoint.prepare() selects the dominant sine-varphi target-spin
+    harmonic (varFTn=-1).  This is the E-sensitive transverse-target handle
+    used for the RGH sensitivity projection.
+    """
+    phi_trento = math.pi - math.radians(float(row.phi_deg))
+    pt = g.DataPoint(
+        xB=float(row.xB),
+        t=-abs(float(row.t_abs)),
+        Q2=float(row.Q2),
+        phi=float(phi_trento),
+        observable="AUT",
+        frame="trento",
+        process="ep2epgamma",
+        exptype="fixed target",
+        in1energy=float(row.ebeam),
+        in1charge=-1,
+        in1polarization=0,
+        in2particle="p",
+        in2polarization=1,
+        in2polarizationvector="T",
+    )
+    pt.prepare()
+    return pt
+
+
+def aut_value(th, pt) -> float:
+    """Gepard transverse target-spin asymmetry A_UT."""
+    if hasattr(th, "AUT"):
+        return float(th.AUT(pt))
+    return float(th.predict(pt))
+
+
 def cff_owner(th, name: str):
     candidates = [th.m] if hasattr(th, "m") else []
     candidates.append(th)
@@ -356,6 +394,8 @@ def finite_derivative(
             return np.asarray([pred(th, p) for p in points], dtype=float)
         if observable == "aul":
             return np.asarray([aul_value(th, p) for p in points], dtype=float)
+        if observable == "aut":
+            return np.asarray([aut_value(th, p) for p in points], dtype=float)
         return np.asarray(
             [bsa_from_points(th, pair[0], pair[1]) for pair in points],
             dtype=float,
@@ -403,14 +443,16 @@ def build_derivatives(df, th, g, rel_step, abs_step, min_nphi):
             for r in cell.itertuples(index=False)
         ]
         aul_pts = [make_aul_point(g, r) for r in cell.itertuples(index=False)]
+        aut_pts = [make_aut_point(g, r) for r in cell.itertuples(index=False)]
         pt0 = xs_pts[0]
 
         cff0 = {name: cff_value(th, name, pt0) for name in ALL_CFFS}
         xs0 = np.asarray([pred(th, p) for p in xs_pts], dtype=float)
         a0 = np.asarray([bsa_from_points(th, p, m) for p, m in bsa_pts], dtype=float)
         aul0 = np.asarray([aul_value(th, p) for p in aul_pts], dtype=float)
+        aut0 = np.asarray([aut_value(th, p) for p in aut_pts], dtype=float)
 
-        dx, da, dul, steps = {}, {}, {}, {}
+        dx, da, dul, dut, steps = {}, {}, {}, {}, {}
         for name in ALL_CFFS:
             dx[name], steps[name] = finite_derivative(
                 th, xs_pts, "xs", name, cff0[name], rel_step, abs_step
@@ -420,6 +462,9 @@ def build_derivatives(df, th, g, rel_step, abs_step, min_nphi):
             )
             dul[name], _ = finite_derivative(
                 th, aul_pts, "aul", name, cff0[name], rel_step, abs_step
+            )
+            dut[name], _ = finite_derivative(
+                th, aut_pts, "aut", name, cff0[name], rel_step, abs_step
             )
 
         # A transparent observable-level diagnostic: response to a +10% change
@@ -440,6 +485,7 @@ def build_derivatives(df, th, g, rel_step, abs_step, min_nphi):
                 "xs_km15": float(xs0[j]),
                 "bsa_km15": float(a0[j]),
                 "aul_km15": float(aul0[j]),
+                "aut_km15": float(aut0[j]),
                 "xs_frac_response_to_10pct_ImHt": float(xs_frac_response_10[j]),
                 "bsa_abs_response_to_10pct_ImHt": float(bsa_abs_response_10[j]),
             }
@@ -447,6 +493,7 @@ def build_derivatives(df, th, g, rel_step, abs_step, min_nphi):
                 rec[f"d_xs_d_{name}"] = float(dx[name][j])
                 rec[f"d_bsa_d_{name}"] = float(da[name][j])
                 rec[f"d_aul_d_{name}"] = float(dul[name][j])
+                rec[f"d_aut_d_{name}"] = float(dut[name][j])
             point_rows.append(rec)
 
         xi = float(np.median(cell["xB"])) / (2.0 - float(np.median(cell["xB"])))
@@ -511,7 +558,7 @@ def build_derivatives_parallel(df, rel_step, abs_step, min_nphi, workers):
     return points, cells
 
 
-def layout_for(cell_meta, mode, include_aul=False):
+def layout_for(cell_meta, mode, include_aul=False, include_aut=False):
     cffs = FIT_MODES[mode]
     pars = []
     for b in cell_meta["bin"].astype(int):
@@ -520,6 +567,8 @@ def layout_for(cell_meta, mode, include_aul=False):
     pars += [(-1, "xs_scale_beta"), (-1, "bsa_scale_beta")]
     if include_aul:
         pars += [(-1, "aul_scale_beta")]
+    if include_aut:
+        pars += [(-1, "aut_scale_beta")]
     return pars
 
 
@@ -532,9 +581,13 @@ def covariance(
     aul_stats_multiplier=1.0,
     aul_scenario="none",
     aul_scale_frac=DEFAULT_AUL_SCALE_FRAC,
+    include_aut=False,
+    aut_stats_multiplier=1.0,
+    aut_scenario="none",
+    aut_scale_frac=DEFAULT_AUT_SCALE_FRAC,
 ):
     use = df.merge(deriv, on=["point_id", "bin", "phi_deg"], how="inner")
-    layout = layout_for(cell_meta, mode, include_aul=include_aul)
+    layout = layout_for(cell_meta, mode, include_aul=include_aul, include_aut=include_aut)
     idx = {k: i for i, k in enumerate(layout)}
     npar = len(layout)
     cffs = FIT_MODES[mode]
@@ -579,6 +632,23 @@ def covariance(
                 rows.append(v)
                 sigmas.append(srow)
 
+    if include_aut:
+        # RGH has not run yet.  For this sensitivity study assume its A_UT
+        # statistical precision at matched kinematics is the same as the
+        # corresponding RGC A_UL scenario.  We therefore reuse the empirical
+        # Samy-Su22 error map only as an absolute precision template.
+        for r in use.itertuples(index=False):
+            v = np.zeros(npar)
+            b = int(r.bin)
+            for name in cffs:
+                v[idx[(b, name)]] = getattr(r, f"d_aut_d_{name}")
+            v[idx[(-1, "aut_scale_beta")]] = aut_scale_frac * r.aut_km15
+            su22_sigma, _ = samy_su22_sigma_aul(r.Q2, r.xB, r.t_abs, r.phi_deg)
+            srow = su22_sigma / math.sqrt(aut_stats_multiplier)
+            if np.isfinite(srow) and srow > 0:
+                rows.append(v)
+                sigmas.append(srow)
+
     A = np.asarray(rows, dtype=float)
     sigmas = np.asarray(sigmas, dtype=float)
     B = A / sigmas[:, None]
@@ -586,6 +656,8 @@ def covariance(
     prior_keys = [(-1, "xs_scale_beta"), (-1, "bsa_scale_beta")]
     if include_aul:
         prior_keys.append((-1, "aul_scale_beta"))
+    if include_aut:
+        prior_keys.append((-1, "aut_scale_beta"))
     priors = []
     for key in prior_keys:
         p = np.zeros(npar)
@@ -615,6 +687,10 @@ def covariance(
         "aul_stats_multiplier_vs_su22": float(aul_stats_multiplier) if include_aul else np.nan,
         "aul_scenario": str(aul_scenario) if include_aul else "none",
         "aul_scale_frac": float(aul_scale_frac) if include_aul else np.nan,
+        "include_aut": bool(include_aut),
+        "aut_stats_multiplier_vs_su22": float(aut_stats_multiplier) if include_aut else np.nan,
+        "aut_scenario": str(aut_scenario) if include_aut else "none",
+        "aut_scale_frac": float(aut_scale_frac) if include_aut else np.nan,
         "n_measurement_rows": len(A),
         "n_parameters": npar,
         "rank": rank,
@@ -916,6 +992,12 @@ def main(argv: Optional[List[str]] = None) -> int:
         help="Common fractional A_UL scale uncertainty; default 0.05.",
     )
     p.add_argument(
+        "--aut-scale-frac",
+        type=float,
+        default=DEFAULT_AUT_SCALE_FRAC,
+        help="Assumed common fractional A_UT scale uncertainty for RGH; default 0.05.",
+    )
+    p.add_argument(
         "--relative-floor",
         type=float,
         default=DEFAULT_RELATIVE_FLOOR,
@@ -947,6 +1029,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     bp = make_point(g, row, +1)
     bm = make_point(g, row, -1)
     ul = make_aul_point(g, row)
+    ut = make_aut_point(g, row)
 
     print("[preflight] representative KM15 point")
     print(
@@ -956,7 +1039,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     print(
         f"[preflight] XS={pred(th,xs0):.8g}, "
         f"BSA={bsa_from_points(th,bp,bm):+.8g}, "
-        f"AUL={aul_value(th,ul):+.8g}"
+        f"AUL={aul_value(th,ul):+.8g}, "
+        f"AUT={aut_value(th,ut):+.8g}"
     )
     for name in ALL_CFFS:
         val = cff_value(th, name, xs0)
@@ -964,27 +1048,31 @@ def main(argv: Optional[List[str]] = None) -> int:
         base_xs = pred(th, xs0)
         base_a = bsa_from_points(th, bp, bm)
         base_ul = aul_value(th, ul)
+        base_ut = aut_value(th, ut)
         with shifted_cff(th, name, step):
             xs1 = pred(th, xs0)
             a1 = bsa_from_points(th, bp, bm)
             ul1 = aul_value(th, ul)
+            ut1 = aut_value(th, ut)
         print(
             f"[preflight] {name:4s}: value={val:+.6g}, step={step:.4g}, "
             f"XS response={100*(xs1/base_xs-1):+.4g}%, "
             f"BSA change={a1-base_a:+.4g}, "
-            f"AUL change={ul1-base_ul:+.4g}"
+            f"AUL change={ul1-base_ul:+.4g}, "
+            f"AUT change={ut1-base_ut:+.4g}"
         )
 
     deriv_path = tables / "point_xs_bsa_allcff_derivatives.csv"
     cell_path = tables / "cell_km15_allcffs.csv"
-    required_deriv_cols = {"aul_km15", "d_aul_d_ReH", "d_aul_d_ImHt", "d_aul_d_ImE"}
+    required_deriv_cols = {"aul_km15", "d_aul_d_ReH", "d_aul_d_ImHt", "d_aul_d_ImE",
+                           "aut_km15", "d_aut_d_ReH", "d_aut_d_ImHt", "d_aut_d_ImE"}
     can_reuse = deriv_path.exists() and cell_path.exists() and not args.force_derivatives
     if can_reuse:
         deriv = pd.read_csv(deriv_path)
         cell_meta = pd.read_csv(cell_path)
         if not required_deriv_cols.issubset(deriv.columns):
             can_reuse = False
-            print("[cache] derivative table predates AUL support; recomputing")
+            print("[cache] derivative table predates AUL/AUT support; recomputing")
     if can_reuse:
         print(f"[cache] reusing {deriv_path} ({len(deriv)} points); skipping Gepard derivative pass")
     else:
@@ -1012,6 +1100,8 @@ def main(argv: Optional[List[str]] = None) -> int:
             rr["observable_set"] = "XS+BSA"
             rr["aul_scenario"] = "none"
             rr["aul_stats_multiplier_vs_su22"] = np.nan
+            rr["aut_scenario"] = "none"
+            rr["aut_stats_multiplier_vs_su22"] = np.nan
             result_frames.append(rr)
 
             # A_UL scan is most relevant once Htilde is released.
@@ -1040,6 +1130,41 @@ def main(argv: Optional[List[str]] = None) -> int:
                     rr["observable_set"] = "XS+BSA+AUL"
                     rr["aul_scenario"] = scenario
                     rr["aul_stats_multiplier_vs_su22"] = n_su22
+                    rr["aut_scenario"] = "none"
+                    rr["aut_stats_multiplier_vs_su22"] = np.nan
+                    result_frames.append(rr)
+
+                    # Add the future RGH transverse-target measurement.  The
+                    # requested working assumption is that RGH achieves the same
+                    # matched-bin statistical precision as RGC A_UL for this
+                    # scenario.
+                    print(
+                        f"[fit] mode={mode:7s} luminosity={factor}x  "
+                        f"XS+BSA+AUL+AUT  AUL={scenario}; "
+                        f"RGH AUT same precision ({n_su22:g}xSu22-equivalent)"
+                    )
+                    cov, layout, unresolved, diag = covariance(
+                        inputs[factor], deriv, cell_meta, mode,
+                        include_aul=True,
+                        aul_stats_multiplier=n_su22,
+                        aul_scenario=scenario,
+                        aul_scale_frac=args.aul_scale_frac,
+                        include_aut=True,
+                        aut_stats_multiplier=n_su22,
+                        aut_scenario=f"RGH same as {scenario}",
+                        aut_scale_frac=args.aut_scale_frac,
+                    )
+                    diag["luminosity_factor"] = factor
+                    diag_rows.append(diag)
+                    rr = summarize(
+                        cell_meta, cov, layout, unresolved, mode, factor,
+                        args.relative_floor
+                    )
+                    rr["observable_set"] = "XS+BSA+AUL+AUT"
+                    rr["aul_scenario"] = scenario
+                    rr["aul_stats_multiplier_vs_su22"] = n_su22
+                    rr["aut_scenario"] = f"RGH same as {scenario}"
+                    rr["aut_stats_multiplier_vs_su22"] = n_su22
                     result_frames.append(rr)
 
     results = pd.concat(result_frames, ignore_index=True)
@@ -1097,6 +1222,46 @@ def main(argv: Optional[List[str]] = None) -> int:
         ax.grid(alpha=.2)
         savefig(fig, figures / f"AUL_SamySu22_{mode}_polarized_running_at_10xRGA.png")
 
+    # Direct comparison of A_UL alone with A_UL+A_UT.  This is the key RGH
+    # diagnostic: does transverse-target information release E and recover
+    # useful Htilde precision in the six-CFF local fit?
+    for mode in ("H_Ht", "H_Ht_E"):
+        fig, ax = plt.subplots(figsize=(8.8, 6.0))
+        for obs, lslabel in (("XS+BSA+AUL", "+ AUL"),
+                             ("XS+BSA+AUL+AUT", "+ AUL + AUT (RGH)")):
+            d = results[(results.fit_mode == mode) &
+                        (results.observable_set == obs) &
+                        (results.aul_scenario == "remaining 1x")]
+            med = d.groupby("luminosity_factor").sigma_ImHt.median()
+            ax.plot(med.index, med.values, marker="o", label=lslabel)
+        ax.set_xscale("log"); ax.set_yscale("log")
+        ax.set_xticks(LUMI_FACTORS); ax.set_xticklabels([f"{x}x" for x in LUMI_FACTORS])
+        ax.set_xlabel("Unpolarized RGA luminosity")
+        ax.set_ylabel(r"Median absolute uncertainty on $\mathrm{Im}\,\widetilde{\mathcal{H}}$")
+        ax.set_title(f"{mode}: impact of future transverse-target A_UT")
+        ax.grid(alpha=.2); ax.legend()
+        savefig(fig, figures / f"AUT_RGH_{mode}_impact_remaining1x.png")
+
+    # At 10x RGA show the full polarized-running scan with and without RGH.
+    mode = "H_Ht_E"
+    fig, ax = plt.subplots(figsize=(8.8, 6.0))
+    labels = [x[0] for x in scenarios]
+    for obs, lab in (("XS+BSA+AUL", "+ AUL"),
+                     ("XS+BSA+AUL+AUT", "+ AUL + AUT (RGH)")):
+        vals=[]
+        for scenario, _ in scenarios:
+            d = results[(results.fit_mode == mode) &
+                        (results.observable_set == obs) &
+                        (results.luminosity_factor == 10) &
+                        (results.aul_scenario == scenario)]
+            vals.append(np.nanmedian(d.sigma_ImHt))
+        ax.plot(range(len(vals)), vals, marker="o", label=lab)
+    ax.set_xticks(range(len(labels))); ax.set_xticklabels(labels, rotation=20, ha="right")
+    ax.set_ylabel(r"Median absolute uncertainty on $\mathrm{Im}\,\widetilde{\mathcal{H}}$")
+    ax.set_title("H+Htilde+E: RGH transverse-target leverage at 10x RGA")
+    ax.grid(alpha=.2); ax.legend()
+    savefig(fig, figures / "AUT_RGH_H_Ht_E_polarized_running_at_10xRGA.png")
+
     print("\n" + "=" * 124)
     print("A_UL CONSTRAINT: SAMY SU22 PRECISION + CONSERVATIVE RGC RUNNING PROJECTION")
     print("=" * 124)
@@ -1129,6 +1294,41 @@ def main(argv: Optional[List[str]] = None) -> int:
                 })
     print(pd.DataFrame(rows).to_string(index=False, float_format=lambda x: f"{x:.4g}"))
 
+    print("\n" + "=" * 124)
+    print("RGH A_UT IMPACT: SAME MATCHED-BIN PRECISION AS THE CORRESPONDING RGC A_UL SCENARIO")
+    print("=" * 124)
+    print(f"AUT common scale nuisance = {100*args.aut_scale_frac:.2f}%.")
+    print("RGH has not run: its A_UT precision is an explicit projection assumption, not measured input.")
+    rows = []
+    for mode in ("H_Ht", "H_Ht_E"):
+        for factor in LUMI_FACTORS:
+            for scenario, n_su22 in scenarios:
+                a = results[(results.fit_mode == mode) &
+                            (results.observable_set == "XS+BSA+AUL") &
+                            (results.luminosity_factor == factor) &
+                            (results.aul_scenario == scenario)]
+                u = results[(results.fit_mode == mode) &
+                            (results.observable_set == "XS+BSA+AUL+AUT") &
+                            (results.luminosity_factor == factor) &
+                            (results.aul_scenario == scenario)]
+                dg = diagnostics[(diagnostics.fit_mode == mode) &
+                                 (diagnostics.luminosity_factor == factor) &
+                                 (diagnostics.include_aul == True) &
+                                 (diagnostics.include_aut == True) &
+                                 (diagnostics.aul_scenario == scenario)]
+                sa = np.nanmedian(a.sigma_ImHt); su = np.nanmedian(u.sigma_ImHt)
+                rows.append({
+                    "mode": mode, "RGA_L": f"{factor}x", "pol_scenario": scenario,
+                    "N/Su22_each": n_su22,
+                    "sigma_ImHt_AUL": sa,
+                    "sigma_ImHt_AUL_AUT": su,
+                    "AUT_gain": sa/su if su > 0 else np.nan,
+                    "rel_ImHt_AUL_AUT_%": 100*np.nanmedian(u.relative_sigma_ImHt),
+                    "maxcorr_ImHt_AUL_AUT": np.nanmedian(u.max_abs_corr_ImHt),
+                    "cond_AUL_AUT": dg.iloc[0].condition_number_effective,
+                })
+    print(pd.DataFrame(rows).to_string(index=False, float_format=lambda x: f"{x:.4g}"))
+
     print("[interpretation]")
     print("  H       : optimistic H-dominance reference.")
     print("  H_Ht    : asks whether XS+BSA can separate Htilde once H is free.")
@@ -1139,6 +1339,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     print("  Current collected RGC is conservatively treated as 3x Su22 effective statistics.")
     print("  Remaining 0.5x/1x/2x scenarios give final 4.5x/6x/9x Su22 statistics.")
     print("  Polarized-target precision is independent of the RGA unpolarized luminosity factor.")
+    print("  RGH AUT is projected with the same matched-bin statistical precision as AUL in each scenario.")
+    print("  Gepard AUT uses a transverse target and its default dominant sine-varphi harmonic.")
     print("  Any nonzero rank deficit is a warning that the corresponding fit")
     print("  contains an exactly unresolved CFF combination and must not be")
     print("  interpreted from pseudoinverse errors alone.")
