@@ -512,22 +512,58 @@ def rga_binning_transfer_projection(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame
     plt.close(fig)
 
     # Luminosity progression in the same fixed RGA 4D binning.
+    #
+    # Once the bin pattern is fixed, this is pure counting-statistics scaling:
+    # sigma(L) = sigma(1x) / sqrt(L).  Plot it continuously to 30x and solve
+    # explicitly for the luminosity at which the RGB and current-RGA medians
+    # are equal.
+    median_rgb_1x = float(summary.loc[summary["luminosity"] == "1x",
+                                      "median_projected_sigma_ALU"].iloc[0])
+    median_rga = float(np.median(pstat))
+    L_cross = (median_rgb_1x / median_rga) ** 2
+
+    L_curve = np.linspace(1.0, 30.0, 400)
+    sigma_curve = median_rgb_1x / np.sqrt(L_curve)
+
     fig, ax = plt.subplots(figsize=(7.7, 5.2))
-    ax.plot([1, 2, 5, 10], summary["median_projected_sigma_ALU"],
-            marker="o", linewidth=2.2, label="Projected RGB neutron")
-    ax.axhline(np.median(pstat), linestyle=":", linewidth=2.0,
-               label="Current RGA proton median")
-    ax.set_xscale("log")
-    ax.set_xticks([1, 2, 5, 10])
-    ax.set_xticklabels(["1x", "2x", "5x", "10x"])
+    ax.plot(L_curve, sigma_curve, linewidth=2.2,
+            label="Projected RGB neutron")
+    ax.scatter([1, 2, 5, 10],
+               summary["median_projected_sigma_ALU"],
+               s=42, zorder=3, label="Calculated luminosity points")
+    ax.axhline(median_rga, linestyle=":", linewidth=2.0,
+               label=f"Current RGA proton median = {median_rga:.3f}")
+
+    if 1.0 <= L_cross <= 30.0:
+        ax.scatter([L_cross], [median_rga], s=70, zorder=5)
+        ax.axvline(L_cross, linestyle="--", linewidth=1.4, alpha=0.7)
+        ax.annotate(
+            f"Equal median precision\nL = {L_cross:.1f}x",
+            xy=(L_cross, median_rga),
+            xytext=(L_cross - 7.5, median_rga + 0.055),
+            arrowprops=dict(arrowstyle="->", lw=1.2),
+            ha="center",
+            va="bottom",
+        )
+
+    ax.set_xlim(1, 30)
+    ax.set_xticks([1, 2, 5, 10, 15, 20, 25, 30])
     ax.set_xlabel("RGB luminosity factor")
     ax.set_ylabel(r"Median statistical $\sigma(A_{LU})$")
     ax.set_title("Precision at fixed RGA-like 4D granularity")
     ax.grid(alpha=0.20)
-    ax.legend()
+    ax.legend(fontsize=9)
     fig.tight_layout()
     fig.savefig(figdir / "rgb_rga_4d_binning_luminosity_progression.png", dpi=180)
     plt.close(fig)
+
+    # Save the crossing as an explicit numerical result for audit/use in slides.
+    crossing = pd.DataFrame([{
+        "median_RGB_1x_on_RGA_binning": median_rgb_1x,
+        "median_current_RGA": median_rga,
+        "equal_median_precision_luminosity_factor": L_cross,
+    }])
+    crossing.to_csv(tabdir / "rgb_rga_4d_binning_precision_crossing.csv", index=False)
 
     return summary, points
 
@@ -608,7 +644,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v11 — ACTUAL RGB BSA + RGA-LIKE 4D BINNING TRANSFER + DFJK/Ji FRAMEWORK")
+    print("STAGE 5 v12 — ACTUAL RGB BSA + RGA-LIKE 4D BINNING TRANSFER + DFJK/Ji FRAMEWORK")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -655,6 +691,12 @@ def main():
         print(f"  Current RGA median sigma(A_LU)       = {q10.median_current_RGA_sigma_ALU:.5f}")
         print(f"  Projected RGB 10x median on RGA bins = {q10.median_projected_sigma_ALU:.5f}")
         print(f"  Ratio RGB(10x)/RGA(current) median   = {q10.median_ratio_projected_RGB_to_current_RGA:.3f}")
+        median_rgb_1x = float(
+            transfer_summary.loc[transfer_summary["luminosity"] == "1x",
+                                 "median_projected_sigma_ALU"].iloc[0]
+        )
+        L_cross = (median_rgb_1x / float(q10.median_current_RGA_sigma_ALU)) ** 2
+        print(f"  Equal-median-precision luminosity    = {L_cross:.2f}x")
         print(f"  Fraction of RGA-like bins where projected RGB 10x has smaller stat error")
         print(f"                                        = {q10.fraction_projected_better_than_current_RGA_point:.3f}")
         print()
