@@ -916,6 +916,62 @@ def make_plots(results, cell_meta, deriv, figures):
     savefig(fig, figures / "09_ImH_degradation_when_subleading_CFFs_float.png")
 
 
+
+def make_presentation_cff_band_figure(results, figures):
+    """Presentation figure: observable complementarity versus luminosity.
+
+    Uses the full six-CFF local fit and a representative |t|~0.5 GeV^2 slice.
+    The filled envelopes are guides through the discrete cell-by-cell 68%
+    intervals; they are not a continuous CFF fit.  Thin/dashed = 1x RGA,
+    opaque/solid = 10x RGA.  Polarized scenarios use nominal completion
+    (remaining 1x = 6 Su22-equivalent statistics).
+    """
+    base = results[(results.fit_mode == "H_Ht_E") &
+                   (results.t_abs >= 0.40) & (results.t_abs <= 0.60)].copy()
+    specs = [
+        ("XS+BSA", "none", "none", r"$\sigma+A_{LU}$"),
+        ("XS+BSA+AUL", "remaining 1x", "none", r"$+A_{UL}$ (RGC)"),
+        ("XS+BSA+AUL+AUT", "remaining 1x", "RGH same as remaining 1x", r"$+A_{UT}$ (RGH)"),
+    ]
+    cffs = [
+        ("ImH_KM15", "sigma_ImH", r"$\mathrm{Im}\,\mathcal{H}$"),
+        ("ImHt_KM15", "sigma_ImHt", r"$\mathrm{Im}\,\widetilde{\mathcal{H}}$"),
+        ("ImE_KM15", "sigma_ImE", r"$\mathrm{Im}\,\mathcal{E}$"),
+    ]
+    fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.9), sharex=True)
+    for ax, (truth_col, sig_col, title) in zip(axes, cffs):
+        for obs, aul, aut, label in specs:
+            for L, alpha, ls, suffix in [(1, .13, "--", "1x"), (10, .30, "-", "10x")]:
+                d = base[(base.observable_set == obs) &
+                         (base.luminosity_factor == L) &
+                         (base.aul_scenario == aul) &
+                         (base.aut_scenario == aut)].sort_values("xi")
+                d = d[np.isfinite(d[truth_col]) & np.isfinite(d[sig_col])]
+                if d.empty:
+                    continue
+                x=d.xi.to_numpy(float); y=d[truth_col].to_numpy(float); e=d[sig_col].to_numpy(float)
+                # The central pseudo-truth is common; draw it only once below.
+                ax.fill_between(x, y-e, y+e, alpha=alpha, linewidth=0, label=(f"{label}, {suffix}" if L==10 else None))
+                ax.plot(x, y-e, ls=ls, lw=.8, alpha=.65)
+                ax.plot(x, y+e, ls=ls, lw=.8, alpha=.65)
+        # common KM15 pseudo-truth from the 10x full-observable rows
+        d0=base[(base.observable_set=="XS+BSA+AUL+AUT") & (base.luminosity_factor==10) &
+                (base.aul_scenario=="remaining 1x")].sort_values("xi")
+        ax.plot(d0.xi, d0[truth_col], marker="o", ms=3.2, lw=1.5, label="KM15 pseudo-truth")
+        ax.axhline(0, lw=.6, alpha=.35)
+        ax.set_title(title); ax.set_xlabel(r"$\xi \simeq x_B/(2-x_B)$")
+        ax.grid(alpha=.16)
+    axes[0].set_ylabel("CFF value with projected 68% interval")
+    # A compact legend on the right-most panel.  Filled bands are the key visual.
+    h,l=axes[-1].get_legend_handles_labels()
+    axes[-1].legend(h,l,fontsize=8,loc="best")
+    fig.suptitle(r"Observable complementarity cannot be replaced by luminosity: full local $H+\widetilde H+E$ fit")
+    fig.text(.5,.01, r"Representative $0.40<|t|<0.60$ GeV$^2$ slice.  Envelopes connect discrete cell-by-cell 68% intervals; not a continuous CFF fit.", ha="center", fontsize=9)
+    fig.tight_layout(rect=(0,.045,1,.94))
+    fig.savefig(figures / "presentation_CFF_bands_observable_complementarity_1x_vs_10x.png", dpi=300)
+    plt.close(fig)
+
+
 def print_summary(results, diagnostics):
     print("\n" + "=" * 108)
     print("LOCAL H / Htilde / E CFF-SEPARATION PROJECTION")
@@ -1270,6 +1326,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     ax.set_title("H+Htilde+E: RGH transverse-target leverage at 10x RGA")
     ax.grid(alpha=.2); ax.legend()
     savefig(fig, figures / "AUT_RGH_H_Ht_E_polarized_running_at_10xRGA.png")
+
+    make_presentation_cff_band_figure(results, figures)
 
     print("\n" + "=" * 124)
     print("A_UL CONSTRAINT: SAMY SU22 PRECISION + CONSERVATIVE RGC RUNNING PROJECTION")
