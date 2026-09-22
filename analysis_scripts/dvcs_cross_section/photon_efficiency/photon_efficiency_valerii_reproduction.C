@@ -16127,6 +16127,104 @@ void run_concise_analysis(const std::string& out) {
 }
 
 
+
+// -----------------------------------------------------------------------------
+// Generator-level AAOgen vs DVCSgen leading-photon momentum diagnostic.
+// Uses the event-level PhotonEfficiencyEvents tree, so every accepted-electron
+// MC event contributes once (no tag/probe-hypothesis duplication).  No REC
+// exclusivity, efficiency, component-normalization, or MC::Event weights enter.
+// -----------------------------------------------------------------------------
+void draw_generated_leading_photon_comparison(const std::string& out) {
+    auto fill_leading = [](const char* input_dir, const char* hname,
+                           bool require_fd_geometry) -> TH1D* {
+        TChain c("PhotonEfficiencyEvents");
+        c.Add((std::string(input_dir)+"/*_photon_efficiency.root").c_str());
+        if (c.GetEntries()<=0) {
+            std::cerr << "WARNING: no PhotonEfficiencyEvents entries in " << input_dir << "\n";
+            return nullptr;
+        }
+
+        int gen_gamma_total=0;
+        double gen_gamma_p[12]={0}, gen_gamma_theta[12]={0};
+        if (!c.GetBranch("gen_gamma_total") || !c.GetBranch("gen_gamma_p") ||
+            !c.GetBranch("gen_gamma_theta")) {
+            std::cerr << "WARNING: required generated-photon branches are missing in "
+                      << input_dir << "\n";
+            return nullptr;
+        }
+        c.SetBranchStatus("*",0);
+        c.SetBranchStatus("gen_gamma_total",1);
+        c.SetBranchStatus("gen_gamma_p",1);
+        c.SetBranchStatus("gen_gamma_theta",1);
+        c.SetBranchAddress("gen_gamma_total",&gen_gamma_total);
+        c.SetBranchAddress("gen_gamma_p",gen_gamma_p);
+        c.SetBranchAddress("gen_gamma_theta",gen_gamma_theta);
+
+        TH1D* h=new TH1D(hname,"",106,0.0,10.6);
+        h->SetDirectory(nullptr);
+        h->Sumw2();
+        Long64_t accepted=0;
+        for (Long64_t ie=0; ie<c.GetEntries(); ++ie) {
+            c.GetEntry(ie);
+            const int n=std::min(gen_gamma_total,12);
+            double best_p=-1.0;
+            for (int ig=0; ig<n; ++ig) {
+                const double p=gen_gamma_p[ig];
+                const double th=gen_gamma_theta[ig];
+                if (!std::isfinite(p) || p<=0.0) continue;
+                if (require_fd_geometry &&
+                    !(std::isfinite(th) && th>=FD_THETA_MIN && th<=FD_THETA_MAX)) continue;
+                if (p>best_p) best_p=p;
+            } // endfor
+            if (best_p>0.0) { h->Fill(best_p); accepted++; }
+        } // endfor
+        if (h->Integral()>0.0) h->Scale(1.0/h->Integral(),"width");
+        std::cout << "[generator leading photon] " << input_dir
+                  << (require_fd_geometry ? " FD geometry" : " all angles")
+                  << ": events=" << accepted << "\n";
+        return h;
+    };
+
+    gSystem->mkdir((out+"/generator_diagnostics").c_str(),kTRUE);
+    for (int ifd=0; ifd<2; ++ifd) {
+        const bool fd_only=(ifd==1);
+        TH1D* haa=fill_leading(AAOGEN_DIR,
+            fd_only?"h_lead_aao_fd":"h_lead_aao_all",fd_only);
+        TH1D* hdv=fill_leading(DVCSGEN_DIR,
+            fd_only?"h_lead_dvcs_fd":"h_lead_dvcs_all",fd_only);
+        if (!haa || !hdv) { delete haa; delete hdv; continue; }
+
+        TCanvas c(fd_only?"c_lead_gen_fd":"c_lead_gen_all","",1000,760);
+        c.SetLeftMargin(0.145); c.SetRightMargin(0.045);
+        c.SetBottomMargin(0.135); c.SetTopMargin(0.095);
+        haa->SetLineColor(kBlue+1); haa->SetLineWidth(3);
+        hdv->SetLineColor(kRed+1); hdv->SetLineWidth(3);
+        haa->SetStats(0); hdv->SetStats(0);
+        haa->GetXaxis()->SetTitle("Generated leading-photon momentum p_{#gamma,max} (GeV)");
+        haa->GetYaxis()->SetTitle("Normalized events / GeV");
+        haa->GetXaxis()->SetTitleOffset(1.15);
+        haa->GetYaxis()->SetTitleOffset(1.35);
+        const double ymax=1.18*std::max(haa->GetMaximum(),hdv->GetMaximum());
+        haa->SetMinimum(0.0); haa->SetMaximum(ymax>0?ymax:1.0);
+        haa->Draw("HIST"); hdv->Draw("HIST SAME");
+
+        TLegend leg(0.57,0.70,0.93,0.86);
+        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.038);
+        leg.AddEntry(haa,"AAOgen: leading #pi^{0}#rightarrow#gamma#gamma photon","l");
+        leg.AddEntry(hdv,"DVCSgen: generated DVCS photon","l");
+        leg.Draw();
+        TLatex tx; tx.SetNDC(); tx.SetTextSize(0.041); tx.SetTextFont(42);
+        tx.DrawLatex(0.15,0.925,fd_only ?
+            "Generator-level photon spectra, 6^{#circ} #leq #theta_{#gamma} #leq 36^{#circ}" :
+            "Generator-level photon spectra, all generated angles");
+        c.RedrawAxis();
+        const std::string fn=out+"/generator_diagnostics/"+
+            (fd_only?"generated_leading_photon_momentum_FD.png":"generated_leading_photon_momentum.png");
+        c.SaveAs(fn.c_str());
+        delete haa; delete hdv;
+    } // endfor
+}
+
 void run_valerii_fd_reproduction(const std::string& out) {
     std::cout << "\n============================================================\n"
               << " Valerii-style FD 8x3x6 reproduction\n"
@@ -16145,6 +16243,7 @@ void run_valerii_fd_reproduction(const std::string& out) {
               << "Raw lab dphi and the underlying Trento-angle quantities remain QA diagnostics.\n"
               << "High-E DVCS normalization diagnostics include Delta t = t_p - t_gamma.\n"
               << "============================================================\n";
+    draw_generated_leading_photon_comparison(out);
     if (!determine_high_eprobe_equalstat_splits()) {
         std::cerr << "ERROR: cannot run Valerii reproduction without Eprobe splits.\n";
         return;
