@@ -599,7 +599,10 @@ def draw_normalization_summary(results, fits, outdir):
                 if total is None: total=hm.Clone(f"htot_{det}_{fr}"); total.SetDirectory(0)
                 else: total.Add(hm)
             ymax=max(hd.GetMaximum(),total.GetMaximum())*1.28 if total else hd.GetMaximum()*1.28
-            hd.SetTitle(""); hd.GetYaxis().SetTitle("Events"); hd.GetYaxis().SetRangeUser(0,max(ymax,1)); hd.Draw("E1")
+            hd.SetTitle("")
+            closure_obs = "mx2epg" if fr=="signal" else ("mx2ep" if fr=="eta" else ("copl" if fr=="central" else "angle"))
+            hd.GetXaxis().SetTitle(OBS[closure_obs][4])
+            hd.GetYaxis().SetTitle("Events"); hd.GetYaxis().SetRangeUser(0,max(ymax,1)); hd.Draw("E1")
             for k,hm in hs: hm.Draw("HIST SAME")
             total.SetLineColor(ROOT.kMagenta+2); total.SetLineWidth(3); total.Draw("HIST SAME"); hd.Draw("E1 SAME")
             leg=ROOT.TLegend(.57,.61,.91,.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(.028); leg.AddEntry(hd,"Data","lep")
@@ -795,6 +798,136 @@ def write_local_purity_tables(results, localfits, outdir):
         f.write("5. Large template condition numbers flag bins where AAOgen/background shapes are too similar to separate reliably.\n")
         f.write("6. Do not start reconstructed-probe efficiency extraction until Candidate-B local fits and control-region transfer checks are accepted.\n")
 
+
+# -----------------------------------------------------------------------------
+# Empirical exclusive-pi0 peak extraction
+# -----------------------------------------------------------------------------
+# The full AAOgen+CLASDIS+DVCSgen template decomposition is intentionally kept
+# above as a diagnostic.  The nominal denominator study below asks a narrower
+# question: how many events belong to the narrow exclusive-pi0 peak near
+# Mx2(ep gamma_tag)=0?  A smooth background is determined from DATA sidebands,
+# and AAOgen supplies only the signal-window acceptance/peak shape.
+PEAK_WINDOW = 0.035
+PEAK_FIT_RANGE = (-0.16, 0.18)
+PEAK_SIDEBAND_GAP = 0.055
+PEAK_POLY_ORDER = 2
+PEAK_VARIATIONS = [
+    (0.030, 0.050, 1, -0.14, 0.16),
+    (0.030, 0.055, 2, -0.16, 0.18),
+    (0.035, 0.055, 2, -0.16, 0.18), # nominal
+    (0.040, 0.060, 2, -0.18, 0.20),
+    (0.035, 0.060, 3, -0.18, 0.20),
+]
+
+def _peak_sideband_extract(data_h, aao_h, window=PEAK_WINDOW, gap=PEAK_SIDEBAND_GAP,
+                           order=PEAK_POLY_ORDER, fit_lo=PEAK_FIT_RANGE[0], fit_hi=PEAK_FIT_RANGE[1]):
+    n=data_h.GetNbinsX()
+    x=np.array([data_h.GetBinCenter(i) for i in range(1,n+1)],float)
+    y=np.array([data_h.GetBinContent(i) for i in range(1,n+1)],float)
+    e=np.array([max(data_h.GetBinError(i),math.sqrt(max(y[i-1],1.0))) for i in range(1,n+1)],float)
+    a=np.array([aao_h.GetBinContent(i) for i in range(1,n+1)],float)
+    inrange=(x>=fit_lo)&(x<=fit_hi)
+    side=inrange&(np.abs(x)>=gap)
+    sig=np.abs(x)<window
+    if np.count_nonzero(side)<order+3 or np.sum(a)<=0 or np.sum(a[sig])<=0:
+        return None
+    # Weighted polynomial fit to DATA sidebands only.  This deliberately avoids
+    # asking CLASDIS/DVCSgen to predict the absolute background normalization.
+    coeff=np.polyfit(x[side],y[side],order,w=1.0/e[side])
+    bkg=np.polyval(coeff,x)
+    bkg=np.maximum(bkg,0.0)
+    excess=float(np.sum(y[sig]-bkg[sig]))
+    a_frac=float(np.sum(a[sig])/np.sum(a[inrange])) if np.sum(a[inrange])>0 else 0.0
+    npi0=max(excess,0.0)/a_frac if a_frac>0 else float('nan')
+    # Scale AAOgen so its integral in the signal window equals the background-
+    # subtracted DATA excess.  This is a shape/closure visualization, not a fit.
+    ascale=max(excess,0.0)/float(np.sum(a[sig])) if np.sum(a[sig])>0 else 0.0
+    model=bkg+ascale*a
+    chi_mask=inrange
+    chi2=float(np.sum(((y[chi_mask]-model[chi_mask])/e[chi_mask])**2))
+    ndf=max(int(np.count_nonzero(chi_mask)-(order+1)-1),1)
+    data_total=float(np.sum(y[inrange]))
+    purity=npi0/data_total if data_total>0 else float('nan')
+    return dict(npi0=npi0,purity=purity,excess=excess,a_frac=a_frac,ascale=ascale,
+                bkg=bkg,model=model,x=x,y=y,e=e,chi2=chi2,ndf=ndf,coeff=coeff)
+
+def perform_peak_extractions(results):
+    out={}
+    for det in ("FT","FD"):
+        for cname in CANDIDATES:
+            for ib,_ in enumerate(PROBE_P_BINS):
+                hd=clone(results["data"]["fit"][(det,"local",cname,ib,"mx2epg")])
+                ha=clone(results["aaogen"]["fit"][(det,"local",cname,ib,"mx2epg")])
+                nominal=_peak_sideband_extract(hd,ha)
+                variations=[]
+                for w,g,o,lo,hi in PEAK_VARIATIONS:
+                    q=_peak_sideband_extract(hd,ha,w,g,o,lo,hi)
+                    if q is not None: variations.append(q)
+                if nominal is not None and variations:
+                    vals=np.array([q["npi0"] for q in variations],float)
+                    nominal["variation_min"]=float(np.min(vals)); nominal["variation_max"]=float(np.max(vals))
+                    nominal["variation_rms"]=float(np.sqrt(np.mean((vals-nominal["npi0"])**2)))
+                out[(det,cname,ib)]=nominal
+    return out
+
+def draw_peak_extractions(results, peakfits, outdir):
+    p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
+    for det in ("FT","FD"):
+        c=ROOT.TCanvas(f"cpeak_{det}","",1600,1100); c.Divide(2,2); keep=[]
+        for ipad,ib in enumerate(range(4),1):
+            pad=c.cd(ipad); setup_pad(pad)
+            hd=clone(results["data"]["fit"][(det,"local",NOMINAL_CANDIDATE,ib,"mx2epg")]); style(hd,"data")
+            ha=clone(results["aaogen"]["fit"][(det,"local",NOMINAL_CANDIDATE,ib,"mx2epg")]); style(ha,"aaogen")
+            q=peakfits[(det,NOMINAL_CANDIDATE,ib)]
+            lo,hi=PROBE_P_BINS[ib]
+            hd.SetTitle(""); hd.GetXaxis().SetTitle(OBS["mx2epg"][4]); hd.GetYaxis().SetTitle("Events")
+            if q is None: hd.Draw("E1"); continue
+            ha.Scale(q["ascale"]); ha.SetLineWidth(3)
+            hb=hd.Clone(f"hbkg_{det}_{ib}"); hb.Reset("ICES"); hb.SetDirectory(0); hb.SetLineColor(ROOT.kBlue+1); hb.SetLineWidth(3)
+            hm=hd.Clone(f"hmodel_{det}_{ib}"); hm.Reset("ICES"); hm.SetDirectory(0); hm.SetLineColor(ROOT.kMagenta+2); hm.SetLineWidth(3)
+            for i in range(1,hd.GetNbinsX()+1): hb.SetBinContent(i,float(q["bkg"][i-1])); hm.SetBinContent(i,float(q["model"][i-1]))
+            ymax=1.25*max(hd.GetMaximum(),hm.GetMaximum()); hd.SetMaximum(max(ymax,1)); hd.Draw("E1"); hb.Draw("HIST SAME"); ha.Draw("HIST SAME"); hm.Draw("HIST SAME"); hd.Draw("E1 SAME")
+            for xx in (-PEAK_WINDOW,PEAK_WINDOW,-PEAK_SIDEBAND_GAP,PEAK_SIDEBAND_GAP):
+                ln=ROOT.TLine(xx,0,xx,0.88*ymax); ln.SetLineStyle(2 if abs(xx)==PEAK_WINDOW else 3); ln.SetLineColor(ROOT.kGray+2); ln.Draw(); keep.append(ln)
+            leg=ROOT.TLegend(.54,.62,.91,.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(.027)
+            leg.AddEntry(hd,"Data","lep"); leg.AddEntry(ha,"AAOgen peak","l"); leg.AddEntry(hb,"DATA sideband background","l"); leg.AddEntry(hm,"Peak + background","l"); leg.Draw()
+            tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.038); tx.DrawLatex(.17,.92,f"{det}, Candidate B: {lo:g}<p_{{probe}}<{hi:g} GeV")
+            tx2=ROOT.TLatex(); tx2.SetNDC(); tx2.SetTextSize(.031); tx2.DrawLatex(.17,.85,f"N_{{#pi^{{0}}}}={q['npi0']:.0f},  #chi^{{2}}/ndf={q['chi2']:.0f}/{q['ndf']}")
+            keep += [hd,ha,hb,hm,leg,tx,tx2]
+        c.SaveAs(str(p/f"06_{det}_candidateB_empirical_peak_extraction.png"))
+
+    c=ROOT.TCanvas("cpeakstab","",1500,900); c.Divide(2,1); keep=[]
+    for ipad,det in enumerate(("FT","FD"),1):
+        pad=c.cd(ipad); setup_pad(pad)
+        h=ROOT.TH1D(f"hpeakstab_{det}","",4,0,4); h.SetDirectory(0); h.SetMarkerStyle(20); h.SetLineWidth(2)
+        for i,ib in enumerate(range(4),1):
+            q=peakfits[(det,NOMINAL_CANDIDATE,ib)]; lo,hi=PROBE_P_BINS[ib]; h.GetXaxis().SetBinLabel(i,f"{lo:g}-{hi:g}")
+            if q: h.SetBinContent(i,q["purity"]); h.SetBinError(i,q["variation_rms"]/(max(q["npi0"],1e-12))*q["purity"] if math.isfinite(q["variation_rms"]) else 0)
+        h.SetMinimum(0); h.SetMaximum(1.15); h.GetXaxis().SetTitle("Predicted probe momentum (GeV)"); h.GetYaxis().SetTitle("Empirical #pi^{0} peak fraction"); h.Draw("E1")
+        tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.045); tx.DrawLatex(.17,.92,f"{det}: sideband peak extraction"); keep += [h,tx]
+    c.SaveAs(str(p/"07_empirical_pi0_peak_fraction.png"))
+
+def write_peak_tables(results,peakfits,outdir):
+    p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
+    with open(p/"empirical_pi0_peak_extraction.txt","w") as f:
+        f.write("# DATA-sideband extraction of the exclusive-pi0 peak. AAOgen supplies the peak shape/window fraction only.\n")
+        f.write("# nominal: |Mx2|<0.035 signal window; |Mx2|>=0.055 sidebands; quadratic background over -0.16..0.18 GeV^2.\n")
+        f.write("detector candidate pmin pmax Npi0 peak_fraction chi2 ndf variation_rms variation_min variation_max\n")
+        for det in ("FT","FD"):
+            for cname in CANDIDATES:
+                for ib,(lo,hi) in enumerate(PROBE_P_BINS):
+                    q=peakfits[(det,cname,ib)]
+                    if q is None: continue
+                    f.write(f"{det} {cname} {lo:g} {hi:g} {q['npi0']:.8g} {q['purity']:.8g} {q['chi2']:.8g} {q['ndf']} {q['variation_rms']:.8g} {q['variation_min']:.8g} {q['variation_max']:.8g}\n")
+    with open(p/"peak_extraction_guardrails.txt","w") as f:
+        f.write("1. This is a signal-peak extraction, not a three-generator composition fit.\n")
+        f.write("2. The smooth background normalization/shape is determined from DATA sidebands.\n")
+        f.write("3. AAOgen supplies the exclusive-pi0 peak shape and the fraction of that shape inside the signal window.\n")
+        f.write("4. A/B/C/D and sideband/window/order variations are retained for the eventual denominator systematic.\n")
+        f.write("5. Data/MC resolution morphing is deliberately deferred. If the central peak width/shape fails closure, add constrained AAOgen smearing before Stage 3.\n")
+        f.write("6. Do not interpret peak_fraction as final photon efficiency; Stage 3 still requires reconstructed-probe signal extraction.\n")
+
+
 def write_normalization_tables(results, fits, outdir):
     p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
     rows,purity=normalization_products(results,fits)
@@ -915,6 +1048,13 @@ def main():
     write_local_purity_tables(results,localfits,normalization_dir)
     draw_local_purity_fits(results,localfits,normalization_dir)
 
+    # Preferred next-step denominator extraction: determine the narrow exclusive-
+    # pi0 peak from DATA sidebands instead of forcing the generators to describe
+    # the entire broad background.  No additional ROOT pass is required.
+    peakfits=perform_peak_extractions(results)
+    write_peak_tables(results,peakfits,normalization_dir)
+    draw_peak_extractions(results,peakfits,normalization_dir)
+
     print("Candidate retentions relative to each detector-region optimization base:")
     print(" sample   region   A       B       C       D")
     for key in SAMPLES:
@@ -940,7 +1080,7 @@ def main():
         print(f"  {det}: " + " | ".join(vals))
     print("\nOutput layout:")
     for d in (overview_dir,validation_dir,normalization_dir,efficiency_dir,final_dir): print(f"  {d}/")
-    print("Stage 3/4 remain empty: reconstructed-probe matching waits for acceptance of the local Candidate-B purity/closure results.")
+    print("Stage 3/4 remain empty: reconstructed-probe matching waits for acceptance of the empirical pi0 peak extraction.")
 
 
 if __name__=="__main__":
