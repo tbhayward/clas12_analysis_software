@@ -211,74 +211,120 @@ def style(h,key):
         h.SetMarkerStyle(20); h.SetMarkerSize(0.55)
 
 
-def draw_overlay(results, outdir, stage, region, var, xlabel):
-    c=ROOT.TCanvas(f"c_{stage}_{region}_{var}","",950,760)
-    c.SetLeftMargin(0.13); c.SetRightMargin(0.04); c.SetBottomMargin(0.13); c.SetTopMargin(0.08)
-    hs=[]
-    ymax=0
+
+def prep_hist(results,key,stage,region,var,normalize=True):
+    h=clone(results[key]["h1"][(stage,region,var)])
+    style(h,key)
+    if normalize:
+        integ=h.Integral("width")
+        if integ>0: h.Scale(1.0/integ)
+    return h
+
+def setup_pad(p, right=0.04):
+    p.SetLeftMargin(0.14); p.SetRightMargin(right); p.SetBottomMargin(0.14); p.SetTopMargin(0.10)
+    p.SetTicks(1,1)
+
+def draw_figure1(results,outdir):
+    c=ROOT.TCanvas("c_fig1","",1500,1050); c.Divide(2,2)
+    labels=["Baseline","M_{X}^{2}(ep)","M_{X}^{2}(e#gamma)","Coplanarity"]
+    keep=[]
+    for ipad,key in enumerate(SAMPLES,1):
+        p=c.cd(ipad); setup_pad(p)
+        vals=[int(results[key]["counts"][st].GetValue()) for st,_,_ in STAGES]
+        den=max(1,vals[0])
+        g=ROOT.TGraph(len(vals)); keep.append(g)
+        for i,v in enumerate(vals): g.SetPoint(i,i,v/den)
+        g.SetLineWidth(3); g.SetMarkerStyle(20); g.SetMarkerSize(1.2)
+        g.SetLineColor(SAMPLES[key][2]); g.SetMarkerColor(SAMPLES[key][2])
+        g.SetTitle(""); g.Draw("ALP")
+        g.GetYaxis().SetTitle("Fraction of baseline hypotheses retained")
+        g.GetYaxis().SetRangeUser(0,1.08); g.GetXaxis().SetLimits(-0.25,3.25)
+        g.GetXaxis().SetNdivisions(4,False)
+        for i,lab in enumerate(labels): g.GetXaxis().ChangeLabel(i+1,-1,0.035,-1,-1,-1,lab)
+        tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(0.047)
+        tx.DrawLatex(0.17,0.92,SAMPLES[key][0])
+        tx.SetTextSize(0.035); tx.DrawLatex(0.17,0.85,f"Baseline N = {vals[0]:,}")
+    c.SaveAs(str(Path(outdir)/"01_exclusivity_cutflow.png"))
+
+def draw_stage_overlay_pad(p,results,key,region,title):
+    setup_pad(p)
+    stage_cols=[ROOT.kGray+2,ROOT.kBlue+1,ROOT.kOrange+7,ROOT.kRed+1]
+    hs=[]; ymax=0.0
+    for i,(st,lab,cut) in enumerate(STAGES):
+        h=clone(results[key]["h1"][(st,region,"E")])
+        integ=h.Integral("width")
+        if integ>0: h.Scale(1.0/integ)
+        h.SetLineColor(stage_cols[i]); h.SetLineWidth(3)
+        hs.append(h); ymax=max(ymax,h.GetMaximum())
+    for i,h in enumerate(hs):
+        h.SetTitle(""); h.GetXaxis().SetTitle("Predicted probe momentum p_{#gamma,probe} (GeV)")
+        h.GetYaxis().SetTitle("Unit-normalized density"); h.GetYaxis().SetRangeUser(0,1.25*ymax)
+        h.Draw("HIST" if i==0 else "HIST SAME")
+    leg=ROOT.TLegend(0.48,0.62,0.91,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.033)
+    for h,(_,lab,_) in zip(hs,STAGES): leg.AddEntry(h,lab.strip().lstrip("+").strip(),"l")
+    leg.Draw()
+    tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(0.044); tx.DrawLatex(0.17,0.92,title)
+    return hs,leg
+
+def draw_figure2(results,outdir):
+    c=ROOT.TCanvas("c_fig2","",1500,1050); c.Divide(2,2); keep=[]
+    keep += draw_stage_overlay_pad(c.cd(1),results,"data","FT","DATA — FT predicted probe")
+    keep += draw_stage_overlay_pad(c.cd(2),results,"aaogen","FT","AAOgen — FT predicted probe")
+    keep += draw_stage_overlay_pad(c.cd(3),results,"data","FD","DATA — FD predicted probe")
+    keep += draw_stage_overlay_pad(c.cd(4),results,"aaogen","FD","AAOgen — FD predicted probe")
+    c.SaveAs(str(Path(outdir)/"02_probe_momentum_survival.png"))
+
+def draw_final_overlay_pad(p,results,region,var,xlabel,title):
+    setup_pad(p); hs=[]; ymax=0
     for key in SAMPLES:
-        h=unit(clone(results[key]["h1"][(stage,region,var)])); style(h,key); hs.append((key,h)); ymax=max(ymax,h.GetMaximum())
-    first=True
-    for key,h in hs:
-        h.SetTitle("")
-        h.GetXaxis().SetTitle(xlabel); h.GetYaxis().SetTitle("Unit-normalized density")
-        h.GetYaxis().SetRangeUser(0,max(1e-12,1.28*ymax))
-        opt="E1" if key=="data" else "HIST"
-        if not first: opt += " SAME"
-        h.Draw(opt); first=False
-    leg=ROOT.TLegend(0.58,0.67,0.91,0.89); leg.SetBorderSize(0); leg.SetFillStyle(0)
+        h=prep_hist(results,key,"coplanarity",region,var,True); hs.append((key,h)); ymax=max(ymax,h.GetMaximum())
+    for i,(key,h) in enumerate(hs):
+        h.SetTitle(""); h.GetXaxis().SetTitle(xlabel); h.GetYaxis().SetTitle("Unit-normalized density")
+        h.GetYaxis().SetRangeUser(0,1.25*ymax)
+        opt=("E1" if key=="data" else "HIST")+("" if i==0 else " SAME"); h.Draw(opt)
+    leg=ROOT.TLegend(0.60,0.64,0.91,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.034)
     for key,h in hs: leg.AddEntry(h,SAMPLES[key][0],"lep" if key=="data" else "l")
     leg.Draw()
-    txt=ROOT.TLatex(); txt.SetNDC(); txt.SetTextSize(0.037); txt.DrawLatex(0.15,0.94,f"{region} predicted probe: {dict((a,b) for a,b,_ in STAGES)[stage]}")
-    c.SaveAs(str(Path(outdir)/f"probe_{var}_{stage}_{region}.png"))
+    tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(0.044); tx.DrawLatex(0.17,0.92,title)
+    return hs,leg
 
+def draw_figure3(results,outdir):
+    c=ROOT.TCanvas("c_fig3","",1500,1050); c.Divide(2,2); keep=[]
+    keep += draw_final_overlay_pad(c.cd(1),results,"FT","E","Predicted probe momentum p_{#gamma,probe} (GeV)","Final sample — FT momentum")
+    keep += draw_final_overlay_pad(c.cd(2),results,"FD","E","Predicted probe momentum p_{#gamma,probe} (GeV)","Final sample — FD momentum")
+    keep += draw_final_overlay_pad(c.cd(3),results,"FT","theta","Predicted probe #theta_{#gamma,probe} (deg)","Final sample — FT angle")
+    keep += draw_final_overlay_pad(c.cd(4),results,"FD","theta","Predicted probe #theta_{#gamma,probe} (deg)","Final sample — FD angle")
+    c.SaveAs(str(Path(outdir)/"03_final_sample_composition.png"))
 
-def draw_2d(results,outdir,key,region,var,ylabel):
-    h=clone(results[key]["h2"][(region,var)])
-    c=ROOT.TCanvas(f"c2_{key}_{region}_{var}","",980,760)
-    c.SetLeftMargin(0.13); c.SetRightMargin(0.16); c.SetBottomMargin(0.13); c.SetTopMargin(0.08)
-    h.SetTitle(""); h.GetXaxis().SetTitle("Predicted probe momentum p_{#gamma,probe} (GeV)"); h.GetYaxis().SetTitle(ylabel)
+def draw_2d_pad(p,results,key,var,title):
+    setup_pad(p,0.16)
+    h=clone(results[key]["h2"][("FT",var)])
+    h.SetTitle(""); h.GetXaxis().SetTitle("Predicted probe momentum p_{#gamma,probe} (GeV)")
+    if var=="angle": h.GetYaxis().SetTitle("#theta(#gamma_{tag},X) (deg)")
+    else: h.GetYaxis().SetTitle("#Delta t=t_{p}-t_{#gamma} (GeV^{2})")
     h.Draw("COLZ")
-    txt=ROOT.TLatex(); txt.SetNDC(); txt.SetTextSize(0.037); txt.DrawLatex(0.15,0.94,f"{SAMPLES[key][0]}: after M_{{X}}^{{2}}(ep), M_{{X}}^{{2}}(e#gamma), coplanarity")
-    c.SaveAs(str(Path(outdir)/f"{var}_vs_probe_p_{key}_{region}.png"))
+    tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(0.043); tx.DrawLatex(0.17,0.92,title)
+    return h
 
-
-def draw_survival(results,outdir,region):
-    c=ROOT.TCanvas(f"csurv_{region}","",950,760)
-    c.SetLeftMargin(0.13); c.SetRightMargin(0.04); c.SetBottomMargin(0.13); c.SetTopMargin(0.08)
-    mg=ROOT.TMultiGraph(); graphs=[]
-    for key in SAMPLES:
-        vals=[]
-        for stage,_,_ in STAGES:
-            h=clone(results[key]["h1"][(stage,region,"E")]); vals.append(h.Integral())
-        den=vals[0] if vals[0]>0 else 1
-        g=ROOT.TGraph(len(vals)); g.SetName(f"g_{key}_{region}")
-        for i,v in enumerate(vals): g.SetPoint(i,i,v/den)
-        g.SetLineColor(SAMPLES[key][2]); g.SetMarkerColor(SAMPLES[key][2]); g.SetLineWidth(2); g.SetMarkerStyle(20)
-        mg.Add(g,"LP"); graphs.append((key,g))
-    mg.Draw("A"); mg.SetTitle(""); mg.GetYaxis().SetTitle("Fraction of baseline hypotheses retained"); mg.GetXaxis().SetTitle("")
-    mg.GetYaxis().SetRangeUser(0,1.08); mg.GetXaxis().SetLimits(-0.25,len(STAGES)-0.75)
-    ax=mg.GetXaxis(); ax.SetNdivisions(len(STAGES),False)
-    labels=["Baseline","M_{X}^{2}(ep)","M_{X}^{2}(e#gamma)","Coplanarity"]
-    for i,s in enumerate(labels): ax.ChangeLabel(i+1,-1,-1,-1,-1,-1,s)
-    leg=ROOT.TLegend(0.63,0.68,0.91,0.89); leg.SetBorderSize(0); leg.SetFillStyle(0)
-    for key,g in graphs: leg.AddEntry(g,SAMPLES[key][0],"lp")
-    leg.Draw();
-    txt=ROOT.TLatex(); txt.SetNDC(); txt.SetTextSize(0.04); txt.DrawLatex(0.15,0.94,f"Exclusivity cut survival: {region} predicted probe")
-    c.SaveAs(str(Path(outdir)/f"cut_survival_{region}.png"))
-
+def draw_figure4(results,outdir):
+    c=ROOT.TCanvas("c_fig4","",1500,1050); c.Divide(2,2); keep=[]
+    keep.append(draw_2d_pad(c.cd(1),results,"data","angle","DATA — FT"))
+    keep.append(draw_2d_pad(c.cd(2),results,"aaogen","angle","AAOgen — FT"))
+    keep.append(draw_2d_pad(c.cd(3),results,"data","dt","DATA — FT"))
+    keep.append(draw_2d_pad(c.cd(4),results,"aaogen","dt","AAOgen — FT"))
+    c.SaveAs(str(Path(outdir)/"04_next_cut_optimization.png"))
 
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--workers",type=int,default=8,help="ROOT worker threads (1-8; default 8)")
-    ap.add_argument("--output",default="output/output_RGA_study")
+    ap.add_argument("--output",default="output_RGA_study")
     args=ap.parse_args()
     workers=max(1,min(8,args.workers))
     ROOT.EnableImplicitMT(workers)
     Path(args.output).mkdir(parents=True,exist_ok=True)
 
     print("="*72)
-    print("Photon-efficiency exclusivity study v1")
+    print("Photon-efficiency RGA study — exclusivity optimization")
     print(f"ROOT worker threads: {workers}")
     print("No reconstructed-probe requirement; angle(gamma,X) and Delta-t are QA only.")
     print("="*72)
@@ -298,24 +344,18 @@ def main():
     ROOT.RDF.RunGraphs(all_actions)
 
     with open(Path(args.output)/"cutflow.txt","w") as f:
-        hdr="sample"+"".join(f" {s[0]:>16s}" for s in STAGES)
+        hdr="sample"+"".join(f" {st[0]:>16s}" for st in STAGES)
         print(hdr); f.write(hdr+"\n")
         for key in SAMPLES:
-            vals=[int(results[key]["counts"][s[0]].GetValue()) for s in STAGES]
+            vals=[int(results[key]["counts"][st[0]].GetValue()) for st in STAGES]
             line=f"{key:10s}"+"".join(f" {v:16d}" for v in vals)
             print(line); f.write(line+"\n")
 
-    for stage,_,_ in STAGES:
-        for region in ("all","FT","FD"):
-            draw_overlay(results,args.output,stage,region,"E","Predicted probe momentum p_{#gamma,probe} (GeV)")
-            draw_overlay(results,args.output,stage,region,"theta","Predicted probe #theta_{#gamma,probe} (deg)")
-    for region in ("all","FT","FD"):
-        draw_survival(results,args.output,region)
-        for key in SAMPLES:
-            draw_2d(results,args.output,key,region,"angle","#angle(#gamma_{tag},X) (deg)")
-            draw_2d(results,args.output,key,region,"dt","#Delta t=t_{p}-t_{#gamma} (GeV^{2})")
-
-    print(f"Done. Output: {args.output}")
+    draw_figure1(results,args.output)
+    draw_figure2(results,args.output)
+    draw_figure3(results,args.output)
+    draw_figure4(results,args.output)
+    print(f"Done. Four summary figures + cutflow.txt written to: {args.output}")
 
 if __name__=="__main__":
     main()
