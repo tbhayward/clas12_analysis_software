@@ -1936,7 +1936,7 @@ static const NormObsDef NORM_OBS[NORM_NOBS] = {
     {"angle_gX",   "#angle(#gamma,X);#angle(#gamma,X) (deg);Candidates",       75,0.0,30.0,true, true},
     // Valerii slide 9 exclusivity cut.  This is intentionally NOT used as a
     // normalization-fit observable.
-    {"angle_eX",   "#angle(e,X);#angle(e,X) (deg);Candidates",                 75,0.0,30.0,false,false},
+    {"angle_eX",   "#angle(e,X);#angle(e,X) (deg);Candidates",                180,0.0,90.0,false,false},
     {"Egamma",     "Tag-photon energy;E_{#gamma} (GeV);Candidates",             95,0.4,8.0,true, false},
     {"Mx2_eg",     "M_{X}^{2}(e#gamma);M_{X}^{2}(e#gamma) (GeV^{2});Candidates",100,0.0,6.0,true, true},
 
@@ -1951,10 +1951,10 @@ static const NormObsDef NORM_OBS[NORM_NOBS] = {
                      180,-180.0,180.0,false,false},
     {"dphi_trento", "Trento azimuth difference;wrap(#phi_{p}^{Trento}-#phi_{#gamma}^{Trento}) (deg);Candidates",
                      180,-180.0,180.0,false,false},
-    {"dphi_trento_shift180", "Trento coplanarity residual;#delta#phi_{copl} (deg);Candidates",
+    {"dphi_trento_shift180", "Trento coplanarity residual;#Delta#phi_{copl} (deg);Candidates",
                      120,-30.0,30.0,false,true},
     {"delta_t_pg", "#Delta t(p,#gamma);t_{p}-t_{#gamma} (GeV^{2});Candidates",
-                     120,-2.0,2.0,false,true}
+                     150,-1.0,4.0,false,true}
 };
 
 // Exclusivity-vs-probe-energy diagnostics. These are filled at the detector-
