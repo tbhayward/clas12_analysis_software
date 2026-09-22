@@ -2,7 +2,7 @@
 //
 // Photon tag-and-probe analysis with two layers:
 //   (1) stage-1 integrated diagnostics;
-//   (2) a Valerii-style FD 8 x 3 x 6 efficiency/correction reproduction (Valerii bins plus 6--10.6 GeV).
+//   (2) a Valerii-style FD 7 x 3 x 6 efficiency/correction reproduction.
 //
 // The stage-1 layer remains useful QA; the Valerii layer is the physics path.
 // NOTE: the June-2026 Delta-phi(p,gamma) exclusivity requirement is implemented
@@ -1738,7 +1738,7 @@ std::vector<std::unique_ptr<SampleResult>> analyze_samples_parallel(const std::s
 // This is deliberately separated from the stage-1 integrated diagnostics above.
 // It follows the workflow documented in Gamma_efficiency_Aug30_2026 as closely
 // as the current skim permits:
-//   * Valerii missing-gamma2 p/theta/phi binning extended with one 6--10.6 GeV momentum bin;
+//   * exact saved 7 x 3 x 6 missing-gamma2 p/theta/phi binning;
 //   * FD/PCAL tag requirement and FD probe acceptance;
 //   * data and weighted-total-MC Delta-p fits independently in every bin;
 //   * nominal weighted MC = AAO + no-exclusivity CLASDIS + DVCS;
@@ -2822,7 +2822,7 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
             !finite_good(b.probe_corr_phi)) continue;
 
         // Compute the exclusivity selection BEFORE applying the FD-only
-        // Valerii binning (extended to 8x3x6 for the high-p study).  This is essential for the coarse FT study:
+        // Valerii 7x3x6 binning.  This is essential for the coarse FT study:
         // the missing probe can lie in the FT even though the observed tag is FD.
         const double Eg=b.have_tag_corr_kin?b.tag_corr_p:std::numeric_limits<double>::quiet_NaN();
         const NormCutFlags ncf=norm_cut_flags(b);
@@ -3029,7 +3029,7 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
             } // endif
         } // endif
 
-        // Detailed Valerii-style 8x3x6 output remains FD-only and is retained
+        // Legacy detailed Valerii 7x3x6 output remains FD-only and is retained
         // internally for future granularity studies.  It no longer controls the
         // concise detector-integrated FD/FT normalization.
         const int ib=val_flat_bin(b.probe_corr_p,b.probe_corr_theta,b.probe_corr_phi);
@@ -3846,7 +3846,7 @@ void write_fd_valerii_momentum_trend(
         const NormDerivation& Rfd,
         const std::string& dir) {
     // Reuse the exact detailed Valerii binning already filled by the worker:
-    // p edges 0.35,0.50,1.10,1.70,2.30,2.90,3.70,6.00,10.60 GeV,
+    // p edges 0.35,0.50,1.10,1.70,2.30,2.90,3.70,6.00 GeV,
     // 3 theta bins, and 6 wrapped-phi sectors.
     //
     // The active skim threshold remains PROBE_P_MIN = 0.4 GeV, so the first
@@ -4018,7 +4018,7 @@ void write_fd_valerii_momentum_trend(
 
         TH1D axis("h_fd_val_p_eff_axis",
                   ";E_{#gamma,probe} (GeV);Photon reconstruction efficiency",
-                  100,0.35,FD_P_MAX);
+                  100,0.35,6.0);
         axis.SetDirectory(nullptr);
         axis.SetStats(0);
         axis.SetMinimum(0);
@@ -4054,7 +4054,7 @@ void write_fd_valerii_momentum_trend(
 
         TH1D axis("h_fd_val_p_ratio_axis",
                   ";E_{#gamma,probe} (GeV);#epsilon_{data}/#epsilon_{MC}",
-                  100,0.35,FD_P_MAX);
+                  100,0.35,6.0);
         axis.SetDirectory(nullptr);
         axis.SetStats(0);
         axis.SetMinimum(0);
@@ -4062,7 +4062,7 @@ void write_fd_valerii_momentum_trend(
         axis.Draw("AXIS");
 
         gratio.Draw("P SAME");
-        TLine one(0.35,1.0,FD_P_MAX,1.0);
+        TLine one(0.35,1.0,6.0,1.0);
         one.SetLineStyle(2);
         one.Draw();
 
@@ -4083,7 +4083,7 @@ void write_fd_valerii_momentum_trend(
 
         TH1D axis("h_fd_val_p_corr_axis",
                   ";E_{#gamma,probe} (GeV);Cross-section multiplier #epsilon_{MC}/#epsilon_{data}",
-                  100,0.35,FD_P_MAX);
+                  100,0.35,6.0);
         axis.SetDirectory(nullptr);
         axis.SetStats(0);
         axis.SetMinimum(0);
@@ -4091,7 +4091,7 @@ void write_fd_valerii_momentum_trend(
         axis.Draw("AXIS");
 
         gcorr.Draw("P SAME");
-        TLine one(0.35,1.0,FD_P_MAX,1.0);
+        TLine one(0.35,1.0,6.0,1.0);
         one.SetLineStyle(2);
         one.Draw();
 
@@ -5394,7 +5394,7 @@ void write_valerii_outputs(const std::vector<std::unique_ptr<ValComponent>>& vv,
     std::ofstream summary(out+"/valerii_fd_summary.txt");
     summary << "Valerii-style FD photon-efficiency reproduction\n"
             << "==============================================\n"
-            << "Binning: 7 p x 3 theta x 6 wrapped-phi = 126 bins\n"
+            << "Binning: 8 p x 3 theta x 6 wrapped-phi = 144 bins\n"
             << "p edges (GeV): 0.35 0.50 1.10 1.70 2.30 2.90 3.70 6.00 10.60\n"
             << "theta edges (deg): 6 20 27 36\n"
             << "phi edges (deg): -30 30 90 150 210 270 330\n"
@@ -10229,7 +10229,7 @@ void run_targeted_alpha_mx2_scan(
 
         TH1D axis("h_truth_categories_axis",
                   ";E_{#gamma,probe} (GeV);Fraction of true #pi^{0} probes",
-                  100,0.35,FD_P_MAX);
+                  100,0.35,6.0);
         axis.SetDirectory(nullptr);
         axis.SetStats(0);
         axis.SetMinimum(0);
@@ -10276,7 +10276,7 @@ void run_targeted_alpha_mx2_scan(
 
         TH1D axis(Form("h_alpha_mx_axis_%d",im),
                   ";E_{#gamma,probe} (GeV);#epsilon_{MC}/#epsilon_{data}",
-                  100,0.35,FD_P_MAX);
+                  100,0.35,6.0);
         axis.SetDirectory(nullptr);
         axis.SetStats(0);
         axis.SetMinimum(0.5);
@@ -10315,12 +10315,12 @@ void run_targeted_alpha_mx2_scan(
             gs.push_back(std::move(g));
         } // endfor
 
-        TLine one(0.35,1.0,FD_P_MAX,1.0);
+        TLine one(0.35,1.0,6.0,1.0);
         one.SetLineStyle(2);
         one.Draw();
 
         // Cross-section diagnostic reference values.
-        TLine lee_fd(0.35,1.137,FD_P_MAX,1.137);
+        TLine lee_fd(0.35,1.137,6.0,1.137);
         lee_fd.SetLineStyle(3);
         lee_fd.SetLineWidth(2);
         lee_fd.Draw();
@@ -10861,7 +10861,7 @@ void run_clasdis_truth_dissection_only(const std::string& outdir) {
 
         TH1D axis("h_truthonly_categories_axis",
                   ";E_{#gamma,probe} (GeV);Fraction of true #pi^{0} probes",
-                  100,0.35,FD_P_MAX);
+                  100,0.35,6.0);
         axis.SetDirectory(nullptr);
         axis.SetStats(0);
         axis.SetMinimum(0);
@@ -11468,7 +11468,7 @@ void run_clasdis_missing_vector_audit_only(const std::string& outdir) {
         TH1D axis("h_mva_dp_summary_axis",
                   ";E_{#gamma,probe}^{true} / p_{miss} bin (GeV);"
                   "p_{miss}-p_{#gamma,true} (GeV)",
-                  100,0.35,FD_P_MAX);
+                  100,0.35,6.0);
         axis.SetDirectory(nullptr);
         axis.SetStats(0);
         axis.SetMinimum(-2.0);
@@ -11526,7 +11526,7 @@ void run_clasdis_missing_vector_audit_only(const std::string& outdir) {
         TH1D axis("h_mva_da_summary_axis",
                   ";E_{#gamma,probe}^{true} / p_{miss} bin (GeV);"
                   "angle(#gamma_{miss},#gamma_{true}) (deg)",
-                  100,0.35,FD_P_MAX);
+                  100,0.35,6.0);
         axis.SetDirectory(nullptr);
         axis.SetStats(0);
         axis.SetMinimum(0.0);
@@ -15888,7 +15888,7 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
 
             TH1D axis(Form("h_prod_eff_axis_%s",det.c_str()),
                 ";E_{#gamma,probe}^{pred} (GeV);Photon efficiency",
-                100,0.35,FD_P_MAX);
+                100,0.35,6.0);
             axis.SetDirectory(nullptr);
             axis.SetStats(0);
             axis.SetMinimum(0.0);
@@ -15927,7 +15927,7 @@ void run_mgg_production_efficiency_only(const std::string& outdir) {
             TH1D axis(Form("h_prod_ratio_axis_%s",det.c_str()),
                 ";E_{#gamma,probe}^{pred} (GeV);"
                 "#epsilon_{data}/#epsilon_{MC}",
-                100,0.35,FD_P_MAX);
+                100,0.35,6.0);
             axis.SetDirectory(nullptr);
             axis.SetStats(0);
             axis.SetMinimum(0.0);
@@ -16086,7 +16086,7 @@ void run_concise_analysis(const std::string& out) {
 
 void run_valerii_fd_reproduction(const std::string& out) {
     std::cout << "\n============================================================\n"
-              << " Valerii-style FD 8x3x6 reproduction (extra 6-10.6 GeV bin)\n"
+              << " Valerii-style FD 7x3x6 reproduction\n"
               << "============================================================\n"
               << "MC events are unit weighted inside each component.\n"
               << "AAO/CLASDIS/DVCS normalization factors are derived from this run's template fits.\n"
@@ -16120,7 +16120,7 @@ void photon_efficiency_valerii_reproduction(int run_mode=5) {
     concise_publication_style();
 
     // run_mode = 5 : DEFAULT production M(gamma gamma) extraction only
-    // run_mode = 6 : Valerii-style FD 8x3x6 reproduction (extra 6-10.6 GeV bin) only
+    // run_mode = 6 : Valerii-style FD 7x3x6 reproduction only
     // run_mode = 0 : legacy full analysis (not recommended for routine reruns)
     // run_mode = 1 : CLASDIS truth-category dissection only
     // run_mode = 2 : missing-vector audit only
