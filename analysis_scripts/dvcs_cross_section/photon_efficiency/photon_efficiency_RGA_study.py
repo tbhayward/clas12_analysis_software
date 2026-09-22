@@ -271,7 +271,7 @@ def draw_survival(results,outdir,region):
 def main():
     ap=argparse.ArgumentParser()
     ap.add_argument("--workers",type=int,default=8,help="ROOT worker threads (1-8; default 8)")
-    ap.add_argument("--output",default="output/photon_efficiency_exclusivity_study")
+    ap.add_argument("--output",default="output/output_RGA_study")
     args=ap.parse_args()
     workers=max(1,min(8,args.workers))
     ROOT.EnableImplicitMT(workers)
