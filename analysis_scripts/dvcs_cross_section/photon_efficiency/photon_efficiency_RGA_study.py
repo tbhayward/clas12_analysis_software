@@ -21,6 +21,9 @@ import glob
 import os
 from pathlib import Path
 import ROOT
+import math
+import itertools
+import numpy as np
 
 ROOT.gROOT.SetBatch(True)
 ROOT.TH1.SetDefaultSumw2(True)
@@ -266,6 +269,8 @@ CANDIDATE_COLORS = {"A": ROOT.kBlue+1, "B": ROOT.kGreen+2,
 # Candidate B is the reference only for *validation plots*.  No final cut is
 # hard-coded by this choice; all four candidates are counted and compared.
 REFERENCE_CANDIDATE = "B"
+NOMINAL_CANDIDATE = "B"
+FIT_P_RANGE = (0.4, 8.0)
 
 # Control regions are deliberately disjoint in purpose, not used in the
 # efficiency denominator.  They are retained now so the later normalization
@@ -285,15 +290,36 @@ CONTROL_REGIONS = {
     ),
 }
 
+# Four mutually exclusive regions used by the Stage-2 component-normalization fit.
+# Candidate B is the pi0-enriched signal region.  The other three are controls.
+FIT_REGIONS = {
+    "signal": CANDIDATES[NOMINAL_CANDIDATE],
+    "eta": CONTROL_REGIONS["eta"][0],
+    "central": CONTROL_REGIONS["central"][0],
+    "highangle": CONTROL_REGIONS["highangle"][0],
+}
+FIT_COMPONENTS = ("aaogen", "clasdis", "dvcsgen")
+
 
 def book_sample(key, df):
-    """Book the final cut-validation stage in one RDF graph per sample.
+    """Book overview, denominator validation, and normalization inputs in one RDF graph."""
+    out = {"counts": {}, "survival": {}, "selected": {}, "slices": {},
+           "control": {}, "overview": {}, "fit": {}}
 
-    No reconstructed-probe requirement is introduced.  Everything here is
-    denominator-side validation: candidate stability, probe-phase-space
-    preservation, normalization-variable shapes, and background control regions.
-    """
-    out = {"counts": {}, "survival": {}, "selected": {}, "slices": {}, "control": {}}
+    # Restore the useful early distributions.  These are intentionally booked
+    # before the final Candidate-B cuts so a reader can see why each cut exists.
+    base = df.Filter("baseline", "baseline")
+    out["counts"]["baseline"] = base.Count()
+    for obs in ("mx2ep", "mx2eg", "copl", "angle", "mx2epg", "tag_p", "probe_p"):
+        out["overview"][("baseline", obs)] = h1(base, f"hov_{key}_base_{obs}", obs)
+    n1_mx2ep = base.Filter("v_mx2eg>1.4")
+    n1_mx2eg = base.Filter("v_mx2ep>-0.231 && v_mx2ep<0.24")
+    n1_copl = base.Filter("v_mx2ep>-0.231 && v_mx2ep<0.24 && v_mx2eg>1.4 && v_angle_gX<8.0")
+    n1_angle = base.Filter("v_mx2ep>-0.231 && v_mx2ep<0.24 && v_mx2eg>1.4 && fabs(v_copl)>2.0")
+    for tag,node,obs in (("n1_mx2ep",n1_mx2ep,"mx2ep"),("n1_mx2eg",n1_mx2eg,"mx2eg"),
+                         ("n1_copl",n1_copl,"copl"),("n1_angle",n1_angle,"angle")):
+        out["overview"][(tag,obs)] = h1(node, f"hov_{key}_{tag}_{obs}", obs)
+
     optbase = df.Filter("baseline && v_mx2ep>-0.231 && v_mx2eg>1.4", "optimization base")
     out["counts"]["optbase"] = optbase.Count()
 
@@ -306,36 +332,39 @@ def book_sample(key, df):
             node = rb.Filter(expr, f"candidate {cname} {region}")
             out["counts"][(region, cname)] = node.Count()
             out["survival"][(region, cname)] = h1(node, f"hs_{key}_{region}_{cname}", "probe_p")
-
-            # These are the observables most useful for the next normalization
-            # stage.  Keep them for every candidate even though only B is drawn
-            # in the compact summary figures.
             for obs in ("mx2epg", "tag_p", "tag_th", "tag_phi", "dt", "probe_p", "probe_th"):
-                out["selected"][(region, cname, obs)] = h1(
-                    node, f"hsel_{key}_{region}_{cname}_{obs}", obs
-                )
-
-            # Predicted-probe slices: essential because the pi0 fraction must
-            # ultimately be differential rather than a single global number.
+                out["selected"][(region, cname, obs)] = h1(node, f"hsel_{key}_{region}_{cname}_{obs}", obs)
             for ib, (plo, phi) in enumerate(PROBE_P_BINS):
                 ps = node.Filter(f"probe_corr_p>={plo} && probe_corr_p<{phi}")
                 out["counts"][(region, cname, "pbin", ib)] = ps.Count()
-                out["slices"][(region, cname, ib, "mx2epg")] = h1(
-                    ps, f"hsl_{key}_{region}_{cname}_{ib}_mx2epg", "mx2epg"
-                )
-                out["slices"][(region, cname, ib, "dt")] = h1(
-                    ps, f"hsl_{key}_{region}_{cname}_{ib}_dt", "dt"
-                )
+                out["slices"][(region, cname, ib, "mx2epg")] = h1(ps, f"hsl_{key}_{region}_{cname}_{ib}_mx2epg", "mx2epg")
+                out["slices"][(region, cname, ib, "dt")] = h1(ps, f"hsl_{key}_{region}_{cname}_{ib}_dt", "dt")
 
-    # Control regions use the same optimization base and are not restricted to
-    # FT/FD: they are intended to constrain/validate component normalization.
+        # Stage-2 normalization inputs.  The primary fit uses one shared set of
+        # component scale factors across FT+FD.  Separate FT/FD fits are retained
+        # as a closure diagnostic, not as the nominal normalization.
+        for fr, expr in FIT_REGIONS.items():
+            fn = rb.Filter(expr, f"fit region {fr} {region}")
+            out["fit"][(region, fr, "count")] = fn.Count()
+            out["fit"][(region, fr, "sumw")] = fn.Sum("ana_weight")
+            out["fit"][(region, fr, "sumw2")] = fn.Define(
+                f"w2_{region}_{fr}_{key}", "ana_weight*ana_weight").Sum(f"w2_{region}_{fr}_{key}")
+            out["fit"][(region, fr, "probe_p")] = h1(fn, f"hfit_{key}_{region}_{fr}_p", "probe_p", weight=(key!="data"))
+            # Shape reserved for independent post-fit closure; it is NOT used to determine coefficients.
+            closure_obs = "mx2epg" if fr=="signal" else ("mx2ep" if fr=="eta" else ("copl" if fr=="central" else "angle"))
+            out["fit"][(region, fr, "shape")] = h1(fn, f"hfit_{key}_{region}_{fr}_shape", closure_obs, weight=(key!="data"))
+            for ib,(plo,phi) in enumerate(PROBE_P_BINS):
+                pn=fn.Filter(f"probe_corr_p>={plo} && probe_corr_p<{phi}")
+                out["fit"][(region, fr, ib, "count")] = pn.Count()
+                out["fit"][(region, fr, ib, "sumw")] = pn.Sum("ana_weight")
+
+    # Legacy compact control plots, integrated over predicted detector region.
     for cr, (expr, _) in CONTROL_REGIONS.items():
         node = optbase.Filter(expr, f"control {cr}")
         out["counts"][("control", cr)] = node.Count()
         obs = "mx2ep" if cr == "eta" else ("copl" if cr == "central" else "angle")
         out["control"][(cr, obs)] = h1(node, f"hcr_{key}_{cr}_{obs}", obs)
         out["control"][(cr, "probe_p")] = h1(node, f"hcr_{key}_{cr}_probe_p", "probe_p")
-
     return out
 
 
@@ -424,6 +453,172 @@ def draw_figure4(results, outdir):
     c.SaveAs(str(Path(outdir)/"04_background_control_regions.png"))
 
 
+
+def draw_selection_overview(results, outdir):
+    c=ROOT.TCanvas("coverview","",1500,1050); c.Divide(2,2); keep=[]
+    keep += list(draw_overlay(c.cd(1),results,lambda r,k:r["overview"][("n1_mx2ep","mx2ep")],"mx2ep","N-1: M_{X}^{2}(ep)",[-0.231,0.24]))
+    keep += list(draw_overlay(c.cd(2),results,lambda r,k:r["overview"][("n1_mx2eg","mx2eg")],"mx2eg","N-1: M_{X}^{2}(e#gamma_{tag})",[1.4]))
+    keep += list(draw_overlay(c.cd(3),results,lambda r,k:r["overview"][("n1_copl","copl")],"copl","N-1: tag-proton coplanarity",[-2,2]))
+    keep += list(draw_overlay(c.cd(4),results,lambda r,k:r["overview"][("n1_angle","angle")],"angle","N-1: #theta(#gamma_{tag},X)",[8]))
+    c.SaveAs(str(Path(outdir)/"01_exclusivity_Nminus1.png"))
+
+    c2=ROOT.TCanvas("coverview2","",1500,1050); c2.Divide(2,2); keep2=[]
+    keep2 += list(draw_overlay(c2.cd(1),results,lambda r,k:r["overview"][("baseline","mx2epg")],"mx2epg","Loose-skim M_{X}^{2}(ep#gamma_{tag})"))
+    keep2 += list(draw_overlay(c2.cd(2),results,lambda r,k:r["overview"][("baseline","tag_p")],"tag_p","Baseline tag-photon momentum"))
+    keep2 += list(draw_overlay(c2.cd(3),results,lambda r,k:r["overview"][("baseline","probe_p")],"probe_p","Baseline predicted-probe momentum"))
+    keep2 += list(draw_overlay(c2.cd(4),results,lambda r,k:r["overview"][("baseline","angle")],"angle","Baseline #theta(#gamma_{tag},X)"))
+    c2.SaveAs(str(Path(outdir)/"02_baseline_kinematics.png"))
+
+
+def _fit_nonnegative(A, y, sigma):
+    """Tiny non-negative weighted least-squares solver for three components."""
+    A=np.asarray(A,float); y=np.asarray(y,float); sigma=np.asarray(sigma,float)
+    good=np.isfinite(y)&np.isfinite(sigma)&(sigma>0)&np.all(np.isfinite(A),axis=1)
+    A=A[good]; y=y[good]; sigma=sigma[good]
+    Aw=A/sigma[:,None]; yw=y/sigma
+    best=None
+    n=A.shape[1]
+    for mask in range(1,1<<n):
+        active=[j for j in range(n) if mask&(1<<j)]
+        x=np.zeros(n)
+        sol,*_=np.linalg.lstsq(Aw[:,active],yw,rcond=None)
+        if np.any(sol<0): continue
+        x[active]=sol
+        resid=(A@x-y)/sigma
+        chi2=float(resid@resid)
+        if best is None or chi2<best[0]: best=(chi2,x)
+    if best is None: return np.zeros(n), float("inf"), 0
+    chi2,x=best
+    ndf=max(0,len(y)-np.count_nonzero(x>0))
+    return x,chi2,ndf
+
+
+def perform_normalization_fit(results):
+    """Fit AAOgen/CLASDIS/DVCSgen scale factors from region yields only.
+
+    Nominal coefficients are shared across FT and FD.  Detector-specific fits are
+    diagnostic.  Shape histograms are deliberately excluded from the fit so they
+    remain genuine closure tests.
+    """
+    fits={}
+    for fitname,regions in (("shared",("FT","FD")),("FT",("FT",)),("FD",("FD",))):
+        rows=[]; y=[]; sig=[]; labels=[]
+        for det in regions:
+            for fr in FIT_REGIONS:
+                yd=float(results["data"]["fit"][(det,fr,"count")].GetValue())
+                mc=[float(results[k]["fit"][(det,fr,"sumw")].GetValue()) for k in FIT_COMPONENTS]
+                if yd<=0 or sum(mc)<=0: continue
+                rows.append(mc); y.append(yd); sig.append(math.sqrt(max(yd,1.0))); labels.append((det,fr))
+        x,chi2,ndf=_fit_nonnegative(rows,y,sig)
+        fits[fitname]={"scale":dict(zip(FIT_COMPONENTS,x)),"chi2":chi2,"ndf":ndf,"rows":labels,
+                       "A":np.asarray(rows,float),"y":np.asarray(y,float),"sigma":np.asarray(sig,float)}
+    return fits
+
+
+def normalization_products(results, fits):
+    """Compute post-fit region closure and differential pi0 purity from nominal shared fit."""
+    scales=fits["shared"]["scale"]
+    rows=[]
+    for det in ("FT","FD"):
+        for fr in FIT_REGIONS:
+            data=float(results["data"]["fit"][(det,fr,"count")].GetValue())
+            comp={k:scales[k]*float(results[k]["fit"][(det,fr,"sumw")].GetValue()) for k in FIT_COMPONENTS}
+            pred=sum(comp.values())
+            rows.append((det,fr,data,comp,pred))
+    purity=[]
+    for det in ("FT","FD"):
+        for ib,(lo,hi) in enumerate(PROBE_P_BINS):
+            data=float(results["data"]["fit"][(det,"signal",ib,"count")].GetValue())
+            comp={k:scales[k]*float(results[k]["fit"][(det,"signal",ib,"sumw")].GetValue()) for k in FIT_COMPONENTS}
+            pred=sum(comp.values()); p=comp["aaogen"]/pred if pred>0 else float("nan")
+            purity.append((det,ib,lo,hi,data,comp,pred,p))
+    return rows,purity
+
+
+def draw_normalization_summary(results, fits, outdir):
+    scales=fits["shared"]["scale"]
+    # Region-yield closure: absolute yields, not unit-normalized shapes.
+    c=ROOT.TCanvas("cnorm","",1500,850); c.Divide(2,1); keep=[]
+    for ipad,det in enumerate(("FT","FD"),1):
+        pad=c.cd(ipad); setup_pad(pad)
+        frame=ROOT.TH1D(f"frnorm_{det}","",4,0,4); frame.SetDirectory(0)
+        for i,fr in enumerate(FIT_REGIONS,1): frame.GetXaxis().SetBinLabel(i,fr)
+        datah=frame.Clone(f"datanorm_{det}"); datah.SetDirectory(0); datah.SetMarkerStyle(20); datah.SetLineColor(ROOT.kBlack)
+        predh=frame.Clone(f"prednorm_{det}"); predh.SetDirectory(0); predh.SetLineWidth(3); predh.SetLineColor(ROOT.kRed+1)
+        ymax=0
+        for i,fr in enumerate(FIT_REGIONS,1):
+            d=float(results["data"]["fit"][(det,fr,"count")].GetValue())
+            pred=sum(scales[k]*float(results[k]["fit"][(det,fr,"sumw")].GetValue()) for k in FIT_COMPONENTS)
+            datah.SetBinContent(i,d); datah.SetBinError(i,math.sqrt(max(d,1)))
+            predh.SetBinContent(i,pred); ymax=max(ymax,d,pred)
+        frame.SetMinimum(0); frame.SetMaximum(1.25*ymax); frame.GetYaxis().SetTitle("Events"); frame.Draw("AXIS")
+        predh.Draw("HIST SAME"); datah.Draw("E1 SAME")
+        leg=ROOT.TLegend(.58,.72,.90,.87); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.AddEntry(datah,"Data","lep"); leg.AddEntry(predh,"Post-fit MC sum","l"); leg.Draw()
+        tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.045); tx.DrawLatex(.17,.92,f"{det}: four-region yield closure")
+        keep += [frame,datah,predh,leg,tx]
+    c.SaveAs(str(Path(outdir)/"01_four_region_yield_closure.png"))
+
+    # Differential signal-region composition: this is the quantity that will feed the denominator correction.
+    c2=ROOT.TCanvas("cpurity","",1500,850); c2.Divide(2,1); keep2=[]
+    for ipad,det in enumerate(("FT","FD"),1):
+        pad=c2.cd(ipad); setup_pad(pad)
+        h=ROOT.TH1D(f"hpur_{det}","",len(PROBE_P_BINS),0,len(PROBE_P_BINS)); h.SetDirectory(0); h.SetMarkerStyle(20); h.SetLineWidth(2)
+        for i,(lo,hi) in enumerate(PROBE_P_BINS,1):
+            comp={k:scales[k]*float(results[k]["fit"][(det,"signal",i-1,"sumw")].GetValue()) for k in FIT_COMPONENTS}
+            tot=sum(comp.values()); h.SetBinContent(i,comp["aaogen"]/tot if tot>0 else 0); h.GetXaxis().SetBinLabel(i,f"{lo:g}-{hi:g}")
+        h.SetMinimum(0); h.SetMaximum(1.05); h.GetYaxis().SetTitle("Post-fit #pi^{0} fraction"); h.GetXaxis().SetTitle("Predicted probe momentum (GeV)"); h.Draw("E1")
+        tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.045); tx.DrawLatex(.17,.92,f"{det}: Candidate B composition")
+        keep2 += [h,tx]
+    c2.SaveAs(str(Path(outdir)/"02_pi0_fraction_vs_probe_momentum.png"))
+
+    # Independent shape closure.  Coefficients came only from four integrated yields.
+    for det in ("FT","FD"):
+        c3=ROOT.TCanvas(f"cshape_{det}","",1500,1050); c3.Divide(2,2); keep3=[]
+        for ipad,fr in enumerate(FIT_REGIONS,1):
+            pad=c3.cd(ipad); setup_pad(pad)
+            hd=clone(results["data"]["fit"][(det,fr,"shape")]); hd.SetMarkerStyle(20); hd.SetLineColor(ROOT.kBlack)
+            hs=[]; total=None
+            for k in FIT_COMPONENTS:
+                hm=clone(results[k]["fit"][(det,fr,"shape")]); hm.Scale(scales[k]); style(hm,k); hs.append((k,hm))
+                if total is None: total=hm.Clone(f"htot_{det}_{fr}"); total.SetDirectory(0)
+                else: total.Add(hm)
+            ymax=max(hd.GetMaximum(),total.GetMaximum())*1.28 if total else hd.GetMaximum()*1.28
+            hd.SetTitle(""); hd.GetYaxis().SetTitle("Events"); hd.GetYaxis().SetRangeUser(0,max(ymax,1)); hd.Draw("E1")
+            for k,hm in hs: hm.Draw("HIST SAME")
+            total.SetLineColor(ROOT.kMagenta+2); total.SetLineWidth(3); total.Draw("HIST SAME"); hd.Draw("E1 SAME")
+            leg=ROOT.TLegend(.57,.61,.91,.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(.028); leg.AddEntry(hd,"Data","lep")
+            for k,hm in hs: leg.AddEntry(hm,SAMPLES[k][0],"l")
+            leg.AddEntry(total,"Post-fit sum","l"); leg.Draw()
+            tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.041); tx.DrawLatex(.17,.92,f"{det}: {fr} shape closure")
+            keep3 += [hd,total,leg,tx]+[x[1] for x in hs]
+        c3.SaveAs(str(Path(outdir)/f"03_{det}_independent_shape_closure.png"))
+
+
+def write_normalization_tables(results, fits, outdir):
+    p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
+    rows,purity=normalization_products(results,fits)
+    with open(p/"normalization_fit.txt","w") as f:
+        f.write("# Four-region component normalization. Nominal = shared FT+FD fit.\n")
+        f.write("# Fits use integrated region yields only; plotted shapes are independent closure tests.\n")
+        for name in ("shared","FT","FD"):
+            q=fits[name]; f.write(f"fit {name} chi2 {q['chi2']:.6g} ndf {q['ndf']}\n")
+            for k in FIT_COMPONENTS: f.write(f"  scale {k} {q['scale'][k]:.10g}\n")
+        f.write("\n# nominal post-fit region closure\n# detector region data aaogen clasdis dvcsgen total data_over_total\n")
+        for det,fr,data,comp,pred in rows:
+            f.write(f"{det} {fr} {data:.8g} {comp['aaogen']:.8g} {comp['clasdis']:.8g} {comp['dvcsgen']:.8g} {pred:.8g} {data/pred if pred else float('nan'):.8g}\n")
+    with open(p/"pi0_fraction_vs_probe_momentum.txt","w") as f:
+        f.write("# Candidate-B denominator composition from nominal shared normalization.\n")
+        f.write("# This is a normalization result, NOT yet a photon efficiency.\n")
+        f.write("detector pmin pmax data aaogen clasdis dvcsgen total pi0_fraction data_over_total\n")
+        for det,ib,lo,hi,data,comp,pred,pur in purity:
+            f.write(f"{det} {lo:g} {hi:g} {data:.8g} {comp['aaogen']:.8g} {comp['clasdis']:.8g} {comp['dvcsgen']:.8g} {pred:.8g} {pur:.8g} {data/pred if pred else float('nan'):.8g}\n")
+    with open(p/"normalization_interpretation_guardrails.txt","w") as f:
+        f.write("1. Nominal component scales are shared between FT and FD.\n")
+        f.write("2. FT-only and FD-only scales are diagnostics for detector-dependent closure.\n")
+        f.write("3. The fit uses only four-region yields; shape plots are independent validation.\n")
+        f.write("4. Do not call pi0_fraction a measured purity unless yield and shape closure are acceptable.\n")
+        f.write("5. Do not introduce reconstructed-probe matching until this denominator normalization is accepted.\n")
+
 def write_tables(results, outdir):
     p=Path(outdir)
     with open(p/"candidate_validation_counts.txt","w") as f:
@@ -459,10 +654,10 @@ def write_tables(results, outdir):
         f.write("Final-validation contract for the next normalization/efficiency stage\n")
         f.write("================================================================\n")
         f.write("1. No reconstructed probe is required in any denominator selection here.\n")
-        f.write("2. Candidate definitions A-D are centralized in CANDIDATES and must be reused unchanged for normalization tests.\n")
+        f.write("2. Candidate B is the nominal denominator; A/C/D are retained as cut-variation systematic checks.\n")
         f.write("3. Pi0 purity must be determined differentially in probe phase space; do not use one global purity number.\n")
-        f.write("4. Control regions eta/central/highangle are validation regions, never denominator signal regions.\n")
-        f.write("5. Component normalization must be established before interpreting DATA as a pi0 percentage.\n")
+        f.write("4. Candidate B plus eta/central/highangle provide the four mutually exclusive regions used for component normalization.\n")
+        f.write("5. The nominal normalization is one shared FT+FD component fit; FT-only/FD-only fits test closure.\n")
         f.write("6. Only after normalization/purity validation should reconstructed-probe matching be introduced for the numerator.\n")
         f.write("7. Final correction convention should remain epsilon_data/epsilon_MC; cross-section correction is its inverse.\n")
 
@@ -472,14 +667,22 @@ def main():
     ap.add_argument("--workers",type=int,default=8,help="ROOT worker threads (1-8; default 8)")
     ap.add_argument("--output",default="output_RGA_study")
     args=ap.parse_args(); workers=max(1,min(8,args.workers)); ROOT.EnableImplicitMT(workers)
-    Path(args.output).mkdir(parents=True,exist_ok=True)
+
+    outroot=Path(args.output)
+    overview_dir=outroot/"00_selection_overview"
+    validation_dir=outroot/"01_denominator_validation"
+    normalization_dir=outroot/"02_component_normalization"
+    efficiency_dir=outroot/"03_efficiency_extraction"
+    final_dir=outroot/"04_final_corrections"
+    for d in (overview_dir,validation_dir,normalization_dir,efficiency_dir,final_dir): d.mkdir(parents=True,exist_ok=True)
+
     print("="*78)
-    print("Photon-efficiency RGA study - final exclusive-pi0 denominator validation")
+    print("Photon-efficiency RGA study - denominator validation + component normalization")
     print(f"ROOT worker threads: {workers}")
     print("No reconstructed-probe requirement.")
-    print("Common base: Mx2(ep)>-0.231 and Mx2(e gamma_tag)>1.4.")
-    print("Validating candidates A-D, control regions, and probe-energy dependence.")
-    print(f"Reference candidate for compact shape plots: {REFERENCE_CANDIDATE}")
+    print("Nominal denominator candidate: B = Mx2(ep)<0.24, |coplanarity|>2 deg, theta(tag,X)<8 deg.")
+    print("Normalization: simultaneous AAOgen/CLASDIS/DVCSgen fit to signal + 3 control-region yields.")
+    print("Nominal component scales are shared across FT and FD; detector-specific fits are diagnostics.")
     print("Photon-energy plotting range: 0-9 GeV.")
     print("="*78)
     results={}; actions=[]
@@ -488,13 +691,19 @@ def main():
         if not fs: raise RuntimeError(f"No ROOT files for {key}: {pat}")
         print(f"{label:10s}: {len(fs):3d} ROOT files")
         results[key]=book_sample(key,define_columns(make_rdf(fs),key))
-        for group in ("counts","survival","selected","slices","control"):
+        for group in ("counts","survival","selected","slices","control","overview","fit"):
             actions += list(results[key][group].values())
     print(f"Executing {len(actions)} booked actions ...")
     ROOT.RDF.RunGraphs(actions)
-    write_tables(results,args.output)
-    draw_figure1(results,args.output); draw_figure2(results,args.output)
-    draw_figure3(results,args.output); draw_figure4(results,args.output)
+
+    draw_selection_overview(results,overview_dir)
+    write_tables(results,validation_dir)
+    draw_figure1(results,validation_dir); draw_figure2(results,validation_dir)
+    draw_figure3(results,validation_dir); draw_figure4(results,validation_dir)
+
+    fits=perform_normalization_fit(results)
+    write_normalization_tables(results,fits,normalization_dir)
+    draw_normalization_summary(results,fits,normalization_dir)
 
     print("Candidate retentions relative to each detector-region optimization base:")
     print(" sample   region   A       B       C       D")
@@ -503,11 +712,17 @@ def main():
             den=float(results[key]["counts"][(region,"base")].GetValue())
             vals=[]
             for cname in CANDIDATES:
-                n=float(results[key]["counts"][(region,cname)].GetValue())
-                vals.append(n/den if den else 0.0)
+                n=float(results[key]["counts"][(region,cname)].GetValue()); vals.append(n/den if den else 0.0)
             print(f" {key:8s} {region:>3s}   " + "  ".join(f"{x:.3f}" for x in vals))
-    print("Control-region counts written to control_region_counts.txt.")
-    print(f"Done. Four focused figures + validation tables written to: {args.output}")
+
+    print("\nComponent-normalization fits:")
+    for name in ("shared","FT","FD"):
+        q=fits[name]
+        scales=" ".join(f"{k}={q['scale'][k]:.4g}" for k in FIT_COMPONENTS)
+        print(f"  {name:6s}: chi2/ndf={q['chi2']:.3g}/{q['ndf']}  {scales}")
+    print("\nOutput layout:")
+    for d in (overview_dir,validation_dir,normalization_dir,efficiency_dir,final_dir): print(f"  {d}/")
+    print("Stage 3/4 directories are intentionally empty: reconstructed-probe matching is not introduced until normalization closure is accepted.")
 
 
 if __name__=="__main__":
