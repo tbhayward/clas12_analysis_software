@@ -16135,8 +16135,10 @@ void run_concise_analysis(const std::string& out) {
 // exclusivity, efficiency, component-normalization, or MC::Event weights enter.
 // -----------------------------------------------------------------------------
 void draw_generated_leading_photon_comparison(const std::string& out) {
+    enum GenPhotonGeometry { GEN_ALL=0, GEN_FD=1, GEN_FT=2 };
+
     auto fill_leading = [](const char* input_dir, const char* hname,
-                           bool require_fd_geometry) -> TH1D* {
+                           int geometry) -> TH1D* {
         TChain c("PhotonEfficiencyEvents");
         c.Add((std::string(input_dir)+"/*_photon_efficiency.root").c_str());
         if (c.GetEntries()<=0) {
@@ -16171,55 +16173,63 @@ void draw_generated_leading_photon_comparison(const std::string& out) {
             for (int ig=0; ig<n; ++ig) {
                 const double p=gen_gamma_p[ig];
                 const double th=gen_gamma_theta[ig];
-                if (!std::isfinite(p) || p<=0.0) continue;
-                if (require_fd_geometry &&
-                    !(std::isfinite(th) && th>=FD_THETA_MIN && th<=FD_THETA_MAX)) continue;
+                if (!std::isfinite(p) || p<=0.0 || !std::isfinite(th)) continue;
+                if (geometry==GEN_FD && !(th>=FD_THETA_MIN && th<=FD_THETA_MAX)) continue;
+                if (geometry==GEN_FT && !(th<=5.5)) continue;
                 if (p>best_p) best_p=p;
             } // endfor
             if (best_p>0.0) { h->Fill(best_p); accepted++; }
         } // endfor
         if (h->Integral()>0.0) h->Scale(1.0/h->Integral(),"width");
-        std::cout << "[generator leading photon] " << input_dir
-                  << (require_fd_geometry ? " FD geometry" : " all angles")
+        const char* label=(geometry==GEN_FD ? " FD geometry" :
+                           (geometry==GEN_FT ? " FT geometry" : " all angles"));
+        std::cout << "[generator leading photon] " << input_dir << label
                   << ": events=" << accepted << "\n";
         return h;
     };
 
     gSystem->mkdir((out+"/generator_diagnostics").c_str(),kTRUE);
-    for (int ifd=0; ifd<2; ++ifd) {
-        const bool fd_only=(ifd==1);
-        TH1D* haa=fill_leading(AAOGEN_DIR,
-            fd_only?"h_lead_aao_fd":"h_lead_aao_all",fd_only);
-        TH1D* hdv=fill_leading(DVCSGEN_DIR,
-            fd_only?"h_lead_dvcs_fd":"h_lead_dvcs_all",fd_only);
+    for (int geometry=GEN_ALL; geometry<=GEN_FT; ++geometry) {
+        const char* suffix=(geometry==GEN_FD ? "fd" : (geometry==GEN_FT ? "ft" : "all"));
+        TH1D* haa=fill_leading(AAOGEN_DIR,(std::string("h_lead_aao_")+suffix).c_str(),geometry);
+        TH1D* hdv=fill_leading(DVCSGEN_DIR,(std::string("h_lead_dvcs_")+suffix).c_str(),geometry);
         if (!haa || !hdv) { delete haa; delete hdv; continue; }
 
-        TCanvas c(fd_only?"c_lead_gen_fd":"c_lead_gen_all","",1000,760);
-        c.SetLeftMargin(0.145); c.SetRightMargin(0.045);
-        c.SetBottomMargin(0.135); c.SetTopMargin(0.095);
+        TCanvas c((std::string("c_lead_gen_")+suffix).c_str(),"",1100,760);
+        c.SetLeftMargin(0.135); c.SetRightMargin(0.045);
+        c.SetBottomMargin(0.135); c.SetTopMargin(0.105);
         haa->SetLineColor(kBlue+1); haa->SetLineWidth(3);
         hdv->SetLineColor(kRed+1); hdv->SetLineWidth(3);
         haa->SetStats(0); hdv->SetStats(0);
         haa->GetXaxis()->SetTitle("Generated leading-photon momentum p_{#gamma,max} (GeV)");
         haa->GetYaxis()->SetTitle("Normalized events / GeV");
         haa->GetXaxis()->SetTitleOffset(1.15);
-        haa->GetYaxis()->SetTitleOffset(1.35);
+        haa->GetYaxis()->SetTitleOffset(1.25);
         const double ymax=1.18*std::max(haa->GetMaximum(),hdv->GetMaximum());
         haa->SetMinimum(0.0); haa->SetMaximum(ymax>0?ymax:1.0);
         haa->Draw("HIST"); hdv->Draw("HIST SAME");
 
-        TLegend leg(0.57,0.70,0.93,0.86);
-        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.038);
-        leg.AddEntry(haa,"AAOgen: leading #pi^{0}#rightarrow#gamma#gamma photon","l");
-        leg.AddEntry(hdv,"DVCSgen: generated DVCS photon","l");
+        // Keep the legend comfortably inside the canvas; the previous long labels
+        // extended beyond the right edge.
+        TLegend leg(0.50,0.72,0.91,0.86);
+        leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.032);
+        leg.AddEntry(haa,"AAOgen: leading #pi^{0} decay photon","l");
+        leg.AddEntry(hdv,"DVCSgen: DVCS photon","l");
         leg.Draw();
+
         TLatex tx; tx.SetNDC(); tx.SetTextSize(0.041); tx.SetTextFont(42);
-        tx.DrawLatex(0.15,0.925,fd_only ?
-            "Generator-level photon spectra, 6^{#circ} #leq #theta_{#gamma} #leq 36^{#circ}" :
-            "Generator-level photon spectra, all generated angles");
+        if (geometry==GEN_FD)
+            tx.DrawLatex(0.14,0.925,"Generator-level photon spectra, 6^{#circ} #leq #theta_{#gamma} #leq 36^{#circ}");
+        else if (geometry==GEN_FT)
+            tx.DrawLatex(0.14,0.925,"Generator-level photon spectra, #theta_{#gamma} #leq 5.5^{#circ}");
+        else
+            tx.DrawLatex(0.14,0.925,"Generator-level photon spectra, all generated angles");
         c.RedrawAxis();
-        const std::string fn=out+"/generator_diagnostics/"+
-            (fd_only?"generated_leading_photon_momentum_FD.png":"generated_leading_photon_momentum.png");
+
+        std::string fn=out+"/generator_diagnostics/generated_leading_photon_momentum";
+        if (geometry==GEN_FD) fn+="_FD";
+        else if (geometry==GEN_FT) fn+="_FT";
+        fn+=".png";
         c.SaveAs(fn.c_str());
         delete haa; delete hdv;
     } // endfor
