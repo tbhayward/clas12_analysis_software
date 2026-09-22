@@ -245,237 +245,226 @@ def h2_probe(node, name, obs_key):
     return node.Histo2D((name, "", 45, 0.0, 9.0, nb, lo, hi), "probe_corr_p", col)
 
 
+# Final-validation candidates.  Keep the names stable: these definitions are
+# intended to flow directly into the subsequent component-normalization and
+# efficiency stages.
+CANDIDATES = {
+    "A": "v_mx2ep<0.24 && fabs(v_copl)>2.0 && v_angle_gX<9.2",
+    "B": "v_mx2ep<0.24 && fabs(v_copl)>2.0 && v_angle_gX<8.0",
+    "C": "v_mx2ep<0.22 && fabs(v_copl)>2.0 && v_angle_gX<8.0",
+    "D": "v_mx2ep<0.24 && fabs(v_copl)>3.0 && v_angle_gX<8.0",
+}
+CANDIDATE_LABELS = {
+    "A": "A: 0.24, 2^{#circ}, 9.2^{#circ}",
+    "B": "B: 0.24, 2^{#circ}, 8^{#circ}",
+    "C": "C: 0.22, 2^{#circ}, 8^{#circ}",
+    "D": "D: 0.24, 3^{#circ}, 8^{#circ}",
+}
+CANDIDATE_COLORS = {"A": ROOT.kBlue+1, "B": ROOT.kGreen+2,
+                    "C": ROOT.kMagenta+1, "D": ROOT.kOrange+7}
+
+# Candidate B is the reference only for *validation plots*.  No final cut is
+# hard-coded by this choice; all four candidates are counted and compared.
+REFERENCE_CANDIDATE = "B"
+
+# Control regions are deliberately disjoint in purpose, not used in the
+# efficiency denominator.  They are retained now so the later normalization
+# fit can be validated against background-enriched DATA regions.
+CONTROL_REGIONS = {
+    "eta": (
+        "v_mx2ep>0.26 && v_mx2ep<0.38 && fabs(v_copl)>2.0 && v_angle_gX<8.0",
+        "Competing-meson control: 0.26<M_{X}^{2}(ep)<0.38"
+    ),
+    "central": (
+        "v_mx2ep<0.24 && fabs(v_copl)<2.0 && v_angle_gX<8.0",
+        "Central-coplanarity control: |#Delta#phi_{copl}|<2^{#circ}"
+    ),
+    "highangle": (
+        "v_mx2ep<0.24 && fabs(v_copl)>2.0 && v_angle_gX>12.0 && v_angle_gX<25.0",
+        "High-angle control: 12^{#circ}<#theta(#gamma_{tag},X)<25^{#circ}"
+    ),
+}
+
+
 def book_sample(key, df):
-    """Book the cut-optimization study in one RDF graph per sample.
+    """Book the final cut-validation stage in one RDF graph per sample.
 
-    The scan base deliberately excludes coplanarity and theta(gamma_tag,X), so
-    neither variable is preselected before we test it.  The existing Mx2(e gamma)
-    >1.4 requirement is retained because the previous study already showed that
-    it strongly suppresses the DVCS-like epgamma topology while preserving AAOgen.
+    No reconstructed-probe requirement is introduced.  Everything here is
+    denominator-side validation: candidate stability, probe-phase-space
+    preservation, normalization-variable shapes, and background control regions.
     """
-    out = {"counts": {}, "shape": {}, "corr": {}, "scan": {}, "survival": {}}
-
-    base = df.Filter("baseline", "baseline")
-    # Common optimization base: retain lower Mx2(ep) edge, but leave its upper
-    # edge free for the scan.  Do not apply coplanarity or angle cuts here.
+    out = {"counts": {}, "survival": {}, "selected": {}, "slices": {}, "control": {}}
     optbase = df.Filter("baseline && v_mx2ep>-0.231 && v_mx2eg>1.4", "optimization base")
-
-    out["counts"]["baseline"] = base.Count()
     out["counts"]["optbase"] = optbase.Count()
 
-    # Shapes at the common optimization base.  These are the distributions that
-    # determine the three cuts being optimized, not post-cut versions of them.
-    for obs in ("mx2ep", "copl", "angle", "probe_p", "probe_th", "tag_p"):
-        out["shape"][("optbase", obs)] = h1(optbase, f"h_{key}_opt_{obs}", obs)
-
-    # Correlations needed to diagnose sculpting of the predicted probe phase space.
     for region, rcut in (("FT", "probe_region==0"), ("FD", "probe_region==1")):
-        rn = optbase.Filter(rcut)
-        out["corr"][(region,"copl")] = h2_probe(rn, f"h2_{key}_{region}_copl", "copl")
-        out["corr"][(region,"angle")] = h2_probe(rn, f"h2_{key}_{region}_angle", "angle")
+        rb = optbase.Filter(rcut)
+        out["counts"][(region, "base")] = rb.Count()
+        out["survival"][(region, "base")] = h1(rb, f"hs_{key}_{region}_base", "probe_p")
 
-    # Individual scans.  Values intentionally bracket the visually interesting
-    # region rather than assuming the previous values were optimal.
-    mx_hi_vals = [0.18,0.20,0.22,0.24,0.26,0.28,0.309]
-    anti_vals  = [0.0,1.0,2.0,3.0,4.0,5.0,6.0,7.0,8.0]
-    ang_vals   = [5.0,6.0,7.0,8.0,9.2,10.0,12.0,15.0,30.0]
-    out["scan_values"] = {"mxhi":mx_hi_vals, "anti":anti_vals, "angle":ang_vals}
+        for cname, expr in CANDIDATES.items():
+            node = rb.Filter(expr, f"candidate {cname} {region}")
+            out["counts"][(region, cname)] = node.Count()
+            out["survival"][(region, cname)] = h1(node, f"hs_{key}_{region}_{cname}", "probe_p")
 
-    for i,x in enumerate(mx_hi_vals):
-        out["scan"][("mxhi",i)] = optbase.Filter(f"v_mx2ep<{x}").Count()
-    # For the anti-coplanarity scan, 0 means no anti-coplanarity veto.
-    for i,x in enumerate(anti_vals):
-        expr = "1" if x==0 else f"fabs(v_copl)>{x}"
-        out["scan"][("anti",i)] = optbase.Filter(expr).Count()
-    # 30 deg is effectively the no-angle-cut reference within the plotted range.
-    for i,x in enumerate(ang_vals):
-        out["scan"][("angle",i)] = optbase.Filter(f"v_angle_gX<{x}").Count()
+            # These are the observables most useful for the next normalization
+            # stage.  Keep them for every candidate even though only B is drawn
+            # in the compact summary figures.
+            for obs in ("mx2epg", "tag_p", "tag_th", "tag_phi", "dt", "probe_p", "probe_th"):
+                out["selected"][(region, cname, obs)] = h1(
+                    node, f"hsel_{key}_{region}_{cname}_{obs}", obs
+                )
 
-    # Combined grid: upper Mx2(ep), anti-coplanarity lower bound, and angle max.
-    # Keep it deliberately modest (7*9*9=567 counts/sample) so the optimization
-    # is comprehensive without exploding into thousands of histograms.
-    for im,mxhi in enumerate(mx_hi_vals):
-        for ic,anti in enumerate(anti_vals):
-            for ia,amax in enumerate(ang_vals):
-                terms=[f"v_mx2ep<{mxhi}", f"v_angle_gX<{amax}"]
-                if anti>0: terms.append(f"fabs(v_copl)>{anti}")
-                out["scan"][("grid",im,ic,ia)] = optbase.Filter(" && ".join(terms)).Count()
+            # Predicted-probe slices: essential because the pi0 fraction must
+            # ultimately be differential rather than a single global number.
+            for ib, (plo, phi) in enumerate(PROBE_P_BINS):
+                ps = node.Filter(f"probe_corr_p>={plo} && probe_corr_p<{phi}")
+                out["counts"][(region, cname, "pbin", ib)] = ps.Count()
+                out["slices"][(region, cname, ib, "mx2epg")] = h1(
+                    ps, f"hsl_{key}_{region}_{cname}_{ib}_mx2epg", "mx2epg"
+                )
+                out["slices"][(region, cname, ib, "dt")] = h1(
+                    ps, f"hsl_{key}_{region}_{cname}_{ib}_dt", "dt"
+                )
 
-    # Probe-energy survival for representative candidate cuts.  This directly
-    # tests the concern that anti-coplanarity may bias pi0 energy sharing.
-    candidates = {
-        "base": "1",
-        "mx024": "v_mx2ep<0.24",
-        "anti3": "fabs(v_copl)>3.0",
-        "anti5": "fabs(v_copl)>5.0",
-        "ang92": "v_angle_gX<9.2",
-        "combo_loose": "v_mx2ep<0.24 && fabs(v_copl)>3.0 && v_angle_gX<9.2",
-        "combo_tight": "v_mx2ep<0.22 && fabs(v_copl)>5.0 && v_angle_gX<9.2",
-    }
-    out["candidate_exprs"] = candidates
-    for region,rcut in (("FT","probe_region==0"),("FD","probe_region==1")):
-        rb=optbase.Filter(rcut)
-        for cname,expr in candidates.items():
-            node=rb.Filter(expr)
-            out["survival"][(region,cname)] = h1(node,f"hsurv_{key}_{region}_{cname}","probe_p")
-            out["counts"][(region,cname)] = node.Count()
+    # Control regions use the same optimization base and are not restricted to
+    # FT/FD: they are intended to constrain/validate component normalization.
+    for cr, (expr, _) in CONTROL_REGIONS.items():
+        node = optbase.Filter(expr, f"control {cr}")
+        out["counts"][("control", cr)] = node.Count()
+        obs = "mx2ep" if cr == "eta" else ("copl" if cr == "central" else "angle")
+        out["control"][(cr, obs)] = h1(node, f"hcr_{key}_{cr}_{obs}", obs)
+        out["control"][(cr, "probe_p")] = h1(node, f"hcr_{key}_{cr}_probe_p", "probe_p")
 
     return out
 
 
-def graph_from_scan(results, scan_name, sample_key, denom_key="optbase"):
-    vals=results[sample_key]["scan_values"][scan_name]
-    den=float(results[sample_key]["counts"][denom_key].GetValue())
-    g=ROOT.TGraph(len(vals))
-    for i,x in enumerate(vals):
-        n=float(results[sample_key]["scan"][(scan_name,i)].GetValue())
-        g.SetPoint(i,x,n/den if den>0 else 0.0)
-    g.SetLineColor(SAMPLES[sample_key][2]); g.SetMarkerColor(SAMPLES[sample_key][2])
-    g.SetLineWidth(2); g.SetMarkerStyle(20); g.SetMarkerSize(0.8)
-    return g
+def ratio_hist(num, den, name):
+    r = num.Clone(name); r.SetDirectory(0); r.Divide(den); return r
 
 
-def draw_scan_pad(pad, results, scan_name, xtitle, title):
+def draw_candidate_retention_pad(pad, results, key, region, title):
     setup_pad(pad)
-    graphs=[]
-    frame=ROOT.TH1D(f"frame_{scan_name}_{pad.GetNumber()}","",100,
-                    min(results["data"]["scan_values"][scan_name]),
-                    max(results["data"]["scan_values"][scan_name]))
-    frame.SetDirectory(0); frame.SetMinimum(0); frame.SetMaximum(1.05)
-    frame.GetXaxis().SetTitle(xtitle); frame.GetYaxis().SetTitle("Fraction of optimization-base sample retained")
+    base = clone(results[key]["survival"][(region, "base")])
+    frame = ROOT.TH1D(f"fr_{key}_{region}", "", 90, 0, 9); frame.SetDirectory(0)
+    frame.SetMinimum(0); frame.SetMaximum(1.08)
+    frame.GetXaxis().SetTitle("Predicted probe-hypothesis momentum p_{#gamma,probe} (GeV)")
+    frame.GetYaxis().SetTitle("Candidate retention / optimization base")
     frame.Draw("AXIS")
-    for key in SAMPLES:
-        g=graph_from_scan(results,scan_name,key); g.Draw("LP SAME"); graphs.append((key,g))
-    leg=ROOT.TLegend(0.57,0.62,0.91,0.87); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.031)
-    for key,g in graphs: leg.AddEntry(g,SAMPLES[key][0],"lp")
+    curves = []
+    for cname in CANDIDATES:
+        h = ratio_hist(clone(results[key]["survival"][(region, cname)]), base,
+                       f"rr_{key}_{region}_{cname}")
+        h.SetLineColor(CANDIDATE_COLORS[cname]); h.SetLineWidth(2); h.Draw("HIST SAME")
+        curves.append((cname, h))
+    leg = ROOT.TLegend(0.48, 0.64, 0.91, 0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.029)
+    for cname, h in curves: leg.AddEntry(h, CANDIDATE_LABELS[cname], "l")
     leg.Draw()
-    tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(0.043); tx.DrawLatex(0.17,0.92,title)
-    return frame,graphs,leg
+    tx = ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(0.043); tx.DrawLatex(0.17, 0.92, title)
+    return frame, curves, leg
 
 
-def draw_shape_overlay_opt(pad, results, obs, title, lines=None):
+def draw_overlay(pad, results, getter, obs, title, lines=None):
     setup_pad(pad); hs=[]; ymax=0.0
     for key in SAMPLES:
-        h=unit(clone(results[key]["shape"][("optbase",obs)])); style(h,key); hs.append((key,h)); ymax=max(ymax,h.GetMaximum())
-    for i,(key,h) in enumerate(hs):
+        h = unit(clone(getter(results[key], key))); style(h, key)
+        hs.append((key, h)); ymax=max(ymax, h.GetMaximum())
+    for i, (key, h) in enumerate(hs):
         h.SetTitle(""); h.GetXaxis().SetTitle(OBS[obs][4]); h.GetYaxis().SetTitle("Unit-normalized density")
-        h.GetYaxis().SetRangeUser(0,max(1e-12,1.28*ymax)); h.Draw(("E1" if key=="data" else "HIST")+(" SAME" if i else ""))
-    keep=[]
+        h.GetYaxis().SetRangeUser(0, max(1e-12, 1.28*ymax))
+        h.Draw(("E1" if key=="data" else "HIST") + (" SAME" if i else ""))
+    ls=[]
     for x in (lines or []):
-        l=ROOT.TLine(x,0,x,1.12*ymax); l.SetLineStyle(2); l.SetLineWidth(2); l.Draw(); keep.append(l)
+        l=ROOT.TLine(x,0,x,1.12*ymax); l.SetLineStyle(2); l.SetLineWidth(2); l.Draw(); ls.append(l)
     leg=ROOT.TLegend(0.60,0.64,0.91,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.031)
     for key,h in hs: leg.AddEntry(h,SAMPLES[key][0],"lep" if key=="data" else "l")
-    leg.Draw(); tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(0.043); tx.DrawLatex(0.17,0.92,title)
-    return hs,keep,leg
+    leg.Draw(); tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(0.041); tx.DrawLatex(0.17,0.92,title)
+    return hs, ls, leg
 
 
-def draw_figure1(results,outdir):
+def draw_figure1(results, outdir):
     c=ROOT.TCanvas("c01","",1500,1050); c.Divide(2,2); keep=[]
-    keep += list(draw_shape_overlay_opt(c.cd(1),results,"mx2ep","Optimization base: M_{X}^{2}(ep)",[0.20,0.24,0.309]))
-    keep += list(draw_shape_overlay_opt(c.cd(2),results,"copl","Optimization base: tag-proton coplanarity",[-5,-3,3,5]))
-    keep += list(draw_shape_overlay_opt(c.cd(3),results,"angle","Optimization base: #theta(#gamma_{tag},X)",[9.2]))
-    keep += list(draw_shape_overlay_opt(c.cd(4),results,"probe_p","Optimization base: predicted probe hypothesis"))
-    c.SaveAs(str(Path(outdir)/"01_optimization_base_shapes.png"))
+    keep += list(draw_candidate_retention_pad(c.cd(1),results,"aaogen","FT","AAOgen FT: candidate stability"))
+    keep += list(draw_candidate_retention_pad(c.cd(2),results,"data","FT","Data FT: candidate stability"))
+    keep += list(draw_candidate_retention_pad(c.cd(3),results,"aaogen","FD","AAOgen FD: candidate stability"))
+    keep += list(draw_candidate_retention_pad(c.cd(4),results,"data","FD","Data FD: candidate stability"))
+    c.SaveAs(str(Path(outdir)/"01_candidate_probe_phase_space.png"))
 
 
-def draw_figure2(results,outdir):
-    c=ROOT.TCanvas("c02","",1500,1050); c.Divide(2,2); keep=[]
-    keep += list(draw_scan_pad(c.cd(1),results,"mxhi","Upper M_{X}^{2}(ep) cut (GeV^{2})","Scan: reject #eta/other meson region"))
-    keep += list(draw_scan_pad(c.cd(2),results,"anti","Minimum |#Delta#phi_{copl}| (deg)","Scan: anti-coplanarity DVCS veto"))
-    keep += list(draw_scan_pad(c.cd(3),results,"angle","Maximum #theta(#gamma_{tag},X) (deg)","Scan: missing-photon consistency"))
-    p=c.cd(4); setup_pad(p); p.Clear(); tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(0.046)
-    tx.DrawLatex(0.12,0.83,"Optimization base")
-    tx.SetTextSize(0.035)
-    tx.DrawLatex(0.12,0.70,"M_{X}^{2}(ep)>-0.231 GeV^{2}")
-    tx.DrawLatex(0.12,0.62,"M_{X}^{2}(e#gamma_{tag})>1.4 GeV^{2}")
-    tx.DrawLatex(0.12,0.54,"No coplanarity or #theta(#gamma_{tag},X) cut")
-    tx.DrawLatex(0.12,0.40,"Curves are retention, not purity.")
-    tx.DrawLatex(0.12,0.32,"Final choice must also preserve probe phase space.")
-    c.SaveAs(str(Path(outdir)/"02_cut_retention_scans.png"))
+def draw_figure2(results, outdir):
+    c=ROOT.TCanvas("c02","",1500,1050); c.Divide(2,2); keep=[]; cand=REFERENCE_CANDIDATE
+    keep += list(draw_overlay(c.cd(1),results,lambda r,k:r["selected"][("FT",cand,"tag_p")],"tag_p",f"Candidate {cand}, FT: tag momentum"))
+    keep += list(draw_overlay(c.cd(2),results,lambda r,k:r["selected"][("FT",cand,"tag_th")],"tag_th",f"Candidate {cand}, FT: tag polar angle"))
+    keep += list(draw_overlay(c.cd(3),results,lambda r,k:r["selected"][("FT",cand,"mx2epg")],"mx2epg",f"Candidate {cand}, FT: M_{{X}}^{{2}}(ep#gamma_{{tag}})"))
+    keep += list(draw_overlay(c.cd(4),results,lambda r,k:r["selected"][("FD",cand,"mx2epg")],"mx2epg",f"Candidate {cand}, FD: M_{{X}}^{{2}}(ep#gamma_{{tag}})"))
+    c.SaveAs(str(Path(outdir)/"02_reference_candidate_shapes.png"))
 
 
-def ratio_hist(num,den,name):
-    r=num.Clone(name); r.SetDirectory(0); r.Divide(den); return r
+def draw_figure3(results, outdir):
+    # FT is the difficult detector region and the immediate motivation for this
+    # study.  Show the normalization-sensitive loose-skim missing-mass shape in
+    # four broad probe-energy intervals.  The 8-9 GeV bin is retained in tables
+    # but omitted here because it is expected to be sparse.
+    c=ROOT.TCanvas("c03","",1500,1050); c.Divide(2,2); keep=[]; cand=REFERENCE_CANDIDATE
+    for ipad, ib in enumerate(range(4), start=1):
+        lo,hi=PROBE_P_BINS[ib]
+        keep += list(draw_overlay(c.cd(ipad),results,
+            lambda r,k,ib=ib:r["slices"][("FT",cand,ib,"mx2epg")],
+            "mx2epg",f"Candidate {cand}, FT: {lo:g}<p_{{probe}}<{hi:g} GeV"))
+    c.SaveAs(str(Path(outdir)/"03_FT_normalization_shape_vs_probe_energy.png"))
 
 
-def draw_survival_pad(pad,results,key,region,title):
-    setup_pad(pad); base=clone(results[key]["survival"][(region,"base")]); curves=[]
-    names=[("mx024","M_{X}^{2}(ep)<0.24"),("anti3","|#Delta#phi|>3^{#circ}"),("anti5","|#Delta#phi|>5^{#circ}"),("ang92","#theta(#gamma_{tag},X)<9.2^{#circ}"),("combo_loose","combined: 0.24, 3^{#circ}, 9.2^{#circ}"),("combo_tight","combined: 0.22, 5^{#circ}, 9.2^{#circ}")]
-    cols=[ROOT.kBlue+1,ROOT.kMagenta+1,ROOT.kRed+1,ROOT.kGreen+2,ROOT.kOrange+7,ROOT.kViolet+1]
-    frame=ROOT.TH1D(f"frsurv_{key}_{region}","",90,0,9); frame.SetDirectory(0); frame.SetMinimum(0); frame.SetMaximum(1.08)
-    frame.GetXaxis().SetTitle("Predicted probe-hypothesis momentum p_{#gamma,probe} (GeV)"); frame.GetYaxis().SetTitle("Retention relative to optimization base"); frame.Draw("AXIS")
-    for (cname,label),col in zip(names,cols):
-        h=ratio_hist(clone(results[key]["survival"][(region,cname)]),base,f"r_{key}_{region}_{cname}"); h.SetLineColor(col); h.SetLineWidth(2); h.Draw("HIST SAME"); curves.append((label,h))
-    leg=ROOT.TLegend(0.45,0.58,0.91,0.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(0.027)
-    for label,h in curves: leg.AddEntry(h,label,"l")
-    leg.Draw(); tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(0.043); tx.DrawLatex(0.17,0.92,title)
-    return frame,curves,leg
-
-
-def draw_figure3(results,outdir):
-    # AAOgen panels are the decisive sculpting test; DATA panels show how much of
-    # the observed population each candidate removes in the same phase space.
-    c=ROOT.TCanvas("c03","",1500,1050); c.Divide(2,2); keep=[]
-    keep += list(draw_survival_pad(c.cd(1),results,"aaogen","FT","AAOgen FT: probe-energy sculpting"))
-    keep += list(draw_survival_pad(c.cd(2),results,"data","FT","Data FT: probe-hypothesis retention"))
-    keep += list(draw_survival_pad(c.cd(3),results,"aaogen","FD","AAOgen FD: probe-energy sculpting"))
-    keep += list(draw_survival_pad(c.cd(4),results,"data","FD","Data FD: probe-hypothesis retention"))
-    c.SaveAs(str(Path(outdir)/"03_probe_energy_retention.png"))
-
-
-def draw_2d_pad_opt(pad,results,key,region,obs,title):
-    setup_pad(pad,0.16); h=clone(results[key]["corr"][(region,obs)]); h.SetTitle("")
-    h.GetXaxis().SetTitle("Predicted probe-hypothesis momentum p_{#gamma,probe} (GeV)"); h.GetXaxis().SetRangeUser(0,9)
-    h.GetYaxis().SetTitle(OBS[obs][4]); h.Draw("COLZ")
-    tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(0.043); tx.DrawLatex(0.17,0.92,title)
-    return h
-
-
-def draw_figure4(results,outdir):
+def draw_figure4(results, outdir):
     c=ROOT.TCanvas("c04","",1500,1050); c.Divide(2,2); keep=[]
-    keep.append(draw_2d_pad_opt(c.cd(1),results,"data","FT","copl","Data FT: coplanarity vs probe hypothesis"))
-    keep.append(draw_2d_pad_opt(c.cd(2),results,"aaogen","FT","copl","AAOgen FT: coplanarity vs probe hypothesis"))
-    keep.append(draw_2d_pad_opt(c.cd(3),results,"data","FT","angle","Data FT: #theta(#gamma_{tag},X) vs probe hypothesis"))
-    keep.append(draw_2d_pad_opt(c.cd(4),results,"aaogen","FT","angle","AAOgen FT: #theta(#gamma_{tag},X) vs probe hypothesis"))
-    c.SaveAs(str(Path(outdir)/"04_FT_cut_correlations.png"))
+    keep += list(draw_overlay(c.cd(1),results,lambda r,k:r["control"][("eta","mx2ep")],"mx2ep",CONTROL_REGIONS["eta"][1],[0.26,0.38]))
+    keep += list(draw_overlay(c.cd(2),results,lambda r,k:r["control"][("central","copl")],"copl",CONTROL_REGIONS["central"][1],[-2,2]))
+    keep += list(draw_overlay(c.cd(3),results,lambda r,k:r["control"][("highangle","angle")],"angle",CONTROL_REGIONS["highangle"][1],[12,25]))
+    cand=REFERENCE_CANDIDATE
+    keep += list(draw_overlay(c.cd(4),results,lambda r,k:r["selected"][("FT",cand,"dt")],"dt",f"Candidate {cand}, FT: #Delta t validation"))
+    c.SaveAs(str(Path(outdir)/"04_background_control_regions.png"))
 
 
-def best_grid_rows(results):
-    """Rank cut combinations by MC separation only, without pretending MC counts
-    are physically normalized.  Score = geometric mean of AAO retention and the
-    two rejection fractions.  It is a diagnostic ordering, not a purity estimate.
-    """
-    vals=results["aaogen"]["scan_values"]
-    den={k:float(results[k]["counts"]["optbase"].GetValue()) for k in ("aaogen","clasdis","dvcsgen")}
-    rows=[]
-    for im,mxhi in enumerate(vals["mxhi"]):
-      for ic,anti in enumerate(vals["anti"]):
-       for ia,amax in enumerate(vals["angle"]):
-        fr={}
-        for k in den:
-            n=float(results[k]["scan"][("grid",im,ic,ia)].GetValue()); fr[k]=n/den[k] if den[k]>0 else 0
-        # Favor AAO retention and rejection of both backgrounds, but do not call
-        # this purity because absolute MC normalizations are not yet established.
-        score=(max(fr["aaogen"],0)*max(1-fr["clasdis"],0)*max(1-fr["dvcsgen"],0))**(1/3)
-        rows.append((score,mxhi,anti,amax,fr["aaogen"],fr["clasdis"],fr["dvcsgen"]))
-    return sorted(rows,reverse=True)
-
-
-def write_tables(results,outdir):
+def write_tables(results, outdir):
     p=Path(outdir)
-    with open(p/"cut_optimization_scan.txt","w") as f:
-        f.write("# Fractions are relative to the common optimization base.\n")
-        f.write("# They are retention/rejection diagnostics, NOT purity estimates; MC components are not normalized yet.\n")
-        f.write("# score mx2ep_upper anti_copl_min angle_max aaogen_ret clasdis_ret dvcsgen_ret\n")
-        for row in best_grid_rows(results)[:80]:
-            f.write("%.6f %.3f %.1f %.1f %.6f %.6f %.6f\n"%row)
-    with open(p/"candidate_cut_counts.txt","w") as f:
-        f.write("# Unweighted counts after the common optimization base and representative candidate cuts.\n")
-        f.write("sample region candidate count\n")
+    with open(p/"candidate_validation_counts.txt","w") as f:
+        f.write("# Unweighted denominator-side counts. No reconstructed-probe requirement.\n")
+        f.write("# Candidates: A=(0.24,2,9.2), B=(0.24,2,8), C=(0.22,2,8), D=(0.24,3,8).\n")
+        f.write("sample region candidate count retention_vs_region_base\n")
         for key in SAMPLES:
             for region in ("FT","FD"):
-                for cname in results[key]["candidate_exprs"]:
-                    f.write(f"{key} {region} {cname} {int(results[key]['counts'][(region,cname)].GetValue())}\n")
+                den=float(results[key]["counts"][(region,"base")].GetValue())
+                for cname in CANDIDATES:
+                    n=float(results[key]["counts"][(region,cname)].GetValue())
+                    f.write(f"{key} {region} {cname} {int(n)} {n/den if den else 0:.8f}\n")
+
+    with open(p/"candidate_probe_bin_counts.txt","w") as f:
+        f.write("# Counts after each candidate in predicted-probe momentum bins.\n")
+        f.write("sample region candidate pmin pmax count\n")
+        for key in SAMPLES:
+            for region in ("FT","FD"):
+                for cname in CANDIDATES:
+                    for ib,(lo,hi) in enumerate(PROBE_P_BINS):
+                        n=int(results[key]["counts"][(region,cname,"pbin",ib)].GetValue())
+                        f.write(f"{key} {region} {cname} {lo:g} {hi:g} {n}\n")
+
+    with open(p/"control_region_counts.txt","w") as f:
+        f.write("# Background-enriched control regions; these are NOT efficiency denominators.\n")
+        f.write("sample control count\n")
+        for key in SAMPLES:
+            for cr in CONTROL_REGIONS:
+                n=int(results[key]["counts"][("control",cr)].GetValue())
+                f.write(f"{key} {cr} {n}\n")
+
+    with open(p/"next_stage_contract.txt","w") as f:
+        f.write("Final-validation contract for the next normalization/efficiency stage\n")
+        f.write("================================================================\n")
+        f.write("1. No reconstructed probe is required in any denominator selection here.\n")
+        f.write("2. Candidate definitions A-D are centralized in CANDIDATES and must be reused unchanged for normalization tests.\n")
+        f.write("3. Pi0 purity must be determined differentially in probe phase space; do not use one global purity number.\n")
+        f.write("4. Control regions eta/central/highangle are validation regions, never denominator signal regions.\n")
+        f.write("5. Component normalization must be established before interpreting DATA as a pi0 percentage.\n")
+        f.write("6. Only after normalization/purity validation should reconstructed-probe matching be introduced for the numerator.\n")
+        f.write("7. Final correction convention should remain epsilon_data/epsilon_MC; cross-section correction is its inverse.\n")
 
 
 def main():
@@ -485,11 +474,12 @@ def main():
     args=ap.parse_args(); workers=max(1,min(8,args.workers)); ROOT.EnableImplicitMT(workers)
     Path(args.output).mkdir(parents=True,exist_ok=True)
     print("="*78)
-    print("Photon-efficiency RGA study - exclusive-pi0 cut optimization")
+    print("Photon-efficiency RGA study - final exclusive-pi0 denominator validation")
     print(f"ROOT worker threads: {workers}")
     print("No reconstructed-probe requirement.")
-    print("Optimization base: Mx2(ep)>-0.231 and Mx2(e gamma_tag)>1.4; no coplanarity/angle cut.")
-    print("Scanning Mx2(ep) upper edge, anti-coplanarity veto, and theta(gamma_tag,X) maximum.")
+    print("Common base: Mx2(ep)>-0.231 and Mx2(e gamma_tag)>1.4.")
+    print("Validating candidates A-D, control regions, and probe-energy dependence.")
+    print(f"Reference candidate for compact shape plots: {REFERENCE_CANDIDATE}")
     print("Photon-energy plotting range: 0-9 GeV.")
     print("="*78)
     results={}; actions=[]
@@ -498,18 +488,26 @@ def main():
         if not fs: raise RuntimeError(f"No ROOT files for {key}: {pat}")
         print(f"{label:10s}: {len(fs):3d} ROOT files")
         results[key]=book_sample(key,define_columns(make_rdf(fs),key))
-        for group in ("counts","shape","corr","scan","survival"):
+        for group in ("counts","survival","selected","slices","control"):
             actions += list(results[key][group].values())
     print(f"Executing {len(actions)} booked actions ...")
     ROOT.RDF.RunGraphs(actions)
     write_tables(results,args.output)
     draw_figure1(results,args.output); draw_figure2(results,args.output)
     draw_figure3(results,args.output); draw_figure4(results,args.output)
-    print("Top 10 MC-separation scan points (diagnostic only; not purity):")
-    print(" score  Mx2hi anti angle  AAOret CLASDISret DVCSret")
-    for r in best_grid_rows(results)[:10]:
-        print(f" {r[0]:.3f}  {r[1]:.3f}  {r[2]:.1f}  {r[3]:.1f}   {r[4]:.3f}   {r[5]:.3f}      {r[6]:.3f}")
-    print(f"Done. Four focused figures + two text tables written to: {args.output}")
+
+    print("Candidate retentions relative to each detector-region optimization base:")
+    print(" sample   region   A       B       C       D")
+    for key in SAMPLES:
+        for region in ("FT","FD"):
+            den=float(results[key]["counts"][(region,"base")].GetValue())
+            vals=[]
+            for cname in CANDIDATES:
+                n=float(results[key]["counts"][(region,cname)].GetValue())
+                vals.append(n/den if den else 0.0)
+            print(f" {key:8s} {region:>3s}   " + "  ".join(f"{x:.3f}" for x in vals))
+    print("Control-region counts written to control_region_counts.txt.")
+    print(f"Done. Four focused figures + validation tables written to: {args.output}")
 
 
 if __name__=="__main__":
