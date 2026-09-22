@@ -185,7 +185,11 @@ def define_columns(df, sample_key):
 
 
 def clone(result):
-    h = result.GetValue().Clone()
+    # Accept either an RResultPtr<TH1> from RDataFrame or an already-materialized
+    # ROOT histogram. Later stages sometimes deliberately pass a TH1D after
+    # GetValue() has already been called.
+    source = result.GetValue() if hasattr(result, "GetValue") else result
+    h = source.Clone()
     h.SetDirectory(0)
     return h
 
