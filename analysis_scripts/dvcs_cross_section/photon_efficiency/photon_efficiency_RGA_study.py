@@ -339,6 +339,13 @@ def book_sample(key, df):
                 out["counts"][(region, cname, "pbin", ib)] = ps.Count()
                 out["slices"][(region, cname, ib, "mx2epg")] = h1(ps, f"hsl_{key}_{region}_{cname}_{ib}_mx2epg", "mx2epg")
                 out["slices"][(region, cname, ib, "dt")] = h1(ps, f"hsl_{key}_{region}_{cname}_{ib}_dt", "dt")
+                # Weighted local-purity template.  DATA has ana_weight=1, while
+                # MC keeps its native event weight.  Candidate A/C/D are booked
+                # now so their spread can become a denominator-selection
+                # systematic without another pass over the ROOT trees.
+                out["fit"][(region, "local", cname, ib, "mx2epg")] = h1(
+                    ps, f"hlocal_{key}_{region}_{cname}_{ib}_mx2epg",
+                    "mx2epg", weight=(key!="data"))
 
         # Stage-2 normalization inputs.  The primary fit uses one shared set of
         # component scale factors across FT+FD.  Separate FT/FD fits are retained
@@ -446,7 +453,10 @@ def draw_figure3(results, outdir):
 def draw_figure4(results, outdir):
     c=ROOT.TCanvas("c04","",1500,1050); c.Divide(2,2); keep=[]
     keep += list(draw_overlay(c.cd(1),results,lambda r,k:r["control"][("eta","mx2ep")],"mx2ep",CONTROL_REGIONS["eta"][1],[0.26,0.38]))
-    keep += list(draw_overlay(c.cd(2),results,lambda r,k:r["control"][("central","copl")],"copl",CONTROL_REGIONS["central"][1],[-2,2]))
+    central = draw_overlay(c.cd(2),results,lambda r,k:r["control"][("central","copl")],"copl",CONTROL_REGIONS["central"][1],[-2,2])
+    for _key,_h in central[0]:
+        _h.GetXaxis().SetRangeUser(-3.0,3.0)
+    keep += list(central)
     keep += list(draw_overlay(c.cd(3),results,lambda r,k:r["control"][("highangle","angle")],"angle",CONTROL_REGIONS["highangle"][1],[12,25]))
     cand=REFERENCE_CANDIDATE
     keep += list(draw_overlay(c.cd(4),results,lambda r,k:r["selected"][("FT",cand,"dt")],"dt",f"Candidate {cand}, FT: #Delta t validation"))
@@ -551,11 +561,17 @@ def draw_normalization_summary(results, fits, outdir):
             pred=sum(scales[k]*float(results[k]["fit"][(det,fr,"sumw")].GetValue()) for k in FIT_COMPONENTS)
             datah.SetBinContent(i,d); datah.SetBinError(i,math.sqrt(max(d,1)))
             predh.SetBinContent(i,pred); ymax=max(ymax,d,pred)
-        frame.SetMinimum(0); frame.SetMaximum(1.25*ymax); frame.GetYaxis().SetTitle("Events"); frame.Draw("AXIS")
+        frame.SetMinimum(0); frame.SetMaximum(1.25*ymax)
+        frame.GetYaxis().SetTitle("Events")
+        frame.GetXaxis().SetTitle("Fit/control region")
+        frame.Draw("AXIS")
         predh.Draw("HIST SAME"); datah.Draw("E1 SAME")
         leg=ROOT.TLegend(.58,.72,.90,.87); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.AddEntry(datah,"Data","lep"); leg.AddEntry(predh,"Post-fit MC sum","l"); leg.Draw()
         tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.045); tx.DrawLatex(.17,.92,f"{det}: four-region yield closure")
-        keep += [frame,datah,predh,leg,tx]
+        q=fits[det]
+        tx2=ROOT.TLatex(); tx2.SetNDC(); tx2.SetTextSize(.032)
+        tx2.DrawLatex(.17,.855,f"diagnostic fit: #chi^{{2}}/ndf = {q['chi2']:.1f}/{q['ndf']}")
+        keep += [frame,datah,predh,leg,tx,tx2]
     c.SaveAs(str(Path(outdir)/"01_four_region_yield_closure.png"))
 
     # Differential signal-region composition: this is the quantity that will feed the denominator correction.
@@ -594,11 +610,196 @@ def draw_normalization_summary(results, fits, outdir):
         c3.SaveAs(str(Path(outdir)/f"03_{det}_independent_shape_closure.png"))
 
 
+
+def _hist_arrays(h):
+    """Return bin contents and errors without under/overflow."""
+    n=h.GetNbinsX()
+    y=np.array([h.GetBinContent(i) for i in range(1,n+1)],dtype=float)
+    e=np.array([h.GetBinError(i) for i in range(1,n+1)],dtype=float)
+    return y,e
+
+
+def _fit_hist_templates(data_h, template_hists):
+    """Non-negative binned template fit.
+
+    The fit is deliberately local: one detector region, one predicted-probe
+    momentum bin, and one candidate definition.  DATA statistical uncertainty
+    defines the nominal weighting.  MC statistical precision is reported
+    separately and can be promoted into the fit uncertainty once closure is
+    accepted.
+    """
+    y,_=_hist_arrays(data_h)
+    cols=[]
+    for h in template_hists:
+        a,_=_hist_arrays(h); cols.append(a)
+    A=np.column_stack(cols)
+    # Empty DATA bins still carry finite Poisson information; use variance >=1.
+    sigma=np.sqrt(np.maximum(y,1.0))
+    x,chi2,ndf=_fit_nonnegative(A,y,sigma)
+
+    pred=A@x
+    active=np.where(x>0)[0]
+    xerr=np.full(len(x),np.nan)
+    if len(active):
+        Aw=A[:,active]/sigma[:,None]
+        try:
+            cov=np.linalg.inv(Aw.T@Aw)
+        except np.linalg.LinAlgError:
+            cov=np.linalg.pinv(Aw.T@Aw)
+        errs=np.sqrt(np.maximum(np.diag(cov),0.0))
+        for j,e in zip(active,errs): xerr[j]=e
+
+    integrals=np.array([h.Integral() for h in template_hists],dtype=float)
+    yields=x*integrals
+    yerrs=xerr*integrals
+    total=float(np.sum(yields))
+    frac=float(yields[0]/total) if total>0 else float("nan")
+
+    # A simple shape-conditioning diagnostic.  Large values warn that two
+    # templates are too similar for their individual normalizations to be
+    # determined robustly from this distribution alone.
+    good=np.sum(A,axis=1)>0
+    cond=float("inf")
+    if np.count_nonzero(good)>len(template_hists):
+        M=A[good]
+        norms=np.sqrt(np.sum(M*M,axis=0))
+        ok=norms>0
+        if np.count_nonzero(ok)>=2:
+            cond=float(np.linalg.cond(M[:,ok]/norms[ok]))
+
+    return {
+        "scale":dict(zip(FIT_COMPONENTS,x)),
+        "scale_err":dict(zip(FIT_COMPONENTS,xerr)),
+        "yield":dict(zip(FIT_COMPONENTS,yields)),
+        "yield_err":dict(zip(FIT_COMPONENTS,yerrs)),
+        "total":total, "pi0_fraction":frac,
+        "chi2":chi2, "ndf":ndf, "condition":cond,
+        "pred_bins":pred,
+    }
+
+
+def perform_local_purity_fits(results):
+    """Fit Candidate-B Mx2(ep gamma_tag) directly in detector/p_probe bins.
+
+    Candidate B is nominal.  A/C/D are fitted in parallel so the same machinery
+    is ready for the cut-variation systematic.  The 8-9 GeV bin is retained as
+    a diagnostic but is not intended to define an independent final efficiency
+    point unless its statistics prove adequate.
+    """
+    out={}
+    for det in ("FT","FD"):
+        for cname in CANDIDATES:
+            for ib,(lo,hi) in enumerate(PROBE_P_BINS):
+                hd=clone(results["data"]["fit"][(det,"local",cname,ib,"mx2epg")])
+                hm=[clone(results[k]["fit"][(det,"local",cname,ib,"mx2epg")]) for k in FIT_COMPONENTS]
+                out[(det,cname,ib)] = _fit_hist_templates(hd,hm)
+    return out
+
+
+def draw_local_purity_fits(results, localfits, outdir):
+    """Presentation-oriented local fits: four useful p bins per detector."""
+    p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
+    cname=NOMINAL_CANDIDATE
+
+    for det in ("FT","FD"):
+        c=ROOT.TCanvas(f"clocal_{det}","",1600,1100); c.Divide(2,2); keep=[]
+        for ipad,ib in enumerate(range(4),1):
+            lo,hi=PROBE_P_BINS[ib]
+            pad=c.cd(ipad); setup_pad(pad)
+            hd=clone(results["data"]["fit"][(det,"local",cname,ib,"mx2epg")])
+            hd.SetMarkerStyle(20); hd.SetMarkerSize(.45); hd.SetLineColor(ROOT.kBlack)
+            fit=localfits[(det,cname,ib)]
+            comps=[]; total=None
+            for k in FIT_COMPONENTS:
+                h=clone(results[k]["fit"][(det,"local",cname,ib,"mx2epg")])
+                h.Scale(fit["scale"][k]); style(h,k); comps.append((k,h))
+                if total is None:
+                    total=h.Clone(f"hloc_tot_{det}_{ib}"); total.SetDirectory(0)
+                else:
+                    total.Add(h)
+            ymax=max(hd.GetMaximum(),total.GetMaximum())*1.30 if total else hd.GetMaximum()*1.30
+            hd.SetTitle("")
+            hd.GetXaxis().SetTitle(OBS["mx2epg"][4])
+            hd.GetYaxis().SetTitle("Events")
+            hd.GetYaxis().SetRangeUser(0,max(1.0,ymax))
+            hd.Draw("E1")
+            for k,h in comps: h.Draw("HIST SAME")
+            total.SetLineColor(ROOT.kMagenta+2); total.SetLineWidth(3); total.Draw("HIST SAME")
+            hd.Draw("E1 SAME")
+            leg=ROOT.TLegend(.55,.59,.91,.88); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(.027)
+            leg.AddEntry(hd,"Data","lep")
+            for k,h in comps: leg.AddEntry(h,SAMPLES[k][0],"l")
+            leg.AddEntry(total,"Local fit sum","l"); leg.Draw()
+            tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.040)
+            tx.DrawLatex(.17,.92,f"{det}, Candidate {cname}: {lo:g}<p_{{probe}}<{hi:g} GeV")
+            tx2=ROOT.TLatex(); tx2.SetNDC(); tx2.SetTextSize(.030)
+            tx2.DrawLatex(.17,.855,f"f_{{#pi^{{0}}}}={fit['pi0_fraction']:.3f},  #chi^{{2}}/ndf={fit['chi2']:.1f}/{fit['ndf']}")
+            keep += [hd,total,leg,tx,tx2]+[x[1] for x in comps]
+        c.SaveAs(str(p/f"04_{det}_candidateB_local_mx2epg_fits.png"))
+
+    # Nominal pi0 fraction and inferred pi0 tag yield.  These are the two
+    # quantities Stage 3 will need; the latter is the actual efficiency denominator.
+    c=ROOT.TCanvas("clocal_summary","",1500,900); c.Divide(2,1); keep=[]
+    for ipad,det in enumerate(("FT","FD"),1):
+        pad=c.cd(ipad); setup_pad(pad)
+        h=ROOT.TH1D(f"hlocpur_{det}","",4,0,4); h.SetDirectory(0); h.SetMarkerStyle(20); h.SetLineWidth(2)
+        for i,ib in enumerate(range(4),1):
+            lo,hi=PROBE_P_BINS[ib]
+            h.GetXaxis().SetBinLabel(i,f"{lo:g}-{hi:g}")
+            h.SetBinContent(i,localfits[(det,cname,ib)]["pi0_fraction"])
+        h.SetMinimum(0); h.SetMaximum(1.05)
+        h.GetXaxis().SetTitle("Predicted probe momentum (GeV)")
+        h.GetYaxis().SetTitle("Locally fitted #pi^{0} fraction")
+        h.Draw("E1")
+        tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.045); tx.DrawLatex(.17,.92,f"{det}: Candidate B local purity")
+        keep += [h,tx]
+    c.SaveAs(str(p/"05_local_pi0_fraction_vs_probe_momentum.png"))
+
+
+def write_local_purity_tables(results, localfits, outdir):
+    p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
+    with open(p/"local_candidate_template_fits.txt","w") as f:
+        f.write("# Local binned Mx2(ep gamma_tag) template fits.\n")
+        f.write("# AAOgen is the exclusive-pi0 component.  Candidate B is nominal; A/C/D are cut variations.\n")
+        f.write("# condition is a template-similarity diagnostic: very large values mean component separation is ill-conditioned.\n")
+        f.write("detector candidate pmin pmax data Npi0 Nclasdis Ndvcs total pi0_fraction chi2 ndf condition aaoscale clasdisscale dvcsscale\n")
+        for det in ("FT","FD"):
+            for cname in CANDIDATES:
+                for ib,(lo,hi) in enumerate(PROBE_P_BINS):
+                    q=localfits[(det,cname,ib)]
+                    data=float(results["data"]["fit"][(det,"local",cname,ib,"mx2epg")].GetValue().Integral())
+                    f.write(
+                        f"{det} {cname} {lo:g} {hi:g} {data:.8g} "
+                        f"{q['yield']['aaogen']:.8g} {q['yield']['clasdis']:.8g} {q['yield']['dvcsgen']:.8g} "
+                        f"{q['total']:.8g} {q['pi0_fraction']:.8g} {q['chi2']:.8g} {q['ndf']} {q['condition']:.8g} "
+                        f"{q['scale']['aaogen']:.8g} {q['scale']['clasdis']:.8g} {q['scale']['dvcsgen']:.8g}\n"
+                    )
+
+    with open(p/"candidateB_pi0_tag_denominator.txt","w") as f:
+        f.write("# Candidate-B quantities intended to flow into Stage 3.\n")
+        f.write("# Npi0_tag is the locally fitted AAOgen contribution in DATA's denominator sample.\n")
+        f.write("# This is NOT yet a photon efficiency.\n")
+        f.write("detector pmin pmax data Npi0_tag pi0_fraction fit_chi2 fit_ndf condition\n")
+        for det in ("FT","FD"):
+            for ib,(lo,hi) in enumerate(PROBE_P_BINS):
+                q=localfits[(det,NOMINAL_CANDIDATE,ib)]
+                data=float(results["data"]["fit"][(det,"local",NOMINAL_CANDIDATE,ib,"mx2epg")].GetValue().Integral())
+                f.write(f"{det} {lo:g} {hi:g} {data:.8g} {q['yield']['aaogen']:.8g} "
+                        f"{q['pi0_fraction']:.8g} {q['chi2']:.8g} {q['ndf']} {q['condition']:.8g}\n")
+
+    with open(p/"local_fit_guardrails.txt","w") as f:
+        f.write("1. The old four-region shared fit is retained only as a diagnostic; its chi2 failure means it is not the nominal purity model.\n")
+        f.write("2. Nominal purity now comes from Candidate-B Mx2(ep gamma_tag) fits local in detector region and predicted-probe momentum.\n")
+        f.write("3. FT and FD are intentionally allowed to have different fitted mixtures; they are different detector/phase-space populations.\n")
+        f.write("4. A/C/D are fitted with the same machinery and will provide a denominator-selection systematic if local closure is acceptable.\n")
+        f.write("5. Large template condition numbers flag bins where AAOgen/background shapes are too similar to separate reliably.\n")
+        f.write("6. Do not start reconstructed-probe efficiency extraction until Candidate-B local fits and control-region transfer checks are accepted.\n")
+
 def write_normalization_tables(results, fits, outdir):
     p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
     rows,purity=normalization_products(results,fits)
     with open(p/"normalization_fit.txt","w") as f:
-        f.write("# Four-region component normalization. Nominal = shared FT+FD fit.\n")
+        f.write("# Four-region component-normalization DIAGNOSTIC. This is no longer the nominal purity model.\n")
         f.write("# Fits use integrated region yields only; plotted shapes are independent closure tests.\n")
         for name in ("shared","FT","FD"):
             q=fits[name]; f.write(f"fit {name} chi2 {q['chi2']:.6g} ndf {q['ndf']}\n")
@@ -607,13 +808,13 @@ def write_normalization_tables(results, fits, outdir):
         for det,fr,data,comp,pred in rows:
             f.write(f"{det} {fr} {data:.8g} {comp['aaogen']:.8g} {comp['clasdis']:.8g} {comp['dvcsgen']:.8g} {pred:.8g} {data/pred if pred else float('nan'):.8g}\n")
     with open(p/"pi0_fraction_vs_probe_momentum.txt","w") as f:
-        f.write("# Candidate-B denominator composition from nominal shared normalization.\n")
+        f.write("# Candidate-B composition from the failed shared-fit diagnostic; do not use as nominal purity.\n")
         f.write("# This is a normalization result, NOT yet a photon efficiency.\n")
         f.write("detector pmin pmax data aaogen clasdis dvcsgen total pi0_fraction data_over_total\n")
         for det,ib,lo,hi,data,comp,pred,pur in purity:
             f.write(f"{det} {lo:g} {hi:g} {data:.8g} {comp['aaogen']:.8g} {comp['clasdis']:.8g} {comp['dvcsgen']:.8g} {pred:.8g} {pur:.8g} {data/pred if pred else float('nan'):.8g}\n")
     with open(p/"normalization_interpretation_guardrails.txt","w") as f:
-        f.write("1. Nominal component scales are shared between FT and FD.\n")
+        f.write("1. The shared FT+FD fit is a diagnostic stress test, not the nominal purity extraction.\n")
         f.write("2. FT-only and FD-only scales are diagnostics for detector-dependent closure.\n")
         f.write("3. The fit uses only four-region yields; shape plots are independent validation.\n")
         f.write("4. Do not call pi0_fraction a measured purity unless yield and shape closure are acceptable.\n")
@@ -656,8 +857,8 @@ def write_tables(results, outdir):
         f.write("1. No reconstructed probe is required in any denominator selection here.\n")
         f.write("2. Candidate B is the nominal denominator; A/C/D are retained as cut-variation systematic checks.\n")
         f.write("3. Pi0 purity must be determined differentially in probe phase space; do not use one global purity number.\n")
-        f.write("4. Candidate B plus eta/central/highangle provide the four mutually exclusive regions used for component normalization.\n")
-        f.write("5. The nominal normalization is one shared FT+FD component fit; FT-only/FD-only fits test closure.\n")
+        f.write("4. Candidate B plus eta/central/highangle are retained as normalization/control diagnostics.\n")
+        f.write("5. Nominal purity is determined locally from Candidate-B Mx2(ep gamma_tag), separately in FT/FD and probe-momentum bins.\n")
         f.write("6. Only after normalization/purity validation should reconstructed-probe matching be introduced for the numerator.\n")
         f.write("7. Final correction convention should remain epsilon_data/epsilon_MC; cross-section correction is its inverse.\n")
 
@@ -681,8 +882,8 @@ def main():
     print(f"ROOT worker threads: {workers}")
     print("No reconstructed-probe requirement.")
     print("Nominal denominator candidate: B = Mx2(ep)<0.24, |coplanarity|>2 deg, theta(tag,X)<8 deg.")
-    print("Normalization: simultaneous AAOgen/CLASDIS/DVCSgen fit to signal + 3 control-region yields.")
-    print("Nominal component scales are shared across FT and FD; detector-specific fits are diagnostics.")
+    print("Normalization diagnostic: global four-region AAOgen/CLASDIS/DVCSgen stress test.")
+    print("Nominal purity extraction: local Candidate-B Mx2(ep gamma_tag) template fits in FT/FD and p_probe bins.")
     print("Photon-energy plotting range: 0-9 GeV.")
     print("="*78)
     results={}; actions=[]
@@ -701,9 +902,18 @@ def main():
     draw_figure1(results,validation_dir); draw_figure2(results,validation_dir)
     draw_figure3(results,validation_dir); draw_figure4(results,validation_dir)
 
+    # First retain the deliberately over-constrained four-region fit as a
+    # diagnostic.  Its failure is useful evidence, but it is no longer the
+    # nominal purity model.
     fits=perform_normalization_fit(results)
     write_normalization_tables(results,fits,normalization_dir)
     draw_normalization_summary(results,fits,normalization_dir)
+
+    # Nominal denominator-purity extraction: fit the actual Candidate-B
+    # Mx2(ep gamma_tag) spectrum locally in detector region and p_probe.
+    localfits=perform_local_purity_fits(results)
+    write_local_purity_tables(results,localfits,normalization_dir)
+    draw_local_purity_fits(results,localfits,normalization_dir)
 
     print("Candidate retentions relative to each detector-region optimization base:")
     print(" sample   region   A       B       C       D")
@@ -715,14 +925,22 @@ def main():
                 n=float(results[key]["counts"][(region,cname)].GetValue()); vals.append(n/den if den else 0.0)
             print(f" {key:8s} {region:>3s}   " + "  ".join(f"{x:.3f}" for x in vals))
 
-    print("\nComponent-normalization fits:")
+    print("\nGlobal four-region normalization diagnostics (not nominal purity):")
     for name in ("shared","FT","FD"):
         q=fits[name]
         scales=" ".join(f"{k}={q['scale'][k]:.4g}" for k in FIT_COMPONENTS)
         print(f"  {name:6s}: chi2/ndf={q['chi2']:.3g}/{q['ndf']}  {scales}")
+
+    print("\nNominal Candidate-B local purity fits:")
+    for det in ("FT","FD"):
+        vals=[]
+        for ib,(lo,hi) in enumerate(PROBE_P_BINS[:4]):
+            q=localfits[(det,NOMINAL_CANDIDATE,ib)]
+            vals.append(f"{lo:g}-{hi:g}: fpi0={q['pi0_fraction']:.3f}, chi2/ndf={q['chi2']:.1f}/{q['ndf']}, cond={q['condition']:.1f}")
+        print(f"  {det}: " + " | ".join(vals))
     print("\nOutput layout:")
     for d in (overview_dir,validation_dir,normalization_dir,efficiency_dir,final_dir): print(f"  {d}/")
-    print("Stage 3/4 directories are intentionally empty: reconstructed-probe matching is not introduced until normalization closure is accepted.")
+    print("Stage 3/4 remain empty: reconstructed-probe matching waits for acceptance of the local Candidate-B purity/closure results.")
 
 
 if __name__=="__main__":
