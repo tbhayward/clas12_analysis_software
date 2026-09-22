@@ -87,10 +87,16 @@ void concise_publication_style() {
     gStyle->SetLabelFont(42,"XYZ");
     gStyle->SetTextFont(42);
     gStyle->SetLegendFont(42);
-    gStyle->SetTitleSize(0.050,"XYZ");
-    gStyle->SetLabelSize(0.042,"XYZ");
-    gStyle->SetTitleOffset(1.05,"X");
-    gStyle->SetTitleOffset(1.25,"Y");
+    gStyle->SetTitleSize(0.048,"XYZ");
+    gStyle->SetLabelSize(0.040,"XYZ");
+    gStyle->SetTitleOffset(1.12,"X");
+    gStyle->SetTitleOffset(1.45,"Y");
+    // Generous defaults prevent axis titles/labels from being clipped in PNGs.
+    // Individual multi-pad canvases can still override these where needed.
+    gStyle->SetPadLeftMargin(0.155);
+    gStyle->SetPadRightMargin(0.050);
+    gStyle->SetPadBottomMargin(0.145);
+    gStyle->SetPadTopMargin(0.065);
     gStyle->SetPadTickX(1);
     gStyle->SetPadTickY(1);
     gStyle->SetFrameLineWidth(2);
@@ -2607,7 +2613,9 @@ void draw_norm_fit(const TH1D* hd,const TH1D* ha,const TH1D* hc,const TH1D* hv,
     style_norm_component(a.get(),kRed+1); style_norm_component(c.get(),kOrange+7); style_norm_component(v.get(),kGreen+2); style_norm_component(tot.get(),kBlue+1,3);
     TCanvas can("c_norm_fit","",1100,850);
     TPad top("norm_top","",0,0.27,1,1); TPad bot("norm_bot","",0,0,1,0.27);
-    top.SetBottomMargin(0.02); bot.SetTopMargin(0.03); bot.SetBottomMargin(0.33); top.Draw(); bot.Draw();
+    top.SetLeftMargin(0.155); top.SetRightMargin(0.050); top.SetTopMargin(0.070); top.SetBottomMargin(0.02);
+    bot.SetLeftMargin(0.155); bot.SetRightMargin(0.050); bot.SetTopMargin(0.03); bot.SetBottomMargin(0.36);
+    top.Draw(); bot.Draw();
     top.cd();
     d->SetTitle(title.c_str()); d->GetXaxis()->SetLabelSize(0); d->SetMaximum(1.25*std::max(d->GetMaximum(),tot->GetMaximum()));
     d->Draw("E1"); a->Draw("HIST SAME"); c->Draw("HIST SAME"); v->Draw("HIST SAME"); tot->Draw("HIST SAME"); d->Draw("E1 SAME");
@@ -2635,7 +2643,8 @@ void draw_norm_shape_overlay(const TH1D* hd,const TH1D* ha,const TH1D* hc,const 
     unit(d.get()); unit(a.get()); unit(c.get()); unit(v.get());
     d->SetMarkerStyle(20); d->SetMarkerSize(0.65); d->SetLineColor(kBlack); d->SetStats(0);
     style_norm_component(a.get(),kRed+1); style_norm_component(c.get(),kOrange+7); style_norm_component(v.get(),kGreen+2);
-    TCanvas can("c_norm_shape","",1050,760);
+    TCanvas can("c_norm_shape","",1100,800);
+    can.SetLeftMargin(0.16); can.SetRightMargin(0.05); can.SetBottomMargin(0.15); can.SetTopMargin(0.07);
     d->SetTitle(title.c_str()); d->GetYaxis()->SetTitle("Unit-area candidates");
     d->SetMaximum(1.25*std::max({d->GetMaximum(),a->GetMaximum(),c->GetMaximum(),v->GetMaximum()}));
     d->Draw("E1"); a->Draw("HIST SAME"); c->Draw("HIST SAME"); v->Draw("HIST SAME"); d->Draw("E1 SAME");
@@ -2663,7 +2672,8 @@ void draw_norm_cutflow(const std::vector<std::unique_ptr<ValComponent>>& vv,cons
         h->Draw(first?"HIST P":"HIST P SAME"); first=false; leg.AddEntry(h.get(),vp->name.c_str(),"lp");
         keep.push_back(std::move(h)); idx++;
     }
-    leg.Draw(); c.SetBottomMargin(0.25); c.SaveAs(file.c_str());
+    leg.Draw(); c.SetLeftMargin(0.15); c.SetRightMargin(0.05); c.SetBottomMargin(0.32); c.SetTopMargin(0.07);
+    c.SaveAs(file.c_str());
 }
 
 bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path) {
@@ -4160,19 +4170,14 @@ void write_fd_valerii_momentum_trend(
 
 void val_draw_map(const std::array<ValBinResult,VAL_NBIN>& rr,
                   const std::string& what,const std::string& outfile) {
-    // Match Valerii's note display convention: show the first six momentum bins;
-    // retain the 3.7-6 GeV bin in CSV/ROOT products.
-    //
-    // IMPORTANT ROOT ownership detail: objects drawn on a TPad are referenced
-    // by pointer.  A stack-local TH2D destroyed at the end of each loop
-    // iteration leaves the pad holding a dangling pointer; the later SaveAs()
-    // then produces a completely blank canvas.  Keep all six maps alive until
-    // after the canvas has been painted and written.
-    TCanvas c(Form("c_%s",what.c_str()),"",1500,920);
-    c.Divide(3,2,0.003,0.003);
+    // Show every momentum interval, including the 3.7-6 and 6-10.6 GeV
+    // extensions.  A 4x2 layout gives each map enough room for readable axes,
+    // bin values, and the color scale.
+    TCanvas c(Form("c_%s",what.c_str()),"",1800,980);
+    c.Divide(4,2,0.002,0.002);
     std::vector<std::unique_ptr<TH2D>> maps;
-    maps.reserve(6);
-    for (int ip=0;ip<6;ip++) {
+    maps.reserve(VAL_NP);
+    for (int ip=0;ip<VAL_NP;ip++) {
         maps.emplace_back(new TH2D(Form("hm_%s_%d",what.c_str(),ip),
                Form("%.2f < p < %.2f GeV;wrapped #phi (deg);#theta (deg)",
                     VAL_P_EDGES[ip],VAL_P_EDGES[ip+1]),
@@ -4190,9 +4195,18 @@ void val_draw_map(const std::array<ValBinResult,VAL_NBIN>& rr,
             h->SetBinContent(iph+1,it+1,z);
         } // endfor
         h->SetStats(0);
+        h->SetMarkerSize(1.15);
+        h->GetXaxis()->SetTitleSize(0.052);
+        h->GetYaxis()->SetTitleSize(0.052);
+        h->GetXaxis()->SetLabelSize(0.043);
+        h->GetYaxis()->SetLabelSize(0.043);
+        h->GetXaxis()->SetTitleOffset(1.10);
+        h->GetYaxis()->SetTitleOffset(1.15);
         c.cd(ip+1);
-        gPad->SetRightMargin(0.16);
-        gPad->SetBottomMargin(0.13);
+        gPad->SetLeftMargin(0.15);
+        gPad->SetRightMargin(0.19);
+        gPad->SetBottomMargin(0.16);
+        gPad->SetTopMargin(0.08);
         h->Draw("COLZ TEXT");
         gPad->Modified();
         gPad->Update();
@@ -4239,7 +4253,7 @@ void draw_step1b_mx2_ep_overlay(const std::vector<std::unique_ptr<ValComponent>>
     style_norm_component(hc.get(),kOrange+7);
     style_norm_component(hv.get(),kGreen+2);
 
-    TCanvas can("c_step1b_mx2_overlay","",1100,780);
+    TCanvas can("c_step1b_mx2_overlay","",1150,820);
     hd->SetTitle("Step 1B: baseline M_{X}^{2}(ep) and low-mass exclusivity window");
     hd->GetXaxis()->SetTitle("M_{X}^{2}(ep) (GeV^{2})");
     hd->GetYaxis()->SetTitle("Unit-area candidates");
@@ -4276,7 +4290,7 @@ void draw_step1b_mx2_ep_overlay(const std::vector<std::unique_ptr<ValComponent>>
 
 void draw_step1b_mx2_ep_individual(const std::vector<std::unique_ptr<ValComponent>>& vv,
                                    const std::string& file) {
-    TCanvas can("c_step1b_mx2_individual","",1350,950);
+    TCanvas can("c_step1b_mx2_individual","",1500,1050);
     can.Divide(2,2);
 
     const char* names[4]={"data","aaogen","clasdis","dvcsgen"};
@@ -4392,7 +4406,7 @@ void draw_step1c_mx2_eg_overlay(const std::vector<std::unique_ptr<ValComponent>>
     style_norm_component(hc.get(),kOrange+7);
     style_norm_component(hv.get(),kGreen+2);
 
-    TCanvas can("c_step1c_mx2eg_overlay","",1100,780);
+    TCanvas can("c_step1c_mx2eg_overlay","",1150,820);
     hd->SetTitle("Step 1C: M_{X}^{2}(e#gamma) after the M_{X}^{2}(ep) requirement");
     hd->GetXaxis()->SetTitle("M_{X}^{2}(e#gamma) (GeV^{2})");
     hd->GetYaxis()->SetTitle("Unit-area candidates");
@@ -4425,7 +4439,7 @@ void draw_step1c_mx2_eg_overlay(const std::vector<std::unique_ptr<ValComponent>>
 
 void draw_step1c_mx2_eg_individual(const std::vector<std::unique_ptr<ValComponent>>& vv,
                                    const std::string& file) {
-    TCanvas can("c_step1c_mx2eg_individual","",1350,950);
+    TCanvas can("c_step1c_mx2eg_individual","",1500,1050);
     can.Divide(2,2);
 
     const char* names[4]={"data","aaogen","clasdis","dvcsgen"};
@@ -4540,7 +4554,7 @@ void draw_step1d_coplanarity_overlay(const std::vector<std::unique_ptr<ValCompon
     style_norm_component(hc.get(),kOrange+7);
     style_norm_component(hv.get(),kGreen+2);
 
-    TCanvas can("c_step1d_copl_overlay","",1100,780);
+    TCanvas can("c_step1d_copl_overlay","",1150,820);
     hd->SetTitle("Step 1D: Trento coplanarity after M_{X}^{2}(ep) and M_{X}^{2}(e#gamma)");
     hd->GetXaxis()->SetTitle("#Delta#phi_{copl} (deg)");
     hd->GetYaxis()->SetTitle("Unit-area candidates");
@@ -4569,7 +4583,7 @@ void draw_step1d_coplanarity_overlay(const std::vector<std::unique_ptr<ValCompon
 
 void draw_step1d_coplanarity_individual(const std::vector<std::unique_ptr<ValComponent>>& vv,
                                         const std::string& file) {
-    TCanvas can("c_step1d_copl_individual","",1350,950);
+    TCanvas can("c_step1d_copl_individual","",1500,1050);
     can.Divide(2,2);
     const char* names[4]={"data","aaogen","clasdis","dvcsgen"};
     const char* labels[4]={"Data","AAOgen","CLASDIS","DVCSgen"};
@@ -4667,7 +4681,7 @@ void draw_step1e_angle_gX_overlay(const std::vector<std::unique_ptr<ValComponent
     style_norm_component(hc.get(),kOrange+7);
     style_norm_component(hv.get(),kGreen+2);
 
-    TCanvas can("c_step1e_anglegX_overlay","",1100,780);
+    TCanvas can("c_step1e_anglegX_overlay","",1150,820);
     hd->SetTitle("Step 1E: angle(#gamma,X) after Steps 1B+1C+1D");
     hd->GetXaxis()->SetTitle("angle(#gamma,X) (deg)");
     hd->GetYaxis()->SetTitle("Unit-area candidates");
@@ -4705,7 +4719,7 @@ void draw_step1e_angle_gX_overlay(const std::vector<std::unique_ptr<ValComponent
 
 void draw_step1e_angle_gX_individual(const std::vector<std::unique_ptr<ValComponent>>& vv,
                                      const std::string& file) {
-    TCanvas can("c_step1e_anglegX_individual","",1350,950);
+    TCanvas can("c_step1e_anglegX_individual","",1500,1050);
     can.Divide(2,2);
 
     const char* names[4]={"data","aaogen","clasdis","dvcsgen"};
@@ -4855,7 +4869,7 @@ void write_step2a_energy_region_diagnostics(const std::vector<std::unique_ptr<Va
     csv.close();
 
     if (hu.size()==4) {
-        TCanvas c("c_step2a_energy_unit","",1150,800);
+        TCanvas c("c_step2a_energy_unit","",1200,840);
         hu[0]->SetTitle("Step 2A: Valerii photon-energy normalization regions");
         hu[0]->GetXaxis()->SetTitle("E_{#gamma} (GeV)");
         hu[0]->GetYaxis()->SetTitle("Unit-area selected candidates");
@@ -4887,7 +4901,7 @@ void write_step2a_energy_region_diagnostics(const std::vector<std::unique_ptr<Va
     }
 
     if (hc.size()==4) {
-        TCanvas c("c_step2a_energy_counts","",1350,950);
+        TCanvas c("c_step2a_energy_counts","",1500,1050);
         c.Divide(2,2);
         for (int is=0;is<4;is++) {
             c.cd(is+1);
@@ -5029,7 +5043,8 @@ void write_lowE_pi0_balance_diagnostics(const std::vector<std::unique_ptr<ValCom
         one.SetLineStyle(2);
         one.SetLineWidth(2);
         one.Draw();
-        c.SetBottomMargin(0.22);
+        c.SetLeftMargin(0.16); c.SetRightMargin(0.05); c.SetBottomMargin(0.31); c.SetTopMargin(0.07);
+        h.GetXaxis()->SetTitleOffset(2.35);
         h.GetXaxis()->LabelsOption("v");
         c.SaveAs((dir+"/lowE_pi0_total_closure.png").c_str());
     }
@@ -5050,7 +5065,8 @@ void write_lowE_pi0_balance_diagnostics(const std::vector<std::unique_ptr<ValCom
         h.SetMinimum(0.0);
         h.SetMaximum(1.0);
         h.Draw("P");
-        c.SetBottomMargin(0.22);
+        c.SetLeftMargin(0.16); c.SetRightMargin(0.05); c.SetBottomMargin(0.31); c.SetTopMargin(0.07);
+        h.GetXaxis()->SetTitleOffset(2.35);
         h.GetXaxis()->LabelsOption("v");
         c.SaveAs((dir+"/lowE_aao_fraction_of_pi0_model.png").c_str());
     }
@@ -5205,7 +5221,9 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
         std::unique_ptr<TH1D> t((TH1D*)a->Clone("energy_total")); t->Add(c.get()); t->Add(v.get()); t->SetDirectory(nullptr);
         d->SetMarkerStyle(20); d->SetMarkerSize(0.65); d->SetLineColor(kBlack); d->SetStats(0);
         style_norm_component(a.get(),kRed+1); style_norm_component(c.get(),kOrange+7); style_norm_component(v.get(),kGreen+2); style_norm_component(t.get(),kBlue+1,3);
-        TCanvas ce("c_energy_regions","",1100,760); d->SetTitle("Normalization regions and fitted MC composition;E_{#gamma} (GeV);Candidates");
+        TCanvas ce("c_energy_regions","",1150,800);
+        ce.SetLeftMargin(0.16); ce.SetRightMargin(0.05); ce.SetBottomMargin(0.15); ce.SetTopMargin(0.07);
+        d->SetTitle("Normalization regions and fitted MC composition;E_{#gamma} (GeV);Candidates");
         d->SetMaximum(1.25*std::max(d->GetMaximum(),t->GetMaximum())); d->Draw("E1"); a->Draw("HIST SAME"); c->Draw("HIST SAME"); v->Draw("HIST SAME"); t->Draw("HIST SAME"); d->Draw("E1 SAME");
         TLine l2(2.0,0,2.0,d->GetMaximum()); l2.SetLineStyle(2); l2.SetLineWidth(2); l2.Draw();
         TLine l3(3.0,0,3.0,d->GetMaximum()); l3.SetLineStyle(2); l3.SetLineWidth(2); l3.Draw();
@@ -5271,12 +5289,17 @@ NormDerivation derive_normalization(const std::vector<std::unique_ptr<ValCompone
     txt.close();
 
     // Summary factor plot.
-    TCanvas cs("c_norm_summary","",1100,700); cs.SetGridy();
+    TCanvas cs("c_norm_summary","",1250,800); cs.SetGridy();
+    cs.SetLeftMargin(0.16); cs.SetRightMargin(0.05); cs.SetBottomMargin(0.36); cs.SetTopMargin(0.07);
     TH1D frame("norm_summary_frame","Normalization factors by observable;Observable;Scale factor",(int)(R.low_points.size()+R.high_points.size()),0,(int)(R.low_points.size()+R.high_points.size()));
     frame.SetStats(0); frame.SetMinimum(0); double ymax=1.4*std::max({1.2,R.high.dvcs,R.high.aao,R.high.clasdis}); frame.SetMaximum(ymax);
     int ib=1; for (const auto& q:R.low_points) { frame.GetXaxis()->SetBinLabel(ib,("low "+q.observable).c_str()); frame.SetBinContent(ib,std::max(q.aao,q.clasdis)); ib++; }
     for (const auto& q:R.high_points) { frame.GetXaxis()->SetBinLabel(ib,("high "+q.observable).c_str()); frame.SetBinContent(ib,q.dvcs); ib++; }
-    frame.LabelsOption("v","X"); frame.Draw("HIST TEXT"); cs.SetBottomMargin(0.30); cs.SaveAs((od+"/normalization_factor_summary.png").c_str());
+    frame.GetXaxis()->SetTitleOffset(2.75);
+    frame.GetYaxis()->SetTitleOffset(1.45);
+    frame.GetXaxis()->SetLabelSize(0.035);
+    frame.LabelsOption("v","X"); frame.Draw("HIST TEXT");
+    cs.SaveAs((od+"/normalization_factor_summary.png").c_str());
 
     // Persist all normalization histograms for detailed offline inspection.
     TFile rf((od+"/normalization_histograms.root").c_str(),"RECREATE");
@@ -16106,7 +16129,7 @@ void run_concise_analysis(const std::string& out) {
 
 void run_valerii_fd_reproduction(const std::string& out) {
     std::cout << "\n============================================================\n"
-              << " Valerii-style FD 7x3x6 reproduction\n"
+              << " Valerii-style FD 8x3x6 reproduction\n"
               << "============================================================\n"
               << "MC events are unit weighted inside each component.\n"
               << "AAO/CLASDIS/DVCS normalization factors are derived from this run's template fits.\n"
@@ -16140,7 +16163,7 @@ void photon_efficiency_valerii_reproduction(int run_mode=5) {
     concise_publication_style();
 
     // run_mode = 5 : DEFAULT production M(gamma gamma) extraction only
-    // run_mode = 6 : Valerii-style FD 7x3x6 reproduction only
+    // run_mode = 6 : Valerii-style FD 8x3x6 reproduction only
     // run_mode = 0 : legacy full analysis (not recommended for routine reruns)
     // run_mode = 1 : CLASDIS truth-category dissection only
     // run_mode = 2 : missing-vector audit only
