@@ -2809,8 +2809,17 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
     } // endfor
 
     long long selected=0,reco=0,outside_count_range=0;
+    // High-p audit: trace the 6--10.6 GeV inferred-probe population through the selection.
+    long long hp_all=0, hp_tag_quality=0, hp_tag_fd=0, hp_theta_fd=0, hp_excl=0, hp_theta_fd_excl=0;
     for (Long64_t i=0;i<c.GetEntries();i++) {
         c.GetEntry(i);
+
+        const bool hp = finite_good(b.probe_corr_p) && b.probe_corr_p>6.0 && b.probe_corr_p<=10.6;
+        if (hp) hp_all++;
+        if (hp && b.p_pass_standard && b.tag_pass_beta && b.tag_pass_fiducial) hp_tag_quality++;
+        if (hp && b.p_pass_standard && b.tag_pass_beta && b.tag_pass_fiducial && b.tag_detector==1) hp_tag_fd++;
+        if (hp && b.p_pass_standard && b.tag_pass_beta && b.tag_pass_fiducial && b.tag_detector==1 &&
+            finite_good(b.probe_corr_theta) && b.probe_corr_theta>=FD_THETA_MIN && b.probe_corr_theta<=FD_THETA_MAX) hp_theta_fd++;
 
         // Match the FD/PCAL workflow: the observed tag photon must itself be FD.
         // The mixed ep-gamma-X denominator is NOT restricted by the stage-1 pi0
@@ -2826,6 +2835,8 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         // the missing probe can lie in the FT even though the observed tag is FD.
         const double Eg=b.have_tag_corr_kin?b.tag_corr_p:std::numeric_limits<double>::quiet_NaN();
         const NormCutFlags ncf=norm_cut_flags(b);
+        if (hp && ncf.all) hp_excl++;
+        if (hp && ncf.all && b.probe_corr_theta>=FD_THETA_MIN && b.probe_corr_theta<=FD_THETA_MAX) hp_theta_fd_excl++;
 
         // Detector-specific inferred-probe acceptance.
         const bool probe_fd=(b.probe_corr_p>=PROBE_P_MIN &&
@@ -3059,6 +3070,15 @@ bool analyze_val_component_worker(const SampleSpec& spec,const std::string& path
         if (dp<VAL_COUNT_MIN || dp>VAL_COUNT_MAX) outside_count_range++;
         reco++;
     } // endfor
+
+    std::cout << "[high-p audit] " << spec.name
+              << " p=6-10.6: all=" << hp_all
+              << " tag-quality=" << hp_tag_quality
+              << " tag-FD=" << hp_tag_fd
+              << " tag-FD+probe-theta-FD=" << hp_theta_fd
+              << " exclusivity=" << hp_excl
+              << " exclusivity+probe-theta-FD=" << hp_theta_fd_excl
+              << std::endl;
 
     TFile f(path.c_str(),"RECREATE");
     if (f.IsZombie()) return false;
