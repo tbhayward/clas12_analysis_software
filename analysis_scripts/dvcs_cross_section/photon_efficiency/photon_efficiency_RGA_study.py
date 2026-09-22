@@ -928,6 +928,171 @@ def write_peak_tables(results,peakfits,outdir):
         f.write("6. Do not interpret peak_fraction as final photon efficiency; Stage 3 still requires reconstructed-probe signal extraction.\n")
 
 
+
+# -----------------------------------------------------------------------------
+# DATA/AAOgen resolution study for Mx2(ep gamma_tag)
+# -----------------------------------------------------------------------------
+# This stage does NOT alter the denominator yield.  It measures whether the
+# exclusive-pi0 peak in DATA requires an additional shift/smearing relative to
+# AAOgen, separately in FT/FD and predicted-probe momentum.  The fit is
+# deliberately simple: AAOgen is fit with a Gaussian core; DATA is fit with a
+# Gaussian signal plus quadratic local background.  A/B/C/D repeat the study
+# so that apparent resolution trends that are actually selection/background
+# effects are exposed before any morphing is adopted.
+RES_FIT_RANGE = (-0.14, 0.16)
+RES_MEAN_LIMIT = (-0.050, 0.050)
+RES_SIGMA_LIMIT = (0.003, 0.160)
+
+def _gaussian_core_fit(h, fit_lo=RES_FIT_RANGE[0], fit_hi=RES_FIT_RANGE[1]):
+    hh=clone(h)
+    if hh.Integral()<=0: return None
+    peakbin=hh.GetMaximumBin(); mu0=hh.GetBinCenter(peakbin)
+    # First determine the narrow MC core without allowing broad tails to drive
+    # the width.  The second pass expands around the fitted core.
+    f=ROOT.TF1(f"fg_{id(hh)}","gaus",max(fit_lo,mu0-0.055),min(fit_hi,mu0+0.055))
+    f.SetParameters(max(hh.GetMaximum(),1.0),mu0,0.020)
+    f.SetParLimits(1,RES_MEAN_LIMIT[0],RES_MEAN_LIMIT[1])
+    f.SetParLimits(2,RES_SIGMA_LIMIT[0],0.080)
+    hh.Fit(f,"Q0R")
+    mu=float(f.GetParameter(1)); sig=abs(float(f.GetParameter(2)))
+    lo=max(fit_lo,mu-2.8*sig); hi=min(fit_hi,mu+2.8*sig)
+    if hi-lo>0.015:
+        f.SetRange(lo,hi); hh.Fit(f,"Q0R")
+    mu=float(f.GetParameter(1)); sig=abs(float(f.GetParameter(2)))
+    return dict(mu=mu,sigma=sig,mu_err=float(f.GetParError(1)),sigma_err=float(f.GetParError(2)),
+                amp=float(f.GetParameter(0)),chi2=float(f.GetChisquare()),ndf=int(f.GetNDF()))
+
+def _data_signal_background_fit(h, mcfit, fit_lo=RES_FIT_RANGE[0], fit_hi=RES_FIT_RANGE[1]):
+    hh=clone(h)
+    if hh.Integral()<=0 or mcfit is None: return None
+    # Gaussian signal + quadratic smooth background.  The DATA width is free;
+    # only broad physical guardrails are imposed.  This is a resolution
+    # diagnostic, not the final purity extraction.
+    name=f"fres_{id(hh)}"
+    f=ROOT.TF1(name,"gaus(0)+pol2(3)",fit_lo,fit_hi)
+    mu0=max(RES_MEAN_LIMIT[0],min(RES_MEAN_LIMIT[1],mcfit['mu']))
+    sig0=max(0.008,min(0.10,mcfit['sigma']*1.5))
+    edge=[]
+    for i in range(1,hh.GetNbinsX()+1):
+        x=hh.GetBinCenter(i)
+        if fit_lo<=x<=fit_hi and abs(x)>0.075: edge.append(hh.GetBinContent(i))
+    b0=float(np.median(edge)) if edge else 0.0
+    f.SetParameters(max(hh.GetMaximum()-b0,1.0),mu0,sig0,b0,0.0,0.0)
+    f.SetParLimits(0,0.0,max(10.0*hh.GetMaximum(),1.0))
+    f.SetParLimits(1,RES_MEAN_LIMIT[0],RES_MEAN_LIMIT[1])
+    f.SetParLimits(2,RES_SIGMA_LIMIT[0],RES_SIGMA_LIMIT[1])
+    hh.Fit(f,"Q0R")
+    mu=float(f.GetParameter(1)); sig=abs(float(f.GetParameter(2)))
+    smear=math.sqrt(max(0.0,sig*sig-mcfit['sigma']*mcfit['sigma']))
+    shift=mu-mcfit['mu']
+    # Approximate fitted signal fraction in the fit range from the Gaussian
+    # integral divided by the histogram integral in the same range.
+    bw=hh.GetXaxis().GetBinWidth(1)
+    fsig=ROOT.TF1(f"fsig_{id(hh)}","gaus",fit_lo,fit_hi)
+    fsig.SetParameters(f.GetParameter(0),mu,sig)
+    nsig=float(fsig.Integral(fit_lo,fit_hi)/bw) if bw>0 else 0.0
+    blo=hh.FindBin(fit_lo+1e-9); bhi=hh.FindBin(fit_hi-1e-9)
+    ntot=float(hh.Integral(blo,bhi))
+    return dict(mu=mu,sigma=sig,mu_err=float(f.GetParError(1)),sigma_err=float(f.GetParError(2)),
+                shift=shift,smear=smear,signal_fraction=nsig/ntot if ntot>0 else float('nan'),
+                chi2=float(f.GetChisquare()),ndf=int(f.GetNDF()),pars=[float(f.GetParameter(i)) for i in range(6)])
+
+def perform_resolution_study(results):
+    out={}
+    for det in ("FT","FD"):
+        for cname in CANDIDATES:
+            for ib,_ in enumerate(PROBE_P_BINS):
+                hd=results["data"]["fit"][(det,"local",cname,ib,"mx2epg")].GetValue()
+                ha=results["aaogen"]["fit"][(det,"local",cname,ib,"mx2epg")].GetValue()
+                mc=_gaussian_core_fit(ha)
+                data=_data_signal_background_fit(hd,mc)
+                out[(det,cname,ib)]=dict(mc=mc,data=data)
+    return out
+
+def draw_resolution_study(results,resfits,outdir):
+    p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
+    # Fit examples: show exactly what is being called signal/background.
+    for det in ("FT","FD"):
+        c=ROOT.TCanvas(f"cresfit_{det}","",1600,1100); c.Divide(2,2); keep=[]
+        for ipad,ib in enumerate(range(4),1):
+            pad=c.cd(ipad); setup_pad(pad)
+            hd=clone(results["data"]["fit"][(det,"local",NOMINAL_CANDIDATE,ib,"mx2epg")]); style(hd,"data")
+            ha=clone(results["aaogen"]["fit"][(det,"local",NOMINAL_CANDIDATE,ib,"mx2epg")]); style(ha,"aaogen")
+            q=resfits[(det,NOMINAL_CANDIDATE,ib)]; lo,hi=PROBE_P_BINS[ib]
+            hd.SetTitle(""); hd.GetXaxis().SetTitle(OBS["mx2epg"][4]); hd.GetYaxis().SetTitle("Events")
+            hd.GetXaxis().SetRangeUser(RES_FIT_RANGE[0],RES_FIT_RANGE[1])
+            hd.SetMaximum(max(1.0,1.30*hd.GetMaximum())); hd.Draw("E1")
+            if q['data'] and q['mc']:
+                d=q['data']; m=q['mc']
+                # Draw fitted DATA signal and total model.
+                ft=ROOT.TF1(f"ftdraw_{det}_{ib}","gaus(0)+pol2(3)",*RES_FIT_RANGE)
+                for j,v in enumerate(d['pars']): ft.SetParameter(j,v)
+                ft.SetLineColor(ROOT.kMagenta+2); ft.SetLineWidth(3); ft.Draw("SAME")
+                fs=ROOT.TF1(f"fsdraw_{det}_{ib}","gaus",*RES_FIT_RANGE)
+                fs.SetParameters(d['pars'][0],d['mu'],d['sigma']); fs.SetLineColor(ROOT.kBlue+1); fs.SetLineWidth(3); fs.SetLineStyle(2); fs.Draw("SAME")
+                # Scale MC Gaussian core to the DATA fitted signal height only for visual width comparison.
+                fm=ROOT.TF1(f"fmdraw_{det}_{ib}","gaus",*RES_FIT_RANGE)
+                fm.SetParameters(d['pars'][0],m['mu'],m['sigma']); fm.SetLineColor(ROOT.kRed+1); fm.SetLineWidth(3); fm.SetLineStyle(7); fm.Draw("SAME")
+                leg=ROOT.TLegend(.52,.61,.92,.87); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(.027)
+                leg.AddEntry(hd,"Data","lep"); leg.AddEntry(ft,"DATA: Gaussian + quadratic background","l")
+                leg.AddEntry(fs,"DATA fitted #pi^{0} Gaussian","l"); leg.AddEntry(fm,"AAOgen Gaussian core (height matched)","l"); leg.Draw()
+                tx2=ROOT.TLatex(); tx2.SetNDC(); tx2.SetTextSize(.030)
+                tx2.DrawLatex(.16,.84,f"#sigma_{{data}}={d['sigma']:.4f}, #sigma_{{MC}}={m['sigma']:.4f} GeV^{{2}}")
+                tx2.DrawLatex(.16,.79,f"required smear={d['smear']:.4f} GeV^{{2}}, shift={d['shift']:+.4f} GeV^{{2}}")
+                keep += [ft,fs,fm,leg,tx2]
+            tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.038); tx.DrawLatex(.16,.92,f"{det}, Candidate B: {lo:g}<p_{{probe}}<{hi:g} GeV"); keep += [hd,ha,tx]
+        c.SaveAs(str(p/f"08_{det}_resolution_fits_vs_probe_momentum.png"))
+
+    # Compact momentum dependence of widths/smearing and mean shift.
+    c=ROOT.TCanvas("cres_summary","",1600,1050); c.Divide(2,2); keep=[]
+    for col,det in enumerate(("FT","FD")):
+        # widths
+        pad=c.cd(1+col); setup_pad(pad)
+        hD=ROOT.TH1D(f"hresD_{det}","",4,0,4); hM=ROOT.TH1D(f"hresM_{det}","",4,0,4)
+        hD.SetDirectory(0); hM.SetDirectory(0); hD.SetMarkerStyle(20); hM.SetMarkerStyle(24); hD.SetLineWidth(2); hM.SetLineWidth(2); hM.SetLineColor(ROOT.kRed+1); hM.SetMarkerColor(ROOT.kRed+1)
+        for i,ib in enumerate(range(4),1):
+            lo,hi=PROBE_P_BINS[ib]; hD.GetXaxis().SetBinLabel(i,f"{lo:g}-{hi:g}")
+            q=resfits[(det,NOMINAL_CANDIDATE,ib)]
+            if q['data'] and q['mc']:
+                hD.SetBinContent(i,q['data']['sigma']); hD.SetBinError(i,q['data']['sigma_err'])
+                hM.SetBinContent(i,q['mc']['sigma']); hM.SetBinError(i,q['mc']['sigma_err'])
+        ymax=max(hD.GetMaximum(),hM.GetMaximum())*1.35; hD.SetMinimum(0); hD.SetMaximum(max(ymax,.02)); hD.GetXaxis().SetTitle("Predicted probe momentum (GeV)"); hD.GetYaxis().SetTitle("Fitted M_{X}^{2} width #sigma (GeV^{2})"); hD.Draw("E1"); hM.Draw("E1 SAME")
+        leg=ROOT.TLegend(.62,.72,.90,.87); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.AddEntry(hD,"DATA","lep"); leg.AddEntry(hM,"AAOgen","lep"); leg.Draw()
+        tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.045); tx.DrawLatex(.16,.92,f"{det}: fitted peak width"); keep += [hD,hM,leg,tx]
+        # derived smear + shift
+        pad=c.cd(3+col); setup_pad(pad)
+        hs=ROOT.TH1D(f"hsmear_{det}","",4,0,4); hsh=ROOT.TH1D(f"hshift_{det}","",4,0,4); hs.SetDirectory(0); hsh.SetDirectory(0); hs.SetMarkerStyle(20); hsh.SetMarkerStyle(24); hs.SetLineWidth(2); hsh.SetLineWidth(2); hsh.SetLineColor(ROOT.kRed+1); hsh.SetMarkerColor(ROOT.kRed+1)
+        for i,ib in enumerate(range(4),1):
+            lo,hi=PROBE_P_BINS[ib]; hs.GetXaxis().SetBinLabel(i,f"{lo:g}-{hi:g}")
+            q=resfits[(det,NOMINAL_CANDIDATE,ib)]
+            if q['data']:
+                hs.SetBinContent(i,q['data']['smear']); hsh.SetBinContent(i,q['data']['shift'])
+        lim=max(.01,1.35*max(hs.GetMaximum(),abs(hsh.GetMaximum()),abs(hsh.GetMinimum()))); hs.SetMinimum(-lim); hs.SetMaximum(lim); hs.GetXaxis().SetTitle("Predicted probe momentum (GeV)"); hs.GetYaxis().SetTitle("Additional MC morphing (GeV^{2})"); hs.Draw("HIST P"); hsh.Draw("HIST P SAME")
+        z=ROOT.TLine(0,0,4,0); z.SetLineStyle(3); z.Draw()
+        leg2=ROOT.TLegend(.56,.72,.90,.87); leg2.SetBorderSize(0); leg2.SetFillStyle(0); leg2.AddEntry(hs,"extra Gaussian #sigma","lp"); leg2.AddEntry(hsh,"mean shift DATA-MC","lp"); leg2.Draw()
+        tx2=ROOT.TLatex(); tx2.SetNDC(); tx2.SetTextSize(.045); tx2.DrawLatex(.16,.92,f"{det}: implied AAOgen morphing"); keep += [hs,hsh,z,leg2,tx2]
+    c.SaveAs(str(p/"09_resolution_summary_vs_probe_momentum.png"))
+
+def write_resolution_tables(resfits,outdir):
+    p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
+    with open(p/"resolution_vs_probe_momentum.txt","w") as f:
+        f.write("# Gaussian-core resolution diagnostic for Mx2(ep gamma_tag).\n")
+        f.write("# DATA = Gaussian signal + quadratic background; AAOgen = Gaussian core.\n")
+        f.write("# extra_smear = sqrt(max(0,sigma_data^2-sigma_mc^2)); this is diagnostic, not yet applied.\n")
+        f.write("detector candidate pmin pmax mu_data sigma_data mu_mc sigma_mc shift extra_smear data_signal_fraction chi2_data ndf_data chi2_mc ndf_mc\n")
+        for det in ("FT","FD"):
+            for cname in CANDIDATES:
+                for ib,(lo,hi) in enumerate(PROBE_P_BINS):
+                    q=resfits[(det,cname,ib)]; d=q['data']; m=q['mc']
+                    if not d or not m: continue
+                    f.write(f"{det} {cname} {lo:g} {hi:g} {d['mu']:.8g} {d['sigma']:.8g} {m['mu']:.8g} {m['sigma']:.8g} {d['shift']:.8g} {d['smear']:.8g} {d['signal_fraction']:.8g} {d['chi2']:.8g} {d['ndf']} {m['chi2']:.8g} {m['ndf']}\n")
+    with open(p/"resolution_study_guardrails.txt","w") as f:
+        f.write("1. No smearing is applied to the nominal denominator in this iteration.\n")
+        f.write("2. The purpose is to measure whether DATA-AAOgen peak width/mean differences vary with predicted-probe momentum and detector region.\n")
+        f.write("3. Candidate A/B/C/D repetition tests whether the apparent resolution trend is stable against denominator-selection/background changes.\n")
+        f.write("4. High-p bins with poor Gaussian+background closure must not be used to calibrate smearing merely because the fitted width is large.\n")
+        f.write("5. If a stable trend exists, the next step is a constrained momentum-dependent AAOgen morphing model, validated in clean bins before repeating the pi0-yield extraction.\n")
+
 def write_normalization_tables(results, fits, outdir):
     p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
     rows,purity=normalization_products(results,fits)
@@ -1016,7 +1181,8 @@ def main():
     print("No reconstructed-probe requirement.")
     print("Nominal denominator candidate: B = Mx2(ep)<0.24, |coplanarity|>2 deg, theta(tag,X)<8 deg.")
     print("Normalization diagnostic: global four-region AAOgen/CLASDIS/DVCSgen stress test.")
-    print("Nominal purity extraction: local Candidate-B Mx2(ep gamma_tag) template fits in FT/FD and p_probe bins.")
+    print("Purity diagnostics: local templates + empirical peak extraction.")
+    print("New step: DATA/AAOgen Mx2(ep gamma_tag) peak resolution vs p_probe; no smearing applied yet.")
     print("Photon-energy plotting range: 0-9 GeV.")
     print("="*78)
     results={}; actions=[]
@@ -1055,6 +1221,12 @@ def main():
     write_peak_tables(results,peakfits,normalization_dir)
     draw_peak_extractions(results,peakfits,normalization_dir)
 
+    # Resolution diagnostic before any morphing is applied.  Measure the DATA
+    # and AAOgen peak widths/means versus p_probe separately in FT and FD.
+    resfits=perform_resolution_study(results)
+    write_resolution_tables(resfits,normalization_dir)
+    draw_resolution_study(results,resfits,normalization_dir)
+
     print("Candidate retentions relative to each detector-region optimization base:")
     print(" sample   region   A       B       C       D")
     for key in SAMPLES:
@@ -1080,7 +1252,15 @@ def main():
         print(f"  {det}: " + " | ".join(vals))
     print("\nOutput layout:")
     for d in (overview_dir,validation_dir,normalization_dir,efficiency_dir,final_dir): print(f"  {d}/")
-    print("Stage 3/4 remain empty: reconstructed-probe matching waits for acceptance of the empirical pi0 peak extraction.")
+    print("\nCandidate-B Mx2(ep gamma_tag) resolution diagnostic:")
+    for det in ("FT","FD"):
+        vals=[]
+        for ib,(lo,hi) in enumerate(PROBE_P_BINS[:4]):
+            q=resfits[(det,NOMINAL_CANDIDATE,ib)]
+            if q["data"] and q["mc"]:
+                vals.append(f"{lo:g}-{hi:g}: sigmaD={q['data']['sigma']:.4f}, sigmaMC={q['mc']['sigma']:.4f}, smear={q['data']['smear']:.4f}, shift={q['data']['shift']:+.4f}")
+        print(f"  {det}: " + " | ".join(vals))
+    print("Stage 3/4 remain empty: no smearing or reconstructed-probe matching is applied until the resolution trend is validated.")
 
 
 if __name__=="__main__":
