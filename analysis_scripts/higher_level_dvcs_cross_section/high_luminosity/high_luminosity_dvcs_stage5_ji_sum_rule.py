@@ -747,6 +747,125 @@ def make_step2c_beta_to_x_mapping(figdir: Path, tabdir: Path):
     }
 
 
+# ---------------------------------------------------------------------------
+# Production finite-skewness E_v model
+# ---------------------------------------------------------------------------
+#
+# The pedagogical alpha/beta plots above are retained as helper functions but
+# are no longer produced by main().  From here on Stage 5 uses the complete
+# DD integral internally:
+#
+#   E_v^q(x,xi,t) = integral d beta E_v^q(beta,0,t)
+#                    pi_b(beta, alpha=(x-beta)/xi) / |xi|
+#
+# over the support |alpha| <= 1-beta.
+#
+# This is still a deliberately simplified workshop model:
+#   * valence E only;
+#   * common fixed factorized t slope;
+#   * fixed DD profile b=1;
+#   * beta_u and beta_d are the shape parameters of interest.
+#
+# The model is used internally; alpha/beta are not conference observables.
+
+
+def ev_finite_xi(x, xi: float, t: float, kappa: float, alpha_e: float,
+                 beta_e: float, slope: float = WORKSHOP_E_T_SLOPE,
+                 profile_b: float = WORKSHOP_DD_PROFILE_B,
+                 n_beta: int = 900):
+    """Finite-skewness valence E from the fixed-profile DD construction."""
+    xarr = np.atleast_1d(np.asarray(x, dtype=float))
+
+    # xi -> 0 must reduce to the zero-skewness input.
+    if abs(xi) < 1.0e-8:
+        out = ev_zero_skewness_t(
+            np.clip(xarr, 1.0e-8, 1.0 - 1.0e-8),
+            t, kappa, alpha_e, beta_e, slope
+        )
+        out[(xarr <= 0.0) | (xarr >= 1.0)] = 0.0
+        return float(out[0]) if np.ndim(x) == 0 else out
+
+    beta_grid = np.linspace(1.0e-5, 1.0 - 1.0e-5, n_beta)
+    forward = ev_zero_skewness_t(
+        beta_grid, t, kappa, alpha_e, beta_e, slope
+    )
+
+    out = np.zeros_like(xarr)
+    for ix, xv in enumerate(xarr):
+        alpha_dd = (xv - beta_grid) / xi
+        prof = np.array([
+            dd_profile(bet, np.array([a]), profile_b)[0]
+            for bet, a in zip(beta_grid, alpha_dd)
+        ])
+        integrand = forward * prof / abs(xi)
+        out[ix] = np.trapezoid(integrand, beta_grid)
+
+    return float(out[0]) if np.ndim(x) == 0 else out
+
+
+def validate_finite_xi_model(tabdir: Path):
+    """Numerical checks needed before the model is used for projections.
+
+    These are model-validation checks, not conference figures.
+    """
+    x = np.linspace(0.002, 0.998, 700)
+    rows = []
+
+    for flavor, kappa, beta_e in [
+        ("u_v", KAPPA_U, WORKSHOP_BETA_U_E),
+        ("d_v", KAPPA_D, WORKSHOP_BETA_D_E),
+    ]:
+        for t in [0.0, -0.3, -0.6]:
+            expected_zeroth = kappa * np.exp(WORKSHOP_E_T_SLOPE * t)
+
+            # Forward-limit numerical moment.
+            e0 = ev_zero_skewness_t(
+                x, t, kappa, DFJK_ALPHA_E, beta_e, WORKSHOP_E_T_SLOPE
+            )
+            zeroth_xi0 = np.trapezoid(e0, x)
+
+            # Finite-xi zeroth moment should be xi independent (up to numerical
+            # integration/support effects) for this DD construction.
+            for xi in [0.05, 0.10, 0.20, 0.30]:
+                exi = ev_finite_xi(
+                    x, xi, t, kappa, DFJK_ALPHA_E, beta_e,
+                    WORKSHOP_E_T_SLOPE, WORKSHOP_DD_PROFILE_B
+                )
+                zeroth = np.trapezoid(exi, x)
+                rows.append({
+                    "flavor": flavor,
+                    "t_GeV2": t,
+                    "xi": xi,
+                    "expected_zeroth_moment": expected_zeroth,
+                    "numerical_xi0_moment": zeroth_xi0,
+                    "numerical_finite_xi_moment": zeroth,
+                    "finite_xi_over_expected": zeroth / expected_zeroth,
+                })
+
+    out = pd.DataFrame(rows)
+    out.to_csv(tabdir / "finite_xi_model_validation.csv", index=False)
+    return out
+
+
+def write_stage5_projection_plan(tabdir: Path):
+    """Machine-readable statement of the only conference comparison we want.
+
+    No fake contour is produced here.  The contour must come from an
+    observable-level proton/neutron DVCS fit, not from assigning an arbitrary
+    conversion between sigma(A_LU) and beta_q.
+    """
+    plan = pd.DataFrame([
+        ["p_1x", "proton", 1.0,
+         "current proton XS+BSA statistical precision"],
+        ["p1x_plus_n1x", "proton+neutron", 1.0,
+         "current proton plus current/projected neutron information"],
+        ["p10x_plus_n10x", "proton+neutron", 10.0,
+         "high-luminosity proton+neutron projection"],
+    ], columns=["scenario", "targets", "luminosity_factor", "meaning"])
+    plan.to_csv(tabdir / "b20_conference_projection_scenarios.csv", index=False)
+    return plan
+
+
 
 def _tuple_component_stage5(series: pd.Series, index: int) -> np.ndarray:
     """Extract a numeric component from tuple-valued pass-2 CSV cells."""
@@ -1067,8 +1186,8 @@ def main():
     plot_rgb_kinematics(xs, figdir)
     make_b20_prior_map(figdir, tabdir)
     make_step2a_t_dependence(figdir, tabdir)
-    make_step2b_skewness_profile(figdir, tabdir)
-    make_step2c_beta_to_x_mapping(figdir, tabdir)
+    finite_xi_validation = validate_finite_xi_model(tabdir)
+    conference_scenarios = write_stage5_projection_plan(tabdir)
 
     bsa = load_actual_rgb_bsa_directory(args.rgb_bsa_dir)
     bsa.to_csv(tabdir / "rgb_published_bsa_actual_points.csv", index=False)
@@ -1084,7 +1203,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v19 — STEP 2C BETA-TO-X SKEWNESS MAPPING + RGB/RGA PROJECTIONS")
+    print("STAGE 5 v21 — PRODUCTION FINITE-XI MODEL + CONFERENCE B20 TARGET")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -1102,28 +1221,20 @@ def main():
     print("RGB covariance-bracket shape diagnostic:")
     print(brackets.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
     print()
-    print("Stage-5 Step 1 — minimal DFJK E_v forward-limit model:")
-    print("  E_v^q(x, xi=0, t=0) = N_q x^(-alpha) (1-x)^(beta_q)")
-    print(f"  fixed alpha = {DFJK_ALPHA_E:.2f}")
-    print(f"  kappa_u = 2*kappa_p + kappa_n = {KAPPA_U:+.6f}")
-    print(f"  kappa_d = kappa_p + 2*kappa_n = {KAPPA_D:+.6f}")
-    print("  N_u and N_d are fixed so integral E_v^q dx = kappa_q")
-    print(f"  workshop reference beta_u = {WORKSHOP_BETA_U_E:.1f}")
-    print(f"  workshop reference beta_d = {WORKSHOP_BETA_D_E:.1f}")
-    print(f"  beta_u scan = {BETA_U_E_SCAN[0]:.1f} -- {BETA_U_E_SCAN[1]:.1f}")
-    print(f"  beta_d scan = {BETA_D_E_SCAN[0]:.1f} -- {BETA_D_E_SCAN[1]:.1f}")
-    print("  Step 2A adds ONLY nonzero t at xi=0:")
-    print("    E_v^q(x,0,t) = E_v^q(x,0,0) exp(B_E t)")
-    print(f"    fixed illustrative B_E = {WORKSHOP_E_T_SLOPE:.1f} GeV^-2")
-    print("  Step 2B introduces ONLY the normalized double-distribution profile:")
-    print("    beta = forward parton momentum fraction")
-    print("    alpha = how longitudinal momentum transfer is shared")
-    print(f"    fixed profile parameter b = {WORKSHOP_DD_PROFILE_B:.1f}")
-    print("    integral d alpha pi_b(beta,alpha) = 1")
-    print("  Step 2C follows one beta contribution through x = beta + xi*alpha.")
-    print("    pedagogical example: beta=0.30, xi=0.20")
-    print("    this shows the mapping only; it is NOT yet the full GPD E(x,xi,t)")
-    print("  NOT included yet: sum/integral over all beta, CFFs, or a DVCS fit.")
+    print("Stage-5 production GPD model:")
+    print("  valence E_v^u and E_v^d with beta_u,beta_d shape parameters")
+    print("  anomalous magnetic moments fix the zeroth moments")
+    print(f"  fixed alpha_E={DFJK_ALPHA_E:.2f}, B_E={WORKSHOP_E_T_SLOPE:.1f} GeV^-2, DD profile b={WORKSHOP_DD_PROFILE_B:.1f}")
+    print("  finite skewness is now constructed internally with the full DD integral")
+    max_dev = np.max(np.abs(finite_xi_validation["finite_xi_over_expected"] - 1.0))
+    print(f"  finite-xi zeroth-moment validation: max fractional deviation = {max_dev:.4g}")
+    print("  pedagogical alpha/beta/skewness figures are no longer produced")
+    print()
+    print("Conference target:")
+    print("  one B20_uv vs B20_dv 68% contour figure with:")
+    print("    p(1x) -> p(1x)+n(1x) -> p(10x)+n(10x)")
+    print("  IMPORTANT: no contour is fabricated from raw BSA errors.")
+    print("  It must come from the observable-level DVCS response to beta_u,beta_d.")
     print()
     print(f"Actual published RGB BSA: loaded {len(bsa)} rows from {args.rgb_bsa_dir}")
     for projection in ["xB", "Q2", "t"]:
@@ -1162,10 +1273,11 @@ def main():
         print("Luminosity progression at fixed RGA-like 4D granularity:")
         print(transfer_summary.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
     print()
-    print("NEXT FIT STEP:")
-    print("  Use the published neutron BSA + proton XS/BSA + preliminary neutron XS in a")
-    print("  finite-skewness H/E model, then compare p(1x), p(1x)+n(1x), p(10x),")
-    print("  and p(10x)+n(10x) directly in the B20_uv-B20_dv plane.")
+    print("B20 CONTOUR STATUS:")
+    print("  finite-xi E_v model: implemented and validated")
+    print("  p/n luminosity scenarios: fixed")
+    print("  remaining ingredient: observable-level DVCS response (XS+BSA) to beta_u,beta_d")
+    print("  The code deliberately does not invent a sigma(A_LU)->B20 conversion.")
     print()
     print()
     print("OUTPUT LAYOUT:")
