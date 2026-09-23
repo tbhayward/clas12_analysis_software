@@ -1416,7 +1416,9 @@ def draw_control_region_discovery(results,outdir):
             for subset,marker in (("fit",20),("holdout",24)):
                 vals=[r for r in rr if r[2]==subset]
                 g=ROOT.TGraph(len(vals)); g.SetMarkerStyle(marker); g.SetMarkerSize(1.2)
-                for i,r in enumerate(vals): g.SetPoint(i+(0 if subset=="fit" else len([q for q in rr if q[2]=="fit"])), r[8])
+                for i,r in enumerate(vals):
+                    offset = 0 if subset == "fit" else len([q for q in rr if q[2] == "fit"])
+                    g.SetPoint(i, offset + i + 0.5, r[8])
                 g.Draw("P SAME"); keep.append(g)
             leg=ROOT.TLegend(.62,.72,.91,.87); leg.SetBorderSize(0); leg.SetFillStyle(0)
             leg.AddEntry(keep[-2],"Fit boxes","p"); leg.AddEntry(keep[-1],"Holdout boxes","p"); leg.Draw(); keep.append(leg)
