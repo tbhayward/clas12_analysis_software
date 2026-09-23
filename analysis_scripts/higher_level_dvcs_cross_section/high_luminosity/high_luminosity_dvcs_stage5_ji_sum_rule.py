@@ -385,33 +385,37 @@ def plot_rgb_kinematics(df: pd.DataFrame, outdir: Path):
 # ---------------------------------------------------------------------------
 
 def make_b20_prior_map(figdir: Path, tabdir: Path):
-    """Stage-5 Step 1: map the two E_v shape parameters into B20 moments.
+    """Stage-5 Step 1: show directly what beta_q does to E_v^q(x).
 
-    This is intentionally NOT a DVCS fit.  It answers only:
-      if beta_u and beta_d change the x-shape of E_v, how do the moments
-      B20^{u_v}(0) and B20^{d_v}(0) change?
+    This is intentionally NOT a DVCS fit.  Each curve has the same zeroth
+    moment (fixed by kappa_q); changing beta_q only redistributes that fixed
+    normalization in x, thereby changing the x-weighted B20 moment.
     """
-    beta_u = np.linspace(BETA_U_E_SCAN[0], BETA_U_E_SCAN[1], 101)
-    beta_d = np.linspace(BETA_D_E_SCAN[0], BETA_D_E_SCAN[1], 101)
+    x = np.linspace(0.01, 0.99, 600)
+
+    beta_u_values = [3.5, WORKSHOP_BETA_U_E, 5.5]
+    beta_d_values = [5.0, WORKSHOP_BETA_D_E, 9.0]
 
     rows = []
-    for bu in beta_u:
-        B_u = b20_from_beta(KAPPA_U, DFJK_ALPHA_E, bu)
-        for bd in beta_d:
-            B_d = b20_from_beta(KAPPA_D, DFJK_ALPHA_E, bd)
-            rows.append((bu, bd, B_u, B_d))
+    for flavor, kappa, beta_values in [
+        ("u_v", KAPPA_U, beta_u_values),
+        ("d_v", KAPPA_D, beta_d_values),
+    ]:
+        for beta in beta_values:
+            b20 = b20_from_beta(kappa, DFJK_ALPHA_E, beta)
+            norm = ev_normalization(kappa, DFJK_ALPHA_E, beta)
+            rows.append({
+                "flavor": flavor,
+                "alpha_E": DFJK_ALPHA_E,
+                "beta_E": beta,
+                "N_q": norm,
+                "zeroth_moment_kappa": kappa,
+                "B20_qv": b20,
+            })
 
-    df = pd.DataFrame(rows, columns=["beta_u_E", "beta_d_E", "B20_uv", "B20_dv"])
-    df.to_csv(tabdir / "dfjk_B20_prior_map.csv", index=False)
+    summary = pd.DataFrame(rows)
+    summary.to_csv(tabdir / "dfjk_step1_Ev_shape_summary.csv", index=False)
 
-    # One explicit reference point so later pseudo-data have a transparent
-    # starting model.  This is a workshop reference, not a fitted result.
-    ref_Bu = b20_from_beta(
-        KAPPA_U, DFJK_ALPHA_E, WORKSHOP_BETA_U_E
-    )
-    ref_Bd = b20_from_beta(
-        KAPPA_D, DFJK_ALPHA_E, WORKSHOP_BETA_D_E
-    )
     assumptions = pd.DataFrame([
         ["alpha_E", DFJK_ALPHA_E,
          "fixed; DFJK E_v forward-limit choice"],
@@ -419,40 +423,65 @@ def make_b20_prior_map(figdir: Path, tabdir: Path):
          "workshop reference; not fitted yet"],
         ["beta_d_E_reference", WORKSHOP_BETA_D_E,
          "workshop reference; not fitted yet"],
-        ["B20_uv_reference", ref_Bu,
-         "derived from beta_u_E_reference"],
-        ["B20_dv_reference", ref_Bd,
-         "derived from beta_d_E_reference"],
         ["kappa_u", KAPPA_U,
-         "fixed by proton/neutron anomalous magnetic moments"],
+         "fixes integral E_v^u dx"],
         ["kappa_d", KAPPA_D,
-         "fixed by proton/neutron anomalous magnetic moments"],
+         "fixes integral E_v^d dx"],
     ], columns=["quantity", "value", "role"])
     assumptions.to_csv(tabdir / "dfjk_step1_model_assumptions.csv", index=False)
 
-    fig, ax = plt.subplots(figsize=(8.0, 6.0))
-    sc = ax.scatter(
-        df["B20_uv"], df["B20_dv"],
-        c=df["beta_u_E"], s=7, alpha=0.65
-    )
-    cb = fig.colorbar(sc, ax=ax)
-    cb.set_label(r"$\beta_u^E$")
-    ax.scatter(
-        [ref_Bu], [ref_Bd], marker="*", s=170,
-        edgecolor="black", linewidth=0.8,
-        label=rf"Workshop reference: $\beta_u={WORKSHOP_BETA_U_E:.1f}$, "
-              rf"$\beta_d={WORKSHOP_BETA_D_E:.1f}$"
-    )
-    ax.set_xlabel(r"$B_{20}^{u_v}(0)=\int dx\,xE_v^u$")
-    ax.set_ylabel(r"$B_{20}^{d_v}(0)=\int dx\,xE_v^d$")
-    ax.set_title("Step 1: E_v shape parameters mapped to Ji-sum-rule moments")
-    ax.grid(alpha=0.25)
-    ax.legend(fontsize=9)
-    fig.tight_layout()
-    fig.savefig(figdir / "dfjk_B20_parameter_map_prior_only.png", dpi=180)
-    plt.close(fig)
+    # Two separate figures rather than subplots: each has one simple message.
+    for flavor, latex_flavor, kappa, beta_values in [
+        ("u", "u", KAPPA_U, beta_u_values),
+        ("d", "d", KAPPA_D, beta_d_values),
+    ]:
+        fig, ax = plt.subplots(figsize=(8.0, 5.4))
 
-    return df
+        for beta in beta_values:
+            y = ev_forward(x, kappa, DFJK_ALPHA_E, beta)
+            b20 = b20_from_beta(kappa, DFJK_ALPHA_E, beta)
+            is_ref = (
+                (flavor == "u" and np.isclose(beta, WORKSHOP_BETA_U_E))
+                or
+                (flavor == "d" and np.isclose(beta, WORKSHOP_BETA_D_E))
+            )
+            label = (
+                rf"$\beta_{latex_flavor}^E={beta:.1f}$"
+                + rf"  [$B_{{20}}^{{{latex_flavor}_v}}={b20:.3f}$]"
+            )
+            ax.plot(
+                x, y,
+                linewidth=3.0 if is_ref else 2.0,
+                linestyle="-" if is_ref else "--",
+                label=label,
+            )
+
+        ax.axhline(0.0, linewidth=0.8, color="black")
+        ax.set_xlabel(r"$x$")
+        ax.set_ylabel(rf"$E_v^{latex_flavor}(x,0,0)$")
+        ax.set_title(
+            rf"Step 1: changing $\beta_{latex_flavor}^E$ changes the "
+            rf"$x$-shape of $E_v^{latex_flavor}$"
+        )
+        ax.text(
+            0.98, 0.96,
+            rf"All curves satisfy $\int_0^1 E_v^{latex_flavor}(x)\,dx"
+            rf"={kappa:+.3f}$",
+            transform=ax.transAxes,
+            ha="right", va="top",
+            fontsize=10,
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85),
+        )
+        ax.grid(alpha=0.22)
+        ax.legend(fontsize=9)
+        fig.tight_layout()
+        fig.savefig(
+            figdir / f"dfjk_step1_Ev_{flavor}_shape.png",
+            dpi=180,
+        )
+        plt.close(fig)
+
+    return summary
 
 
 
@@ -789,7 +818,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v15 — STEP 1 MINIMAL DFJK E_v MODEL + RGB/RGA PROJECTIONS")
+    print("STAGE 5 v16 — STEP 1 INTUITIVE E_v SHAPE MODEL + RGB/RGA PROJECTIONS")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
