@@ -626,7 +626,7 @@ def make_step2b_skewness_profile(figdir: Path, tabdir: Path):
         amax = 1.0 - beta
         alpha = np.linspace(-amax, amax, 600)
         profile = dd_profile(beta, alpha, WORKSHOP_DD_PROFILE_B)
-        integral = np.trapz(profile, alpha)
+        integral = np.trapezoid(profile, alpha)
 
         ax.plot(
             alpha, profile, linewidth=2.2,
