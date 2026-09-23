@@ -1426,6 +1426,95 @@ def draw_control_region_discovery(results,outdir):
             tx.DrawLatex(.16,.92,f"{region}: {SAMPLES[pair[0]][0]} + {SAMPLES[pair[1]][0]}, suppress {SAMPLES[supp][0]}")
             keep.append(tx); c.SaveAs(str(p/f"04_{region}_{tag}_pair_fit_holdout.png"))
 
+            # Visualize the same two-component fit in the actual 2D control boxes.
+            # Only the selected fit+holdout boxes are shown: outside those boxes the
+            # omitted third component was not assumed negligible, so plotting the
+            # pair prediction there would give a misleading closure test.
+            fit_rows=[r for r in rr if r[2]=="fit"]
+            if not fit_rows:
+                continue
+            scale1,scale2=fit_rows[0][9],fit_rows[0][10]
+            selected={(r[3],r[4]):r[2] for r in rr}
+
+            hdata=clone(results["data"]["discovery"][(region,"mx2eg_vs_mx2ep")])
+            h1c=clone(results[pair[0]]["discovery"][(region,"mx2eg_vs_mx2ep")])
+            h2c=clone(results[pair[1]]["discovery"][(region,"mx2eg_vs_mx2ep")])
+            hdata.SetName(f"hpair_data_{region}_{tag}")
+            h1c.SetName(f"hpair_c1_{region}_{tag}")
+            h2c.SetName(f"hpair_c2_{region}_{tag}")
+            h1c.Scale(scale1); h2c.Scale(scale2)
+            hpred=h1c.Clone(f"hpair_pred_{region}_{tag}"); hpred.SetDirectory(0); hpred.Add(h2c)
+
+            # Mask to the selected grid boxes so the maps and projections show
+            # exactly the phase space used for fit/holdout closure.
+            for bx in range(1,hdata.GetNbinsX()+1):
+                xc=hdata.GetXaxis().GetBinCenter(bx)
+                ix=next((i for i in range(len(mx2eg_edges)-1) if mx2eg_edges[i] <= xc < mx2eg_edges[i+1]),None)
+                for by in range(1,hdata.GetNbinsY()+1):
+                    yc=hdata.GetYaxis().GetBinCenter(by)
+                    iy=next((j for j in range(len(mx2ep_edges)-1) if mx2ep_edges[j] <= yc < mx2ep_edges[j+1]),None)
+                    if ix is None or iy is None or (ix,iy) not in selected:
+                        hdata.SetBinContent(bx,by,0.0); hdata.SetBinError(bx,by,0.0)
+                        h1c.SetBinContent(bx,by,0.0); h1c.SetBinError(bx,by,0.0)
+                        h2c.SetBinContent(bx,by,0.0); h2c.SetBinError(bx,by,0.0)
+                        hpred.SetBinContent(bx,by,0.0); hpred.SetBinError(bx,by,0.0)
+
+            #endfor
+
+            hratio=hdata.Clone(f"hpair_ratio2d_{region}_{tag}"); hratio.SetDirectory(0)
+            for bx in range(1,hratio.GetNbinsX()+1):
+                for by in range(1,hratio.GetNbinsY()+1):
+                    d=hdata.GetBinContent(bx,by); pr=hpred.GetBinContent(bx,by)
+                    hratio.SetBinContent(bx,by,d/pr if pr>0 else 0.0)
+                    hratio.SetBinError(bx,by,0.0)
+
+            #endfor
+
+            # 2D DATA, fitted pair prediction, and DATA/prediction.  Draw the
+            # selected boxes explicitly: solid=fit, dashed=holdout.
+            c2=ROOT.TCanvas(f"cpair2d_{region}_{tag}","",1800,620); c2.Divide(3,1); keep2=[]
+            for ipad,(hh,title,ztitle) in enumerate(((hdata,"DATA","Events"),(hpred,"Two-component prediction","Predicted events"),(hratio,"DATA / prediction","DATA / prediction")),1):
+                pad=c2.cd(ipad); setup_pad(pad,0.15)
+                hh.SetTitle(""); hh.GetXaxis().SetTitle(OBS["mx2eg"][4]); hh.GetYaxis().SetTitle(OBS["mx2ep"][4]); hh.GetZaxis().SetTitle(ztitle)
+                if ipad==3:
+                    hh.SetMinimum(0.5); hh.SetMaximum(1.5)
+                hh.Draw("COLZ")
+                boxes=[]
+                for (ix,iy),subset in selected.items():
+                    b=ROOT.TBox(mx2eg_edges[ix],mx2ep_edges[iy],mx2eg_edges[ix+1],mx2ep_edges[iy+1])
+                    b.SetFillStyle(0); b.SetLineWidth(3); b.SetLineStyle(1 if subset=="fit" else 2); b.Draw("SAME"); boxes.append(b)
+
+                #endfor
+                tx2=ROOT.TLatex(); tx2.SetNDC(); tx2.SetTextSize(.042); tx2.DrawLatex(.16,.92,f"{region}: {title}")
+                keep2 += [hh,tx2]+boxes
+
+            #endfor
+            c2.SaveAs(str(p/f"05_{region}_{tag}_2D_fit_closure.png"))
+
+            # 1D projections of exactly the selected control boxes.  These make
+            # the fitted component shapes and their sum visible rather than only
+            # reporting integrated box ratios.
+            c1=ROOT.TCanvas(f"cpairproj_{region}_{tag}","",1500,650); c1.Divide(2,1); keep1=[]
+            for ipad,axis in enumerate(("x","y"),1):
+                pad=c1.cd(ipad); setup_pad(pad)
+                if axis=="x":
+                    hd=hdata.ProjectionX(f"hprojx_data_{region}_{tag}"); hc1=h1c.ProjectionX(f"hprojx_c1_{region}_{tag}"); hc2=h2c.ProjectionX(f"hprojx_c2_{region}_{tag}"); hp=hpred.ProjectionX(f"hprojx_pred_{region}_{tag}"); xt=OBS["mx2eg"][4]
+                else:
+                    hd=hdata.ProjectionY(f"hprojy_data_{region}_{tag}"); hc1=h1c.ProjectionY(f"hprojy_c1_{region}_{tag}"); hc2=h2c.ProjectionY(f"hprojy_c2_{region}_{tag}"); hp=hpred.ProjectionY(f"hprojy_pred_{region}_{tag}"); xt=OBS["mx2ep"][4]
+                for h in (hd,hc1,hc2,hp): h.SetDirectory(0); h.SetTitle("")
+                style(hd,"data"); style(hc1,pair[0]); style(hc2,pair[1])
+                hp.SetLineColor(ROOT.kBlack); hp.SetLineWidth(3); hp.SetLineStyle(2)
+                hd.GetXaxis().SetTitle(xt); hd.GetYaxis().SetTitle("Events in selected control boxes")
+                ymax=max(hd.GetMaximum(),hp.GetMaximum(),hc1.GetMaximum(),hc2.GetMaximum()); hd.SetMaximum(1.25*ymax if ymax>0 else 1.0)
+                hd.Draw("E1"); hc1.Draw("HIST SAME"); hc2.Draw("HIST SAME"); hp.Draw("HIST SAME")
+                legp=ROOT.TLegend(.56,.62,.91,.87); legp.SetBorderSize(0); legp.SetFillStyle(0)
+                legp.AddEntry(hd,"DATA","lep"); legp.AddEntry(hc1,f"{SAMPLES[pair[0]][0]} x {scale1:.4g}","l"); legp.AddEntry(hc2,f"{SAMPLES[pair[1]][0]} x {scale2:.4g}","l"); legp.AddEntry(hp,"Two-component sum","l"); legp.Draw()
+                tx1=ROOT.TLatex(); tx1.SetNDC(); tx1.SetTextSize(.041); tx1.DrawLatex(.16,.92,f"{region}: selected fit + holdout boxes")
+                keep1 += [hd,hc1,hc2,hp,legp,tx1]
+
+            #endfor
+            c1.SaveAs(str(p/f"06_{region}_{tag}_1D_fit_projections.png"))
+
 def write_normalization_tables(results, fits, outdir):
     p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
     rows,purity=normalization_products(results,fits)
