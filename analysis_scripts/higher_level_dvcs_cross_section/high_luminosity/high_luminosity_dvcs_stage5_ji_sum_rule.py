@@ -541,11 +541,12 @@ def make_step2a_t_dependence(figdir: Path, tabdir: Path):
         tabdir / "dfjk_step2a_t_dependence_summary.csv", index=False
     )
 
-    for flavor, latex_flavor, kappa, beta in [
-        ("u", "u", KAPPA_U, WORKSHOP_BETA_U_E),
-        ("d", "d", KAPPA_D, WORKSHOP_BETA_D_E),
+    fig, axes = plt.subplots(1, 2, figsize=(13.2, 5.2))
+
+    for ax, flavor, latex_flavor, kappa, beta in [
+        (axes[0], "u", "u", KAPPA_U, WORKSHOP_BETA_U_E),
+        (axes[1], "d", "d", KAPPA_D, WORKSHOP_BETA_D_E),
     ]:
-        fig, ax = plt.subplots(figsize=(8.0, 5.4))
         for t in t_values:
             y = ev_zero_skewness_t(
                 x, t, kappa, DFJK_ALPHA_E, beta, WORKSHOP_E_T_SLOPE
@@ -555,24 +556,106 @@ def make_step2a_t_dependence(figdir: Path, tabdir: Path):
         ax.axhline(0.0, linewidth=0.8, color="black")
         ax.set_xlabel(r"$x$")
         ax.set_ylabel(rf"$E_v^{latex_flavor}(x,\xi=0,t)$")
-        ax.set_title(
-            rf"Step 2A: adding $t$ dependence to $E_v^{latex_flavor}$ "
-            rf"(still $\xi=0$)"
-        )
-        ax.text(
-            0.98, 0.96,
-            rf"$E_v(x,0,t)=E_v(x,0,0)e^{{B_Et}}$, "
-            rf"$B_E={WORKSHOP_E_T_SLOPE:.1f}\ \mathrm{{GeV}}^{{-2}}$",
-            transform=ax.transAxes, ha="right", va="top", fontsize=10,
-            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85),
-        )
+        ax.set_title(rf"$E_v^{latex_flavor}$")
         ax.grid(alpha=0.22)
-        ax.legend(fontsize=9)
-        fig.tight_layout()
-        fig.savefig(figdir / f"dfjk_step2a_Ev_{flavor}_t_dependence.png", dpi=180)
-        plt.close(fig)
+        ax.legend(fontsize=8)
+
+    fig.suptitle(
+        rf"Step 2A: adding $t$ dependence at $\xi=0$: "
+        rf"$E_v(x,0,t)=E_v(x,0,0)e^{{B_Et}}$, "
+        rf"$B_E={WORKSHOP_E_T_SLOPE:.1f}\ \mathrm{{GeV}}^{{-2}}$",
+        fontsize=15,
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.savefig(figdir / "dfjk_step2a_Ev_t_dependence.png", dpi=180)
+    plt.close(fig)
 
     return pd.DataFrame(rows)
+
+
+# ---------------------------------------------------------------------------
+# Stage-5 Step 2B: introduce skewness as a redistribution variable
+# ---------------------------------------------------------------------------
+#
+# A Radyushkin-style double distribution introduces a second variable alpha.
+# For a fixed forward momentum fraction beta, alpha describes how longitudinal
+# momentum transfer is shared.  We start by plotting ONLY the normalized
+# profile pi_b(beta, alpha), before integrating it into E(x,xi,t).
+#
+# Standard profile:
+#   pi_b(beta,alpha) =
+#     Gamma(2b+2) / [2^(2b+1) Gamma(b+1)^2]
+#     * [((1-beta)^2-alpha^2)^b / (1-beta)^(2b+1)]
+#
+# for 0 <= beta <= 1 and |alpha| <= 1-beta.
+#
+# Its key property is integral d alpha pi_b = 1.  Thus it redistributes a
+# given forward E_v(beta) in the new alpha direction without changing its
+# total weight.  Only in the NEXT step will xi connect beta and alpha through
+# x = beta + xi*alpha.
+WORKSHOP_DD_PROFILE_B = 1.0
+
+
+def dd_profile(beta, alpha, b=WORKSHOP_DD_PROFILE_B):
+    """Normalized Radyushkin DD profile for valence beta in [0,1]."""
+    beta = float(beta)
+    alpha = np.asarray(alpha, dtype=float)
+    one_minus = 1.0 - beta
+    pref = (
+        math.gamma(2.0 * b + 2.0)
+        / (2.0 ** (2.0 * b + 1.0) * math.gamma(b + 1.0) ** 2)
+    )
+    out = np.zeros_like(alpha)
+    mask = np.abs(alpha) <= one_minus
+    core = np.maximum(one_minus**2 - alpha[mask]**2, 0.0)
+    out[mask] = pref * core**b / one_minus**(2.0 * b + 1.0)
+    return out
+
+
+def make_step2b_skewness_profile(figdir: Path, tabdir: Path):
+    """Pedagogical Step 2B: show the normalized DD profile only.
+
+    We intentionally stop before constructing E(x,xi,t).  This isolates the
+    one new idea: skewness requires a second longitudinal-momentum variable.
+    """
+    beta_values = [0.1, 0.3, 0.5]
+    rows = []
+
+    fig, ax = plt.subplots(figsize=(8.0, 5.4))
+    for beta in beta_values:
+        amax = 1.0 - beta
+        alpha = np.linspace(-amax, amax, 600)
+        profile = dd_profile(beta, alpha, WORKSHOP_DD_PROFILE_B)
+        integral = np.trapz(profile, alpha)
+
+        ax.plot(
+            alpha, profile, linewidth=2.2,
+            label=rf"$\beta={beta:.1f}$  [$\int d\alpha\,\pi={integral:.3f}$]"
+        )
+
+        for a, p in zip(alpha, profile):
+            rows.append({
+                "beta": beta,
+                "alpha": a,
+                "profile_pi": p,
+                "profile_b": WORKSHOP_DD_PROFILE_B,
+            })
+
+    ax.set_xlabel(r"$\alpha$ (longitudinal momentum-transfer sharing)")
+    ax.set_ylabel(r"$\pi_b(\beta,\alpha)$")
+    ax.set_title(
+        r"Step 2B: skewness starts by spreading each forward $\beta$ "
+        r"over a second variable $\alpha$"
+    )
+    ax.grid(alpha=0.22)
+    ax.legend(fontsize=9)
+    fig.tight_layout()
+    fig.savefig(figdir / "dfjk_step2b_skewness_profile.png", dpi=180)
+    plt.close(fig)
+
+    pd.DataFrame(rows).to_csv(
+        tabdir / "dfjk_step2b_skewness_profile.csv", index=False
+    )
 
 
 
@@ -895,6 +978,7 @@ def main():
     plot_rgb_kinematics(xs, figdir)
     make_b20_prior_map(figdir, tabdir)
     make_step2a_t_dependence(figdir, tabdir)
+    make_step2b_skewness_profile(figdir, tabdir)
 
     bsa = load_actual_rgb_bsa_directory(args.rgb_bsa_dir)
     bsa.to_csv(tabdir / "rgb_published_bsa_actual_points.csv", index=False)
@@ -910,7 +994,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v17 — STEP 2A SIMPLE t DEPENDENCE + RGB/RGA PROJECTIONS")
+    print("STAGE 5 v18 — STEP 2B SKEWNESS PROFILE + RGB/RGA PROJECTIONS")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -941,7 +1025,12 @@ def main():
     print("  Step 2A adds ONLY nonzero t at xi=0:")
     print("    E_v^q(x,0,t) = E_v^q(x,0,0) exp(B_E t)")
     print(f"    fixed illustrative B_E = {WORKSHOP_E_T_SLOPE:.1f} GeV^-2")
-    print("  NOT included yet: skewness xi, DD profile, CFFs, or DVCS fit.")
+    print("  Step 2B introduces ONLY the normalized double-distribution profile:")
+    print("    beta = forward parton momentum fraction")
+    print("    alpha = how longitudinal momentum transfer is shared")
+    print(f"    fixed profile parameter b = {WORKSHOP_DD_PROFILE_B:.1f}")
+    print("    integral d alpha pi_b(beta,alpha) = 1")
+    print("  NOT included yet: finite-xi E(x,xi,t), CFFs, or a DVCS fit.")
     print()
     print(f"Actual published RGB BSA: loaded {len(bsa)} rows from {args.rgb_bsa_dir}")
     for projection in ["xB", "Q2", "t"]:
