@@ -74,7 +74,7 @@ def _read_raw(raw: str, name: str, qtarget: float):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--archive", type=Path, default=DEFAULT_ARCHIVE)
-    ap.add_argument("--q2", type=float, default=4.0, help="Q^2 in GeV^2 (default 4.0; must lie inside the grid)")
+    ap.add_argument("--q2", type=float, default=3.0, help="Q^2 in GeV^2 (default 3.0; must lie inside the grid)")
     ap.add_argument("--outdir", type=Path, default=DEFAULT_OUT)
     args = ap.parse_args()
     qtarget = math.sqrt(args.q2)
