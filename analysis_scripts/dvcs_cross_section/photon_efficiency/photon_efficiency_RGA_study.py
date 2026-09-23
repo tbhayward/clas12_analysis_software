@@ -437,6 +437,7 @@ def book_sample(key, df):
                 x0,x1=mx2eg_edges[ix],mx2eg_edges[ix+1]
                 y0,y1=mx2ep_edges[iy],mx2ep_edges[iy+1]
                 rn=dn.Filter(f"v_mx2eg>={x0} && v_mx2eg<{x1} && v_mx2ep>={y0} && v_mx2ep<{y1}")
+                out["discovery"][(region,"box",ix,iy,"count")] = rn.Count()
                 out["discovery"][(region,"box",ix,iy,"sumw")] = rn.Sum("ana_weight")
 
     # Controlled tag-response sensitivity study.  Only AAOgen is morphed.
@@ -1314,40 +1315,114 @@ def draw_control_region_discovery(results,outdir):
             keep += [h,tx]
         c.SaveAs(str(p/f"03_{region}_mx2eg_vs_mx2ep_self_normalized.png"))
 
-    # Text ranking of rectangular boxes.  We report only per-component retention.
-    # A useful AAO+CLASDIS two-component box has small DVCS retention while both
-    # AAO and CLASDIS retain measurable populations.  No physical purity is claimed.
+    # Generalized pair-control discovery.  We look for two useful cases:
+    #   AAOgen + CLASDIS with DVCSgen suppressed, and
+    #   AAOgen + DVCSgen with CLASDIS suppressed.
+    # We intentionally do NOT search DVCSgen+CLASDIS with AAOgen suppressed:
+    # that pair is not useful for anchoring the exclusive-pi0 denominator and
+    # no such region is suggested by the present shapes.
+    pair_specs=(
+        ("aaogen_clasdis_low_dvcs", ("aaogen","clasdis"), "dvcsgen"),
+        ("aaogen_dvcs_low_clasdis", ("aaogen","dvcsgen"), "clasdis"),
+    )
+    all_rankings={}
     with open(p/"control_region_discovery.txt","w") as f:
         f.write("# CONTROL-REGION DISCOVERY -- no relative MC normalization assumed.\n")
         f.write("# Every retention is weighted yield in the box divided by that SAME sample's detector-region discovery-base weighted yield.\n")
-        f.write("# Therefore unequal generated statistics and arbitrary overall MC sample sizes cancel.\n")
-        f.write("# Columns: detector xlo xhi ylo yhi data_ret aaogen_ret clasdis_ret dvcsgen_ret dvcs_suppression_index\n")
+        f.write("# Unequal generated statistics and arbitrary overall MC sample sizes therefore cancel in the DISCOVERY metric.\n")
+        f.write("# Pair score = suppressed-component retention / sqrt(retention(pair1)*retention(pair2)); smaller is better.\n")
+        f.write("# These scores are NOT purities. Actual pair normalizations are fitted only after regions are selected.\n")
         for region in ("FT","FD"):
-            rows=[]
             bases={k:float(results[k]["discovery"][(region,"base_sumw")].GetValue()) for k in SAMPLES}
+            rows=[]
             for ix in range(len(mx2eg_edges)-1):
                 for iy in range(len(mx2ep_edges)-1):
                     ret={}
                     for key in SAMPLES:
                         v=float(results[key]["discovery"][(region,"box",ix,iy,"sumw")].GetValue())
                         ret[key]=v/bases[key] if bases[key] else 0.0
-                    # Smaller is better for suppressing DVCS relative to the two
-                    # components we want to keep.  This is a discovery ranking only.
-                    keep_scale=math.sqrt(max(ret["aaogen"],0.0)*max(ret["clasdis"],0.0))
-                    idx=ret["dvcsgen"]/(keep_scale+1e-12)
-                    rows.append((idx,ix,iy,ret))
-            rows.sort(key=lambda z:z[0])
-            f.write(f"\n# {region}: all boxes\n")
-            for idx,ix,iy,ret in rows:
+                    rows.append((ix,iy,ret))
+            f.write(f"\n# {region}: all rectangular boxes and self-retentions\n")
+            f.write("# detector xlo xhi ylo yhi data_ret aaogen_ret clasdis_ret dvcsgen_ret\n")
+            for ix,iy,ret in rows:
                 f.write(f"{region} {mx2eg_edges[ix]:.3g} {mx2eg_edges[ix+1]:.3g} {mx2ep_edges[iy]:.3g} {mx2ep_edges[iy+1]:.3g} "
-                        f"{ret['data']:.8g} {ret['aaogen']:.8g} {ret['clasdis']:.8g} {ret['dvcsgen']:.8g} {idx:.8g}\n")
-            f.write(f"# {region}: suggested boxes for inspection (DVCS retention <2%; AAO and CLASDIS each >0.2% of own base)\n")
-            for idx,ix,iy,ret in rows:
-                if ret["dvcsgen"]<0.02 and ret["aaogen"]>0.002 and ret["clasdis"]>0.002:
-                    f.write(f"# inspect {mx2eg_edges[ix]:.2f}<Mx2eg<{mx2eg_edges[ix+1]:.2f}, {mx2ep_edges[iy]:.3f}<Mx2ep<{mx2ep_edges[iy+1]:.3f}: "
-                            f"data={ret['data']:.4f} AAO={ret['aaogen']:.4f} CLASDIS={ret['clasdis']:.4f} DVCS={ret['dvcsgen']:.4f}\n")
-        f.write("\n# Guardrail: these numbers identify shape-enriched regions only. They are NOT component fractions or purities.\n")
-        f.write("# The next stage may use a chosen low-DVCS region to fit AAOgen+CLASDIS simultaneously, separately in FT and FD.\n")
+                        f"{ret['data']:.8g} {ret['aaogen']:.8g} {ret['clasdis']:.8g} {ret['dvcsgen']:.8g}\n")
+            for tag,pair,supp in pair_specs:
+                ranked=[]
+                for ix,iy,ret in rows:
+                    keep=math.sqrt(max(ret[pair[0]],0.0)*max(ret[pair[1]],0.0))
+                    score=ret[supp]/(keep+1e-12)
+                    # Require both retained components and DATA to have nontrivial support.
+                    if ret[pair[0]]>0.002 and ret[pair[1]]>0.002 and ret["data"]>0.001:
+                        ranked.append((score,ix,iy,ret))
+                ranked.sort(key=lambda z:z[0])
+                all_rankings[(region,tag)]=ranked
+                f.write(f"\n# {region} {tag}: best boxes; pair={pair[0]}+{pair[1]}, suppressed={supp}\n")
+                for score,ix,iy,ret in ranked[:20]:
+                    f.write(f"# score={score:.5g}  {mx2eg_edges[ix]:.2f}<Mx2eg<{mx2eg_edges[ix+1]:.2f}, "
+                            f"{mx2ep_edges[iy]:.3f}<Mx2ep<{mx2ep_edges[iy+1]:.3f}: "
+                            f"DATA={ret['data']:.4f} AAO={ret['aaogen']:.4f} CLASDIS={ret['clasdis']:.4f} DVCS={ret['dvcsgen']:.4f}\n")
+        f.write("\n# Guardrail: discovery scores identify shape-enriched regions only; they are not component fractions or purities.\n")
+
+    # Fit the two retained components across the best NON-OVERLAPPING grid boxes.
+    # Use alternating ranked boxes for fit and hold-out validation.  The third
+    # component is deliberately omitted from the fit and its self-retention is
+    # reported so we can see whether that omission is credible.
+    pairfit_rows=[]
+    for region in ("FT","FD"):
+        for tag,pair,supp in pair_specs:
+            ranked=all_rankings.get((region,tag),[])[:16]
+            if len(ranked)<4:
+                continue
+            train=ranked[::2]; hold=ranked[1::2]
+            A=[]; y=[]; sig=[]
+            for score,ix,iy,ret in train:
+                yd=float(results["data"]["discovery"][(region,"box",ix,iy,"count")].GetValue())
+                mc=[float(results[k]["discovery"][(region,"box",ix,iy,"sumw")].GetValue()) for k in pair]
+                if yd>0 and sum(mc)>0:
+                    A.append(mc); y.append(yd); sig.append(math.sqrt(max(yd,1.0)))
+            if len(A)<2:
+                continue
+            x,chi2,ndf=_fit_nonnegative(A,y,sig)
+            scales=dict(zip(pair,x))
+            # Store train and holdout closure box-by-box.
+            for subset,items in (("fit",train),("holdout",hold)):
+                for score,ix,iy,ret in items:
+                    yd=float(results["data"]["discovery"][(region,"box",ix,iy,"count")].GetValue())
+                    pred=sum(scales[k]*float(results[k]["discovery"][(region,"box",ix,iy,"sumw")].GetValue()) for k in pair)
+                    pairfit_rows.append((region,tag,subset,ix,iy,score,yd,pred,yd/pred if pred>0 else float("nan"),scales[pair[0]],scales[pair[1]],chi2,ndf,ret[supp]))
+
+    with open(p/"pair_control_region_fits.txt","w") as f:
+        f.write("# Two-component fits in control boxes selected using ONLY per-component self-retention.\n")
+        f.write("# detector pair_study subset ix iy discovery_score data pair_prediction data_over_prediction scale1 scale2 fit_chi2 fit_ndf suppressed_self_retention\n")
+        for r in pairfit_rows:
+            f.write(" ".join(str(x) for x in r)+"\n")
+        f.write("# FIT boxes determine the two scales. HOLDOUT boxes are not used in the fit and are the important closure test.\n")
+        f.write("# A poor holdout closure means the two-component approximation is not transferable even if fit-box closure looks good.\n")
+
+    # Compact closure plots for the pair fits.  Plot DATA/pair-prediction so a
+    # value of one has an immediate interpretation; fit and holdout are separated.
+    for region in ("FT","FD"):
+        for tag,pair,supp in pair_specs:
+            rr=[r for r in pairfit_rows if r[0]==region and r[1]==tag]
+            if not rr: continue
+            c=ROOT.TCanvas(f"cpair_{region}_{tag}","",1200,760); setup_pad(c); keep=[]
+            frame=ROOT.TH1D(f"fpair_{region}_{tag}","",max(4,len(rr)),0,max(4,len(rr)))
+            frame.SetDirectory(0); frame.SetMinimum(0.0); frame.SetMaximum(2.2)
+            frame.GetXaxis().SetTitle("Selected non-overlapping control boxes (rank order)")
+            frame.GetYaxis().SetTitle("DATA / two-component prediction")
+            frame.Draw("AXIS")
+            line=ROOT.TLine(0,1,max(4,len(rr)),1); line.SetLineStyle(2); line.Draw(); keep += [frame,line]
+            for subset,marker in (("fit",20),("holdout",24)):
+                vals=[r for r in rr if r[2]==subset]
+                g=ROOT.TGraph(len(vals)); g.SetMarkerStyle(marker); g.SetMarkerSize(1.2)
+                for i,r in enumerate(vals): g.SetPoint(i+(0 if subset=="fit" else len([q for q in rr if q[2]=="fit"])), r[8])
+                g.Draw("P SAME"); keep.append(g)
+            leg=ROOT.TLegend(.62,.72,.91,.87); leg.SetBorderSize(0); leg.SetFillStyle(0)
+            leg.AddEntry(keep[-2],"Fit boxes","p"); leg.AddEntry(keep[-1],"Holdout boxes","p"); leg.Draw(); keep.append(leg)
+            tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.041)
+            tx.DrawLatex(.16,.92,f"{region}: {SAMPLES[pair[0]][0]} + {SAMPLES[pair[1]][0]}, suppress {SAMPLES[supp][0]}")
+            keep.append(tx); c.SaveAs(str(p/f"04_{region}_{tag}_pair_fit_holdout.png"))
 
 def write_normalization_tables(results, fits, outdir):
     p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
@@ -1444,6 +1519,8 @@ def main():
     print("Failed-attempt archive: Gaussian Mx2(ep gamma_tag) width -> detector smearing.")
     print("Failed-attempt archive: AAOgen-only tag smearing cannot represent mixed DATA.")
     print("New step: explicit FT/FD control-region discovery using per-component self-normalized retention, not raw MC fractions.")
+    print("Pair studies: AAOgen+CLASDIS with DVCS suppressed, and AAOgen+DVCSgen with CLASDIS suppressed.")
+    print("Each pair fit uses selected boxes and separate holdout boxes for transfer/closure validation.")
     print("Photon-energy plotting range: 0-9 GeV.")
     print("="*78)
     results={}; actions=[]
