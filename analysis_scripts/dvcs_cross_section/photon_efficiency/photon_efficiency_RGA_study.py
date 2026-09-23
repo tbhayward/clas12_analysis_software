@@ -345,7 +345,7 @@ FIT_COMPONENTS = ("aaogen", "clasdis", "dvcsgen")
 def book_sample(key, df):
     """Book overview, denominator validation, and normalization inputs in one RDF graph."""
     out = {"counts": {}, "survival": {}, "selected": {}, "slices": {},
-           "control": {}, "overview": {}, "fit": {}, "response": {}}
+           "control": {}, "overview": {}, "fit": {}, "response": {}, "discovery": {}}
 
     # Restore the useful early distributions.  These are intentionally booked
     # before the final Candidate-B cuts so a reader can see why each cut exists.
@@ -405,6 +405,39 @@ def book_sample(key, df):
                 pn=fn.Filter(f"probe_corr_p>={plo} && probe_corr_p<{phi}")
                 out["fit"][(region, fr, ib, "count")] = pn.Count()
                 out["fit"][(region, fr, ib, "sumw")] = pn.Sum("ana_weight")
+
+    # Explicit control-region discovery.  This stage deliberately avoids raw
+    # MC fractions such as A/(A+C+V): those would depend on how many events were
+    # generated for each MC sample and on arbitrary overall MC normalizations.
+    # Instead every sample is normalized to *its own* detector-region discovery
+    # base.  The resulting retention/density shapes answer the robust question:
+    # "where does this component preferentially live?" independently in FT/FD.
+    discovery_base = df.Filter("baseline && v_mx2ep>-0.231", "control-region discovery base")
+    for region, rcut in (("FT", "probe_region==0"), ("FD", "probe_region==1")):
+        dn = discovery_base.Filter(rcut)
+        out["discovery"][(region,"base_sumw")] = dn.Sum("ana_weight")
+        out["discovery"][(region,"mx2eg")] = h1(
+            dn, f"hdisc_{key}_{region}_mx2eg", "mx2eg", weight=(key!="data"))
+        out["discovery"][(region,"mx2ep")] = h1(
+            dn, f"hdisc_{key}_{region}_mx2ep", "mx2ep", weight=(key!="data"))
+        out["discovery"][(region,"mx2eg_vs_mx2ep")] = dn.Histo2D(
+            (f"hdisc2_{key}_{region}","",60,0.0,6.0,72,-0.50,1.30),
+            "v_mx2eg","v_mx2ep","ana_weight")
+        # Threshold scan in Mx2(e gamma_tag).  These are weighted retentions
+        # relative to this same component's own discovery base.
+        for it,thr in enumerate((1.4,1.8,2.2,2.6,3.0,3.4,3.8,4.2,4.6,5.0)):
+            tn=dn.Filter(f"v_mx2eg>{thr}")
+            out["discovery"][(region,"mx2eg_gt",it,"sumw")] = tn.Sum("ana_weight")
+        # Rectangular 2D scan.  Keep the grid modest and interpretable; its job
+        # is to identify promising control boxes, not optimize a fit statistic.
+        mx2eg_edges=(1.4,2.0,2.6,3.2,3.8,4.4,5.0,6.0)
+        mx2ep_edges=(-0.231,0.0,0.18,0.30,0.45,0.70,1.00,1.30)
+        for ix in range(len(mx2eg_edges)-1):
+            for iy in range(len(mx2ep_edges)-1):
+                x0,x1=mx2eg_edges[ix],mx2eg_edges[ix+1]
+                y0,y1=mx2ep_edges[iy],mx2ep_edges[iy+1]
+                rn=dn.Filter(f"v_mx2eg>={x0} && v_mx2eg<{x1} && v_mx2ep>={y0} && v_mx2ep<{y1}")
+                out["discovery"][(region,"box",ix,iy,"sumw")] = rn.Sum("ana_weight")
 
     # Controlled tag-response sensitivity study.  Only AAOgen is morphed.
     # We perturb the *measured tag momentum* and recompute Mx2(ep gamma_tag),
@@ -1226,6 +1259,96 @@ def draw_tag_response_sensitivity(results,outdir):
         f.write("2. Failure even at large smear means the Mx2 shape mismatch is not reducible to tag-energy resolution alone.\n")
         f.write("3. Do not propagate these scan values into the efficiency until an independent DATA/MC response calibration is established.\n")
 
+def draw_control_region_discovery(results,outdir):
+    """Find FT/FD control regions without assuming relative MC normalizations.
+
+    Every MC curve/map is normalized to its own detector-region discovery base.
+    This intentionally measures enrichment/retention, not physical mixture fractions.
+    """
+    p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
+    thresholds=(1.4,1.8,2.2,2.6,3.0,3.4,3.8,4.2,4.6,5.0)
+    mx2eg_edges=(1.4,2.0,2.6,3.2,3.8,4.4,5.0,6.0)
+    mx2ep_edges=(-0.231,0.0,0.18,0.30,0.45,0.70,1.00,1.30)
+
+    # 1D shape comparison: unit area independently for each sample.
+    for region in ("FT","FD"):
+        c=ROOT.TCanvas(f"cdisc_shape_{region}","",1100,780); setup_pad(c); keep=[]
+        ymax=0.0; hs={}
+        for key in SAMPLES:
+            h=unit(clone(results[key]["discovery"][(region,"mx2eg")]))
+            style(h,key); h.SetTitle(""); h.GetXaxis().SetTitle(OBS["mx2eg"][4]); h.GetYaxis().SetTitle("Unit-normalized density")
+            hs[key]=h; ymax=max(ymax,h.GetMaximum())
+        hs["data"].SetMaximum(1.25*ymax); hs["data"].Draw("E1")
+        for key in ("aaogen","clasdis","dvcsgen"): hs[key].Draw("HIST SAME")
+        leg=ROOT.TLegend(.62,.62,.91,.87); leg.SetBorderSize(0); leg.SetFillStyle(0)
+        for key in SAMPLES: leg.AddEntry(hs[key],SAMPLES[key][0],"lep" if key=="data" else "l")
+        leg.Draw(); tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.043); tx.DrawLatex(.16,.92,f"{region}: control-region discovery")
+        keep += list(hs.values())+[leg,tx]; c.SaveAs(str(p/f"01_{region}_mx2eg_self_normalized_shapes.png"))
+
+    # Retention above a lower Mx2(e gamma_tag) threshold.  Each line starts from
+    # its own base, so unequal generated MC statistics cancel by construction.
+    for region in ("FT","FD"):
+        c=ROOT.TCanvas(f"cdisc_ret_{region}","",1100,780); setup_pad(c); keep=[]
+        frame=ROOT.TH1D(f"fdisc_ret_{region}","",100,1.3,5.1); frame.SetDirectory(0); frame.SetMinimum(0); frame.SetMaximum(1.05)
+        frame.GetXaxis().SetTitle("Lower M_{X}^{2}(e#gamma_{tag}) threshold (GeV^{2})"); frame.GetYaxis().SetTitle("Retention / own detector-region base"); frame.Draw("AXIS")
+        leg=ROOT.TLegend(.58,.62,.91,.87); leg.SetBorderSize(0); leg.SetFillStyle(0)
+        for key in SAMPLES:
+            base=float(results[key]["discovery"][(region,"base_sumw")].GetValue())
+            g=ROOT.TGraph(len(thresholds)); g.SetName(f"gdisc_{key}_{region}"); g.SetLineColor(SAMPLES[key][2]); g.SetMarkerColor(SAMPLES[key][2]); g.SetLineWidth(2); g.SetMarkerStyle(20)
+            for i,t in enumerate(thresholds):
+                v=float(results[key]["discovery"][(region,"mx2eg_gt",i,"sumw")].GetValue())
+                g.SetPoint(i,t,v/base if base else 0.0)
+            g.Draw("LP SAME"); leg.AddEntry(g,SAMPLES[key][0],"lp"); keep.append(g)
+        leg.Draw(); tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.043); tx.DrawLatex(.16,.92,f"{region}: high-M_{{X}}^{{2}}(e#gamma_{{tag}}) retention")
+        keep += [frame,leg,tx]; c.SaveAs(str(p/f"02_{region}_mx2eg_threshold_retention.png"))
+
+    # 2D self-normalized density maps: one canvas per detector, four panels.
+    for region in ("FT","FD"):
+        c=ROOT.TCanvas(f"cdisc2_{region}","",1700,1100); c.Divide(2,2); keep=[]
+        for ipad,key in enumerate(SAMPLES,1):
+            pad=c.cd(ipad); setup_pad(pad,0.15)
+            h=clone(results[key]["discovery"][(region,"mx2eg_vs_mx2ep")]); integ=h.Integral()
+            if integ>0: h.Scale(1.0/integ)
+            h.SetTitle(""); h.GetXaxis().SetTitle(OBS["mx2eg"][4]); h.GetYaxis().SetTitle(OBS["mx2ep"][4]); h.Draw("COLZ")
+            tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.045); tx.DrawLatex(.16,.92,f"{SAMPLES[key][0]} - {region}")
+            keep += [h,tx]
+        c.SaveAs(str(p/f"03_{region}_mx2eg_vs_mx2ep_self_normalized.png"))
+
+    # Text ranking of rectangular boxes.  We report only per-component retention.
+    # A useful AAO+CLASDIS two-component box has small DVCS retention while both
+    # AAO and CLASDIS retain measurable populations.  No physical purity is claimed.
+    with open(p/"control_region_discovery.txt","w") as f:
+        f.write("# CONTROL-REGION DISCOVERY -- no relative MC normalization assumed.\n")
+        f.write("# Every retention is weighted yield in the box divided by that SAME sample's detector-region discovery-base weighted yield.\n")
+        f.write("# Therefore unequal generated statistics and arbitrary overall MC sample sizes cancel.\n")
+        f.write("# Columns: detector xlo xhi ylo yhi data_ret aaogen_ret clasdis_ret dvcsgen_ret dvcs_suppression_index\n")
+        for region in ("FT","FD"):
+            rows=[]
+            bases={k:float(results[k]["discovery"][(region,"base_sumw")].GetValue()) for k in SAMPLES}
+            for ix in range(len(mx2eg_edges)-1):
+                for iy in range(len(mx2ep_edges)-1):
+                    ret={}
+                    for key in SAMPLES:
+                        v=float(results[key]["discovery"][(region,"box",ix,iy,"sumw")].GetValue())
+                        ret[key]=v/bases[key] if bases[key] else 0.0
+                    # Smaller is better for suppressing DVCS relative to the two
+                    # components we want to keep.  This is a discovery ranking only.
+                    keep_scale=math.sqrt(max(ret["aaogen"],0.0)*max(ret["clasdis"],0.0))
+                    idx=ret["dvcsgen"]/(keep_scale+1e-12)
+                    rows.append((idx,ix,iy,ret))
+            rows.sort(key=lambda z:z[0])
+            f.write(f"\n# {region}: all boxes\n")
+            for idx,ix,iy,ret in rows:
+                f.write(f"{region} {mx2eg_edges[ix]:.3g} {mx2eg_edges[ix+1]:.3g} {mx2ep_edges[iy]:.3g} {mx2ep_edges[iy+1]:.3g} "
+                        f"{ret['data']:.8g} {ret['aaogen']:.8g} {ret['clasdis']:.8g} {ret['dvcsgen']:.8g} {idx:.8g}\n")
+            f.write(f"# {region}: suggested boxes for inspection (DVCS retention <2%; AAO and CLASDIS each >0.2% of own base)\n")
+            for idx,ix,iy,ret in rows:
+                if ret["dvcsgen"]<0.02 and ret["aaogen"]>0.002 and ret["clasdis"]>0.002:
+                    f.write(f"# inspect {mx2eg_edges[ix]:.2f}<Mx2eg<{mx2eg_edges[ix+1]:.2f}, {mx2ep_edges[iy]:.3f}<Mx2ep<{mx2ep_edges[iy+1]:.3f}: "
+                            f"data={ret['data']:.4f} AAO={ret['aaogen']:.4f} CLASDIS={ret['clasdis']:.4f} DVCS={ret['dvcsgen']:.4f}\n")
+        f.write("\n# Guardrail: these numbers identify shape-enriched regions only. They are NOT component fractions or purities.\n")
+        f.write("# The next stage may use a chosen low-DVCS region to fit AAOgen+CLASDIS simultaneously, separately in FT and FD.\n")
+
 def write_normalization_tables(results, fits, outdir):
     p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
     rows,purity=normalization_products(results,fits)
@@ -1305,10 +1428,11 @@ def main():
     validation_dir=outroot/"01_denominator_validation"
     normalization_dir=outroot/"02_component_normalization"
     failed_resolution_dir=outroot/"failed_attempts"/"01_mx2epg_gaussian_resolution"
-    response_dir=outroot/"02_component_normalization"/"tag_response_sensitivity"
+    response_dir=outroot/"failed_attempts"/"02_aaogen_only_tag_smearing"
+    discovery_dir=outroot/"02_component_normalization"/"control_region_discovery"
     efficiency_dir=outroot/"03_efficiency_extraction"
     final_dir=outroot/"04_final_corrections"
-    for d in (overview_dir,validation_dir,normalization_dir,failed_resolution_dir,response_dir,efficiency_dir,final_dir): d.mkdir(parents=True,exist_ok=True)
+    for d in (overview_dir,validation_dir,normalization_dir,failed_resolution_dir,response_dir,discovery_dir,efficiency_dir,final_dir): d.mkdir(parents=True,exist_ok=True)
 
     print("="*78)
     print("Photon-efficiency RGA study - denominator validation + component normalization")
@@ -1318,7 +1442,8 @@ def main():
     print("Normalization diagnostic: global four-region AAOgen/CLASDIS/DVCSgen stress test.")
     print("Purity diagnostics: local templates + empirical peak extraction.")
     print("Failed-attempt archive: Gaussian Mx2(ep gamma_tag) width -> detector smearing.")
-    print("New step: controlled AAOgen tag-momentum smearing sensitivity; no smearing is adopted or applied to yields.")
+    print("Failed-attempt archive: AAOgen-only tag smearing cannot represent mixed DATA.")
+    print("New step: explicit FT/FD control-region discovery using per-component self-normalized retention, not raw MC fractions.")
     print("Photon-energy plotting range: 0-9 GeV.")
     print("="*78)
     results={}; actions=[]
@@ -1327,7 +1452,7 @@ def main():
         if not fs: raise RuntimeError(f"No ROOT files for {key}: {pat}")
         print(f"{label:10s}: {len(fs):3d} ROOT files")
         results[key]=book_sample(key,define_columns(make_rdf(fs),key))
-        for group in ("counts","survival","selected","slices","control","overview","fit","response"):
+        for group in ("counts","survival","selected","slices","control","overview","fit","response","discovery"):
             actions += list(results[key][group].values())
     print(f"Executing {len(actions)} booked actions ...")
     ROOT.RDF.RunGraphs(actions)
@@ -1367,6 +1492,7 @@ def main():
     # whether that mechanism can reproduce the DATA Mx2(ep gamma_tag) shape.
     # This does not require a reconstructed probe and does not alter any yields.
     draw_tag_response_sensitivity(results,response_dir)
+    draw_control_region_discovery(results,discovery_dir)
 
     print("Candidate retentions relative to each detector-region optimization base:")
     print(" sample   region   A       B       C       D")
@@ -1392,7 +1518,7 @@ def main():
             vals.append(f"{lo:g}-{hi:g}: fpi0={q['pi0_fraction']:.3f}, chi2/ndf={q['chi2']:.1f}/{q['ndf']}, cond={q['condition']:.1f}")
         print(f"  {det}: " + " | ".join(vals))
     print("\nOutput layout:")
-    for d in (overview_dir,validation_dir,response_dir,failed_resolution_dir,efficiency_dir,final_dir): print(f"  {d}/")
+    for d in (overview_dir,validation_dir,normalization_dir,discovery_dir,failed_resolution_dir,response_dir,efficiency_dir,final_dir): print(f"  {d}/")
     print("\nCandidate-B Mx2(ep gamma_tag) resolution diagnostic:")
     for det in ("FT","FD"):
         vals=[]
@@ -1402,7 +1528,7 @@ def main():
                 vals.append(f"{lo:g}-{hi:g}: sigmaD={q['data']['sigma']:.4f}, sigmaMC={q['mc']['sigma']:.4f}, smear={q['data']['smear']:.4f}, shift={q['data']['shift']:+.4f}")
         print(f"  {det}: " + " | ".join(vals))
     print("The Gaussian Mx2 width->smearing interpretation is archived as a failed attempt, not used downstream.")
-    print("Stage 3/4 remain empty: no smearing or reconstructed-probe matching is applied until tag-response sensitivity and purity closure are accepted.")
+    print("Stage 3/4 remain empty: no reconstructed-probe matching is applied until component normalization and purity closure are accepted.")
 
 
 if __name__=="__main__":
