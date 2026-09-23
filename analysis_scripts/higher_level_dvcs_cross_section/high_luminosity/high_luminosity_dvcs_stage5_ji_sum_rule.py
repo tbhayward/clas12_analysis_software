@@ -1494,33 +1494,15 @@ def _ellipse_points(mean,cov,delta_chi2=2.30,n=300):
 
 
 
-def _nonlinear_b20_boundary_from_beta(mean_beta, cov_beta, delta_chi2=2.30,
-                                      n=500, beta_floor=0.05):
-    """Map the local beta confidence boundary through the exact B20(beta) relation.
-
-    Points with beta <= beta_floor are outside the intended positive large-x
-    falloff family and are omitted rather than extrapolated into an unphysical
-    B20 ellipse.  This is a diagnostic of the beta->B20 nonlinearity; the
-    observable response itself remains the finite-difference response used by
-    the H+E projection.
-    """
-    vals, vecs = np.linalg.eigh(cov_beta)
-    vals = np.maximum(vals, 0.0)
-    ang = np.linspace(0.0, 2.0*np.pi, n)
-    circ = np.vstack([np.cos(ang), np.sin(ang)])
-    beta_pts = (np.asarray(mean_beta)[:,None] +
-                vecs @ np.diag(np.sqrt(delta_chi2*vals)) @ circ).T
-
-    keep = (beta_pts[:,0] > beta_floor) & (beta_pts[:,1] > beta_floor)
-    beta_keep = beta_pts[keep]
-    b20 = np.empty((len(beta_keep), 2))
-    if len(beta_keep):
-        b20[:,0] = [b20_from_beta(KAPPA_U, DFJK_ALPHA_E, b) for b in beta_keep[:,0]]
-        b20[:,1] = [b20_from_beta(KAPPA_D, DFJK_ALPHA_E, b) for b in beta_keep[:,1]]
-    return beta_keep, b20, float(np.mean(keep))
 
 def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir):
-    """Run joint H+E projection, target/observable ablations, and B20 validation."""
+    """Run joint H+E projection and target/observable ablations.
+
+    Proton-only local covariance contours are retained only as diagnostics in
+    the tables; the conference figure does not draw them as literal 68% B20
+    regions because the corresponding beta uncertainties leave the intended
+    model domain.
+    """
     try:
         import gepard as g
         from gepard.fits import th_KM15
@@ -1530,7 +1512,6 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir):
     th = th_KM15
     scenarios = []
     contour_data = []
-    nonlinear_rows = []
     obs_by_factor = {}
 
     # Build the expensive observable response only once at each luminosity.
@@ -1563,19 +1544,6 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir):
         bcov, betacov = _b20_covariance_from_beta(cov, layout)
         contour_data.append((name, mean_b20.copy(), bcov, betacov))
 
-        beta_pts, b20_exact, kept = _nonlinear_b20_boundary_from_beta(
-            mean_beta, betacov
-        )
-        if len(b20_exact):
-            nonlinear_rows.append(dict(
-                scenario=name,
-                boundary_points_requested=500,
-                physical_beta_fraction=kept,
-                exact_B20_u_min=float(np.min(b20_exact[:,0])),
-                exact_B20_u_max=float(np.max(b20_exact[:,0])),
-                exact_B20_d_min=float(np.min(b20_exact[:,1])),
-                exact_B20_d_max=float(np.max(b20_exact[:,1])),
-            ))
 
         scenarios.append(dict(
             scenario=name, luminosity_factor=factor, include_neutron=incn,
@@ -1590,9 +1558,6 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir):
 
     summary = pd.DataFrame(scenarios)
     summary.to_csv(tabdir/"b20_he_projection_summary.csv", index=False)
-    pd.DataFrame(nonlinear_rows).to_csv(
-        tabdir/"b20_exact_beta_mapping_validation.csv", index=False
-    )
 
     # Neutron ablation: diagnostic only, not extra conference contours.
     ablations = []
@@ -1618,57 +1583,71 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir):
     ablation_df = pd.DataFrame(ablations)
     ablation_df.to_csv(tabdir/"b20_neutron_observable_ablation.csv", index=False)
 
-    # Main figure: retain the familiar local 68% contours so all four scenarios
-    # are directly comparable.  Exact beta->B20 mapping is a validation product,
-    # not silently substituted for the fit result.
+    # Conference-facing B20 figure.  The p-only solutions are deliberately
+    # shown as local degeneracy DIRECTIONS, not closed confidence ellipses.
+    # Their covariance extends far outside the positive-beta model family, so
+    # drawing the giant Gaussian ellipses as literal 68% regions is misleading.
+    # The p+n contours are sufficiently local and are shown as quantitative
+    # 68% (Delta chi2=2.30) contours.
     fig, ax = plt.subplots(figsize=(7.4,6.2))
     labels = {
-        "p_1x": r"$p$ 1x",
-        "p_10x": r"$p$ 10x",
-        "p1x_plus_n1x": r"$p$ 1x + $n$ 1x",
-        "p10x_plus_n10x": r"$p$ 10x + $n$ 10x",
+        "p_1x": r"$p$ 1x: local flavor-degeneracy direction",
+        "p_10x": r"$p$ 10x: local flavor-degeneracy direction",
+        "p1x_plus_n1x": r"$p$ 1x + $n$ 1x: 68% contour",
+        "p10x_plus_n10x": r"$p$ 10x + $n$ 10x: 68% contour",
     }
+
+    # First draw the quantitative p+n contours and use them to define a
+    # presentation-scale window around the reference point.
+    pn_pts = []
     for name, mean, cov, betacov in contour_data:
-        pts = _ellipse_points(mean, cov)
-        ax.plot(pts[:,0], pts[:,1], linewidth=2.4, label=labels[name])
-    ax.scatter([mean_b20[0]], [mean_b20[1]], marker="*", s=110,
-               label="reference model")
+        if name.startswith("p1x_plus") or name.startswith("p10x_plus"):
+            pts = _ellipse_points(mean, cov)
+            pn_pts.append(pts)
+            ax.plot(pts[:,0], pts[:,1], linewidth=2.6, label=labels[name])
+
+    allpn = np.vstack(pn_pts)
+    xmin, xmax = float(allpn[:,0].min()), float(allpn[:,0].max())
+    ymin, ymax = float(allpn[:,1].min()), float(allpn[:,1].max())
+    dx=max(xmax-xmin, 0.08); dy=max(ymax-ymin, 0.08)
+    xmin -= 0.35*dx; xmax += 0.35*dx
+    ymin -= 0.35*dy; ymax += 0.35*dy
+
+    # Show only the major-axis direction for p-only.  A line has no endpoints
+    # and therefore makes no quantitative confidence-boundary claim.
+    for name, mean, cov, betacov in contour_data:
+        if name not in ("p_1x", "p_10x"):
+            continue
+        vals, vecs = np.linalg.eigh(cov)
+        v = vecs[:, int(np.argmax(vals))]
+        # Intersect a long line through the reference point with plot window.
+        tt = np.linspace(-20.0, 20.0, 2000)
+        line = mean[None,:] + tt[:,None]*v[None,:]
+        keep=(line[:,0]>=xmin)&(line[:,0]<=xmax)&(line[:,1]>=ymin)&(line[:,1]<=ymax)
+        line=line[keep]
+        ax.plot(line[:,0], line[:,1], linestyle="--", linewidth=1.8,
+                alpha=0.75, label=labels[name])
+
+    ax.scatter([mean_b20[0]], [mean_b20[1]], marker="*", s=120,
+               label="reference model", zorder=5)
+    ax.set_xlim(xmin,xmax); ax.set_ylim(ymin,ymax)
     ax.set_xlabel(r"$B_{20}^{u_v}(0)$")
     ax.set_ylabel(r"$B_{20}^{d_v}(0)$")
-    ax.set_title(r"Projected flavor separation allowing $\mathcal{H}$ to vary")
-    ax.grid(alpha=.22); ax.legend(fontsize=9)
+    ax.set_title(r"Projected valence flavor separation allowing $\mathcal{H}$ to vary")
+    ax.grid(alpha=.22); ax.legend(fontsize=8)
     fig.tight_layout()
     fig.savefig(figdir/"b20_uv_dv_he_marginalized_contours.png", dpi=200)
     plt.close(fig)
 
-    # Development-only validation figure: exact nonlinear B20(beta) mapping of
-    # the same local beta confidence boundaries.  This exposes when a giant
-    # Gaussian B20 ellipse is merely a bad extrapolation.
-    fig, ax = plt.subplots(figsize=(7.4,6.2))
-    for name, mean, cov, betacov in contour_data:
-        _, b20_exact, kept = _nonlinear_b20_boundary_from_beta(mean_beta, betacov)
-        if len(b20_exact):
-            # Sorting by polar angle around the reference keeps the valid mapped
-            # boundary readable when only part of a huge proton contour remains.
-            ang = np.arctan2(b20_exact[:,1]-mean_b20[1],
-                             b20_exact[:,0]-mean_b20[0])
-            order = np.argsort(ang)
-            ax.plot(b20_exact[order,0], b20_exact[order,1], linewidth=2.0,
-                    label=f"{labels[name]} (valid beta {100*kept:.0f}%)")
-    ax.scatter([mean_b20[0]], [mean_b20[1]], marker="*", s=110,
-               label="reference model")
-    ax.set_xlabel(r"$B_{20}^{u_v}(0)$")
-    ax.set_ylabel(r"$B_{20}^{d_v}(0)$")
-    ax.set_title(r"Validation: exact nonlinear $\beta\rightarrow B_{20}$ mapping")
-    ax.grid(alpha=.22); ax.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(figdir/"b20_exact_beta_mapping_validation.png", dpi=200)
-    plt.close(fig)
+    # Remove stale v26 nonlinear-validation products so the output directory
+    # reflects the current production analysis after an in-place rerun.
+    for stale in (figdir/"b20_exact_beta_mapping_validation.png",
+                  tabdir/"b20_exact_beta_mapping_validation.csv"):
+        if stale.exists():
+            stale.unlink()
 
     print("\n[Stage5 H+E] neutron observable ablation:")
     print(ablation_df.to_string(index=False))
-    print("\n[Stage5 H+E] exact beta->B20 mapping diagnostic:")
-    print(pd.DataFrame(nonlinear_rows).to_string(index=False))
 
     return summary
 
@@ -1762,7 +1741,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v26 — JOINT p+n H+E B20 PROJECTION")
+    print("STAGE 5 v27 — VALENCE p+n H+E B20 PROJECTION")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -1797,8 +1776,9 @@ def main():
     print("  pedagogical alpha/beta/skewness figures are no longer produced")
     print()
     print("Conference target:")
-    print("  one B20_uv vs B20_dv 68% contour figure separating luminosity from target complementarity:")
-    print("    p(1x) -> p(10x) -> p(1x)+n(1x) -> p(10x)+n(10x)")
+    print("  one B20_uv vs B20_dv figure separating luminosity from target complementarity:")
+    print("    p-only: local flavor-degeneracy directions (not literal closed 68% regions)")
+    print("    p+n: quantitative 68% contours at 1x and 10x")
     print("  IMPORTANT: no contour is fabricated from raw BSA errors.")
     print("  It must come from the observable-level DVCS response to beta_u,beta_d.")
     print()
@@ -1845,6 +1825,9 @@ def main():
     print("  therefore H is constrained by the same RGA/RGB observables, not held fixed")
     print("  neutron fit uses preliminary XS plus ONE published BSA projection (t)")
     print("  neutron XS systematics remain excluded from this first contour because their covariance is unresolved")
+    print("  p-only closed B20 ellipses are not plotted: their local beta covariance leaves the intended model domain")
+    print("  p-only dashed lines show only the locally constrained flavor direction")
+    print("  p+n contours are the quantitative 68% regions used for the workshop projection")
     print(he_summary.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
     print()
     print()
