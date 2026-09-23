@@ -1403,11 +1403,16 @@ def _build_he_observable_rows(th, g, proton, rgb_xs, rgb_bsa, factor):
                 row["ebeam"], "p", kind
             )
             if kind == "xs":
-                rel = math.hypot(
+                # Stage-2's joint_fit_input file contains the experimental
+                # absolute XS uncertainties, but not the KM15 prediction.
+                # Keep those uncertainties in their native XS units, exactly
+                # as Stage-2 CFF sensitivity does.  Do not reconstruct a
+                # relative uncertainty using an xs_km15 column that is only
+                # created later inside the Stage-2 CFF-derivative script.
+                sig = math.hypot(
                     float(row["xs_stat_pseudo_abs"]),
                     float(row["xs_ptp_sys_pseudo_abs"])
-                ) / max(abs(float(row["xs_km15"])), 1e-30)
-                sig = abs(y0) * rel
+                )
             else:
                 sig = math.hypot(
                     float(row["bsa_stat_pseudo_abs"]),
@@ -1614,7 +1619,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v24 — JOINT p+n H+E B20 PROJECTION")
+    print("STAGE 5 v25 — JOINT p+n H+E B20 PROJECTION")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
