@@ -1296,7 +1296,8 @@ def _lo_flavor_E_cff(beta_u, beta_d, xB, t_abs, target):
         d1 = xi-x
         d2 = xi+x
         f1 = np.where(np.abs(d1)>2e-6, (E-Ep)/d1, 0.0)
-        f2 = np.where(np.abs(d2)>2e-6, (E-Em)/d2, 0.0)
+        f2 = np.zeros_like(E, dtype=float)
+        np.divide(E - Em, d2, out=f2, where=np.abs(d2) > 2e-6)
         logpv = math.log((1.0+xi)/(1.0-xi))
         re = np.trapezoid(f1, x) + Ep*logpv \
              - np.trapezoid(f2, x) - Em*logpv
@@ -1394,18 +1395,29 @@ def _build_he_observable_rows(th, g, proton, rgb_xs, rgb_bsa, factor):
 
     # Proton: actual Stage-2 matched 4D XS+BSA rows.  H is refit locally here;
     # no Stage-2 H prior is added, avoiding double counting the same data.
-    for r in proton.itertuples(index=False):
-        cell=f"p:{int(r.bin)}"
-        for kind in ("xs","bsa"):
-            y0,du,dd,dhre,dhim=derivatives(r.xB,r.Q2,r.t_abs,r.phi_deg,r.ebeam,"p",kind)
-            if kind=="xs":
-                rel=math.hypot(r.xs_stat_pseudo_abs,r.xs_ptp_sys_pseudo_abs)/max(abs(r.xs_km15),1e-30)
-                sig=abs(y0)*rel
+    for row in proton.to_dict("records"):
+        cell = f"p:{int(row['bin'])}"
+        for kind in ("xs", "bsa"):
+            y0, du, dd, dhre, dhim = derivatives(
+                row["xB"], row["Q2"], row["t_abs"], row["phi_deg"],
+                row["ebeam"], "p", kind
+            )
+            if kind == "xs":
+                rel = math.hypot(
+                    float(row["xs_stat_pseudo_abs"]),
+                    float(row["xs_ptp_sys_pseudo_abs"])
+                ) / max(abs(float(row["xs_km15"])), 1e-30)
+                sig = abs(y0) * rel
             else:
-                sig=math.hypot(r.bsa_stat_pseudo_abs,r.bsa_ptp_sys_pseudo_abs)
-            if np.isfinite(sig) and sig>0:
-                obs.append(dict(target="p",cell=cell,kind=kind,y0=y0,sigma=sig,
-                                d_bu=du,d_bd=dd,d_ReH=dhre,d_ImH=dhim))
+                sig = math.hypot(
+                    float(row["bsa_stat_pseudo_abs"]),
+                    float(row["bsa_ptp_sys_pseudo_abs"])
+                )
+            if np.isfinite(sig) and sig > 0:
+                obs.append(dict(
+                    target="p", cell=cell, kind=kind, y0=y0, sigma=sig,
+                    d_bu=du, d_bd=dd, d_ReH=dhre, d_ImH=dhim
+                ))
 
     # Neutron XS: use the measured relative statistical precision, scaled with L.
     # The unresolved quoted total systematic is not silently made diagonal here.
@@ -1602,7 +1614,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v23 — JOINT p+n H+E B20 PROJECTION")
+    print("STAGE 5 v24 — JOINT p+n H+E B20 PROJECTION")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
