@@ -626,7 +626,7 @@ def make_step2b_skewness_profile(figdir: Path, tabdir: Path):
         amax = 1.0 - beta
         alpha = np.linspace(-amax, amax, 600)
         profile = dd_profile(beta, alpha, WORKSHOP_DD_PROFILE_B)
-        integral = np.trapezoid(profile, alpha)
+        integral = np.trapz(profile, alpha)
 
         ax.plot(
             alpha, profile, linewidth=2.2,
@@ -656,6 +656,95 @@ def make_step2b_skewness_profile(figdir: Path, tabdir: Path):
     pd.DataFrame(rows).to_csv(
         tabdir / "dfjk_step2b_skewness_profile.csv", index=False
     )
+
+
+def make_step2c_beta_to_x_mapping(figdir: Path, tabdir: Path):
+    """Step 2C: visualize x = beta + xi*alpha for one beta.
+
+    This still does NOT construct the full GPD E(x,xi,t).  It follows one
+    forward beta contribution through the DD profile and shows how finite xi
+    spreads that one contribution over x.
+    """
+    beta = 0.30
+    xi = 0.20
+    b = WORKSHOP_DD_PROFILE_B
+
+    amax = 1.0 - beta
+    alpha = np.linspace(-amax, amax, 800)
+    pi_alpha = dd_profile(beta, alpha, b)
+
+    # Mapping from the DD variable alpha to the GPD integration variable x.
+    x = beta + xi * alpha
+
+    # Probability-density transformation:
+    # p_x(x) dx = pi(alpha) d alpha, with dx = xi d alpha.
+    p_x = pi_alpha / abs(xi)
+
+    int_alpha = np.trapezoid(pi_alpha, alpha)
+    int_x = np.trapezoid(p_x, x)
+
+    # Save the exact pedagogical mapping used in the figure.
+    pd.DataFrame({
+        "beta": beta,
+        "xi": xi,
+        "alpha": alpha,
+        "x_equals_beta_plus_xi_alpha": x,
+        "pi_beta_alpha": pi_alpha,
+        "mapped_density_in_x": p_x,
+    }).to_csv(tabdir / "dfjk_step2c_beta_to_x_mapping.csv", index=False)
+
+    fig, axes = plt.subplots(1, 2, figsize=(13.2, 5.2))
+
+    axes[0].plot(alpha, pi_alpha, linewidth=2.5)
+    axes[0].axvline(0.0, linewidth=0.9, color="black", alpha=0.7)
+    axes[0].set_xlabel(r"$\alpha$")
+    axes[0].set_ylabel(r"$\pi_b(\beta,\alpha)$")
+    axes[0].set_title(
+        rf"Start with one forward contribution: $\beta={beta:.2f}$"
+    )
+    axes[0].text(
+        0.04, 0.94,
+        rf"$\int d\alpha\,\pi={int_alpha:.3f}$",
+        transform=axes[0].transAxes, ha="left", va="top",
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.85),
+    )
+    axes[0].grid(alpha=0.22)
+
+    axes[1].plot(x, p_x, linewidth=2.5)
+    axes[1].axvline(beta, linewidth=1.2, color="black", linestyle="--",
+                    label=rf"center $x=\beta={beta:.2f}$")
+    axes[1].set_xlabel(r"$x=\beta+\xi\alpha$")
+    axes[1].set_ylabel(r"mapped weight density in $x$")
+    axes[1].set_title(
+        rf"Turn on $\xi={xi:.2f}$: that contribution spreads over $x$"
+    )
+    axes[1].text(
+        0.04, 0.94,
+        rf"$x\in[{x.min():.2f},{x.max():.2f}]$" + "\n"
+        + rf"$\int dx\,p_x={int_x:.3f}$",
+        transform=axes[1].transAxes, ha="left", va="top",
+        bbox=dict(boxstyle="round", facecolor="white", alpha=0.85),
+    )
+    axes[1].legend(fontsize=9)
+    axes[1].grid(alpha=0.22)
+
+    fig.suptitle(
+        r"Step 2C: finite skewness maps the DD variables through "
+        r"$x=\beta+\xi\alpha$",
+        fontsize=15,
+    )
+    fig.tight_layout(rect=[0, 0, 1, 0.93])
+    fig.savefig(figdir / "dfjk_step2c_beta_to_x_mapping.png", dpi=180)
+    plt.close(fig)
+
+    return {
+        "beta": beta,
+        "xi": xi,
+        "x_min": float(x.min()),
+        "x_max": float(x.max()),
+        "integral_alpha": float(int_alpha),
+        "integral_x": float(int_x),
+    }
 
 
 
@@ -979,6 +1068,7 @@ def main():
     make_b20_prior_map(figdir, tabdir)
     make_step2a_t_dependence(figdir, tabdir)
     make_step2b_skewness_profile(figdir, tabdir)
+    make_step2c_beta_to_x_mapping(figdir, tabdir)
 
     bsa = load_actual_rgb_bsa_directory(args.rgb_bsa_dir)
     bsa.to_csv(tabdir / "rgb_published_bsa_actual_points.csv", index=False)
@@ -994,7 +1084,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v18 — STEP 2B SKEWNESS PROFILE + RGB/RGA PROJECTIONS")
+    print("STAGE 5 v19 — STEP 2C BETA-TO-X SKEWNESS MAPPING + RGB/RGA PROJECTIONS")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -1030,7 +1120,10 @@ def main():
     print("    alpha = how longitudinal momentum transfer is shared")
     print(f"    fixed profile parameter b = {WORKSHOP_DD_PROFILE_B:.1f}")
     print("    integral d alpha pi_b(beta,alpha) = 1")
-    print("  NOT included yet: finite-xi E(x,xi,t), CFFs, or a DVCS fit.")
+    print("  Step 2C follows one beta contribution through x = beta + xi*alpha.")
+    print("    pedagogical example: beta=0.30, xi=0.20")
+    print("    this shows the mapping only; it is NOT yet the full GPD E(x,xi,t)")
+    print("  NOT included yet: sum/integral over all beta, CFFs, or a DVCS fit.")
     print()
     print(f"Actual published RGB BSA: loaded {len(bsa)} rows from {args.rgb_bsa_dir}")
     for projection in ["xB", "Q2", "t"]:
