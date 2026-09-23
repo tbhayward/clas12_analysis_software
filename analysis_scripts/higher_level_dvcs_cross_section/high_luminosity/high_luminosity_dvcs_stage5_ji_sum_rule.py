@@ -1448,6 +1448,62 @@ def _build_he_observable_rows(th, g, proton, rgb_xs, rgb_bsa, factor):
     return pd.DataFrame(obs)
 
 
+
+def _assign_rgb_rga_ptp_fraction(rgb_xs, proton_1x, obs_1x, scale=1.25):
+    """Assign each RGB XS point a conservative RGA-like relative PTP systematic.
+
+    The RGA relative PTP pattern is taken from the Stage-2 proton XS input and
+    matched to RGB by nearest (xB,Q2,|t|,phi) kinematics.  The assigned
+    fractional uncertainty is then multiplied by `scale` (default 1.25).
+    """
+    pobs = obs_1x[(obs_1x.target == "p") & (obs_1x.kind == "xs")].reset_index(drop=True)
+    pdat = proton_1x.reset_index(drop=True)
+    if len(pobs) != len(pdat):
+        raise RuntimeError(f"RGA PTP mapping mismatch: {len(pobs)} XS derivative rows vs {len(pdat)} Stage-2 rows")
+    rel = np.abs(pdat["xs_ptp_sys_pseudo_abs"].to_numpy(float)) / np.maximum(np.abs(pobs["y0"].to_numpy(float)), 1e-12)
+    coords = pdat[["xB","Q2","t_abs","phi_deg"]].to_numpy(float)
+    # Dimension scales only define the nearest-neighbour metric; they do not
+    # alter the RGA systematic values themselves.
+    scales = np.array([0.08, 0.8, 0.15, 30.0], dtype=float)
+    out=[]
+    for r in rgb_xs.itertuples(index=False):
+        q=np.array([r.xB,r.Q2_GeV2,r.t_abs_GeV2,r.phi_deg],dtype=float)
+        d=coords-q[None,:]
+        # phi is periodic.
+        d[:,3]=((d[:,3]+180.0)%360.0)-180.0
+        j=int(np.argmin(np.sum((d/scales[None,:])**2,axis=1)))
+        out.append(scale*rel[j])
+    return np.asarray(out,dtype=float)
+
+
+def _set_observable_uncertainties(obs_template, factor, proton_factor, rgb_xs, rgb_bsa, rgb_rel_ptp):
+    """Reuse luminosity-independent derivatives and update only uncertainties."""
+    obs=obs_template.copy()
+    # Proton rows: exact Stage-2 uncertainty prescription at this luminosity.
+    p_xs_idx=obs.index[(obs.target=="p")&(obs.kind=="xs")].to_numpy()
+    p_bsa_idx=obs.index[(obs.target=="p")&(obs.kind=="bsa")].to_numpy()
+    if len(p_xs_idx)!=len(proton_factor) or len(p_bsa_idx)!=len(proton_factor):
+        raise RuntimeError("Proton derivative/template row count does not match Stage-2 input")
+    obs.loc[p_xs_idx,"sigma"]=[math.hypot(float(r["xs_stat_pseudo_abs"]),float(r["xs_ptp_sys_pseudo_abs"])) for r in proton_factor.to_dict("records")]
+    obs.loc[p_bsa_idx,"sigma"]=[math.hypot(float(r["bsa_stat_pseudo_abs"]),float(r["bsa_ptp_sys_pseudo_abs"])) for r in proton_factor.to_dict("records")]
+
+    # RGB XS: statistical error scales as 1/sqrt(L); the assigned RGA-like PTP
+    # systematic is fixed with luminosity and is 1.25x the matched RGA fraction.
+    n_xs_idx=obs.index[(obs.target=="n")&(obs.kind=="xs")].to_numpy()
+    if len(n_xs_idx)!=len(rgb_xs):
+        raise RuntimeError("RGB XS derivative/template row count mismatch")
+    y=np.abs(obs.loc[n_xs_idx,"y0"].to_numpy(float))
+    relstat=rgb_xs["rel_stat"].to_numpy(float)/math.sqrt(factor)
+    obs.loc[n_xs_idx,"sigma"]=y*np.hypot(relstat,rgb_rel_ptp)
+
+    # RGB BSA: retain the published statistical projection used previously.
+    nb=rgb_bsa[rgb_bsa["projection"]=="t"].reset_index(drop=True)
+    n_bsa_idx=obs.index[(obs.target=="n")&(obs.kind=="bsa")].to_numpy()
+    if len(n_bsa_idx)!=len(nb):
+        raise RuntimeError("RGB BSA derivative/template row count mismatch")
+    obs.loc[n_bsa_idx,"sigma"]=np.abs(nb["stat"].to_numpy(float))/math.sqrt(factor)
+    return obs
+
 def _he_global_covariance(obs, include_neutron=False, neutron_kinds=None):
     """Profile local ReH/ImH while selecting the requested target/observable set."""
     if not include_neutron:
@@ -1569,40 +1625,27 @@ def make_ji_projection(contour_data, a20_mean, a20_cov, figdir, tabdir):
     out.to_csv(tabdir/"ji_valence_projection_summary.csv", index=False)
 
     labels={
-        "p_1x": r"$p$ 1x: local flavor-degeneracy direction",
-        "p_10x": r"$p$ 10x: local flavor-degeneracy direction",
-        "p1x_plus_n1x": r"$p$ 1x + $n$ 1x: 68% contour",
-        "p10x_plus_n10x": r"$p$ 10x + $n$ 10x: 68% contour",
+        "p1x_plus_n1x": r"$p+n$ 1x: 68% contour",
+        "p5x_plus_n5x": r"$p+n$ 5x: 68% contour",
+        "p10x_plus_n10x": r"$p+n$ 10x: 68% contour",
     }
     fig,ax=plt.subplots(figsize=(7.4,6.2))
-    pn=[]
+    pts_all=[]
     for name,mean,cov in ji_data:
-        if name.startswith("p1x_plus") or name.startswith("p10x_plus"):
-            pts=_ellipse_points(mean,cov)
-            pn.append(pts)
-            ax.plot(pts[:,0],pts[:,1],linewidth=2.6,label=labels[name])
-    allpn=np.vstack(pn)
+        pts=_ellipse_points(mean,cov); pts_all.append(pts)
+        ax.plot(pts[:,0],pts[:,1],linewidth=2.6,label=labels[name])
+    allpn=np.vstack(pts_all)
     xmin,xmax=float(allpn[:,0].min()),float(allpn[:,0].max())
     ymin,ymax=float(allpn[:,1].min()),float(allpn[:,1].max())
     dx=max(xmax-xmin,0.04); dy=max(ymax-ymin,0.04)
-    xmin-=0.35*dx; xmax+=0.35*dx; ymin-=0.35*dy; ymax+=0.35*dy
-    for name,mean,cov in ji_data:
-        if name not in ("p_1x","p_10x"): continue
-        vals,vecs=np.linalg.eigh(cov); v=vecs[:,int(np.argmax(vals))]
-        tt=np.linspace(-20,20,2000)
-        line=mean[None,:]+tt[:,None]*v[None,:]
-        keep=(line[:,0]>=xmin)&(line[:,0]<=xmax)&(line[:,1]>=ymin)&(line[:,1]<=ymax)
-        line=line[keep]
-        ax.plot(line[:,0],line[:,1],linestyle="--",linewidth=1.8,alpha=.75,label=labels[name])
+    xmin-=0.25*dx; xmax+=0.25*dx; ymin-=0.25*dy; ymax+=0.25*dy
     ref=ji_data[0][1]
     ax.scatter([ref[0]],[ref[1]],marker="*",s=120,label="reference model",zorder=5)
     ax.set_xlim(xmin,xmax); ax.set_ylim(ymin,ymax)
     ax.set_xlabel(r"$J_{u_v}$"); ax.set_ylabel(r"$J_{d_v}$")
     ax.set_title(r"Projected valence Ji sum-rule flavor separation at $Q^2=3\,\mathrm{GeV}^2$")
     ax.grid(alpha=.22); ax.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(figdir/"ji_uv_dv_projected_contours.png",dpi=200)
-    plt.close(fig)
+    fig.tight_layout(); fig.savefig(figdir/"ji_uv_dv_projected_contours.png",dpi=200); plt.close(fig)
     return out
 
 
@@ -1625,32 +1668,44 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
     contour_data = []
     obs_by_factor = {}
 
-    # Build the expensive observable response only once at each luminosity.
-    # Reuse the saved derivative table on later runs.  Delete the cache file
-    # deliberately if the observable model, finite-difference setup, or inputs
-    # are changed and a fresh derivative calculation is required.
-    for factor in (1, 10):
-        cache_file = tabdir / f"he_observable_derivatives_{factor}x.csv"
+    # The observable derivatives themselves do not depend on luminosity.  Build
+    # them once (or load the existing 1x cache), then change only the uncertainty
+    # model for 1x/5x/10x.  This avoids repeated slow Gepard derivative calls.
+    cache_file = tabdir / "he_observable_derivatives_1x.csv"
+    if cache_file.exists():
+        print("[Stage5 H+E] loading cached observable derivatives ...")
+        obs_template = pd.read_csv(cache_file)
+        print(f"[Stage5 H+E] using cached derivatives: {cache_file}")
+    else:
+        print("[Stage5 H+E] building observable derivatives once ...")
+        p1 = _load_stage2_proton_inputs(stage2_dir, 1)
+        obs_template = _build_he_observable_rows(th, g, p1, rgb_xs, rgb_bsa, 1)
+        obs_template.to_csv(cache_file, index=False)
+        print(f"[Stage5 H+E] cached observable derivatives: {cache_file}")
 
-        if cache_file.exists():
-            print(f"[Stage5 H+E] loading cached observable derivatives at {factor}x ...")
-            obs = pd.read_csv(cache_file)
-            print(f"[Stage5 H+E] using cached derivatives: {cache_file}")
-        else:
-            print(f"[Stage5 H+E] building observable derivatives at {factor}x ...")
-            p = _load_stage2_proton_inputs(stage2_dir, factor)
-            obs = _build_he_observable_rows(th, g, p, rgb_xs, rgb_bsa, factor)
-            obs.to_csv(cache_file, index=False)
-            print(f"[Stage5 H+E] cached observable derivatives: {cache_file}")
+    p1 = _load_stage2_proton_inputs(stage2_dir, 1)
+    rgb_rel_ptp = _assign_rgb_rga_ptp_fraction(rgb_xs, p1, obs_template, scale=1.25)
+    pd.DataFrame({
+        "kin_bin": rgb_xs["kin_bin"].to_numpy(),
+        "phi_deg": rgb_xs["phi_deg"].to_numpy(),
+        "xB": rgb_xs["xB"].to_numpy(),
+        "Q2_GeV2": rgb_xs["Q2_GeV2"].to_numpy(),
+        "t_abs_GeV2": rgb_xs["t_abs_GeV2"].to_numpy(),
+        "assigned_RGA_ptp_frac_times_1p25": rgb_rel_ptp,
+    }).to_csv(tabdir/"rgb_assigned_rga_ptp_systematics.csv",index=False)
+    print(f"[Stage5 H+E] RGB XS assigned RGA-like PTP: median={100*np.median(rgb_rel_ptp):.2f}% (includes 1.25x scale)")
 
-        obs_by_factor[factor] = obs
+    for factor in (1, 5, 10):
+        pf = _load_stage2_proton_inputs(stage2_dir, factor)
+        obs_by_factor[factor] = _set_observable_uncertainties(
+            obs_template, factor, pf, rgb_xs, rgb_bsa, rgb_rel_ptp
+        )
 
     # Four conference-facing scenarios.  p10x is deliberately included so the
     # plot separates "more proton statistics" from "new neutron flavor info".
     configs = [
-        ("p_1x",               1,  False, None),
-        ("p_10x",             10,  False, None),
         ("p1x_plus_n1x",       1,  True,  ("xs","bsa")),
+        ("p5x_plus_n5x",       5,  True,  ("xs","bsa")),
         ("p10x_plus_n10x",    10,  True,  ("xs","bsa")),
     ]
 
@@ -1684,7 +1739,7 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
 
     # Neutron ablation: diagnostic only, not extra conference contours.
     ablations = []
-    for factor in (1, 10):
+    for factor in (1, 5, 10):
         for label, kinds in [
             ("proton_only", None),
             ("plus_neutron_XS_only", ("xs",)),
@@ -1706,61 +1761,29 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
     ablation_df = pd.DataFrame(ablations)
     ablation_df.to_csv(tabdir/"b20_neutron_observable_ablation.csv", index=False)
 
-    # Conference-facing B20 figure.  The p-only solutions are deliberately
-    # shown as local degeneracy DIRECTIONS, not closed confidence ellipses.
-    # Their covariance extends far outside the positive-beta model family, so
-    # drawing the giant Gaussian ellipses as literal 68% regions is misleading.
-    # The p+n contours are sufficiently local and are shown as quantitative
-    # 68% (Delta chi2=2.30) contours.
+    # Conference-facing B20 figure: only the quantitative p+n contours.
     fig, ax = plt.subplots(figsize=(7.4,6.2))
     labels = {
-        "p_1x": r"$p$ 1x: local flavor-degeneracy direction",
-        "p_10x": r"$p$ 10x: local flavor-degeneracy direction",
-        "p1x_plus_n1x": r"$p$ 1x + $n$ 1x: 68% contour",
-        "p10x_plus_n10x": r"$p$ 10x + $n$ 10x: 68% contour",
+        "p1x_plus_n1x": r"$p+n$ 1x: 68% contour",
+        "p5x_plus_n5x": r"$p+n$ 5x: 68% contour",
+        "p10x_plus_n10x": r"$p+n$ 10x: 68% contour",
     }
-
-    # First draw the quantitative p+n contours and use them to define a
-    # presentation-scale window around the reference point.
-    pn_pts = []
+    allpts=[]
     for name, mean, cov, betacov in contour_data:
-        if name.startswith("p1x_plus") or name.startswith("p10x_plus"):
-            pts = _ellipse_points(mean, cov)
-            pn_pts.append(pts)
-            ax.plot(pts[:,0], pts[:,1], linewidth=2.6, label=labels[name])
-
-    allpn = np.vstack(pn_pts)
-    xmin, xmax = float(allpn[:,0].min()), float(allpn[:,0].max())
-    ymin, ymax = float(allpn[:,1].min()), float(allpn[:,1].max())
-    dx=max(xmax-xmin, 0.08); dy=max(ymax-ymin, 0.08)
-    xmin -= 0.35*dx; xmax += 0.35*dx
-    ymin -= 0.35*dy; ymax += 0.35*dy
-
-    # Show only the major-axis direction for p-only.  A line has no endpoints
-    # and therefore makes no quantitative confidence-boundary claim.
-    for name, mean, cov, betacov in contour_data:
-        if name not in ("p_1x", "p_10x"):
-            continue
-        vals, vecs = np.linalg.eigh(cov)
-        v = vecs[:, int(np.argmax(vals))]
-        # Intersect a long line through the reference point with plot window.
-        tt = np.linspace(-20.0, 20.0, 2000)
-        line = mean[None,:] + tt[:,None]*v[None,:]
-        keep=(line[:,0]>=xmin)&(line[:,0]<=xmax)&(line[:,1]>=ymin)&(line[:,1]<=ymax)
-        line=line[keep]
-        ax.plot(line[:,0], line[:,1], linestyle="--", linewidth=1.8,
-                alpha=0.75, label=labels[name])
-
-    ax.scatter([mean_b20[0]], [mean_b20[1]], marker="*", s=120,
-               label="reference model", zorder=5)
+        pts=_ellipse_points(mean,cov)
+        allpts.append(pts)
+        ax.plot(pts[:,0],pts[:,1],linewidth=2.6,label=labels[name])
+    allpn=np.vstack(allpts)
+    xmin,xmax=float(allpn[:,0].min()),float(allpn[:,0].max())
+    ymin,ymax=float(allpn[:,1].min()),float(allpn[:,1].max())
+    dx=max(xmax-xmin,0.08); dy=max(ymax-ymin,0.08)
+    xmin-=0.25*dx; xmax+=0.25*dx; ymin-=0.25*dy; ymax+=0.25*dy
+    ax.scatter([mean_b20[0]],[mean_b20[1]],marker="*",s=120,label="reference model",zorder=5)
     ax.set_xlim(xmin,xmax); ax.set_ylim(ymin,ymax)
-    ax.set_xlabel(r"$B_{20}^{u_v}(0)$")
-    ax.set_ylabel(r"$B_{20}^{d_v}(0)$")
+    ax.set_xlabel(r"$B_{20}^{u_v}(0)$"); ax.set_ylabel(r"$B_{20}^{d_v}(0)$")
     ax.set_title(r"Projected valence flavor separation allowing $\mathcal{H}$ to vary")
     ax.grid(alpha=.22); ax.legend(fontsize=8)
-    fig.tight_layout()
-    fig.savefig(figdir/"b20_uv_dv_he_marginalized_contours.png", dpi=200)
-    plt.close(fig)
+    fig.tight_layout(); fig.savefig(figdir/"b20_uv_dv_he_marginalized_contours.png",dpi=200); plt.close(fig)
 
     # Remove stale v26 nonlinear-validation products so the output directory
     # reflects the current production analysis after an in-place rerun.
@@ -1873,7 +1896,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v28 — VALENCE p+n H+E → Ji PROJECTION")
+    print("STAGE 5 v29 — VALENCE p+n H+E → Ji PROJECTION")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -1956,7 +1979,7 @@ def main():
     print("  ReH,ImH are free local nuisance parameters in every p/n kinematic cell")
     print("  therefore H is constrained by the same RGA/RGB observables, not held fixed")
     print("  neutron fit uses preliminary XS plus ONE published BSA projection (t)")
-    print("  neutron XS systematics remain excluded from this first contour because their covariance is unresolved")
+    print("  neutron XS uses an RGA point-to-point systematic pattern, matched in kinematics and scaled by 1.25x")
     print("  p-only closed B20 ellipses are not plotted: their local beta covariance leaves the intended model domain")
     print("  p-only dashed lines show only the locally constrained flavor direction")
     print("  p+n contours are the quantitative 68% regions used for the workshop projection")
