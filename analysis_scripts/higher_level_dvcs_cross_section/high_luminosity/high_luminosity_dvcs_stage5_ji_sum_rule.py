@@ -34,6 +34,48 @@ Published RGB nDVCS BSA:
 
 Output:
   output/stage5_ji/
+
+World-comparison sources used by the Ji comparison figure
+---------------------------------------------------------
+The numerical literature inputs below are intentionally documented here so a
+future rerun can recover exactly what was plotted and why.
+
+HERMES proton DVCS transverse-target constraint (full-flavor Ju,Jd, NOT
+valence-only):
+  HERMES Collaboration / Airapetian et al., 2008 result as summarized in
+  Aidala et al., Rev. Mod. Phys. 85, 655 (2013):
+      Ju + Jd/2.8 = 0.49 +/- 0.17 (experimental)
+  https://cds.cern.ch/record/1478050/files/RevModPhys.85.655.pdf
+  The HERMES 2002--04 preliminary form was Ju + Jd/2.9 = 0.42 +/- 0.21
+  (exp_tot) +/- 0.06 model; see the HERMES/DESY transparency archive.
+  IMPORTANT: the HERMES archive explicitly warns that its old 2008 Ju-vs-Jd
+  conference plot should no longer be shown because the Dual-model curve had a
+  theory error and the remaining VGG variants did not describe all HERMES data.
+  We therefore reconstruct ONLY the published one-dimensional VGG/DD constraint
+  above; we do not reproduce the deprecated HERMES plot.
+  Archive: https://www.desy.de/~w3hermes/trans-public-author.html
+
+Diehl--Kroll elastic-form-factor GPD extraction (VALENCE):
+  M. Diehl and P. Kroll, Eur. Phys. J. C 73, 2397 (2013), arXiv:1302.4604
+  https://arxiv.org/abs/1302.4604
+      J_uv = 0.230 +0.009 -0.024
+      J_dv = -0.004 +0.010 -0.016
+  quoted at mu = 2 GeV.
+
+Cichy--Constantinou--Sznajder--Wagner elastic+lattice extraction (VALENCE):
+  K. Cichy et al., Phys. Rev. D 110, 114025 (2024)
+  https://doi.org/10.1103/PhysRevD.110.114025
+      J_uv = 0.195 +/- 0.010
+      J_dv = 0.0173 +/- 0.0046
+  Values are also explicitly tabulated in P. Sznajder's BNL 2024 GPD slides:
+  https://indico.bnl.gov/event/24891/contributions/96844/attachments/58671/100775/BNL24_SB.pdf
+
+Comparability warning:
+  The CLAS12 projection, Diehl--Kroll, and Cichy et al. entries are valence
+  quantities.  HERMES is a historical full-flavor Ju,Jd model constraint.
+  It is drawn only as a historical direct-DVCS sensitivity benchmark and is
+  labeled as such on the figure; it is NOT treated as an apples-to-apples
+  valence determination.
 """
 
 from __future__ import annotations
@@ -1476,16 +1518,26 @@ def _assign_rgb_rga_ptp_fraction(rgb_xs, proton_1x, obs_1x, scale=1.25):
     return np.asarray(out,dtype=float)
 
 
-def _set_observable_uncertainties(obs_template, factor, proton_factor, rgb_xs, rgb_bsa, rgb_rel_ptp):
-    """Reuse luminosity-independent derivatives and update only uncertainties."""
+def _set_observable_uncertainties(obs_template, factor, proton_factor, rgb_xs, rgb_bsa, rgb_rel_ptp, include_ptp=True):
+    """Reuse luminosity-independent derivatives and update only uncertainties.
+
+    include_ptp=True is the conference baseline: RGA uses its measured PTP
+    systematics and RGB XS receives the matched RGA PTP pattern scaled by 1.25.
+    include_ptp=False is the strict statistics-only backup: ALL RGA XS/BSA PTP
+    terms and the assigned RGB XS PTP term are removed.
+    """
     obs=obs_template.copy()
     # Proton rows: exact Stage-2 uncertainty prescription at this luminosity.
     p_xs_idx=obs.index[(obs.target=="p")&(obs.kind=="xs")].to_numpy()
     p_bsa_idx=obs.index[(obs.target=="p")&(obs.kind=="bsa")].to_numpy()
     if len(p_xs_idx)!=len(proton_factor) or len(p_bsa_idx)!=len(proton_factor):
         raise RuntimeError("Proton derivative/template row count does not match Stage-2 input")
-    obs.loc[p_xs_idx,"sigma"]=[math.hypot(float(r["xs_stat_pseudo_abs"]),float(r["xs_ptp_sys_pseudo_abs"])) for r in proton_factor.to_dict("records")]
-    obs.loc[p_bsa_idx,"sigma"]=[math.hypot(float(r["bsa_stat_pseudo_abs"]),float(r["bsa_ptp_sys_pseudo_abs"])) for r in proton_factor.to_dict("records")]
+    if include_ptp:
+        obs.loc[p_xs_idx,"sigma"]=[math.hypot(float(r["xs_stat_pseudo_abs"]),float(r["xs_ptp_sys_pseudo_abs"])) for r in proton_factor.to_dict("records")]
+        obs.loc[p_bsa_idx,"sigma"]=[math.hypot(float(r["bsa_stat_pseudo_abs"]),float(r["bsa_ptp_sys_pseudo_abs"])) for r in proton_factor.to_dict("records")]
+    else:
+        obs.loc[p_xs_idx,"sigma"]=[abs(float(r["xs_stat_pseudo_abs"])) for r in proton_factor.to_dict("records")]
+        obs.loc[p_bsa_idx,"sigma"]=[abs(float(r["bsa_stat_pseudo_abs"])) for r in proton_factor.to_dict("records")]
 
     # RGB XS: statistical error scales as 1/sqrt(L); the assigned RGA-like PTP
     # systematic is fixed with luminosity and is 1.25x the matched RGA fraction.
@@ -1494,7 +1546,7 @@ def _set_observable_uncertainties(obs_template, factor, proton_factor, rgb_xs, r
         raise RuntimeError("RGB XS derivative/template row count mismatch")
     y=np.abs(obs.loc[n_xs_idx,"y0"].to_numpy(float))
     relstat=rgb_xs["rel_stat"].to_numpy(float)/math.sqrt(factor)
-    obs.loc[n_xs_idx,"sigma"]=y*np.hypot(relstat,rgb_rel_ptp)
+    obs.loc[n_xs_idx,"sigma"]=y*(np.hypot(relstat,rgb_rel_ptp) if include_ptp else relstat)
 
     # RGB BSA: retain the published statistical projection used previously.
     nb=rgb_bsa[rgb_bsa["projection"]=="t"].reset_index(drop=True)
@@ -1592,7 +1644,7 @@ def _corr_from_cov(cov):
     return float(cov[0,1]/den)
 
 
-def make_ji_projection(contour_data, a20_mean, a20_cov, figdir, tabdir):
+def make_ji_projection(contour_data, a20_mean, a20_cov, figdir, tabdir, tag="baseline"):
     """Combine external A20 with projected B20 using the valence Ji sum rule.
 
       J_qv = 1/2 (A20_qv + B20_qv)
@@ -1622,7 +1674,7 @@ def make_ji_projection(contour_data, a20_mean, a20_cov, figdir, tabdir):
             corr_J=_corr_from_cov(jcov),
         ))
     out=pd.DataFrame(rows)
-    out.to_csv(tabdir/"ji_valence_projection_summary.csv", index=False)
+    out.to_csv(tabdir/("ji_valence_projection_summary.csv" if tag=="baseline" else f"ji_valence_projection_summary_{tag}.csv"), index=False)
 
     labels={
         "p1x_plus_n1x": r"$p+n$ 1x: 68% contour",
@@ -1645,8 +1697,80 @@ def make_ji_projection(contour_data, a20_mean, a20_cov, figdir, tabdir):
     ax.set_xlabel(r"$J_{u_v}$"); ax.set_ylabel(r"$J_{d_v}$")
     ax.set_title(r"Projected valence Ji sum-rule flavor separation at $Q^2=3\,\mathrm{GeV}^2$")
     ax.grid(alpha=.22); ax.legend(fontsize=8)
-    fig.tight_layout(); fig.savefig(figdir/"ji_uv_dv_projected_contours.png",dpi=200); plt.close(fig)
+    fig.tight_layout()
+    fname = "ji_uv_dv_projected_contours.png" if tag=="baseline" else f"ji_uv_dv_projected_contours_{tag}.png"
+    fig.savefig(figdir/fname,dpi=200); plt.close(fig)
     return out
+
+
+def make_ji_world_comparison(ji_summary, figdir, tabdir):
+    """World-context plot for the Stage-5 valence Ji projection.
+
+    The CLAS12 contours and the two modern elastic/lattice points are valence
+    quantities.  The HERMES band is *not*: it is the historical full-flavor
+    proton-DVCS model constraint Ju + Jd/2.8 = 0.49 +/- 0.17.  It is included
+    only to show the scale/direction of the early direct-DVCS constraint.
+
+    Literature numbers and URLs are documented in the module docstring.
+    No covariance between J_uv and J_dv is published with the compact Cichy or
+    Diehl--Kroll numbers used here, so they are shown as marginal x/y error bars,
+    NOT reconstructed 2D confidence ellipses.
+    """
+    rows = [
+        dict(source="HERMES 2008 proton DVCS (full flavor)", kind="full_flavor_band",
+             Ju=np.nan, Jd=np.nan, Ju_lo=np.nan, Ju_hi=np.nan, Jd_lo=np.nan, Jd_hi=np.nan,
+             note="Ju + Jd/2.8 = 0.49 +/- 0.17 exp; historical full-flavor VGG/DD constraint"),
+        dict(source="Diehl-Kroll 2013 elastic FF (valence)", kind="valence_point",
+             Ju=0.230, Jd=-0.004, Ju_lo=0.024, Ju_hi=0.009, Jd_lo=0.016, Jd_hi=0.010,
+             note="EPJC 73, 2397 (2013), arXiv:1302.4604; mu=2 GeV"),
+        dict(source="Cichy et al. 2024 elastic+lattice (valence)", kind="valence_point",
+             Ju=0.195, Jd=0.0173, Ju_lo=0.010, Ju_hi=0.010, Jd_lo=0.0046, Jd_hi=0.0046,
+             note="PRD 110, 114025 (2024)"),
+    ]
+    pd.DataFrame(rows).to_csv(tabdir/"ji_world_comparison_literature_inputs.csv", index=False)
+
+    fig, ax = plt.subplots(figsize=(8.0,6.4))
+
+    # Historical HERMES direct-DVCS band.  Axes are Ju horizontal, Jd vertical.
+    # Central relation: Jd = 2.8*(0.49-Ju); +/-0.17 widens the band in the
+    # measured linear combination.  This is full flavor, not valence.
+    xu = np.linspace(0.05, 0.36, 400)
+    yd_c = 2.8*(0.49-xu)
+    yd_lo = 2.8*((0.49-0.17)-xu)
+    yd_hi = 2.8*((0.49+0.17)-xu)
+    ax.fill_between(xu, yd_lo, yd_hi, alpha=0.13,
+                    label=r"HERMES DVCS: $J_u+J_d/2.8=0.49\pm0.17$ (full flavor)")
+    ax.plot(xu, yd_c, linewidth=1.4, alpha=0.65)
+
+    # Current Stage-5 projected valence contours.
+    labels = {1:r"CLAS12 $p+n$ 1x (valence)", 5:r"CLAS12 $p+n$ 5x (valence)",
+              10:r"CLAS12 $p+n$ 10x (valence)"}
+    for L in (1,5,10):
+        r = ji_summary[ji_summary["scenario"]==f"p{L}x_plus_n{L}x"].iloc[0]
+        mean=np.array([r.J_uv,r.J_dv],float)
+        su,sd=float(r.sigma_J_uv),float(r.sigma_J_dv); rho=float(r.corr_J)
+        cov=np.array([[su*su,rho*su*sd],[rho*su*sd,sd*sd]])
+        pts=_ellipse_points(mean,cov)
+        ax.plot(pts[:,0],pts[:,1],linewidth=2.4,label=labels[L])
+
+    # Directly comparable valence determinations.  These are marginal error bars
+    # because a 2D covariance is not supplied by the compact published numbers.
+    ax.errorbar(0.230,-0.004,xerr=np.array([[0.024],[0.009]]),
+                yerr=np.array([[0.016],[0.010]]),fmt="s",capsize=3,markersize=6,
+                label="Diehl-Kroll 2013 elastic FF (valence)")
+    ax.errorbar(0.195,0.0173,xerr=0.010,yerr=0.0046,fmt="D",capsize=3,markersize=6,
+                label="Cichy et al. 2024 elastic+lattice (valence)")
+
+    ax.axhline(0,linewidth=0.8,alpha=0.25); ax.axvline(0,linewidth=0.8,alpha=0.25)
+    ax.set_xlim(0.05,0.36); ax.set_ylim(-0.22,0.42)
+    ax.set_xlabel(r"$J_u$ or $J_{u_v}$")
+    ax.set_ylabel(r"$J_d$ or $J_{d_v}$")
+    ax.set_title("Projected CLAS12 valence Ji constraints in world context")
+    ax.text(0.02,0.02,"HERMES band is full flavor; all other entries shown are valence.\n"
+            "Literature point error bars are marginal uncertainties, not 2D covariances.",
+            transform=ax.transAxes,fontsize=8,va="bottom")
+    ax.grid(alpha=.20); ax.legend(fontsize=7.4,loc="upper right")
+    fig.tight_layout(); fig.savefig(figdir/"ji_world_comparison.png",dpi=200); plt.close(fig)
 
 
 def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_mean, a20_cov):
@@ -1667,6 +1791,7 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
     scenarios = []
     contour_data = []
     obs_by_factor = {}
+    obs_by_factor_stat_only = {}
 
     # The observable derivatives themselves do not depend on luminosity.  Build
     # them once (or load the existing 1x cache), then change only the uncertainty
@@ -1698,7 +1823,10 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
     for factor in (1, 5, 10):
         pf = _load_stage2_proton_inputs(stage2_dir, factor)
         obs_by_factor[factor] = _set_observable_uncertainties(
-            obs_template, factor, pf, rgb_xs, rgb_bsa, rgb_rel_ptp
+            obs_template, factor, pf, rgb_xs, rgb_bsa, rgb_rel_ptp, include_ptp=True
+        )
+        obs_by_factor_stat_only[factor] = _set_observable_uncertainties(
+            obs_template, factor, pf, rgb_xs, rgb_bsa, rgb_rel_ptp, include_ptp=False
         )
 
     # Four conference-facing scenarios.  p10x is deliberately included so the
@@ -1733,6 +1861,22 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
             sigma_B20_dv=math.sqrt(max(bcov[1,1],0)),
             corr_B20=float(bcov[0,1]/math.sqrt(max(bcov[0,0]*bcov[1,1],1e-300)))
         ))
+
+    # Strict statistics-only backup: remove PTP terms from BOTH RGA and RGB.
+    stat_contour_data=[]
+    stat_rows=[]
+    for name, factor, incn, nkinds in configs:
+        cov, layout, rank, npar, nrow = _he_global_covariance(
+            obs_by_factor_stat_only[factor], incn, nkinds
+        )
+        bcov, betacov = _b20_covariance_from_beta(cov, layout)
+        stat_contour_data.append((name, mean_b20.copy(), bcov, betacov))
+        stat_rows.append(dict(
+            scenario=name, luminosity_factor=factor, n_rows=nrow, n_parameters=npar, rank=rank,
+            sigma_B20_uv=math.sqrt(max(bcov[0,0],0)),
+            sigma_B20_dv=math.sqrt(max(bcov[1,1],0)),
+            corr_B20=_corr_from_cov(bcov)))
+    pd.DataFrame(stat_rows).to_csv(tabdir/"b20_he_projection_summary_stat_only.csv",index=False)
 
     summary = pd.DataFrame(scenarios)
     summary.to_csv(tabdir/"b20_he_projection_summary.csv", index=False)
@@ -1785,6 +1929,21 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
     ax.grid(alpha=.22); ax.legend(fontsize=8)
     fig.tight_layout(); fig.savefig(figdir/"b20_uv_dv_he_marginalized_contours.png",dpi=200); plt.close(fig)
 
+    # Statistics-only B20 backup figure.
+    fig, ax = plt.subplots(figsize=(7.4,6.2))
+    allpts=[]
+    for name, mean, cov, betacov in stat_contour_data:
+        pts=_ellipse_points(mean,cov); allpts.append(pts)
+        ax.plot(pts[:,0],pts[:,1],linewidth=2.6,label=labels[name])
+    allpn=np.vstack(allpts); xmin,xmax=allpn[:,0].min(),allpn[:,0].max(); ymin,ymax=allpn[:,1].min(),allpn[:,1].max()
+    dx=max(xmax-xmin,0.08); dy=max(ymax-ymin,0.08)
+    ax.set_xlim(xmin-.25*dx,xmax+.25*dx); ax.set_ylim(ymin-.25*dy,ymax+.25*dy)
+    ax.scatter([mean_b20[0]],[mean_b20[1]],marker="*",s=120,label="reference model",zorder=5)
+    ax.set_xlabel(r"$B_{20}^{u_v}(0)$"); ax.set_ylabel(r"$B_{20}^{d_v}(0)$")
+    ax.set_title(r"Projected valence flavor separation — statistics only")
+    ax.grid(alpha=.22); ax.legend(fontsize=8); fig.tight_layout()
+    fig.savefig(figdir/"b20_uv_dv_he_marginalized_contours_stat_only.png",dpi=200); plt.close(fig)
+
     # Remove stale v26 nonlinear-validation products so the output directory
     # reflects the current production analysis after an in-place rerun.
     for stale in (figdir/"b20_exact_beta_mapping_validation.png",
@@ -1792,7 +1951,11 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
         if stale.exists():
             stale.unlink()
 
-    ji_summary = make_ji_projection(contour_data, a20_mean, a20_cov, figdir, tabdir)
+    ji_summary = make_ji_projection(contour_data, a20_mean, a20_cov, figdir, tabdir, tag="baseline")
+    ji_summary_stat = make_ji_projection(stat_contour_data, a20_mean, a20_cov, figdir, tabdir, tag="stat_only")
+    make_ji_world_comparison(ji_summary, figdir, tabdir)
+    print("\n[Stage5 H+E] strict statistics-only Ji projection (all RGA/RGB PTP removed):")
+    print(ji_summary_stat.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
 
     print("\n[Stage5 H+E] neutron observable ablation:")
     print(ablation_df.to_string(index=False))
