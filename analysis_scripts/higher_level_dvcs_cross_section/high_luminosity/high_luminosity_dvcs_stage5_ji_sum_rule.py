@@ -41,7 +41,7 @@ from __future__ import annotations
 import argparse
 import re
 import math
-import re
+import contextlib
 from pathlib import Path
 
 import numpy as np
@@ -1195,6 +1195,323 @@ def rga_binning_transfer_projection(rgb_bsa: pd.DataFrame, rga_bsa: pd.DataFrame
 
     return summary, points
 
+
+# ---------------------------------------------------------------------------
+# Stage-5 production p+n H+E projection
+# ---------------------------------------------------------------------------
+#
+# This is the first conference-facing fit.  beta_u and beta_d are global E_v
+# shape parameters.  ReH and ImH are NOT fixed: every proton/neutron kinematic
+# cell receives its own local H nuisance pair, constrained by the same XS+BSA
+# rows used in the fit.  Thus the 1x -> 10x improvement of H is propagated
+# automatically rather than imposed as an external percentage prior.
+#
+# E is mapped to ReE/ImE at leading order from the finite-xi DD model.  Gepard
+# is then used only for the observable response (BH+DVCS+interference) to the
+# resulting CFF changes.  This is intentionally a workshop projection, not a
+# global GPD extraction.
+
+STAGE5_BETA_STEP_U = 0.08
+STAGE5_BETA_STEP_D = 0.10
+STAGE5_MIN_NPHI = 3
+
+
+def _cff_owner_stage5(th, name):
+    candidates = [th.m] if hasattr(th, "m") else []
+    candidates.append(th)
+    for obj in candidates:
+        if hasattr(obj, name) and callable(getattr(obj, name)):
+            return obj
+    raise AttributeError(f"Could not find callable Gepard CFF method {name}")
+
+
+@contextlib.contextmanager
+def _shifted_cffs_stage5(th, shifts):
+    saved = []
+    try:
+        for name, shift in shifts.items():
+            owner = _cff_owner_stage5(th, name)
+            old = getattr(owner, name)
+            setattr(owner, name, lambda pt, _old=old, _s=float(shift):
+                    float(_old(pt)) + _s)
+            saved.append((owner, name, old))
+        yield
+    finally:
+        for owner, name, old in reversed(saved):
+            setattr(owner, name, old)
+
+
+def _make_gepard_point_stage5(g, xB, Q2, t_abs, phi_deg, ebeam,
+                              target="p", helicity=0):
+    pt = g.DataPoint(
+        xB=float(xB), t=-abs(float(t_abs)), Q2=float(Q2),
+        phi=math.pi - math.radians(float(phi_deg)),
+        observable="XS", frame="trento", process="ep2epgamma",
+        exptype="fixed target", in1energy=float(ebeam), in1charge=-1,
+        in1polarization=int(helicity), in2particle=str(target),
+    )
+    pt.prepare()
+    return pt
+
+
+def _bsa_gepard_stage5(th, pp, pm):
+    sp, sm = float(th.predict(pp)), float(th.predict(pm))
+    return (sp-sm)/(sp+sm) if np.isfinite(sp+sm) and abs(sp+sm)>1e-30 else np.nan
+
+
+def _lo_flavor_E_cff(beta_u, beta_d, xB, t_abs, target):
+    """Workshop LO CFF E from the finite-xi valence DD model.
+
+    Convention used internally:
+      Re E = PV int_-1^1 dx E(x,xi,t)[1/(xi-x)-1/(xi+x)]
+      Im E = pi [E(xi,xi,t)-E(-xi,xi,t)].
+
+    Proton charge weights are 4/9 u + 1/9 d; neutron interchanges u,d by
+    isospin.  Only *changes* around the reference beta point drive the
+    projected covariance, which reduces sensitivity to an overall CFF sign
+    convention.
+    """
+    xi = float(xB)/(2.0-float(xB))
+    t = -abs(float(t_abs))
+    # Dense full support; avoid evaluating exactly at +/-xi in the subtracted
+    # principal-value integrands.
+    xneg = np.linspace(-xi, -1.0e-6, 220, endpoint=True)
+    xpos = np.unique(np.concatenate([
+        np.geomspace(1.0e-6, 0.03, 260),
+        np.linspace(0.03, 1.0-1.0e-6, 520),
+    ]))
+    x = np.unique(np.concatenate([xneg, xpos]))
+
+    def one(kappa, beta_e):
+        E = ev_finite_xi(x, xi, t, kappa, DFJK_ALPHA_E, beta_e,
+                         WORKSHOP_E_T_SLOPE, WORKSHOP_DD_PROFILE_B,
+                         n_beta=1100)
+        Ep = float(ev_finite_xi(xi, xi, t, kappa, DFJK_ALPHA_E, beta_e,
+                                WORKSHOP_E_T_SLOPE, WORKSHOP_DD_PROFILE_B,
+                                n_beta=1400))
+        Em = float(ev_finite_xi(-xi, xi, t, kappa, DFJK_ALPHA_E, beta_e,
+                                WORKSHOP_E_T_SLOPE, WORKSHOP_DD_PROFILE_B,
+                                n_beta=1400))
+        # Subtracted PV forms are finite at x=+/-xi.
+        d1 = xi-x
+        d2 = xi+x
+        f1 = np.where(np.abs(d1)>2e-6, (E-Ep)/d1, 0.0)
+        f2 = np.where(np.abs(d2)>2e-6, (E-Em)/d2, 0.0)
+        logpv = math.log((1.0+xi)/(1.0-xi))
+        re = np.trapezoid(f1, x) + Ep*logpv \
+             - np.trapezoid(f2, x) - Em*logpv
+        im = math.pi*(Ep-Em)
+        return float(re), float(im)
+
+    ru, iu = one(KAPPA_U, beta_u)
+    rd, id_ = one(KAPPA_D, beta_d)
+    if str(target).lower().startswith("n"):
+        return (4.0*rd+ru)/9.0, (4.0*id_+iu)/9.0
+    return (4.0*ru+rd)/9.0, (4.0*iu+id_)/9.0
+
+
+def _load_stage2_proton_inputs(stage2_dir: Path, factor: int):
+    p = stage2_dir / f"joint_fit_input_km15_{factor}x.csv"
+    if not p.exists():
+        raise FileNotFoundError(
+            f"Stage-5 H+E fit needs the existing Stage-2 input {p}. "
+            "Run high_luminosity_dvcs_stage2_pseudodata_pass2.py first."
+        )
+    d = pd.read_csv(p)
+    d["bin"] = d["bin"].astype(int)
+    return d.sort_values(["bin","phi_deg"]).reset_index(drop=True)
+
+
+def _build_he_observable_rows(th, g, proton, rgb_xs, rgb_bsa, factor):
+    """Build linearized p+n observable response rows around the reference model."""
+    obs = []
+    cell_cff_cache = {}
+
+    def cff_triplet(xB,Q2,t_abs,target):
+        key=(target,round(float(xB),6),round(float(Q2),6),round(float(t_abs),6))
+        if key not in cell_cff_cache:
+            ref = _lo_flavor_E_cff(WORKSHOP_BETA_U_E, WORKSHOP_BETA_D_E,
+                                   xB,t_abs,target)
+            up_p = _lo_flavor_E_cff(WORKSHOP_BETA_U_E+STAGE5_BETA_STEP_U,
+                                     WORKSHOP_BETA_D_E,xB,t_abs,target)
+            up_m = _lo_flavor_E_cff(WORKSHOP_BETA_U_E-STAGE5_BETA_STEP_U,
+                                     WORKSHOP_BETA_D_E,xB,t_abs,target)
+            dn_p = _lo_flavor_E_cff(WORKSHOP_BETA_U_E,
+                                     WORKSHOP_BETA_D_E+STAGE5_BETA_STEP_D,xB,t_abs,target)
+            dn_m = _lo_flavor_E_cff(WORKSHOP_BETA_U_E,
+                                     WORKSHOP_BETA_D_E-STAGE5_BETA_STEP_D,xB,t_abs,target)
+            cell_cff_cache[key]=(ref,up_p,up_m,dn_p,dn_m)
+        return cell_cff_cache[key]
+
+    def prediction(xB,Q2,t_abs,phi,ebeam,target,helicity,beta_u,beta_d):
+        p0=_make_gepard_point_stage5(g,xB,Q2,t_abs,phi,ebeam,target,helicity)
+        re0=float(getattr(_cff_owner_stage5(th,"ReE"),"ReE")(p0))
+        im0=float(getattr(_cff_owner_stage5(th,"ImE"),"ImE")(p0))
+        rem,imm=_lo_flavor_E_cff(beta_u,beta_d,xB,t_abs,target)
+        with _shifted_cffs_stage5(th,{"ReE":rem-re0,"ImE":imm-im0}):
+            return float(th.predict(p0))
+
+    def bsa_prediction(xB,Q2,t_abs,phi,ebeam,target,beta_u,beta_d):
+        pp=_make_gepard_point_stage5(g,xB,Q2,t_abs,phi,ebeam,target,+1)
+        pm=_make_gepard_point_stage5(g,xB,Q2,t_abs,phi,ebeam,target,-1)
+        re0=float(getattr(_cff_owner_stage5(th,"ReE"),"ReE")(pp))
+        im0=float(getattr(_cff_owner_stage5(th,"ImE"),"ImE")(pp))
+        rem,imm=_lo_flavor_E_cff(beta_u,beta_d,xB,t_abs,target)
+        with _shifted_cffs_stage5(th,{"ReE":rem-re0,"ImE":imm-im0}):
+            return _bsa_gepard_stage5(th,pp,pm)
+
+    def derivatives(xB,Q2,t_abs,phi,ebeam,target,kind):
+        if kind=="xs":
+            fun=lambda bu,bd: prediction(xB,Q2,t_abs,phi,ebeam,target,0,bu,bd)
+        else:
+            fun=lambda bu,bd: bsa_prediction(xB,Q2,t_abs,phi,ebeam,target,bu,bd)
+        y0=fun(WORKSHOP_BETA_U_E,WORKSHOP_BETA_D_E)
+        du=(fun(WORKSHOP_BETA_U_E+STAGE5_BETA_STEP_U,WORKSHOP_BETA_D_E)-
+            fun(WORKSHOP_BETA_U_E-STAGE5_BETA_STEP_U,WORKSHOP_BETA_D_E))/(2*STAGE5_BETA_STEP_U)
+        dd=(fun(WORKSHOP_BETA_U_E,WORKSHOP_BETA_D_E+STAGE5_BETA_STEP_D)-
+            fun(WORKSHOP_BETA_U_E,WORKSHOP_BETA_D_E-STAGE5_BETA_STEP_D))/(2*STAGE5_BETA_STEP_D)
+        # Local H derivatives around the same E-reference pseudo-truth.
+        p0=_make_gepard_point_stage5(g,xB,Q2,t_abs,phi,ebeam,target,0)
+        reh=float(getattr(_cff_owner_stage5(th,"ReH"),"ReH")(p0))
+        imh=float(getattr(_cff_owner_stage5(th,"ImH"),"ImH")(p0))
+        hs_re=max(0.05,0.02*max(abs(reh),1.0)); hs_im=max(0.05,0.02*max(abs(imh),1.0))
+        def h_eval(name,step):
+            if kind=="xs":
+                # Preserve the reference E replacement while shifting H.
+                re0=float(getattr(_cff_owner_stage5(th,"ReE"),"ReE")(p0)); im0=float(getattr(_cff_owner_stage5(th,"ImE"),"ImE")(p0))
+                rem,imm=_lo_flavor_E_cff(WORKSHOP_BETA_U_E,WORKSHOP_BETA_D_E,xB,t_abs,target)
+                with _shifted_cffs_stage5(th,{"ReE":rem-re0,"ImE":imm-im0,name:step}):
+                    return float(th.predict(p0))
+            pp=_make_gepard_point_stage5(g,xB,Q2,t_abs,phi,ebeam,target,+1)
+            pm=_make_gepard_point_stage5(g,xB,Q2,t_abs,phi,ebeam,target,-1)
+            re0=float(getattr(_cff_owner_stage5(th,"ReE"),"ReE")(pp)); im0=float(getattr(_cff_owner_stage5(th,"ImE"),"ImE")(pp))
+            rem,imm=_lo_flavor_E_cff(WORKSHOP_BETA_U_E,WORKSHOP_BETA_D_E,xB,t_abs,target)
+            with _shifted_cffs_stage5(th,{"ReE":rem-re0,"ImE":imm-im0,name:step}):
+                return _bsa_gepard_stage5(th,pp,pm)
+        dre=(h_eval("ReH",+hs_re)-h_eval("ReH",-hs_re))/(2*hs_re)
+        dim=(h_eval("ImH",+hs_im)-h_eval("ImH",-hs_im))/(2*hs_im)
+        return y0,du,dd,dre,dim
+
+    # Proton: actual Stage-2 matched 4D XS+BSA rows.  H is refit locally here;
+    # no Stage-2 H prior is added, avoiding double counting the same data.
+    for r in proton.itertuples(index=False):
+        cell=f"p:{int(r.bin)}"
+        for kind in ("xs","bsa"):
+            y0,du,dd,dhre,dhim=derivatives(r.xB,r.Q2,r.t_abs,r.phi_deg,r.ebeam,"p",kind)
+            if kind=="xs":
+                rel=math.hypot(r.xs_stat_pseudo_abs,r.xs_ptp_sys_pseudo_abs)/max(abs(r.xs_km15),1e-30)
+                sig=abs(y0)*rel
+            else:
+                sig=math.hypot(r.bsa_stat_pseudo_abs,r.bsa_ptp_sys_pseudo_abs)
+            if np.isfinite(sig) and sig>0:
+                obs.append(dict(target="p",cell=cell,kind=kind,y0=y0,sigma=sig,
+                                d_bu=du,d_bd=dd,d_ReH=dhre,d_ImH=dhim))
+
+    # Neutron XS: use the measured relative statistical precision, scaled with L.
+    # The unresolved quoted total systematic is not silently made diagonal here.
+    for r in rgb_xs.itertuples(index=False):
+        cell=f"nxs:{int(r.kin_bin)}"
+        y0,du,dd,dhre,dhim=derivatives(r.xB,r.Q2_GeV2,r.t_abs_GeV2,r.phi_deg,10.45,"n","xs")
+        sig=abs(y0)*abs(r.rel_stat)/math.sqrt(factor)
+        if np.isfinite(sig) and sig>0:
+            obs.append(dict(target="n",cell=cell,kind="xs",y0=y0,sigma=sig,
+                            d_bu=du,d_bd=dd,d_ReH=dhre,d_ImH=dhim))
+
+    # Neutron BSA: use ONE published projection only (t), never all 63 points.
+    nb=rgb_bsa[rgb_bsa["projection"]=="t"]
+    for r in nb.itertuples(index=False):
+        cell=f"nbsa:{int(r.projected_bin)}"
+        y0,du,dd,dhre,dhim=derivatives(r.xB,r.Q2_GeV2,r.t_abs_GeV2,r.phi_deg,10.45,"n","bsa")
+        sig=abs(r.stat)/math.sqrt(factor)
+        if np.isfinite(sig) and sig>0:
+            obs.append(dict(target="n",cell=cell,kind="bsa",y0=y0,sigma=sig,
+                            d_bu=du,d_bd=dd,d_ReH=dhre,d_ImH=dhim))
+    return pd.DataFrame(obs)
+
+
+def _he_global_covariance(obs, include_neutron):
+    use=obs if include_neutron else obs[obs.target=="p"]
+    cells=sorted(use.cell.unique())
+    layout=["beta_u","beta_d"]+[(c,"ReH") for c in cells]+[(c,"ImH") for c in cells]
+    idx={k:i for i,k in enumerate(layout)}
+    A=[]; sig=[]
+    for r in use.itertuples(index=False):
+        v=np.zeros(len(layout)); v[idx["beta_u"]]=r.d_bu; v[idx["beta_d"]]=r.d_bd
+        v[idx[(r.cell,"ReH")]]=r.d_ReH; v[idx[(r.cell,"ImH")]]=r.d_ImH
+        A.append(v); sig.append(r.sigma)
+    B=np.asarray(A)/np.asarray(sig)[:,None]
+    info=B.T@B
+    cov=np.linalg.pinv(info,rcond=1e-11)
+    rank=int(np.linalg.matrix_rank(B))
+    return cov,layout,rank,len(layout),len(B)
+
+
+def _b20_covariance_from_beta(cov,layout):
+    idx={k:i for i,k in enumerate(layout)}
+    cb=cov[np.ix_([idx["beta_u"],idx["beta_d"]],[idx["beta_u"],idx["beta_d"]])]
+    h=1.0e-4
+    du=(b20_from_beta(KAPPA_U,DFJK_ALPHA_E,WORKSHOP_BETA_U_E+h)-b20_from_beta(KAPPA_U,DFJK_ALPHA_E,WORKSHOP_BETA_U_E-h))/(2*h)
+    dd=(b20_from_beta(KAPPA_D,DFJK_ALPHA_E,WORKSHOP_BETA_D_E+h)-b20_from_beta(KAPPA_D,DFJK_ALPHA_E,WORKSHOP_BETA_D_E-h))/(2*h)
+    J=np.diag([du,dd])
+    return J@cb@J.T,cb
+
+
+def _ellipse_points(mean,cov,delta_chi2=2.30,n=300):
+    vals,vecs=np.linalg.eigh(cov); vals=np.maximum(vals,0.0)
+    ang=np.linspace(0,2*np.pi,n)
+    circ=np.vstack([np.cos(ang),np.sin(ang)])
+    pts=np.asarray(mean)[:,None]+vecs@np.diag(np.sqrt(delta_chi2*vals))@circ
+    return pts.T
+
+
+def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir):
+    """Run the conference-facing H+E projection and make the B20 contour."""
+    try:
+        import gepard as g
+        from gepard.fits import th_KM15
+    except Exception as exc:
+        raise RuntimeError("Stage-5 H+E projection requires Gepard/KM15 on ifarm.") from exc
+    th=th_KM15
+    scenarios=[]; contour_data=[]
+    for factor in (1,10):
+        print(f"[Stage5 H+E] building observable derivatives at {factor}x ...")
+        p=_load_stage2_proton_inputs(stage2_dir,factor)
+        obs=_build_he_observable_rows(th,g,p,rgb_xs,rgb_bsa,factor)
+        obs.to_csv(tabdir/f"he_observable_derivatives_{factor}x.csv",index=False)
+        configs=[("p_1x",False)] if factor==1 else []
+        if factor==1: configs.append(("p1x_plus_n1x",True))
+        if factor==10: configs.append(("p10x_plus_n10x",True))
+        for name,incn in configs:
+            cov,layout,rank,npar,nrow=_he_global_covariance(obs,incn)
+            bcov,betacov=_b20_covariance_from_beta(cov,layout)
+            mean=[b20_from_beta(KAPPA_U,DFJK_ALPHA_E,WORKSHOP_BETA_U_E),
+                  b20_from_beta(KAPPA_D,DFJK_ALPHA_E,WORKSHOP_BETA_D_E)]
+            contour_data.append((name,mean,bcov))
+            scenarios.append(dict(
+                scenario=name,luminosity_factor=factor,include_neutron=incn,
+                n_rows=nrow,n_parameters=npar,rank=rank,rank_deficit=npar-rank,
+                sigma_beta_u=math.sqrt(max(betacov[0,0],0)),
+                sigma_beta_d=math.sqrt(max(betacov[1,1],0)),
+                sigma_B20_uv=math.sqrt(max(bcov[0,0],0)),
+                sigma_B20_dv=math.sqrt(max(bcov[1,1],0)),
+                corr_B20=float(bcov[0,1]/math.sqrt(max(bcov[0,0]*bcov[1,1],1e-300)))
+            ))
+    summary=pd.DataFrame(scenarios)
+    summary.to_csv(tabdir/"b20_he_projection_summary.csv",index=False)
+
+    fig,ax=plt.subplots(figsize=(7.4,6.2))
+    for name,mean,cov in contour_data:
+        pts=_ellipse_points(mean,cov)
+        ax.plot(pts[:,0],pts[:,1],linewidth=2.4,label=name.replace("_"," "))
+    ax.scatter([contour_data[0][1][0]],[contour_data[0][1][1]],marker="*",s=110,
+               label="reference model")
+    ax.set_xlabel(r"$B_{20}^{u_v}(0)$")
+    ax.set_ylabel(r"$B_{20}^{d_v}(0)$")
+    ax.set_title(r"Projected flavor separation with $H$ marginalized")
+    ax.grid(alpha=.22); ax.legend(fontsize=9)
+    fig.tight_layout(); fig.savefig(figdir/"b20_uv_dv_he_marginalized_contours.png",dpi=200); plt.close(fig)
+    return summary
+
 # ---------------------------------------------------------------------------
 # Main
 # ---------------------------------------------------------------------------
@@ -1215,8 +1532,14 @@ def main():
         help="Pass-2 CSV; default: ../higher_level_dvcs_cross_section/import/dvcs_pass2_analysis.csv relative to this script.",
     )
     ap.add_argument("--output", type=Path, default=OUT_DEFAULT)
+    ap.add_argument("--stage2-dir", type=Path, default=None,
+                    help="Stage-2 pseudo-data tables; default output/stage2/tables next to this script.")
     args = ap.parse_args()
     here = Path(__file__).resolve().parent
+    if args.stage2_dir is None:
+        args.stage2_dir = (here / "output" / "stage2" / "tables").resolve()
+    else:
+        args.stage2_dir = args.stage2_dir.expanduser().resolve()
     if args.rga_pass2 is None:
         args.rga_pass2 = (
             here.parent
@@ -1264,6 +1587,10 @@ def main():
     bsa = load_actual_rgb_bsa_directory(args.rgb_bsa_dir)
     bsa.to_csv(tabdir / "rgb_published_bsa_actual_points.csv", index=False)
 
+    he_summary = run_stage5_he_projection(
+        args.stage2_dir, xs, bsa, figdir, tabdir
+    )
+
     rga_bsa = load_rga_pass2_bsa(args.rga_pass2)
     if rga_bsa is not None:
         rga_bsa.to_csv(tabdir / "rga_pass2_bsa_audit.csv", index=False)
@@ -1275,7 +1602,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v22 — VALIDATED FINITE-XI MODEL + CONFERENCE B20 TARGET")
+    print("STAGE 5 v23 — JOINT p+n H+E B20 PROJECTION")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -1352,11 +1679,13 @@ def main():
         print("Luminosity progression at fixed RGA-like 4D granularity:")
         print(transfer_summary.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
     print()
-    print("B20 CONTOUR STATUS:")
-    print("  finite-xi E_v model: implemented and validated")
-    print("  p/n luminosity scenarios: fixed")
-    print("  remaining ingredient: observable-level DVCS response (XS+BSA) to beta_u,beta_d")
-    print("  The code deliberately does not invent a sigma(A_LU)->B20 conversion.")
+    print("JOINT H+E B20 PROJECTION:")
+    print("  beta_u,beta_d are global E_v parameters of interest")
+    print("  ReH,ImH are free local nuisance parameters in every p/n kinematic cell")
+    print("  therefore H is constrained by the same RGA/RGB observables, not held fixed")
+    print("  neutron fit uses preliminary XS plus ONE published BSA projection (t)")
+    print("  neutron XS systematics remain excluded from this first contour because their covariance is unresolved")
+    print(he_summary.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
     print()
     print()
     print("OUTPUT LAYOUT:")
