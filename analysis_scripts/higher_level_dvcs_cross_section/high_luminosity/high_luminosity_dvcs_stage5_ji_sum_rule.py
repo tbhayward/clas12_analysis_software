@@ -1626,12 +1626,24 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
     obs_by_factor = {}
 
     # Build the expensive observable response only once at each luminosity.
+    # Reuse the saved derivative table on later runs.  Delete the cache file
+    # deliberately if the observable model, finite-difference setup, or inputs
+    # are changed and a fresh derivative calculation is required.
     for factor in (1, 10):
-        print(f"[Stage5 H+E] building observable derivatives at {factor}x ...")
-        p = _load_stage2_proton_inputs(stage2_dir, factor)
-        obs = _build_he_observable_rows(th, g, p, rgb_xs, rgb_bsa, factor)
+        cache_file = tabdir / f"he_observable_derivatives_{factor}x.csv"
+
+        if cache_file.exists():
+            print(f"[Stage5 H+E] loading cached observable derivatives at {factor}x ...")
+            obs = pd.read_csv(cache_file)
+            print(f"[Stage5 H+E] using cached derivatives: {cache_file}")
+        else:
+            print(f"[Stage5 H+E] building observable derivatives at {factor}x ...")
+            p = _load_stage2_proton_inputs(stage2_dir, factor)
+            obs = _build_he_observable_rows(th, g, p, rgb_xs, rgb_bsa, factor)
+            obs.to_csv(cache_file, index=False)
+            print(f"[Stage5 H+E] cached observable derivatives: {cache_file}")
+
         obs_by_factor[factor] = obs
-        obs.to_csv(tabdir/f"he_observable_derivatives_{factor}x.csv", index=False)
 
     # Four conference-facing scenarios.  p10x is deliberately included so the
     # plot separates "more proton statistics" from "new neutron flavor info".
