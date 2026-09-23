@@ -121,6 +121,38 @@ double pe2_delta_t(double Eb,double ep,double eth,double eph,
     auto q=k-kp;
     return (target-pr).M2()-(q-ga).M2();
 }
+
+
+// Recompute Mx2(ep gamma_tag) after a controlled tag-momentum perturbation.
+// This is used only for the AAOgen response-sensitivity study below.
+double pe2_mx2_epg(double Eb,double ep,double eth,double eph,
+                   double pp,double pth,double pph,
+                   double gp,double gth,double gph) {
+    const double me=0.00051099895, mp=0.9382720813;
+    const double pb=std::sqrt(std::max(0.0,Eb*Eb-me*me));
+    ROOT::Math::PxPyPzEVector k(0,0,pb,Eb), target(0,0,0,mp);
+    TVector3 ev=pe2_vec(ep,eth,eph), pv=pe2_vec(pp,pth,pph), gv=pe2_vec(gp,gth,gph);
+    ROOT::Math::PxPyPzEVector kp(ev.X(),ev.Y(),ev.Z(),std::sqrt(ep*ep+me*me));
+    ROOT::Math::PxPyPzEVector pr(pv.X(),pv.Y(),pv.Z(),std::sqrt(pp*pp+mp*mp));
+    ROOT::Math::PxPyPzEVector ga(gv.X(),gv.Y(),gv.Z(),gp);
+    return (k+target-kp-pr-ga).M2();
+}
+
+// Deterministic standard-normal variate from rdfentry_.  Reproducible across
+// runs/thread counts; no global RNG state is used.
+static double pe2_gauss_from_entry(unsigned long long x) {
+    auto mix=[](unsigned long long z) {
+        z += 0x9e3779b97f4a7c15ULL;
+        z = (z ^ (z >> 30)) * 0xbf58476d1ce4e5b9ULL;
+        z = (z ^ (z >> 27)) * 0x94d049bb133111ebULL;
+        return z ^ (z >> 31);
+    };
+    const unsigned long long a=mix(x), b=mix(x+0x517cc1b727220a95ULL);
+    const double u1=(double((a>>11)+1ULL))/9007199254740993.0;
+    const double u2=(double((b>>11)+1ULL))/9007199254740993.0;
+    return std::sqrt(-2.0*std::log(u1))*std::cos(2.0*M_PI*u2);
+}
+
 ''')
 
 
@@ -240,6 +272,11 @@ OBS = {
 # retained for the later purity fit.  Last bin includes the beam-energy endpoint.
 PROBE_P_BINS = [(0.4,2.0), (2.0,4.0), (4.0,6.0), (6.0,8.0), (8.0,9.0)]
 
+# Controlled AAOgen tag-energy smearing scan.  These are sensitivity points,
+# NOT calibrated detector-resolution values.  The purpose is to ask whether a
+# plausible tag-energy resolution mismatch can reproduce the DATA shape at all.
+TAG_SMEAR_FRACS = [0.00, 0.01, 0.02, 0.03, 0.05, 0.07, 0.10]
+
 
 def h1(node, name, obs_key, weight=False):
     col, nb, lo, hi, _ = OBS[obs_key]
@@ -308,7 +345,7 @@ FIT_COMPONENTS = ("aaogen", "clasdis", "dvcsgen")
 def book_sample(key, df):
     """Book overview, denominator validation, and normalization inputs in one RDF graph."""
     out = {"counts": {}, "survival": {}, "selected": {}, "slices": {},
-           "control": {}, "overview": {}, "fit": {}}
+           "control": {}, "overview": {}, "fit": {}, "response": {}}
 
     # Restore the useful early distributions.  These are intentionally booked
     # before the final Candidate-B cuts so a reader can see why each cut exists.
@@ -368,6 +405,25 @@ def book_sample(key, df):
                 pn=fn.Filter(f"probe_corr_p>={plo} && probe_corr_p<{phi}")
                 out["fit"][(region, fr, ib, "count")] = pn.Count()
                 out["fit"][(region, fr, ib, "sumw")] = pn.Sum("ana_weight")
+
+    # Controlled tag-response sensitivity study.  Only AAOgen is morphed.
+    # We perturb the *measured tag momentum* and recompute Mx2(ep gamma_tag),
+    # while leaving the denominator selection and predicted probe untouched.
+    # This is deliberately not called a resolution calibration: it tests whether
+    # tag-energy smearing can plausibly explain the observed DATA/MC broadening.
+    if key == "aaogen":
+        morphbase = optbase.Define("v_tag_smear_z", "pe2_gauss_from_entry((unsigned long long)rdfentry_)")
+        for ismr, frac in enumerate(TAG_SMEAR_FRACS):
+            pcol=f"v_tag_p_smear_{ismr}"
+            mcol=f"v_mx2epg_smear_{ismr}"
+            morphbase = morphbase.Define(pcol, f"std::max(1e-6, tag_corr_p*(1.0+({frac:.12g})*v_tag_smear_z))")
+            morphbase = morphbase.Define(mcol, f"pe2_mx2_epg(beam_energy,e_p,e_theta,e_phi,p_corr_p,p_corr_theta,p_corr_phi,{pcol},tag_corr_theta,tag_corr_phi)")
+            for region, rcut in (("FT", "probe_region==0"), ("FD", "probe_region==1")):
+                rn=morphbase.Filter(rcut).Filter(CANDIDATES[NOMINAL_CANDIDATE])
+                for ib,(plo,phi) in enumerate(PROBE_P_BINS[:4]):
+                    pn=rn.Filter(f"probe_corr_p>={plo} && probe_corr_p<{phi}")
+                    name=f"hresp_{key}_{region}_{ib}_{ismr}"
+                    out["response"][(region,ib,ismr)] = pn.Histo1D((name,"",140,-0.35,0.35),mcol,"ana_weight")
 
     # Legacy compact control plots, integrated over predicted detector region.
     for cr, (expr, _) in CONTROL_REGIONS.items():
@@ -943,9 +999,9 @@ def write_peak_tables(results,peakfits,outdir):
 # Gaussian signal plus quadratic local background.  A/B/C/D repeat the study
 # so that apparent resolution trends that are actually selection/background
 # effects are exposed before any morphing is adopted.
-RES_FIT_RANGE = (-0.14, 0.16)
+RES_FIT_RANGE = (-0.22, 0.24)
 RES_MEAN_LIMIT = (-0.050, 0.050)
-RES_SIGMA_LIMIT = (0.003, 0.160)
+RES_SIGMA_LIMIT = (0.003, 0.220)
 
 def _gaussian_core_fit(h, fit_lo=RES_FIT_RANGE[0], fit_hi=RES_FIT_RANGE[1]):
     hh=clone(h)
@@ -1097,6 +1153,79 @@ def write_resolution_tables(resfits,outdir):
         f.write("4. High-p bins with poor Gaussian+background closure must not be used to calibrate smearing merely because the fitted width is large.\n")
         f.write("5. If a stable trend exists, the next step is a constrained momentum-dependent AAOgen morphing model, validated in clean bins before repeating the pi0-yield extraction.\n")
 
+
+def _unit_area_copy(h,name):
+    q=clone(h); q.SetName(name)
+    integ=q.Integral()
+    if integ>0: q.Scale(1.0/integ)
+    return q
+
+def _shape_chi2(data,mc,lo=-0.22,hi=0.24):
+    """Simple shape-only Pearson diagnostic after unit-area normalization."""
+    d=_unit_area_copy(data,f"ud_{id(data)}"); m=_unit_area_copy(mc,f"um_{id(mc)}")
+    chi2=0.0; n=0
+    for i in range(1,d.GetNbinsX()+1):
+        x=d.GetBinCenter(i)
+        if x<lo or x>hi: continue
+        vd=d.GetBinContent(i); vm=m.GetBinContent(i)
+        # Use DATA counting uncertainty after normalization as the scale.  This
+        # is a ranking diagnostic only, not a likelihood or final goodness-of-fit.
+        raw=data.GetBinContent(i); nt=max(data.Integral(),1.0)
+        err=math.sqrt(max(raw,1.0))/nt
+        if err>0:
+            chi2 += (vd-vm)*(vd-vm)/(err*err); n += 1
+    return chi2,max(0,n-1)
+
+def draw_tag_response_sensitivity(results,outdir):
+    p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
+    summary=[]
+    colors=[ROOT.kRed+1,ROOT.kOrange+7,ROOT.kGreen+2,ROOT.kCyan+2,ROOT.kBlue+1,ROOT.kViolet+1,ROOT.kMagenta+2]
+    for det in ("FT","FD"):
+        c=ROOT.TCanvas(f"ctagsmear_{det}","",1700,1100); c.Divide(2,2); keep=[]
+        for ipad,ib in enumerate(range(4),1):
+            pad=c.cd(ipad); setup_pad(pad)
+            hd=clone(results["data"]["fit"][(det,"local",NOMINAL_CANDIDATE,ib,"mx2epg")])
+            hd=_unit_area_copy(hd,f"hdata_smear_{det}_{ib}"); style(hd,"data")
+            hd.SetTitle(""); hd.GetXaxis().SetTitle(OBS["mx2epg"][4]); hd.GetYaxis().SetTitle("Unit-normalized events")
+            hd.GetXaxis().SetRangeUser(-0.25,0.25); hd.SetMaximum(max(1e-6,1.35*hd.GetMaximum())); hd.Draw("E1")
+            best=None
+            leg=ROOT.TLegend(.55,.50,.92,.87); leg.SetBorderSize(0); leg.SetFillStyle(0); leg.SetTextSize(.027); leg.AddEntry(hd,"Data","lep")
+            for ismr,frac in enumerate(TAG_SMEAR_FRACS):
+                hm0=clone(results["aaogen"]["response"][(det,ib,ismr)])
+                chi2,ndf=_shape_chi2(results["data"]["fit"][(det,"local",NOMINAL_CANDIDATE,ib,"mx2epg")].GetValue(),hm0)
+                score=chi2/max(ndf,1)
+                if best is None or score<best[0]: best=(score,frac,chi2,ndf)
+                # Draw a restrained subset; all scan points still enter ranking/table.
+                if frac in (0.00,0.02,0.05,0.10):
+                    hm=_unit_area_copy(hm0,f"hm_smear_{det}_{ib}_{ismr}"); hm.SetLineColor(colors[ismr]); hm.SetLineWidth(2); hm.Draw("HIST SAME")
+                    leg.AddEntry(hm,f"AAOgen tag smear {100*frac:.0f}%","l"); keep.append(hm)
+            leg.Draw(); lo,hi=PROBE_P_BINS[ib]
+            tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.036); tx.DrawLatex(.16,.92,f"{det}, Candidate B: {lo:g}<p_{{probe}}<{hi:g} GeV")
+            tx2=ROOT.TLatex(); tx2.SetNDC(); tx2.SetTextSize(.030); tx2.DrawLatex(.16,.85,f"best scan point: {100*best[1]:.0f}% tag-p smear (shape diagnostic)")
+            keep += [hd,leg,tx,tx2]; summary.append((det,ib,*best))
+        c.SaveAs(str(p/f"01_{det}_tag_momentum_smearing_sensitivity.png"))
+
+    c=ROOT.TCanvas("ctagsmear_summary","",1200,800); setup_pad(c); keep=[]
+    frame=ROOT.TH1D("htagsmear_best","",8,0,8); frame.SetDirectory(0); frame.SetMinimum(0); frame.SetMaximum(11)
+    frame.GetYaxis().SetTitle("Best scanned tag-momentum smear (%)"); frame.GetXaxis().SetTitle("Detector / predicted-probe momentum bin")
+    for j,(det,ib,score,frac,chi2,ndf) in enumerate(summary,1):
+        lo,hi=PROBE_P_BINS[ib]; frame.SetBinContent(j,100*frac); frame.GetXaxis().SetBinLabel(j,f"{det} {lo:g}-{hi:g}")
+    frame.SetMarkerStyle(20); frame.SetLineWidth(2); frame.Draw("HIST P")
+    tx=ROOT.TLatex(); tx.SetNDC(); tx.SetTextSize(.035); tx.DrawLatex(.16,.92,"Sensitivity scan only: not a calibrated detector resolution")
+    keep += [frame,tx]; c.SaveAs(str(p/"02_best_tag_smear_vs_probe_momentum.png"))
+
+    with open(p/"tag_momentum_smearing_sensitivity.txt","w") as f:
+        f.write("# Controlled AAOgen tag-momentum smearing sensitivity. NOT a resolution calibration.\n")
+        f.write("# DATA and each morphed AAOgen shape are unit-normalized before the ranking diagnostic.\n")
+        f.write("detector pmin pmax best_smear_fraction shape_chi2 shape_ndf shape_chi2_ndf\n")
+        for det,ib,score,frac,chi2,ndf in summary:
+            lo,hi=PROBE_P_BINS[ib]
+            f.write(f"{det} {lo:g} {hi:g} {frac:.6g} {chi2:.8g} {ndf} {score:.8g}\n")
+        f.write("\nInterpretation guardrails:\n")
+        f.write("1. A preferred smear is only evidence that tag-energy broadening moves AAOgen toward DATA.\n")
+        f.write("2. Failure even at large smear means the Mx2 shape mismatch is not reducible to tag-energy resolution alone.\n")
+        f.write("3. Do not propagate these scan values into the efficiency until an independent DATA/MC response calibration is established.\n")
+
 def write_normalization_tables(results, fits, outdir):
     p=Path(outdir); p.mkdir(parents=True,exist_ok=True)
     rows,purity=normalization_products(results,fits)
@@ -1175,9 +1304,11 @@ def main():
     overview_dir=outroot/"00_selection_overview"
     validation_dir=outroot/"01_denominator_validation"
     normalization_dir=outroot/"02_component_normalization"
+    failed_resolution_dir=outroot/"failed_attempts"/"01_mx2epg_gaussian_resolution"
+    response_dir=outroot/"02_component_normalization"/"tag_response_sensitivity"
     efficiency_dir=outroot/"03_efficiency_extraction"
     final_dir=outroot/"04_final_corrections"
-    for d in (overview_dir,validation_dir,normalization_dir,efficiency_dir,final_dir): d.mkdir(parents=True,exist_ok=True)
+    for d in (overview_dir,validation_dir,normalization_dir,failed_resolution_dir,response_dir,efficiency_dir,final_dir): d.mkdir(parents=True,exist_ok=True)
 
     print("="*78)
     print("Photon-efficiency RGA study - denominator validation + component normalization")
@@ -1186,7 +1317,8 @@ def main():
     print("Nominal denominator candidate: B = Mx2(ep)<0.24, |coplanarity|>2 deg, theta(tag,X)<8 deg.")
     print("Normalization diagnostic: global four-region AAOgen/CLASDIS/DVCSgen stress test.")
     print("Purity diagnostics: local templates + empirical peak extraction.")
-    print("New step: DATA/AAOgen Mx2(ep gamma_tag) peak resolution vs p_probe; no smearing applied yet.")
+    print("Failed-attempt archive: Gaussian Mx2(ep gamma_tag) width -> detector smearing.")
+    print("New step: controlled AAOgen tag-momentum smearing sensitivity; no smearing is adopted or applied to yields.")
     print("Photon-energy plotting range: 0-9 GeV.")
     print("="*78)
     results={}; actions=[]
@@ -1195,7 +1327,7 @@ def main():
         if not fs: raise RuntimeError(f"No ROOT files for {key}: {pat}")
         print(f"{label:10s}: {len(fs):3d} ROOT files")
         results[key]=book_sample(key,define_columns(make_rdf(fs),key))
-        for group in ("counts","survival","selected","slices","control","overview","fit"):
+        for group in ("counts","survival","selected","slices","control","overview","fit","response"):
             actions += list(results[key][group].values())
     print(f"Executing {len(actions)} booked actions ...")
     ROOT.RDF.RunGraphs(actions)
@@ -1228,8 +1360,13 @@ def main():
     # Resolution diagnostic before any morphing is applied.  Measure the DATA
     # and AAOgen peak widths/means versus p_probe separately in FT and FD.
     resfits=perform_resolution_study(results)
-    write_resolution_tables(resfits,normalization_dir)
-    draw_resolution_study(results,resfits,normalization_dir)
+    write_resolution_tables(resfits,failed_resolution_dir)
+    draw_resolution_study(results,resfits,failed_resolution_dir)
+
+    # Forward study: perturb the measured AAOgen tag momentum itself and ask
+    # whether that mechanism can reproduce the DATA Mx2(ep gamma_tag) shape.
+    # This does not require a reconstructed probe and does not alter any yields.
+    draw_tag_response_sensitivity(results,response_dir)
 
     print("Candidate retentions relative to each detector-region optimization base:")
     print(" sample   region   A       B       C       D")
@@ -1255,7 +1392,7 @@ def main():
             vals.append(f"{lo:g}-{hi:g}: fpi0={q['pi0_fraction']:.3f}, chi2/ndf={q['chi2']:.1f}/{q['ndf']}, cond={q['condition']:.1f}")
         print(f"  {det}: " + " | ".join(vals))
     print("\nOutput layout:")
-    for d in (overview_dir,validation_dir,normalization_dir,efficiency_dir,final_dir): print(f"  {d}/")
+    for d in (overview_dir,validation_dir,response_dir,failed_resolution_dir,efficiency_dir,final_dir): print(f"  {d}/")
     print("\nCandidate-B Mx2(ep gamma_tag) resolution diagnostic:")
     for det in ("FT","FD"):
         vals=[]
@@ -1264,7 +1401,8 @@ def main():
             if q["data"] and q["mc"]:
                 vals.append(f"{lo:g}-{hi:g}: sigmaD={q['data']['sigma']:.4f}, sigmaMC={q['mc']['sigma']:.4f}, smear={q['data']['smear']:.4f}, shift={q['data']['shift']:+.4f}")
         print(f"  {det}: " + " | ".join(vals))
-    print("Stage 3/4 remain empty: no smearing or reconstructed-probe matching is applied until the resolution trend is validated.")
+    print("The Gaussian Mx2 width->smearing interpretation is archived as a failed attempt, not used downstream.")
+    print("Stage 3/4 remain empty: no smearing or reconstructed-probe matching is applied until tag-response sensitivity and purity closure are accepted.")
 
 
 if __name__=="__main__":
