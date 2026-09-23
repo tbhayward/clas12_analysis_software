@@ -113,6 +113,8 @@ RGB_XS_DEFAULT = Path("import/ndvcs_clas12_preliminary_unpolarized.txt")
 RGB_BSA_DIR_DEFAULT = None  # resolved relative to this script in main()
 RGA_PASS2_DEFAULT = None  # resolved relative to this script below
 OUT_DEFAULT = Path("output/stage5_ji")
+A20_Q2_GEV2 = 3.0
+A20_SUMMARY_DEFAULT = Path("output/stage5_ji/tables/nnpdf40_valence_A20_summary_Q2_3.csv")
 
 
 # ---------------------------------------------------------------------------
@@ -1495,7 +1497,116 @@ def _ellipse_points(mean,cov,delta_chi2=2.30,n=300):
 
 
 
-def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir):
+def load_nnpdf_a20_summary(path: Path):
+    """Read the one-time NNPDF4.0 valence A20 extraction.
+
+    Returns the mean vector (u_v,d_v) and its 2x2 replica covariance.
+    The Stage-5 workshop projection treats this external PDF covariance as
+    independent of the projected DVCS B20 covariance.
+    """
+    if not path.exists():
+        raise FileNotFoundError(
+            f"NNPDF A20 summary not found: {path}\n"
+            "Run extract_nnpdf40_valence_moments.py first."
+        )
+    df = pd.read_csv(path)
+    if not {"quantity", "value"}.issubset(df.columns):
+        raise RuntimeError(f"Unexpected A20 summary format in {path}")
+    vals = dict(zip(df["quantity"].astype(str), df["value"]))
+    required = ["Q2_GeV2", "A20_uv_mean", "A20_uv_std",
+                "A20_dv_mean", "A20_dv_std", "cov_uv_dv"]
+    missing = [k for k in required if k not in vals]
+    if missing:
+        raise RuntimeError(f"A20 summary is missing: {missing}")
+    q2 = float(vals["Q2_GeV2"])
+    if not np.isclose(q2, A20_Q2_GEV2, rtol=0.0, atol=1e-9):
+        raise RuntimeError(
+            f"A20 summary has Q^2={q2:g} GeV^2; Stage 5 expects "
+            f"Q^2={A20_Q2_GEV2:g} GeV^2."
+        )
+    mean = np.array([float(vals["A20_uv_mean"]), float(vals["A20_dv_mean"])])
+    su = float(vals["A20_uv_std"]); sd = float(vals["A20_dv_std"])
+    covud = float(vals["cov_uv_dv"])
+    cov = np.array([[su*su, covud], [covud, sd*sd]], dtype=float)
+    return mean, cov, vals
+
+
+def _corr_from_cov(cov):
+    den = math.sqrt(max(float(cov[0,0]*cov[1,1]), 1e-300))
+    return float(cov[0,1]/den)
+
+
+def make_ji_projection(contour_data, a20_mean, a20_cov, figdir, tabdir):
+    """Combine external A20 with projected B20 using the valence Ji sum rule.
+
+      J_qv = 1/2 (A20_qv + B20_qv)
+      C_J  = 1/4 (C_A20 + C_B20)
+
+    C_A20 and C_B20 are taken independent for this workshop projection.
+    """
+    rows=[]; ji_data=[]
+    for name, bmean, bcov, betacov in contour_data:
+        jmean = 0.5*(a20_mean + bmean)
+        jcov = 0.25*(a20_cov + bcov)
+        ji_data.append((name, jmean, jcov))
+        rows.append(dict(
+            scenario=name,
+            Q2_GeV2=A20_Q2_GEV2,
+            A20_uv=float(a20_mean[0]), A20_dv=float(a20_mean[1]),
+            B20_uv=float(bmean[0]), B20_dv=float(bmean[1]),
+            J_uv=float(jmean[0]), J_dv=float(jmean[1]),
+            sigma_A20_uv=math.sqrt(max(a20_cov[0,0],0.0)),
+            sigma_A20_dv=math.sqrt(max(a20_cov[1,1],0.0)),
+            sigma_B20_uv=math.sqrt(max(bcov[0,0],0.0)),
+            sigma_B20_dv=math.sqrt(max(bcov[1,1],0.0)),
+            sigma_J_uv=math.sqrt(max(jcov[0,0],0.0)),
+            sigma_J_dv=math.sqrt(max(jcov[1,1],0.0)),
+            corr_A20=_corr_from_cov(a20_cov),
+            corr_B20=_corr_from_cov(bcov),
+            corr_J=_corr_from_cov(jcov),
+        ))
+    out=pd.DataFrame(rows)
+    out.to_csv(tabdir/"ji_valence_projection_summary.csv", index=False)
+
+    labels={
+        "p_1x": r"$p$ 1x: local flavor-degeneracy direction",
+        "p_10x": r"$p$ 10x: local flavor-degeneracy direction",
+        "p1x_plus_n1x": r"$p$ 1x + $n$ 1x: 68% contour",
+        "p10x_plus_n10x": r"$p$ 10x + $n$ 10x: 68% contour",
+    }
+    fig,ax=plt.subplots(figsize=(7.4,6.2))
+    pn=[]
+    for name,mean,cov in ji_data:
+        if name.startswith("p1x_plus") or name.startswith("p10x_plus"):
+            pts=_ellipse_points(mean,cov)
+            pn.append(pts)
+            ax.plot(pts[:,0],pts[:,1],linewidth=2.6,label=labels[name])
+    allpn=np.vstack(pn)
+    xmin,xmax=float(allpn[:,0].min()),float(allpn[:,0].max())
+    ymin,ymax=float(allpn[:,1].min()),float(allpn[:,1].max())
+    dx=max(xmax-xmin,0.04); dy=max(ymax-ymin,0.04)
+    xmin-=0.35*dx; xmax+=0.35*dx; ymin-=0.35*dy; ymax+=0.35*dy
+    for name,mean,cov in ji_data:
+        if name not in ("p_1x","p_10x"): continue
+        vals,vecs=np.linalg.eigh(cov); v=vecs[:,int(np.argmax(vals))]
+        tt=np.linspace(-20,20,2000)
+        line=mean[None,:]+tt[:,None]*v[None,:]
+        keep=(line[:,0]>=xmin)&(line[:,0]<=xmax)&(line[:,1]>=ymin)&(line[:,1]<=ymax)
+        line=line[keep]
+        ax.plot(line[:,0],line[:,1],linestyle="--",linewidth=1.8,alpha=.75,label=labels[name])
+    ref=ji_data[0][1]
+    ax.scatter([ref[0]],[ref[1]],marker="*",s=120,label="reference model",zorder=5)
+    ax.set_xlim(xmin,xmax); ax.set_ylim(ymin,ymax)
+    ax.set_xlabel(r"$J_{u_v}$"); ax.set_ylabel(r"$J_{d_v}$")
+    ax.set_title(r"Projected valence Ji sum-rule flavor separation at $Q^2=3\,\mathrm{GeV}^2$")
+    ax.grid(alpha=.22); ax.legend(fontsize=8)
+    fig.tight_layout()
+    fig.savefig(figdir/"ji_uv_dv_projected_contours.png",dpi=200)
+    plt.close(fig)
+    return out
+
+
+def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_mean, a20_cov):
     """Run joint H+E projection and target/observable ablations.
 
     Proton-only local covariance contours are retained only as diagnostics in
@@ -1646,10 +1757,12 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir):
         if stale.exists():
             stale.unlink()
 
+    ji_summary = make_ji_projection(contour_data, a20_mean, a20_cov, figdir, tabdir)
+
     print("\n[Stage5 H+E] neutron observable ablation:")
     print(ablation_df.to_string(index=False))
 
-    return summary
+    return summary, ji_summary
 
 # ---------------------------------------------------------------------------
 # Main
@@ -1671,10 +1784,16 @@ def main():
         help="Pass-2 CSV; default: ../higher_level_dvcs_cross_section/import/dvcs_pass2_analysis.csv relative to this script.",
     )
     ap.add_argument("--output", type=Path, default=OUT_DEFAULT)
+    ap.add_argument("--a20-summary", type=Path, default=None,
+                    help="NNPDF4.0 A20 summary; default output/stage5_ji/tables/nnpdf40_valence_A20_summary_Q2_3.csv next to this script.")
     ap.add_argument("--stage2-dir", type=Path, default=None,
                     help="Stage-2 pseudo-data tables; default output/stage2/tables next to this script.")
     args = ap.parse_args()
     here = Path(__file__).resolve().parent
+    if args.a20_summary is None:
+        args.a20_summary = (here / A20_SUMMARY_DEFAULT).resolve()
+    else:
+        args.a20_summary = args.a20_summary.expanduser().resolve()
     if args.stage2_dir is None:
         args.stage2_dir = (here / "output" / "stage2" / "tables").resolve()
     else:
@@ -1726,8 +1845,9 @@ def main():
     bsa = load_actual_rgb_bsa_directory(args.rgb_bsa_dir)
     bsa.to_csv(tabdir / "rgb_published_bsa_actual_points.csv", index=False)
 
-    he_summary = run_stage5_he_projection(
-        args.stage2_dir, xs, bsa, figdir, tabdir
+    a20_mean, a20_cov, a20_meta = load_nnpdf_a20_summary(args.a20_summary)
+    he_summary, ji_summary = run_stage5_he_projection(
+        args.stage2_dir, xs, bsa, figdir, tabdir, a20_mean, a20_cov
     )
 
     rga_bsa = load_rga_pass2_bsa(args.rga_pass2)
@@ -1741,7 +1861,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v27 — VALENCE p+n H+E B20 PROJECTION")
+    print("STAGE 5 v28 — VALENCE p+n H+E → Ji PROJECTION")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -1829,6 +1949,14 @@ def main():
     print("  p-only dashed lines show only the locally constrained flavor direction")
     print("  p+n contours are the quantitative 68% regions used for the workshop projection")
     print(he_summary.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
+    print()
+    print("VALENCE Ji SUM-RULE PROJECTION:")
+    print(f"  NNPDF4.0 A20 input: {args.a20_summary}")
+    print(f"  fixed quoted scale: Q^2={A20_Q2_GEV2:g} GeV^2")
+    print("  J_qv = 0.5 * (A20_qv + B20_qv)")
+    print("  external PDF A20 covariance and projected DVCS B20 covariance are treated as independent")
+    print("  B20 model is interpreted at the same fixed workshop scale; no QCD evolution across CLAS12 bins is implemented")
+    print(ji_summary.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
     print()
     print()
     print("OUTPUT LAYOUT:")
