@@ -59,10 +59,40 @@ KAPPA_N = -1.91304273
 KAPPA_U = 2.0 * KAPPA_P + KAPPA_N
 KAPPA_D = KAPPA_P + 2.0 * KAPPA_N
 
-# Simple beta-family seed used only to map the E_v moment freedom.
-# e_v^q(x) = N_q x^{-alpha} (1-x)^beta, with N_q fixed by kappa_q.
-DEFAULT_ALPHA_U = 0.55
-DEFAULT_ALPHA_D = 0.55
+# ---------------------------------------------------------------------------
+# Stage-5 Step 1: minimal DFJK E_v forward-limit model
+# ---------------------------------------------------------------------------
+#
+# We deliberately start ONLY at xi=0, t=0:
+#
+#   E_v^q(x,0,0) = e_v^q(x)
+#                 = N_q x^{-alpha} (1-x)^{beta_q}.
+#
+# This is the forward-limit ansatz used by Diehl, Feldmann, Jakob and Kroll
+# (EPJC 39 (2005) 1, hep-ph/0408173).  Their normalization is fixed by the
+# proton/neutron anomalous magnetic moments:
+#
+#   integral_0^1 dx e_v^u = kappa_u,
+#   integral_0^1 dx e_v^d = kappa_d.
+#
+# For this workshop projection we fix alpha=0.55, the value used in the DFJK
+# E_v study, and allow only beta_u and beta_d to control the x-shape.
+#
+# IMPORTANT: this step does NOT yet add t dependence, skewness xi, a
+# double-distribution profile, CFFs, or DVCS observables.  Those belong to
+# later steps and should only be added after this simple map is understood.
+DFJK_ALPHA_E = 0.55
+
+# Transparent workshop reference point, chosen near the middle of the
+# beta ranges explored by DFJK.  It is NOT advertised as a new fit or as the
+# exact DFJK best-fit parameter set.
+WORKSHOP_BETA_U_E = 4.0
+WORKSHOP_BETA_D_E = 6.0
+
+# Scan ranges chosen to cover the beta variations explicitly discussed/shown
+# in the DFJK E_v study (u roughly 3.5--5.5, d roughly 5--9).
+BETA_U_E_SCAN = (3.5, 5.5)
+BETA_D_E_SCAN = (5.0, 9.0)
 
 RGB_XS_DEFAULT = Path("import/ndvcs_clas12_preliminary_unpolarized.txt")
 RGB_BSA_DIR_DEFAULT = None  # resolved relative to this script in main()
@@ -76,6 +106,18 @@ OUT_DEFAULT = Path("output/stage5_ji")
 
 def beta_fn(a: float, b: float) -> float:
     return math.gamma(a) * math.gamma(b) / math.gamma(a + b)
+
+
+def ev_normalization(kappa: float, alpha: float, beta: float) -> float:
+    """N_q such that integral_0^1 e_v^q(x) dx = kappa_q."""
+    return kappa / beta_fn(1.0 - alpha, beta + 1.0)
+
+
+def ev_forward(x, kappa: float, alpha: float, beta: float):
+    """Minimal DFJK forward limit e_v^q(x) = E_v^q(x, xi=0, t=0)."""
+    x = np.asarray(x, dtype=float)
+    Nq = ev_normalization(kappa, alpha, beta)
+    return Nq * np.power(x, -alpha) * np.power(1.0 - x, beta)
 
 
 def b20_from_beta(kappa: float, alpha: float, beta: float) -> float:
@@ -343,28 +385,73 @@ def plot_rgb_kinematics(df: pd.DataFrame, outdir: Path):
 # ---------------------------------------------------------------------------
 
 def make_b20_prior_map(figdir: Path, tabdir: Path):
-    beta_u = np.linspace(2.0, 8.0, 121)
-    beta_d = np.linspace(2.0, 8.0, 121)
+    """Stage-5 Step 1: map the two E_v shape parameters into B20 moments.
+
+    This is intentionally NOT a DVCS fit.  It answers only:
+      if beta_u and beta_d change the x-shape of E_v, how do the moments
+      B20^{u_v}(0) and B20^{d_v}(0) change?
+    """
+    beta_u = np.linspace(BETA_U_E_SCAN[0], BETA_U_E_SCAN[1], 101)
+    beta_d = np.linspace(BETA_D_E_SCAN[0], BETA_D_E_SCAN[1], 101)
+
     rows = []
     for bu in beta_u:
-        B_u = b20_from_beta(KAPPA_U, DEFAULT_ALPHA_U, bu)
+        B_u = b20_from_beta(KAPPA_U, DFJK_ALPHA_E, bu)
         for bd in beta_d:
-            B_d = b20_from_beta(KAPPA_D, DEFAULT_ALPHA_D, bd)
+            B_d = b20_from_beta(KAPPA_D, DFJK_ALPHA_E, bd)
             rows.append((bu, bd, B_u, B_d))
+
     df = pd.DataFrame(rows, columns=["beta_u_E", "beta_d_E", "B20_uv", "B20_dv"])
     df.to_csv(tabdir / "dfjk_B20_prior_map.csv", index=False)
 
+    # One explicit reference point so later pseudo-data have a transparent
+    # starting model.  This is a workshop reference, not a fitted result.
+    ref_Bu = b20_from_beta(
+        KAPPA_U, DFJK_ALPHA_E, WORKSHOP_BETA_U_E
+    )
+    ref_Bd = b20_from_beta(
+        KAPPA_D, DFJK_ALPHA_E, WORKSHOP_BETA_D_E
+    )
+    assumptions = pd.DataFrame([
+        ["alpha_E", DFJK_ALPHA_E,
+         "fixed; DFJK E_v forward-limit choice"],
+        ["beta_u_E_reference", WORKSHOP_BETA_U_E,
+         "workshop reference; not fitted yet"],
+        ["beta_d_E_reference", WORKSHOP_BETA_D_E,
+         "workshop reference; not fitted yet"],
+        ["B20_uv_reference", ref_Bu,
+         "derived from beta_u_E_reference"],
+        ["B20_dv_reference", ref_Bd,
+         "derived from beta_d_E_reference"],
+        ["kappa_u", KAPPA_U,
+         "fixed by proton/neutron anomalous magnetic moments"],
+        ["kappa_d", KAPPA_D,
+         "fixed by proton/neutron anomalous magnetic moments"],
+    ], columns=["quantity", "value", "role"])
+    assumptions.to_csv(tabdir / "dfjk_step1_model_assumptions.csv", index=False)
+
     fig, ax = plt.subplots(figsize=(8.0, 6.0))
-    sc = ax.scatter(df["B20_uv"], df["B20_dv"], c=df["beta_u_E"], s=7, alpha=0.65)
+    sc = ax.scatter(
+        df["B20_uv"], df["B20_dv"],
+        c=df["beta_u_E"], s=7, alpha=0.65
+    )
     cb = fig.colorbar(sc, ax=ax)
-    cb.set_label(r"$\beta_u^E$ (seed scan)")
+    cb.set_label(r"$\beta_u^E$")
+    ax.scatter(
+        [ref_Bu], [ref_Bd], marker="*", s=170,
+        edgecolor="black", linewidth=0.8,
+        label=rf"Workshop reference: $\beta_u={WORKSHOP_BETA_U_E:.1f}$, "
+              rf"$\beta_d={WORKSHOP_BETA_D_E:.1f}$"
+    )
     ax.set_xlabel(r"$B_{20}^{u_v}(0)=\int dx\,xE_v^u$")
     ax.set_ylabel(r"$B_{20}^{d_v}(0)=\int dx\,xE_v^d$")
-    ax.set_title("DFJK-inspired E-sector parameter space (prior map, not data constraint)")
+    ax.set_title("Step 1: E_v shape parameters mapped to Ji-sum-rule moments")
     ax.grid(alpha=0.25)
+    ax.legend(fontsize=9)
     fig.tight_layout()
     fig.savefig(figdir / "dfjk_B20_parameter_map_prior_only.png", dpi=180)
     plt.close(fig)
+
     return df
 
 
@@ -702,7 +789,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v14 — ACTUAL RGB BSA + RGA-LIKE 4D BINNING TRANSFER + DFJK/Ji FRAMEWORK")
+    print("STAGE 5 v15 — STEP 1 MINIMAL DFJK E_v MODEL + RGB/RGA PROJECTIONS")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -720,9 +807,17 @@ def main():
     print("RGB covariance-bracket shape diagnostic:")
     print(brackets.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
     print()
-    print("DFJK-inspired E normalization from anomalous magnetic moments:")
+    print("Stage-5 Step 1 — minimal DFJK E_v forward-limit model:")
+    print("  E_v^q(x, xi=0, t=0) = N_q x^(-alpha) (1-x)^(beta_q)")
+    print(f"  fixed alpha = {DFJK_ALPHA_E:.2f}")
     print(f"  kappa_u = 2*kappa_p + kappa_n = {KAPPA_U:+.6f}")
     print(f"  kappa_d = kappa_p + 2*kappa_n = {KAPPA_D:+.6f}")
+    print("  N_u and N_d are fixed so integral E_v^q dx = kappa_q")
+    print(f"  workshop reference beta_u = {WORKSHOP_BETA_U_E:.1f}")
+    print(f"  workshop reference beta_d = {WORKSHOP_BETA_D_E:.1f}")
+    print(f"  beta_u scan = {BETA_U_E_SCAN[0]:.1f} -- {BETA_U_E_SCAN[1]:.1f}")
+    print(f"  beta_d scan = {BETA_D_E_SCAN[0]:.1f} -- {BETA_D_E_SCAN[1]:.1f}")
+    print("  NOT included yet: t dependence, skewness, DD profile, CFFs, or DVCS fit.")
     print()
     print(f"Actual published RGB BSA: loaded {len(bsa)} rows from {args.rgb_bsa_dir}")
     for projection in ["xB", "Q2", "t"]:
