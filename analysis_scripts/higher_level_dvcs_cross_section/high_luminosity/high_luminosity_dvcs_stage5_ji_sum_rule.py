@@ -94,6 +94,21 @@ WORKSHOP_BETA_D_E = 6.0
 BETA_U_E_SCAN = (3.5, 5.5)
 BETA_D_E_SCAN = (5.0, 9.0)
 
+# ---------------------------------------------------------------------------
+# Stage-5 Step 2A: add ONLY t dependence
+# ---------------------------------------------------------------------------
+#
+# Before introducing skewness xi, use the simplest possible factorized
+# extension away from t=0:
+#
+#   E_v^q(x, xi=0, t) = E_v^q(x,0,0) * exp(B_E * t).
+#
+# Physical DVCS kinematics have t < 0, so positive B_E suppresses the GPD as
+# |t| grows.  A single common slope is used for u and d on purpose: at this
+# stage it is only a transparent bridge from the forward limit to nonzero t,
+# not a precision GPD parameterization.
+WORKSHOP_E_T_SLOPE = 1.0  # GeV^-2; illustrative fixed workshop value
+
 RGB_XS_DEFAULT = Path("import/ndvcs_clas12_preliminary_unpolarized.txt")
 RGB_BSA_DIR_DEFAULT = None  # resolved relative to this script in main()
 RGA_PASS2_DEFAULT = None  # resolved relative to this script below
@@ -118,6 +133,17 @@ def ev_forward(x, kappa: float, alpha: float, beta: float):
     x = np.asarray(x, dtype=float)
     Nq = ev_normalization(kappa, alpha, beta)
     return Nq * np.power(x, -alpha) * np.power(1.0 - x, beta)
+
+
+def ev_zero_skewness_t(x, t: float, kappa: float, alpha: float, beta: float,
+                       slope: float = WORKSHOP_E_T_SLOPE):
+    """Step 2A: simplest nonzero-t extension at xi=0.
+
+    E_v^q(x,0,t) = E_v^q(x,0,0) exp(slope*t).
+
+    t is in GeV^2 and is negative in the physical region.
+    """
+    return ev_forward(x, kappa, alpha, beta) * np.exp(slope * t)
 
 
 def b20_from_beta(kappa: float, alpha: float, beta: float) -> float:
@@ -484,6 +510,71 @@ def make_b20_prior_map(figdir: Path, tabdir: Path):
     return summary
 
 
+def make_step2a_t_dependence(figdir: Path, tabdir: Path):
+    """Step 2A diagnostic: add t dependence, but still keep xi=0.
+
+    The goal is pedagogical: show exactly what the new variable t does before
+    introducing skewness or calculating a DVCS observable.
+    """
+    x = np.linspace(0.01, 0.99, 600)
+    t_values = [0.0, -0.3, -0.6, -0.9]
+
+    rows = []
+    for flavor, kappa, beta in [
+        ("u_v", KAPPA_U, WORKSHOP_BETA_U_E),
+        ("d_v", KAPPA_D, WORKSHOP_BETA_D_E),
+    ]:
+        b20_0 = b20_from_beta(kappa, DFJK_ALPHA_E, beta)
+        for t in t_values:
+            scale = float(np.exp(WORKSHOP_E_T_SLOPE * t))
+            rows.append({
+                "flavor": flavor,
+                "t_GeV2": t,
+                "beta_E": beta,
+                "B_E_GeV_minus2": WORKSHOP_E_T_SLOPE,
+                "exp_Bt": scale,
+                "integral_Ev_dx": kappa * scale,
+                "B20_qv_t": b20_0 * scale,
+            })
+
+    pd.DataFrame(rows).to_csv(
+        tabdir / "dfjk_step2a_t_dependence_summary.csv", index=False
+    )
+
+    for flavor, latex_flavor, kappa, beta in [
+        ("u", "u", KAPPA_U, WORKSHOP_BETA_U_E),
+        ("d", "d", KAPPA_D, WORKSHOP_BETA_D_E),
+    ]:
+        fig, ax = plt.subplots(figsize=(8.0, 5.4))
+        for t in t_values:
+            y = ev_zero_skewness_t(
+                x, t, kappa, DFJK_ALPHA_E, beta, WORKSHOP_E_T_SLOPE
+            )
+            ax.plot(x, y, linewidth=2.2, label=rf"$t={t:.1f}\ \mathrm{{GeV}}^2$")
+
+        ax.axhline(0.0, linewidth=0.8, color="black")
+        ax.set_xlabel(r"$x$")
+        ax.set_ylabel(rf"$E_v^{latex_flavor}(x,\xi=0,t)$")
+        ax.set_title(
+            rf"Step 2A: adding $t$ dependence to $E_v^{latex_flavor}$ "
+            rf"(still $\xi=0$)"
+        )
+        ax.text(
+            0.98, 0.96,
+            rf"$E_v(x,0,t)=E_v(x,0,0)e^{{B_Et}}$, "
+            rf"$B_E={WORKSHOP_E_T_SLOPE:.1f}\ \mathrm{{GeV}}^{{-2}}$",
+            transform=ax.transAxes, ha="right", va="top", fontsize=10,
+            bbox=dict(boxstyle="round", facecolor="white", alpha=0.85),
+        )
+        ax.grid(alpha=0.22)
+        ax.legend(fontsize=9)
+        fig.tight_layout()
+        fig.savefig(figdir / f"dfjk_step2a_Ev_{flavor}_t_dependence.png", dpi=180)
+        plt.close(fig)
+
+    return pd.DataFrame(rows)
+
+
 
 def _tuple_component_stage5(series: pd.Series, index: int) -> np.ndarray:
     """Extract a numeric component from tuple-valued pass-2 CSV cells."""
@@ -803,6 +894,7 @@ def main():
 
     plot_rgb_kinematics(xs, figdir)
     make_b20_prior_map(figdir, tabdir)
+    make_step2a_t_dependence(figdir, tabdir)
 
     bsa = load_actual_rgb_bsa_directory(args.rgb_bsa_dir)
     bsa.to_csv(tabdir / "rgb_published_bsa_actual_points.csv", index=False)
@@ -818,7 +910,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v16 — STEP 1 INTUITIVE E_v SHAPE MODEL + RGB/RGA PROJECTIONS")
+    print("STAGE 5 v17 — STEP 2A SIMPLE t DEPENDENCE + RGB/RGA PROJECTIONS")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -846,7 +938,10 @@ def main():
     print(f"  workshop reference beta_d = {WORKSHOP_BETA_D_E:.1f}")
     print(f"  beta_u scan = {BETA_U_E_SCAN[0]:.1f} -- {BETA_U_E_SCAN[1]:.1f}")
     print(f"  beta_d scan = {BETA_D_E_SCAN[0]:.1f} -- {BETA_D_E_SCAN[1]:.1f}")
-    print("  NOT included yet: t dependence, skewness, DD profile, CFFs, or DVCS fit.")
+    print("  Step 2A adds ONLY nonzero t at xi=0:")
+    print("    E_v^q(x,0,t) = E_v^q(x,0,0) exp(B_E t)")
+    print(f"    fixed illustrative B_E = {WORKSHOP_E_T_SLOPE:.1f} GeV^-2")
+    print("  NOT included yet: skewness xi, DD profile, CFFs, or DVCS fit.")
     print()
     print(f"Actual published RGB BSA: loaded {len(bsa)} rows from {args.rgb_bsa_dir}")
     for projection in ["xB", "Q2", "t"]:
