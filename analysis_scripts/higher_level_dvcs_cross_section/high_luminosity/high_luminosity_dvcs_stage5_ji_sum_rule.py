@@ -769,23 +769,58 @@ def make_step2c_beta_to_x_mapping(figdir: Path, tabdir: Path):
 # The model is used internally; alpha/beta are not conference observables.
 
 
+def _positive_unit_grid(n: int = 1800):
+    """Grid on 0<z<1 with strong resolution near z=0.
+
+    E_v ~ z^{-alpha_E}, so a uniform grid badly under-resolves the small-z
+    contribution to its moments.  This composite grid fixes that numerical
+    problem without changing the model.
+    """
+    n_log = max(200, n // 2)
+    n_lin = max(200, n - n_log)
+    return np.unique(np.concatenate([
+        np.geomspace(1.0e-9, 0.03, n_log),
+        np.linspace(0.03, 1.0 - 1.0e-8, n_lin),
+    ]))
+
+
+def _dd_profile_vectorized(beta, alpha, b=WORKSHOP_DD_PROFILE_B):
+    """Vectorized equivalent of dd_profile for numerical DD integration."""
+    beta = np.asarray(beta, dtype=float)
+    alpha = np.asarray(alpha, dtype=float)
+    one_minus = 1.0 - beta
+    pref = (
+        math.gamma(2.0 * b + 2.0)
+        / (2.0 ** (2.0 * b + 1.0) * math.gamma(b + 1.0) ** 2)
+    )
+    core = one_minus**2 - alpha**2
+    out = np.zeros_like(beta)
+    mask = np.abs(alpha) <= one_minus
+    out[mask] = (
+        pref
+        * np.maximum(core[mask], 0.0) ** b
+        / one_minus[mask] ** (2.0 * b + 1.0)
+    )
+    return out
+
+
 def ev_finite_xi(x, xi: float, t: float, kappa: float, alpha_e: float,
                  beta_e: float, slope: float = WORKSHOP_E_T_SLOPE,
                  profile_b: float = WORKSHOP_DD_PROFILE_B,
-                 n_beta: int = 900):
+                 n_beta: int = 1800):
     """Finite-skewness valence E from the fixed-profile DD construction."""
     xarr = np.atleast_1d(np.asarray(x, dtype=float))
 
     # xi -> 0 must reduce to the zero-skewness input.
     if abs(xi) < 1.0e-8:
-        out = ev_zero_skewness_t(
-            np.clip(xarr, 1.0e-8, 1.0 - 1.0e-8),
-            t, kappa, alpha_e, beta_e, slope
+        out = np.zeros_like(xarr)
+        mask = (xarr > 0.0) & (xarr < 1.0)
+        out[mask] = ev_zero_skewness_t(
+            xarr[mask], t, kappa, alpha_e, beta_e, slope
         )
-        out[(xarr <= 0.0) | (xarr >= 1.0)] = 0.0
         return float(out[0]) if np.ndim(x) == 0 else out
 
-    beta_grid = np.linspace(1.0e-5, 1.0 - 1.0e-5, n_beta)
+    beta_grid = _positive_unit_grid(n_beta)
     forward = ev_zero_skewness_t(
         beta_grid, t, kappa, alpha_e, beta_e, slope
     )
@@ -793,23 +828,28 @@ def ev_finite_xi(x, xi: float, t: float, kappa: float, alpha_e: float,
     out = np.zeros_like(xarr)
     for ix, xv in enumerate(xarr):
         alpha_dd = (xv - beta_grid) / xi
-        prof = np.array([
-            dd_profile(bet, np.array([a]), profile_b)[0]
-            for bet, a in zip(beta_grid, alpha_dd)
-        ])
-        integrand = forward * prof / abs(xi)
-        out[ix] = np.trapezoid(integrand, beta_grid)
+        prof = _dd_profile_vectorized(beta_grid, alpha_dd, profile_b)
+        out[ix] = np.trapezoid(
+            forward * prof / abs(xi), beta_grid
+        )
 
     return float(out[0]) if np.ndim(x) == 0 else out
 
 
 def validate_finite_xi_model(tabdir: Path):
-    """Numerical checks needed before the model is used for projections.
+    """Numerically verify the DD zeroth-moment sum rule.
 
-    These are model-validation checks, not conference figures.
+    Two corrections relative to v21 are essential:
+      1. resolve the integrable x^{-alpha_E} behavior near x=0;
+      2. at finite xi integrate the full DD support -xi <= x <= 1,
+         including the negative-x part of the ERBL region.
+
+    No conference figure is produced; this is an internal numerical check.
     """
-    x = np.linspace(0.002, 0.998, 700)
     rows = []
+
+    # Dense near x=0 so the forward singular behavior is integrated correctly.
+    x_forward = _positive_unit_grid(4000)
 
     for flavor, kappa, beta_e in [
         ("u_v", KAPPA_U, WORKSHOP_BETA_U_E),
@@ -818,33 +858,65 @@ def validate_finite_xi_model(tabdir: Path):
         for t in [0.0, -0.3, -0.6]:
             expected_zeroth = kappa * np.exp(WORKSHOP_E_T_SLOPE * t)
 
-            # Forward-limit numerical moment.
             e0 = ev_zero_skewness_t(
-                x, t, kappa, DFJK_ALPHA_E, beta_e, WORKSHOP_E_T_SLOPE
+                x_forward, t, kappa, DFJK_ALPHA_E, beta_e,
+                WORKSHOP_E_T_SLOPE
             )
-            zeroth_xi0 = np.trapezoid(e0, x)
+            zeroth_xi0 = np.trapezoid(e0, x_forward)
 
-            # Finite-xi zeroth moment should be xi independent (up to numerical
-            # integration/support effects) for this DD construction.
             for xi in [0.05, 0.10, 0.20, 0.30]:
+                # For beta in [0,1] and |alpha|<=1-beta, the finite-xi
+                # construction has support down to x=-xi and up to x=1.
+                x_negative = np.linspace(-xi, 0.0, 500, endpoint=False)
+                x_positive = np.unique(np.concatenate([
+                    np.geomspace(1.0e-8, 0.03, 700),
+                    np.linspace(0.03, 1.0, 900),
+                ]))
+                x_full = np.concatenate([x_negative, x_positive])
+
                 exi = ev_finite_xi(
-                    x, xi, t, kappa, DFJK_ALPHA_E, beta_e,
-                    WORKSHOP_E_T_SLOPE, WORKSHOP_DD_PROFILE_B
+                    x_full, xi, t, kappa, DFJK_ALPHA_E, beta_e,
+                    WORKSHOP_E_T_SLOPE, WORKSHOP_DD_PROFILE_B,
+                    n_beta=1800
                 )
-                zeroth = np.trapezoid(exi, x)
+                zeroth = np.trapezoid(exi, x_full)
+
                 rows.append({
                     "flavor": flavor,
                     "t_GeV2": t,
                     "xi": xi,
                     "expected_zeroth_moment": expected_zeroth,
                     "numerical_xi0_moment": zeroth_xi0,
+                    "xi0_over_expected": zeroth_xi0 / expected_zeroth,
                     "numerical_finite_xi_moment": zeroth,
                     "finite_xi_over_expected": zeroth / expected_zeroth,
+                    "finite_xi_fractional_deviation":
+                        zeroth / expected_zeroth - 1.0,
                 })
 
     out = pd.DataFrame(rows)
     out.to_csv(tabdir / "finite_xi_model_validation.csv", index=False)
+
+    max_forward_dev = float(
+        np.max(np.abs(out["xi0_over_expected"] - 1.0))
+    )
+    max_finite_dev = float(
+        np.max(np.abs(out["finite_xi_over_expected"] - 1.0))
+    )
+
+    # This should be a numerical identity at the sub-percent level.  Fail
+    # loudly rather than allowing later observable fits to use a broken grid.
+    tolerance = 2.0e-3
+    if max_forward_dev > tolerance or max_finite_dev > tolerance:
+        raise RuntimeError(
+            "Finite-xi DD validation failed: "
+            f"max forward deviation={max_forward_dev:.4g}, "
+            f"max finite-xi deviation={max_finite_dev:.4g}, "
+            f"tolerance={tolerance:.4g}"
+        )
+
     return out
+
 
 
 def write_stage5_projection_plan(tabdir: Path):
@@ -1203,7 +1275,7 @@ def main():
         transfer_points = None
 
     print("=" * 100)
-    print("STAGE 5 v21 — PRODUCTION FINITE-XI MODEL + CONFERENCE B20 TARGET")
+    print("STAGE 5 v22 — VALIDATED FINITE-XI MODEL + CONFERENCE B20 TARGET")
     print("=" * 100)
     print(f"RGB neutron XS: {len(xs)} phi points in {xs['kin_bin'].nunique()} kinematic bins")
     print(f"xB range      : {xs.xB.min():.3f} -- {xs.xB.max():.3f}")
@@ -1226,8 +1298,15 @@ def main():
     print("  anomalous magnetic moments fix the zeroth moments")
     print(f"  fixed alpha_E={DFJK_ALPHA_E:.2f}, B_E={WORKSHOP_E_T_SLOPE:.1f} GeV^-2, DD profile b={WORKSHOP_DD_PROFILE_B:.1f}")
     print("  finite skewness is now constructed internally with the full DD integral")
-    max_dev = np.max(np.abs(finite_xi_validation["finite_xi_over_expected"] - 1.0))
-    print(f"  finite-xi zeroth-moment validation: max fractional deviation = {max_dev:.4g}")
+    max_forward_dev = np.max(
+        np.abs(finite_xi_validation["xi0_over_expected"] - 1.0)
+    )
+    max_finite_dev = np.max(
+        np.abs(finite_xi_validation["finite_xi_over_expected"] - 1.0)
+    )
+    print(f"  forward zeroth-moment validation:  max fractional deviation = {max_forward_dev:.4g}")
+    print(f"  finite-xi zeroth-moment validation: max fractional deviation = {max_finite_dev:.4g}")
+    print("  validation includes full finite-xi support -xi <= x <= 1")
     print("  pedagogical alpha/beta/skewness figures are no longer produced")
     print()
     print("Conference target:")
