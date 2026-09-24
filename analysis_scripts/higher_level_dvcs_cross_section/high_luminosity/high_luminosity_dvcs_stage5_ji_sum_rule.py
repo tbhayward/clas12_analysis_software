@@ -70,12 +70,44 @@ Cichy--Constantinou--Sznajder--Wagner elastic+lattice extraction (VALENCE):
   Values are also explicitly tabulated in P. Sznajder's BNL 2024 GPD slides:
   https://indico.bnl.gov/event/24891/contributions/96844/attachments/58671/100775/BNL24_SB.pdf
 
+Hall-A neutron DVCS historical constraint (full-flavor Ju,Jd, VGG model):
+  Mazouz et al., Phys. Rev. Lett. 99, 242501 (2007), as summarized together
+  with HERMES in Aidala et al., Rev. Mod. Phys. 85, 655 (2013):
+      Jd + Ju/5.0 = 0.18 +/- 0.14 (experimental)
+  https://cds.cern.ch/record/1478050/files/RevModPhys.85.655.pdf
+  This is a one-dimensional model-dependent combination, not separate Ju/Jd
+  marginal uncertainties.
+
+Future EIC/EicC DVCS projection (full-flavor Ju,Jd, VGG-style model):
+  X. Ji et al., ``Deeply virtual compton scattering at future electron-ion
+  colliders'', Eur. Phys. J. C 83 (2023), DOI 10.1140/epjc/s10052-023-12065-x
+  https://link.springer.com/article/10.1140/epjc/s10052-023-12065-x
+  In the HERMES-like kinematic region, including statistical + assumed
+  experimental systematic errors (their Eqs. 49--50):
+      EicC: Ju + Jd/2.9 = 0.41 +/- 0.08
+      EIC : Ju + Jd/3.0 = 0.39 +/- 0.06
+  Statistics-only values are 0.06 (EicC) and 0.04 (EIC), but the production
+  comparison uses the stat+syst values to avoid giving the collider projection
+  an artificially favorable treatment.  Their small-x projections reach
+  roughly 0.04--0.05 on related Ju+c*Jd combinations; these are documented but
+  not mixed into the HERMES-region benchmark because the kinematics differ.
+
+Hashamipour et al. valence extraction -- documented, not numerically plotted:
+  H. Hashamipour et al., Phys. Rev. D 105, 054002 (2022),
+  DOI 10.1103/PhysRevD.105.054002.
+  https://journals.aps.org/prd/abstract/10.1103/PhysRevD.105.054002
+  This paper extracts valence H_v and E_v from proton/neutron elastic FF and
+  radius data and presents J_uv,J_dv with uncertainties at mu=2 GeV in Fig. 11.
+  The article does not tabulate compact numerical Ji uncertainties.  We do NOT
+  digitize the figure or invent numbers here; add it to the numerical comparison
+  only if an author table/data file or a documented digitization is adopted.
+
 Comparability warning:
   The CLAS12 projection, Diehl--Kroll, and Cichy et al. entries are valence
-  quantities.  HERMES is a historical full-flavor Ju,Jd model constraint.
-  It is drawn only as a historical direct-DVCS sensitivity benchmark and is
-  labeled as such on the figure; it is NOT treated as an apples-to-apples
-  valence determination.
+  quantities. HERMES, Hall-A, EIC and EicC entries are historical/projected
+  full-flavor one-combination constraints. The uncertainty-only figure therefore
+  separates these into two groups rather than treating all markers as the same
+  observable.
 """
 
 from __future__ import annotations
@@ -1775,99 +1807,118 @@ def make_ji_world_comparison(ji_summary, figdir, tabdir):
 
 
 def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, tabdir):
-    """Compare quoted/projected Ji uncertainty magnitudes without central values.
+    """Uncertainty-only world context, separated by what is actually constrained.
 
-    This is intentionally separate from ``ji_world_comparison.png``.  It avoids
-    making the arbitrary pseudo-data/reference-model center part of the visual
-    comparison and instead asks only how large the constraints are.
+    The upper group contains direct/projected DVCS constraints on ONE full-flavor
+    linear combination of Ju and Jd.  Those numbers are not sigma(J_uv) or
+    sigma(J_dv), so they are deliberately not mixed with the lower group.
 
-    Directly comparable valence entries:
-      * CLAS12 RGA+RGB projections: sigma(J_uv), sigma(J_dv).
-      * Diehl--Kroll 2013: asymmetric marginal valence uncertainties.  The
-        plotted horizontal ranges retain the published lower/upper magnitudes;
-        no symmetric uncertainty or 2D covariance is invented.
-      * Cichy et al. 2024: quoted marginal valence uncertainties.
+    The lower group contains genuinely flavor-separated VALENCE marginal
+    uncertainties sigma(J_uv), sigma(J_dv).  This is where the CLAS12 RGA+RGB
+    projection can be compared directly with Diehl--Kroll and Cichy et al.
 
-    Historical HERMES is deliberately separated from the u_v/d_v markers:
-      sigma(J_u + J_d/2.8) = 0.17 is a full-flavor, one-combination DVCS
-      constraint, not separate sigma(J_uv) and sigma(J_dv).  It is shown only
-      as a historical direct-DVCS scale benchmark.
-
-    Full citations, URLs, definitions, and caveats are documented in the module
-    docstring and in ji_world_comparison_literature_inputs.csv.
+    EIC/EicC use the stat+syst HERMES-region projections from Eqs. (49--50) of
+    EPJC 83 (2023), not their smaller statistics-only numbers.  Hashamipour et
+    al. PRD 105, 054002 (2022) is documented in the module header but omitted
+    numerically because its J_uv/J_dv uncertainties are figure-only in the
+    publication; no undocumented digitization is used here.
     """
-    # Rows used in the plotted comparison and an auditable companion table.
     rows=[]
+    # Direct DVCS one-combination benchmarks.  coefficient means
+    # combination = first_flavor + second_flavor/coefficient.
+    direct=[
+        dict(label="HERMES p-DVCS", status="measured", sigma_combination=0.17,
+             combination="Ju + Jd/2.8", flavor_scope="full flavor",
+             note="Airapetian et al. 2008 as summarized in RMP 85, 655 (2013)"),
+        dict(label="Hall-A n-DVCS", status="measured", sigma_combination=0.14,
+             combination="Jd + Ju/5.0", flavor_scope="full flavor",
+             note="Mazouz et al. PRL 99, 242501 (2007); VGG interpretation"),
+        dict(label="EicC projection", status="projection stat+syst", sigma_combination=0.08,
+             combination="Ju + Jd/2.9", flavor_scope="full flavor",
+             note="EPJC 83 (2023), Eq. 49, HERMES-like region"),
+        dict(label="EIC projection", status="projection stat+syst", sigma_combination=0.06,
+             combination="Ju + Jd/3.0", flavor_scope="full flavor",
+             note="EPJC 83 (2023), Eq. 50, HERMES-like region"),
+    ]
+    rows.extend(direct)
+
     for L in (1,5,10):
         r=ji_summary[ji_summary["scenario"]==f"p{L}x_plus_n{L}x"].iloc[0]
-        rows.append(dict(label=f"CLAS12 p+n {L}x", kind="projected_valence_baseline",
+        rows.append(dict(label=f"CLAS12 p+n {L}x", status="projected valence baseline",
                          sigma_Juv=float(r.sigma_J_uv), sigma_Jdv=float(r.sigma_J_dv),
-                         note="RGA+RGB projection; baseline PTP systematics"))
+                         flavor_scope="valence",
+                         note="RGA+RGB only; baseline PTP systematics; RGH AUT not included"))
     r=ji_summary_stat[ji_summary_stat["scenario"]=="p10x_plus_n10x"].iloc[0]
-    rows.append(dict(label="CLAS12 p+n 10x stat-only", kind="projected_valence_stat_only",
+    rows.append(dict(label="CLAS12 p+n 10x stat-only", status="projected valence stat-only",
                      sigma_Juv=float(r.sigma_J_uv), sigma_Jdv=float(r.sigma_J_dv),
-                     note="Strict statistics-only: all RGA/RGB experimental PTP removed"))
+                     flavor_scope="valence",
+                     note="all RGA/RGB experimental PTP removed; RGH AUT not included"))
     rows += [
-        dict(label="Diehl-Kroll 2013", kind="published_valence_asymmetric",
-             sigma_Juv=float("nan"), sigma_Jdv=float("nan"),
-             note="Juv -0.024/+0.009; Jdv -0.016/+0.010; elastic FF + GPD model"),
-        dict(label="Cichy et al. 2024", kind="published_valence",
-             sigma_Juv=0.010, sigma_Jdv=0.0046,
-             note="elastic FF + lattice"),
-        dict(label="HERMES DVCS", kind="historical_full_flavor_combination",
-             sigma_Juv=float("nan"), sigma_Jdv=float("nan"),
-             note="sigma(Ju + Jd/2.8)=0.17; full flavor; not flavor separated"),
+        dict(label="Diehl-Kroll 2013", status="published valence asymmetric",
+             sigma_Juv_low=0.024, sigma_Juv_high=0.009,
+             sigma_Jdv_low=0.016, sigma_Jdv_high=0.010,
+             flavor_scope="valence", note="elastic FF + GPD model; mu=2 GeV"),
+        dict(label="Cichy et al. 2024", status="published valence",
+             sigma_Juv=0.010, sigma_Jdv=0.0046, flavor_scope="valence",
+             note="elastic FF + lattice; mu=2 GeV"),
+        dict(label="Hashamipour et al. 2022", status="documented_not_plotted",
+             flavor_scope="valence",
+             note="Juv/Jdv shown with uncertainties in Fig. 11 but compact numerical errors not tabulated; no digitization used"),
     ]
     pd.DataFrame(rows).to_csv(tabdir/"ji_world_uncertainty_comparison_inputs.csv", index=False)
 
-    labels=["HERMES DVCS\n(full-flavor combination)",
-            "CLAS12 p+n 1x", "CLAS12 p+n 5x", "CLAS12 p+n 10x",
-            "CLAS12 p+n 10x\n(stat-only)", "Diehl-Kroll 2013", "Cichy et al. 2024"]
-    y=np.arange(len(labels))[::-1]
-    fig,ax=plt.subplots(figsize=(8.4,5.8))
+    # One figure, two panels: do not make full-flavor combination widths look
+    # like valence marginal errors simply because all numbers are dimensionless.
+    fig,(ax0,ax1)=plt.subplots(2,1,figsize=(8.6,7.4),gridspec_kw={"height_ratios":[0.85,1.35]})
 
-    # CLAS12 baseline points.
-    for i,L in enumerate((1,5,10), start=1):
+    # --- direct DVCS combination constraints ---
+    labels0=[d["label"] for d in direct]
+    y0=np.arange(len(labels0))[::-1]
+    for yy,d in zip(y0,direct):
+        marker="D" if d["status"]=="measured" else "^"
+        ax0.scatter(d["sigma_combination"],yy,marker=marker,s=65,zorder=4)
+        ax0.text(d["sigma_combination"]+0.004,yy,d["combination"],va="center",fontsize=8)
+    ax0.set_yticks(y0); ax0.set_yticklabels(labels0)
+    ax0.set_xlim(0,0.23)
+    ax0.set_xlabel("Uncertainty on quoted $J_u$--$J_d$ linear combination")
+    ax0.set_title("Direct DVCS constraints and collider projections (full flavor)",fontsize=11)
+    ax0.grid(axis="x",alpha=.22)
+    ax0.text(0.99,0.04,"EIC/EicC: HERMES-like kinematics, statistical + systematic projection",
+             transform=ax0.transAxes,ha="right",va="bottom",fontsize=7.5)
+
+    # --- flavor-separated valence marginal uncertainties ---
+    labels1=["CLAS12 p+n 1x","CLAS12 p+n 5x","CLAS12 p+n 10x",
+             "CLAS12 p+n 10x (stat-only)","Diehl-Kroll 2013","Cichy et al. 2024"]
+    y1=np.arange(len(labels1))[::-1]
+    for i,L in enumerate((1,5,10)):
         r=ji_summary[ji_summary["scenario"]==f"p{L}x_plus_n{L}x"].iloc[0]
-        yy=y[i]
-        ax.scatter(float(r.sigma_J_uv),yy+0.10,marker="o",s=55,zorder=4,
-                   label=r"$\sigma(J_{u_v})$" if L==1 else None)
-        ax.scatter(float(r.sigma_J_dv),yy-0.10,marker="s",s=50,zorder=4,
-                   label=r"$\sigma(J_{d_v})$" if L==1 else None)
-
-    # Strict statistics-only 10x sensitivity.
+        ax1.scatter(float(r.sigma_J_uv),y1[i]+0.10,marker="o",s=55,zorder=4,
+                    label=r"$\sigma(J_{u_v})$" if i==0 else None)
+        ax1.scatter(float(r.sigma_J_dv),y1[i]-0.10,marker="s",s=50,zorder=4,
+                    label=r"$\sigma(J_{d_v})$" if i==0 else None)
     r=ji_summary_stat[ji_summary_stat["scenario"]=="p10x_plus_n10x"].iloc[0]
-    yy=y[4]
-    ax.scatter(float(r.sigma_J_uv),yy+0.10,marker="o",s=55,zorder=4)
-    ax.scatter(float(r.sigma_J_dv),yy-0.10,marker="s",s=50,zorder=4)
+    ax1.scatter(float(r.sigma_J_uv),y1[3]+0.10,marker="o",s=55,zorder=4)
+    ax1.scatter(float(r.sigma_J_dv),y1[3]-0.10,marker="s",s=50,zorder=4)
 
-    # Diehl--Kroll: preserve asymmetric published marginal uncertainty sizes.
-    yy=y[5]
+    # DK asymmetric uncertainty magnitudes: draw the published lower/upper
+    # magnitudes as a range, rather than inventing a symmetric sigma.
     for lo,hi,off,marker in ((0.024,0.009,+0.10,"o"),(0.016,0.010,-0.10,"s")):
-        ax.hlines(yy+off,min(lo,hi),max(lo,hi),linewidth=2.0,zorder=3)
-        ax.scatter(0.5*(lo+hi),yy+off,marker=marker,s=45,zorder=4)
+        ax1.hlines(y1[4]+off,min(lo,hi),max(lo,hi),linewidth=2.0,zorder=3)
+        ax1.scatter(0.5*(lo+hi),y1[4]+off,marker=marker,s=45,zorder=4)
+    ax1.scatter(0.010,y1[5]+0.10,marker="o",s=55,zorder=4)
+    ax1.scatter(0.0046,y1[5]-0.10,marker="s",s=50,zorder=4)
 
-    # Cichy et al. symmetric quoted marginal uncertainties.
-    yy=y[6]
-    ax.scatter(0.010,yy+0.10,marker="o",s=55,zorder=4)
-    ax.scatter(0.0046,yy-0.10,marker="s",s=50,zorder=4)
+    ax1.set_yticks(y1); ax1.set_yticklabels(labels1)
+    ax1.set_xlim(0,0.085)
+    ax1.set_xlabel("Marginal uncertainty magnitude")
+    ax1.set_title(r"Flavor-separated valence $J_{u_v},J_{d_v}$ constraints",fontsize=11)
+    ax1.grid(axis="x",alpha=.22); ax1.legend(fontsize=8,loc="lower right")
+    ax1.text(0.99,0.04,
+             "CLAS12 = RGA+RGB only; projected RGH $A_{UT}$ sensitivity to $E$ is not included.",
+             transform=ax1.transAxes,ha="right",va="bottom",fontsize=7.5)
 
-    # HERMES is a different quantity; show one explicitly distinct historical
-    # benchmark rather than pretending it supplies u_v and d_v uncertainties.
-    ax.scatter(0.17,y[0],marker="D",s=60,zorder=4,
-               label=r"HERMES $\sigma(J_u+J_d/2.8)$ (full flavor)")
-
-    ax.set_yticks(y); ax.set_yticklabels(labels)
-    ax.set_xlim(0,0.185)
-    ax.set_xlabel("Quoted/projected uncertainty magnitude")
-    ax.set_title("Valence Ji precision in world context")
-    ax.grid(axis="x",alpha=.22)
-    ax.legend(fontsize=8,loc="upper right")
-    ax.text(0.99,0.02,
-            "CLAS12 projections use RGA+RGB only; projected RGH $A_{UT}$ is not included.\n"
-            "HERMES is historical context only: full flavor and one linear combination.",
-            transform=ax.transAxes,ha="right",va="bottom",fontsize=8)
-    fig.tight_layout()
+    fig.suptitle("Ji-sum-rule uncertainty scales in world context",fontsize=14)
+    fig.tight_layout(rect=(0,0,1,.965))
     fig.savefig(figdir/"ji_world_uncertainty_comparison.png",dpi=200)
     plt.close(fig)
 
