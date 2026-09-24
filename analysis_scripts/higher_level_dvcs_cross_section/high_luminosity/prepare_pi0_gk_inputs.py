@@ -6,6 +6,7 @@ import tempfile
 from pathlib import Path
 import numpy as np
 import pandas as pd
+import matplotlib.pyplot as plt
 
 RGA_REL = Path("rga_10604/combined_reduced_cross_sections.csv")
 RGK_REL = Path("rgk_6535/rgk6535_reduced_cross_sections.csv")
@@ -53,7 +54,7 @@ def locate(inp):
             q = Path(m.name)
             if q.is_absolute() or ".." in q.parts:
                 raise ValueError(f"Unsafe archive member: {m.name}")
-        tf.extractall(root)
+        tf.extractall(root, filter="data")
     for c in [root] + list(root.iterdir()):
         if c.is_dir() and (c/RGA_REL).exists() and (c/RGK_REL).exists():
             return c, tmp
@@ -116,7 +117,7 @@ def write_partons_kinematics(points, path):
     with open(path, "w") as f:
         for r in points.itertuples(index=False):
             f.write(f"{r.gk_xi:.12g}|{r.gk_t_GeV2:.12g}|{r.gk_MuF2_GeV2:.12g}|"
-                    f"{r.gk_MuR2_GeV2:.12g}|{r.Q2_flux_coordinate_GeV2:.12g}\\n")
+                    f"{r.gk_MuR2_GeV2:.12g}|{r.Q2_flux_coordinate_GeV2:.12g}\n")
 
 def write_xml(path, kin_path, nw, nc, chi2):
     lines = [
@@ -139,7 +140,78 @@ def write_xml(path, kin_path, nw, nc, chi2):
         '  <task service="DVMPConvolCoeffFunctionService" method="printResults"></task>',
         '</scenario>',
     ]
-    path.write_text("\\n".join(lines)+"\\n")
+    path.write_text("\n".join(lines)+"\n")
+
+
+def make_diagnostic_plots(rga, rgk, common, plotdir):
+    plotdir.mkdir(parents=True, exist_ok=True)
+
+    # One point per nominal Q2-xB cell so phi/t multiplicity does not dominate.
+    rga_qx = rga.groupby(["iq2","ixb"], as_index=False).agg(
+        Q2=("Q2_flux_coordinate_GeV2","median"),
+        xB=("xB_flux_coordinate","median"))
+    rgk_qx = rgk.groupby(["iq2","ixb"], as_index=False).agg(
+        Q2=("Q2_flux_coordinate_GeV2","median"),
+        xB=("xB_flux_coordinate","median"))
+
+    fig, ax = plt.subplots(figsize=(7.2,5.4))
+    ax.scatter(rga_qx["xB"], rga_qx["Q2"], marker="o", label="RGA 10.604 GeV")
+    ax.scatter(rgk_qx["xB"], rgk_qx["Q2"], marker="x", label="RGK 6.535 GeV")
+    ax.set_xlabel(r"$x_B$")
+    ax.set_ylabel(r"$Q^2$ (GeV$^2$)")
+    ax.set_title(r"Blinded $\pi^0$ kinematic coverage")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(plotdir/"01_q2_xb_coverage.png", dpi=180)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(7.2,5.4))
+    ax.hist(np.abs(common["delta_epsilon_rga_minus_rgk"]), bins=18)
+    ax.axvline(np.abs(common["delta_epsilon_rga_minus_rgk"]).median(),
+               linestyle="--", label="Median")
+    ax.set_xlabel(r"$|\Delta\epsilon|$")
+    ax.set_ylabel("Common (Q², xB, t) cells")
+    ax.set_title("RGA–RGK Rosenbluth lever arm")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(plotdir/"02_delta_epsilon_distribution.png", dpi=180)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(7.2,5.4))
+    cap = 1.5
+    ax.hist(np.clip(rga["relative_uncertainty"], 0, cap), bins=35,
+            histtype="step", linewidth=1.6, label="RGA supplied sample")
+    ax.hist(np.clip(rgk["relative_uncertainty"], 0, cap), bins=35,
+            histtype="step", linewidth=1.6, label="RGK supplied subset")
+    ax.set_xlabel("Relative uncertainty")
+    ax.set_ylabel("4D bins")
+    ax.set_title("Supplied per-bin relative uncertainties")
+    ax.legend()
+    ax.text(0.98, 0.95, "Values >1.5 shown in final bin",
+            transform=ax.transAxes, ha="right", va="top", fontsize=9)
+    fig.tight_layout()
+    fig.savefig(plotdir/"03_relative_uncertainty_distribution.png", dpi=180)
+    plt.close(fig)
+
+    q2_edges = rga[["iq2","Q2_low_GeV2","Q2_high_GeV2"]].drop_duplicates("iq2")
+    counts = common.groupby("iq2").size().rename("n_common").reset_index()
+    counts8 = common[common["both_nphi_ge_8"]].groupby("iq2").size().rename("n_ge8").reset_index()
+    qc = q2_edges.merge(counts, on="iq2", how="inner").merge(counts8, on="iq2", how="left").fillna({"n_ge8":0})
+    qc["label"] = qc.apply(lambda r: f'{r["Q2_low_GeV2"]:g}–{r["Q2_high_GeV2"]:g}', axis=1)
+
+    fig, ax = plt.subplots(figsize=(8.2,5.4))
+    x = np.arange(len(qc))
+    ax.bar(x, qc["n_common"], label="All common cells")
+    ax.plot(x, qc["n_ge8"], marker="o", label=r"$\geq8$ $\phi$ bins at both energies")
+    ax.set_xticks(x)
+    ax.set_xticklabels(qc["label"], rotation=35, ha="right")
+    ax.set_xlabel(r"$Q^2$ bin (GeV$^2$)")
+    ax.set_ylabel("Common (Q², xB, t) cells")
+    ax.set_title("RGA–RGK common-cell reach versus Q²")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(plotdir/"04_common_cells_vs_q2.png", dpi=180)
+    plt.close(fig)
 
 def main():
     a = cli()
@@ -168,6 +240,9 @@ def main():
 
         common = make_common_cells(rga, rgk)
         common.to_csv(out/"06_exact_common_cells.csv", index=False)
+
+        plotdir = out/"figures"
+        make_diagnostic_plots(rga, rgk, common, plotdir)
 
         # Defensive privacy check on every CSV emitted here.
         for p in out.glob("*.csv"):
@@ -200,9 +275,9 @@ def main():
             f"RGA source SHA256: {sha256(rp)}",
             f"RGK source SHA256: {sha256(kp)}",
         ]
-        (out/"07_summary.txt").write_text("\\n".join(summary)+"\\n")
-        print("\\n".join(summary))
-        print(f"\\nWrote stage-1 outputs to {out}")
+        (out/"07_summary.txt").write_text("\n".join(summary)+"\n")
+        print("\n".join(summary))
+        print(f"\nWrote stage-1 outputs to {out}")
     finally:
         if tmp is not None:
             tmp.cleanup()
