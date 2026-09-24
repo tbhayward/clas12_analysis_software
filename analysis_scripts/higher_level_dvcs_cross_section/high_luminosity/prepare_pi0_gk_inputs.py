@@ -144,7 +144,7 @@ def write_xml(path, kin_path, nw, nc, chi2):
 def main():
     a = cli()
     if a.input is None:
-        a.input = Path(__file__).resolve().parent.parent / "import" / "fa18_rosenbluth_inputs_20260924T165948Z.tar.gz"
+        a.input = Path(__file__).resolve().parent / "import" / "fa18_rosenbluth_inputs_20260924T165948Z.tar.gz"
     out = a.outdir.expanduser().resolve()
     out.mkdir(parents=True, exist_ok=True)
     root, tmp = locate(a.input)
