@@ -1725,7 +1725,8 @@ def make_ji_projection(contour_data, a20_mean, a20_cov, figdir, tabdir, tag="bas
     xmin-=0.25*dx; xmax+=0.25*dx; ymin-=0.25*dy; ymax+=0.25*dy
     ref=ji_data[0][1]
     ax.scatter([ref[0]],[ref[1]],marker="*",s=120,label="reference model",zorder=5)
-    ax.set_xlim(xmin,xmax); ax.set_ylim(ymin,ymax)
+    # Identical axes for baseline and statistics-only Ji plots.
+    ax.set_xlim(0.12, 0.31); ax.set_ylim(-0.18, 0.17)
     ax.set_xlabel(r"$J_{u_v}$"); ax.set_ylabel(r"$J_{d_v}$")
     ax.set_title(r"Projected valence Ji sum-rule flavor separation at $Q^2=3\,\mathrm{GeV}^2$")
     ax.grid(alpha=.22); ax.legend(fontsize=8)
@@ -1830,7 +1831,7 @@ def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, ta
         dict(label="HERMES $p\,A_{UT}$ [Airapetian et al. 2008]", status="measured", sigma_combination=0.21,
              combination="Ju + Jd/2.9", flavor_scope="full flavor",
              note="HERMES result quoted in Xie et al., EPJC 83, 900 (2023), Eq. 51; uncertainty used here matches the EIC/EicC comparison"),
-        dict(label="Hall-A $n$DVCS [Mazouz et al. 2007]", status="measured", sigma_combination=0.14,
+        dict(label="Hall-A $n\,\Delta\sigma_{LU}$ [Mazouz et al. 2007]", status="measured", sigma_combination=0.14,
              combination="Jd + Ju/5.0", flavor_scope="full flavor",
              note="Mazouz et al. PRL 99, 242501 (2007); VGG interpretation"),
         dict(label="EicC $p\,A_{UT}$ projection [Xie et al. 2023]", status="projection stat+syst", sigma_combination=0.08,
