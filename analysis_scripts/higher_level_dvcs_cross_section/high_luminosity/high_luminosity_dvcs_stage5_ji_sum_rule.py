@@ -1875,11 +1875,17 @@ def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, ta
     labels0=[d["label"] for d in direct]
     y0=np.arange(len(labels0))[::-1]
     for yy,d in zip(y0,direct):
-        marker="o"
-        projected = d["status"] != "measured"
-        ax0.scatter(d["sigma_combination"], yy, marker=marker, s=65, zorder=4,
-                    facecolors="none" if projected else "black", edgecolors="black", linewidths=1.5)
-        ax0.text(d["sigma_combination"]+0.004,yy,d["combination"],va="center",fontsize=8)
+        # Row labels already identify EIC/EicC as projections, so use one
+        # marker convention for all upper-panel entries.
+        ax0.scatter(d["sigma_combination"], yy, marker="o", s=45, zorder=4,
+                    color="black")
+        # Put labels inward near the right edge to prevent clipping.
+        if d["sigma_combination"] > 0.19:
+            ax0.text(d["sigma_combination"]-0.004, yy, d["combination"],
+                     va="center", ha="right", fontsize=8)
+        else:
+            ax0.text(d["sigma_combination"]+0.004, yy, d["combination"],
+                     va="center", ha="left", fontsize=8)
     ax0.set_yticks(y0); ax0.set_yticklabels(labels0)
     ax0.set_xlim(0,0.23)
     ax0.set_xlabel("Uncertainty on quoted $J_u$--$J_d$ linear combination")
@@ -1888,17 +1894,19 @@ def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, ta
 
     # --- flavor-separated valence marginal uncertainties ---
     labels1=["CLAS12 p+n 1x","CLAS12 p+n 5x","CLAS12 p+n 10x",
-             "CLAS12 p+n 10x stat-only","Diehl-Kroll 2013 [EPJC 73, 2397]","Cichy et al. 2024 [PRD 110, 114025]"]
+             "CLAS12 p+n 10x stat-only",
+             "Diehl-Kroll 2013 [EPJC 73, 2397]\n$\it{average\ of\ asymmetric\ uncertainties}$",
+             "Cichy et al. 2024 [PRD 110, 114025]"]
     y1=np.arange(len(labels1))[::-1]
     for i,L in enumerate((1,5,10)):
         r=ji_summary[ji_summary["scenario"]==f"p{L}x_plus_n{L}x"].iloc[0]
-        ax1.scatter(float(r.sigma_J_uv),y1[i]+0.10,marker="o",s=55,zorder=4,color="black",
+        ax1.scatter(float(r.sigma_J_uv),y1[i]+0.10,marker="o",s=40,zorder=4,color="black",
                     label=r"$\sigma(J_{u_v})$" if i==0 else None)
-        ax1.scatter(float(r.sigma_J_dv),y1[i]-0.10,marker="o",s=55,zorder=4,facecolors="none",edgecolors="black",linewidths=1.5,
+        ax1.scatter(float(r.sigma_J_dv),y1[i]-0.10,marker="o",s=40,zorder=4,facecolors="none",edgecolors="black",linewidths=1.5,
                     label=r"$\sigma(J_{d_v})$" if i==0 else None)
     r=ji_summary_stat[ji_summary_stat["scenario"]=="p10x_plus_n10x"].iloc[0]
-    ax1.scatter(float(r.sigma_J_uv),y1[3]+0.10,marker="o",s=55,zorder=4,color="black")
-    ax1.scatter(float(r.sigma_J_dv),y1[3]-0.10,marker="o",s=55,zorder=4,facecolors="none",edgecolors="black",linewidths=1.5)
+    ax1.scatter(float(r.sigma_J_uv),y1[3]+0.10,marker="o",s=40,zorder=4,color="black")
+    ax1.scatter(float(r.sigma_J_dv),y1[3]-0.10,marker="o",s=40,zorder=4,facecolors="none",edgecolors="black",linewidths=1.5)
 
     # DK13 quotes asymmetric errors on J itself.  For this uncertainty-scale
     # comparison use the arithmetic mean of the magnitudes of the two sides:
@@ -1907,24 +1915,26 @@ def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, ta
     # This plotting convention is stated explicitly below the y-axis labels.
     dk_u = 0.5*(0.024 + 0.009)
     dk_d = 0.5*(0.016 + 0.010)
-    ax1.scatter(dk_u,y1[4]+0.10,marker="o",s=55,zorder=4,color="black")
-    ax1.scatter(dk_d,y1[4]-0.10,marker="o",s=55,zorder=4,facecolors="none",edgecolors="black",linewidths=1.5)
-    ax1.scatter(0.010,y1[5]+0.10,marker="o",s=55,zorder=4,color="black")
-    ax1.scatter(0.0046,y1[5]-0.10,marker="o",s=55,zorder=4,facecolors="none",edgecolors="black",linewidths=1.5)
+    ax1.scatter(dk_u,y1[4]+0.10,marker="o",s=40,zorder=4,color="black")
+    ax1.scatter(dk_d,y1[4]-0.10,marker="o",s=40,zorder=4,facecolors="none",edgecolors="black",linewidths=1.5)
+    ax1.scatter(0.010,y1[5]+0.10,marker="o",s=40,zorder=4,color="black")
+    ax1.scatter(0.0046,y1[5]-0.10,marker="o",s=40,zorder=4,facecolors="none",edgecolors="black",linewidths=1.5)
 
     ax1.set_yticks(y1); ax1.set_yticklabels(labels1)
+    # Make the two-line Diehl--Kroll qualifier unobtrusive.
+    for tick in ax1.get_yticklabels():
+        if "Diehl-Kroll" in tick.get_text():
+            tick.set_fontsize(8.5)
     ax1.set_xlim(0,0.085)
     ax1.set_xlabel("Marginal uncertainty magnitude")
     ax1.set_title(r"Flavor-separated valence $J_{u_v},J_{d_v}$ constraints",fontsize=11)
     ax1.grid(axis="x",alpha=.22); ax1.legend(fontsize=8,loc="lower right",frameon=False)
-    ax1.text(-0.01,-0.17,"Diehl--Kroll: average of asymmetric errors",
-             transform=ax1.transAxes,ha="left",va="top",fontsize=7.2,clip_on=False)
     ax1.text(0.99,-0.17,
              "CLAS12 = RGA+RGB only; projected RGH $A_{UT}$ sensitivity to $E$ is not included.",
              transform=ax1.transAxes,ha="right",va="top",fontsize=7.2,clip_on=False)
 
     fig.suptitle("Ji-sum-rule uncertainty scales in world context",fontsize=14)
-    fig.tight_layout(rect=(0,0.065,1,.965))
+    fig.tight_layout(rect=(0,0.055,1,.965))
     fig.savefig(figdir/"ji_world_uncertainty_comparison.png",dpi=200)
     plt.close(fig)
 
