@@ -68,6 +68,8 @@ def find_sif(explicit: Path|None, here: Path, project: Path) -> Path:
         here/"partons_v4.sif",
         project/"partons_v4.sif",
         project.parent/"partons_v4.sif",
+        # Established container used by the existing PARTONS work on ifarm.
+        Path("/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/external_scripts/partons_v4.sif"),
         Path("/work/clas12/thayward/partons/partons_v4.sif"),
         Path.cwd()/"partons_v4.sif",
     ]
