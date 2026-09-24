@@ -24686,7 +24686,7 @@ def run_pass2_analysis(args, return_results: bool = False):
 # high_luminosity/.  The physics machinery above is intentionally duplicated.
 # =============================================================================
 
-HL_LUMINOSITY_FACTORS = (1.0, 2.0, 5.0, 10.0)
+HL_LUMINOSITY_FACTORS = (1.0, 5.0, 10.0)
 HL_BH_CUT = 0.05
 
 
@@ -24721,6 +24721,95 @@ def _hl_scale_rgb_for_luminosity(df: pd.DataFrame, L: float,
     out["xs"] = out[central].to_numpy(float)
     out["stat"] = out["stat"].to_numpy(float) / math.sqrt(float(L))
     return out
+
+
+
+
+def _hl_tmin_abs(xB: float, Q2: float) -> float:
+    """Exact DVCS |t_min| for a proton target, in GeV^2."""
+    eps2 = 4.0 * MP * MP * xB * xB / Q2
+    root = math.sqrt(1.0 + eps2)
+    tmin = -Q2 * (2.0*(1.0-xB)*(1.0-root) + eps2) / (4.0*xB*(1.0-xB) + eps2)
+    return abs(float(tmin))
+
+
+def _hl_build_low_t_rga_projection(df: pd.DataFrame, args, root: Path) -> pd.DataFrame:
+    """
+    Add a conservative e-gamma-only low-|t| projection down to 0.02 GeV^2.
+
+    The measured xB/Q2 bins and their lowest-|t| phi segmentation are retained.
+    Synthetic t bins are laid down in 0.03 GeV^2 steps below the present first
+    t-bin edge, subject to the exact kinematic |t_min|.  KM15 supplies the new
+    cross sections.  Statistical errors are anchored to the nearest measured
+    low-|t| phi bin and scaled with Poisson yield,
+
+       (dsigma/sigma)_new = (dsigma/sigma)_anchor
+                            sqrt(sigma_anchor/sigma_new).
+
+    Point-to-point systematics retain the anchor fractional uncertainty.
+    This is an acceptance/reach projection, not a BDT-efficiency prediction.
+    """
+    target = float(args.low_t_min)
+    step = float(args.low_t_step)
+    keys = ["xBmin","xBmax","Q2min","Q2max"]
+    if not all(k in df.columns for k in keys):
+        raise KeyError("Low-|t| projection requires xB/Q2 bin-edge columns in the RGA CSV")
+    rows=[]
+    for _,g in df.groupby(keys, dropna=False):
+        g=g.sort_values("t_abs")
+        if len(g)==0: continue
+        # Use the phi segmentation of the experimentally lowest t-bin.
+        if "t_abs_min" in g.columns and np.isfinite(g["t_abs_min"]).any():
+            first_edge=float(np.nanmin(g["t_abs_min"]))
+            anchors=g.loc[np.isclose(g["t_abs_min"].to_numpy(float),first_edge,atol=1e-8)].copy()
+        else:
+            first_edge=float(g["t_abs"].min())
+            anchors=g.loc[g["t_abs"] <= g["t_abs"].quantile(0.15)].copy()
+        if first_edge <= target + 1e-9: continue
+        # Nominal new bins: [0.02,0.05], [0.05,0.08], ... truncated at the
+        # current acceptance edge.  Their centers are clipped above |t_min|.
+        lo=target
+        while lo < first_edge - 1e-9:
+            hi=min(lo+step, first_edge)
+            for _,a in anchors.iterrows():
+                xb=float(a.xB); q2=float(a.Q2); tkin=_hl_tmin_abs(xb,q2)
+                physical_lo=max(lo,tkin)
+                if physical_lo >= hi - 1e-5: continue
+                r=a.copy()
+                r["t_abs"]=0.5*(physical_lo+hi)
+                r[COL_T]=r["t_abs"]
+                r["t_abs_min"]=physical_lo; r["t_abs_max"]=hi
+                r["synthetic_low_t"]=True
+                r["low_t_requested_min"]=target
+                r["low_t_kinematic_min"]=tkin
+                r["anchor_t_abs"]=float(a.t_abs)
+                r["anchor_phi_deg"]=float(a.phi_deg)
+                r["anchor_xs_stat"]=float(a.xs_stat)
+                r["anchor_km15_ep"]=float(a.km15_ep)
+                r["anchor_ptp_sys_abs"]=float(a.get("ptp_sys_abs",0.0))
+                rows.append(r)
+            lo=hi
+    if not rows:
+        raise RuntimeError("No kinematically allowed synthetic low-|t| RGA points were generated")
+    syn=pd.DataFrame(rows).reset_index(drop=True)
+    # Force a fresh KM15 evaluation because these are new kinematic points.
+    cache=root/"cache"/"rga_low_t_synthetic_km15.csv"
+    syn=evaluate_km15_dataframe(syn,float(args.rga_ebeam),max(1,int(args.workers)),cache,bool(args.force_km15))
+    good=np.isfinite(syn.km15_ep)&(syn.km15_ep>0)&np.isfinite(syn.anchor_km15_ep)&(syn.anchor_km15_ep>0)
+    syn=syn.loc[good].copy()
+    rel_anchor=syn.anchor_xs_stat.to_numpy(float)/syn.anchor_km15_ep.to_numpy(float)
+    rel_new=rel_anchor*np.sqrt(syn.anchor_km15_ep.to_numpy(float)/syn.km15_ep.to_numpy(float))
+    syn["xs"]=syn.km15_ep.to_numpy(float)
+    syn["xs_stat"]=rel_new*syn.km15_ep.to_numpy(float)
+    frac_ptp=syn.anchor_ptp_sys_abs.to_numpy(float)/syn.anchor_km15_ep.to_numpy(float)
+    syn["ptp_sys_abs"]=frac_ptp*syn.km15_ep.to_numpy(float)
+    syn["stat_scaling_method"]="nearest measured low-t phi anchor; relative error scaled as sqrt(sigma_anchor/sigma_new)"
+    syn.to_csv(root/"rga_low_t_synthetic_points_all.csv",index=False)
+    base=df.copy(); base["synthetic_low_t"]=False
+    combined=pd.concat([base,syn],ignore_index=True,sort=False)
+    combined.to_csv(root/"rga_with_low_t_projection_all.csv",index=False)
+    print(f"[low-t] generated {len(syn)} synthetic points; |t|={syn.t_abs.min():.4f}--{syn.t_abs.max():.4f} GeV^2")
+    return combined
 
 
 def _hl_rga_bundle(selected: pd.DataFrame, norm_frac: float = 0.0) -> Dict[str, object]:
@@ -24915,89 +25004,109 @@ def _hl_prepare_rgb(args, root: Path) -> pd.DataFrame:
     return out
 
 
+def _hl_case_dir(root: Path, row) -> Path:
+    case=str(getattr(row,"projection_case","current"))
+    if case=="low_t": return root/"low_t_1x"
+    L=float(row.luminosity_factor)
+    return root/f"{L:g}x".replace(".","p")
+
 def _hl_plot_likelihoods(root: Path, summary: pd.DataFrame):
     for scenario in ["baseline","statistics_only"]:
         fig,axes=plt.subplots(1,3,figsize=(15.0,4.5))
         targets=[("proton","rE",r"$r_E^p$ (fm)"),("proton","rM",r"$r_M^p$ (fm)"),("neutron","rM",r"$r_M^n$ (fm)")]
         for ax,(target,q,xlab) in zip(axes,targets):
-            part=summary.loc[(summary.target==target)&(summary.quantity==q)&(summary.scenario==scenario)].sort_values("luminosity_factor")
+            part=summary.loc[(summary.target==target)&(summary.quantity==q)&(summary.scenario==scenario)].copy()
             for _,r in part.iterrows():
-                L=float(r.luminosity_factor); tag=f"{L:g}x".replace(".","p")
+                case=str(r.get("projection_case","current")); L=float(r.luminosity_factor)
+                if target=="neutron" and case=="low_t": continue
+                ddir=_hl_case_dir(root,r)
+                label="1x + |t| to 0.02" if case=="low_t" else f"{L:g}x"
                 if target=="proton":
-                    path=root/tag/"proton"/scenario/f"P_{q}_weight_closure_only.csv"
-                    d=pd.read_csv(path); x=d["radius_fm"].to_numpy(float); pval=d["density"].to_numpy(float)
+                    d=pd.read_csv(ddir/"proton"/scenario/f"P_{q}_weight_closure_only.csv"); x=d.radius_fm.to_numpy(float); pval=d.density.to_numpy(float)
                 else:
-                    path=root/tag/"neutron"/scenario/"neutron_rM_likelihood.csv"
-                    d=pd.read_csv(path); x=d["rM_fm"].to_numpy(float); pval=d["density"].to_numpy(float)
-                pval=pval/np.nanmax(pval)
-                ax.plot(x,pval,label=f"{L:g}x")
+                    d=pd.read_csv(ddir/"neutron"/scenario/"neutron_rM_likelihood.csv"); x=d.rM_fm.to_numpy(float); pval=d.density.to_numpy(float)
+                ax.plot(x,pval/np.nanmax(pval),label=label)
             ax.set_xlabel(xlab); ax.set_ylabel("Normalized likelihood"); ax.grid(alpha=0.2); ax.legend(frameon=False)
-        fig.suptitle(f"High-luminosity BH radius projection: {scenario.replace('_',' ')}",y=0.995)
+        fig.suptitle(f"BH radius projection: luminosity versus low-|t| reach ({scenario.replace('_',' ')})",y=0.995)
         fig.tight_layout(rect=(0,0,1,0.95)); fig.savefig(root/f"radius_likelihoods_{scenario}.png",dpi=220); plt.close(fig)
 
-    fig,ax=plt.subplots(figsize=(8.5,5.5))
-    for target,q,label in [("proton","rE",r"$r_E^p$"),("proton","rM",r"$r_M^p$"),("neutron","rM",r"$r_M^n$")]:
-        part=summary.loc[(summary.target==target)&(summary.quantity==q)&(summary.scenario=="baseline")].sort_values("luminosity_factor")
-        if len(part): ax.plot(part.luminosity_factor,part.halfwidth68_fm,marker="o",label=label)
-    ax.set_xscale("log"); ax.set_xticks(list(HL_LUMINOSITY_FACTORS)); ax.set_xticklabels([f"{x:g}x" for x in HL_LUMINOSITY_FACTORS])
-    ax.set_xlabel("RGA/RGB statistical sample relative to current"); ax.set_ylabel("Half-width of central 68% interval (fm)"); ax.grid(alpha=0.2); ax.legend()
-    fig.tight_layout(); fig.savefig(root/"radius_precision_vs_luminosity.png",dpi=220); plt.close(fig)
+    # Categorical comparison is clearer now that low-t 1x is not a luminosity value.
+    labels=["current 1x","current 5x","current 10x","1x + |t| to 0.02"]
+    fig,ax=plt.subplots(figsize=(9.0,5.5))
+    xpos=np.arange(len(labels),dtype=float)
+    for target,q,label in [("proton","rE",r"$r_E^p$"),("proton","rM",r"$r_M^p$")]:
+        vals=[]
+        for L,case in [(1.0,"current"),(5.0,"current"),(10.0,"current"),(1.0,"low_t")]:
+            z=summary.loc[(summary.target==target)&(summary.quantity==q)&(summary.scenario=="baseline")&(summary.projection_case==case)&np.isclose(summary.luminosity_factor,L)]
+            vals.append(float(z.halfwidth68_fm.iloc[0]) if len(z) else np.nan)
+        ax.plot(xpos,vals,marker="o",label=label)
+    ax.set_xticks(xpos); ax.set_xticklabels(labels); ax.set_ylabel("Half-width of central 68% interval (fm)"); ax.grid(alpha=0.2); ax.legend()
+    fig.tight_layout(); fig.savefig(root/"radius_precision_case_comparison.png",dpi=220); plt.close(fig)
 #enddef
+
+def _hl_run_proton_case(rga_sel: pd.DataFrame, args, ldir: Path, L: float, case: str):
+    out=[]
+    rga_sel.to_csv(ldir/"rga_km15_pseudodata_5pct.csv",index=False)
+    cdir=ldir/"proton_closure"; bundle=_hl_rga_bundle(rga_sel)
+    run_radius_bias_variance_study([bundle],args,cdir)
+    for scenario in ["baseline","statistics_only"]:
+        sdir=ldir/"proton"/scenario
+        fits=_hl_fit_proton_families(rga_sel,cdir,scenario,sdir)
+        selected_for_mix=_hl_zero_ptp_rga(rga_sel) if scenario=="statistics_only" else rga_sel
+        _hl_proton_mixture(cdir,fits,selected_for_mix,sdir,n_bootstrap=args.model_bootstrap)
+        rr=_hl_read_proton_mixture_summary(sdir,L,scenario)
+        for x in rr: x["projection_case"]=case
+        out.extend(rr)
+    return out
 
 def run_high_luminosity_radius_projection(args) -> int:
     root=Path(args.outdir).expanduser().resolve(); root.mkdir(parents=True,exist_ok=True)
     print(f"[high-L] output -> {root}")
     rga0=_hl_prepare_rga(args,root); rgb0=_hl_prepare_rgb(args,root)
     summary=[]
+    # Current-acceptance luminosity comparison.
     for L in args.luminosity_factors:
-        L=float(L); tag=f"{L:g}x".replace(".","p"); print(f"\n[high-L] ===== {L:g}x =====")
-        # Full-KM15 pseudo-data, followed by the nominal 5% BH-only extraction.
-        rga=_hl_scale_rga_for_luminosity(rga0,L,"km15_ep")
-        rgb=_hl_scale_rgb_for_luminosity(rgb0,L,"km15_ep")
+        L=float(L); tag=f"{L:g}x".replace(".","p"); print(f"\n[high-L] ===== current acceptance, {L:g}x =====")
+        rga=_hl_scale_rga_for_luminosity(rga0,L,"km15_ep"); rgb=_hl_scale_rgb_for_luminosity(rgb0,L,"km15_ep")
         rga_sel=rga.loc[np.isfinite(rga.bh_delta)&(rga.bh_delta<=HL_BH_CUT)].copy()
         rgb_sel=rgb.loc[np.isfinite(rgb.bh_delta)&(rgb.bh_delta<=HL_BH_CUT)].copy()
         print(f"[high-L] RGA 5% BH points={len(rga_sel)}; RGB 5% BH points={len(rgb_sel)}")
         ldir=root/tag; ldir.mkdir(parents=True,exist_ok=True)
-        rga_sel.to_csv(ldir/"rga_km15_pseudodata_5pct.csv",index=False); rgb_sel.to_csv(ldir/"rgb_km15_pseudodata_5pct.csv",index=False)
-
-        # Closure is statistical by construction. Re-running it at every L lets
-        # the preferred extrapolation family evolve as variance shrinks.
-        cdir=ldir/"proton_closure"; bundle=_hl_rga_bundle(rga_sel)
-        run_radius_bias_variance_study([bundle],args,cdir)
-        for scenario in ["baseline","statistics_only"]:
-            sdir=ldir/"proton"/scenario
-            fits=_hl_fit_proton_families(rga_sel,cdir,scenario,sdir)
-            selected_for_mix=_hl_zero_ptp_rga(rga_sel) if scenario=="statistics_only" else rga_sel
-            _hl_proton_mixture(cdir,fits,selected_for_mix,sdir,n_bootstrap=args.model_bootstrap)
-            summary.extend(_hl_read_proton_mixture_summary(sdir,L,scenario))
-
-        # Neutron closure/family optimization at the same luminosity. GE_n is
-        # fixed to the Atac-2021 central form; only GM_n/rM_n is extracted.
+        summary.extend(_hl_run_proton_case(rga_sel,args,ldir,L,"current"))
+        rgb_sel.to_csv(ldir/"rgb_km15_pseudodata_5pct.csv",index=False)
         ncdir=ldir/"neutron_closure"; ncdir.mkdir(parents=True,exist_ok=True)
-        # Existing function writes into <outdir>/neutron_GM_function_closure.
-        chosen=run_neutron_magnetic_function_closure(rgb_sel,args,ncdir)
+        run_neutron_magnetic_function_closure(rgb_sel,args,ncdir)
         actual_ncdir=ncdir/"magnetic_only"/"function_closure"
         for scenario in ["baseline","statistics_only"]:
-            summary.append(_hl_neutron_mixture(rgb_sel,actual_ncdir,scenario,L,
-                ldir/"neutron"/scenario,n_bootstrap=args.model_bootstrap))
+            rr=_hl_neutron_mixture(rgb_sel,actual_ncdir,scenario,L,ldir/"neutron"/scenario,n_bootstrap=args.model_bootstrap)
+            rr["projection_case"]="current"; summary.append(rr)
+
+    # Dedicated 1x proton acceptance/reach case: same current points plus
+    # synthetic e-gamma-only points extending toward |t|=0.02 GeV^2.
+    print(f"\n[low-t] ===== 1x with projected |t| reach to {args.low_t_min:g} GeV^2 =====")
+    rga_low=_hl_build_low_t_rga_projection(rga0,args,root)
+    rga_low=_hl_scale_rga_for_luminosity(rga_low,1.0,"km15_ep")
+    low_sel=rga_low.loc[np.isfinite(rga_low.bh_delta)&(rga_low.bh_delta<=HL_BH_CUT)].copy()
+    ldir=root/"low_t_1x"; ldir.mkdir(parents=True,exist_ok=True)
+    low_sel.to_csv(ldir/"rga_km15_pseudodata_5pct_with_low_t.csv",index=False)
+    syn_sel=low_sel.loc[low_sel.get("synthetic_low_t",False).fillna(False).astype(bool)].copy()
+    syn_sel.to_csv(ldir/"synthetic_low_t_points_selected_5pct.csv",index=False)
+    print(f"[low-t] combined 5% BH points={len(low_sel)}, synthetic selected={len(syn_sel)}, minimum |t|={low_sel.t_abs.min():.4f}")
+    summary.extend(_hl_run_proton_case(low_sel,args,ldir,1.0,"low_t"))
 
     s=pd.DataFrame(summary); s.to_csv(root/"radius_projection_summary.csv",index=False)
-    # Improvements relative to current 1x for each target/quantity/scenario.
+    # Improvements are referenced to current-acceptance 1x, including low-t 1x.
     imp=[]
-    for keys,g in s.groupby(["target","quantity","scenario"]):
-        g=g.sort_values("luminosity_factor"); base=g.loc[np.isclose(g.luminosity_factor,1.0),"halfwidth68_fm"]
+    for (target,q,scenario),g in s.groupby(["target","quantity","scenario"]):
+        base=g.loc[(g.projection_case=="current")&np.isclose(g.luminosity_factor,1.0),"halfwidth68_fm"]
         b=float(base.iloc[0]) if len(base) else np.nan
         for _,r in g.iterrows():
-            imp.append({**dict(zip(["target","quantity","scenario"],keys)),"luminosity_factor":r.luminosity_factor,
-                        "halfwidth68_fm":r.halfwidth68_fm,"improvement_factor_vs_1x":b/r.halfwidth68_fm if r.halfwidth68_fm>0 else np.nan,
-                        "ideal_statistical_improvement":math.sqrt(float(r.luminosity_factor))})
+            ideal=math.sqrt(float(r.luminosity_factor)) if r.projection_case=="current" else np.nan
+            imp.append({"target":target,"quantity":q,"scenario":scenario,"projection_case":r.projection_case,"luminosity_factor":r.luminosity_factor,"halfwidth68_fm":r.halfwidth68_fm,"improvement_factor_vs_current_1x":b/r.halfwidth68_fm if r.halfwidth68_fm>0 else np.nan,"ideal_statistical_improvement":ideal})
     pd.DataFrame(imp).to_csv(root/"radius_precision_improvement.csv",index=False)
     _hl_plot_likelihoods(root,s)
-    print("\n[high-L] final radius projection summary")
-    print(s.to_string(index=False))
-    print(f"[high-L] done -> {root}")
+    print("\n[high-L] final radius projection summary"); print(s.to_string(index=False)); print(f"[high-L] done -> {root}")
     return 0
-
 
 def build_high_luminosity_parser() -> argparse.ArgumentParser:
     # Start from the mature source parser so closure controls remain available,
@@ -25009,8 +25118,10 @@ def build_high_luminosity_parser() -> argparse.ArgumentParser:
     p.add_argument("--rga-ebeam",type=float,default=10.604,help="RGA beam energy (GeV)")
     p.add_argument("--rgb-ebeam",type=float,default=10.45,help="RGB effective beam energy (GeV)")
     p.add_argument("--rgb-phi-convention",choices=("auto",)+NEUTRON_PHI_CONVENTIONS,default="auto")
-    p.add_argument("--luminosity-factors",type=float,nargs="+",default=list(HL_LUMINOSITY_FACTORS),help="Relative statistical samples; default 1 2 5 10")
+    p.add_argument("--luminosity-factors",type=float,nargs="+",default=list(HL_LUMINOSITY_FACTORS),help="Current-acceptance relative statistical samples; default 1 5 10")
     p.add_argument("--model-bootstrap",type=int,default=20000,help="Truth-menu bootstrap draws for model averaging")
+    p.add_argument("--low-t-min",type=float,default=0.02,help="Projected e-gamma-only minimum |t| reach in GeV^2")
+    p.add_argument("--low-t-step",type=float,default=0.03,help="Synthetic low-|t| bin width in GeV^2")
     p.set_defaults(outdir="output/high_luminosity_radius_projection",radius_bias_extended_truths=True)
     return p
 
