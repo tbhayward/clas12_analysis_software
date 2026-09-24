@@ -1827,16 +1827,16 @@ def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, ta
     # Direct DVCS one-combination benchmarks.  coefficient means
     # combination = first_flavor + second_flavor/coefficient.
     direct=[
-        dict(label="HERMES p-DVCS [Airapetian et al. 2008]", status="measured", sigma_combination=0.21,
+        dict(label="HERMES $p\,A_{UT}$ [Airapetian et al. 2008]", status="measured", sigma_combination=0.21,
              combination="Ju + Jd/2.9", flavor_scope="full flavor",
              note="HERMES result quoted in Xie et al., EPJC 83, 900 (2023), Eq. 51; uncertainty used here matches the EIC/EicC comparison"),
-        dict(label="Hall-A n-DVCS [Mazouz et al. 2007]", status="measured", sigma_combination=0.14,
+        dict(label="Hall-A $n$DVCS [Mazouz et al. 2007]", status="measured", sigma_combination=0.14,
              combination="Jd + Ju/5.0", flavor_scope="full flavor",
              note="Mazouz et al. PRL 99, 242501 (2007); VGG interpretation"),
-        dict(label="EicC projection [Xie et al. 2023]", status="projection stat+syst", sigma_combination=0.08,
+        dict(label="EicC $p\,A_{UT}$ projection [Xie et al. 2023]", status="projection stat+syst", sigma_combination=0.08,
              combination="Ju + Jd/2.9", flavor_scope="full flavor",
              note="EPJC 83 (2023), Eq. 49, HERMES-like region"),
-        dict(label="EIC projection [Xie et al. 2023]", status="projection stat+syst", sigma_combination=0.06,
+        dict(label="EIC $p\,A_{UT}$ projection [Xie et al. 2023]", status="projection stat+syst", sigma_combination=0.06,
              combination="Ju + Jd/3.0", flavor_scope="full flavor",
              note="EPJC 83 (2023), Eq. 50, HERMES-like region"),
     ]
@@ -1889,7 +1889,7 @@ def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, ta
     ax0.set_yticks(y0); ax0.set_yticklabels(labels0)
     ax0.set_xlim(0,0.23)
     ax0.set_xlabel("Uncertainty on quoted $J_u$--$J_d$ linear combination")
-    ax0.set_title("Direct DVCS constraints and collider projections (full flavor)",fontsize=11)
+    ax0.set_title("DVCS constraints on $J_u$--$J_d$ combinations (full flavor)",fontsize=11)
     ax0.grid(axis="x",alpha=.22)
 
     # --- flavor-separated valence marginal uncertainties ---
