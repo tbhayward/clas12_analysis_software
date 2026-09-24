@@ -1773,6 +1773,104 @@ def make_ji_world_comparison(ji_summary, figdir, tabdir):
     fig.tight_layout(); fig.savefig(figdir/"ji_world_comparison.png",dpi=200); plt.close(fig)
 
 
+
+def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, tabdir):
+    """Compare quoted/projected Ji uncertainty magnitudes without central values.
+
+    This is intentionally separate from ``ji_world_comparison.png``.  It avoids
+    making the arbitrary pseudo-data/reference-model center part of the visual
+    comparison and instead asks only how large the constraints are.
+
+    Directly comparable valence entries:
+      * CLAS12 RGA+RGB projections: sigma(J_uv), sigma(J_dv).
+      * Diehl--Kroll 2013: asymmetric marginal valence uncertainties.  The
+        plotted horizontal ranges retain the published lower/upper magnitudes;
+        no symmetric uncertainty or 2D covariance is invented.
+      * Cichy et al. 2024: quoted marginal valence uncertainties.
+
+    Historical HERMES is deliberately separated from the u_v/d_v markers:
+      sigma(J_u + J_d/2.8) = 0.17 is a full-flavor, one-combination DVCS
+      constraint, not separate sigma(J_uv) and sigma(J_dv).  It is shown only
+      as a historical direct-DVCS scale benchmark.
+
+    Full citations, URLs, definitions, and caveats are documented in the module
+    docstring and in ji_world_comparison_literature_inputs.csv.
+    """
+    # Rows used in the plotted comparison and an auditable companion table.
+    rows=[]
+    for L in (1,5,10):
+        r=ji_summary[ji_summary["scenario"]==f"p{L}x_plus_n{L}x"].iloc[0]
+        rows.append(dict(label=f"CLAS12 p+n {L}x", kind="projected_valence_baseline",
+                         sigma_Juv=float(r.sigma_J_uv), sigma_Jdv=float(r.sigma_J_dv),
+                         note="RGA+RGB projection; baseline PTP systematics"))
+    r=ji_summary_stat[ji_summary_stat["scenario"]=="p10x_plus_n10x"].iloc[0]
+    rows.append(dict(label="CLAS12 p+n 10x stat-only", kind="projected_valence_stat_only",
+                     sigma_Juv=float(r.sigma_J_uv), sigma_Jdv=float(r.sigma_J_dv),
+                     note="Strict statistics-only: all RGA/RGB experimental PTP removed"))
+    rows += [
+        dict(label="Diehl-Kroll 2013", kind="published_valence_asymmetric",
+             sigma_Juv=float("nan"), sigma_Jdv=float("nan"),
+             note="Juv -0.024/+0.009; Jdv -0.016/+0.010; elastic FF + GPD model"),
+        dict(label="Cichy et al. 2024", kind="published_valence",
+             sigma_Juv=0.010, sigma_Jdv=0.0046,
+             note="elastic FF + lattice"),
+        dict(label="HERMES DVCS", kind="historical_full_flavor_combination",
+             sigma_Juv=float("nan"), sigma_Jdv=float("nan"),
+             note="sigma(Ju + Jd/2.8)=0.17; full flavor; not flavor separated"),
+    ]
+    pd.DataFrame(rows).to_csv(tabdir/"ji_world_uncertainty_comparison_inputs.csv", index=False)
+
+    labels=["HERMES DVCS\n(full-flavor combination)",
+            "CLAS12 p+n 1x", "CLAS12 p+n 5x", "CLAS12 p+n 10x",
+            "CLAS12 p+n 10x\n(stat-only)", "Diehl-Kroll 2013", "Cichy et al. 2024"]
+    y=np.arange(len(labels))[::-1]
+    fig,ax=plt.subplots(figsize=(8.4,5.8))
+
+    # CLAS12 baseline points.
+    for i,L in enumerate((1,5,10), start=1):
+        r=ji_summary[ji_summary["scenario"]==f"p{L}x_plus_n{L}x"].iloc[0]
+        yy=y[i]
+        ax.scatter(float(r.sigma_J_uv),yy+0.10,marker="o",s=55,zorder=4,
+                   label=r"$\sigma(J_{u_v})$" if L==1 else None)
+        ax.scatter(float(r.sigma_J_dv),yy-0.10,marker="s",s=50,zorder=4,
+                   label=r"$\sigma(J_{d_v})$" if L==1 else None)
+
+    # Strict statistics-only 10x sensitivity.
+    r=ji_summary_stat[ji_summary_stat["scenario"]=="p10x_plus_n10x"].iloc[0]
+    yy=y[4]
+    ax.scatter(float(r.sigma_J_uv),yy+0.10,marker="o",s=55,zorder=4)
+    ax.scatter(float(r.sigma_J_dv),yy-0.10,marker="s",s=50,zorder=4)
+
+    # Diehl--Kroll: preserve asymmetric published marginal uncertainty sizes.
+    yy=y[5]
+    for lo,hi,off,marker in ((0.024,0.009,+0.10,"o"),(0.016,0.010,-0.10,"s")):
+        ax.hlines(yy+off,min(lo,hi),max(lo,hi),linewidth=2.0,zorder=3)
+        ax.scatter(0.5*(lo+hi),yy+off,marker=marker,s=45,zorder=4)
+
+    # Cichy et al. symmetric quoted marginal uncertainties.
+    yy=y[6]
+    ax.scatter(0.010,yy+0.10,marker="o",s=55,zorder=4)
+    ax.scatter(0.0046,yy-0.10,marker="s",s=50,zorder=4)
+
+    # HERMES is a different quantity; show one explicitly distinct historical
+    # benchmark rather than pretending it supplies u_v and d_v uncertainties.
+    ax.scatter(0.17,y[0],marker="D",s=60,zorder=4,
+               label=r"HERMES $\sigma(J_u+J_d/2.8)$ (full flavor)")
+
+    ax.set_yticks(y); ax.set_yticklabels(labels)
+    ax.set_xlim(0,0.185)
+    ax.set_xlabel("Quoted/projected uncertainty magnitude")
+    ax.set_title("Valence Ji precision in world context")
+    ax.grid(axis="x",alpha=.22)
+    ax.legend(fontsize=8,loc="upper right")
+    ax.text(0.99,0.02,
+            "CLAS12 projections use RGA+RGB only; projected RGH $A_{UT}$ is not included.\n"
+            "HERMES is historical context only: full flavor and one linear combination.",
+            transform=ax.transAxes,ha="right",va="bottom",fontsize=8)
+    fig.tight_layout()
+    fig.savefig(figdir/"ji_world_uncertainty_comparison.png",dpi=200)
+    plt.close(fig)
+
 def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_mean, a20_cov):
     """Run joint H+E projection and target/observable ablations.
 
@@ -1954,6 +2052,7 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
     ji_summary = make_ji_projection(contour_data, a20_mean, a20_cov, figdir, tabdir, tag="baseline")
     ji_summary_stat = make_ji_projection(stat_contour_data, a20_mean, a20_cov, figdir, tabdir, tag="stat_only")
     make_ji_world_comparison(ji_summary, figdir, tabdir)
+    make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, tabdir)
     print("\n[Stage5 H+E] strict statistics-only Ji projection (all RGA/RGB PTP removed):")
     print(ji_summary_stat.to_string(index=False, float_format=lambda x: f"{x:.4g}"))
 
