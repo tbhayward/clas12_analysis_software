@@ -1827,16 +1827,16 @@ def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, ta
     # Direct DVCS one-combination benchmarks.  coefficient means
     # combination = first_flavor + second_flavor/coefficient.
     direct=[
-        dict(label="HERMES p-DVCS", status="measured", sigma_combination=0.17,
-             combination="Ju + Jd/2.8", flavor_scope="full flavor",
-             note="Airapetian et al. 2008 as summarized in RMP 85, 655 (2013)"),
-        dict(label="Hall-A n-DVCS", status="measured", sigma_combination=0.14,
+        dict(label="HERMES p-DVCS [Airapetian et al. 2008]", status="measured", sigma_combination=0.21,
+             combination="Ju + Jd/2.9", flavor_scope="full flavor",
+             note="HERMES result quoted in Xie et al., EPJC 83, 900 (2023), Eq. 51; uncertainty used here matches the EIC/EicC comparison"),
+        dict(label="Hall-A n-DVCS [Mazouz et al. 2007]", status="measured", sigma_combination=0.14,
              combination="Jd + Ju/5.0", flavor_scope="full flavor",
              note="Mazouz et al. PRL 99, 242501 (2007); VGG interpretation"),
-        dict(label="EicC projection", status="projection stat+syst", sigma_combination=0.08,
+        dict(label="EicC projection [Xie et al. 2023]", status="projection stat+syst", sigma_combination=0.08,
              combination="Ju + Jd/2.9", flavor_scope="full flavor",
              note="EPJC 83 (2023), Eq. 49, HERMES-like region"),
-        dict(label="EIC projection", status="projection stat+syst", sigma_combination=0.06,
+        dict(label="EIC projection [Xie et al. 2023]", status="projection stat+syst", sigma_combination=0.06,
              combination="Ju + Jd/3.0", flavor_scope="full flavor",
              note="EPJC 83 (2023), Eq. 50, HERMES-like region"),
     ]
@@ -1854,11 +1854,11 @@ def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, ta
                      flavor_scope="valence",
                      note="all RGA/RGB experimental PTP removed; RGH AUT not included"))
     rows += [
-        dict(label="Diehl-Kroll 2013", status="published valence asymmetric",
+        dict(label="Diehl-Kroll 2013 [EPJC 73, 2397]", status="published valence asymmetric",
              sigma_Juv_low=0.024, sigma_Juv_high=0.009,
              sigma_Jdv_low=0.016, sigma_Jdv_high=0.010,
              flavor_scope="valence", note="elastic FF + GPD model; mu=2 GeV"),
-        dict(label="Cichy et al. 2024", status="published valence",
+        dict(label="Cichy et al. 2024 [PRD 110, 114025]", status="published valence",
              sigma_Juv=0.010, sigma_Jdv=0.0046, flavor_scope="valence",
              note="elastic FF + lattice; mu=2 GeV"),
         dict(label="Hashamipour et al. 2022", status="documented_not_plotted",
@@ -1876,7 +1876,7 @@ def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, ta
     y0=np.arange(len(labels0))[::-1]
     for yy,d in zip(y0,direct):
         marker="D" if d["status"]=="measured" else "^"
-        ax0.scatter(d["sigma_combination"],yy,marker=marker,s=65,zorder=4)
+        ax0.scatter(d["sigma_combination"],yy,marker=marker,s=65,zorder=4,color="black")
         ax0.text(d["sigma_combination"]+0.004,yy,d["combination"],va="center",fontsize=8)
     ax0.set_yticks(y0); ax0.set_yticklabels(labels0)
     ax0.set_xlim(0,0.23)
@@ -1887,38 +1887,45 @@ def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, ta
              transform=ax0.transAxes,ha="right",va="bottom",fontsize=7.5)
 
     # --- flavor-separated valence marginal uncertainties ---
-    labels1=["CLAS12 p+n 1x","CLAS12 p+n 5x","CLAS12 p+n 10x",
-             "CLAS12 p+n 10x (stat-only)","Diehl-Kroll 2013","Cichy et al. 2024"]
+    labels1=["CLAS12 p+n 1x [this work]","CLAS12 p+n 5x [this work]","CLAS12 p+n 10x [this work]",
+             "CLAS12 p+n 10x stat-only [this work]","Diehl-Kroll 2013 [EPJC 73, 2397]","Cichy et al. 2024 [PRD 110, 114025]"]
     y1=np.arange(len(labels1))[::-1]
     for i,L in enumerate((1,5,10)):
         r=ji_summary[ji_summary["scenario"]==f"p{L}x_plus_n{L}x"].iloc[0]
-        ax1.scatter(float(r.sigma_J_uv),y1[i]+0.10,marker="o",s=55,zorder=4,
+        ax1.scatter(float(r.sigma_J_uv),y1[i]+0.10,marker="o",s=55,zorder=4,color="black",
                     label=r"$\sigma(J_{u_v})$" if i==0 else None)
-        ax1.scatter(float(r.sigma_J_dv),y1[i]-0.10,marker="s",s=50,zorder=4,
+        ax1.scatter(float(r.sigma_J_dv),y1[i]-0.10,marker="s",s=50,zorder=4,color="black",
                     label=r"$\sigma(J_{d_v})$" if i==0 else None)
     r=ji_summary_stat[ji_summary_stat["scenario"]=="p10x_plus_n10x"].iloc[0]
-    ax1.scatter(float(r.sigma_J_uv),y1[3]+0.10,marker="o",s=55,zorder=4)
-    ax1.scatter(float(r.sigma_J_dv),y1[3]-0.10,marker="s",s=50,zorder=4)
+    ax1.scatter(float(r.sigma_J_uv),y1[3]+0.10,marker="o",s=55,zorder=4,color="black")
+    ax1.scatter(float(r.sigma_J_dv),y1[3]-0.10,marker="s",s=50,zorder=4,color="black")
 
     # DK asymmetric uncertainty magnitudes: draw the published lower/upper
     # magnitudes as a range, rather than inventing a symmetric sigma.
     for lo,hi,off,marker in ((0.024,0.009,+0.10,"o"),(0.016,0.010,-0.10,"s")):
-        ax1.hlines(y1[4]+off,min(lo,hi),max(lo,hi),linewidth=2.0,zorder=3)
-        ax1.scatter(0.5*(lo+hi),y1[4]+off,marker=marker,s=45,zorder=4)
-    ax1.scatter(0.010,y1[5]+0.10,marker="o",s=55,zorder=4)
-    ax1.scatter(0.0046,y1[5]-0.10,marker="s",s=50,zorder=4)
+        ax1.hlines(y1[4]+off,min(lo,hi),max(lo,hi),linewidth=2.0,zorder=3,color="black")
+        ax1.scatter(0.5*(lo+hi),y1[4]+off,marker=marker,s=45,zorder=4,color="black")
+    ax1.scatter(0.010,y1[5]+0.10,marker="o",s=55,zorder=4,color="black")
+    ax1.scatter(0.0046,y1[5]-0.10,marker="s",s=50,zorder=4,color="black")
+    # DK13 publishes asymmetric errors on J itself.  Since this figure's x-axis is
+    # uncertainty magnitude, the horizontal segments span the magnitudes of the
+    # two sides of each quoted asymmetric interval: u_v = -0.024/+0.009 and
+    # d_v = -0.016/+0.010.  Label them explicitly to avoid looking like ordinary
+    # error bars on an uncertainty measurement.
+    ax1.text(0.0252,y1[4]+0.10,r"$-0.024/+0.009$",va="center",fontsize=7.2)
+    ax1.text(0.0172,y1[4]-0.10,r"$-0.016/+0.010$",va="center",fontsize=7.2)
 
     ax1.set_yticks(y1); ax1.set_yticklabels(labels1)
     ax1.set_xlim(0,0.085)
     ax1.set_xlabel("Marginal uncertainty magnitude")
     ax1.set_title(r"Flavor-separated valence $J_{u_v},J_{d_v}$ constraints",fontsize=11)
-    ax1.grid(axis="x",alpha=.22); ax1.legend(fontsize=8,loc="lower right")
-    ax1.text(0.99,0.04,
+    ax1.grid(axis="x",alpha=.22); ax1.legend(fontsize=8,loc="upper right",frameon=False)
+    ax1.text(0.99,-0.16,
              "CLAS12 = RGA+RGB only; projected RGH $A_{UT}$ sensitivity to $E$ is not included.",
-             transform=ax1.transAxes,ha="right",va="bottom",fontsize=7.5)
+             transform=ax1.transAxes,ha="right",va="top",fontsize=7.5,clip_on=False)
 
     fig.suptitle("Ji-sum-rule uncertainty scales in world context",fontsize=14)
-    fig.tight_layout(rect=(0,0,1,.965))
+    fig.tight_layout(rect=(0,0.035,1,.965))
     fig.savefig(figdir/"ji_world_uncertainty_comparison.png",dpi=200)
     plt.close(fig)
 
