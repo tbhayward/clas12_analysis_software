@@ -126,7 +126,7 @@ def task_xml(row):
 <param name="Q2" value="{float(row.Q2):.15g}" />
 <param name="E" value="{float(row.E):.15g}" />
 <param name="phi" value="{phi_rad:.15g}" />
-<param name="meson" value="PI0" />
+<param name="meson" value="9" />
 </kinematics>
 <computation_configuration>
 {module_xml()}
@@ -187,8 +187,13 @@ def run_job(job,sif,project,executable,out,force=False,dry=False):
         try:
             rc=int(status.read_text().strip())
             vals=parse_stdout(stdout.read_text(errors="replace"))
-            if rc==0 and len(vals)==job["n"] and all(np.isfinite(v) for v,_ in vals):
-                return dict(chunk=ic,returncode=0,reused=True,nresults=len(vals))
+            cached_txt=stdout.read_text(errors="replace")
+            cached_err=stderr.read_text(errors="replace") if stderr.exists() else ""
+            logger_error=("[ERROR]" in cached_txt) or ("[ERROR]" in cached_err)
+            if rc==0 and not logger_error and len(vals)==job["n"] and all(np.isfinite(v) for v,_ in vals):
+                return dict(chunk=ic,returncode=0,process_returncode=0,
+                            logger_error=False,reused=True,nresults=len(vals),
+                            expected=job["n"])
         except Exception: pass
     if dry:
         return dict(chunk=ic,returncode=0,reused=False,nresults=0,dry_run=True)
@@ -205,7 +210,10 @@ def run_job(job,sif,project,executable,out,force=False,dry=False):
     p=subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env)
     stdout.write_text(p.stdout); stderr.write_text(p.stderr); status.write_text(str(p.returncode)+"\n")
     vals=parse_stdout(p.stdout)
-    return dict(chunk=ic,returncode=p.returncode,reused=False,nresults=len(vals),
+    logger_error = ("[ERROR]" in p.stdout) or ("[ERROR]" in p.stderr)
+    effective_rc = p.returncode if p.returncode != 0 else (90 if logger_error else 0)
+    return dict(chunk=ic,returncode=effective_rc,process_returncode=p.returncode,
+                logger_error=logger_error,reused=False,nresults=len(vals),
                 expected=job["n"],seconds=time.perf_counter()-t)
 
 def collect(jobs,out):
