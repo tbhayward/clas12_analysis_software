@@ -26,7 +26,7 @@ Expected repo location:
 """
 
 from __future__ import annotations
-import argparse, math, os, re, shutil, subprocess, sys, time, tarfile
+import argparse, hashlib, math, os, re, shutil, subprocess, sys, time, tarfile
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
@@ -437,22 +437,29 @@ def run_job(job,sif,project,executable,out,force=False,dry=False):
     stdout=logs/f"gk_pi0_{ic:05d}.stdout.txt"
     stderr=logs/f"gk_pi0_{ic:05d}.stderr.txt"
     status=logs/f"gk_pi0_{ic:05d}.status.txt"
-    if not force and stdout.exists() and status.exists():
+    cachekey_file=logs/f"gk_pi0_{ic:05d}.cachekey.txt"
+    xml=Path(job["xml"]).resolve()
+    # Cache identity is the exact XML scenario submitted to PARTONS.  This
+    # includes every kinematic coordinate, phi value, module setting, and task
+    # order, so an old stdout with merely the same number of results can never
+    # be silently reused after the work list changes.
+    expected_cachekey=hashlib.sha256(xml.read_bytes()).hexdigest()
+    if not force and stdout.exists() and status.exists() and cachekey_file.exists():
         try:
             rc=int(status.read_text().strip())
             vals=parse_stdout(stdout.read_text(errors="replace"))
             cached_txt=stdout.read_text(errors="replace")
             cached_err=stderr.read_text(errors="replace") if stderr.exists() else ""
             logger_error=("[ERROR]" in cached_txt) or ("[ERROR]" in cached_err)
-            if rc==0 and not logger_error and len(vals)==job["n"] and all(np.isfinite(v) for v,_ in vals):
+            cache_matches=(cachekey_file.read_text().strip()==expected_cachekey)
+            if cache_matches and rc==0 and not logger_error and len(vals)==job["n"] and all(np.isfinite(v) for v,_ in vals):
                 return dict(chunk=ic,returncode=0,process_returncode=0,
-                            logger_error=False,reused=True,nresults=len(vals),
+                            logger_error=False,reused=True,cache_valid=True,nresults=len(vals),
                             expected=job["n"])
         except Exception: pass
     if dry:
         return dict(chunk=ic,returncode=0,reused=False,nresults=0,dry_run=True)
 
-    xml=Path(job["xml"]).resolve()
     binds=[project.resolve(),xml.parent]
     cmd=["apptainer","exec"]
     for b in binds: cmd += ["--bind",f"{b}:{b}"]
@@ -463,11 +470,13 @@ def run_job(job,sif,project,executable,out,force=False,dry=False):
     t=time.perf_counter()
     p=subprocess.run(cmd,text=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,env=env)
     stdout.write_text(p.stdout); stderr.write_text(p.stderr); status.write_text(str(p.returncode)+"\n")
+    # Write the cache identity only after this exact scenario has completed.
+    cachekey_file.write_text(expected_cachekey+"\n")
     vals=parse_stdout(p.stdout)
     logger_error = ("[ERROR]" in p.stdout) or ("[ERROR]" in p.stderr)
     effective_rc = p.returncode if p.returncode != 0 else (90 if logger_error else 0)
     return dict(chunk=ic,returncode=effective_rc,process_returncode=p.returncode,
-                logger_error=logger_error,reused=False,nresults=len(vals),
+                logger_error=logger_error,reused=False,cache_valid=True,nresults=len(vals),
                 expected=job["n"],seconds=time.perf_counter()-t)
 
 def collect(jobs,out):
@@ -503,6 +512,36 @@ def harmonic_closure(df):
             max_fractional_harmonic_residual=float(np.max(np.abs(y-pred))/scale)))
     return pd.DataFrame(rows)
 
+def native_to_shared_diagnostics(raw,harm):
+    """Build transparent GK native->shared diagnostic ratios.
+
+    The phi-grid ratio is the quantity that can ultimately multiply a measured
+    cross section at the same phi.  Harmonic coefficient ratios are written as
+    diagnostics only; they are not themselves assumed to be universal
+    bin-centering factors.
+    """
+    keys=["point_id","campaign","phi_deg"]
+    n=raw[raw.evaluation=="native"].copy()
+    c=raw[raw.evaluation=="shared"].copy()
+    keep=keys+["partons_value","partons_unit","Q2","xB","minus_t","y","epsilon"]
+    n=n[keep].rename(columns={x:f"{x}_native" for x in keep if x not in keys})
+    c=c[keep].rename(columns={x:f"{x}_shared" for x in keep if x not in keys})
+    phi=n.merge(c,on=keys,how="inner",validate="one_to_one")
+    phi["gk_shared_over_native"]=phi.partons_value_shared/phi.partons_value_native
+    phi["gk_fractional_shift"]=phi.gk_shared_over_native-1.0
+
+    hk=["point_id","campaign"]
+    hn=harm[harm.evaluation=="native"].copy()
+    hc=harm[harm.evaluation=="shared"].copy()
+    coeff=["coefficient_const","coefficient_cosphi","coefficient_cos2phi"]
+    hn=hn[hk+coeff].rename(columns={x:f"{x}_native" for x in coeff})
+    hc=hc[hk+coeff].rename(columns={x:f"{x}_shared" for x in coeff})
+    hd=hn.merge(hc,on=hk,how="inner",validate="one_to_one")
+    for x in coeff:
+        hd[f"{x}_shared_over_native"]=hd[f"{x}_shared"]/hd[f"{x}_native"]
+        hd[f"{x}_fractional_shift"]=hd[f"{x}_shared_over_native"]-1.0
+    return phi,hd
+
 def main():
     a=parse_args(); here=Path(__file__).resolve().parent
     out=a.output.resolve(); out.mkdir(parents=True,exist_ok=True)
@@ -523,7 +562,7 @@ def main():
         print(f"\n[probe] point {first.iloc[0].point_id}: native + shared midpoint, 3 phi values, both beam energies")
         print("  expected PARTONS evaluations: 12 = 2 campaigns x 2 coordinates x 3 phi")
     else:
-        pts,skipped=expanded_points(q,shared,DEFAULT_PHI_DEG)
+        pts,skipped=expanded_points(q_retained,shared,DEFAULT_PHI_DEG)
         print(f"\n[production] {len(q_retained)}/{len(q)} Rosenbluth points retained after shared-y<{COMMON_Y_MAX:.2f} cut")
         print(f"  {len(pts)} PARTONS evaluations = retained points x 2 campaigns x 2 coordinates x {len(DEFAULT_PHI_DEG)} phi")
 
@@ -583,6 +622,9 @@ def main():
     raw.to_csv(out/"04_partons_raw_phi_grid.csv",index=False)
     harm=harmonic_closure(raw)
     harm.to_csv(out/"05_partons_phi_harmonic_closure.csv",index=False)
+    corr_phi,corr_harm=native_to_shared_diagnostics(raw,harm)
+    corr_phi.to_csv(out/"06_gk_native_to_shared_phi_corrections.csv",index=False)
+    corr_harm.to_csv(out/"07_gk_native_to_shared_harmonic_diagnostics.csv",index=False)
 
     print(f"\nParsed {len(raw)} finite PARTONS results.")
     print("Units reported by PARTONS:",", ".join(sorted(units)))
@@ -590,7 +632,9 @@ def main():
           f"{harm.max_fractional_harmonic_residual.max():.3e}")
     if not a.all:
         print("\nProbe succeeded. Review the reported units and harmonic closure.")
-        print("Probe includes native and shared-midpoint RGA/RGK coordinates. Review all four harmonic rows before --all.")
+        print("Probe includes native and shared-midpoint RGA/RGK coordinates.")
+        print("Native->shared GK ratios: 06_gk_native_to_shared_phi_corrections.csv")
+        print("Harmonic shift diagnostics: 07_gk_native_to_shared_harmonic_diagnostics.csv")
     else:
         print(f"\nWrote complete public-observable GK grid to {out}")
         print("This file deliberately does NOT yet label the harmonic coefficients")
