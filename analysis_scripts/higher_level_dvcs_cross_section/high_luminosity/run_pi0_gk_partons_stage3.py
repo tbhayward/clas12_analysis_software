@@ -26,7 +26,7 @@ Expected repo location:
 """
 
 from __future__ import annotations
-import argparse, math, os, re, shutil, subprocess, sys, time
+import argparse, math, os, re, shutil, subprocess, sys, time, tarfile
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
@@ -149,42 +149,69 @@ def task_xml(row, meson_value=DEFAULT_MESON_VALUE):
 <task service="DVMPObservableService" method="printResults"></task>"""
 
 def _find_campaign_input(explicit:Path|None, stage3:Path, filename:str) -> Path:
-    """Locate the native Rosenbluth campaign CSV without silently using common-bin centers."""
+    """Locate (or extract) the native Rosenbluth campaign CSV used upstream."""
     if explicit is not None:
         path=explicit.expanduser().resolve()
         if not path.exists(): raise FileNotFoundError(path)
         return path
 
-    roots=[stage3,stage3.parent,Path(__file__).resolve().parent]
+    here=Path(__file__).resolve().parent
+    campaign_dir="rga_10604" if filename=="combined_reduced_cross_sections.csv" else "rgk_6535"
+    roots=[stage3,stage3.parent,here,here/"input",here/"inputs",here.parent]
+
+    # First prefer an already-unpacked copy.  The exported Rosenbluth package is
+    # normally fa18_rosenbluth_inputs_<timestamp>/<campaign>/<filename>.
     candidates=[]
     for root in roots:
         candidates += [
             root/filename,
-            root/"rga_10604"/filename,
-            root/"rgk_6535"/filename,
-            root/"inputs"/"rga_10604"/filename,
-            root/"inputs"/"rgk_6535"/filename,
-            root/"fa18_rosenbluth_inputs"/"rga_10604"/filename,
-            root/"fa18_rosenbluth_inputs"/"rgk_6535"/filename,
+            root/campaign_dir/filename,
+            root/"inputs"/campaign_dir/filename,
+            root/"input"/campaign_dir/filename,
+            root/"fa18_rosenbluth_inputs"/campaign_dir/filename,
         ]
     for path in candidates:
         if path.exists(): return path.resolve()
 
-    # A bounded recursive search is useful because exported input packages carry
-    # timestamped top-level directory names.
     seen=set()
     for root in roots:
         if not root.exists(): continue
-        for path in root.glob(f"**/{filename}"):
+        for path in root.glob(f"**/{campaign_dir}/{filename}"):
             rp=path.resolve()
             if rp not in seen:
                 seen.add(rp)
                 return rp
-    raise FileNotFoundError(
-        f"Could not locate native campaign input {filename}. "
-        f"Pass --{'rga-input' if filename.startswith('combined') else 'rgk-input'} /full/path/{filename}."
-    )
 
+    # The standard handoff is also often kept as a timestamped tar.gz rather
+    # than unpacked.  Read the exact campaign member from that archive and cache
+    # it under Stage 3 so subsequent runs use the same bytes deterministically.
+    archives=[]
+    for root in roots:
+        if not root.exists(): continue
+        archives.extend(root.glob("fa18_rosenbluth_inputs_*.tar.gz"))
+        archives.extend(root.glob("fa18_rosenbluth_inputs*.tgz"))
+    archives=sorted({a.resolve() for a in archives}, key=lambda p:p.stat().st_mtime, reverse=True)
+    member_suffix=f"/{campaign_dir}/{filename}"
+    for archive in archives:
+        try:
+            with tarfile.open(archive,"r:*") as tf:
+                matches=[m for m in tf.getmembers() if m.isfile() and m.name.endswith(member_suffix)]
+                if len(matches)!=1: continue
+                cache=stage3/"native_campaign_inputs"/campaign_dir/filename
+                cache.parent.mkdir(parents=True,exist_ok=True)
+                src=tf.extractfile(matches[0])
+                if src is None: continue
+                cache.write_bytes(src.read())
+                print(f"  extracted : {archive} -> {cache}")
+                return cache.resolve()
+        except (tarfile.TarError,OSError):
+            continue
+
+    raise FileNotFoundError(
+        f"Could not locate native campaign input {campaign_dir}/{filename}, either unpacked "
+        f"or inside fa18_rosenbluth_inputs_*.tar.gz. "
+        f"Pass --{'rga-input' if campaign_dir=='rga_10604' else 'rgk-input'} /full/path/{filename}."
+    )
 
 def _native_campaign_bins(path:Path, campaign:str) -> pd.DataFrame:
     """Collapse phi rows to one native flux-coordinate record per (iq2,ixb,it)."""
