@@ -42,6 +42,8 @@ DEFAULT_CHUNK_SIZE = 30
 DEFAULT_MESON_VALUE = "pi0"
 # Four points determine const + cos(phi) + cos(2phi), with redundancy.
 DEFAULT_PHI_DEG = (0.0, 60.0, 120.0, 180.0, 240.0, 300.0)
+PROBE_PHI_DEG = (0.0, 90.0, 180.0)
+PROTON_MASS_GEV = 0.9382720813
 
 RESULT_RE = re.compile(
     r"Result:\s*([+-]?(?:[\d,]+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*\[([^\]]+)\]"
@@ -124,15 +126,16 @@ def module_xml():
 </module>"""
 
 def task_xml(row, meson_value=DEFAULT_MESON_VALUE):
-    # PARTONS DVMP phi is radians in the Trento convention.
-    phi_rad=math.radians(float(row.phi_deg))
+    # PARTONS prints DVMPObservableKinematic::phi in degrees.  Pass the
+    # requested Trento azimuth directly rather than converting it to radians.
+    phi_deg=float(row.phi_deg)
     return f"""<task service="DVMPObservableService" method="computeSingleKinematic" storeInDB="0">
 <kinematics type="DVMPObservableKinematic">
 <param name="xB" value="{float(row.xB):.15g}" />
 <param name="t" value="{-abs(float(row.minus_t)):.15g}" />
 <param name="Q2" value="{float(row.Q2):.15g}" />
 <param name="E" value="{float(row.E):.15g}" />
-<param name="phi" value="{phi_rad:.15g}" />
+<param name="phi" value="{phi_deg:.15g}" />
 <param name="meson" value="{meson_value}" />
 </kinematics>
 <computation_configuration>
@@ -150,18 +153,25 @@ def load_queries(stage3:Path):
     if miss: raise RuntimeError(f"Stage-3 query file missing {miss}")
     return q
 
-def expanded_points(q):
+def expanded_points(q, phi_grid=DEFAULT_PHI_DEG):
     rows=[]
-    # Beam energies are the actual supplied campaign energies.
+    skipped=[]
+    # Beam energies currently encoded by the Stage-3 driver.  Reject nominal
+    # coordinates that are not physical at a given beam energy before PARTONS.
     for r in q.itertuples(index=False):
         for camp,E in (("rga",10.604),("rgk",6.535)):
-            for phi in DEFAULT_PHI_DEG:
-                rows.append(dict(point_id=r.point_id,campaign=camp,E=E,
-                    Q2=r.Q2_common_GeV2,xB=r.xB_common,
-                    minus_t=r.minus_t_common_GeV2,phi_deg=phi))
+            Q2=float(r.Q2_common_GeV2); xB=float(r.xB_common)
+            y=Q2/(2.0*PROTON_MASS_GEV*float(E)*xB)
+            if not (0.0 < y < 1.0):
+                skipped.append(dict(point_id=r.point_id,campaign=camp,E=E,Q2=Q2,xB=xB,y=y,
+                    reason="nominal common coordinate has y outside (0,1)"))
+                continue
+            for phi in phi_grid:
+                rows.append(dict(point_id=r.point_id,campaign=camp,E=E,y=y,
+                    Q2=Q2,xB=xB,minus_t=r.minus_t_common_GeV2,phi_deg=phi))
     out=pd.DataFrame(rows)
-    out.insert(0,"eval_id",[f"E{i:06d}" for i in range(len(out))])
-    return out
+    if len(out): out.insert(0,"eval_id",[f"E{i:06d}" for i in range(len(out))])
+    return out,pd.DataFrame(skipped)
 
 def write_chunks(points,out,chunk_size,meson_value=DEFAULT_MESON_VALUE):
     xml_dir=out/"xml"; xml_dir.mkdir(parents=True,exist_ok=True)
@@ -264,15 +274,21 @@ def main():
     preflight(sif,project,a.executable)
 
     q=load_queries(a.stage3.resolve())
-    pts=expanded_points(q)
     if not a.all:
         first=q.iloc[[0]]
-        pts=expanded_points(first)
-        print(f"\n[probe] point {first.iloc[0].point_id}: evaluating 6 phi values at each of 2 beam energies")
+        pts,skipped=expanded_points(first,PROBE_PHI_DEG)
+        print(f"\n[probe] point {first.iloc[0].point_id}: evaluating {len(PROBE_PHI_DEG)} phi values for each physically allowed beam energy")
     else:
-        print(f"\n[production] {len(q)} common points x 2 energies x 6 phi = {len(pts)} PARTONS evaluations")
+        pts,skipped=expanded_points(q,DEFAULT_PHI_DEG)
+        print(f"\n[production] {len(q)} common points; {len(pts)} physical PARTONS evaluations after beam-energy y filtering")
 
     pts.to_csv(out/"01_partons_evaluation_points.csv",index=False)
+    skipped.to_csv(out/"01b_partons_skipped_unphysical.csv",index=False)
+    if len(skipped):
+        print(f"  prefilter : skipped {len(skipped)} point/campaign combination(s) with y outside (0,1)")
+        for r in skipped.head(8).itertuples(index=False):
+            print(f"              {r.point_id} {r.campaign}: E={r.E:.3f} GeV, Q2={r.Q2:.4g} GeV^2, xB={r.xB:.4g}, y={r.y:.4f}")
+        if len(skipped)>8: print(f"              ... and {len(skipped)-8} more (see 01b_partons_skipped_unphysical.csv)")
     print(f"  meson XML : {a.meson_value!r} (MesonType::fromString representation)")
     jobs=write_chunks(pts,out,a.chunk_size,a.meson_value)
     pd.DataFrame(jobs).to_csv(out/"02_chunk_manifest.csv",index=False)
