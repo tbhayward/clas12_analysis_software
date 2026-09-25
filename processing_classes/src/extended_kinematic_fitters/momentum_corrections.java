@@ -762,7 +762,7 @@ public class momentum_corrections {
         double pSmear = dilutionFactor(mx2); 
 //        pSmear = 0;
 //        pSmear = 1;
-        if (rand.nextDouble() > pSmear) {
+        if (rand.nextDouble() < pSmear) {
             // leave at rest
             return new Vector3(0.0, 0.0, 0.0);
         }
