@@ -180,6 +180,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing as mp
+import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -2791,13 +2792,31 @@ def fit_bin_worker(
     events = _WORKER_EVENTS
     run_states = _WORKER_RUN_STATES
     dilution_records = _WORKER_DILUTION_RECORDS
+    worker_start = time.perf_counter()
 
+    def report(stage: str, detail: str = "") -> None:
+        elapsed = time.perf_counter() - worker_start
+        suffix = f" | {detail}" if detail else ""
+        print(
+            f"[worker bin {bin_number:02d}] {stage} "
+            f"(elapsed {elapsed:8.1f} s){suffix}",
+            flush=True,
+        )
+    # enddef
+
+    report("START")
+
+    report("nominal simultaneous fit: START")
     nominal = fit_one_variant(
         events,
         run_states,
         dilution_records,
         bin_number,
         "nominal",
+    )
+    report(
+        "nominal simultaneous fit: DONE",
+        f"valid={nominal['valid']}; EDM={nominal['edm']:.3e}",
     )
     variants = {"nominal": nominal}
     projection_systematic: dict[str, float | None] = {
@@ -2814,6 +2833,7 @@ def fit_bin_worker(
     }
 
     if include_target_axis_study:
+        report("target-axis no_projection: START")
         no_projection = fit_one_variant(
             events,
             run_states,
@@ -2822,6 +2842,11 @@ def fit_bin_worker(
             "no_projection",
             initial_values=nominal["values"],
         )
+        report(
+            "target-axis no_projection: DONE",
+            f"valid={no_projection['valid']}; EDM={no_projection['edm']:.3e}",
+        )
+        report("target-axis external_data_informed: START")
         external_data_informed = fit_one_variant(
             events,
             run_states,
@@ -2829,6 +2854,11 @@ def fit_bin_worker(
             bin_number,
             "external_data_informed",
             initial_values=nominal["values"],
+        )
+        report(
+            "target-axis external_data_informed: DONE",
+            f"valid={external_data_informed['valid']}; "
+            f"EDM={external_data_informed['edm']:.3e}",
         )
         variants.update({
             "no_projection": no_projection,
@@ -2882,8 +2912,10 @@ def fit_bin_worker(
     if include_period_diagnostics:
         # Independent nominal fits for period-consistency plots.  These do not
         # enter the quoted combined result or its target-axis systematic.
-        period_fits = {
-            period: fit_one_variant(
+        period_fits = {}
+        for period in PERIODS:
+            report(f"period-only {period}: START")
+            period_fits[period] = fit_one_variant(
                 events,
                 run_states,
                 dilution_records,
@@ -2892,8 +2924,12 @@ def fit_bin_worker(
                 active_periods=(period,),
                 initial_values=nominal["values"],
             )
-            for period in PERIODS
-        }
+            report(
+                f"period-only {period}: DONE",
+                f"valid={period_fits[period]['valid']}; "
+                f"EDM={period_fits[period]['edm']:.3e}",
+            )
+        # endfor
 
         period_constraint_fits: dict[
             str,
@@ -2904,6 +2940,7 @@ def fit_bin_worker(
             "fix_u1_u2": {},
         }
         for period in PERIODS:
+            report(f"period constraint fix_u1 {period}: START")
             period_constraint_fits["fix_u1"][period] = fit_one_variant(
                 events,
                 run_states,
@@ -2916,6 +2953,12 @@ def fit_bin_worker(
                     "u1": nominal["values"]["u1"],
                 },
             )
+            report(
+                f"period constraint fix_u1 {period}: DONE",
+                f"valid={period_constraint_fits['fix_u1'][period]['valid']}; "
+                f"EDM={period_constraint_fits['fix_u1'][period]['edm']:.3e}",
+            )
+            report(f"period constraint fix_u2 {period}: START")
             period_constraint_fits["fix_u2"][period] = fit_one_variant(
                 events,
                 run_states,
@@ -2928,6 +2971,12 @@ def fit_bin_worker(
                     "u2": nominal["values"]["u2"],
                 },
             )
+            report(
+                f"period constraint fix_u2 {period}: DONE",
+                f"valid={period_constraint_fits['fix_u2'][period]['valid']}; "
+                f"EDM={period_constraint_fits['fix_u2'][period]['edm']:.3e}",
+            )
+            report(f"period constraint fix_u1_u2 {period}: START")
             period_constraint_fits["fix_u1_u2"][period] = fit_one_variant(
                 events,
                 run_states,
@@ -2941,6 +2990,11 @@ def fit_bin_worker(
                     "u2": nominal["values"]["u2"],
                 },
             )
+            report(
+                f"period constraint fix_u1_u2 {period}: DONE",
+                f"valid={period_constraint_fits['fix_u1_u2'][period]['valid']}; "
+                f"EDM={period_constraint_fits['fix_u1_u2'][period]['edm']:.3e}",
+            )
         # endfor
 
         # Quantify each period's tension with the simultaneous solution.  For each
@@ -2949,6 +3003,7 @@ def fit_bin_worker(
         # up to minimizer precision and is a compact period-consistency diagnostic.
         period_consistency: dict[str, dict[str, float]] = {}
         for period in PERIODS:
+            report(f"period consistency {period}: START")
             period_nll, _ = make_bin_nll(
                 events,
                 run_states,
@@ -2979,9 +3034,11 @@ def fit_bin_worker(
                     combined_nll_for_period - period_minimum_nll,
                 ),
             }
+            report(f"period consistency {period}: DONE")
         # endfor
     # endif
 
+    report("DONE; returning result to parent")
     return {
         "bin_number": bin_number,
         "variants": variants,
@@ -4254,6 +4311,11 @@ def run_analysis_variant(
         initargs=(str(cache_path), run_state_payload, dilution_payload),
     )
     try:
+        print(
+            f"[{sample_variant}] submitting {NUMBER_OF_BINS} bin workers "
+            f"with max_workers={workers}...",
+            flush=True,
+        )
         futures = {
             executor.submit(
                 fit_bin_worker, bin_number, include_target_axis_study,
@@ -4266,7 +4328,7 @@ def run_analysis_variant(
             results.append(result)
             nominal = result["variants"]["nominal"]
             print(
-                f"[{sample_variant} bin {result['bin_number']:02d}] "
+                f"[{sample_variant} bin {result['bin_number']:02d} COMPLETE] "
                 f"N={nominal['metadata']['number_of_events']:,}; "
                 f"valid={nominal['valid']}; "
                 f"NLL={nominal['minimum_nll']:.6f}; "
