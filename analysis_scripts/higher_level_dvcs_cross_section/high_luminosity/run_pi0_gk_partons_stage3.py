@@ -65,6 +65,10 @@ def parse_args():
     p.add_argument("--force",action="store_true")
     p.add_argument("--meson-value",default=DEFAULT_MESON_VALUE,
                    help="MesonType string passed to PARTONS XML (default: pi0).")
+    p.add_argument("--rga-input",type=Path,default=None,
+                   help="RGA combined_reduced_cross_sections.csv. Auto-discovered when omitted.")
+    p.add_argument("--rgk-input",type=Path,default=None,
+                   help="RGK rgk6535_reduced_cross_sections.csv. Auto-discovered when omitted.")
     p.add_argument("--dry-run",action="store_true",
                    help="Write XML/maps but do not invoke PARTONS.")
     return p.parse_args()
@@ -144,31 +148,137 @@ def task_xml(row, meson_value=DEFAULT_MESON_VALUE):
 </task>
 <task service="DVMPObservableService" method="printResults"></task>"""
 
-def load_queries(stage3:Path):
+def _find_campaign_input(explicit:Path|None, stage3:Path, filename:str) -> Path:
+    """Locate the native Rosenbluth campaign CSV without silently using common-bin centers."""
+    if explicit is not None:
+        path=explicit.expanduser().resolve()
+        if not path.exists(): raise FileNotFoundError(path)
+        return path
+
+    roots=[stage3,stage3.parent,Path(__file__).resolve().parent]
+    candidates=[]
+    for root in roots:
+        candidates += [
+            root/filename,
+            root/"rga_10604"/filename,
+            root/"rgk_6535"/filename,
+            root/"inputs"/"rga_10604"/filename,
+            root/"inputs"/"rgk_6535"/filename,
+            root/"fa18_rosenbluth_inputs"/"rga_10604"/filename,
+            root/"fa18_rosenbluth_inputs"/"rgk_6535"/filename,
+        ]
+    for path in candidates:
+        if path.exists(): return path.resolve()
+
+    # A bounded recursive search is useful because exported input packages carry
+    # timestamped top-level directory names.
+    seen=set()
+    for root in roots:
+        if not root.exists(): continue
+        for path in root.glob(f"**/{filename}"):
+            rp=path.resolve()
+            if rp not in seen:
+                seen.add(rp)
+                return rp
+    raise FileNotFoundError(
+        f"Could not locate native campaign input {filename}. "
+        f"Pass --{'rga-input' if filename.startswith('combined') else 'rgk-input'} /full/path/{filename}."
+    )
+
+
+def _native_campaign_bins(path:Path, campaign:str) -> pd.DataFrame:
+    """Collapse phi rows to one native flux-coordinate record per (iq2,ixb,it)."""
+    d=pd.read_csv(path)
+    req=["iq2","ixb","it","Q2_flux_coordinate_GeV2","xB_flux_coordinate",
+         "minus_t_center_GeV2","beam_energy_GeV","virtual_photon_epsilon"]
+    miss=[c for c in req if c not in d]
+    if miss: raise RuntimeError(f"{path} missing required columns {miss}")
+
+    keys=["iq2","ixb","it"]
+    vals=req[3:]
+    # Every phi bin belonging to one hadronic bin must carry identical model
+    # coordinates.  Check this explicitly before taking the first row.
+    nunique=d.groupby(keys,dropna=False)[vals].nunique(dropna=False)
+    bad=nunique[(nunique>1).any(axis=1)]
+    if len(bad):
+        raise RuntimeError(f"{path}: {len(bad)} hadronic bins have inconsistent native coordinates across phi")
+    out=d.groupby(keys,as_index=False,dropna=False)[vals].first()
+    out["campaign"]=campaign
+    return out
+
+
+def load_queries(stage3:Path, rga_input:Path|None=None, rgk_input:Path|None=None):
     qpath=stage3/"model_queries"/"01_common_gk_query_points.csv"
     if not qpath.exists(): raise FileNotFoundError(qpath)
     q=pd.read_csv(qpath)
-    req=["point_id","Q2_common_GeV2","xB_common","minus_t_common_GeV2"]
+    req=["point_id","Q2_common_GeV2","xB_common","minus_t_common_GeV2",
+         "iq2_rga","ixb_rga","it_rga","iq2_rgk","ixb_rgk","it_rgk"]
     miss=[c for c in req if c not in q]
     if miss: raise RuntimeError(f"Stage-3 query file missing {miss}")
+
+    rga_path=_find_campaign_input(rga_input,stage3,"combined_reduced_cross_sections.csv")
+    rgk_path=_find_campaign_input(rgk_input,stage3,"rgk6535_reduced_cross_sections.csv")
+    print("[native campaign coordinates]")
+    print(f"  RGA input : {rga_path}")
+    print(f"  RGK input : {rgk_path}")
+
+    for camp,path in (("rga",rga_path),("rgk",rgk_path)):
+        native=_native_campaign_bins(path,camp)
+        native=native.rename(columns={
+            "iq2":f"iq2_{camp}","ixb":f"ixb_{camp}","it":f"it_{camp}",
+            "Q2_flux_coordinate_GeV2":f"Q2_{camp}_GeV2",
+            "xB_flux_coordinate":f"xB_{camp}",
+            "minus_t_center_GeV2":f"minus_t_{camp}_GeV2",
+            "beam_energy_GeV":f"E_{camp}_GeV",
+            "virtual_photon_epsilon":f"epsilon_{camp}_native",
+        }).drop(columns="campaign")
+        keys=[f"iq2_{camp}",f"ixb_{camp}",f"it_{camp}"]
+        q=q.merge(native,on=keys,how="left",validate="many_to_one")
+        missing=q[f"Q2_{camp}_GeV2"].isna()
+        if missing.any():
+            ids=", ".join(q.loc[missing,"point_id"].astype(str).head(8))
+            raise RuntimeError(f"Could not match {missing.sum()} Stage-3 points to native {camp.upper()} bins; first: {ids}")
+
+        # The epsilon already carried by Stage 3 should originate from the same
+        # native coordinates.  Preserve both and demand agreement.
+        old=f"epsilon_{camp}"
+        new=f"epsilon_{camp}_native"
+        if old in q:
+            diff=np.abs(q[old].astype(float)-q[new].astype(float))
+            if np.nanmax(diff)>1e-10:
+                raise RuntimeError(f"Stage-3/native {camp.upper()} epsilon mismatch: max |delta|={np.nanmax(diff):.3e}")
+
     return q
+
 
 def expanded_points(q, phi_grid=DEFAULT_PHI_DEG):
     rows=[]
     skipped=[]
-    # Beam energies currently encoded by the Stage-3 driver.  Reject nominal
-    # coordinates that are not physical at a given beam energy before PARTONS.
+    # Evaluate each campaign at its OWN measured flux-weighted (Q2,xB)
+    # coordinate and beam energy.  Common coordinates remain metadata for the
+    # later explicit model-based translation to the Rosenbluth comparison point.
     for r in q.itertuples(index=False):
-        for camp,E in (("rga",10.604),("rgk",6.535)):
-            Q2=float(r.Q2_common_GeV2); xB=float(r.xB_common)
-            y=Q2/(2.0*PROTON_MASS_GEV*float(E)*xB)
+        for camp in ("rga","rgk"):
+            E=float(getattr(r,f"E_{camp}_GeV"))
+            Q2=float(getattr(r,f"Q2_{camp}_GeV2"))
+            xB=float(getattr(r,f"xB_{camp}"))
+            mt=float(getattr(r,f"minus_t_{camp}_GeV2"))
+            eps=float(getattr(r,f"epsilon_{camp}_native"))
+            y=Q2/(2.0*PROTON_MASS_GEV*E*xB)
+            base=dict(
+                point_id=r.point_id,campaign=camp,E=E,y=y,epsilon=eps,
+                Q2=Q2,xB=xB,minus_t=mt,
+                Q2_common=float(r.Q2_common_GeV2),xB_common=float(r.xB_common),
+                minus_t_common=float(r.minus_t_common_GeV2),
+                delta_Q2_from_common=Q2-float(r.Q2_common_GeV2),
+                delta_xB_from_common=xB-float(r.xB_common),
+                delta_minus_t_from_common=mt-float(r.minus_t_common_GeV2),
+            )
             if not (0.0 < y < 1.0):
-                skipped.append(dict(point_id=r.point_id,campaign=camp,E=E,Q2=Q2,xB=xB,y=y,
-                    reason="nominal common coordinate has y outside (0,1)"))
+                skipped.append({**base,"reason":"native campaign flux coordinate has y outside (0,1)"})
                 continue
             for phi in phi_grid:
-                rows.append(dict(point_id=r.point_id,campaign=camp,E=E,y=y,
-                    Q2=Q2,xB=xB,minus_t=r.minus_t_common_GeV2,phi_deg=phi))
+                rows.append({**base,"phi_deg":float(phi)})
     out=pd.DataFrame(rows)
     if len(out): out.insert(0,"eval_id",[f"E{i:06d}" for i in range(len(out))])
     return out,pd.DataFrame(skipped)
@@ -273,14 +383,14 @@ def main():
     sif=find_sif(a.sif,here,project)
     preflight(sif,project,a.executable)
 
-    q=load_queries(a.stage3.resolve())
+    q=load_queries(a.stage3.resolve(),a.rga_input,a.rgk_input)
     if not a.all:
         first=q.iloc[[0]]
         pts,skipped=expanded_points(first,PROBE_PHI_DEG)
         print(f"\n[probe] point {first.iloc[0].point_id}: evaluating {len(PROBE_PHI_DEG)} phi values for each physically allowed beam energy")
     else:
         pts,skipped=expanded_points(q,DEFAULT_PHI_DEG)
-        print(f"\n[production] {len(q)} common points; {len(pts)} physical PARTONS evaluations after beam-energy y filtering")
+        print(f"\n[production] {len(q)} matched Rosenbluth points; {len(pts)} PARTONS evaluations at native campaign coordinates")
 
     pts.to_csv(out/"01_partons_evaluation_points.csv",index=False)
     skipped.to_csv(out/"01b_partons_skipped_unphysical.csv",index=False)
@@ -345,7 +455,7 @@ def main():
           f"{harm.max_fractional_harmonic_residual.max():.3e}")
     if not a.all:
         print("\nProbe succeeded. Review the reported units and harmonic closure.")
-        print("If they are sensible, rerun with --all.")
+        print("Native RGA/RGK coordinates were used. Review the reported units and harmonic closure before --all.")
     else:
         print(f"\nWrote complete public-observable GK grid to {out}")
         print("This file deliberately does NOT yet label the harmonic coefficients")
