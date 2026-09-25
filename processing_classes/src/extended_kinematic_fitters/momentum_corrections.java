@@ -703,7 +703,7 @@ public class momentum_corrections {
     private static boolean fermiInit = false;
     private static double fermiScale = 1.0;
 
-//––– fit parameters for D_f(Mx2)=poly₄+Gauss from your python result
+//––– fit parameters for D_f(Mx2)=poly₄+Gauss
     private static final double a0 = -0.0236548;
     private static final double a1 = 0.355323;
     private static final double a2 = -0.210453;
