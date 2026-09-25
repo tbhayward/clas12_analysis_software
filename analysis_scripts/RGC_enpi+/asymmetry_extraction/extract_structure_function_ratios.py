@@ -2777,6 +2777,7 @@ def initialize_fit_worker(
 def fit_bin_worker(
     bin_number: int,
     include_target_axis_study: bool = True,
+    include_period_diagnostics: bool = True,
 ) -> dict[str, Any]:
     if (
         _WORKER_EVENTS is None
@@ -2867,106 +2868,118 @@ def fit_bin_worker(
         # endfor
     # endif
 
-    # Independent nominal fits for period-consistency plots.  These do not
-    # enter the quoted combined result or its target-axis systematic.
-    period_fits = {
-        period: fit_one_variant(
-            events,
-            run_states,
-            dilution_records,
-            bin_number,
-            "nominal",
-            active_periods=(period,),
-            initial_values=nominal["values"],
-        )
-        for period in PERIODS
+    # Period-only and constrained fits are diagnostics only.  They are
+    # intentionally evaluated for the production nominal extraction, where
+    # they feed the final period-stability products, but are skipped for
+    # systematic-variation samples.  This does not alter the simultaneous
+    # extraction used for any quoted result or systematic variation.
+    period_fits: dict[str, dict[str, Any]] = {}
+    period_constraint_fits: dict[str, dict[str, dict[str, Any]]] = {
+        "fix_u1": {}, "fix_u2": {}, "fix_u1_u2": {}
     }
-
-    period_constraint_fits: dict[
-        str,
-        dict[str, dict[str, Any]],
-    ] = {
-        "fix_u1": {},
-        "fix_u2": {},
-        "fix_u1_u2": {},
-    }
-    for period in PERIODS:
-        period_constraint_fits["fix_u1"][period] = fit_one_variant(
-            events,
-            run_states,
-            dilution_records,
-            bin_number,
-            "nominal",
-            active_periods=(period,),
-            initial_values=period_fits[period]["values"],
-            fixed_physics_parameters={
-                "u1": nominal["values"]["u1"],
-            },
-        )
-        period_constraint_fits["fix_u2"][period] = fit_one_variant(
-            events,
-            run_states,
-            dilution_records,
-            bin_number,
-            "nominal",
-            active_periods=(period,),
-            initial_values=period_fits[period]["values"],
-            fixed_physics_parameters={
-                "u2": nominal["values"]["u2"],
-            },
-        )
-        period_constraint_fits["fix_u1_u2"][period] = fit_one_variant(
-            events,
-            run_states,
-            dilution_records,
-            bin_number,
-            "nominal",
-            active_periods=(period,),
-            initial_values=period_fits[period]["values"],
-            fixed_physics_parameters={
-                "u1": nominal["values"]["u1"],
-                "u2": nominal["values"]["u2"],
-            },
-        )
-    # endfor
-
-    # Quantify each period's tension with the simultaneous solution.  For each
-    # period, compare its nominal NLL at the combined best-fit point with the
-    # independently minimized period-only NLL.  The difference is nonnegative
-    # up to minimizer precision and is a compact period-consistency diagnostic.
     period_consistency: dict[str, dict[str, float]] = {}
-    for period in PERIODS:
-        period_nll, _ = make_bin_nll(
-            events,
-            run_states,
-            dilution_records,
-            bin_number,
-            "nominal",
-            active_periods=(period,),
-        )
-        combined_nll_for_period = float(
-            period_nll(
-                **{
-                    name: nominal["values"][name]
-                    for name in (
-                        *PHYSICS_PARAMETERS,
-                        "f_su22",
-                        "f_fa22",
-                        "f_sp23",
-                    )
-                }
+    if include_period_diagnostics:
+        # Independent nominal fits for period-consistency plots.  These do not
+        # enter the quoted combined result or its target-axis systematic.
+        period_fits = {
+            period: fit_one_variant(
+                events,
+                run_states,
+                dilution_records,
+                bin_number,
+                "nominal",
+                active_periods=(period,),
+                initial_values=nominal["values"],
             )
-        )
-        period_minimum_nll = float(period_fits[period]["minimum_nll"])
-        period_consistency[period] = {
-            "nll_at_combined_solution": combined_nll_for_period,
-            "period_only_minimum_nll": period_minimum_nll,
-            "delta_nll": max(
-                0.0,
-                combined_nll_for_period - period_minimum_nll,
-            ),
+            for period in PERIODS
         }
-    # endfor
+
+        period_constraint_fits: dict[
+            str,
+            dict[str, dict[str, Any]],
+        ] = {
+            "fix_u1": {},
+            "fix_u2": {},
+            "fix_u1_u2": {},
+        }
+        for period in PERIODS:
+            period_constraint_fits["fix_u1"][period] = fit_one_variant(
+                events,
+                run_states,
+                dilution_records,
+                bin_number,
+                "nominal",
+                active_periods=(period,),
+                initial_values=period_fits[period]["values"],
+                fixed_physics_parameters={
+                    "u1": nominal["values"]["u1"],
+                },
+            )
+            period_constraint_fits["fix_u2"][period] = fit_one_variant(
+                events,
+                run_states,
+                dilution_records,
+                bin_number,
+                "nominal",
+                active_periods=(period,),
+                initial_values=period_fits[period]["values"],
+                fixed_physics_parameters={
+                    "u2": nominal["values"]["u2"],
+                },
+            )
+            period_constraint_fits["fix_u1_u2"][period] = fit_one_variant(
+                events,
+                run_states,
+                dilution_records,
+                bin_number,
+                "nominal",
+                active_periods=(period,),
+                initial_values=period_fits[period]["values"],
+                fixed_physics_parameters={
+                    "u1": nominal["values"]["u1"],
+                    "u2": nominal["values"]["u2"],
+                },
+            )
+        # endfor
+
+        # Quantify each period's tension with the simultaneous solution.  For each
+        # period, compare its nominal NLL at the combined best-fit point with the
+        # independently minimized period-only NLL.  The difference is nonnegative
+        # up to minimizer precision and is a compact period-consistency diagnostic.
+        period_consistency: dict[str, dict[str, float]] = {}
+        for period in PERIODS:
+            period_nll, _ = make_bin_nll(
+                events,
+                run_states,
+                dilution_records,
+                bin_number,
+                "nominal",
+                active_periods=(period,),
+            )
+            combined_nll_for_period = float(
+                period_nll(
+                    **{
+                        name: nominal["values"][name]
+                        for name in (
+                            *PHYSICS_PARAMETERS,
+                            "f_su22",
+                            "f_fa22",
+                            "f_sp23",
+                        )
+                    }
+                )
+            )
+            period_minimum_nll = float(period_fits[period]["minimum_nll"])
+            period_consistency[period] = {
+                "nll_at_combined_solution": combined_nll_for_period,
+                "period_only_minimum_nll": period_minimum_nll,
+                "delta_nll": max(
+                    0.0,
+                    combined_nll_for_period - period_minimum_nll,
+                ),
+            }
+        # endfor
+    # endif
 
     return {
         "bin_number": bin_number,
@@ -2982,6 +2995,7 @@ def fit_bin_worker(
             EXTERNAL_TRANSVERSE_INPUTS if include_target_axis_study else None
         ),
         "target_axis_study_performed": include_target_axis_study,
+        "period_diagnostics_performed": include_period_diagnostics,
     }
 
 
@@ -3032,7 +3046,25 @@ def flatten_fit_results(
                 "errors"
             ][f"f_{period}"]
 
-            period_fit = result["period_fits"][period]
+            period_fit = result["period_fits"].get(period)
+            if period_fit is None:
+                row[f"period_fit_valid_{period}"] = np.nan
+                row[f"period_fit_accurate_covariance_{period}"] = np.nan
+                row[f"period_fit_positive_definite_covariance_{period}"] = np.nan
+                row[f"period_fit_parameters_at_limit_{period}"] = np.nan
+                row[f"period_fit_nll_{period}"] = np.nan
+                row[f"period_fit_edm_{period}"] = np.nan
+                row[f"period_delta_nll_{period}"] = np.nan
+                for constraint_name in ("fix_u1", "fix_u2", "fix_u1_u2"):
+                    prefix = f"{constraint_name}_period_fit"
+                    row[f"{prefix}_valid_{period}"] = np.nan
+                    row[f"{prefix}_accurate_covariance_{period}"] = np.nan
+                    row[f"{prefix}_positive_definite_covariance_{period}"] = np.nan
+                    row[f"{prefix}_parameters_at_limit_{period}"] = np.nan
+                    row[f"{prefix}_edm_{period}"] = np.nan
+                # endfor
+                continue
+            # endif
             row[f"period_fit_valid_{period}"] = period_fit["valid"]
             row[f"period_fit_accurate_covariance_{period}"] = period_fit[
                 "accurate_covariance"
@@ -3108,7 +3140,16 @@ def flatten_fit_results(
                 )
             # endfor
             for period in PERIODS:
-                period_fit = result["period_fits"][period]
+                period_fit = result["period_fits"].get(period)
+                if period_fit is None:
+                    row[f"{parameter}_{period}"] = np.nan
+                    row[f"{parameter}_stat_{period}"] = np.nan
+                    for constraint_name in ("fix_u1", "fix_u2", "fix_u1_u2"):
+                        row[f"{parameter}_{constraint_name}_{period}"] = np.nan
+                        row[f"{parameter}_{constraint_name}_stat_{period}"] = np.nan
+                    # endfor
+                    continue
+                # endif
                 row[f"{parameter}_{period}"] = period_fit[
                     "values"
                 ][parameter]
@@ -4122,6 +4163,7 @@ def run_analysis_variant(
     reuse_cache: bool,
     skip_plots: bool,
     include_target_axis_study: bool,
+    include_period_diagnostics: bool = False,
     cut_label: str = "nominal",
     source_cache_path: Path | None = None,
 ) -> dict[str, Any]:
@@ -4154,6 +4196,7 @@ def run_analysis_variant(
     print(f"Output directory:     {output_dir}")
     print(f"Selected-event cache: {cache_path}")
     print(f"Target-axis study:    {include_target_axis_study}")
+    print(f"Period diagnostics:   {include_period_diagnostics}")
     print(f"Exclusivity window:   {cut_label}")
 
     run_records = parse_run_info_csv(run_info_path)
@@ -4196,7 +4239,13 @@ def run_analysis_variant(
     dilution_payload = {period: {str(bin_number): {"x_index": record.x_index, "t_index": record.t_index, "value": record.value, "stat_uncertainty": record.stat_uncertainty} for (record_period, bin_number), record in dilution_records.items() if record_period == period} for period in PERIODS}
     results = []
     with ProcessPoolExecutor(max_workers=workers, initializer=initialize_fit_worker, initargs=(str(cache_path), run_state_payload, dilution_payload)) as executor:
-        futures = {executor.submit(fit_bin_worker, bin_number, include_target_axis_study): bin_number for bin_number in range(1, NUMBER_OF_BINS + 1)}
+        futures = {
+            executor.submit(
+                fit_bin_worker, bin_number, include_target_axis_study,
+                include_period_diagnostics
+            ): bin_number
+            for bin_number in range(1, NUMBER_OF_BINS + 1)
+        }
         for future in as_completed(futures):
             result = future.result()
             results.append(result)
@@ -4204,6 +4253,7 @@ def run_analysis_variant(
             print(f"[{sample_variant} bin {result['bin_number']:02d}] N={nominal['metadata']['number_of_events']:,}; valid={nominal['valid']}; NLL={nominal['minimum_nll']:.6f}; EDM={nominal['edm']:.3e}")
         # endfor
     # endwith
+    print(f"[{sample_variant}] all {NUMBER_OF_BINS} bin fits completed; assembling tables.", flush=True)
     results.sort(key=lambda item: item["bin_number"])
     frame = flatten_fit_results(results)
     csv_path = tables_dir / "structure_function_ratios.csv"
@@ -4216,6 +4266,7 @@ def run_analysis_variant(
         "diagnostic_only": sample_variant != "nominal",
         "exclusivity_window": cut_label,
         "target_axis_study_performed": include_target_axis_study,
+        "period_diagnostics_performed": include_period_diagnostics,
         "created_utc": datetime.now(timezone.utc).isoformat(),
         "beam_polarization": BEAM_POLARIZATION,
         "beam_energy_gev": BEAM_ENERGY_GEV,
@@ -4245,6 +4296,7 @@ def run_analysis_variant(
     )
     plot_paths = {"all_bins": [], "aggregated": [], "aggregated_by_period": [], "target_axis_variants": [], "period_stability": []}
     if not skip_plots:
+        print(f"[{sample_variant}] writing plots...", flush=True)
         plot_paths["all_bins"] = plot_parameter_summaries(
             frame,
             all_bins_plots_dir,
@@ -4255,15 +4307,22 @@ def run_analysis_variant(
             aggregated_plots_dir,
             include_target_axis_uncertainty=include_target_axis_study,
         )
-        plot_paths["aggregated_by_period"] = plot_aggregated_by_period(frame, period_plots_dir)
-        plot_paths["aggregated_by_period"].append(plot_period_consistency_heatmap(frame, period_plots_dir))
-        plot_paths["period_stability"] = plot_period_stability(frame, period_stability_dir)
+        if include_period_diagnostics:
+            print(f"[{sample_variant}] writing period-consistency diagnostics...", flush=True)
+            plot_paths["aggregated_by_period"] = plot_aggregated_by_period(frame, period_plots_dir)
+            plot_paths["aggregated_by_period"].append(
+                plot_period_consistency_heatmap(frame, period_plots_dir)
+            )
+            plot_paths["period_stability"] = plot_period_stability(
+                frame, period_stability_dir
+            )
+        # endif
         if include_target_axis_study:
             plot_paths["target_axis_variants"] = plot_target_axis_variants(frame, target_axis_variants_dir)
         # endif
     # endif
     manifest_path = output_dir / "analysis_variant_manifest.json"
-    write_json(manifest_path, {"schema_version": 3, "sample_variant": sample_variant, "diagnostic_only": sample_variant != "nominal", "exclusivity_window": cut_label, "target_axis_study_performed": include_target_axis_study, "products": {"csv": str(csv_path), "detailed_json": str(detailed_json_path), "latex": str(latex_path), "covariance_directory": str(covariance_dir), "plots": plot_paths, "cache": str(cache_path)}})
+    write_json(manifest_path, {"schema_version": 3, "sample_variant": sample_variant, "diagnostic_only": sample_variant != "nominal", "exclusivity_window": cut_label, "target_axis_study_performed": include_target_axis_study, "period_diagnostics_performed": include_period_diagnostics, "products": {"csv": str(csv_path), "detailed_json": str(detailed_json_path), "latex": str(latex_path), "covariance_directory": str(covariance_dir), "plots": plot_paths, "cache": str(cache_path)}})
     invalid_bins = frame.loc[~frame["nominal_fit_valid"].astype(bool), "bin_number"].astype(int).tolist()
     return {"sample_variant": sample_variant, "frame": frame, "results": results, "events": int(events["runnum"].size), "csv": str(csv_path), "json": str(detailed_json_path), "latex": str(latex_path), "manifest": str(manifest_path), "invalid_bins": invalid_bins}
 
@@ -4970,6 +5029,7 @@ def main() -> int:
         reuse_cache=args.reuse_cache,
         skip_plots=args.skip_plots,
         include_target_axis_study=True,
+        include_period_diagnostics=True,
         cut_label="nominal",
         source_cache_path=(None if args.reuse_cache else nominal_source_cache),
     )
@@ -5067,23 +5127,18 @@ def main() -> int:
             include_target_axis_study=False,
             cut_label="loose",
         )
-        nominal_window_result = run_analysis_variant(
-            sample_variant="channel_selection_nominal",
-            input_paths=nominal_inputs,
-            run_info_path=args.run_info_csv.expanduser().resolve(),
-            cut_json_path=args.cut_json.expanduser().resolve(),
-            dilution_json_path=nominal_dilution,
-            output_dir=nominal_window_dir,
-            cache_path=nominal_window_dir / "cache/selected_events.npz",
-            tree_name=args.tree,
-            chunk_size=args.chunk_size,
-            workers=workers,
-            reuse_cache=args.reuse_cache,
-            skip_plots=args.skip_plots,
-            include_target_axis_study=False,
-            cut_label="nominal",
-            source_cache_path=channel_loose_cache,
+        # The production nominal result already uses the same nominal ROOT
+        # inputs, nominal dilution factors, and nominal (2 sigma) exclusivity
+        # selection.  Reuse that fitted result rather than repeating the same
+        # simultaneous likelihood fit a second time.  This is an exact reuse,
+        # not a change to the extraction.
+        print(
+            "[channel_selection] reusing production nominal (2 sigma) fit "
+            "for the channel-selection comparison.",
+            flush=True,
         )
+        nominal_window_result = nominal_result
+
         tight_result = run_analysis_variant(
             sample_variant="channel_selection_tight",
             input_paths=nominal_inputs,
