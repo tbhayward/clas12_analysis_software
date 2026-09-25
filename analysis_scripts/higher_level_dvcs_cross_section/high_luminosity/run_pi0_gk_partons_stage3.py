@@ -34,16 +34,18 @@ import pandas as pd
 
 DEFAULT_PROJECT = Path("/work/clas12/thayward/partons/partons-example")
 DEFAULT_EXECUTABLE = "./bin/PARTONS_example"
-DEFAULT_WORKERS = 4
+DEFAULT_WORKERS = 8
 DEFAULT_CHUNK_SIZE = 30
 COMMON_Y_MAX = 0.90
 # PARTONS MesonType::fromString() expects its canonical string representation.
 # The enum integer (PI0=9) is NOT the XML representation; "PI0" also maps to
 # UNDEFINED in the installed build.  PARTONS canonical type strings are lower-case.
 DEFAULT_MESON_VALUE = "pi0"
-# Four points determine const + cos(phi) + cos(2phi), with redundancy.
-DEFAULT_PHI_DEG = (0.0, 60.0, 120.0, 180.0, 240.0, 300.0)
-PROBE_PHI_DEG = (0.0, 90.0, 180.0)
+# The unpolarized observable is exactly A + B cos(phi) + C cos(2phi) in
+# the validated PARTONS chain. Three points determine those harmonics exactly.
+# Use the same minimal grid in probe and production to avoid redundant ~60 s calls.
+DEFAULT_PHI_DEG = (0.0, 90.0, 180.0)
+PROBE_PHI_DEG = DEFAULT_PHI_DEG
 PROTON_MASS_GEV = 0.9382720813
 
 RESULT_RE = re.compile(
@@ -542,6 +544,60 @@ def native_to_shared_diagnostics(raw,harm):
         hd[f"{x}_fractional_shift"]=hd[f"{x}_shared_over_native"]-1.0
     return phi,hd
 
+def shared_structure_function_diagnostic(raw,harm):
+    """Reconstruct the shared-point Rosenbluth structure-function combinations.
+
+    At identical shared (Q2,xB,t), the two beam energies provide two epsilon
+    values.  With the standard unpolarized electroproduction convention
+
+      sigma(phi) = sigma_T + eps sigma_L
+                 + sqrt(2 eps (1+eps)) sigma_LT cos(phi)
+                 + eps sigma_TT cos(2phi),
+
+    the two constant harmonics solve sigma_T and sigma_L, while the cos(phi)
+    and cos(2phi) harmonics independently reconstruct sigma_LT and sigma_TT at
+    each epsilon.  Agreement of the RGA/RGK reconstructions is therefore a
+    direct convention/normalization diagnostic for the public PARTONS
+    observable.  These quantities are diagnostics until that agreement is
+    verified; they are not silently substituted for the direct cross sections.
+    """
+    hs=harm[harm.evaluation.eq("shared")].copy()
+    if hs.empty:
+        return pd.DataFrame()
+
+    eps=(raw[raw.evaluation.eq("shared")]
+         .groupby(["point_id","campaign"],as_index=False)["epsilon"].first())
+    hs=hs.merge(eps,on=["point_id","campaign"],how="left",validate="one_to_one")
+    rows=[]
+    for pid,g in hs.groupby("point_id"):
+        by={str(r.campaign):r for r in g.itertuples(index=False)}
+        if "rga" not in by or "rgk" not in by:
+            continue
+        a=by["rga"]; b=by["rgk"]
+        er=float(a.epsilon); ek=float(b.epsilon); de=er-ek
+        if not np.isfinite(de) or abs(de)<1e-12:
+            continue
+        Ar=float(a.coefficient_const); Ak=float(b.coefficient_const)
+        sigL=(Ar-Ak)/de
+        sigT=Ar-er*sigL
+        lt_r=float(a.coefficient_cosphi)/math.sqrt(2.0*er*(1.0+er)) if er>0 else np.nan
+        lt_k=float(b.coefficient_cosphi)/math.sqrt(2.0*ek*(1.0+ek)) if ek>0 else np.nan
+        tt_r=float(a.coefficient_cos2phi)/er if er>0 else np.nan
+        tt_k=float(b.coefficient_cos2phi)/ek if ek>0 else np.nan
+        def fracdiff(x,y):
+            den=max(0.5*(abs(x)+abs(y)),1e-300)
+            return (x-y)/den
+        rows.append(dict(
+            point_id=pid,Q2_shared_GeV2=float(a.Q2),xB_shared=float(a.xB),
+            minus_t_shared_GeV2=float(a.minus_t),epsilon_rga=er,epsilon_rgk=ek,
+            delta_epsilon=de,sigma_T_candidate=sigT,sigma_L_candidate=sigL,
+            sigma_LT_from_rga=lt_r,sigma_LT_from_rgk=lt_k,
+            sigma_LT_fractional_difference=fracdiff(lt_r,lt_k),
+            sigma_TT_from_rga=tt_r,sigma_TT_from_rgk=tt_k,
+            sigma_TT_fractional_difference=fracdiff(tt_r,tt_k),
+        ))
+    return pd.DataFrame(rows)
+
 def main():
     a=parse_args(); here=Path(__file__).resolve().parent
     out=a.output.resolve(); out.mkdir(parents=True,exist_ok=True)
@@ -565,6 +621,7 @@ def main():
         pts,skipped=expanded_points(q_retained,shared,DEFAULT_PHI_DEG)
         print(f"\n[production] {len(q_retained)}/{len(q)} Rosenbluth points retained after shared-y<{COMMON_Y_MAX:.2f} cut")
         print(f"  {len(pts)} PARTONS evaluations = retained points x 2 campaigns x 2 coordinates x {len(DEFAULT_PHI_DEG)} phi")
+        print(f"  parallel workers: {a.workers} (default 8; override with --workers N)")
 
     pts.to_csv(out/"01_partons_evaluation_points.csv",index=False)
     skipped.to_csv(out/"01b_partons_skipped_unphysical.csv",index=False)
@@ -625,6 +682,8 @@ def main():
     corr_phi,corr_harm=native_to_shared_diagnostics(raw,harm)
     corr_phi.to_csv(out/"06_gk_native_to_shared_phi_corrections.csv",index=False)
     corr_harm.to_csv(out/"07_gk_native_to_shared_harmonic_diagnostics.csv",index=False)
+    sfdiag=shared_structure_function_diagnostic(raw,harm)
+    sfdiag.to_csv(out/"08_shared_rosenbluth_structure_function_diagnostic.csv",index=False)
 
     print(f"\nParsed {len(raw)} finite PARTONS results.")
     print("Units reported by PARTONS:",", ".join(sorted(units)))
@@ -635,6 +694,7 @@ def main():
         print("Probe includes native and shared-midpoint RGA/RGK coordinates.")
         print("Native->shared GK ratios: 06_gk_native_to_shared_phi_corrections.csv")
         print("Harmonic shift diagnostics: 07_gk_native_to_shared_harmonic_diagnostics.csv")
+        print("Shared-point Rosenbluth diagnostic: 08_shared_rosenbluth_structure_function_diagnostic.csv")
     else:
         print(f"\nWrote complete public-observable GK grid to {out}")
         print("This file deliberately does NOT yet label the harmonic coefficients")
