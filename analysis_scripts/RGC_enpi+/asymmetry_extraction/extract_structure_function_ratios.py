@@ -582,10 +582,8 @@ PHYSICS_PARAMETERS: tuple[str, ...] = (
     "lu1",
     "ul1",
     "ul2",
-    "ut3",
     "ll0",
     "ll1",
-    "lt2",
 )
 
 PARAMETER_INITIAL_VALUES: dict[str, float] = {
@@ -594,10 +592,8 @@ PARAMETER_INITIAL_VALUES: dict[str, float] = {
     "lu1": 0.05,
     "ul1": 0.0,
     "ul2": 0.0,
-    "ut3": 0.0,
     "ll0": 0.0,
     "ll1": 0.0,
-    "lt2": 0.0,
 }
 
 PARAMETER_LIMITS: dict[str, tuple[float, float]] = {
@@ -611,10 +607,8 @@ PARAMETER_LABELS: dict[str, str] = {
     "lu1": r"$F_{LU}^{\sin\phi}/F_{UU}$",
     "ul1": r"$F_{UL}^{\sin\phi}/F_{UU}$",
     "ul2": r"$F_{UL}^{\sin2\phi}/F_{UU}$",
-    "ut3": r"$F_{UT}^{\sin(3\phi-\phi_S)}/F_{UU}$",
     "ll0": r"$F_{LL}/F_{UU}$",
     "ll1": r"$F_{LL}^{\cos\phi}/F_{UU}$",
-    "lt2": r"$F_{LT}^{\cos(2\phi-\phi_S)}/F_{UU}$",
 }
 
 PARAMETER_Y_LIMITS: dict[str, tuple[float, float] | None] = {
@@ -623,17 +617,15 @@ PARAMETER_Y_LIMITS: dict[str, tuple[float, float] | None] = {
     "lu1": (-0.5, 0.5),
     "ul1": (-0.5, 0.5),
     "ul2": (-0.5, 0.5),
-    "ut3": (-0.5, 0.5),
     "ll0": (-1.0, 1.0),
     "ll1": (-1.0, 1.0),
-    "lt2": (-1.0, 1.0),
 }
 
 # Standardized systematic-comparison axes.  Single-spin ratios share one
 # scale, while unpolarized and double-spin ratios share the broader scale.
-SINGLE_SPIN_PARAMETERS = frozenset(("lu1", "ul1", "ul2", "ut3"))
+SINGLE_SPIN_PARAMETERS = frozenset(("lu1", "ul1", "ul2"))
 UNPOLARIZED_DOUBLE_SPIN_PARAMETERS = frozenset(
-    ("u1", "u2", "ll0", "ll1", "lt2")
+    ("u1", "u2", "ll0", "ll1")
 )
 SYSTEMATIC_COMPARISON_SINGLE_SPIN_Y_LIMITS = (-0.5, 0.5)
 SYSTEMATIC_COMPARISON_UNPOLARIZED_DOUBLE_Y_LIMITS = (-1.0, 1.0)
@@ -641,19 +633,19 @@ SYSTEMATIC_TO_STAT_RATIO_Y_LIMITS = (1.0e-2, 1.0e1)
 SYSTEMATIC_COMPARISON_FIGSIZE = (11, 10)
 SYSTEMATIC_COMPARISON_DPI = 200
 PUBLISHED_SYSTEMATIC_PARAMETERS: tuple[str, ...] = (
-    "lu1", "ul1", "ul2", "ut3", "ll0", "ll1", "lt2",
+    "lu1", "ul1", "ul2", "ll0", "ll1",
 )
 
 # Physics-motivated 3x4 canvas layout:
 #   top row:    UU (unpolarized) structure-function ratios
-#   middle row: all single-spin ratios (LU, UL, and UT)
-#   bottom row: all double-spin ratios (LL and LT)
+#   middle row: all fitted single-spin ratios (LU and UL)
+#   bottom row: all fitted double-spin ratios (LL)
 #
 # The unused cells in the top and bottom rows are intentionally left blank.
 PHYSICS_PANEL_ROWS: tuple[tuple[str, tuple[str, ...]], ...] = (
     ("UU", ("u1", "u2")),
-    ("Single-spin", ("lu1", "ul1", "ul2", "ut3")),
-    ("Double-spin", ("ll0", "ll1", "lt2")),
+    ("Single-spin", ("lu1", "ul1", "ul2")),
+    ("Double-spin", ("ll0", "ll1")),
 )
 
 AGGREGATED_PANEL_ORDER: tuple[str, ...] = tuple(
@@ -2043,9 +2035,8 @@ def external_data_informed_transverse_terms(
       F_LT^{cos(phi_S)} / F_UU
       F_LT^{cos(phi-phi_S)} / F_UU
 
-    These are the fixed *degenerate* transverse leakage inputs.  The
-    non-degenerate sin(3phi-phi_S) UT and cos(2phi-phi_S) LT terms are
-    floated separately as physics parameters in every projected-target fit.
+    These are the complete fixed transverse inputs used in the controlled
+    external-data-informed leakage study.  No UT or LT amplitude is fitted.
 
     With phi_S = 0, sin(phi-phi_S) and sin(phi+phi_S) both reduce
     to sin(phi), but they are not averaged: their cross-section
@@ -2094,10 +2085,8 @@ def evaluate_cross_section_factor(
     lu1: float,
     ul1: float,
     ul2: float,
-    ut3: float,
     ll0: float,
     ll1: float,
-    lt2: float,
 ) -> np.ndarray:
     h = np.asarray(helicity, dtype=np.float64)
     pt = np.asarray(target_polarization, dtype=np.float64)
@@ -2105,16 +2094,21 @@ def evaluate_cross_section_factor(
     if variant == "no_projection":
         p_longitudinal = pt
         p_transverse = np.zeros_like(pt, dtype=np.float64)
-    else:
+    elif variant == "external_data_informed":
         p_longitudinal = pt * cos_theta_gamma
         p_transverse = pt * sin_theta_gamma
+    else:
+        # Production nominal: retain only the longitudinal photon-axis
+        # projection.  Transverse target polarization enters solely through
+        # the controlled external-data-informed leakage study.
+        p_longitudinal = pt * cos_theta_gamma
+        p_transverse = np.zeros_like(pt, dtype=np.float64)
     # endif
 
     cos_phi = np.cos(phi)
     sin_phi = np.sin(phi)
     cos_2phi = np.cos(2.0 * phi)
     sin_2phi = np.sin(2.0 * phi)
-    sin_3phi = np.sin(3.0 * phi)
 
     unpolarized = 1.0 + r_v * u1 * cos_phi + r_b * u2 * cos_2phi
     beam_spin = h * beam_polarization * r_w * lu1 * sin_phi
@@ -2144,32 +2138,12 @@ def evaluate_cross_section_factor(
         lt_fixed = np.zeros(phi.shape, dtype=np.float64)
     # endif
 
-    # For the beam-axis longitudinal target, phi_S = 0 (or pi after the
-    # target-spin sign is carried by P_t).  The two transverse harmonics that
-    # remain linearly independent of the longitudinal-target basis are
-    #   UT: sin(3 phi - phi_S) -> sin(3 phi), with depolarization B/A = eps
-    #   LT: cos(2 phi - phi_S) -> cos(2 phi), with depolarization W/A.
-    # They are therefore genuine fit observables, suppressed event by event by
-    # the induced transverse polarization P_t sin(theta_gamma).
-    target_transverse_floated = (
-        dilution * p_transverse * r_b * ut3 * sin_3phi
-    )
-    double_transverse_floated = (
-        h
-        * beam_polarization
-        * dilution
-        * p_transverse
-        * r_w
-        * lt2
-        * cos_2phi
-    )
-
-    target_transverse = (
-        dilution * p_transverse * ut_fixed + target_transverse_floated
-    )
+    # UT and LT amplitudes are not fitted observables in this analysis.
+    # They enter only as fixed external inputs in the external-data-informed
+    # target-axis leakage study.
+    target_transverse = dilution * p_transverse * ut_fixed
     double_transverse = (
         h * beam_polarization * dilution * p_transverse * lt_fixed
-        + double_transverse_floated
     )
 
     return (
@@ -2301,15 +2275,13 @@ def make_bin_nll(
         lu1: float,
         ul1: float,
         ul2: float,
-        ut3: float,
         ll0: float,
         ll1: float,
-        lt2: float,
         f_su22: float,
         f_fa22: float,
         f_sp23: float,
     ) -> float:
-        parameter_values = (u1, u2, lu1, ul1, ul2, ut3, ll0, ll1, lt2)
+        parameter_values = (u1, u2, lu1, ul1, ul2, ll0, ll1)
         if not all(math.isfinite(value) for value in parameter_values):
             return INVALID_NLL
         # endif
@@ -2363,10 +2335,8 @@ def make_bin_nll(
                 lu1=lu1,
                 ul1=ul1,
                 ul2=ul2,
-                ut3=ut3,
                 ll0=ll0,
                 ll1=ll1,
-                lt2=lt2,
             )
             if (
                 np.any(~np.isfinite(numerator_factor))
@@ -2390,9 +2360,12 @@ def make_bin_nll(
             if variant == "no_projection":
                 longitudinal_geometry = np.ones_like(event_phi)
                 transverse_geometry = np.zeros_like(event_phi)
-            else:
+            elif variant == "external_data_informed":
                 longitudinal_geometry = event_cos
                 transverse_geometry = event_sin
+            else:
+                longitudinal_geometry = event_cos
+                transverse_geometry = np.zeros_like(event_phi)
             # endif
 
             target_longitudinal_coefficient = (
@@ -2413,24 +2386,10 @@ def make_bin_nll(
                 )
             )
 
-            # Floated non-degenerate transverse harmonics are present in every
-            # fit that retains the photon-axis transverse projection.  They
-            # vanish identically in the no-projection variant.
-            target_transverse_coefficient = (
-                dilution
-                * transverse_geometry
-                * event_r_b
-                * ut3
-                * data["sin_3phi"]
-            )
-            double_transverse_coefficient = (
-                BEAM_POLARIZATION[period]
-                * dilution
-                * transverse_geometry
-                * event_r_w
-                * lt2
-                * data["cos_2phi"]
-            )
+            # UT/LT terms are fixed external leakage inputs only; there
+            # are no fitted transverse-target amplitudes.
+            target_transverse_coefficient = np.zeros_like(event_phi)
+            double_transverse_coefficient = np.zeros_like(event_phi)
 
             if variant == "external_data_informed":
                 ut_sin_phi = float(
@@ -2629,13 +2588,6 @@ def fit_one_variant(
     effective_fixed_physics_parameters = dict(
         fixed_physics_parameters or {}
     )
-    if variant == "no_projection":
-        # With P_T set to zero, ut3 and lt2 are mathematically absent from the
-        # likelihood and cannot be floated.  Fixing them avoids a singular
-        # covariance while leaving the longitudinal target-axis diagnostic
-        # unchanged.
-        effective_fixed_physics_parameters.update({"ut3": 0.0, "lt2": 0.0})
-    # endif
 
     for name, value in effective_fixed_physics_parameters.items():
         if name not in PHYSICS_PARAMETERS:
@@ -2720,10 +2672,8 @@ def fit_one_variant(
         "lu1": 0.05,
         "ul1": -0.05,
         "ul2": 0.05,
-        "ut3": -0.05,
         "ll0": 0.20,
         "ll1": -0.20,
-        "lt2": 0.10,
     }
     for name, offset in offset_pattern.items():
         if (
@@ -2948,30 +2898,17 @@ def fit_bin_worker(
                 external_value - nominal_value
             )
 
-            if parameter in {"ut3", "lt2"}:
-                # The no-projection fit has P_T = 0, so these transverse
-                # observables are not defined there.  Do not manufacture a
-                # projection systematic from their forced zero values.  The
-                # nominal-vs-external shift still quantifies sensitivity to
-                # the fixed degenerate transverse leakage model.
-                projection_systematic[parameter] = None
-                systematics[parameter] = external_data_systematic[parameter]
-                full_three_fit_spread[parameter] = abs(
-                    external_value - nominal_value
-                )
-            else:
-                projection_systematic[parameter] = abs(
-                    no_projection_value - nominal_value
-                )
-                systematics[parameter] = max(
-                    projection_systematic[parameter],
-                    external_data_systematic[parameter],
-                )
-                full_three_fit_spread[parameter] = (
-                    max(nominal_value, no_projection_value, external_value)
-                    - min(nominal_value, no_projection_value, external_value)
-                )
-            # endif
+            projection_systematic[parameter] = abs(
+                no_projection_value - nominal_value
+            )
+            systematics[parameter] = max(
+                projection_systematic[parameter],
+                external_data_systematic[parameter],
+            )
+            full_three_fit_spread[parameter] = (
+                max(nominal_value, no_projection_value, external_value)
+                - min(nominal_value, no_projection_value, external_value)
+            )
         # endfor
     # endif
 
@@ -3571,21 +3508,15 @@ def finish_target_axis_systematics(result: dict[str, Any]) -> None:
         external_value = external_data_informed["values"][parameter]
         external_shift = abs(external_value - nominal_value)
         result["external_data_systematic"][parameter] = external_shift
-        if parameter in {"ut3", "lt2"}:
-            result["projection_systematic"][parameter] = None
-            result["target_axis_systematic"][parameter] = external_shift
-            result["full_three_fit_spread"][parameter] = external_shift
-        else:
-            projection_shift = abs(no_projection_value - nominal_value)
-            result["projection_systematic"][parameter] = projection_shift
-            result["target_axis_systematic"][parameter] = max(
-                projection_shift, external_shift
-            )
-            result["full_three_fit_spread"][parameter] = (
-                max(nominal_value, no_projection_value, external_value)
-                - min(nominal_value, no_projection_value, external_value)
-            )
-        # endif
+        projection_shift = abs(no_projection_value - nominal_value)
+        result["projection_systematic"][parameter] = projection_shift
+        result["target_axis_systematic"][parameter] = max(
+            projection_shift, external_shift
+        )
+        result["full_three_fit_spread"][parameter] = (
+            max(nominal_value, no_projection_value, external_value)
+            - min(nominal_value, no_projection_value, external_value)
+        )
     # endfor
 
 
@@ -4149,9 +4080,9 @@ def make_grouped_physics_canvas(
     """
     Create the common 3x4 physics canvas used by the aggregate plots.
 
-    Row 1 contains the two UU ratios, row 2 contains all four single-spin
-    ratios, and row 3 contains the three double-spin ratios.  The remaining
-    three cells are left blank.
+    Row 1 contains the two UU ratios, row 2 contains the three fitted
+    single-spin ratios, and row 3 contains the two fitted double-spin ratios.
+    The remaining five cells are left blank.
     """
     fig, axes = plt.subplots(
         3,
@@ -4167,10 +4098,8 @@ def make_grouped_physics_canvas(
         "lu1": (1, 0),
         "ul1": (1, 1),
         "ul2": (1, 2),
-        "ut3": (1, 3),
         "ll0": (2, 0),
         "ll1": (2, 1),
-        "lt2": (2, 2),
     }
 
     axes_by_parameter: dict[str, plt.Axes] = {}
@@ -4420,15 +4349,6 @@ def plot_target_axis_variants(
             ax = axes_by_parameter[parameter]
 
             for variant in variants:
-                if (
-                    parameter in {"ut3", "lt2"}
-                    and variant == "no_projection"
-                ):
-                    # P_T is identically zero in this diagnostic, so these
-                    # transverse structure functions are unobservable rather
-                    # than measurements of zero.
-                    continue
-                # endif
                 ax.errorbar(
                     x_values,
                     subset[f"{parameter}_{variant}"],
