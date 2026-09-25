@@ -2722,6 +2722,29 @@ def fit_one_variant(
     minuit = min(attempted, key=candidate_quality)
 
     result = minuit_result_payload(minuit)
+    # Evaluation-only diagnostics: these do not alter Minuit, the likelihood,
+    # starting values, limits, or the selected minimum.
+    result["diagnostics"] = {
+        "initial_values": {name: float(value) for name, value in initial.items()},
+        "parameter_limits": {
+            name: [float(PARAMETER_LIMITS[name][0]), float(PARAMETER_LIMITS[name][1])]
+            for name in PHYSICS_PARAMETERS
+        },
+        "nll_probes_at_selected_minimum": _finite_nll_probes(
+            nll, {name: float(minuit.values[name]) for name in minuit.parameters}
+        ),
+        "fmin": {
+            "is_valid": bool(minuit.fmin.is_valid),
+            "has_accurate_covar": bool(minuit.fmin.has_accurate_covar),
+            "has_posdef_covar": bool(minuit.fmin.has_posdef_covar),
+            "has_parameters_at_limit": bool(minuit.fmin.has_parameters_at_limit),
+            "has_reached_call_limit": bool(minuit.fmin.has_reached_call_limit),
+            "hesse_failed": bool(minuit.fmin.hesse_failed),
+            "nfcn": int(minuit.fmin.nfcn),
+            "edm": float(minuit.fmin.edm),
+            "edm_goal": float(minuit.fmin.edm_goal),
+        },
+    }
     result.update(
         {
             "bin_number": bin_number,
@@ -3062,6 +3085,192 @@ def fit_bin_worker(
 # =============================================================================
 
 
+
+def _nll_vector(nll: Any, values: Mapping[str, float]) -> float:
+    """Evaluate the existing NLL without changing any fit configuration."""
+    order = (*PHYSICS_PARAMETERS, "f_su22", "f_fa22", "f_sp23")
+    return float(nll(*[float(values[name]) for name in order]))
+
+
+def _finite_nll_probes(
+    nll: Any,
+    values: Mapping[str, float],
+    *,
+    fractional_step: float = 0.02,
+    absolute_step: float = 0.01,
+) -> dict[str, Any]:
+    """Probe local NLL sensitivity using evaluations only (no minimization)."""
+    center = _nll_vector(nll, values)
+    probes: dict[str, Any] = {}
+    for name in PHYSICS_PARAMETERS:
+        low, high = PARAMETER_LIMITS[name]
+        step = max(absolute_step, fractional_step * (high - low))
+        minus_values = dict(values)
+        plus_values = dict(values)
+        minus_values[name] = max(low + 1.0e-8, float(values[name]) - step)
+        plus_values[name] = min(high - 1.0e-8, float(values[name]) + step)
+        minus_nll = _nll_vector(nll, minus_values)
+        plus_nll = _nll_vector(nll, plus_values)
+        probes[name] = {
+            "step": float(step),
+            "minus_value": float(minus_values[name]),
+            "plus_value": float(plus_values[name]),
+            "delta_nll_minus": float(minus_nll - center),
+            "delta_nll_plus": float(plus_nll - center),
+        }
+    # endfor
+    return {"center_nll": center, "parameters": probes}
+
+
+def _period_state_counts(
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    bin_number: int,
+    period: str,
+) -> dict[str, Any]:
+    """Count observed helicity/target-polarization states for diagnostics."""
+    mask = (
+        (events["bin_number"] == bin_number)
+        & (events["period_index"] == PERIOD_INDEX[period])
+    )
+    runs = events["runnum"][mask].astype(np.int32, copy=False)
+    helicity = events["helicity"][mask].astype(np.int8, copy=False)
+    lookup = {
+        int(run): float(pt)
+        for run, pt in zip(
+            run_states[period]["run"], run_states[period]["pt"]
+        )
+    }
+    pt = np.fromiter((lookup[int(run)] for run in runs), dtype=np.float64,
+                     count=runs.size)
+    target_sign = np.sign(pt).astype(np.int8, copy=False)
+    counts = {}
+    for h in (-1, 1):
+        for t in (-1, 0, 1):
+            counts[f"h{h:+d}_t{t:+d}"] = int(
+                np.count_nonzero((helicity == h) & (target_sign == t))
+            )
+        # endfor
+    # endfor
+    return {
+        "events": int(runs.size),
+        "unique_runs": int(np.unique(runs).size),
+        "helicity_plus": int(np.count_nonzero(helicity > 0)),
+        "helicity_minus": int(np.count_nonzero(helicity < 0)),
+        "target_plus": int(np.count_nonzero(target_sign > 0)),
+        "target_minus": int(np.count_nonzero(target_sign < 0)),
+        "state_counts": counts,
+    }
+
+
+def period_preflight_worker(task: dict[str, Any]) -> dict[str, Any]:
+    """Diagnose one period/bin likelihood without running Minuit."""
+    if (_WORKER_EVENTS is None or _WORKER_RUN_STATES is None
+            or _WORKER_DILUTION_RECORDS is None):
+        raise RuntimeError("Fit worker was not initialized.")
+    bin_number = int(task["bin_number"])
+    period = str(task["period"])
+    nominal = task["nominal"]
+    nll, metadata = make_bin_nll(
+        _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
+        bin_number, "nominal", active_periods=(period,),
+    )
+    values = dict(PARAMETER_INITIAL_VALUES)
+    values.update({name: float(nominal["values"][name])
+                   for name in PHYSICS_PARAMETERS})
+    values.update({
+        f"f_{p}": float(_WORKER_DILUTION_RECORDS[(p, bin_number)].value)
+        for p in PERIODS
+    })
+    probes = _finite_nll_probes(nll, values)
+    response_by_parameter = {
+        name: max(abs(item["delta_nll_minus"]), abs(item["delta_nll_plus"]))
+        for name, item in probes["parameters"].items()
+    }
+    weakest = sorted(response_by_parameter, key=response_by_parameter.get)[:2]
+    scans: dict[str, Any] = {}
+    for name in weakest:
+        low, high = PARAMETER_LIMITS[name]
+        grid = np.linspace(low, high, 31)
+        nll_values = []
+        for value in grid:
+            trial = dict(values)
+            trial[name] = float(value)
+            nll_values.append(_nll_vector(nll, trial))
+        # endfor
+        finite = np.asarray(nll_values, dtype=np.float64)
+        finite_mask = np.isfinite(finite)
+        minimum = float(np.min(finite[finite_mask])) if np.any(finite_mask) else math.inf
+        scans[name] = {
+            "grid": grid.tolist(),
+            "delta_nll": [
+                float(v - minimum) if math.isfinite(float(v)) and math.isfinite(minimum) else None
+                for v in nll_values
+            ],
+        }
+    # endfor
+    payload = {
+        "bin_number": bin_number,
+        "period": period,
+        "counts": _period_state_counts(
+            _WORKER_EVENTS, _WORKER_RUN_STATES, bin_number, period
+        ),
+        "start_values": values,
+        "nll_probes_at_start": probes,
+        "weakest_parameters": weakest,
+        "one_dimensional_scans": scans,
+        "metadata": metadata,
+    }
+    flatness = min(response_by_parameter.values())
+    print(
+        f"[preflight] bin {bin_number:02d} | {period} | "
+        f"N={payload['counts']['events']:,} | weakest local response={flatness:.3e}",
+        flush=True,
+    )
+    return payload
+
+
+def run_period_preflight_stage(
+    *, tasks: list[dict[str, Any]], workers: int, cache_path: Path,
+    run_state_payload: dict[str, Any], dilution_payload: dict[str, Any],
+    output_dir: Path,
+) -> list[dict[str, Any]]:
+    """Run evaluation-only diagnostics before any period-only minimizations."""
+    print("=" * 78, flush=True)
+    print(f"[stage period preflight] START | tasks={len(tasks)} | max_workers={workers}", flush=True)
+    print("=" * 78, flush=True)
+    completed = []
+    mp_context = mp.get_context("spawn")
+    with ProcessPoolExecutor(
+        max_workers=workers, mp_context=mp_context,
+        initializer=initialize_fit_worker,
+        initargs=(str(cache_path), run_state_payload, dilution_payload),
+    ) as executor:
+        futures = {executor.submit(period_preflight_worker, task): task for task in tasks}
+        for index, future in enumerate(as_completed(futures), start=1):
+            completed.append(future.result())
+            write_json(
+                output_dir / "json" / "checkpoint_03a_period_preflight_partial.json",
+                {"schema_version": 1, "completed": sorted(
+                    completed, key=lambda x: (x["bin_number"], x["period"])
+                )},
+            )
+            print(f"[stage period preflight] progress {index}/{len(tasks)}", flush=True)
+        # endfor
+    # endwith
+    write_json(
+        output_dir / "json" / "checkpoint_03a_period_preflight.json",
+        {"schema_version": 1, "completed": sorted(
+            completed, key=lambda x: (x["bin_number"], x["period"])
+        )},
+    )
+    return completed
+
+
+def _task_key(task: Mapping[str, Any]) -> str:
+    return "|".join(str(task.get(k, "")) for k in
+                    ("kind", "bin_number", "period", "constraint"))
+
 def fit_stage_worker(task: dict[str, Any]) -> dict[str, Any]:
     """Execute exactly one existing fit task for staged production.
 
@@ -3171,17 +3380,47 @@ def run_fit_stage(
     cache_path: Path,
     run_state_payload: dict[str, Any],
     dilution_payload: dict[str, Any],
+    output_dir: Path | None = None,
+    checkpoint_tag: str | None = None,
 ) -> list[dict[str, Any]]:
-    """Run one checkpointable group of independent fits."""
+    """Run one fit stage with incremental task-level checkpointing.
+
+    Completed tasks are written immediately.  If the same stage is restarted,
+    those exact completed fit payloads are reused and only missing tasks are
+    submitted.  This changes scheduling only, never the fit itself.
+    """
+    partial_path = None
+    completed_by_key: dict[str, dict[str, Any]] = {}
+    if output_dir is not None and checkpoint_tag is not None:
+        partial_path = output_dir / "json" / f"checkpoint_{checkpoint_tag}_partial.json"
+        if partial_path.is_file():
+            try:
+                payload = json.loads(partial_path.read_text())
+                for item in payload.get("completed", []):
+                    key = _task_key(item)
+                    completed_by_key[key] = item
+                # endfor
+                print(f"[stage {stage_name}] RESUME: loaded {len(completed_by_key)} completed tasks", flush=True)
+            except Exception as exc:
+                print(f"[stage {stage_name}] WARNING: could not read partial checkpoint: {exc}", flush=True)
+            # endtry
+        # endif
+    # endif
+    pending_tasks = [task for task in tasks if _task_key(task) not in completed_by_key]
+
     print("=" * 78, flush=True)
     print(
-        f"[stage {stage_name}] START | tasks={len(tasks)} | "
+        f"[stage {stage_name}] START | tasks={len(tasks)} | pending={len(pending_tasks)} | "
         f"max_workers={workers}",
         flush=True,
     )
     print("=" * 78, flush=True)
     t0 = time.perf_counter()
-    completed: list[dict[str, Any]] = []
+    completed: list[dict[str, Any]] = list(completed_by_key.values())
+    if not pending_tasks:
+        print(f"[stage {stage_name}] all tasks already checkpointed.", flush=True)
+        return sorted(completed, key=lambda x: (_task_key(x)))
+    # endif
     mp_context = mp.get_context("spawn")
     executor = ProcessPoolExecutor(
         max_workers=workers,
@@ -3192,10 +3431,11 @@ def run_fit_stage(
     try:
         futures = {
             executor.submit(fit_stage_worker, task): task
-            for task in tasks
+            for task in pending_tasks
         }
-        total = len(futures)
-        for index, future in enumerate(as_completed(futures), start=1):
+        total = len(tasks)
+        already = len(completed_by_key)
+        for index, future in enumerate(as_completed(futures), start=already + 1):
             task = futures[future]
             try:
                 item = future.result()
@@ -3210,6 +3450,17 @@ def run_fit_stage(
                 raise
             # endtry
             completed.append(item)
+            if partial_path is not None:
+                write_json(
+                    partial_path,
+                    {
+                        "schema_version": 1,
+                        "stage": stage_name,
+                        "updated_utc": datetime.now(timezone.utc).isoformat(),
+                        "completed": sorted(completed, key=_task_key),
+                    },
+                )
+            # endif
             print(
                 f"[stage {stage_name}] progress {index}/{total} completed",
                 flush=True,
@@ -4597,6 +4848,7 @@ def run_analysis_variant(
         cache_path=cache_path,
         run_state_payload=run_state_payload,
         dilution_payload=dilution_payload,
+        output_dir=output_dir, checkpoint_tag="01_simultaneous_tasks",
     )
     nominal_by_bin = {
         int(item["bin_number"]): item["fit"] for item in nominal_stage
@@ -4649,6 +4901,7 @@ def run_analysis_variant(
             cache_path=cache_path,
             run_state_payload=run_state_payload,
             dilution_payload=dilution_payload,
+            output_dir=output_dir, checkpoint_tag="02_target_axis_tasks",
         )
         for item in target_stage:
             result = results_by_bin[int(item["bin_number"])]
@@ -4675,6 +4928,20 @@ def run_analysis_variant(
                 })
             # endfor
         # endfor
+        # Evaluation-only preflight: inspect state populations and local NLL
+        # sensitivity before launching the expensive period-only minimizations.
+        # This is diagnostic only and does not alter any fit.
+        preflight_tasks = [
+            {"bin_number": task["bin_number"], "period": task["period"],
+             "nominal": task["nominal"]}
+            for task in period_tasks
+        ]
+        run_period_preflight_stage(
+            tasks=preflight_tasks, workers=workers, cache_path=cache_path,
+            run_state_payload=run_state_payload,
+            dilution_payload=dilution_payload, output_dir=output_dir,
+        )
+
         period_stage = run_fit_stage(
             stage_name=f"{sample_variant}: period-only",
             tasks=period_tasks,
@@ -4682,6 +4949,7 @@ def run_analysis_variant(
             cache_path=cache_path,
             run_state_payload=run_state_payload,
             dilution_payload=dilution_payload,
+            output_dir=output_dir, checkpoint_tag="03_period_only_tasks",
         )
         for item in period_stage:
             results_by_bin[int(item["bin_number"])]["period_fits"][
@@ -4715,6 +4983,7 @@ def run_analysis_variant(
             cache_path=cache_path,
             run_state_payload=run_state_payload,
             dilution_payload=dilution_payload,
+            output_dir=output_dir, checkpoint_tag="04_period_constraints_tasks",
         )
         for item in constraint_stage:
             results_by_bin[int(item["bin_number"])][
