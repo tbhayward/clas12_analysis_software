@@ -3,7 +3,10 @@
 apply_external_isr_v4.py
 
 Apply one additional, deterministic external-ISR draw to an existing
-internal-ISR RGC e pi+ ROOT tree.
+internal-ISR RGC e pi+ ROOT tree.  The sampled external bremsstrahlung
+distribution is strongly peaked near zero with a long high-energy tail; the
+script propagates that draw event by event rather than approximating the
+effect with a mean energy loss.
 
 The input tree is expected to contain measured/corrected electron and pion
 four-vector variables plus the already sampled internal-ISR photon energy.
@@ -15,9 +18,9 @@ Required packages:
     python3 -m pip install numpy awkward uproot matplotlib
 
 Example:
-    python3 apply_external_isr_v2.py \
+    python3 apply_external_isr.py \
         rgc_fa22_inb_NH3_epi+_ISR_mom_corrections.root \
-        --geometry-json external_radiation_geometry_v1.json
+        --geometry-json external_radiation_geometry.json
 
 Important:
   * The script requires an internal ISR photon-energy branch named either

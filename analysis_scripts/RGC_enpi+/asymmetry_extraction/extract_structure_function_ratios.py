@@ -103,10 +103,17 @@ For each observable a, the target-axis systematic is
 
 Dilution-factor uncertainty
 ---------------------------
-The recommended nominal dilution factor, the average of Methods 1 and 2, is
-read from the nominal production dilution-factor JSON.  The same nominal
-dilution-factor values and bootstrap statistical uncertainties are used for
-the nominal extraction and the ISR/external-ISR radiation diagnostic.
+The production nominal dilution factor is Method 1, the direct five-target
+calculation.  Its bootstrap statistical uncertainty is propagated in the
+likelihood as a period/bin-dependent nuisance parameter.  The 4% thermal-
+contraction uncertainty is a correlated scale uncertainty and is not folded
+into the point-to-point systematic bands here.
+
+For the radiation variation, the extraction uses the dilution factors
+recalculated from the matched internal+external-ISR samples and their matched
+exclusivity cuts.  Thus the radiation comparison consistently propagates the
+change in event kinematics, event selection, and dilution factor through the
+full asymmetry extraction.
 
 Momentum-correction uncertainty
 -------------------------------
@@ -126,20 +133,19 @@ Barlow denominator uses the correlated-sample variance-difference prescription.
 Channel-selection uncertainty
 -----------------------------
 The ordinary data are also refitted with the matched tight, nominal, and loose
-Mx2 windows (mu +/- 2 sigma, 3 sigma, and 4 sigma). Each extraction uses the
-corresponding dilution factor determined with the same window. The loose cache
+Mx2 windows (mu +/- 1 sigma, 2 sigma, and 3 sigma, respectively). Each
+extraction uses the corresponding dilution factor determined with the same
+window. The loose cache
 is built once from ROOT and the nominal and tight caches are derived from that
 superset. For each observable, the recommended pointwise uncertainty is the RMS
 of the tight-minus-nominal and loose-minus-nominal shifts. The complete signed
 variation vectors and their outer-product covariance are retained for coherent
 propagation across bins.
 
-A separately recalculated radiation-sample dilution factor is intentionally not
-used here because Method 1 is not valid for that diagnostic under the present
-normalization treatment.  Reusing the nominal dilution factor is a controlled
-small approximation for estimating the point-to-point radiation systematic.
-The correlated dilution-model scale uncertainty is intentionally not included
-here and will be imposed later.
+The radiation sample uses its separately recalculated Method-1 dilution factor
+and bootstrap statistical uncertainty.  The correlated 4% dilution-factor
+scale uncertainty is intentionally not included in the radiation difference;
+it is imposed separately as a scale uncertainty on the final observables.
 
 Barlow consistency criterion
 ----------------------------
@@ -1297,6 +1303,33 @@ def load_channel_cuts(
 # =============================================================================
 # Dilution factors
 # =============================================================================
+
+def find_isr_dilution_json(directory: Path) -> Path:
+    """Locate the compact dilution-factor JSON for the radiation sample."""
+    preferred = [
+        directory / "isr/dilution_factors_production.json",
+        directory / "isr/tables/dilution_factors_production.json",
+    ]
+    for path in preferred:
+        if path.is_file():
+            return path
+        # endif
+    # endfor
+    candidates = sorted(
+        (directory / "isr").rglob("dilution_factors_production*.json")
+        if (directory / "isr").is_dir() else [],
+        key=lambda path: (path.stat().st_mtime, path.name),
+        reverse=True,
+    )
+    if not candidates:
+        raise FileNotFoundError(
+            "Could not locate the radiation-sample dilution-factor JSON under "
+            f"{directory / 'isr'}. Run determine_dilution_factor.py with its "
+            "ISR diagnostic enabled first, or pass --isr-dilution-json."
+        )
+    # endif
+    return candidates[0]
+
 
 def find_default_dilution_json(directory: Path) -> Path:
     if not directory.is_dir():
@@ -4816,6 +4849,16 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--cut-json", type=Path, default=DEFAULT_CUT_JSON)
     parser.add_argument("--isr-cut-json", type=Path, default=None)
     parser.add_argument("--dilution-json", type=Path, default=None)
+    parser.add_argument(
+        "--isr-dilution-json",
+        type=Path,
+        default=None,
+        help=(
+            "Compact dilution-factor JSON recalculated from the matched "
+            "internal+external-ISR samples. By default this is resolved from "
+            "the ISR output of determine_dilution_factor.py."
+        ),
+    )
     parser.add_argument("--dilution-dir", type=Path, default=DEFAULT_DILUTION_DIR)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
     parser.add_argument("--cache", type=Path, default=None, help="Legacy nominal-cache override.")
@@ -4864,6 +4907,17 @@ def main() -> int:
             args.dilution_dir.expanduser().resolve()
         ).resolve()
     )
+    isr_dilution = None
+    if not args.disable_isr:
+        isr_dilution = (
+            args.isr_dilution_json.expanduser().resolve()
+            if args.isr_dilution_json
+            else find_isr_dilution_json(
+                args.dilution_dir.expanduser().resolve()
+            ).resolve()
+        )
+    # endif
+
     nominal_cache = (
         args.cache.expanduser().resolve()
         if args.cache
@@ -4937,7 +4991,7 @@ def main() -> int:
             input_paths=isr_inputs,
             run_info_path=args.run_info_csv.expanduser().resolve(),
             cut_json_path=isr_cut,
-            dilution_json_path=nominal_dilution,
+            dilution_json_path=isr_dilution,
             output_dir=isr_dir,
             cache_path=isr_dir / "cache/selected_events.npz",
             tree_name=args.tree,

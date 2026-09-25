@@ -39,8 +39,15 @@ The default exclusivity-cut JSON is therefore
         final_carbon_assisted_cuts/tables/
         final_carbon_assisted_mx2_cuts.json
 
+The production exclusivity definitions are tight = mu +/- 1 sigma,
+nominal = mu +/- 2 sigma, and loose = mu +/- 3 sigma.  When the ISR diagnostic
+is enabled, the same Method-1 calculation is repeated with the matched
+internal+external-ISR target samples and ISR-specific exclusivity cuts.  The
+compact ISR dilution-factor JSON is written for direct use by the radiation
+variation in extract_structure_function_ratios.py.
+
 All ROOT inputs default to the finalized momentum-corrected paper_versions
-files.  The program uses at most seven worker processes.  It writes complete
+files.  The program uses at most eight worker processes.  It writes complete
 JSON and CSV products, compact downstream JSON, statistical covariance and
 correlation matrices, and diagnostic plots.
 
@@ -131,7 +138,7 @@ MINUS_TPRIME_BINS_GEV2: tuple[tuple[float, float], ...] = (
 )
 
 NUMBER_OF_BINS = len(XB_BINS) * len(MINUS_TPRIME_BINS_GEV2)
-MAXIMUM_WORKERS = 7
+MAXIMUM_WORKERS = 8
 
 DEFAULT_TREE_NAME = "PhysicsEvents"
 DEFAULT_CONTROL_MIN_GEV2 = 0.0
@@ -4101,7 +4108,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--workers",
         type=int,
         default=MAXIMUM_WORKERS,
-        help="Worker processes; hard-capped at 7 (default: 7).",
+        help="Worker processes; hard-capped at 8 (default: 8).",
     )
     parser.add_argument(
         "--run-info-csv",
