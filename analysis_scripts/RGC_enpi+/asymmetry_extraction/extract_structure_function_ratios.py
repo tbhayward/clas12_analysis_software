@@ -3061,6 +3061,292 @@ def fit_bin_worker(
 # Outputs
 # =============================================================================
 
+
+def fit_stage_worker(task: dict[str, Any]) -> dict[str, Any]:
+    """Execute exactly one existing fit task for staged production.
+
+    This function changes only scheduling/granularity.  Every fit delegates to
+    fit_one_variant with the same arguments used by the original bundled
+    fit_bin_worker implementation.
+    """
+    if (
+        _WORKER_EVENTS is None
+        or _WORKER_RUN_STATES is None
+        or _WORKER_DILUTION_RECORDS is None
+    ):
+        raise RuntimeError("Fit worker was not initialized.")
+    # endif
+
+    events = _WORKER_EVENTS
+    run_states = _WORKER_RUN_STATES
+    dilution_records = _WORKER_DILUTION_RECORDS
+    bin_number = int(task["bin_number"])
+    kind = str(task["kind"])
+    period = task.get("period")
+    constraint = task.get("constraint")
+    nominal = task.get("nominal")
+    period_fit = task.get("period_fit")
+    t0 = time.perf_counter()
+
+    label = f"bin {bin_number:02d} | {kind}"
+    if period is not None:
+        label += f" | {period}"
+    # endif
+    if constraint is not None:
+        label += f" | {constraint}"
+    # endif
+    print(f"[stage fit START] {label}", flush=True)
+
+    if kind == "nominal":
+        fit = fit_one_variant(
+            events, run_states, dilution_records, bin_number, "nominal"
+        )
+    elif kind in {"no_projection", "external_data_informed"}:
+        fit = fit_one_variant(
+            events,
+            run_states,
+            dilution_records,
+            bin_number,
+            kind,
+            initial_values=nominal["values"],
+        )
+    elif kind == "period_only":
+        fit = fit_one_variant(
+            events,
+            run_states,
+            dilution_records,
+            bin_number,
+            "nominal",
+            active_periods=(period,),
+            initial_values=nominal["values"],
+        )
+    elif kind == "period_constraint":
+        if constraint == "fix_u1":
+            fixed = {"u1": nominal["values"]["u1"]}
+        elif constraint == "fix_u2":
+            fixed = {"u2": nominal["values"]["u2"]}
+        elif constraint == "fix_u1_u2":
+            fixed = {
+                "u1": nominal["values"]["u1"],
+                "u2": nominal["values"]["u2"],
+            }
+        else:
+            raise ValueError(f"Unknown period constraint: {constraint}")
+        # endif
+        fit = fit_one_variant(
+            events,
+            run_states,
+            dilution_records,
+            bin_number,
+            "nominal",
+            active_periods=(period,),
+            initial_values=period_fit["values"],
+            fixed_physics_parameters=fixed,
+        )
+    else:
+        raise ValueError(f"Unknown staged fit kind: {kind}")
+    # endif
+
+    elapsed = time.perf_counter() - t0
+    print(
+        f"[stage fit DONE ] {label} | {elapsed:.1f} s | "
+        f"valid={fit['valid']} | EDM={fit['edm']:.3e}",
+        flush=True,
+    )
+    return {
+        "bin_number": bin_number,
+        "kind": kind,
+        "period": period,
+        "constraint": constraint,
+        "fit": fit,
+        "elapsed_seconds": elapsed,
+    }
+
+
+def run_fit_stage(
+    *,
+    stage_name: str,
+    tasks: list[dict[str, Any]],
+    workers: int,
+    cache_path: Path,
+    run_state_payload: dict[str, Any],
+    dilution_payload: dict[str, Any],
+) -> list[dict[str, Any]]:
+    """Run one checkpointable group of independent fits."""
+    print("=" * 78, flush=True)
+    print(
+        f"[stage {stage_name}] START | tasks={len(tasks)} | "
+        f"max_workers={workers}",
+        flush=True,
+    )
+    print("=" * 78, flush=True)
+    t0 = time.perf_counter()
+    completed: list[dict[str, Any]] = []
+    mp_context = mp.get_context("spawn")
+    executor = ProcessPoolExecutor(
+        max_workers=workers,
+        mp_context=mp_context,
+        initializer=initialize_fit_worker,
+        initargs=(str(cache_path), run_state_payload, dilution_payload),
+    )
+    try:
+        futures = {
+            executor.submit(fit_stage_worker, task): task
+            for task in tasks
+        }
+        total = len(futures)
+        for index, future in enumerate(as_completed(futures), start=1):
+            task = futures[future]
+            try:
+                item = future.result()
+            except Exception:
+                print(
+                    f"[stage {stage_name}] ERROR in bin "
+                    f"{int(task['bin_number']):02d}, kind={task['kind']}, "
+                    f"period={task.get('period')}, "
+                    f"constraint={task.get('constraint')}",
+                    flush=True,
+                )
+                raise
+            # endtry
+            completed.append(item)
+            print(
+                f"[stage {stage_name}] progress {index}/{total} completed",
+                flush=True,
+            )
+        # endfor
+        print(
+            f"[stage {stage_name}] all futures returned; shutting down workers...",
+            flush=True,
+        )
+    finally:
+        executor.shutdown(wait=True, cancel_futures=False)
+    # endtry
+    elapsed = time.perf_counter() - t0
+    print(
+        f"[stage {stage_name}] DONE | {elapsed:.1f} s",
+        flush=True,
+    )
+    return completed
+
+
+def initialize_result_shell(
+    bin_number: int,
+    nominal: dict[str, Any],
+    include_target_axis_study: bool,
+    include_period_diagnostics: bool,
+) -> dict[str, Any]:
+    empty = {parameter: None for parameter in PHYSICS_PARAMETERS}
+    return {
+        "bin_number": bin_number,
+        "variants": {"nominal": nominal},
+        "period_fits": {},
+        "period_constraint_fits": {
+            "fix_u1": {}, "fix_u2": {}, "fix_u1_u2": {}
+        },
+        "period_consistency": {},
+        "target_axis_systematic": dict(empty),
+        "projection_systematic": dict(empty),
+        "external_data_systematic": dict(empty),
+        "full_three_fit_spread": dict(empty),
+        "external_transverse_inputs": (
+            EXTERNAL_TRANSVERSE_INPUTS if include_target_axis_study else None
+        ),
+        "target_axis_study_performed": include_target_axis_study,
+        "period_diagnostics_performed": include_period_diagnostics,
+    }
+
+
+def finish_target_axis_systematics(result: dict[str, Any]) -> None:
+    nominal = result["variants"]["nominal"]
+    no_projection = result["variants"]["no_projection"]
+    external_data_informed = result["variants"]["external_data_informed"]
+    for parameter in PHYSICS_PARAMETERS:
+        nominal_value = nominal["values"][parameter]
+        no_projection_value = no_projection["values"][parameter]
+        external_value = external_data_informed["values"][parameter]
+        external_shift = abs(external_value - nominal_value)
+        result["external_data_systematic"][parameter] = external_shift
+        if parameter in {"ut3", "lt2"}:
+            result["projection_systematic"][parameter] = None
+            result["target_axis_systematic"][parameter] = external_shift
+            result["full_three_fit_spread"][parameter] = external_shift
+        else:
+            projection_shift = abs(no_projection_value - nominal_value)
+            result["projection_systematic"][parameter] = projection_shift
+            result["target_axis_systematic"][parameter] = max(
+                projection_shift, external_shift
+            )
+            result["full_three_fit_spread"][parameter] = (
+                max(nominal_value, no_projection_value, external_value)
+                - min(nominal_value, no_projection_value, external_value)
+            )
+        # endif
+    # endfor
+
+
+def finish_period_consistency(
+    result: dict[str, Any],
+    events: dict[str, np.ndarray],
+    run_states: dict[str, dict[str, np.ndarray]],
+    dilution_records: dict[tuple[str, int], DilutionRecord],
+) -> None:
+    """Reproduce the original non-minimizing period-consistency calculation."""
+    bin_number = int(result["bin_number"])
+    nominal = result["variants"]["nominal"]
+    for period in PERIODS:
+        period_nll, _ = make_bin_nll(
+            events,
+            run_states,
+            dilution_records,
+            bin_number,
+            "nominal",
+            active_periods=(period,),
+        )
+        combined_nll_for_period = float(
+            period_nll(
+                **{
+                    name: nominal["values"][name]
+                    for name in (
+                        *PHYSICS_PARAMETERS,
+                        "f_su22",
+                        "f_fa22",
+                        "f_sp23",
+                    )
+                }
+            )
+        )
+        period_minimum_nll = float(
+            result["period_fits"][period]["minimum_nll"]
+        )
+        result["period_consistency"][period] = {
+            "nll_at_combined_solution": combined_nll_for_period,
+            "period_only_minimum_nll": period_minimum_nll,
+            "delta_nll": max(
+                0.0, combined_nll_for_period - period_minimum_nll
+            ),
+        }
+    # endfor
+
+
+def write_stage_checkpoint(
+    output_dir: Path,
+    stage_name: str,
+    results: list[dict[str, Any]],
+) -> Path:
+    path = output_dir / "json" / f"checkpoint_{stage_name}.json"
+    write_json(
+        path,
+        {
+            "schema_version": 1,
+            "stage": stage_name,
+            "created_utc": datetime.now(timezone.utc).isoformat(),
+            "results": sorted(results, key=lambda item: item["bin_number"]),
+        },
+    )
+    print(f"[checkpoint] wrote {path}", flush=True)
+    return path
+
 def flatten_fit_results(
     results: list[dict[str, Any]],
 ) -> pd.DataFrame:
@@ -4295,59 +4581,162 @@ def run_analysis_variant(
 
     run_state_payload = {period: {key: values.tolist() for key, values in state.items()} for period, state in run_states.items()}
     dilution_payload = {period: {str(bin_number): {"x_index": record.x_index, "t_index": record.t_index, "value": record.value, "stat_uncertainty": record.stat_uncertainty} for (record_period, bin_number), record in dilution_records.items() if record_period == period} for period in PERIODS}
-    results = []
+    results: list[dict[str, Any]] = []
 
-    # Use "spawn" rather than Linux's default "fork" for the fit workers.
-    # The numerical extraction is unchanged: the same worker function, inputs,
-    # likelihood, Minuit configuration, and number of fits are used.  Spawn
-    # avoids inheriting parent-process C/C++ runtime and plotting-library state,
-    # which can cause a ProcessPoolExecutor to hang while shutting workers down
-    # after every submitted future has already returned.
-    mp_context = mp.get_context("spawn")
-    executor = ProcessPoolExecutor(
-        max_workers=workers,
-        mp_context=mp_context,
-        initializer=initialize_fit_worker,
-        initargs=(str(cache_path), run_state_payload, dilution_payload),
+    # Stage 1: the quoted simultaneous extraction.  These are exactly the
+    # original nominal fit_one_variant calls, now returned and checkpointed
+    # before any diagnostic minimizations begin.
+    nominal_tasks = [
+        {"kind": "nominal", "bin_number": bin_number}
+        for bin_number in range(1, NUMBER_OF_BINS + 1)
+    ]
+    nominal_stage = run_fit_stage(
+        stage_name=f"{sample_variant}: simultaneous",
+        tasks=nominal_tasks,
+        workers=workers,
+        cache_path=cache_path,
+        run_state_payload=run_state_payload,
+        dilution_payload=dilution_payload,
     )
-    try:
+    nominal_by_bin = {
+        int(item["bin_number"]): item["fit"] for item in nominal_stage
+    }
+    for bin_number in range(1, NUMBER_OF_BINS + 1):
+        results.append(
+            initialize_result_shell(
+                bin_number,
+                nominal_by_bin[bin_number],
+                include_target_axis_study,
+                include_period_diagnostics,
+            )
+        )
+    # endfor
+    results_by_bin = {item["bin_number"]: item for item in results}
+    write_stage_checkpoint(output_dir, "01_simultaneous", results)
+
+    invalid_nominal = [
+        bin_number
+        for bin_number, fit in sorted(nominal_by_bin.items())
+        if not bool(fit["valid"])
+    ]
+    if invalid_nominal:
         print(
-            f"[{sample_variant}] submitting {NUMBER_OF_BINS} bin workers "
-            f"with max_workers={workers}...",
+            f"[{sample_variant}] WARNING: simultaneous fit invalid in bins "
+            f"{invalid_nominal}. No automatic retry or fit-setting change "
+            "has been applied.",
             flush=True,
         )
-        futures = {
-            executor.submit(
-                fit_bin_worker, bin_number, include_target_axis_study,
-                include_period_diagnostics
-            ): bin_number
-            for bin_number in range(1, NUMBER_OF_BINS + 1)
-        }
-        for future in as_completed(futures):
-            result = future.result()
-            results.append(result)
-            nominal = result["variants"]["nominal"]
-            print(
-                f"[{sample_variant} bin {result['bin_number']:02d} COMPLETE] "
-                f"N={nominal['metadata']['number_of_events']:,}; "
-                f"valid={nominal['valid']}; "
-                f"NLL={nominal['minimum_nll']:.6f}; "
-                f"EDM={nominal['edm']:.3e}",
-                flush=True,
-            )
+    # endif
+
+    # Stage 2: target-axis alternatives.  The calls and starting values are
+    # identical to the original bundled worker.
+    if include_target_axis_study:
+        target_tasks: list[dict[str, Any]] = []
+        for bin_number in range(1, NUMBER_OF_BINS + 1):
+            nominal = nominal_by_bin[bin_number]
+            for kind in ("no_projection", "external_data_informed"):
+                target_tasks.append({
+                    "kind": kind,
+                    "bin_number": bin_number,
+                    "nominal": nominal,
+                })
+            # endfor
+        # endfor
+        target_stage = run_fit_stage(
+            stage_name=f"{sample_variant}: target-axis",
+            tasks=target_tasks,
+            workers=workers,
+            cache_path=cache_path,
+            run_state_payload=run_state_payload,
+            dilution_payload=dilution_payload,
+        )
+        for item in target_stage:
+            result = results_by_bin[int(item["bin_number"])]
+            result["variants"][item["kind"]] = item["fit"]
+        # endfor
+        for result in results:
+            finish_target_axis_systematics(result)
+        # endfor
+        write_stage_checkpoint(output_dir, "02_target_axis", results)
+    # endif
+
+    # Stages 3 and 4 are nominal-only diagnostics.  They remain complete final
+    # outputs, but no longer block saving the production simultaneous fits.
+    if include_period_diagnostics:
+        period_tasks: list[dict[str, Any]] = []
+        for bin_number in range(1, NUMBER_OF_BINS + 1):
+            nominal = nominal_by_bin[bin_number]
+            for period in PERIODS:
+                period_tasks.append({
+                    "kind": "period_only",
+                    "bin_number": bin_number,
+                    "period": period,
+                    "nominal": nominal,
+                })
+            # endfor
+        # endfor
+        period_stage = run_fit_stage(
+            stage_name=f"{sample_variant}: period-only",
+            tasks=period_tasks,
+            workers=workers,
+            cache_path=cache_path,
+            run_state_payload=run_state_payload,
+            dilution_payload=dilution_payload,
+        )
+        for item in period_stage:
+            results_by_bin[int(item["bin_number"])]["period_fits"][
+                item["period"]
+            ] = item["fit"]
+        # endfor
+        write_stage_checkpoint(output_dir, "03_period_only", results)
+
+        constraint_tasks: list[dict[str, Any]] = []
+        for bin_number in range(1, NUMBER_OF_BINS + 1):
+            result = results_by_bin[bin_number]
+            nominal = nominal_by_bin[bin_number]
+            for period in PERIODS:
+                period_fit = result["period_fits"][period]
+                for constraint in ("fix_u1", "fix_u2", "fix_u1_u2"):
+                    constraint_tasks.append({
+                        "kind": "period_constraint",
+                        "bin_number": bin_number,
+                        "period": period,
+                        "constraint": constraint,
+                        "nominal": nominal,
+                        "period_fit": period_fit,
+                    })
+                # endfor
+            # endfor
+        # endfor
+        constraint_stage = run_fit_stage(
+            stage_name=f"{sample_variant}: period-constraints",
+            tasks=constraint_tasks,
+            workers=workers,
+            cache_path=cache_path,
+            run_state_payload=run_state_payload,
+            dilution_payload=dilution_payload,
+        )
+        for item in constraint_stage:
+            results_by_bin[int(item["bin_number"])][
+                "period_constraint_fits"
+            ][item["constraint"]][item["period"]] = item["fit"]
         # endfor
 
         print(
-            f"[{sample_variant}] all {NUMBER_OF_BINS} futures returned; "
-            "shutting down fit workers...",
+            f"[{sample_variant}] computing period-consistency NLL diagnostics...",
             flush=True,
         )
-    finally:
-        executor.shutdown(wait=True, cancel_futures=False)
-    # endtry
+        for result in results:
+            finish_period_consistency(
+                result, events, run_states, dilution_records
+            )
+        # endfor
+        write_stage_checkpoint(output_dir, "04_period_constraints", results)
+    # endif
 
     print(
-        f"[{sample_variant}] fit workers shut down cleanly; assembling tables.",
+        f"[{sample_variant}] all requested fit stages complete; "
+        "assembling final tables and plots.",
         flush=True,
     )
     results.sort(key=lambda item: item["bin_number"])
