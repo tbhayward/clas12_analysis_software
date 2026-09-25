@@ -116,6 +116,7 @@ def module_xml():
 </module>
 <module type="DVMPXiConverterModule" name="DVMPXiConverterXBToXi"></module>
 <module type="DVMPConvolCoeffFunctionModule" name="DVMPCFFGK06">
+<param name="qcd_order_type" value="LO" />
 <module type="RunningAlphaStrongModule" name="RunningAlphaStrongGK"></module>
 <module type="GPDModule" name="GPDGK19"></module>
 </module>
@@ -311,6 +312,9 @@ def main():
             print(f"\nMeson serialization {a.meson_value!r} still maps to UNDEFINED in this build.")
             print("Do not run --all. Try a build-local canonical MesonType string only after")
             print("checking MesonType::toString()/fromString() in the installed PARTONS source.")
+        if "QCD order: UNDEFINED not implemented" in combined:
+            print("\nDVMPCFFGK06 still sees an undefined QCD order despite the explicit LO setting.")
+            print("Do not run --all; inspect how this PARTONS build serializes qcd_order_type.")
         print(f"Full logs: {out/'logs'}")
         sys.exit(2)
 
