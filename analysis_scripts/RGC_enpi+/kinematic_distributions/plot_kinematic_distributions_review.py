@@ -100,25 +100,28 @@ def hist2d(ax,x,y,bins,ranges,xlabel,ylabel):
 def save(fig,path):
     fig.savefig(path,dpi=220,bbox_inches="tight"); plt.close(fig); print(f"[plot] wrote {path}",flush=True)
 
-def analysis_bin_title(ix,it,n):
-    xl,xh=XB_BINS[ix]; tl,th=TP_BINS[it]
-    return rf"${xl:.2f}\leq x_B<{xh:.2f}$, ${tl:.2f}\leq -t'<{th:.2f}$"+f"\nN={n:,}"
-
-def plot_variable_by_analysis_bin(data,key,edges,xlabel,path):
-    """4x6 grid matching the actual xB (rows) x -t' (columns) analysis binning."""
-    fig,axes=plt.subplots(4,6,figsize=(17.5,10.5),sharex=True,sharey=False)
-    for ix in range(4):
-        for it in range(6):
-            ax=axes[ix,it]; xl,xh=XB_BINS[ix]; tl,th=TP_BINS[it]
-            m=(data["xB"]>=xl)&(data["xB"]<xh)&(data["minus_tprime"]>=tl)&(data["minus_tprime"]<th)&np.isfinite(data[key])
+def plot_variable_by_xb_with_tprime_overlays(data,key,edges,xlabel,path):
+    """One row of xB panels, with the six -t' analysis bins overlaid as normalized shapes."""
+    fig,axes=plt.subplots(1,4,figsize=(16.0,4.1),sharex=True,sharey=True)
+    for ix,(ax,(xl,xh)) in enumerate(zip(axes,XB_BINS)):
+        for it,(tl,th) in enumerate(TP_BINS):
+            m=((data["xB"]>=xl)&(data["xB"]<xh)&
+               (data["minus_tprime"]>=tl)&(data["minus_tprime"]<th)&
+               np.isfinite(data[key]))
             vals=data[key][m]
-            ax.hist(vals,bins=edges,histtype="step",linewidth=1.25)
-            ax.set_title(analysis_bin_title(ix,it,vals.size),fontsize=8)
-            ax.tick_params(direction="in",top=True,right=True,labelsize=8)
-            if ix==3: ax.set_xlabel(xlabel,fontsize=9)
-            if it==0: ax.set_ylabel("Events",fontsize=9)
-    fig.suptitle(rf"{xlabel} distributions in the 24 analysis bins",fontsize=15)
-    fig.tight_layout(rect=(0,0,1,0.965)); save(fig,path)
+            counts,_=np.histogram(vals,bins=edges)
+            total=counts.sum()
+            density=counts/total if total else counts.astype(float)
+            centers=.5*(edges[:-1]+edges[1:])
+            ax.step(centers,density,where="mid",linewidth=1.35,
+                    label=fr"${tl:.2f}\leq -t'<{th:.2f}$ ($N={total:,}$)")
+        ax.set_title(fr"${xl:.2f}\leq x_B<{xh:.2f}$")
+        ax.set_xlabel(xlabel)
+        ax.tick_params(direction="in",top=True,right=True)
+        ax.legend(fontsize=7,frameon=False,loc="best")
+    axes[0].set_ylabel("Fraction of events / bin")
+    fig.suptitle(rf"{xlabel} distributions across the analysis $x_B$ and $-t'$ bins",fontsize=15)
+    fig.tight_layout(rect=(0,0,1,0.93)); save(fig,path)
 
 def main():
     ap=argparse.ArgumentParser(); ap.add_argument("--cuts",type=Path,default=DEFAULT_CUTS); ap.add_argument("--output-dir",type=Path,default=DEFAULT_OUT)
@@ -160,10 +163,10 @@ def main():
     for ax in axes[:,0]: ax.set_ylabel("Fraction of events / bin")
     fig.suptitle(r"$\phi$ acceptance shape in the four analysis $x_B$ intervals"); fig.tight_layout(rect=(0,0,1,.95)); save(fig,args.output_dir/"04_phi_projections.png")
 
-    # New: directly show the Q2 and W populations entering every extracted analysis bin.
-    plot_variable_by_analysis_bin(data,"Q2",np.linspace(1,q2max,45),r"$Q^2$ (GeV$^2$)",args.output_dir/"05_Q2_by_analysis_bin.png")
+    # Compact analysis-bin shape plots: one panel per xB interval, with the six -t' bins overlaid.
+    plot_variable_by_xb_with_tprime_overlays(data,"Q2",np.linspace(1,q2max,45),r"$Q^2$ (GeV$^2$)",args.output_dir/"05_Q2_by_analysis_bin.png")
     if np.isfinite(data["W"]).any():
-        plot_variable_by_analysis_bin(data,"W",np.linspace(2,wmax,45),r"$W$ (GeV)",args.output_dir/"06_W_by_analysis_bin.png")
+        plot_variable_by_xb_with_tprime_overlays(data,"W",np.linspace(2,wmax,45),r"$W$ (GeV)",args.output_dir/"06_W_by_analysis_bin.png")
 
     # New: Q2-W correlation in each xB row. This compactly exposes how DIS phase space evolves across xB.
     if np.isfinite(data["W"]).any():
