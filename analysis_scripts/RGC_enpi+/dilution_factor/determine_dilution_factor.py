@@ -3613,11 +3613,11 @@ def build_sigma_window_scan(
                 )
             )
             percent_difference = float(
-                100.0 * safe_divide(method1 - method3, method3)
+                100.0 * safe_divide(method3 - method1, method1)
             )
 
             # Statistical uncertainties are evaluated with paired Poisson
-            # replicas.  Method 1 and Method 2 are recalculated from the same
+            # replicas.  Method 1 and Method 3 are recalculated from the same
             # replica counts, preserving their covariance in the lower-panel
             # percent difference.  The control-region counts are disjoint from
             # the neutron-window counts and are therefore redrawn separately.
@@ -3637,20 +3637,20 @@ def build_sigma_window_scan(
                 replica_control_nh3,
                 replica_control_c,
             )
-            replica_method1 = 1.0 - safe_divide(
+            replica_method3 = 1.0 - safe_divide(
                 replica_alpha * replica_selected["C"],
                 replica_selected["NH3"],
             )
-            replica_method2 = method1_equation10_from_counts(
+            replica_method1 = method1_equation10_from_counts(
                 replica_selected,
                 charge_fractions[period],
             )
             replica_percent_difference = 100.0 * safe_divide(
-                replica_method2 - replica_method1,
+                replica_method3 - replica_method1,
                 replica_method1,
             )
-            method1_stat = float(np.nanstd(replica_method1, ddof=1))
-            method2_stat = float(np.nanstd(replica_method2, ddof=1))
+            method1_stat = float(np.nanstd(replica_method3, ddof=1))
+            method2_stat = float(np.nanstd(replica_method1, ddof=1))
             percent_difference_stat = float(
                 np.nanstd(replica_percent_difference, ddof=1)
             )
@@ -3667,11 +3667,11 @@ def build_sigma_window_scan(
                     "mx2_max_gev2": upper,
                     "method3_alpha": alpha,
                     "method3": method3,
-                    "method1_stat_uncertainty": method1_stat,
+                    "method3_stat_uncertainty": method1_stat,
                     "method1": method1,
-                    "method2_stat_uncertainty": method2_stat,
-                    "method2_minus_method1_percent_of_method1": percent_difference,
-                    "method2_minus_method1_percent_stat_uncertainty": percent_difference_stat,
+                    "method1_stat_uncertainty": method2_stat,
+                    "method3_minus_method1_percent_of_method1": percent_difference,
+                    "method3_minus_method1_percent_stat_uncertainty": percent_difference_stat,
                     **{
                         f"{target}_selected_count": selected[target]
                         for target in TARGETS
@@ -3735,12 +3735,12 @@ def plot_sigma_window_scan(
             marker="o",
             markersize=5.5,
             linewidth=1.8,
-            label=f"{PERIOD_LABELS[period]} Method 1",
+            label=f"{PERIOD_LABELS[period]} Method 3",
         )
         top.errorbar(
             method1_x[endpoint_indices],
             subset["method3"].to_numpy(dtype=float)[endpoint_indices],
-            yerr=subset["method1_stat_uncertainty"].to_numpy(dtype=float)[endpoint_indices],
+            yerr=subset["method3_stat_uncertainty"].to_numpy(dtype=float)[endpoint_indices],
             color=color,
             fmt="none",
             elinewidth=1.0,
@@ -3757,12 +3757,12 @@ def plot_sigma_window_scan(
             markersize=5.5,
             linewidth=1.6,
             linestyle="--",
-            label=f"{PERIOD_LABELS[period]} Method 2",
+            label=f"{PERIOD_LABELS[period]} Method 1",
         )
         top.errorbar(
             method2_x[endpoint_indices],
             subset["method1"].to_numpy(dtype=float)[endpoint_indices],
-            yerr=subset["method2_stat_uncertainty"].to_numpy(dtype=float)[endpoint_indices],
+            yerr=subset["method1_stat_uncertainty"].to_numpy(dtype=float)[endpoint_indices],
             color=color,
             fmt="none",
             elinewidth=1.0,
@@ -3771,7 +3771,7 @@ def plot_sigma_window_scan(
 
         bottom.plot(
             center,
-            subset["method2_minus_method1_percent_of_method1"],
+            subset["method3_minus_method1_percent_of_method1"],
             color=color,
             marker="o",
             markersize=5.0,
@@ -3780,8 +3780,8 @@ def plot_sigma_window_scan(
         )
         bottom.errorbar(
             center[endpoint_indices],
-            subset["method2_minus_method1_percent_of_method1"].to_numpy(dtype=float)[endpoint_indices],
-            yerr=subset["method2_minus_method1_percent_stat_uncertainty"].to_numpy(dtype=float)[endpoint_indices],
+            subset["method3_minus_method1_percent_of_method1"].to_numpy(dtype=float)[endpoint_indices],
+            yerr=subset["method3_minus_method1_percent_stat_uncertainty"].to_numpy(dtype=float)[endpoint_indices],
             color=color,
             fmt="none",
             elinewidth=1.0,
@@ -3793,12 +3793,12 @@ def plot_sigma_window_scan(
     top.grid(alpha=0.25)
     top.legend(ncol=3, fontsize=9, loc="best")
     top.set_title(
-        "Method 1 and Method 2 versus missing-neutron window\n"
+        "Method 1 and Method 3 versus missing-neutron window\n"
         f"{title_suffix}"
     )
 
     bottom.axhline(0.0, color="black", linewidth=1.0)
-    bottom.set_ylabel(r"$100(f_2-f_1)/f_1$ (%)")
+    bottom.set_ylabel(r"$100(f_3-f_1)/f_1$ (%)")
     bottom.grid(alpha=0.25)
 
     tick_labels: list[str] = []
@@ -3873,10 +3873,10 @@ def write_momentum_correction_sigma_scan_products(
     uncorrected_frame.to_csv(uncorrected_csv, index=False)
 
     corrected_plot = (
-        plots_dir / "method1_method2_sigma_scan_with_momentum_corrections.png"
+        plots_dir / "method1_method3_sigma_scan_with_momentum_corrections.png"
     )
     uncorrected_plot = (
-        plots_dir / "method1_method2_sigma_scan_without_momentum_corrections.png"
+        plots_dir / "method1_method3_sigma_scan_without_momentum_corrections.png"
     )
     plot_paths: list[str] = []
     if not skip_plots:
