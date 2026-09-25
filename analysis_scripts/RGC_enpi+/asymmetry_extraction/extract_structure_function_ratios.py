@@ -1623,6 +1623,16 @@ def build_event_cache(
     cache_path: Path,
 ) -> dict[str, Any]:
     ensure_directory(cache_path.parent)
+    cache_build_start = time.perf_counter()
+    print(
+        f"[cache] BUILD START -> {cache_path.resolve()}",
+        flush=True,
+    )
+    print(
+        f"[cache] tree={tree_name}; chunk_size={chunk_size}; "
+        f"periods={', '.join(PERIODS)}",
+        flush=True,
+    )
 
     collected: dict[str, list[np.ndarray]] = {
         "period_index": [],
@@ -1645,7 +1655,9 @@ def build_event_cache(
     period_statistics: dict[str, dict[str, int]] = {}
 
     for period in PERIODS:
+        period_start = time.perf_counter()
         path = input_paths[period].expanduser().resolve()
+        print(f"[cache] {period}: opening {path}", flush=True)
         if not path.is_file():
             raise FileNotFoundError(f"Missing ROOT input: {path}")
         # endif
@@ -1670,13 +1682,23 @@ def build_event_cache(
             }
             expressions = list(dict.fromkeys(branches.values()))
 
+            chunk_number = 0
             for arrays in tree.iterate(
                 expressions=expressions,
                 step_size=chunk_size,
                 library="np",
             ):
+                chunk_number += 1
                 n_chunk = len(arrays[branches["runnum"]])
                 total_seen += n_chunk
+                if chunk_number == 1 or chunk_number % 10 == 0:
+                    print(
+                        f"[cache] {period}: chunk {chunk_number}; "
+                        f"seen={total_seen:,}; selected={total_selected:,}; "
+                        f"elapsed={time.perf_counter() - period_start:.1f} s",
+                        flush=True,
+                    )
+                # endif
 
                 runnum = np.asarray(
                     arrays[branches["runnum"]],
@@ -1869,6 +1891,12 @@ def build_event_cache(
                 )
             # endif
 
+        print(
+            f"[cache] {period}: DONE; seen={total_seen:,}; "
+            f"selected={total_selected:,}; "
+            f"elapsed={time.perf_counter() - period_start:.1f} s",
+            flush=True,
+        )
         period_statistics[period] = {
             "events_seen": total_seen,
             "events_selected": total_selected,
@@ -1895,7 +1923,17 @@ def build_event_cache(
         name: np.concatenate(chunks)
         for name, chunks in collected.items()
     }
+    print(
+        f"[cache] compressing {cache["runnum"].size:,} selected events -> "
+        f"{cache_path.resolve()}",
+        flush=True,
+    )
     np.savez_compressed(cache_path, **cache)
+    print(
+        f"[cache] BUILD DONE; selected={cache['runnum'].size:,}; "
+        f"elapsed={time.perf_counter() - cache_build_start:.1f} s",
+        flush=True,
+    )
 
     return {
         "cache_path": str(cache_path.resolve()),
@@ -1912,7 +1950,17 @@ def derive_event_cache(
     cache_path: Path,
 ) -> dict[str, Any]:
     """Filter a previously selected superset cache without rereading ROOT."""
+    derive_start = time.perf_counter()
+    print(
+        f"[cache] DERIVE START: {source_cache_path.resolve()} -> "
+        f"{cache_path.resolve()}",
+        flush=True,
+    )
     source = load_event_cache(source_cache_path)
+    print(
+        f"[cache] source cache loaded: {source['runnum'].size:,} events",
+        flush=True,
+    )
     selected = np.zeros(source["runnum"].shape, dtype=bool)
     period_index = np.asarray(source["period_index"], dtype=np.int8)
     bin_number = np.asarray(source["bin_number"], dtype=np.int16)
@@ -1940,6 +1988,11 @@ def derive_event_cache(
     ensure_directory(cache_path.parent)
     filtered = {name: values[selected] for name, values in source.items()}
     np.savez_compressed(cache_path, **filtered)
+    print(
+        f"[cache] DERIVE DONE; selected={np.count_nonzero(selected):,}/"
+        f"{selected.size:,}; elapsed={time.perf_counter() - derive_start:.1f} s",
+        flush=True,
+    )
     return {
         "cache_path": str(cache_path.resolve()),
         "number_of_selected_events": int(np.count_nonzero(selected)),
@@ -4801,7 +4854,12 @@ def run_analysis_variant(
         dilution_json_path, cut_label=cut_label
     )
     if reuse_cache:
+        print(f"[cache] REUSE requested: {cache_path}", flush=True)
         events = load_event_cache(cache_path)
+        print(
+            f"[cache] REUSE DONE: loaded {events['runnum'].size:,} events",
+            flush=True,
+        )
         cache_summary = {
             "cache_path": str(cache_path),
             "number_of_selected_events": int(events["runnum"].size),
@@ -5738,18 +5796,75 @@ def main() -> int:
     )
 
     channel_loose_cache = channel_dir / "loose/cache/selected_events.npz"
+
+    print("=" * 78, flush=True)
+    print("RGC enpi+ structure-function-ratio extraction: startup", flush=True)
+    print("=" * 78, flush=True)
+    print(f"Output root:          {root}", flush=True)
+    print(f"Workers:              {workers} (maximum {MAXIMUM_WORKERS})", flush=True)
+    print(f"Reuse cache:          {args.reuse_cache}", flush=True)
+    print(f"Skip plots:           {args.skip_plots}", flush=True)
+    print(f"ISR study enabled:    {not args.disable_isr}", flush=True)
+    print(
+        f"Momentum study:       {not args.disable_momentum_corrections}",
+        flush=True,
+    )
+    print(
+        f"Channel-selection:    {not args.disable_channel_selection}",
+        flush=True,
+    )
+    print(f"Nominal cache:        {nominal_cache}", flush=True)
+    if not args.disable_channel_selection:
+        print(f"Loose superset cache: {channel_loose_cache}", flush=True)
+        if args.reuse_cache:
+            print(
+                "[startup] --reuse-cache: existing loose cache will be loaded; "
+                "no ROOT cache rebuild will be performed.",
+                flush=True,
+            )
+        else:
+            print(
+                "[startup] Clean run: building the loose (3 sigma) superset "
+                "cache FIRST. The nominal (2 sigma) cache will then be derived "
+                "from it without rereading the nominal ROOT trees.",
+                flush=True,
+            )
+        # endif
+    else:
+        print(
+            "[startup] Channel-selection study disabled: nominal cache will be "
+            "built directly from the nominal ROOT inputs.",
+            flush=True,
+        )
+    # endif
+    print("=" * 78, flush=True)
+
     nominal_source_cache: Path | None = None
     channel_loose_cache_ready = False
     if not args.disable_channel_selection:
         if args.reuse_cache:
+            print(
+                f"[startup/cache] checking loose superset cache: "
+                f"{channel_loose_cache}",
+                flush=True,
+            )
             if not channel_loose_cache.is_file():
                 raise FileNotFoundError(
                     "--reuse-cache was requested, but the loose channel-selection "
                     f"cache is missing: {channel_loose_cache}"
                 )
             # endif
+            print(
+                "[startup/cache] loose superset cache exists; it will be reused.",
+                flush=True,
+            )
             channel_loose_cache_ready = True
         else:
+            print(
+                "[startup/cache] preparing loose (3 sigma) superset cache "
+                "before nominal fitting...",
+                flush=True,
+            )
             run_records_for_cache = parse_run_info_csv(
                 args.run_info_csv.expanduser().resolve()
             )
@@ -5765,6 +5880,11 @@ def main() -> int:
                 cache_path=channel_loose_cache,
             )
             channel_loose_cache_ready = True
+            print(
+                "[startup/cache] loose superset cache is ready; proceeding to "
+                "the nominal analysis.",
+                flush=True,
+            )
         # endif
         nominal_source_cache = channel_loose_cache
     # endif
