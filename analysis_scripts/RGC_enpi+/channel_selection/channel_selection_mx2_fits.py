@@ -5736,26 +5736,28 @@ def plot_master_cut_summary(
 
     ax_bounds = axes[0]
     # Draw widest first so the nested bands remain visible.
-    ax_bounds.fill_between(
-        bins,
-        mean - 4.0 * sigma_summary,
-        mean + 4.0 * sigma_summary,
-        alpha=0.10,
-        label="Loose (4$\\sigma$), mean period width",
-    )
+    # The production selections are tight = 1 sigma, nominal = 2 sigma,
+    # and loose = 3 sigma.
     ax_bounds.fill_between(
         bins,
         mean - 3.0 * sigma_summary,
         mean + 3.0 * sigma_summary,
-        alpha=0.13,
-        label="Nominal (3$\\sigma$), mean period width",
+        alpha=0.10,
+        label="Loose (3$\\sigma$), mean period width",
     )
     ax_bounds.fill_between(
         bins,
         mean - 2.0 * sigma_summary,
         mean + 2.0 * sigma_summary,
+        alpha=0.13,
+        label="Nominal (2$\\sigma$), mean period width",
+    )
+    ax_bounds.fill_between(
+        bins,
+        mean - 1.0 * sigma_summary,
+        mean + 1.0 * sigma_summary,
         alpha=0.17,
-        label="Tight (2$\\sigma$), mean period width",
+        label="Tight (1$\\sigma$), mean period width",
     )
     ax_bounds.errorbar(
         bins,
