@@ -5508,12 +5508,13 @@ def plot_final_cut_canvases(
                     f"sigma_{period}_error_gev2",
                 )
                 ax.set_title(
-                    f"Bin {cut.bin_number}: {cut.classification}, "
+                    f"Bin {cut.bin_number}: "
                     f"$\\mu$={cut.shared_mean_gev2:.4f}, "
                     f"$\\sigma_{{{PERIOD_LABELS[period]}}}$="
                     f"{period_sigma:.4f}$\\pm${period_sigma_error:.4f}",
                     fontsize=8,
                 )
+                ax.set_xlim(0.50, 1.25)
                 ax.grid(alpha=0.22)
                 if x_index == len(XB_BINS) - 1:
                     ax.set_xlabel("$M_x^2$ (GeV$^2$)")
@@ -5533,9 +5534,9 @@ def plot_final_cut_canvases(
             Line2D([0], [0], linestyle="-", label="Gaussian signal"),
             Line2D([0], [0], linestyle="--", label="Residual polynomial"),
             Line2D([0], [0], linestyle="-", linewidth=1.5, label="Total model (display-smoothed)"),
-            Patch(alpha=0.12, label="Nominal (3$\\sigma$)"),
-            Line2D([0], [0], linestyle=":", label="Tight (2$\\sigma$)"),
-            Line2D([0], [0], linestyle="-.", label="Loose (4$\\sigma$)"),
+            Patch(alpha=0.12, label="Nominal (2$\\sigma$)"),
+            Line2D([0], [0], linestyle=":", label="Tight (1$\\sigma$)"),
+            Line2D([0], [0], linestyle="-.", label="Loose (3$\\sigma$)"),
         ]
         labels = [handle.get_label() for handle in handles]
 
