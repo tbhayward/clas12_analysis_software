@@ -1,0 +1,77 @@
+{
+  "schema_version": 1,
+  "package": "RGA Fall 2018 10.604 GeV provisional reduced cross sections",
+  "analysis_note": "Provisional RGA Fall 2018 extraction using closure-selected polarity-specific IBU iterations and joint data-and-response count-bootstrap covariance",
+  "csv_definition": "one row per final-valid 4D cross-section bin",
+  "uncertainty_scope": "propagated data and finite-MC counting uncertainty including finite radiative-correction MC uncertainty; remaining campaign systematic covariance is not included",
+  "current_efficiency_treatment": "unit current weights with the same retained-run selections",
+  "samples": [
+    {
+      "key": "torus_plus1",
+      "label": "RGA Fall 2018 torus+1",
+      "source": "/w/hallb-scshelf2102/clas12/storyf/rga_fa18/20260915_exclusive_eppi0_10604MeV_torus-both/07_xsec/torus+1/systematics/iterations_1_count_bootstrap_certified_unit_weights/cross_section.npz",
+      "sha256": "ceac5a59f3f742068d452cadf278a7ca66c6bf7958b3799c6c11185684396b08",
+      "array_shape": [
+        10,
+        9,
+        8,
+        20
+      ],
+      "valid_bins": 4595,
+      "finite_epsilon_bins": 4595,
+      "beam_energy_GeV": 10.604,
+      "units": "nb/(GeV^2 rad)",
+      "phase_space_definition": "exclusive physical 4D bin and Q2 >= 1 and W >= 2 and electron p >= 2 GeV",
+      "final_validity_definition": "acceptance above minimum, reliable radiative correction, reliable bin centering, finite nonnegative corrected yield, finite positive propagated uncertainty, and positive physical volume and virtual-photon flux",
+      "covariance_available": true,
+      "covariance_definition": "cross-section covariance among phi bins within each (Q2,xB,-t) cell, propagated from unfolding corrected_covariance_phi",
+      "covariance_bootstrap_experiments": 300,
+      "uncertainty_definition": "diagonal square root of covariance_phi: propagated data and finite-response count-bootstrap uncertainty plus finite radiative-correction MC uncertainty; remaining campaign systematic covariance is absent"
+    },
+    {
+      "key": "torus_minus1",
+      "label": "RGA Fall 2018 torus-1",
+      "source": "/w/hallb-scshelf2102/clas12/storyf/rga_fa18/20260915_exclusive_eppi0_10604MeV_torus-both/07_xsec/torus-1/systematics/iterations_0_count_bootstrap_certified_unit_weights/cross_section.npz",
+      "sha256": "47a1fcbd1c9937617fe527b60b9632b0ae1b328cf053873d3d6ecac71068b534",
+      "array_shape": [
+        10,
+        9,
+        8,
+        20
+      ],
+      "valid_bins": 4140,
+      "finite_epsilon_bins": 4140,
+      "beam_energy_GeV": 10.604,
+      "units": "nb/(GeV^2 rad)",
+      "phase_space_definition": "exclusive physical 4D bin and Q2 >= 1 and W >= 2 and electron p >= 2 GeV",
+      "final_validity_definition": "acceptance above minimum, reliable radiative correction, reliable bin centering, finite nonnegative corrected yield, finite positive propagated uncertainty, and positive physical volume and virtual-photon flux",
+      "covariance_available": true,
+      "covariance_definition": "cross-section covariance among phi bins within each (Q2,xB,-t) cell, propagated from unfolding corrected_covariance_phi",
+      "covariance_bootstrap_experiments": 300,
+      "uncertainty_definition": "diagonal square root of covariance_phi: propagated data and finite-response count-bootstrap uncertainty plus finite radiative-correction MC uncertainty; remaining campaign systematic covariance is absent"
+    },
+    {
+      "key": "combined",
+      "label": "RGA Fall 2018 combined polarities",
+      "source": "/w/hallb-scshelf2102/clas12/storyf/rga_fa18/20260915_exclusive_eppi0_10604MeV_torus-both/07_xsec/combined/systematics/certified_count_bootstrap_unit_weights/cross_section.npz",
+      "sha256": "b70a6ec08c524c869185a057f3a2d7b5bc477977ac937238a379a0b0dcedd41d",
+      "array_shape": [
+        10,
+        9,
+        8,
+        20
+      ],
+      "valid_bins": 5293,
+      "finite_epsilon_bins": 5293,
+      "beam_energy_GeV": 10.604,
+      "units": "nb/(GeV^2 rad)",
+      "phase_space_definition": "exclusive physical 4D bin and Q2 >= 1 and W >= 2 and electron p >= 2 GeV",
+      "final_validity_definition": "union of valid polarity measurements; common bins use covariance-aware BLUE",
+      "covariance_available": true,
+      "covariance_definition": "within-polarity phi covariance propagated through the binwise BLUE weights, treating polarity statistical and finite-response fluctuations as independent; the diagonal is the BLUE variance including the shared radiative contribution",
+      "covariance_bootstrap_experiments": 300,
+      "uncertainty_definition": "input total uncertainties with shared radiative covariance retained; other pending systematic covariance is not included"
+    }
+  ],
+  "covariance_artifact": "/w/hallb-scshelf2102/clas12/storyf/fa18_external_shares/fa18_rosenbluth_inputs_20260924T165948Z/rga_10604/rga_fa18_10604_reduced_cross_section_phi_covariance.npz"
+}

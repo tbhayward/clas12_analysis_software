@@ -1,0 +1,12 @@
+rga_10604/combined_reduced_cross_sections.csv
+rga_10604/export_summary.json
+rga_10604/README.md
+rga_10604/rga_fa18_10604_reduced_cross_section_phi_covariance.npz
+rga_10604/rga_fa18_reduced_cross_section_phi_covariance.npz
+rga_10604/torus_minus1_reduced_cross_sections.csv
+rga_10604/torus_plus1_reduced_cross_sections.csv
+rgk_6535/export_summary.json
+rgk_6535/README.md
+rgk_6535/rgk6535_reduced_cross_sections.csv
+rgk_6535/rgk_fa18_6535_reduced_cross_section_phi_covariance.npz
+rgk_6535/rgk_fa18_reduced_cross_section_phi_covariance.npz

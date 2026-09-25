@@ -66,9 +66,9 @@ def parse_args():
     p.add_argument("--meson-value",default=DEFAULT_MESON_VALUE,
                    help="MesonType string passed to PARTONS XML (default: pi0).")
     p.add_argument("--rga-input",type=Path,default=None,
-                   help="RGA combined_reduced_cross_sections.csv. Auto-discovered when omitted.")
+                   help="RGA CSV override. Default: newest import/fa18_rosenbluth_inputs_*/rga_10604/combined_reduced_cross_sections.csv.")
     p.add_argument("--rgk-input",type=Path,default=None,
-                   help="RGK rgk6535_reduced_cross_sections.csv. Auto-discovered when omitted.")
+                   help="RGK CSV override. Default: newest import/fa18_rosenbluth_inputs_*/rgk_6535/rgk6535_reduced_cross_sections.csv.")
     p.add_argument("--dry-run",action="store_true",
                    help="Write XML/maps but do not invoke PARTONS.")
     return p.parse_args()
@@ -157,7 +157,24 @@ def _find_campaign_input(explicit:Path|None, stage3:Path, filename:str) -> Path:
 
     here=Path(__file__).resolve().parent
     campaign_dir="rga_10604" if filename=="combined_reduced_cross_sections.csv" else "rgk_6535"
-    roots=[stage3,stage3.parent,here,here/"input",here/"inputs",here.parent]
+
+    # Normal repository layout: this script sits beside import/, and the
+    # Rosenbluth handoff is unpacked as
+    #   import/fa18_rosenbluth_inputs_<timestamp>/<campaign>/<filename>.
+    # Prefer the newest unpacked handoff deterministically.
+    import_dir=here/"import"
+    if import_dir.exists():
+        unpacked=sorted(
+            import_dir.glob(f"fa18_rosenbluth_inputs_*/{campaign_dir}/{filename}"),
+            key=lambda p:p.parent.parent.name,
+            reverse=True,
+        )
+        if unpacked:
+            return unpacked[0].resolve()
+
+    # Keep broader discovery as a fallback for explicit Stage-3 copies or older
+    # repository layouts.
+    roots=[stage3,stage3.parent,here,import_dir,here/"input",here/"inputs",here.parent]
 
     # First prefer an already-unpacked copy.  The exported Rosenbluth package is
     # normally fa18_rosenbluth_inputs_<timestamp>/<campaign>/<filename>.

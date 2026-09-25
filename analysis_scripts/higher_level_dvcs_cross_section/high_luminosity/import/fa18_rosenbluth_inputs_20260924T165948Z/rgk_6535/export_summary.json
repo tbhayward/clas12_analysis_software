@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "package": "RGK Fall 2018 6.535 GeV provisional reduced cross sections",
+  "analysis_note": "Provisional RGK Fall 2018 extraction using the closure-selected one-iteration IBU result and joint data-and-response count-bootstrap covariance",
+  "csv_definition": "one row per final-valid 4D cross-section bin",
+  "uncertainty_scope": "propagated data and finite-MC counting uncertainty including finite radiative-correction MC uncertainty; remaining campaign systematic covariance is not included",
+  "current_efficiency_treatment": "campaign current-efficiency weighting referenced to 35 nA",
+  "samples": [
+    {
+      "key": "rgk6535",
+      "label": "RGK Fall 2018, 6.535 GeV, torus+1",
+      "source": "/w/hallb-scshelf2102/clas12/storyf/rgk_fa18/20260915_exclusive_eppi0_6535MeV_torus+1/07_xsec/systematics/iterations_1_count_bootstrap_certified/cross_section.npz",
+      "sha256": "f0e7be8a3aa0fe3b60d2c6b42780f5dedf5d29ed37308945c18d4b79363ebb1c",
+      "array_shape": [
+        9,
+        9,
+        8,
+        20
+      ],
+      "valid_bins": 2032,
+      "finite_epsilon_bins": 2032,
+      "beam_energy_GeV": 6.535,
+      "units": "nb/(GeV^2 rad)",
+      "phase_space_definition": "exclusive physical 4D bin and Q2 >= 1 and W >= 2 and electron p >= 1 GeV",
+      "final_validity_definition": "acceptance above minimum, reliable radiative correction, reliable bin centering, finite nonnegative corrected yield, finite positive propagated uncertainty, and positive physical volume and virtual-photon flux",
+      "covariance_available": true,
+      "covariance_definition": "cross-section covariance among phi bins within each (Q2,xB,-t) cell, propagated from unfolding corrected_covariance_phi",
+      "covariance_bootstrap_experiments": 300,
+      "uncertainty_definition": "diagonal square root of covariance_phi: propagated data and finite-response count-bootstrap uncertainty plus finite radiative-correction MC uncertainty; remaining campaign systematic covariance is absent"
+    }
+  ],
+  "covariance_artifact": "/w/hallb-scshelf2102/clas12/storyf/fa18_external_shares/fa18_rosenbluth_inputs_20260924T165948Z/rgk_6535/rgk_fa18_6535_reduced_cross_section_phi_covariance.npz"
+}
