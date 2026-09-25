@@ -71,6 +71,8 @@ def parse_args():
                    help="RGK CSV override. Default: newest import/fa18_rosenbluth_inputs_*/rgk_6535/rgk6535_reduced_cross_sections.csv.")
     p.add_argument("--dry-run",action="store_true",
                    help="Write XML/maps but do not invoke PARTONS.")
+    p.add_argument("--study-common-points",action="store_true",
+                   help="Study midpoint common kinematics for all matched RGA/RGK bins and exit before PARTONS.")
     return p.parse_args()
 
 def find_sif(explicit: Path|None, here: Path, project: Path) -> Path:
@@ -295,6 +297,67 @@ def load_queries(stage3:Path, rga_input:Path|None=None, rgk_input:Path|None=None
     return q
 
 
+def virtual_photon_kinematics(Q2, xB, E):
+    """Return (y, epsilon) for electron scattering at fixed beam energy."""
+    Q2=np.asarray(Q2,dtype=float); xB=np.asarray(xB,dtype=float); E=np.asarray(E,dtype=float)
+    y=Q2/(2.0*PROTON_MASS_GEV*E*xB)
+    gamma2=4.0*PROTON_MASS_GEV**2*xB**2/Q2
+    eps=(1.0-y-0.25*gamma2*y*y)/(1.0-y+0.5*y*y+0.25*gamma2*y*y)
+    return y,eps
+
+def study_common_points(q:pd.DataFrame, out:Path) -> pd.DataFrame:
+    """Build and diagnose the symmetric midpoint shared hadronic coordinate."""
+    d=q.copy()
+    d["Q2_shared_GeV2"]=0.5*(d["Q2_rga_GeV2"].astype(float)+d["Q2_rgk_GeV2"].astype(float))
+    d["xB_shared"]=0.5*(d["xB_rga"].astype(float)+d["xB_rgk"].astype(float))
+    d["minus_t_shared_GeV2"]=0.5*(d["minus_t_rga_GeV2"].astype(float)+d["minus_t_rgk_GeV2"].astype(float))
+    for camp in ("rga","rgk"):
+        y,eps=virtual_photon_kinematics(d["Q2_shared_GeV2"],d["xB_shared"],d[f"E_{camp}_GeV"])
+        d[f"y_{camp}_at_shared"]=y
+        d[f"epsilon_{camp}_at_shared"]=eps
+        d[f"delta_Q2_{camp}_to_shared_GeV2"]=d["Q2_shared_GeV2"]-d[f"Q2_{camp}_GeV2"]
+        d[f"delta_xB_{camp}_to_shared"]=d["xB_shared"]-d[f"xB_{camp}"]
+        d[f"delta_minus_t_{camp}_to_shared_GeV2"]=d["minus_t_shared_GeV2"]-d[f"minus_t_{camp}_GeV2"]
+    d["delta_epsilon_shared"]=d["epsilon_rga_at_shared"]-d["epsilon_rgk_at_shared"]
+    d["shared_physical_rga"]=(d["y_rga_at_shared"]>0)&(d["y_rga_at_shared"]<1)&(d["epsilon_rga_at_shared"]>=0)&(d["epsilon_rga_at_shared"]<=1)
+    d["shared_physical_rgk"]=(d["y_rgk_at_shared"]>0)&(d["y_rgk_at_shared"]<1)&(d["epsilon_rgk_at_shared"]>=0)&(d["epsilon_rgk_at_shared"]<=1)
+    d["shared_physical_both"]=d["shared_physical_rga"]&d["shared_physical_rgk"]
+    d["rgk_high_y_gt_0p90"]=d["y_rgk_at_shared"]>0.90
+    d["rgk_very_high_y_gt_0p95"]=d["y_rgk_at_shared"]>0.95
+    study=out/"common_point_study"; study.mkdir(parents=True,exist_ok=True)
+    d.to_csv(study/"01_shared_midpoint_all_points.csv",index=False)
+    cols=["point_id","Q2_shared_GeV2","xB_shared","minus_t_shared_GeV2",
+          "y_rga_at_shared","epsilon_rga_at_shared","y_rgk_at_shared","epsilon_rgk_at_shared",
+          "delta_epsilon_shared","shared_physical_both","rgk_high_y_gt_0p90","rgk_very_high_y_gt_0p95"]
+    d.sort_values("y_rgk_at_shared",ascending=False)[cols].to_csv(study/"02_points_sorted_by_rgk_y.csv",index=False)
+    n=len(d); nphys=int(d.shared_physical_both.sum()); n90=int(d.rgk_high_y_gt_0p90.sum()); n95=int(d.rgk_very_high_y_gt_0p95.sum())
+    lines=[
+      "Shared midpoint common-kinematics study",
+      f"points: {n}",
+      f"physical for both beam energies: {nphys}/{n}",
+      f"RGK shared y > 0.90: {n90}",
+      f"RGK shared y > 0.95: {n95}",
+      f"RGK shared y range: {d.y_rgk_at_shared.min():.6f} -- {d.y_rgk_at_shared.max():.6f}",
+      f"RGA shared y range: {d.y_rga_at_shared.min():.6f} -- {d.y_rga_at_shared.max():.6f}",
+      f"shared epsilon lever arm range (eps_RGA-eps_RGK): {d.delta_epsilon_shared.min():.6f} -- {d.delta_epsilon_shared.max():.6f}",
+      "",
+      "Highest-y RGK shared points:",
+    ]
+    for r in d.nlargest(12,"y_rgk_at_shared").itertuples(index=False):
+        lines.append(f"  {r.point_id}: Q2={r.Q2_shared_GeV2:.6f} GeV^2, xB={r.xB_shared:.6f}, -t={r.minus_t_shared_GeV2:.6f} GeV^2, y_RGK={r.y_rgk_at_shared:.6f}, eps_RGK={r.epsilon_rgk_at_shared:.6f}, eps_RGA={r.epsilon_rga_at_shared:.6f}")
+    (study/"summary.txt").write_text("\n".join(lines)+"\n")
+    print("\n[shared midpoint study]")
+    print(f"  physical for both energies : {nphys}/{n}")
+    print(f"  RGK y > 0.90              : {n90}")
+    print(f"  RGK y > 0.95              : {n95}")
+    print(f"  RGK y range               : {d.y_rgk_at_shared.min():.4f} -- {d.y_rgk_at_shared.max():.4f}")
+    print(f"  outputs                   : {study}")
+    if n90:
+        print("  highest-y shared points:")
+        for r in d.nlargest(min(8,n),"y_rgk_at_shared").itertuples(index=False):
+            print(f"    {r.point_id}: y_RGK={r.y_rgk_at_shared:.4f}, eps_RGK={r.epsilon_rgk_at_shared:.4f}, Q2={r.Q2_shared_GeV2:.4f}, xB={r.xB_shared:.5f}")
+    return d
+
 def expanded_points(q, phi_grid=DEFAULT_PHI_DEG):
     rows=[]
     skipped=[]
@@ -428,6 +491,10 @@ def main():
     preflight(sif,project,a.executable)
 
     q=load_queries(a.stage3.resolve(),a.rga_input,a.rgk_input)
+    shared=study_common_points(q,out)
+    if a.study_common_points:
+        print("\nStudy complete; exiting before PARTONS evaluation.")
+        return
     if not a.all:
         first=q.iloc[[0]]
         pts,skipped=expanded_points(first,PROBE_PHI_DEG)
