@@ -179,6 +179,7 @@ from __future__ import annotations
 
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing as mp
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -4238,7 +4239,21 @@ def run_analysis_variant(
     run_state_payload = {period: {key: values.tolist() for key, values in state.items()} for period, state in run_states.items()}
     dilution_payload = {period: {str(bin_number): {"x_index": record.x_index, "t_index": record.t_index, "value": record.value, "stat_uncertainty": record.stat_uncertainty} for (record_period, bin_number), record in dilution_records.items() if record_period == period} for period in PERIODS}
     results = []
-    with ProcessPoolExecutor(max_workers=workers, initializer=initialize_fit_worker, initargs=(str(cache_path), run_state_payload, dilution_payload)) as executor:
+
+    # Use "spawn" rather than Linux's default "fork" for the fit workers.
+    # The numerical extraction is unchanged: the same worker function, inputs,
+    # likelihood, Minuit configuration, and number of fits are used.  Spawn
+    # avoids inheriting parent-process C/C++ runtime and plotting-library state,
+    # which can cause a ProcessPoolExecutor to hang while shutting workers down
+    # after every submitted future has already returned.
+    mp_context = mp.get_context("spawn")
+    executor = ProcessPoolExecutor(
+        max_workers=workers,
+        mp_context=mp_context,
+        initializer=initialize_fit_worker,
+        initargs=(str(cache_path), run_state_payload, dilution_payload),
+    )
+    try:
         futures = {
             executor.submit(
                 fit_bin_worker, bin_number, include_target_axis_study,
@@ -4250,10 +4265,29 @@ def run_analysis_variant(
             result = future.result()
             results.append(result)
             nominal = result["variants"]["nominal"]
-            print(f"[{sample_variant} bin {result['bin_number']:02d}] N={nominal['metadata']['number_of_events']:,}; valid={nominal['valid']}; NLL={nominal['minimum_nll']:.6f}; EDM={nominal['edm']:.3e}")
+            print(
+                f"[{sample_variant} bin {result['bin_number']:02d}] "
+                f"N={nominal['metadata']['number_of_events']:,}; "
+                f"valid={nominal['valid']}; "
+                f"NLL={nominal['minimum_nll']:.6f}; "
+                f"EDM={nominal['edm']:.3e}",
+                flush=True,
+            )
         # endfor
-    # endwith
-    print(f"[{sample_variant}] all {NUMBER_OF_BINS} bin fits completed; assembling tables.", flush=True)
+
+        print(
+            f"[{sample_variant}] all {NUMBER_OF_BINS} futures returned; "
+            "shutting down fit workers...",
+            flush=True,
+        )
+    finally:
+        executor.shutdown(wait=True, cancel_futures=False)
+    # endtry
+
+    print(
+        f"[{sample_variant}] fit workers shut down cleanly; assembling tables.",
+        flush=True,
+    )
     results.sort(key=lambda item: item["bin_number"])
     frame = flatten_fit_results(results)
     csv_path = tables_dir / "structure_function_ratios.csv"
