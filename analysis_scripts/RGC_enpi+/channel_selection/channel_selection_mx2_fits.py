@@ -3082,7 +3082,7 @@ def execute_fit_jobs(
     joint_config: JointFitConfig,
 ) -> list[dict[str, Any]]:
     """Fit before-correction jobs independently and corrected bins jointly."""
-    actual_workers = max(1, min(int(workers), 7, os.cpu_count() or 1))
+    actual_workers = max(1, min(int(workers), 8, os.cpu_count() or 1))
     print("Running channel_selection_mx2_fits_v31.py", flush=True)
 
     before_jobs = [job for job in jobs if job.stage == "before"]
@@ -4768,8 +4768,14 @@ def run_carbon_template_fits(
     fit_max_gev2: float,
     control_min_gev2: float,
     control_endpoints_gev2: tuple[float, ...],
+    full_diagnostics: bool = False,
 ) -> list[dict[str, Any]]:
-    """Run P1/P2 candidates plus fit-range and control-endpoint stability checks."""
+    """Fit the neutron peak; optionally run expensive development diagnostics.
+
+    Production fits are deliberately local to the neutron peak. The low-Mx2
+    control region determines the carbon normalization; the fit itself only
+    needs to determine the neutron-peak position and width.
+    """
     nominal_scales={(r['period'],r['stage']):r for r in period_diagnostics['group_rows']}
     results=[]
     for stage in ('before','after'):
@@ -4790,23 +4796,50 @@ def run_carbon_template_fits(
                     'P1':{k:p1[k] for k in ('aicc','joint_chi2_ndf','shared_mean_gev2','shared_mean_error_gev2','maximum_local_chi2_ndf')},
                     'P2':{k:p2[k] for k in ('aicc','joint_chi2_ndf','shared_mean_gev2','shared_mean_error_gev2','maximum_local_chi2_ndf')},
                 }
-                # Deterministic fit-range variations.
+                # Expensive stability scans are development diagnostics,
+                # not part of the production cut determination.
                 variations=[]
-                for lo,hi in ((fit_min_gev2,1.30),(fit_min_gev2,1.40),(0.45,fit_max_gev2)):
-                    if lo>=hi or abs(lo-fit_min_gev2)<1e-9 and abs(hi-fit_max_gev2)<1e-9: continue
-                    v=fit_one_carbon_candidate(nh3_jobs,carbon_jobs,nominal_scales,stage,xi,ti,lo,hi,selected['residual_order'])
-                    variations.append({'fit_min_gev2':lo,'fit_max_gev2':hi,'shared_mean_gev2':v['shared_mean_gev2'],
-                                       'delta_mean_gev2':v['shared_mean_gev2']-selected['shared_mean_gev2'],'joint_chi2_ndf':v['joint_chi2_ndf']})
-                # Control endpoint variations: rebuild period-wide count scales.
                 endpoint_vars=[]
-                for endpoint in sorted(set(control_endpoints_gev2)):
-                    diag=build_carbon_phase1_diagnostics(nh3_jobs,carbon_jobs,'period',control_min_gev2,endpoint,(endpoint,),
-                                                         nh3_jobs[0].histogram_min_gev2,nh3_jobs[0].histogram_max_gev2,nh3_jobs[0].histogram_bins,
-                                                         (0.40,0.65),(1.15,1.35))
-                    scales={(r['period'],r['stage']):r for r in diag['group_rows']}
-                    v=fit_one_carbon_candidate(nh3_jobs,carbon_jobs,scales,stage,xi,ti,fit_min_gev2,fit_max_gev2,selected['residual_order'])
-                    endpoint_vars.append({'control_max_gev2':endpoint,'shared_mean_gev2':v['shared_mean_gev2'],
-                                          'delta_mean_gev2':v['shared_mean_gev2']-selected['shared_mean_gev2'],'joint_chi2_ndf':v['joint_chi2_ndf']})
+                if full_diagnostics:
+                    local_ranges = (
+                        (max(0.64, fit_min_gev2 - 0.04), fit_max_gev2),
+                        (fit_min_gev2, min(1.14, fit_max_gev2 + 0.04)),
+                        (max(0.64, fit_min_gev2 - 0.04), min(1.14, fit_max_gev2 + 0.04)),
+                    )
+                    for lo,hi in local_ranges:
+                        if lo>=hi or (abs(lo-fit_min_gev2)<1e-9 and abs(hi-fit_max_gev2)<1e-9):
+                            continue
+                        # endif
+                        v=fit_one_carbon_candidate(
+                            nh3_jobs,carbon_jobs,nominal_scales,stage,xi,ti,
+                            lo,hi,selected['residual_order']
+                        )
+                        variations.append({
+                            'fit_min_gev2':lo,'fit_max_gev2':hi,
+                            'shared_mean_gev2':v['shared_mean_gev2'],
+                            'delta_mean_gev2':v['shared_mean_gev2']-selected['shared_mean_gev2'],
+                            'joint_chi2_ndf':v['joint_chi2_ndf']
+                        })
+                    # endfor
+                    for endpoint in sorted(set(control_endpoints_gev2)):
+                        diag=build_carbon_phase1_diagnostics(
+                            nh3_jobs,carbon_jobs,'period',control_min_gev2,endpoint,(endpoint,),
+                            nh3_jobs[0].histogram_min_gev2,nh3_jobs[0].histogram_max_gev2,
+                            nh3_jobs[0].histogram_bins,(0.40,0.65),(1.15,1.35)
+                        )
+                        scales={(r['period'],r['stage']):r for r in diag['group_rows']}
+                        v=fit_one_carbon_candidate(
+                            nh3_jobs,carbon_jobs,scales,stage,xi,ti,
+                            fit_min_gev2,fit_max_gev2,selected['residual_order']
+                        )
+                        endpoint_vars.append({
+                            'control_max_gev2':endpoint,
+                            'shared_mean_gev2':v['shared_mean_gev2'],
+                            'delta_mean_gev2':v['shared_mean_gev2']-selected['shared_mean_gev2'],
+                            'joint_chi2_ndf':v['joint_chi2_ndf']
+                        })
+                    # endfor
+                # endif
                 selected['fit_range_variations']=variations; selected['control_endpoint_variations']=endpoint_vars
                 selected['maximum_abs_fit_range_delta_mean_gev2']=max((abs(v['delta_mean_gev2']) for v in variations),default=0.0)
                 selected['maximum_abs_control_delta_mean_gev2']=max((abs(v['delta_mean_gev2']) for v in endpoint_vars),default=0.0)
@@ -5139,6 +5172,42 @@ def build_final_carbon_cut_table(
     frame = pd.DataFrame(rows)
     frame.sort_values("bin_number", inplace=True, ignore_index=True)
     return frame
+
+
+def write_final_cut_latex_table(cuts: pd.DataFrame, output_path: Path) -> Path:
+    """Write one compact analysis-note table of the final peak parameters."""
+    frame = cuts.sort_values("bin_number").copy()
+    lines = [
+        "% Auto-generated final channel-selection table.",
+        "\\begin{table}[htbp]",
+        "\\centering",
+        "\\scriptsize",
+        "\\setlength{\\tabcolsep}{4.5pt}",
+        "\\renewcommand{\\arraystretch}{1.10}",
+        "\\caption{Final missing-neutron peak parameters after momentum corrections. "
+        "The peak position $\\mu$ is shared among Su22, Fa22, and Sp23 in each "
+        "kinematic bin, while the Gaussian width $\\sigma$ is determined "
+        "independently for each run period. All quantities are in GeV$^2$.}",
+        "\\label{tab:final_mx2_peak_parameters}",
+        "\\begin{tabular}{c cc cc c ccc}",
+        "\\hline",
+        "Bin & $x_{B,\\min}$ & $x_{B,\\max}$ & $(-t')_{\\min}$ & $(-t')_{\\max}$ "
+        "& $\\mu$ & $\\sigma_{\\rm Su22}$ & $\\sigma_{\\rm Fa22}$ & $\\sigma_{\\rm Sp23}$ \\\\",
+        "\\hline",
+    ]
+    for row in frame.itertuples(index=False):
+        lines.append(
+            f"{int(row.bin_number)} & {row.xB_min:.3f} & {row.xB_max:.3f} & "
+            f"{row.minus_tprime_min_gev2:.3f} & {row.minus_tprime_max_gev2:.3f} & "
+            f"{row.shared_mean_gev2:.4f} $\\pm$ {row.shared_mean_error_gev2:.4f} & "
+            f"{row.sigma_su22_gev2:.4f} & {row.sigma_fa22_gev2:.4f} & "
+            f"{row.sigma_sp23_gev2:.4f} \\\\"
+        )
+    # endfor
+    lines.extend(["\\hline", "\\end{tabular}", "\\end{table}", ""])
+    output_path.write_text("\\n".join(lines), encoding="utf-8")
+    return output_path
+
 
 def write_python_cut_lookup(
     cuts: pd.DataFrame,
@@ -5842,6 +5911,7 @@ def write_final_carbon_cut_products(
     python_path = exports_dir / "final_carbon_assisted_mx2_cuts.py"
     cpp_path = exports_dir / "final_carbon_assisted_mx2_cuts.h"
     metadata_path = exports_dir / "final_carbon_assisted_mx2_cuts_metadata.json"
+    latex_table_path = tables_dir / "final_carbon_assisted_mx2_peak_table.tex"
     comparison_plot = (
         plots_dir / "carbon_vs_polynomial_mu_sigma_v27.png"
     )
@@ -5919,6 +5989,7 @@ def write_final_carbon_cut_products(
     )
     write_python_cut_lookup(cuts, python_path)
     write_cpp_cut_lookup(cuts, cpp_path)
+    write_final_cut_latex_table(cuts, latex_table_path)
     metadata_path.write_text(
         json.dumps(
             {
@@ -5982,6 +6053,7 @@ def write_final_carbon_cut_products(
         "python_lookup": python_path,
         "cpp_lookup": cpp_path,
         "metadata": metadata_path,
+        "latex_table": latex_table_path,
         "comparison_plot": comparison_plot,
         "master_summary_plot": master_summary_plot,
         "cut_plots": cut_plots,
@@ -7352,19 +7424,19 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--carbon-template-fit-min",
         type=float,
-        default=0.40,
+        default=0.68,
         help=(
-            "Minimum Mx2 used by the exploratory carbon-template fits in "
-            "GeV^2 (default: 0.40)."
+            "Minimum Mx2 used by the production carbon-assisted neutron-peak fits in "
+            "GeV^2 (default: 0.68)."
         ),
     )
     parser.add_argument(
         "--carbon-template-fit-max",
         type=float,
-        default=1.35,
+        default=1.10,
         help=(
-            "Maximum Mx2 used by the exploratory carbon-template fits in "
-            "GeV^2 (default: 1.35)."
+            "Maximum Mx2 used by the production carbon-assisted neutron-peak fits in "
+            "GeV^2 (default: 1.10)."
         ),
     )
     parser.add_argument(
@@ -7389,6 +7461,15 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--full-diagnostics",
+        action="store_true",
+        help=(
+            "Run the expensive development diagnostics. By default the script "
+            "runs the streamlined production workflow needed by downstream "
+            "analysis and the analysis note."
+        ),
+    )
+    parser.add_argument(
         "--output-dir",
         type=Path,
         default=Path("output/channel_selection_mx2_fit_stability"),
@@ -7400,8 +7481,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--workers",
         type=int,
-        default=7,
-        help="Number of worker processes; hard-capped at 7 (default: 7).",
+        default=8,
+        help="Number of worker processes; hard-capped at 8 (default: 8).",
     )
     parser.add_argument(
         "--step-size",
@@ -7784,27 +7865,29 @@ def run_analysis_variant(
     write_latex_nominal_tables(frame, latex_path)
     write_fit_status_summary(frame, status_path)
 
-    plot_spectrum_canvases(
-        results=results,
-        output_dir=spectrum_dir,
-        fit_min_gev2=args.fit_min,
-        fit_max_gev2=args.fit_max,
-    )
-    plot_background_model_canvases(
-        results=results,
-        output_dir=model_canvas_dir,
-        fit_min_gev2=args.fit_min,
-        fit_max_gev2=args.fit_max,
-    )
-    plot_before_after_summary(frame, summary_dir)
-    plot_corrected_period_summary(frame, summary_dir)
-    plot_model_variations(frame, summary_dir)
-    plot_problem_bin_pull_diagnostics(
-        results=results,
-        output_dir=pull_diagnostic_dir,
-        fit_min_gev2=args.fit_min,
-        fit_max_gev2=args.fit_max,
-    )
+    if args.full_diagnostics:
+        plot_spectrum_canvases(
+            results=results,
+            output_dir=spectrum_dir,
+            fit_min_gev2=args.fit_min,
+            fit_max_gev2=args.fit_max,
+        )
+        plot_background_model_canvases(
+            results=results,
+            output_dir=model_canvas_dir,
+            fit_min_gev2=args.fit_min,
+            fit_max_gev2=args.fit_max,
+        )
+        plot_before_after_summary(frame, summary_dir)
+        plot_corrected_period_summary(frame, summary_dir)
+        plot_model_variations(frame, summary_dir)
+        plot_problem_bin_pull_diagnostics(
+            results=results,
+            output_dir=pull_diagnostic_dir,
+            fit_min_gev2=args.fit_min,
+            fit_max_gev2=args.fit_max,
+        )
+    # endif
 
     carbon_products: dict[str, Any] | None = None
     carbon_template_products: dict[str, Any] | None = None
@@ -7882,6 +7965,7 @@ def run_analysis_variant(
                 control_endpoints_gev2=(
                     args.carbon_template_control_endpoints
                 ),
+                full_diagnostics=args.full_diagnostics,
             )
             carbon_template_products = (
                 write_carbon_template_fit_products(
