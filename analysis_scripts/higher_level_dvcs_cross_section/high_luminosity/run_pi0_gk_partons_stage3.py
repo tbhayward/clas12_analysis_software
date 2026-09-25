@@ -36,6 +36,10 @@ DEFAULT_PROJECT = Path("/work/clas12/thayward/partons/partons-example")
 DEFAULT_EXECUTABLE = "./bin/PARTONS_example"
 DEFAULT_WORKERS = 4
 DEFAULT_CHUNK_SIZE = 30
+# PARTONS MesonType::fromString() expects its canonical string representation.
+# The enum integer (PI0=9) is NOT the XML representation; "PI0" also maps to
+# UNDEFINED in the installed build.  PARTONS canonical type strings are lower-case.
+DEFAULT_MESON_VALUE = "pi0"
 # Four points determine const + cos(phi) + cos(2phi), with redundancy.
 DEFAULT_PHI_DEG = (0.0, 60.0, 120.0, 180.0, 240.0, 300.0)
 
@@ -57,6 +61,8 @@ def parse_args():
     p.add_argument("--all",action="store_true",
                    help="After preflight, evaluate all 154 points. Default is a one-point probe.")
     p.add_argument("--force",action="store_true")
+    p.add_argument("--meson-value",default=DEFAULT_MESON_VALUE,
+                   help="MesonType string passed to PARTONS XML (default: pi0).")
     p.add_argument("--dry-run",action="store_true",
                    help="Write XML/maps but do not invoke PARTONS.")
     return p.parse_args()
@@ -116,7 +122,7 @@ def module_xml():
 </module>
 </module>"""
 
-def task_xml(row):
+def task_xml(row, meson_value=DEFAULT_MESON_VALUE):
     # PARTONS DVMP phi is radians in the Trento convention.
     phi_rad=math.radians(float(row.phi_deg))
     return f"""<task service="DVMPObservableService" method="computeSingleKinematic" storeInDB="0">
@@ -126,7 +132,7 @@ def task_xml(row):
 <param name="Q2" value="{float(row.Q2):.15g}" />
 <param name="E" value="{float(row.E):.15g}" />
 <param name="phi" value="{phi_rad:.15g}" />
-<param name="meson" value="9" />
+<param name="meson" value="{meson_value}" />
 </kinematics>
 <computation_configuration>
 {module_xml()}
@@ -156,14 +162,14 @@ def expanded_points(q):
     out.insert(0,"eval_id",[f"E{i:06d}" for i in range(len(out))])
     return out
 
-def write_chunks(points,out,chunk_size):
+def write_chunks(points,out,chunk_size,meson_value=DEFAULT_MESON_VALUE):
     xml_dir=out/"xml"; xml_dir.mkdir(parents=True,exist_ok=True)
     jobs=[]
     for ic,start in enumerate(range(0,len(points),chunk_size)):
         g=points.iloc[start:start+chunk_size].copy()
         xml=xml_dir/f"gk_pi0_{ic:05d}.xml"
         mp=xml_dir/f"gk_pi0_{ic:05d}_point_map.csv"
-        body="\n".join(task_xml(r) for r in g.itertuples(index=False))
+        body="\n".join(task_xml(r, meson_value) for r in g.itertuples(index=False))
         xml.write_text(
             '<?xml version="1.0" encoding="UTF-8"?>\n'
             '<scenario date="2026-09-24" description="high-luminosity pi0 GK projection">\n'
@@ -266,7 +272,8 @@ def main():
         print(f"\n[production] {len(q)} common points x 2 energies x 6 phi = {len(pts)} PARTONS evaluations")
 
     pts.to_csv(out/"01_partons_evaluation_points.csv",index=False)
-    jobs=write_chunks(pts,out,a.chunk_size)
+    print(f"  meson XML : {a.meson_value!r} (MesonType::fromString representation)")
+    jobs=write_chunks(pts,out,a.chunk_size,a.meson_value)
     pd.DataFrame(jobs).to_csv(out/"02_chunk_manifest.csv",index=False)
 
     if a.dry_run:
@@ -288,7 +295,23 @@ def main():
     bad=stat[(stat.returncode!=0)|(stat.nresults!=stat.get("expected",stat.nresults))]
     if len(bad):
         print(f"\nERROR: {len(bad)} chunk(s) failed or returned the wrong result count.")
-        print(f"Inspect {out/'logs'} and send me the first stdout/stderr pair.")
+        first_chunk=int(bad.iloc[0].chunk)
+        so=out/"logs"/f"gk_pi0_{first_chunk:05d}.stdout.txt"
+        se=out/"logs"/f"gk_pi0_{first_chunk:05d}.stderr.txt"
+        combined="\n".join([
+            so.read_text(errors="replace") if so.exists() else "",
+            se.read_text(errors="replace") if se.exists() else "",
+        ])
+        err_lines=[re.sub(r"\x1b\[[0-9;]*m", "", x) for x in combined.splitlines()
+                   if "[ERROR]" in x or "Exception" in x or "UNDEFINED" in x]
+        if err_lines:
+            print("First PARTONS diagnostic:")
+            for line in err_lines[:8]: print("  "+line)
+        if "MesonType::getPossibleGPDTypes" in combined and "UNDEFINED" in combined:
+            print(f"\nMeson serialization {a.meson_value!r} still maps to UNDEFINED in this build.")
+            print("Do not run --all. Try a build-local canonical MesonType string only after")
+            print("checking MesonType::toString()/fromString() in the installed PARTONS source.")
+        print(f"Full logs: {out/'logs'}")
         sys.exit(2)
 
     raw,units=collect(jobs,out)
