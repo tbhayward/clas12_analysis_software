@@ -36,6 +36,7 @@ DEFAULT_PROJECT = Path("/work/clas12/thayward/partons/partons-example")
 DEFAULT_EXECUTABLE = "./bin/PARTONS_example"
 DEFAULT_WORKERS = 4
 DEFAULT_CHUNK_SIZE = 30
+COMMON_Y_MAX = 0.90
 # PARTONS MesonType::fromString() expects its canonical string representation.
 # The enum integer (PI0=9) is NOT the XML representation; "PI0" also maps to
 # UNDEFINED in the installed build.  PARTONS canonical type strings are lower-case.
@@ -61,7 +62,7 @@ def parse_args():
     p.add_argument("--workers",type=int,default=DEFAULT_WORKERS)
     p.add_argument("--chunk-size",type=int,default=DEFAULT_CHUNK_SIZE)
     p.add_argument("--all",action="store_true",
-                   help="After preflight, evaluate all 154 points. Default is a one-point probe.")
+                   help="After preflight, evaluate all retained midpoint bins at both native and shared coordinates. Default is a one-point probe.")
     p.add_argument("--force",action="store_true")
     p.add_argument("--meson-value",default=DEFAULT_MESON_VALUE,
                    help="MesonType string passed to PARTONS XML (default: pi0).")
@@ -322,10 +323,17 @@ def study_common_points(q:pd.DataFrame, out:Path) -> pd.DataFrame:
     d["shared_physical_rga"]=(d["y_rga_at_shared"]>0)&(d["y_rga_at_shared"]<1)&(d["epsilon_rga_at_shared"]>=0)&(d["epsilon_rga_at_shared"]<=1)
     d["shared_physical_rgk"]=(d["y_rgk_at_shared"]>0)&(d["y_rgk_at_shared"]<1)&(d["epsilon_rgk_at_shared"]>=0)&(d["epsilon_rgk_at_shared"]<=1)
     d["shared_physical_both"]=d["shared_physical_rga"]&d["shared_physical_rgk"]
-    d["rgk_high_y_gt_0p90"]=d["y_rgk_at_shared"]>0.90
+    d["rgk_high_y_gt_0p90"]=d["y_rgk_at_shared"]>COMMON_Y_MAX
     d["rgk_very_high_y_gt_0p95"]=d["y_rgk_at_shared"]>0.95
+    # Workshop prescription: retain only shared midpoint coordinates with y<0.90
+    # at both beam energies.  For the present 154-bin sample this removes exactly
+    # R0000, R0001, R0002, and R0042.
+    d["retain_for_rosenbluth"]=(d["y_rga_at_shared"]<COMMON_Y_MAX)&(d["y_rgk_at_shared"]<COMMON_Y_MAX)&d["shared_physical_both"]
+    d["exclusion_reason"]=np.where(d["retain_for_rosenbluth"],"",f"shared midpoint y >= {COMMON_Y_MAX:.2f}")
     study=out/"common_point_study"; study.mkdir(parents=True,exist_ok=True)
     d.to_csv(study/"01_shared_midpoint_all_points.csv",index=False)
+    d[d["retain_for_rosenbluth"]].to_csv(study/"03_retained_shared_midpoints.csv",index=False)
+    d[~d["retain_for_rosenbluth"]].to_csv(study/"04_excluded_shared_midpoints.csv",index=False)
     cols=["point_id","Q2_shared_GeV2","xB_shared","minus_t_shared_GeV2",
           "y_rga_at_shared","epsilon_rga_at_shared","y_rgk_at_shared","epsilon_rgk_at_shared",
           "delta_epsilon_shared","shared_physical_both","rgk_high_y_gt_0p90","rgk_very_high_y_gt_0p95"]
@@ -337,6 +345,7 @@ def study_common_points(q:pd.DataFrame, out:Path) -> pd.DataFrame:
       f"physical for both beam energies: {nphys}/{n}",
       f"RGK shared y > 0.90: {n90}",
       f"RGK shared y > 0.95: {n95}",
+      f"retained for Rosenbluth (shared y < {COMMON_Y_MAX:.2f} at both energies): {int(d.retain_for_rosenbluth.sum())}/{n}",
       f"RGK shared y range: {d.y_rgk_at_shared.min():.6f} -- {d.y_rgk_at_shared.max():.6f}",
       f"RGA shared y range: {d.y_rga_at_shared.min():.6f} -- {d.y_rga_at_shared.max():.6f}",
       f"shared epsilon lever arm range (eps_RGA-eps_RGK): {d.delta_epsilon_shared.min():.6f} -- {d.delta_epsilon_shared.max():.6f}",
@@ -350,6 +359,7 @@ def study_common_points(q:pd.DataFrame, out:Path) -> pd.DataFrame:
     print(f"  physical for both energies : {nphys}/{n}")
     print(f"  RGK y > 0.90              : {n90}")
     print(f"  RGK y > 0.95              : {n95}")
+    print(f"  retained (shared y < {COMMON_Y_MAX:.2f}) : {int(d.retain_for_rosenbluth.sum())}/{n}")
     print(f"  RGK y range               : {d.y_rgk_at_shared.min():.4f} -- {d.y_rgk_at_shared.max():.4f}")
     print(f"  outputs                   : {study}")
     if n90:
@@ -358,34 +368,44 @@ def study_common_points(q:pd.DataFrame, out:Path) -> pd.DataFrame:
             print(f"    {r.point_id}: y_RGK={r.y_rgk_at_shared:.4f}, eps_RGK={r.epsilon_rgk_at_shared:.4f}, Q2={r.Q2_shared_GeV2:.4f}, xB={r.xB_shared:.5f}")
     return d
 
-def expanded_points(q, phi_grid=DEFAULT_PHI_DEG):
-    rows=[]
-    skipped=[]
-    # Evaluate each campaign at its OWN measured flux-weighted (Q2,xB)
-    # coordinate and beam energy.  Common coordinates remain metadata for the
-    # later explicit model-based translation to the Rosenbluth comparison point.
+def expanded_points(q, shared_lookup, phi_grid=DEFAULT_PHI_DEG):
+    """Build PARTONS evaluations at native and shared midpoint coordinates.
+
+    Each retained Rosenbluth bin is evaluated four ways: RGA/native,
+    RGK/native, RGA/shared, RGK/shared.  The two shared evaluations have the
+    same hadronic (Q2,xB,t) midpoint but retain their own beam energies, hence
+    their own epsilon values.  These are the ingredients for the subsequent
+    GK native->shared bin-centering correction.
+    """
+    rows=[]; skipped=[]
+    shared_by_id=shared_lookup.set_index("point_id")
     for r in q.itertuples(index=False):
+        sh=shared_by_id.loc[r.point_id]
+        if not bool(sh["retain_for_rosenbluth"]):
+            skipped.append(dict(point_id=r.point_id,campaign="both",evaluation="shared_selection",
+                E=np.nan,y=max(float(sh["y_rga_at_shared"]),float(sh["y_rgk_at_shared"])),epsilon=np.nan,
+                Q2=float(sh["Q2_shared_GeV2"]),xB=float(sh["xB_shared"]),
+                minus_t=float(sh["minus_t_shared_GeV2"]),
+                reason=f"dropped from workshop Rosenbluth study: shared midpoint y >= {COMMON_Y_MAX:.2f}"))
+            continue
         for camp in ("rga","rgk"):
             E=float(getattr(r,f"E_{camp}_GeV"))
-            Q2=float(getattr(r,f"Q2_{camp}_GeV2"))
-            xB=float(getattr(r,f"xB_{camp}"))
-            mt=float(getattr(r,f"minus_t_{camp}_GeV2"))
-            eps=float(getattr(r,f"epsilon_{camp}_native"))
-            y=Q2/(2.0*PROTON_MASS_GEV*E*xB)
-            base=dict(
-                point_id=r.point_id,campaign=camp,E=E,y=y,epsilon=eps,
-                Q2=Q2,xB=xB,minus_t=mt,
-                Q2_common=float(r.Q2_common_GeV2),xB_common=float(r.xB_common),
-                minus_t_common=float(r.minus_t_common_GeV2),
-                delta_Q2_from_common=Q2-float(r.Q2_common_GeV2),
-                delta_xB_from_common=xB-float(r.xB_common),
-                delta_minus_t_from_common=mt-float(r.minus_t_common_GeV2),
-            )
-            if not (0.0 < y < 1.0):
-                skipped.append({**base,"reason":"native campaign flux coordinate has y outside (0,1)"})
-                continue
-            for phi in phi_grid:
-                rows.append({**base,"phi_deg":float(phi)})
+            for evaluation in ("native","shared"):
+                if evaluation=="native":
+                    Q2=float(getattr(r,f"Q2_{camp}_GeV2")); xB=float(getattr(r,f"xB_{camp}"))
+                    mt=float(getattr(r,f"minus_t_{camp}_GeV2")); eps=float(getattr(r,f"epsilon_{camp}_native"))
+                    y=Q2/(2.0*PROTON_MASS_GEV*E*xB)
+                else:
+                    Q2=float(sh["Q2_shared_GeV2"]); xB=float(sh["xB_shared"]); mt=float(sh["minus_t_shared_GeV2"])
+                    y=float(sh[f"y_{camp}_at_shared"]); eps=float(sh[f"epsilon_{camp}_at_shared"])
+                base=dict(point_id=r.point_id,campaign=camp,evaluation=evaluation,E=E,y=y,epsilon=eps,
+                    Q2=Q2,xB=xB,minus_t=mt,
+                    Q2_shared=float(sh["Q2_shared_GeV2"]),xB_shared=float(sh["xB_shared"]),
+                    minus_t_shared=float(sh["minus_t_shared_GeV2"]),
+                    delta_epsilon_shared=float(sh["delta_epsilon_shared"]))
+                if not (0.0 < y < 1.0):
+                    skipped.append({**base,"reason":f"{evaluation} coordinate has y outside (0,1)"}); continue
+                for phi in phi_grid: rows.append({**base,"phi_deg":float(phi)})
     out=pd.DataFrame(rows)
     if len(out): out.insert(0,"eval_id",[f"E{i:06d}" for i in range(len(out))])
     return out,pd.DataFrame(skipped)
@@ -470,14 +490,14 @@ def collect(jobs,out):
 def harmonic_closure(df):
     """Fit PARTONS observable vs phi at fixed point/beam: a0+a1 cos(phi)+a2 cos(2phi)."""
     rows=[]
-    for (pid,camp),g in df.groupby(["point_id","campaign"]):
+    for (pid,camp,evaluation),g in df.groupby(["point_id","campaign","evaluation"]):
         ph=np.deg2rad(g.phi_deg.to_numpy(float))
         A=np.column_stack([np.ones(len(g)),np.cos(ph),np.cos(2*ph)])
         y=g.partons_value.to_numpy(float)
         b,*_=np.linalg.lstsq(A,y,rcond=None)
         pred=A@b
         scale=max(np.max(np.abs(y)),1e-300)
-        rows.append(dict(point_id=pid,campaign=camp,E=float(g.E.iloc[0]),
+        rows.append(dict(point_id=pid,campaign=camp,evaluation=evaluation,E=float(g.E.iloc[0]),
             Q2=float(g.Q2.iloc[0]),xB=float(g.xB.iloc[0]),minus_t=float(g.minus_t.iloc[0]),
             coefficient_const=b[0],coefficient_cosphi=b[1],coefficient_cos2phi=b[2],
             max_fractional_harmonic_residual=float(np.max(np.abs(y-pred))/scale)))
@@ -495,13 +515,17 @@ def main():
     if a.study_common_points:
         print("\nStudy complete; exiting before PARTONS evaluation.")
         return
+    retained_ids=set(shared.loc[shared.retain_for_rosenbluth,"point_id"].astype(str))
+    q_retained=q[q.point_id.astype(str).isin(retained_ids)].copy()
     if not a.all:
-        first=q.iloc[[0]]
-        pts,skipped=expanded_points(first,PROBE_PHI_DEG)
-        print(f"\n[probe] point {first.iloc[0].point_id}: evaluating {len(PROBE_PHI_DEG)} phi values for each physically allowed beam energy")
+        first=q_retained.iloc[[0]]
+        pts,skipped=expanded_points(first,shared,PROBE_PHI_DEG)
+        print(f"\n[probe] point {first.iloc[0].point_id}: native + shared midpoint, 3 phi values, both beam energies")
+        print("  expected PARTONS evaluations: 12 = 2 campaigns x 2 coordinates x 3 phi")
     else:
-        pts,skipped=expanded_points(q,DEFAULT_PHI_DEG)
-        print(f"\n[production] {len(q)} matched Rosenbluth points; {len(pts)} PARTONS evaluations at native campaign coordinates")
+        pts,skipped=expanded_points(q,shared,DEFAULT_PHI_DEG)
+        print(f"\n[production] {len(q_retained)}/{len(q)} Rosenbluth points retained after shared-y<{COMMON_Y_MAX:.2f} cut")
+        print(f"  {len(pts)} PARTONS evaluations = retained points x 2 campaigns x 2 coordinates x {len(DEFAULT_PHI_DEG)} phi")
 
     pts.to_csv(out/"01_partons_evaluation_points.csv",index=False)
     skipped.to_csv(out/"01b_partons_skipped_unphysical.csv",index=False)
@@ -566,7 +590,7 @@ def main():
           f"{harm.max_fractional_harmonic_residual.max():.3e}")
     if not a.all:
         print("\nProbe succeeded. Review the reported units and harmonic closure.")
-        print("Native RGA/RGK coordinates were used. Review the reported units and harmonic closure before --all.")
+        print("Probe includes native and shared-midpoint RGA/RGK coordinates. Review all four harmonic rows before --all.")
     else:
         print(f"\nWrote complete public-observable GK grid to {out}")
         print("This file deliberately does NOT yet label the harmonic coefficients")
