@@ -202,7 +202,9 @@ def make_period_plot(period, filename):
     )
 
     # Use a common logarithmic normalization so the two panels are directly
-    # visually comparable.
+    # Build the three populations separately.  Each panel uses its own
+    # logarithmic color normalization so low-statistics residual backgrounds
+    # remain visible after the increasingly restrictive selections.
     h_before, _, _ = np.histogram2d(
         p[before], beta[before], bins=(P_BINS, BETA_BINS)
     )
@@ -212,11 +214,6 @@ def make_period_plot(period, filename):
     h_exclusive, _, _ = np.histogram2d(
         p[exclusive], beta[exclusive], bins=(P_BINS, BETA_BINS)
     )
-    vmax = max(
-        float(h_before.max()), float(h_after.max()),
-        float(h_exclusive.max()), 1.0
-    )
-
     for ax, mask, title in (
         (axes[0], before, "Before PID cuts"),
         (axes[1], after, r"After $|\chi^2_{\rm PID}|<3.5$, $0.5<p<5.0$ GeV"),
@@ -229,7 +226,7 @@ def make_period_plot(period, filename):
             p[mask],
             beta[mask],
             bins=(P_BINS, BETA_BINS),
-            norm=LogNorm(vmin=1.0, vmax=vmax),
+            norm=LogNorm(vmin=1.0),
             cmap="turbo",
         )
         ax.set_xlabel(r"$p$ (GeV)")
@@ -242,9 +239,9 @@ def make_period_plot(period, filename):
     axes[0].set_xlim(0.0, 6.0)
     axes[0].set_ylim(0.2, 1.2)
     axes[1].set_xlim(0.5, 5.0)
-    axes[1].set_ylim(0.8, 1.1)
+    axes[1].set_ylim(0.80, 1.05)
     axes[2].set_xlim(0.5, 5.0)
-    axes[2].set_ylim(0.8, 1.1)
+    axes[2].set_ylim(0.80, 1.05)
 
     axes[0].set_ylabel(r"$\beta$")
     fig.suptitle(
