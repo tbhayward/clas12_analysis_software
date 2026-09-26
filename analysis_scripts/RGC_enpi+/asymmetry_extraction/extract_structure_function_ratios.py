@@ -734,6 +734,8 @@ BRANCH_ALIASES: dict[str, tuple[str, ...]] = {
     ),
     "phi": ("phi", "phi1", "phi_h", "trento_phi"),
     "Q2": ("Q2", "q2"),
+    "y": ("y", "inelasticity"),
+    "epsilon": ("epsilon", "eps", "virtual_photon_epsilon"),
     "e_p": ("e_p", "p_e", "electron_p"),
     "e_theta": ("e_theta", "theta_e", "electron_theta"),
     "DepA": ("DepA", "depA"),
@@ -1699,6 +1701,13 @@ def build_event_cache(
         "Mx2": [],
         "phi": [],
         "Q2": [],
+        "y": [],
+        "epsilon": [],
+        "DepA": [],
+        "DepB": [],
+        "DepC": [],
+        "DepV": [],
+        "DepW": [],
         "sin_theta_gamma": [],
         "cos_theta_gamma": [],
         "rB": [],
@@ -1781,6 +1790,8 @@ def build_event_cache(
                 phi = angle_to_radians(phi_raw, branches["phi"])
                 phi = np.mod(phi, 2.0 * math.pi)
                 q2 = np.asarray(arrays[branches["Q2"]], dtype=np.float64)
+                y = np.asarray(arrays[branches["y"]], dtype=np.float64)
+                epsilon = np.asarray(arrays[branches["epsilon"]], dtype=np.float64)
                 e_p = np.asarray(arrays[branches["e_p"]], dtype=np.float64)
                 e_theta_raw = np.asarray(
                     arrays[branches["e_theta"]],
@@ -1873,6 +1884,8 @@ def build_event_cache(
                     & np.isfinite(mx2)
                     & np.isfinite(phi)
                     & np.isfinite(q2)
+                    & np.isfinite(y)
+                    & np.isfinite(epsilon)
                     & np.isfinite(sin_theta_gamma)
                     & np.isfinite(cos_theta_gamma)
                     & np.isfinite(dep_a)
@@ -1924,6 +1937,13 @@ def build_event_cache(
                 collected["Mx2"].append(mx2[selected])
                 collected["phi"].append(phi[selected])
                 collected["Q2"].append(q2[selected])
+                collected["y"].append(y[selected])
+                collected["epsilon"].append(epsilon[selected])
+                collected["DepA"].append(dep_a[selected])
+                collected["DepB"].append(dep_b[selected])
+                collected["DepC"].append(dep_c[selected])
+                collected["DepV"].append(dep_v[selected])
+                collected["DepW"].append(dep_w[selected])
                 collected["sin_theta_gamma"].append(sin_theta_gamma[selected])
                 collected["cos_theta_gamma"].append(cos_theta_gamma[selected])
                 collected["rB"].append(dep_b[selected] / dep_a[selected])
@@ -2078,6 +2098,18 @@ def load_event_cache(path: Path) -> dict[str, np.ndarray]:
             for key in payload.files
         }
     # endwith
+
+    required_fields = {
+        "runnum", "xB", "Q2", "W", "minus_t", "minus_tprime",
+        "y", "epsilon", "DepA", "DepB", "DepC", "DepV", "DepW",
+    }
+    missing_fields = sorted(required_fields.difference(result))
+    if missing_fields:
+        raise RuntimeError(
+            f"Event cache {path} predates the full-kinematics schema and is "
+            f"missing: {', '.join(missing_fields)}. Rebuild without --reuse-cache."
+        )
+    # endif
 
     sizes = {array.shape[0] for array in result.values()}
     if len(sizes) != 1:
@@ -2578,6 +2610,27 @@ def make_bin_nll(
         "mean_cos_theta_gamma": float(np.mean(cos_theta)),
         "rms_cos_theta_gamma": float(np.std(cos_theta, ddof=1))
         if cos_theta.size > 1 else 0.0,
+        "min_y": float(np.min(events["y"][mask])),
+        "mean_y": float(np.mean(events["y"][mask])),
+        "max_y": float(np.max(events["y"][mask])),
+        "min_epsilon": float(np.min(events["epsilon"][mask])),
+        "mean_epsilon": float(np.mean(events["epsilon"][mask])),
+        "max_epsilon": float(np.max(events["epsilon"][mask])),
+        "min_DepA": float(np.min(events["DepA"][mask])),
+        "mean_DepA": float(np.mean(events["DepA"][mask])),
+        "max_DepA": float(np.max(events["DepA"][mask])),
+        "min_DepB": float(np.min(events["DepB"][mask])),
+        "mean_DepB": float(np.mean(events["DepB"][mask])),
+        "max_DepB": float(np.max(events["DepB"][mask])),
+        "min_DepC": float(np.min(events["DepC"][mask])),
+        "mean_DepC": float(np.mean(events["DepC"][mask])),
+        "max_DepC": float(np.max(events["DepC"][mask])),
+        "min_DepV": float(np.min(events["DepV"][mask])),
+        "mean_DepV": float(np.mean(events["DepV"][mask])),
+        "max_DepV": float(np.max(events["DepV"][mask])),
+        "min_DepW": float(np.min(events["DepW"][mask])),
+        "mean_DepW": float(np.mean(events["DepW"][mask])),
+        "max_DepW": float(np.max(events["DepW"][mask])),
         "min_xB": float(np.min(events["xB"][mask])),
         "mean_xB": float(np.mean(events["xB"][mask])),
         "max_xB": float(np.max(events["xB"][mask])),
@@ -3706,6 +3759,27 @@ def flatten_fit_results(
                 "mean_minus_tprime_gev2"
             ],
             "max_minus_tprime_gev2": metadata["max_minus_tprime_gev2"],
+            "min_y": metadata["min_y"],
+            "mean_y": metadata["mean_y"],
+            "max_y": metadata["max_y"],
+            "min_epsilon": metadata["min_epsilon"],
+            "mean_epsilon": metadata["mean_epsilon"],
+            "max_epsilon": metadata["max_epsilon"],
+            "min_DepA": metadata["min_DepA"],
+            "mean_DepA": metadata["mean_DepA"],
+            "max_DepA": metadata["max_DepA"],
+            "min_DepB": metadata["min_DepB"],
+            "mean_DepB": metadata["mean_DepB"],
+            "max_DepB": metadata["max_DepB"],
+            "min_DepC": metadata["min_DepC"],
+            "mean_DepC": metadata["mean_DepC"],
+            "max_DepC": metadata["max_DepC"],
+            "min_DepV": metadata["min_DepV"],
+            "mean_DepV": metadata["mean_DepV"],
+            "max_DepV": metadata["max_DepV"],
+            "min_DepW": metadata["min_DepW"],
+            "mean_DepW": metadata["mean_DepW"],
+            "max_DepW": metadata["max_DepW"],
             "number_of_events": metadata["number_of_events"],
             "mean_sin_theta_gamma": metadata["mean_sin_theta_gamma"],
             "rms_sin_theta_gamma": metadata["rms_sin_theta_gamma"],
@@ -5287,7 +5361,7 @@ def write_momentum_correction_comparison_products(
         ensure_directory(directory)
     # endfor
     keys = ["bin_number", "x_index", "t_index"]
-    keep = keys + ["min_xB", "mean_xB", "max_xB", "min_Q2_gev2", "mean_Q2_gev2", "max_Q2_gev2", "min_W_gev", "mean_W_gev", "max_W_gev", "min_minus_t_gev2", "mean_minus_t_gev2", "max_minus_t_gev2", "min_minus_tprime_gev2", "mean_minus_tprime_gev2", "max_minus_tprime_gev2", "number_of_events"] + [item for parameter in PHYSICS_PARAMETERS for item in (parameter, f"{parameter}_stat")]
+    keep = keys + ["min_xB", "mean_xB", "max_xB", "min_Q2_gev2", "mean_Q2_gev2", "max_Q2_gev2", "min_W_gev", "mean_W_gev", "max_W_gev", "min_minus_t_gev2", "mean_minus_t_gev2", "max_minus_t_gev2", "min_minus_tprime_gev2", "mean_minus_tprime_gev2", "max_minus_tprime_gev2", "min_y", "mean_y", "max_y", "min_epsilon", "mean_epsilon", "max_epsilon", "min_DepA", "mean_DepA", "max_DepA", "min_DepB", "mean_DepB", "max_DepB", "min_DepC", "mean_DepC", "max_DepC", "min_DepV", "mean_DepV", "max_DepV", "min_DepW", "mean_DepW", "max_DepW", "number_of_events"] + [item for parameter in PHYSICS_PARAMETERS for item in (parameter, f"{parameter}_stat")]
     merged = corrected[keep].merge(uncorrected[keep], on=keys, suffixes=("_corrected", "_uncorrected"), validate="one_to_one")
     barlow_records: list[dict[str, Any]] = []
     covariance_products: dict[str, str] = {}
@@ -5350,7 +5424,7 @@ def write_channel_selection_comparison_products(
         ensure_directory(directory)
     # endfor
     keys = ["bin_number", "x_index", "t_index"]
-    keep = keys + ["min_xB", "mean_xB", "max_xB", "min_Q2_gev2", "mean_Q2_gev2", "max_Q2_gev2", "min_W_gev", "mean_W_gev", "max_W_gev", "min_minus_t_gev2", "mean_minus_t_gev2", "max_minus_t_gev2", "min_minus_tprime_gev2", "mean_minus_tprime_gev2", "max_minus_tprime_gev2", "number_of_events"] + [item for parameter in PHYSICS_PARAMETERS for item in (parameter, f"{parameter}_stat")]
+    keep = keys + ["min_xB", "mean_xB", "max_xB", "min_Q2_gev2", "mean_Q2_gev2", "max_Q2_gev2", "min_W_gev", "mean_W_gev", "max_W_gev", "min_minus_t_gev2", "mean_minus_t_gev2", "max_minus_t_gev2", "min_minus_tprime_gev2", "mean_minus_tprime_gev2", "max_minus_tprime_gev2", "min_y", "mean_y", "max_y", "min_epsilon", "mean_epsilon", "max_epsilon", "min_DepA", "mean_DepA", "max_DepA", "min_DepB", "mean_DepB", "max_DepB", "min_DepC", "mean_DepC", "max_DepC", "min_DepV", "mean_DepV", "max_DepV", "min_DepW", "mean_DepW", "max_DepW", "number_of_events"] + [item for parameter in PHYSICS_PARAMETERS for item in (parameter, f"{parameter}_stat")]
     merged = nominal[keep].merge(tight[keep], on=keys, suffixes=("_nominal", "_tight"), validate="one_to_one").merge(loose[keep], on=keys, validate="one_to_one")
     merged = merged.rename(columns={column: f"{column}_loose" for column in keep if column not in keys})
     covariance_products: dict[str, str] = {}
@@ -5726,6 +5800,13 @@ def write_target_axis_study_products(
         "min_minus_tprime_gev2",
         "mean_minus_tprime_gev2",
         "max_minus_tprime_gev2",
+        "min_y", "mean_y", "max_y",
+        "min_epsilon", "mean_epsilon", "max_epsilon",
+        "min_DepA", "mean_DepA", "max_DepA",
+        "min_DepB", "mean_DepB", "max_DepB",
+        "min_DepC", "mean_DepC", "max_DepC",
+        "min_DepV", "mean_DepV", "max_DepV",
+        "min_DepW", "mean_DepW", "max_DepW",
     ]
 
     column_data: dict[str, Any] = {
