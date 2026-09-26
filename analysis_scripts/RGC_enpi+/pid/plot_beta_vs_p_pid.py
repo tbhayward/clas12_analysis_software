@@ -112,7 +112,7 @@ def make_period_plot(period, filename):
     )
 
     fig, axes = plt.subplots(
-        1, 2, figsize=(12, 5), sharex=True, sharey=True,
+        1, 2, figsize=(12, 5), sharex=False, sharey=False,
         constrained_layout=True,
     )
 
@@ -137,12 +137,17 @@ def make_period_plot(period, filename):
             norm=LogNorm(vmin=1.0, vmax=vmax),
             cmap="turbo",
         )
-        ax.set_xlim(0.0, 6.0)
-        ax.set_ylim(0.2, 1.2)
         ax.set_xlabel(r"$p$ (GeV)")
         ax.set_title(title)
         fig.colorbar(h[3], ax=ax, label="Counts")
     # endfor
+
+    # Keep the first panel as the broad diagnostic view and zoom the
+    # post-selection panel onto the accepted pion band.
+    axes[0].set_xlim(0.0, 6.0)
+    axes[0].set_ylim(0.2, 1.2)
+    axes[1].set_xlim(0.5, 5.0)
+    axes[1].set_ylim(0.8, 1.1)
 
     axes[0].set_ylabel(r"$\beta$")
     fig.suptitle(
