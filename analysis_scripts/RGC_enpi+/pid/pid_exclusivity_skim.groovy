@@ -20,6 +20,7 @@ import org.jlab.io.base.DataEvent
 import org.jlab.clas.physics.*
 import org.jlab.clas12.physics.*
 import extended_kinematic_fitters.*
+import analyzers.*
 import clasqa.QADB
 
 class PIDExclusivitySkim {
