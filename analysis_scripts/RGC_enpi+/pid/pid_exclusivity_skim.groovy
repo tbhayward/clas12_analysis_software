@@ -163,8 +163,19 @@ class PIDExclusivitySkim {
             // Use the same run-dependent beam-energy machinery as the production processor.
             PhysicsEvent research=fitter.getPhysicsEvent(event)
             if (research == null || research.countByPid(11) < 1) continue
-            BeamEnergy ebObj = new BeamEnergy(research, run, false)
-            double Ebeam=ebObj.Eb()
+            // Use the nominal beam energy for the requested RGC run period.
+            // This keeps this standalone diagnostic independent of the analysis-local
+            // BeamEnergy helper, which is not on this GROOVY classpath.
+            double Ebeam
+            if (period == "Su22") {
+                Ebeam = 10.5473
+            } else if (period == "Fa22") {
+                Ebeam = 10.5563
+            } else if (period == "Sp23") {
+                Ebeam = 10.5593
+            } else {
+                throw new IllegalArgumentException("Unknown period: ${period}")
+            }
 
             int ie=electronIndex(rec)
             if (ie<0) continue
