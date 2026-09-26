@@ -722,6 +722,8 @@ BRANCH_ALIASES: dict[str, tuple[str, ...]] = {
     "helicity": ("helicity", "hel", "beam_helicity"),
     "xB": ("xB", "x", "xb", "x_b"),
     "tprime": ("tprime", "t_prime", "tp", "tPrime"),
+    "t": ("t", "T", "mandelstam_t"),
+    "W": ("W", "w", "invariant_mass_W"),
     "Mx2": (
         "Mx2",
         "mx2",
@@ -1692,6 +1694,8 @@ def build_event_cache(
         "bin_number": [],
         "xB": [],
         "minus_tprime": [],
+        "minus_t": [],
+        "W": [],
         "Mx2": [],
         "phi": [],
         "Q2": [],
@@ -1762,6 +1766,14 @@ def build_event_cache(
                 xB = np.asarray(arrays[branches["xB"]], dtype=np.float64)
                 minus_tprime = -np.asarray(
                     arrays[branches["tprime"]],
+                    dtype=np.float64,
+                )
+                minus_t = -np.asarray(
+                    arrays[branches["t"]],
+                    dtype=np.float64,
+                )
+                w = np.asarray(
+                    arrays[branches["W"]],
                     dtype=np.float64,
                 )
                 mx2 = np.asarray(arrays[branches["Mx2"]], dtype=np.float64)
@@ -1856,6 +1868,8 @@ def build_event_cache(
                 finite = (
                     np.isfinite(xB)
                     & np.isfinite(minus_tprime)
+                    & np.isfinite(minus_t)
+                    & np.isfinite(w)
                     & np.isfinite(mx2)
                     & np.isfinite(phi)
                     & np.isfinite(q2)
@@ -1905,6 +1919,8 @@ def build_event_cache(
                 )
                 collected["xB"].append(xB[selected])
                 collected["minus_tprime"].append(minus_tprime[selected])
+                collected["minus_t"].append(minus_t[selected])
+                collected["W"].append(w[selected])
                 collected["Mx2"].append(mx2[selected])
                 collected["phi"].append(phi[selected])
                 collected["Q2"].append(q2[selected])
@@ -2562,11 +2578,21 @@ def make_bin_nll(
         "mean_cos_theta_gamma": float(np.mean(cos_theta)),
         "rms_cos_theta_gamma": float(np.std(cos_theta, ddof=1))
         if cos_theta.size > 1 else 0.0,
+        "min_xB": float(np.min(events["xB"][mask])),
         "mean_xB": float(np.mean(events["xB"][mask])),
-        "mean_minus_tprime_gev2": float(
-            np.mean(events["minus_tprime"][mask])
-        ),
+        "max_xB": float(np.max(events["xB"][mask])),
+        "min_Q2_gev2": float(np.min(events["Q2"][mask])),
         "mean_Q2_gev2": float(np.mean(events["Q2"][mask])),
+        "max_Q2_gev2": float(np.max(events["Q2"][mask])),
+        "min_W_gev": float(np.min(events["W"][mask])),
+        "mean_W_gev": float(np.mean(events["W"][mask])),
+        "max_W_gev": float(np.max(events["W"][mask])),
+        "min_minus_t_gev2": float(np.min(events["minus_t"][mask])),
+        "mean_minus_t_gev2": float(np.mean(events["minus_t"][mask])),
+        "max_minus_t_gev2": float(np.max(events["minus_t"][mask])),
+        "min_minus_tprime_gev2": float(np.min(events["minus_tprime"][mask])),
+        "mean_minus_tprime_gev2": float(np.mean(events["minus_tprime"][mask])),
+        "max_minus_tprime_gev2": float(np.max(events["minus_tprime"][mask])),
     }
     return nll, metadata
 
@@ -3663,11 +3689,23 @@ def flatten_fit_results(
             // len(MINUS_TPRIME_BINS_GEV2),
             "t_index": (result["bin_number"] - 1)
             % len(MINUS_TPRIME_BINS_GEV2),
+            "min_xB": metadata["min_xB"],
             "mean_xB": metadata["mean_xB"],
+            "max_xB": metadata["max_xB"],
+            "min_Q2_gev2": metadata["min_Q2_gev2"],
             "mean_Q2_gev2": metadata["mean_Q2_gev2"],
+            "max_Q2_gev2": metadata["max_Q2_gev2"],
+            "min_W_gev": metadata["min_W_gev"],
+            "mean_W_gev": metadata["mean_W_gev"],
+            "max_W_gev": metadata["max_W_gev"],
+            "min_minus_t_gev2": metadata["min_minus_t_gev2"],
+            "mean_minus_t_gev2": metadata["mean_minus_t_gev2"],
+            "max_minus_t_gev2": metadata["max_minus_t_gev2"],
+            "min_minus_tprime_gev2": metadata["min_minus_tprime_gev2"],
             "mean_minus_tprime_gev2": metadata[
                 "mean_minus_tprime_gev2"
             ],
+            "max_minus_tprime_gev2": metadata["max_minus_tprime_gev2"],
             "number_of_events": metadata["number_of_events"],
             "mean_sin_theta_gamma": metadata["mean_sin_theta_gamma"],
             "rms_sin_theta_gamma": metadata["rms_sin_theta_gamma"],
@@ -5146,7 +5184,7 @@ def write_nominal_isr_comparison_products(
 
     keys = ["bin_number", "x_index", "t_index"]
     keep = keys + [
-        "mean_xB", "mean_Q2_gev2", "mean_minus_tprime_gev2",
+        "min_xB", "mean_xB", "max_xB", "min_Q2_gev2", "mean_Q2_gev2", "max_Q2_gev2", "min_W_gev", "mean_W_gev", "max_W_gev", "min_minus_t_gev2", "mean_minus_t_gev2", "max_minus_t_gev2", "min_minus_tprime_gev2", "mean_minus_tprime_gev2", "max_minus_tprime_gev2",
         "number_of_events",
     ] + [
         item for parameter in PHYSICS_PARAMETERS
@@ -5249,7 +5287,7 @@ def write_momentum_correction_comparison_products(
         ensure_directory(directory)
     # endfor
     keys = ["bin_number", "x_index", "t_index"]
-    keep = keys + ["mean_xB", "mean_Q2_gev2", "mean_minus_tprime_gev2", "number_of_events"] + [item for parameter in PHYSICS_PARAMETERS for item in (parameter, f"{parameter}_stat")]
+    keep = keys + ["min_xB", "mean_xB", "max_xB", "min_Q2_gev2", "mean_Q2_gev2", "max_Q2_gev2", "min_W_gev", "mean_W_gev", "max_W_gev", "min_minus_t_gev2", "mean_minus_t_gev2", "max_minus_t_gev2", "min_minus_tprime_gev2", "mean_minus_tprime_gev2", "max_minus_tprime_gev2", "number_of_events"] + [item for parameter in PHYSICS_PARAMETERS for item in (parameter, f"{parameter}_stat")]
     merged = corrected[keep].merge(uncorrected[keep], on=keys, suffixes=("_corrected", "_uncorrected"), validate="one_to_one")
     barlow_records: list[dict[str, Any]] = []
     covariance_products: dict[str, str] = {}
@@ -5312,7 +5350,7 @@ def write_channel_selection_comparison_products(
         ensure_directory(directory)
     # endfor
     keys = ["bin_number", "x_index", "t_index"]
-    keep = keys + ["mean_xB", "mean_Q2_gev2", "mean_minus_tprime_gev2", "number_of_events"] + [item for parameter in PHYSICS_PARAMETERS for item in (parameter, f"{parameter}_stat")]
+    keep = keys + ["min_xB", "mean_xB", "max_xB", "min_Q2_gev2", "mean_Q2_gev2", "max_Q2_gev2", "min_W_gev", "mean_W_gev", "max_W_gev", "min_minus_t_gev2", "mean_minus_t_gev2", "max_minus_t_gev2", "min_minus_tprime_gev2", "mean_minus_tprime_gev2", "max_minus_tprime_gev2", "number_of_events"] + [item for parameter in PHYSICS_PARAMETERS for item in (parameter, f"{parameter}_stat")]
     merged = nominal[keep].merge(tight[keep], on=keys, suffixes=("_nominal", "_tight"), validate="one_to_one").merge(loose[keep], on=keys, validate="one_to_one")
     merged = merged.rename(columns={column: f"{column}_loose" for column in keep if column not in keys})
     covariance_products: dict[str, str] = {}
@@ -5673,9 +5711,21 @@ def write_target_axis_study_products(
         "bin_number",
         "x_index",
         "t_index",
+        "min_xB",
         "mean_xB",
+        "max_xB",
+        "min_Q2_gev2",
         "mean_Q2_gev2",
+        "max_Q2_gev2",
+        "min_W_gev",
+        "mean_W_gev",
+        "max_W_gev",
+        "min_minus_t_gev2",
+        "mean_minus_t_gev2",
+        "max_minus_t_gev2",
+        "min_minus_tprime_gev2",
         "mean_minus_tprime_gev2",
+        "max_minus_tprime_gev2",
     ]
 
     column_data: dict[str, Any] = {
