@@ -53,10 +53,12 @@ Target-axis treatments
 Three fits are performed in every kinematic bin.
 
   nominal
-    P_L = P_t cos(theta_gamma), P_T = 0.
+    P_parallel = P_t in the laboratory (beam-axis) frame.  No cos(theta_gamma)
+    projection is applied.  These are the reported observables.
 
-  no_projection
-    P_L = P_t, P_T = 0.
+  photon_axis_projection
+    P_L = P_t cos(theta_gamma), P_T = 0.  This is retained only as an
+    interpretation study of the conversion to the virtual-photon axis.
 
   external_data_informed
     P_L = P_t cos(theta_gamma), P_T = P_t sin(theta_gamma).  Fixed
@@ -93,12 +95,11 @@ There is no fixed transverse sin(3phi) or cos(2phi) input. The external-data-inf
 controlled leakage study, not a claim that the SIDIS amplitudes equal the
 exclusive amplitudes at CLAS12 kinematics.
 
-For each observable a, the target-axis systematic is
-
-    max(
-        abs(a_no_projection - a_nominal),
-        abs(a_external_data_informed - a_nominal)
-    ).
+The photon-axis-projection and external-data-informed fits are retained as
+interpretation studies.  Their shifts relative to the laboratory-frame nominal
+result are written to the diagnostic tables and plots, but no target-axis
+systematic is assigned and these shifts do not enter the point-to-point
+systematic uncertainty.
 
 
 Dilution-factor uncertainty
@@ -170,7 +171,7 @@ publication-level systematic averages.
 
 The final published point-to-point systematic is therefore
 
-    sqrt(delta_radiation^2 + delta_target_axis^2
+    sqrt(delta_radiation^2
          + delta_channel_selection^2 + delta_migration^2).
 
 Barlow consistency criterion
@@ -253,13 +254,13 @@ PERIOD_COLORS: dict[str, str] = {
 COMBINED_COLOR = "tab:blue"
 
 VARIANT_LABELS: dict[str, str] = {
-    "nominal": r"Nominal: $P_L=P_t\cos\theta_\gamma$",
-    "no_projection": r"No projection: $P_L=P_t$",
+    "nominal": r"Nominal lab frame: $P_{\parallel}=P_t$",
+    "photon_axis_projection": r"Photon-axis projection: $P_L=P_t\cos\theta_\gamma$",
     "external_data_informed": r"External-data-informed transverse leakage",
 }
 VARIANT_COLORS: dict[str, str] = {
     "nominal": "tab:blue",
-    "no_projection": "tab:purple",
+    "photon_axis_projection": "tab:purple",
     "external_data_informed": "tab:orange",
 }
 
@@ -597,7 +598,7 @@ DEFAULT_ISR_CUT_JSON = Path(
 )
 FIT_VARIANTS: tuple[str, ...] = (
     "nominal",
-    "no_projection",
+    "photon_axis_projection",
     "external_data_informed",
 )
 
@@ -631,10 +632,10 @@ PARAMETER_LABELS: dict[str, str] = {
     "u1": r"$F_{UU}^{\cos\phi}/F_{UU}$",
     "u2": r"$F_{UU}^{\cos2\phi}/F_{UU}$",
     "lu1": r"$F_{LU}^{\sin\phi}/F_{UU}$",
-    "ul1": r"$F_{UL}^{\sin\phi}/F_{UU}$",
-    "ul2": r"$F_{UL}^{\sin2\phi}/F_{UU}$",
-    "ll0": r"$F_{LL}/F_{UU}$",
-    "ll1": r"$F_{LL}^{\cos\phi}/F_{UU}$",
+    "ul1": r"$A_{UL,\mathrm{lab}}^{\sin\phi}$",
+    "ul2": r"$A_{UL,\mathrm{lab}}^{\sin2\phi}$",
+    "ll0": r"$A_{LL,\mathrm{lab}}$",
+    "ll1": r"$A_{LL,\mathrm{lab}}^{\cos\phi}$",
 }
 
 PARAMETER_Y_LIMITS: dict[str, tuple[float, float] | None] = {
@@ -2149,17 +2150,22 @@ def evaluate_cross_section_factor(
     h = np.asarray(helicity, dtype=np.float64)
     pt = np.asarray(target_polarization, dtype=np.float64)
 
-    if variant == "no_projection":
-        p_longitudinal = pt
+    if variant == "photon_axis_projection":
+        # Interpretation study: project the laboratory target polarization
+        # onto the virtual-photon direction and neglect the transverse piece.
+        p_longitudinal = pt * cos_theta_gamma
         p_transverse = np.zeros_like(pt, dtype=np.float64)
     elif variant == "external_data_informed":
+        # Interpretation study in the virtual-photon basis, including the
+        # geometrically induced transverse component with fixed external inputs.
         p_longitudinal = pt * cos_theta_gamma
         p_transverse = pt * sin_theta_gamma
     else:
-        # Production nominal: retain only the longitudinal photon-axis
-        # projection.  Transverse target polarization enters solely through
-        # the controlled external-data-informed leakage study.
-        p_longitudinal = pt * cos_theta_gamma
+        # Production nominal: report the observable for the polarization state
+        # actually prepared in the laboratory, longitudinal to the beam line.
+        # No cos(theta_gamma) projection is applied to the fitted target
+        # polarization.  Photon-axis decompositions are diagnostic studies only.
+        p_longitudinal = pt
         p_transverse = np.zeros_like(pt, dtype=np.float64)
     # endif
 
@@ -2415,14 +2421,18 @@ def make_bin_nll(
                 * data["sin_phi"]
             )
 
-            if variant == "no_projection":
-                longitudinal_geometry = np.ones_like(event_phi)
+            if variant == "photon_axis_projection":
+                longitudinal_geometry = event_cos
                 transverse_geometry = np.zeros_like(event_phi)
             elif variant == "external_data_informed":
                 longitudinal_geometry = event_cos
                 transverse_geometry = event_sin
             else:
-                longitudinal_geometry = event_cos
+                # Production nominal: the target polarization is defined along
+                # the incident beam in the laboratory frame.  Keep the same
+                # event-by-event SIDIS depolarization factors, but do not apply
+                # an additional cos(theta_gamma) target-axis projection.
+                longitudinal_geometry = np.ones_like(event_phi)
                 transverse_geometry = np.zeros_like(event_phi)
             # endif
 
@@ -2903,10 +2913,10 @@ def fit_bin_worker(
         f"valid={nominal['valid']}; EDM={nominal['edm']:.3e}",
     )
     variants = {"nominal": nominal}
-    projection_systematic: dict[str, float | None] = {
+    photon_axis_projection_shift: dict[str, float | None] = {
         parameter: None for parameter in PHYSICS_PARAMETERS
     }
-    external_data_systematic: dict[str, float | None] = {
+    external_data_shift: dict[str, float | None] = {
         parameter: None for parameter in PHYSICS_PARAMETERS
     }
     full_three_fit_spread: dict[str, float | None] = {
@@ -2917,18 +2927,18 @@ def fit_bin_worker(
     }
 
     if include_target_axis_study:
-        report("target-axis no_projection: START")
-        no_projection = fit_one_variant(
+        report("target-axis photon_axis_projection: START")
+        photon_axis_projection = fit_one_variant(
             events,
             run_states,
             dilution_records,
             bin_number,
-            "no_projection",
+            "photon_axis_projection",
             initial_values=nominal["values"],
         )
         report(
-            "target-axis no_projection: DONE",
-            f"valid={no_projection['valid']}; EDM={no_projection['edm']:.3e}",
+            "target-axis photon_axis_projection: DONE",
+            f"valid={photon_axis_projection['valid']}; EDM={photon_axis_projection['edm']:.3e}",
         )
         report("target-axis external_data_informed: START")
         external_data_informed = fit_one_variant(
@@ -2945,27 +2955,27 @@ def fit_bin_worker(
             f"EDM={external_data_informed['edm']:.3e}",
         )
         variants.update({
-            "no_projection": no_projection,
+            "photon_axis_projection": photon_axis_projection,
             "external_data_informed": external_data_informed,
         })
         for parameter in PHYSICS_PARAMETERS:
             nominal_value = nominal["values"][parameter]
-            no_projection_value = no_projection["values"][parameter]
+            photon_axis_projection_value = photon_axis_projection["values"][parameter]
             external_value = external_data_informed["values"][parameter]
-            external_data_systematic[parameter] = abs(
+            external_data_shift[parameter] = abs(
                 external_value - nominal_value
             )
 
-            projection_systematic[parameter] = abs(
-                no_projection_value - nominal_value
+            photon_axis_projection_shift[parameter] = abs(
+                photon_axis_projection_value - nominal_value
             )
             systematics[parameter] = max(
-                projection_systematic[parameter],
-                external_data_systematic[parameter],
+                photon_axis_projection_shift[parameter],
+                external_data_shift[parameter],
             )
             full_three_fit_spread[parameter] = (
-                max(nominal_value, no_projection_value, external_value)
-                - min(nominal_value, no_projection_value, external_value)
+                max(nominal_value, photon_axis_projection_value, external_value)
+                - min(nominal_value, photon_axis_projection_value, external_value)
             )
         # endfor
     # endif
@@ -3116,9 +3126,9 @@ def fit_bin_worker(
         "period_fits": period_fits,
         "period_constraint_fits": period_constraint_fits,
         "period_consistency": period_consistency,
-        "target_axis_systematic": systematics,
-        "projection_systematic": projection_systematic,
-        "external_data_systematic": external_data_systematic,
+        "target_axis_study_envelope": systematics,
+        "photon_axis_projection_shift": photon_axis_projection_shift,
+        "external_data_shift": external_data_shift,
         "full_three_fit_spread": full_three_fit_spread,
         "external_transverse_inputs": (
             EXTERNAL_TRANSVERSE_INPUTS if include_target_axis_study else None
@@ -3358,7 +3368,7 @@ def fit_stage_worker(task: dict[str, Any]) -> dict[str, Any]:
         fit = fit_one_variant(
             events, run_states, dilution_records, bin_number, "nominal"
         )
-    elif kind in {"no_projection", "external_data_informed"}:
+    elif kind in {"photon_axis_projection", "external_data_informed"}:
         fit = fit_one_variant(
             events,
             run_states,
@@ -3544,9 +3554,9 @@ def initialize_result_shell(
             "fix_u1": {}, "fix_u2": {}, "fix_u1_u2": {}
         },
         "period_consistency": {},
-        "target_axis_systematic": dict(empty),
-        "projection_systematic": dict(empty),
-        "external_data_systematic": dict(empty),
+        "target_axis_study_envelope": dict(empty),
+        "photon_axis_projection_shift": dict(empty),
+        "external_data_shift": dict(empty),
         "full_three_fit_spread": dict(empty),
         "external_transverse_inputs": (
             EXTERNAL_TRANSVERSE_INPUTS if include_target_axis_study else None
@@ -3556,24 +3566,24 @@ def initialize_result_shell(
     }
 
 
-def finish_target_axis_systematics(result: dict[str, Any]) -> None:
+def finish_target_axis_study_envelopes(result: dict[str, Any]) -> None:
     nominal = result["variants"]["nominal"]
-    no_projection = result["variants"]["no_projection"]
+    photon_axis_projection = result["variants"]["photon_axis_projection"]
     external_data_informed = result["variants"]["external_data_informed"]
     for parameter in PHYSICS_PARAMETERS:
         nominal_value = nominal["values"][parameter]
-        no_projection_value = no_projection["values"][parameter]
+        photon_axis_projection_value = photon_axis_projection["values"][parameter]
         external_value = external_data_informed["values"][parameter]
         external_shift = abs(external_value - nominal_value)
-        result["external_data_systematic"][parameter] = external_shift
-        projection_shift = abs(no_projection_value - nominal_value)
-        result["projection_systematic"][parameter] = projection_shift
-        result["target_axis_systematic"][parameter] = max(
+        result["external_data_shift"][parameter] = external_shift
+        projection_shift = abs(photon_axis_projection_value - nominal_value)
+        result["photon_axis_projection_shift"][parameter] = projection_shift
+        result["target_axis_study_envelope"][parameter] = max(
             projection_shift, external_shift
         )
         result["full_three_fit_spread"][parameter] = (
-            max(nominal_value, no_projection_value, external_value)
-            - min(nominal_value, no_projection_value, external_value)
+            max(nominal_value, photon_axis_projection_value, external_value)
+            - min(nominal_value, photon_axis_projection_value, external_value)
         )
     # endfor
 
@@ -3752,16 +3762,16 @@ def flatten_fit_results(
             row[parameter] = nominal["values"][parameter]
             row[f"{parameter}_stat"] = nominal["errors"][parameter]
             row[f"{parameter}_projection_sys"] = result[
-                "projection_systematic"
+                "photon_axis_projection_shift"
             ][parameter]
             row[f"{parameter}_external_data_sys"] = result[
-                "external_data_systematic"
+                "external_data_shift"
             ][parameter]
             row[f"{parameter}_three_fit_full_spread"] = result[
                 "full_three_fit_spread"
             ][parameter]
-            row[f"{parameter}_target_axis_sys"] = result[
-                "target_axis_systematic"
+            row[f"{parameter}_target_axis_study_envelope"] = result[
+                "target_axis_study_envelope"
             ][parameter]
             for variant in FIT_VARIANTS:
                 variant_fit = result["variants"].get(variant)
@@ -4099,7 +4109,7 @@ def plot_parameter_summaries(
         )
         if include_target_axis_uncertainty:
             target_axis_uncertainty = pd.to_numeric(
-                frame[f"{parameter}_target_axis_sys"],
+                frame[f"{parameter}_target_axis_study_envelope"],
                 errors="coerce",
             ).to_numpy(dtype=float)
             if np.isfinite(target_axis_uncertainty).any():
@@ -4236,7 +4246,7 @@ def plot_aggregated_by_x(
             )
             if include_target_axis_uncertainty:
                 target_axis_uncertainty = pd.to_numeric(
-                    subset[f"{parameter}_target_axis_sys"],
+                    subset[f"{parameter}_target_axis_study_envelope"],
                     errors="coerce",
                 ).to_numpy(dtype=float)
                 if np.isfinite(target_axis_uncertainty).any():
@@ -4393,7 +4403,7 @@ def plot_target_axis_variants(
     frame: pd.DataFrame,
     output_dir: Path,
 ) -> list[str]:
-    """Compare nominal, no-projection, and external-data-informed T fits."""
+    """Compare nominal, photon-axis-projection, and external-data-informed T fits."""
     ensure_directory(output_dir)
     paths: list[str] = []
     variants = tuple(VARIANT_LABELS)
@@ -4424,12 +4434,12 @@ def plot_target_axis_variants(
                 )
             # endfor
 
-            # Draw the quoted target-axis systematic as narrow, non-overlapping
+            # Draw the target-axis study envelope for diagnostic comparison as narrow, non-overlapping
             # gray rectangles centered on the nominal points.
             x_array = np.asarray(x_values, dtype=np.float64)
             y_array = subset[parameter].to_numpy(dtype=np.float64)
             sys_array = subset[
-                f"{parameter}_target_axis_sys"
+                f"{parameter}_target_axis_study_envelope"
             ].to_numpy(dtype=np.float64)
             if x_array.size > 1:
                 separations = np.diff(np.sort(x_array))
@@ -4448,7 +4458,7 @@ def plot_target_axis_variants(
                     alpha=0.45,
                     linewidth=0.0,
                     label=(
-                        "Quoted target-axis systematic"
+                        "Target-axis study envelope (diagnostic only)"
                         if point_index == 0 else None
                     ),
                     zorder=1,
@@ -4654,7 +4664,7 @@ def write_latex_table(
                 ptp = float(getattr(row, f"{parameter}_point_to_point_systematic"))
                 entries.append(rf"${value:.5f}\pm{stat:.5f}\pm{ptp:.5f}$")
             elif include_target_axis_uncertainty:
-                axis = float(getattr(row, f"{parameter}_target_axis_sys"))
+                axis = float(getattr(row, f"{parameter}_target_axis_study_envelope"))
                 entries.append(rf"${value:.5f}\pm{stat:.5f}\pm{axis:.5f}$")
             else:
                 entries.append(rf"${value:.5f}\pm{stat:.5f}$")
@@ -4925,7 +4935,7 @@ def run_analysis_variant(
         target_tasks: list[dict[str, Any]] = []
         for bin_number in range(1, NUMBER_OF_BINS + 1):
             nominal = nominal_by_bin[bin_number]
-            for kind in ("no_projection", "external_data_informed"):
+            for kind in ("photon_axis_projection", "external_data_informed"):
                 target_tasks.append({
                     "kind": kind,
                     "bin_number": bin_number,
@@ -4947,7 +4957,7 @@ def run_analysis_variant(
             result["variants"][item["kind"]] = item["fit"]
         # endfor
         for result in results:
-            finish_target_axis_systematics(result)
+            finish_target_axis_study_envelopes(result)
         # endfor
         write_stage_checkpoint(output_dir, "02_target_axis", results)
     # endif
@@ -5563,8 +5573,8 @@ def attach_point_to_point_systematics(
         delta_ptp = sqrt(delta_rad^2 + delta_axis^2
                          + delta_ch^2 + delta_migration^2).
 
-    The momentum-correction on/off difference is retained in its own diagnostic
-    column but is deliberately excluded from the assigned total.  The two UU
+    The target-axis study envelope and momentum-correction on/off difference are retained in diagnostic
+    columns but are deliberately excluded from the assigned total.  The two UU
     modulations are fitted nuisance quantities and receive no migration term;
     they are excluded from publication-level systematic summaries.
     """
@@ -5585,7 +5595,7 @@ def attach_point_to_point_systematics(
         # endif
 
         target_axis = pd.to_numeric(
-            output[f"{parameter}_target_axis_sys"], errors="coerce"
+            output[f"{parameter}_target_axis_study_envelope"], errors="coerce"
         ).to_numpy(dtype=float)
 
         if momentum_uncorrected is None:
@@ -5619,10 +5629,10 @@ def attach_point_to_point_systematics(
             if parameter in PUBLISHED_SYSTEMATIC_PARAMETERS
             else np.zeros_like(nominal_values)
         )
-        total = np.sqrt(radiation**2 + target_axis**2 + channel**2 + migration**2)
+        total = np.sqrt(radiation**2 + channel**2 + migration**2)
 
         output[f"{parameter}_radiation_systematic"] = radiation
-        output[f"{parameter}_target_axis_systematic"] = target_axis
+        output[f"{parameter}_target_axis_study_envelope"] = target_axis
         output[f"{parameter}_momentum_correction_difference_diagnostic"] = momentum_diagnostic
         # Keep the legacy column name for downstream compatibility, but make
         # its diagnostic-only status explicit in the new manifest and JSON.
@@ -5641,7 +5651,7 @@ def attach_point_to_point_systematics(
     return output
 
 
-def write_target_axis_barlow_products(
+def write_target_axis_study_products(
     nominal_frame: pd.DataFrame,
     output_dir: Path,
 ) -> dict[str, Any]:
@@ -5686,7 +5696,7 @@ def write_target_axis_barlow_products(
         covariance_products[parameter] = {}
 
         variation_results: dict[str, dict[str, np.ndarray]] = {}
-        for variation in ("no_projection", "external_data_informed"):
+        for variation in ("photon_axis_projection", "external_data_informed"):
             variation_values = nominal_frame[f"{parameter}_{variation}"].to_numpy(
                 dtype=np.float64, copy=True
             )
@@ -5748,35 +5758,35 @@ def write_target_axis_barlow_products(
             covariance_products[parameter][variation] = str(covariance_path)
         # endfor
 
-        no_difference = variation_results["no_projection"]["difference"]
+        no_difference = variation_results["photon_axis_projection"]["difference"]
         ext_difference = variation_results["external_data_informed"][
             "difference"
         ]
         no_abs = np.abs(no_difference)
         ext_abs = np.abs(ext_difference)
         choose_no = no_abs >= ext_abs
-        target_axis_systematic = np.maximum(no_abs, ext_abs)
+        target_axis_study_envelope = np.maximum(no_abs, ext_abs)  # diagnostic envelope only
 
         systematic_to_stat = np.divide(
-            target_axis_systematic,
+            target_axis_study_envelope,
             nominal_stat,
-            out=np.full_like(target_axis_systematic, np.nan, dtype=np.float64),
+            out=np.full_like(target_axis_study_envelope, np.nan, dtype=np.float64),
             where=np.isfinite(nominal_stat) & (nominal_stat > 0.0),
         )
 
-        no_status = variation_results["no_projection"]["status"]
+        no_status = variation_results["photon_axis_projection"]["status"]
         ext_status = variation_results["external_data_informed"]["status"]
 
-        column_data[f"{parameter}_target_axis_systematic"] = (
-            target_axis_systematic
+        column_data[f"{parameter}_target_axis_study_envelope"] = (
+            target_axis_study_envelope
         )
         column_data[
-            f"{parameter}_target_axis_systematic_to_nominal_stat"
+            f"{parameter}_target_axis_study_envelope_to_nominal_stat"
         ] = systematic_to_stat
         column_data[f"{parameter}_target_axis_selected_variation"] = np.where(
-            choose_no, "no_projection", "external_data_informed"
+            choose_no, "photon_axis_projection", "external_data_informed"
         )
-        column_data[f"{parameter}_target_axis_barlow_status"] = np.where(
+        column_data[f"{parameter}_target_axis_study_status"] = np.where(
             choose_no, no_status, ext_status
         )
     # endfor
@@ -5808,10 +5818,10 @@ def write_target_axis_barlow_products(
                     "label": "Nominal projection",
                 },
                 {
-                    "values": frame[f"{parameter}_no_projection"],
-                    "errors": frame[f"{parameter}_stat_no_projection"],
+                    "values": frame[f"{parameter}_photon_axis_projection"],
+                    "errors": frame[f"{parameter}_stat_photon_axis_projection"],
                     "fmt": "^",
-                    "label": "No projection",
+                    "label": "Photon-axis projection",
                 },
                 {
                     "values": frame[f"{parameter}_external_data_informed"],
@@ -5822,12 +5832,14 @@ def write_target_axis_barlow_products(
                     "label": "External-data-informed",
                 },
             ],
-            systematic=frame[f"{parameter}_target_axis_systematic"],
-            status=frame[f"{parameter}_target_axis_barlow_status"],
+            systematic=frame[f"{parameter}_target_axis_study_envelope"],
+            status=frame[f"{parameter}_target_axis_study_status"],
             systematic_definition=definition,
             show_legends=show_legends,
             show_xlabel=show_xlabel,
         )
+        axes[1].set_ylabel("Diagnostic envelope")
+        axes[2].set_ylabel("Envelope / nominal stat.")
     # enddef
 
     plot_paths: list[str] = []
@@ -5845,29 +5857,29 @@ def write_target_axis_barlow_products(
 
     summary = write_systematic_summary_canvas(
         output_dir=summary_dir,
-        filename_stem="target_axis_systematic_summary",
+        filename_stem="target_axis_study_envelope_summary",
         draw_parameter=draw,
     )
-    csv_path = tables_dir / "target_axis_barlow_criteria.csv"
-    json_path = tables_dir / "target_axis_barlow_criteria.json"
+    csv_path = tables_dir / "target_axis_study_criteria.csv"
+    json_path = tables_dir / "target_axis_study_criteria.json"
     frame.to_csv(csv_path, index=False)
     write_json(
         json_path,
         {
             "schema_version": 3,
-            "systematic_definition": (
-                "delta_axis = max(abs(no_projection-nominal), "
-                "abs(external_data_informed-nominal))"
+            "study_envelope_definition": (
+                "diagnostic envelope = max(abs(photon_axis_projection-nominal), "
+                "abs(external_data_informed-nominal)); not assigned as a systematic"
             ),
             "selected_barlow_marker_rule": (
                 "The marker state is taken from the variation that supplies "
                 "the envelope in that bin."
             ),
             "middle_panel": (
-                "Assigned target-axis envelope with Barlow marker state."
+                "Target-axis diagnostic envelope with Barlow marker state; not assigned as a systematic."
             ),
             "bottom_panel": (
-                "Assigned target-axis envelope divided by nominal statistical "
+                "Target-axis diagnostic envelope divided by nominal statistical "
                 "uncertainty."
             ),
             "plot_axis_convention": (
@@ -6099,7 +6111,7 @@ def main() -> int:
         source_cache_path=(None if args.reuse_cache else nominal_source_cache),
     )
 
-    target_axis_barlow = write_target_axis_barlow_products(
+    target_axis_study = write_target_axis_study_products(
         nominal_result["frame"], diagnostics_dir / "target_axis"
     )
 
@@ -6280,7 +6292,7 @@ def main() -> int:
     # endif
 
     all_barlow_records: list[dict[str, Any]] = list(
-        target_axis_barlow["barlow_summary"]
+        target_axis_study["barlow_summary"]
     )
     if isr_comparison is not None:
         all_barlow_records.extend(isr_comparison["barlow_summary"])
@@ -6316,8 +6328,10 @@ def main() -> int:
             "complete variation vectors are retained as coherent alternatives. "
             "The momentum-correction on/off comparison is diagnostic only and is "
             "not assigned as a systematic. For the five published polarized ratios, "
-            "radiation, target-axis, channel-selection RMS, and 1.5-scaled bin-migration "
-            "uncertainties are combined in quadrature and drawn as bars from y=0. "
+            "radiation, channel-selection RMS, and 1.5-scaled bin-migration uncertainties "
+            "are combined in quadrature and drawn as bars from y=0. Target-axis "
+            "variants are retained as interpretation studies and are not assigned "
+            "as systematic uncertainties. "
             "The two fitted UU modulations are excluded from publication-level "
             "systematic summaries."
         ),
@@ -6332,7 +6346,7 @@ def main() -> int:
             }
             if isr_result else None
         ),
-        "target_axis_barlow": target_axis_barlow,
+        "target_axis_study": target_axis_study,
         "nominal_isr_comparison": isr_comparison,
         "momentum_corrections": (
             {
@@ -6357,8 +6371,9 @@ def main() -> int:
         "channel_selection_comparison": channel_comparison,
         "point_to_point_systematics_csv": str(point_to_point_csv),
         "point_to_point_systematic_definition": (
-            "sqrt(radiation^2 + target_axis^2 + channel_selection_RMS^2 + "
-            "bin_migration^2), for published polarized observables"
+            "sqrt(radiation^2 + channel_selection_RMS^2 + bin_migration^2), "
+            "for published polarized observables; target-axis variants are "
+            "interpretation studies only"
         ),
         "barlow_summary": barlow_summary_products,
     })
