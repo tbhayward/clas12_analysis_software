@@ -150,6 +150,7 @@ class PIDExclusivitySkim {
         HipoDataSource reader=new HipoDataSource()
         reader.open(input)
         long nev=0, ncand=0
+        long processingStartTime = System.currentTimeMillis()
         while (reader.hasEvent()) {
             DataEvent event=reader.getNextEvent(); ++nev
             if (!event.hasBank('RUN::config') || !event.hasBank('REC::Particle')) continue
@@ -246,10 +247,20 @@ class PIDExclusivitySkim {
                     passY?1:0,passPhase?1:0,passMx?1:0,passFinal?1:0))
                 ++ncand
             }
-            if (nev%250000==0) println("${new File(input).name}: events=${nev}, candidates=${ncand}")
+            if (nev % 1000000 == 0) {
+                double elapsedSec = (System.currentTimeMillis() - processingStartTime) / 1000.0
+                double rate = elapsedSec > 0.0 ? nev / elapsedSec : 0.0
+                println(String.format(java.util.Locale.US,
+                    '[progress] %s | %,d events | %,d candidates | %.1f min | %.0f events/s',
+                    new File(input).name, nev, ncand, elapsedSec / 60.0, rate))
+            }
         }
         reader.close(); out.close()
-        println("DONE ${input}: events=${nev}, positive-FD/all-positive candidates written=${ncand} -> ${output}")
+        double totalSec = (System.currentTimeMillis() - processingStartTime) / 1000.0
+        double avgRate = totalSec > 0.0 ? nev / totalSec : 0.0
+        println(String.format(java.util.Locale.US,
+            'DONE %s | %,d events | %,d positive candidates | %.1f min | %.0f events/s | output: %s',
+            new File(input).name, nev, ncand, totalSec / 60.0, avgRate, output))
     }
 }
 PIDExclusivitySkim.main(args)
