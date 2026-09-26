@@ -6305,90 +6305,19 @@ def _fit_rga_uu_lu(events, run_states, mask):
     return m, idx
 
 
-def run_rga_cross_check(args):
-    """Comparison-only extraction in the exact Diehl et al. binning."""
-    out = args.output_dir.expanduser().resolve() / "rga_cross_check"
-    tables = out / "tables"
-    plots = out / "plots"
-    cache_dir = out / "cache"
-    for directory in (out, tables, plots, cache_dir):
-        ensure_directory(directory)
-    # endfor
 
-    # Reuse/build the ordinary nominal selected-event sample.  The RGC
-    # production exclusivity selection is preserved; only the comparison DIS
-    # cuts and Diehl binning are changed.
-    nominal_cache = (
-        args.cache.expanduser().resolve()
-        if args.cache
-        else args.output_dir.expanduser().resolve()
-        / "nominal/cache/selected_events.npz"
-    )
-    run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
-    run_states = run_state_arrays(run_records)
-
-    if nominal_cache.is_file():
-        print(
-            f"[RGA cross-check] loading nominal selected-event cache: "
-            f"{nominal_cache}",
-            flush=True,
-        )
-        events = load_event_cache(nominal_cache)
-    else:
-        print(
-            "[RGA cross-check] nominal cache missing; building it directly.",
-            flush=True,
-        )
-        inputs = {p: Path(v) for p, v in DEFAULT_INPUTS.items()}
-        for period, path in args.input:
-            inputs[period] = path
-        # endfor
-        cuts = load_channel_cuts(
-            args.cut_json.expanduser().resolve(),
-            cut_label="nominal",
-        )
-        build_event_cache(
-            inputs,
-            args.tree,
-            args.chunk_size,
-            run_records,
-            cuts,
-            nominal_cache,
-        )
-        events = load_event_cache(nominal_cache)
-    # endif
-
+def _rga_fit_cache(events, run_states):
+    """Fit all populated Diehl bins for one already-selected RGC cache."""
     panel, subbin, gbin, y, mapping = _assign_rga_bins(events)
-    print(
-        "[RGA cross-check] fit model: "
-        "(u1, u2, lu1) = "
-        "(F_UU^cos(phi), F_UU^cos(2phi), F_LU^sin(phi))/F_UU; "
-        "no production-bin amplitudes are imported.",
-        flush=True,
-    )
-    print(
-        f"[RGA cross-check] events after Diehl cuts and binning: "
-        f"{np.count_nonzero(gbin > 0):,}",
-        flush=True,
-    )
-
     rows = []
     for g, (ip, it, lo, hi) in mapping.items():
         mask = gbin == g
         n = int(np.count_nonzero(mask))
         if n < 20:
-            print(
-                f"[RGA cross-check] panel {ip} t-bin {it}: "
-                f"only {n} events; skipping",
-                flush=True,
-            )
             continue
         # endif
-
         m, idx = _fit_rga_uu_lu(events, run_states, mask)
-        pub = RGA_PUBLISHED[ip][it - 1]
-
-        fit_valid = (
+        valid = (
             bool(m.valid)
             and m.covariance is not None
             and all(
@@ -6397,211 +6326,661 @@ def run_rga_cross_check(args):
                 for name in ("u1", "u2", "lu1")
             )
         )
-        rgc_u1 = float(m.values["u1"])
-        rgc_u2 = float(m.values["u2"])
-        rgc_lu = float(m.values["lu1"])
-        stat_u1 = float(m.errors["u1"])
-        stat_u2 = float(m.errors["u2"])
-        rgc_stat = float(m.errors["lu1"])
+        rows.append({
+            "rga_panel": ip,
+            "t_bin": it,
+            "global_bin": g,
+            "minus_t_low": lo,
+            "minus_t_high": hi,
+            "n": n,
+            "mean_xB": float(np.mean(events["xB"][idx])),
+            "mean_Q2": float(np.mean(events["Q2"][idx])),
+            "mean_minus_t": float(np.mean(events["minus_t"][idx])),
+            "mean_minus_tprime": float(np.mean(events["minus_tprime"][idx])),
+            "mean_y": float(np.mean(y[idx])),
+            "mean_epsilon": float(np.nanmean(events["epsilon"][idx])),
+            "u1": float(m.values["u1"]),
+            "u1_stat": float(m.errors["u1"]),
+            "u2": float(m.values["u2"]),
+            "u2_stat": float(m.errors["u2"]),
+            "lu1": float(m.values["lu1"]),
+            "lu1_stat": float(m.errors["lu1"]),
+            "fit_valid": valid,
+            "edm": float(m.fmin.edm),
+        })
+    # endfor
+    return pd.DataFrame(rows), (panel, subbin, gbin, y, mapping)
 
-        correlation = np.full((3, 3), np.nan)
-        if m.covariance is not None:
-            names = ("u1", "u2", "lu1")
-            cov = np.asarray(
-                [
-                    [float(m.covariance[a, b]) for b in names]
-                    for a in names
-                ],
-                dtype=float,
-            )
-            sig = np.sqrt(np.maximum(np.diag(cov), 0.0))
-            correlation = np.divide(
-                cov,
-                np.outer(sig, sig),
-                out=np.full_like(cov, np.nan),
-                where=np.outer(sig, sig) > 0.0,
-            )
+
+def _rga_migration_remap(events, gbin, nominal_production_frame):
+    """Event-weight the established LU migration uncertainty into Diehl bins.
+
+    Every selected event already carries its original 24-bin production
+    ``bin_number``.  The LU migration uncertainty assigned to that production
+    bin is therefore averaged over the events entering each Diehl bin.
+    """
+    _, assigned, _ = calculate_migration_systematics(nominal_production_frame)
+    lu_by_bin = np.asarray(assigned["lu1"], dtype=float)
+    result = {}
+    for g in np.unique(gbin[gbin > 0]):
+        mask = gbin == g
+        old_bins = np.asarray(events["bin_number"][mask], dtype=int)
+        good = (old_bins >= 1) & (old_bins <= NUMBER_OF_BINS)
+        if not np.any(good):
+            result[int(g)] = np.nan
+            continue
         # endif
+        result[int(g)] = float(np.mean(lu_by_bin[old_bins[good] - 1]))
+    # endfor
+    return result
 
-        rga_q2, rga_x, rga_t, rga_eps, rga_val, rga_stat, rga_sys = pub
-        if fit_valid:
-            combined = math.sqrt(
-                rgc_stat**2 + rga_stat**2 + rga_sys**2
-            )
-            delta = rgc_lu - rga_val
-            pull = delta / combined if combined > 0.0 else np.nan
-        else:
-            combined = np.nan
-            delta = np.nan
-            pull = np.nan
-        # endif
 
-        epsilon_values = (
-            events["epsilon"][idx]
-            if "epsilon" in events
-            else np.full(idx.size, np.nan)
-        )
-        rows.append(
-            {
-                "rga_panel": ip,
-                "t_bin": it,
-                "minus_t_low": lo,
-                "minus_t_high": hi,
-                "n_rgc": n,
-                "mean_xB_rgc": float(np.mean(events["xB"][idx])),
-                "mean_Q2_rgc": float(np.mean(events["Q2"][idx])),
-                "mean_minus_t_rgc": float(
-                    np.mean(events["minus_t"][idx])
-                ),
-                "mean_y_rgc": float(np.mean(y[idx])),
-                "mean_epsilon_rgc": float(
-                    np.nanmean(epsilon_values)
-                ),
-                "u1_rgc": rgc_u1,
-                "stat_u1_rgc": stat_u1,
-                "u2_rgc": rgc_u2,
-                "stat_u2_rgc": stat_u2,
-                "lu1_rgc": rgc_lu,
-                "stat_rgc": rgc_stat,
-                "fit_valid": fit_valid,
-                "edm": float(m.fmin.edm),
-                "corr_u1_u2": float(correlation[0, 1]),
-                "corr_u1_lu1": float(correlation[0, 2]),
-                "corr_u2_lu1": float(correlation[1, 2]),
-                "xB_rga": rga_x,
-                "Q2_rga": rga_q2,
-                "minus_t_rga": rga_t,
-                "epsilon_rga": rga_eps,
-                "lu1_rga": rga_val,
-                "stat_rga": rga_stat,
-                "sys_rga": rga_sys,
-                "delta_rgc_minus_rga": delta,
-                "combined_uncertainty": combined,
-                "pull": pull,
+def _profile_rga_rgc_scales(frame, scale_sigma=0.028):
+    """Profile independent RGC and RGA multiplicative scale nuisances.
+
+    The two priors have the same width but are independent because the RGA and
+    RGC Moller measurements were performed in different running periods.
+    """
+    use = (
+        frame["fit_valid"].astype(bool).to_numpy()
+        & np.isfinite(frame["lu1_rgc"].to_numpy(float))
+        & np.isfinite(frame["lu1_rga"].to_numpy(float))
+        & np.isfinite(frame["uncorr_sigma"].to_numpy(float))
+        & (frame["uncorr_sigma"].to_numpy(float) > 0.0)
+    )
+    rgc = frame.loc[use, "lu1_rgc"].to_numpy(float)
+    rga = frame.loc[use, "lu1_rga"].to_numpy(float)
+    sig = frame.loc[use, "uncorr_sigma"].to_numpy(float)
+    w = 1.0 / sig**2
+    d = rgc - rga
+
+    # Minimize sum[(d + b_RGC*RGC - b_RGA*RGA)^2/sig^2]
+    # plus independent Gaussian priors b^2/s_scale^2.
+    a11 = float(np.sum(w * rgc**2) + 1.0 / scale_sigma**2)
+    a22 = float(np.sum(w * rga**2) + 1.0 / scale_sigma**2)
+    a12 = float(-np.sum(w * rgc * rga))
+    rhs = np.asarray([
+        -float(np.sum(w * rgc * d)),
+        +float(np.sum(w * rga * d)),
+    ])
+    beta_rgc, beta_rga = np.linalg.solve(
+        np.asarray([[a11, a12], [a12, a22]]), rhs
+    )
+
+    residual = (1.0 + beta_rgc) * rgc - (1.0 + beta_rga) * rga
+    pulls = residual / sig
+    chi2_data = float(np.sum(pulls**2))
+    chi2_prior = float(
+        (beta_rgc / scale_sigma)**2 + (beta_rga / scale_sigma)**2
+    )
+    chi2 = chi2_data + chi2_prior
+    n = int(rgc.size)
+    # Two constrained nuisance parameters add two prior observations, so the
+    # effective goodness-of-fit ndf remains N comparison points.
+    ndf = n
+    try:
+        from scipy.stats import chi2 as chi2_distribution
+        p_value = float(chi2_distribution.sf(chi2, ndf))
+    except Exception:
+        p_value = np.nan
+    # endtry
+
+    return {
+        "beta_rgc": float(beta_rgc),
+        "beta_rga": float(beta_rga),
+        "beta_rgc_pull": float(beta_rgc / scale_sigma),
+        "beta_rga_pull": float(beta_rga / scale_sigma),
+        "relative_scale_rgc_over_rga": float(
+            (1.0 + beta_rgc) / (1.0 + beta_rga)
+        ),
+        "chi2_data": chi2_data,
+        "chi2_prior": chi2_prior,
+        "chi2": chi2,
+        "ndf": ndf,
+        "chi2_per_ndf": float(chi2 / ndf) if ndf else np.nan,
+        "p_value": p_value,
+        "n_points": n,
+        "profiled_pulls": pulls,
+        "use_mask": use,
+    }
+
+
+def _rga_raw_cutflow(args, run_records, output_csv):
+    """Diagnose where raw nominal ROOT events disappear from Diehl panels.
+
+    This is diagnostic only.  It does not alter any selected-event cache or
+    production selection.
+    """
+    cuts = load_channel_cuts(
+        args.cut_json.expanduser().resolve(), cut_label="nominal"
+    )
+    inputs = {p: Path(v) for p, v in DEFAULT_INPUTS.items()}
+    for period, path in args.input:
+        inputs[period] = path
+    # endfor
+
+    stages = (
+        "polygon",
+        "Q2_gt_1p5",
+        "W_gt_2",
+        "y_lt_0p75",
+        "inside_published_t_range",
+        "inside_production_xB_tprime",
+        "nominal_Mx2",
+    )
+    counts = {
+        (period, ip, stage): 0
+        for period in PERIODS
+        for ip in range(1, 10)
+        for stage in stages
+    }
+
+    for period in PERIODS:
+        path = inputs[period].expanduser().resolve()
+        print(f"[RGA cutflow] scanning raw nominal tree: {period} {path}", flush=True)
+        with uproot.open(path) as root_file:
+            tree = resolve_tree(root_file, args.tree, path)
+            wanted = {
+                key: resolve_branch(tree, BRANCH_ALIASES[key])
+                for key in ("xB", "Q2", "W", "t", "tprime", "Mx2", "y")
             }
+            expressions = list(dict.fromkeys(wanted.values()))
+            for arrays in tree.iterate(
+                expressions=expressions,
+                step_size=args.chunk_size,
+                library="np",
+            ):
+                x = np.asarray(arrays[wanted["xB"]], float)
+                q2 = np.asarray(arrays[wanted["Q2"]], float)
+                w = np.asarray(arrays[wanted["W"]], float)
+                mt = -np.asarray(arrays[wanted["t"]], float)
+                mtp = -np.asarray(arrays[wanted["tprime"]], float)
+                mx2 = np.asarray(arrays[wanted["Mx2"]], float)
+                y = np.asarray(arrays[wanted["y"]], float)
+                _, _, old_bin = bin_indices(x, mtp)
+
+                for ip in range(1, 10):
+                    polygon = _points_in_polygon(
+                        x, q2, RGA_Q2_XB_POLYGONS[ip]
+                    )
+                    m = polygon
+                    counts[(period, ip, "polygon")] += int(np.count_nonzero(m))
+
+                    m = m & (q2 > 1.5)
+                    counts[(period, ip, "Q2_gt_1p5")] += int(np.count_nonzero(m))
+                    m = m & (w > 2.0)
+                    counts[(period, ip, "W_gt_2")] += int(np.count_nonzero(m))
+                    m = m & (y < 0.75)
+                    counts[(period, ip, "y_lt_0p75")] += int(np.count_nonzero(m))
+
+                    t_edges = RGA_MINUS_T_EDGES[ip]
+                    m = m & (mt >= t_edges[0]) & (mt < t_edges[-1])
+                    counts[(period, ip, "inside_published_t_range")] += int(
+                        np.count_nonzero(m)
+                    )
+
+                    m_prod = m & (old_bin >= 1)
+                    counts[
+                        (period, ip, "inside_production_xB_tprime")
+                    ] += int(np.count_nonzero(m_prod))
+
+                    m_mx = np.zeros_like(m_prod)
+                    for b in range(1, NUMBER_OF_BINS + 1):
+                        cut = cuts[(period, b)]
+                        m_mx |= (
+                            m_prod
+                            & (old_bin == b)
+                            & (mx2 >= cut.low_gev2)
+                            & (mx2 < cut.high_gev2)
+                        )
+                    # endfor
+                    counts[(period, ip, "nominal_Mx2")] += int(
+                        np.count_nonzero(m_mx)
+                    )
+                # endfor
+            # endfor
+        # endwith
+    # endfor
+
+    rows = []
+    for ip in range(1, 10):
+        row = {"rga_panel": ip}
+        for stage in stages:
+            row[stage] = int(sum(
+                counts[(period, ip, stage)] for period in PERIODS
+            ))
+        # endfor
+        rows.append(row)
+    # endfor
+    frame = pd.DataFrame(rows)
+    frame.to_csv(output_csv, index=False)
+    print("[RGA cutflow] combined panel cut flow:", flush=True)
+    print(frame.to_string(index=False), flush=True)
+    return frame
+
+
+def _rga_variant_cache_paths(args):
+    root = args.output_dir.expanduser().resolve()
+    return {
+        "nominal": (
+            args.cache.expanduser().resolve()
+            if args.cache
+            else root / "nominal/cache/selected_events.npz"
+        ),
+        "radiation": root / "isr/cache/selected_events.npz",
+        "tight": root / "channel_selection/tight/cache/selected_events.npz",
+        "loose": root / "channel_selection/loose/cache/selected_events.npz",
+    }
+
+
+def run_rga_cross_check(args):
+    """Final comparison study in the Diehl et al. RGA binning.
+
+    Production extraction is untouched.  This mode:
+      * fits (u1,u2,lu1) in each populated Diehl bin;
+      * repeats the fit for radiation and tight/loose channel variations;
+      * remaps the established LU migration uncertainty event-by-event from
+        the original 24-bin (xB,-t') scheme;
+      * combines RGC point-to-point systematics in quadrature;
+      * compares against published RGA statistical and systematic errors;
+      * profiles independent 2.8% RGA/RGC beam-polarization scale nuisances;
+      * writes pull distributions and a raw-ROOT panel cut flow.
+    """
+    out = args.output_dir.expanduser().resolve() / "rga_cross_check"
+    tables = out / "tables"
+    plots = out / "plots"
+    for directory in (out, tables, plots):
+        ensure_directory(directory)
+    # endfor
+
+    run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
+    run_states = run_state_arrays(run_records)
+    paths = _rga_variant_cache_paths(args)
+
+    if not paths["nominal"].is_file():
+        raise FileNotFoundError(
+            "RGA cross-check requires the nominal selected-event cache: "
+            f"{paths['nominal']}"
+        )
+    # endif
+
+    print(f"[RGA cross-check] nominal cache: {paths['nominal']}", flush=True)
+    nominal_events = load_event_cache(paths["nominal"])
+    nominal_fit, assignment = _rga_fit_cache(nominal_events, run_states)
+    panel, subbin, gbin, y, mapping = assignment
+    print(
+        f"[RGA cross-check] nominal Diehl-binned events: "
+        f"{np.count_nonzero(gbin > 0):,}",
+        flush=True,
+    )
+
+    # Production LU migration uncertainty, remapped into the Diehl bins.
+    nominal_production_csv = (
+        args.output_dir.expanduser().resolve()
+        / "nominal/tables/structure_function_ratios.csv"
+    )
+    if not nominal_production_csv.is_file():
+        raise FileNotFoundError(
+            "Need the completed nominal production table to remap the "
+            f"migration systematic: {nominal_production_csv}"
+        )
+    # endif
+    nominal_production = pd.read_csv(nominal_production_csv)
+    migration = _rga_migration_remap(
+        nominal_events, gbin, nominal_production
+    )
+
+    variant_frames = {}
+    for name in ("radiation", "tight", "loose"):
+        path = paths[name]
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"RGA final systematic study requires the {name} cache: {path}. "
+                "Run the ordinary production/systematic suite first."
+            )
+        # endif
+        print(f"[RGA cross-check] fitting {name} cache: {path}", flush=True)
+        events = load_event_cache(path)
+        variant_frames[name], _ = _rga_fit_cache(events, run_states)
+    # endfor
+
+    def keyed(frame, column):
+        return {
+            (int(row.rga_panel), int(row.t_bin)): float(getattr(row, column))
+            for row in frame.itertuples()
+            if bool(row.fit_valid)
+        }
+
+    nominal_lu = keyed(nominal_fit, "lu1")
+    radiation_lu = keyed(variant_frames["radiation"], "lu1")
+    tight_lu = keyed(variant_frames["tight"], "lu1")
+    loose_lu = keyed(variant_frames["loose"], "lu1")
+
+    rows = []
+    for row in nominal_fit.itertuples():
+        ip, it = int(row.rga_panel), int(row.t_bin)
+        pub = RGA_PUBLISHED[ip][it - 1]
+        rga_q2, rga_x, rga_t, rga_eps, rga_val, rga_stat, rga_sys = pub
+        key = (ip, it)
+
+        rad = (
+            abs(radiation_lu[key] - row.lu1)
+            if key in radiation_lu and bool(row.fit_valid)
+            else np.nan
+        )
+        if (
+            key in tight_lu and key in loose_lu and bool(row.fit_valid)
+        ):
+            dt = tight_lu[key] - row.lu1
+            dl = loose_lu[key] - row.lu1
+            channel = math.sqrt(0.5 * (dt * dt + dl * dl))
+        else:
+            channel = np.nan
+        # endif
+
+        migration_sys = float(migration.get(int(row.global_bin), np.nan))
+        rgc_ptp = (
+            math.sqrt(rad**2 + channel**2 + migration_sys**2)
+            if np.all(np.isfinite([rad, channel, migration_sys]))
+            else np.nan
+        )
+        uncorr_sigma = (
+            math.sqrt(
+                row.lu1_stat**2 + rgc_ptp**2 + rga_stat**2 + rga_sys**2
+            )
+            if bool(row.fit_valid) and np.isfinite(rgc_ptp)
+            else np.nan
+        )
+        raw_delta = row.lu1 - rga_val
+        raw_pull = (
+            raw_delta / uncorr_sigma
+            if np.isfinite(uncorr_sigma) and uncorr_sigma > 0.0
+            else np.nan
         )
 
-        status = "OK" if fit_valid else "INVALID"
-        print(
-            f"[RGA cross-check] panel {ip} t{it}: N={n:,}, "
-            f"u1={rgc_u1:+.4f}+/-{stat_u1:.4f}, "
-            f"u2={rgc_u2:+.4f}+/-{stat_u2:.4f}, "
-            f"LU={rgc_lu:+.4f}+/-{rgc_stat:.4f}; "
-            f"RGA={rga_val:+.4f} [{status}]",
-            flush=True,
-        )
+        rows.append({
+            "rga_panel": ip,
+            "t_bin": it,
+            "global_bin": int(row.global_bin),
+            "n_rgc": int(row.n),
+            "mean_xB_rgc": row.mean_xB,
+            "mean_Q2_rgc": row.mean_Q2,
+            "mean_minus_t_rgc": row.mean_minus_t,
+            "mean_minus_tprime_rgc": row.mean_minus_tprime,
+            "mean_y_rgc": row.mean_y,
+            "mean_epsilon_rgc": row.mean_epsilon,
+            "u1_rgc": row.u1,
+            "stat_u1_rgc": row.u1_stat,
+            "u2_rgc": row.u2,
+            "stat_u2_rgc": row.u2_stat,
+            "lu1_rgc": row.lu1,
+            "stat_rgc": row.lu1_stat,
+            "radiation_rgc": rad,
+            "channel_selection_rgc": channel,
+            "migration_remap_rgc": migration_sys,
+            "ptp_rgc": rgc_ptp,
+            "fit_valid": bool(row.fit_valid),
+            "edm": row.edm,
+            "xB_rga": rga_x,
+            "Q2_rga": rga_q2,
+            "minus_t_rga": rga_t,
+            "epsilon_rga": rga_eps,
+            "lu1_rga": rga_val,
+            "stat_rga": rga_stat,
+            "ptp_rga": rga_sys,
+            "uncorr_sigma": uncorr_sigma,
+            "delta_rgc_minus_rga": raw_delta,
+            "raw_pull_with_ptp": raw_pull,
+        })
     # endfor
 
     frame = pd.DataFrame(rows)
-    csv = tables / "rga_cross_check.csv"
+    profile = _profile_rga_rgc_scales(frame, scale_sigma=0.028)
+    frame["profiled_pull"] = np.nan
+    frame.loc[profile["use_mask"], "profiled_pull"] = profile["profiled_pulls"]
+    frame["lu1_rgc_profiled"] = (
+        (1.0 + profile["beta_rgc"]) * frame["lu1_rgc"]
+    )
+    frame["lu1_rga_profiled"] = (
+        (1.0 + profile["beta_rga"]) * frame["lu1_rga"]
+    )
+
+    csv = tables / "rga_rgc_final_comparison.csv"
     frame.to_csv(csv, index=False)
 
-    valid_frame = frame[frame["fit_valid"]].copy()
+    # Compact statistics/systematics comparison table.
+    summary_rows = []
+    for label, stat_col, ptp_col in (
+        ("RGC", "stat_rgc", "ptp_rgc"),
+        ("RGA", "stat_rga", "ptp_rga"),
+    ):
+        for kind, column in (("stat", stat_col), ("ptp", ptp_col)):
+            values = pd.to_numeric(frame[column], errors="coerce").to_numpy(float)
+            values = values[np.isfinite(values)]
+            summary_rows.append({
+                "dataset": label,
+                "uncertainty": kind,
+                "n": int(values.size),
+                "mean": float(np.mean(values)) if values.size else np.nan,
+                "median": float(np.median(values)) if values.size else np.nan,
+                "rms": float(np.sqrt(np.mean(values**2))) if values.size else np.nan,
+                "max": float(np.max(values)) if values.size else np.nan,
+            })
+        # endfor
+    # endfor
+    uncertainty_summary = pd.DataFrame(summary_rows)
+    uncertainty_summary.to_csv(
+        tables / "rga_rgc_uncertainty_summary.csv", index=False
+    )
+
+    # Raw ROOT cut flow for the panel-1 investigation.
+    cutflow = _rga_raw_cutflow(
+        args, run_records, tables / "rga_panel_cutflow.csv"
+    )
+
+    valid_pulls = frame["profiled_pull"].to_numpy(float)
+    valid_pulls = valid_pulls[np.isfinite(valid_pulls)]
+    pull_stats = {
+        "n": int(valid_pulls.size),
+        "mean": float(np.mean(valid_pulls)) if valid_pulls.size else np.nan,
+        "sample_sigma": (
+            float(np.std(valid_pulls, ddof=1))
+            if valid_pulls.size > 1 else np.nan
+        ),
+        "rms": (
+            float(np.sqrt(np.mean(valid_pulls**2)))
+            if valid_pulls.size else np.nan
+        ),
+        "median": (
+            float(np.median(valid_pulls)) if valid_pulls.size else np.nan
+        ),
+    }
+
+    print("\n[RGA cross-check] uncertainty summary", flush=True)
+    print(uncertainty_summary.to_string(index=False), flush=True)
+    print(
+        "[RGA cross-check] profiled compatibility: "
+        f"chi2/ndf={profile['chi2']:.3f}/{profile['ndf']}="
+        f"{profile['chi2_per_ndf']:.3f}, p={profile['p_value']:.4g}; "
+        f"beta_RGC={profile['beta_rgc']:+.4f} "
+        f"({profile['beta_rgc_pull']:+.2f} sigma), "
+        f"beta_RGA={profile['beta_rga']:+.4f} "
+        f"({profile['beta_rga_pull']:+.2f} sigma)",
+        flush=True,
+    )
+    print(
+        "[RGA cross-check] profiled pull distribution: "
+        f"N={pull_stats['n']}, mean={pull_stats['mean']:+.3f}, "
+        f"sigma={pull_stats['sample_sigma']:.3f}, "
+        f"RMS={pull_stats['rms']:.3f}",
+        flush=True,
+    )
 
     if not args.skip_plots:
-        fig, axes = plt.subplots(
-            3, 3, figsize=(12, 10), sharey=True
-        )
+        valid = frame[
+            frame["fit_valid"]
+            & np.isfinite(frame["ptp_rgc"])
+        ].copy()
+
+        # Final 3x3 overlay: inner bars are statistical, outer bars are
+        # stat+point-to-point.  The 2.8% scales are profiled separately.
+        fig, axes = plt.subplots(3, 3, figsize=(12, 10), sharey=True)
         for ip, ax in enumerate(axes.flat, start=1):
-            data = valid_frame[valid_frame.rga_panel == ip]
+            data = valid[valid.rga_panel == ip]
             pub = np.asarray(RGA_PUBLISHED[ip], float)
+            rga_outer = np.sqrt(pub[:,5]**2 + pub[:,6]**2)
             ax.errorbar(
-                pub[:, 2],
-                pub[:, 4],
-                yerr=np.hypot(pub[:, 5], pub[:, 6]),
-                fmt="o",
-                label="RGA (Diehl et al.)",
+                pub[:,2], pub[:,4], yerr=rga_outer, fmt="o",
+                capsize=2, label="RGA stat+ptp"
+            )
+            ax.errorbar(
+                pub[:,2], pub[:,4], yerr=pub[:,5], fmt="none",
+                capsize=4, label="RGA stat"
             )
             if len(data):
+                rgc_outer = np.sqrt(data.stat_rgc**2 + data.ptp_rgc**2)
                 ax.errorbar(
-                    data.mean_minus_t_rgc,
-                    data.lu1_rgc,
-                    yerr=data.stat_rgc,
-                    fmt="s",
-                    label="RGC cross-check",
+                    data.mean_minus_t_rgc, data.lu1_rgc,
+                    yerr=rgc_outer, fmt="s", capsize=2,
+                    label="RGC stat+ptp"
+                )
+                ax.errorbar(
+                    data.mean_minus_t_rgc, data.lu1_rgc,
+                    yerr=data.stat_rgc, fmt="none", capsize=4,
+                    label="RGC stat"
                 )
             # endif
-            ax.axhline(0, lw=0.8)
+            ax.axhline(0.0, lw=0.8)
             ax.set_title(f"RGA $Q^2$-$x_B$ bin {ip}")
             ax.set_xlabel(r"$-t$ (GeV$^2$)")
-            if ip in (1, 4, 7):
+            if ip in (1,4,7):
                 ax.set_ylabel(
                     r"$F_{LU}^{\sin\phi}/F_{UU}"
                     r"=\sigma_{LT'}/\sigma_0$"
                 )
             # endif
             if ip == 1:
-                ax.legend(fontsize=8)
+                ax.legend(fontsize=7)
             # endif
         # endfor
         fig.tight_layout()
-        fig.savefig(
-            plots / "rga_rgc_lu_overlay.png",
-            dpi=200,
-        )
+        fig.savefig(plots / "rga_rgc_final_overlay.png", dpi=200)
         plt.close(fig)
 
-        fig, axes = plt.subplots(
-            3, 3, figsize=(12, 10), sharey=True
-        )
-        for ip, ax in enumerate(axes.flat, start=1):
-            data = valid_frame[valid_frame.rga_panel == ip]
-            ax.axhline(0, lw=0.8)
-            if len(data):
-                ax.plot(
-                    data.mean_minus_t_rgc,
-                    data.pull,
-                    "o",
-                )
-            # endif
-            ax.set_title(f"RGA $Q^2$-$x_B$ bin {ip}")
-            ax.set_xlabel(r"$-t$ (GeV$^2$)")
-            if ip in (1, 4, 7):
-                ax.set_ylabel("RGC - RGA pull")
-            # endif
-        # endfor
+        # Point-by-point statistical and point-to-point uncertainty comparison.
+        fig, ax = plt.subplots(figsize=(11, 5.5))
+        xplot = np.arange(len(valid))
+        ax.plot(xplot, valid.stat_rgc, "o", label="RGC stat")
+        ax.plot(xplot, valid.ptp_rgc, "s", label="RGC point-to-point")
+        ax.plot(xplot, valid.stat_rga, "^", label="RGA stat")
+        ax.plot(xplot, valid.ptp_rga, "v", label="RGA point-to-point")
+        ax.set_xlabel("Matched RGA/RGC comparison point")
+        ax.set_ylabel(r"Absolute uncertainty on $F_{LU}^{\sin\phi}/F_{UU}$")
+        ax.legend()
         fig.tight_layout()
-        fig.savefig(
-            plots / "rga_rgc_lu_pulls.png",
-            dpi=200,
+        fig.savefig(plots / "rga_rgc_uncertainty_comparison.png", dpi=200)
+        plt.close(fig)
+
+        # Source breakdown of the RGC point-to-point systematic.
+        fig, ax = plt.subplots(figsize=(11, 5.5))
+        ax.plot(xplot, valid.radiation_rgc, "o", label="Radiation")
+        ax.plot(xplot, valid.channel_selection_rgc, "s", label="Channel selection")
+        ax.plot(xplot, valid.migration_remap_rgc, "^", label="Migration remap")
+        ax.plot(xplot, valid.ptp_rgc, "D", label="Total RGC point-to-point")
+        ax.set_xlabel("Matched RGA/RGC comparison point")
+        ax.set_ylabel("Absolute systematic uncertainty")
+        ax.legend()
+        fig.tight_layout()
+        fig.savefig(plots / "rgc_ptp_systematic_breakdown.png", dpi=200)
+        plt.close(fig)
+
+        # Pull histogram after profiling the two independent scale nuisances.
+        fig, ax = plt.subplots(figsize=(7.5, 5.5))
+        bins = np.linspace(-4.0, 4.0, 17)
+        ax.hist(valid_pulls, bins=bins, histtype="stepfilled", alpha=0.65)
+        ax.axvline(0.0, lw=1.0)
+        ax.set_xlabel("Profiled RGC - RGA pull")
+        ax.set_ylabel("Comparison points")
+        ax.text(
+            0.03, 0.97,
+            f"N = {pull_stats['n']}\n"
+            f"mean = {pull_stats['mean']:+.2f}\n"
+            f"sigma = {pull_stats['sample_sigma']:.2f}\n"
+            f"RMS = {pull_stats['rms']:.2f}\n"
+            f"chi2/ndf = {profile['chi2_per_ndf']:.2f}",
+            transform=ax.transAxes, va="top"
         )
+        fig.tight_layout()
+        fig.savefig(plots / "rga_rgc_profiled_pull_histogram.png", dpi=200)
+        plt.close(fig)
+
+        # Pull versus point after profiling.
+        fig, ax = plt.subplots(figsize=(11, 5.5))
+        ax.axhline(0.0, lw=0.8)
+        ax.axhline(+1.0, lw=0.7, ls="--")
+        ax.axhline(-1.0, lw=0.7, ls="--")
+        ax.plot(np.arange(len(valid_pulls)), valid_pulls, "o")
+        ax.set_xlabel("Matched RGA/RGC comparison point")
+        ax.set_ylabel("Profiled RGC - RGA pull")
+        fig.tight_layout()
+        fig.savefig(plots / "rga_rgc_profiled_pulls.png", dpi=200)
         plt.close(fig)
     # endif
 
-    write_json(
-        out / "rga_cross_check_manifest.json",
-        {
-            "selection": {
-                "Q2_min_gev2": 1.5,
-                "W_min_gev": 2.0,
-                "y_max": 0.75,
-            },
-            "fit_parameters": [
-                "u1 = F_UU^{cos(phi)}/F_UU",
-                "u2 = F_UU^{cos(2phi)}/F_UU",
-                "lu1 = F_LU^{sin(phi)}/F_UU",
-            ],
-            "observable": (
-                "F_LU^{sin(phi)}/F_UU = sigma_LT'/sigma_0"
-            ),
-            "number_of_comparison_points": int(len(frame)),
-            "number_of_valid_comparison_points": int(
-                np.count_nonzero(frame["fit_valid"])
-            ),
-            "important_note": (
-                "Comparison-only three-parameter UU+LU fit performed "
-                "directly in each Diehl (Q2,xB,-t) bin. No amplitudes "
-                "or dilution factors are imported from the nominal "
-                "24-bin production fit. Target-spin UL/LL terms are "
-                "omitted in this first cross-check implementation. "
-                "The production extraction is unchanged."
+    manifest = {
+        "selection": {
+            "Q2_min_gev2": 1.5,
+            "W_min_gev": 2.0,
+            "y_max": 0.75,
+        },
+        "fit_parameters": [
+            "u1 = F_UU^{cos(phi)}/F_UU",
+            "u2 = F_UU^{cos(2phi)}/F_UU",
+            "lu1 = F_LU^{sin(phi)}/F_UU",
+        ],
+        "rgc_point_to_point": (
+            "sqrt(radiation^2 + channel_selection^2 + "
+            "migration_remap^2)"
+        ),
+        "radiation": "|LU_ISR - LU_nominal| in the Diehl binning",
+        "channel_selection": (
+            "sqrt(((LU_tight-LU_nominal)^2 + "
+            "(LU_loose-LU_nominal)^2)/2) in the Diehl binning"
+        ),
+        "migration": (
+            "event-weighted remap of the established production-bin LU "
+            "migration systematic using each event's original (xB,-t') bin"
+        ),
+        "rga_point_to_point": (
+            "published Diehl et al. systematic uncertainty for each point"
+        ),
+        "beam_polarization_scale": {
+            "RGC": 0.028,
+            "RGA": 0.028,
+            "correlation": (
+                "100% within each dataset; independent between datasets"
             ),
         },
-    )
-    print(
-        f"[RGA cross-check] wrote {csv}",
-        flush=True,
-    )
+        "profiled_compatibility": {
+            key: value for key, value in profile.items()
+            if key not in ("profiled_pulls", "use_mask")
+        },
+        "profiled_pull_distribution": pull_stats,
+        "products": {
+            "comparison_csv": str(csv),
+            "uncertainty_summary_csv": str(
+                tables / "rga_rgc_uncertainty_summary.csv"
+            ),
+            "raw_cutflow_csv": str(tables / "rga_panel_cutflow.csv"),
+            "plots_directory": str(plots),
+        },
+        "important_note": (
+            "This entire study is isolated behind --rga-cross-check. "
+            "The production extraction is unchanged."
+        ),
+    }
+    write_json(out / "rga_cross_check_manifest.json", manifest)
+    print(f"[RGA cross-check] wrote {csv}", flush=True)
     return 0
 
 
