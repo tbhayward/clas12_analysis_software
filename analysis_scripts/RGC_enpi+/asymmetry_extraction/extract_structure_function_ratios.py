@@ -115,20 +115,22 @@ exclusivity cuts.  Thus the radiation comparison consistently propagates the
 change in event kinematics, event selection, and dilution factor through the
 full asymmetry extraction.
 
-Momentum-correction uncertainty
--------------------------------
+Momentum-correction diagnostic
+------------------------------
 The nominal production files include the established electron and pi+ momentum
 corrections.  A matched extraction is also performed with the corresponding
 uncorrected ROOT files while retaining the same nominal channel-selection cuts,
-run information, and nominal dilution factors.  For each observable, the
-pointwise momentum-correction systematic is
+run information, and nominal dilution factors.  This comparison is retained as
+a correction-validation diagnostic only.  Turning the established correction
+off is not an equally plausible analysis alternative, so
 
-    abs(a_without_corrections - a_with_corrections).
+    abs(a_without_corrections - a_with_corrections)
 
-The complete signed no-correction-minus-corrected variation vector and its
-outer-product covariance are retained for coherent propagation across bins.
-Because both samples originate from the same measured events, the associated
-Barlow denominator uses the correlated-sample variance-difference prescription.
+is NOT assigned as a point-to-point systematic uncertainty and is NOT included
+in the final systematic quadrature.  A residual momentum-correction uncertainty
+would require a separate estimate of the uncertainty on the correction itself.
+The signed comparison vector, covariance diagnostic, and Barlow readout are
+still retained.
 
 Channel-selection uncertainty
 -----------------------------
@@ -146,6 +148,30 @@ The radiation sample uses its separately recalculated Method-1 dilution factor
 and bootstrap statistical uncertainty.  The correlated 4% dilution-factor
 scale uncertainty is intentionally not included in the radiation difference;
 it is imposed separately as a scale uncertainty on the final observables.
+
+Bin-migration uncertainty
+-------------------------
+The established 24x24 MC migration matrix from the previous analysis-note
+version is embedded below.  Matrix row i gives the fractional composition of
+reconstructed bin i in terms of generated bins j.  Because the published table
+is rounded to two decimal places, each row is renormalized to unit sum before
+application; otherwise a constant observable would acquire an artificial 1--2%
+shift from rounding alone.  For each of the five published polarized ratios,
+
+    a_migrated[i] = sum_j M_normalized[i,j] * a_nominal[j]
+
+    delta_migration[i] = 1.5 * abs(a_migrated[i] - a_nominal[i]).
+
+The factor 1.5 retains the established conservative prescription for GEMC
+underestimating the relevant detector resolution.  The two fitted unpolarized
+modulations are nuisance quantities required by the simultaneous likelihood;
+they are not publication observables and are excluded from migration and from
+publication-level systematic averages.
+
+The final published point-to-point systematic is therefore
+
+    sqrt(delta_radiation^2 + delta_target_axis^2
+         + delta_channel_selection^2 + delta_migration^2).
 
 Barlow consistency criterion
 ----------------------------
@@ -635,6 +661,38 @@ SYSTEMATIC_COMPARISON_DPI = 200
 PUBLISHED_SYSTEMATIC_PARAMETERS: tuple[str, ...] = (
     "lu1", "ul1", "ul2", "ll0", "ll1",
 )
+
+# Established MC bin-migration composition matrix from the previous analysis
+# note.  Row i is the generated-bin composition of reconstructed bin i.
+# Values were published rounded to two decimal places, so rows are normalized
+# before use.
+MIGRATION_RESOLUTION_SCALE = 1.5
+MIGRATION_MATRIX = np.asarray([
+    [0.93,0.03,0,0,0,0,0.03,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0.11,0.80,0.04,0,0,0,0,0.04,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0.01,0.11,0.83,0.02,0,0,0,0,0.01,0.03,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0.10,0.82,0.03,0,0,0,0.01,0.03,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0.01,0.09,0.83,0.04,0,0,0,0,0.01,0.02,0,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0.01,0.11,0.84,0,0,0,0,0,0.01,0.02,0,0,0,0,0,0,0,0,0,0,0],
+    [0.01,0,0,0,0,0,0.93,0.02,0,0,0,0,0.05,0,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0.16,0.70,0.02,0,0,0,0.04,0.07,0,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0.01,0.14,0.71,0.02,0,0,0,0.04,0.07,0,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0.01,0.17,0.68,0.03,0,0,0.01,0.03,0.06,0,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0.01,0.14,0.70,0.05,0,0,0.01,0.03,0.04,0,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0.01,0.14,0.76,0,0,0.01,0.01,0.03,0.03,0,0,0,0,0,0],
+    [0,0,0,0,0,0,0.01,0,0,0,0,0,0.94,0.03,0,0,0,0,0.02,0,0,0,0,0],
+    [0,0,0,0,0,0,0,0.01,0,0,0,0,0.17,0.74,0.03,0,0,0,0.02,0.02,0,0,0,0],
+    [0,0,0,0,0,0,0,0,0.01,0,0,0,0.01,0.16,0.72,0.03,0,0,0.01,0.02,0.03,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0.01,0.19,0.70,0.04,0,0,0.01,0.02,0.02,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.02,0.17,0.69,0.04,0,0.01,0.01,0.01,0.03,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0.01,0,0,0,0.02,0.19,0.71,0,0,0.01,0.01,0.02,0.03],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0.03,0,0,0,0,0,0.89,0.06,0.01,0,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0.02,0.01,0,0,0,0.23,0.69,0.04,0.01,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.01,0.01,0,0,0.02,0.24,0.67,0.05,0,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.02,0,0,0,0.03,0.24,0.66,0.05,0],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.01,0,0,0.01,0.05,0.18,0.70,0.04],
+    [0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0.02,0,0,0.01,0.06,0.25,0.65],
+], dtype=np.float64)
 
 # Physics-motivated 3x4 canvas layout:
 #   top row:    UU (unpolarized) structure-function ratios
@@ -4557,45 +4615,47 @@ def write_latex_table(
     include_target_axis_uncertainty: bool,
     sample_variant: str,
 ) -> None:
-    """Write a LaTeX table appropriate for the selected sample variant.
+    """Write the publication-facing table for the five polarized observables.
 
-    The nominal extraction includes the target-axis envelope as a second
-    uncertainty.  The ISR extraction intentionally omits the target-axis
-    study, so its table contains only the statistical uncertainty rather than
-    attempting to convert the corresponding ``None`` values to floats.
+    The two UU harmonics remain fitted nuisance quantities and are deliberately
+    omitted.  Once the final point-to-point columns have been attached, the
+    nominal table quotes statistical and total point-to-point uncertainties.
+    Earlier/intermediate variant tables quote the uncertainty information that
+    is actually available at that stage.
     """
     ensure_directory(path.parent)
+    parameters = PUBLISHED_SYSTEMATIC_PARAMETERS
     lines = [
         r"\begin{table}[htbp]",
         r"\centering",
         r"\small",
-        r"\begin{tabular}{rrrrrrrrrr}",
+        r"\begin{tabular}{rrrrrr}",
         r"\hline",
         (
-            r"Bin & $F_{UU}^{\cos\phi}/F_{UU}$ & "
-            r"$F_{UU}^{\cos2\phi}/F_{UU}$ & "
-            r"$F_{LU}^{\sin\phi}/F_{UU}$ & "
+            r"Bin & $F_{LU}^{\sin\phi}/F_{UU}$ & "
             r"$F_{UL}^{\sin\phi}/F_{UU}$ & "
             r"$F_{UL}^{\sin2\phi}/F_{UU}$ & "
-            r"$F_{UT}^{\sin(3\phi-\phi_S)}/F_{UU}$ & "
             r"$F_{LL}/F_{UU}$ & "
-            r"$F_{LL}^{\cos\phi}/F_{UU}$ & "
-            r"$F_{LT}^{\cos(2\phi-\phi_S)}/F_{UU}$ \\"
+            r"$F_{LL}^{\cos\phi}/F_{UU}$ \\"
         ),
         r"\hline",
     ]
 
+    has_final_ptp = all(
+        f"{parameter}_point_to_point_systematic" in frame.columns
+        for parameter in parameters
+    )
     for row in frame.itertuples(index=False):
         entries = [str(int(row.bin_number))]
-        for parameter in PHYSICS_PARAMETERS:
+        for parameter in parameters:
             value = float(getattr(row, parameter))
             stat = float(getattr(row, f"{parameter}_stat"))
-            if include_target_axis_uncertainty:
-                axis_raw = getattr(row, f"{parameter}_target_axis_sys")
-                axis = float(axis_raw)
-                entries.append(
-                    rf"${value:.5f}\pm{stat:.5f}\pm{axis:.5f}$"
-                )
+            if has_final_ptp:
+                ptp = float(getattr(row, f"{parameter}_point_to_point_systematic"))
+                entries.append(rf"${value:.5f}\pm{stat:.5f}\pm{ptp:.5f}$")
+            elif include_target_axis_uncertainty:
+                axis = float(getattr(row, f"{parameter}_target_axis_sys"))
+                entries.append(rf"${value:.5f}\pm{stat:.5f}\pm{axis:.5f}$")
             else:
                 entries.append(rf"${value:.5f}\pm{stat:.5f}$")
             # endif
@@ -4603,37 +4663,38 @@ def write_latex_table(
         lines.append(" & ".join(entries) + r" \\")
     # endfor
 
-    if include_target_axis_uncertainty:
+    if has_final_ptp:
         caption = (
-            r"Nominal simultaneous unbinned-likelihood results. "
-            r"The first uncertainty is statistical and includes the "
-            r"Gaussian-constrained dilution-factor statistical uncertainty. "
-            r"The second is the target-axis treatment uncertainty; for the "
-            r"two explicitly transverse observables this is the nominal-to-"
-            r"external-leakage shift because they are unobservable when "
-            r"$P_T$ is set to zero. "
-            r"Polarization and dilution-model scale uncertainties are not "
-            r"included."
+            r"Nominal simultaneous unbinned-likelihood results for the five "
+            r"published polarized structure-function ratios. The first "
+            r"uncertainty is statistical and includes the Gaussian-constrained "
+            r"dilution-factor statistical uncertainty. The second is the total "
+            r"point-to-point systematic uncertainty, combining radiation, "
+            r"target-axis treatment, channel selection, and bin migration in "
+            r"quadrature. Correlated polarization and dilution-model scale "
+            r"uncertainties are not included."
+        )
+    elif include_target_axis_uncertainty:
+        caption = (
+            r"Intermediate nominal simultaneous unbinned-likelihood results "
+            r"for the five published polarized structure-function ratios. "
+            r"The first uncertainty is statistical and the second is the "
+            r"target-axis treatment uncertainty."
         )
     else:
         caption = (
             rf"{sample_variant.upper()} simultaneous unbinned-likelihood "
-            r"diagnostic results. The quoted uncertainty is statistical and "
-            r"includes the Gaussian-constrained dilution-factor statistical "
-            r"uncertainty. No target-axis envelope is evaluated for the ISR "
-            r"sample. Polarization and dilution-model scale uncertainties "
-            r"are not included."
+            r"diagnostic results for the five polarized structure-function "
+            r"ratios. The quoted uncertainty is statistical."
         )
     # endif
 
-    lines.extend(
-        [
-            r"\hline",
-            r"\end{tabular}",
-            rf"\caption{{{caption}}}",
-            r"\end{table}",
-        ]
-    )
+    lines.extend([
+        r"\hline",
+        r"\end{tabular}",
+        rf"\caption{{{caption}}}",
+        r"\end{table}",
+    ])
     path.write_text("\n".join(lines) + "\n", encoding="utf-8")
 
 
@@ -5276,9 +5337,9 @@ def write_channel_selection_comparison_products(
     definition = r"$\delta_{\rm ch}=\sqrt{(\Delta_{\rm tight}^2+\Delta_{\rm loose}^2)/2}$"
     def draw(parameter: str, axes: np.ndarray, *, show_legends: bool, show_xlabel: bool) -> None:
         draw_systematic_comparison(axes, x=x, parameter=parameter, top_series=[
-            {"values": merged[f"{parameter}_nominal"], "errors": merged[f"{parameter}_stat_nominal"], "fmt": "o", "label": r"Nominal ($\mu\pm3\sigma$)"},
-            {"values": merged[f"{parameter}_tight"], "errors": merged[f"{parameter}_stat_tight"], "fmt": "^", "label": r"Tight ($\mu\pm2\sigma$)"},
-            {"values": merged[f"{parameter}_loose"], "errors": merged[f"{parameter}_stat_loose"], "fmt": "s", "label": r"Loose ($\mu\pm4\sigma$)"},
+            {"values": merged[f"{parameter}_nominal"], "errors": merged[f"{parameter}_stat_nominal"], "fmt": "o", "label": r"Nominal ($\mu\pm2\sigma$)"},
+            {"values": merged[f"{parameter}_tight"], "errors": merged[f"{parameter}_stat_tight"], "fmt": "^", "label": r"Tight ($\mu\pm1\sigma$)"},
+            {"values": merged[f"{parameter}_loose"], "errors": merged[f"{parameter}_stat_loose"], "fmt": "s", "label": r"Loose ($\mu\pm3\sigma$)"},
         ], systematic=merged[f"{parameter}_channel_selection_rms_systematic"], status=merged[f"{parameter}_channel_selection_barlow_status"], systematic_definition=definition, show_legends=show_legends, show_xlabel=show_xlabel)
     # enddef
     plot_paths: list[str] = []
@@ -5298,6 +5359,196 @@ def write_channel_selection_comparison_products(
     write_json(json_path, {"schema_version": 4, "systematic_definition": "delta_ch = sqrt(((tight-nominal)^2 + (loose-nominal)^2)/2)", "combined_barlow_marker_rule": "Filled if either tight or loose variation passes Barlow; open only if both defined variations fail; x if unresolved/undefined.", "middle_panel": "Assigned RMS systematic with Barlow marker state.", "bottom_panel": "Assigned RMS systematic divided by nominal statistical uncertainty.", "plot_axis_convention": "Top-panel axes are common by parameter family; every assigned-systematic panel uses 0 to 0.2; normalized-size axis is logarithmic from 1e-2 to 1e1.", "barlow_summary": barlow_records, "rows": merged.to_dict(orient="records")})
     return {"csv": str(csv_path), "json": str(json_path), "plots_directory": str(plots_dir), "plots": plot_paths, "summary": summary, "covariance_directory": str(covariance_dir), "covariance": covariance_products, "barlow_summary": barlow_records}
 
+def calculate_migration_systematics(
+    nominal: pd.DataFrame,
+) -> tuple[dict[str, np.ndarray], dict[str, np.ndarray], np.ndarray]:
+    """Calculate current-result migration shifts from the established matrix.
+
+    The published matrix rows are rounded generated-bin compositions of each
+    reconstructed bin.  Renormalizing each row is essential: a constant input
+    observable must remain constant after migration despite the 0.98--1.01 row
+    sums introduced by two-decimal-place publication rounding.
+
+    Returns
+    -------
+    migrated
+        Migration-smeared values for the five published polarized ratios.
+    assigned
+        1.5 * abs(migrated - nominal), the established conservative systematic.
+    matrix_normalized
+        Row-normalized matrix actually used in the calculation.
+    """
+    if len(nominal) != NUMBER_OF_BINS:
+        raise ValueError(
+            f"Migration calculation requires {NUMBER_OF_BINS} nominal bins; "
+            f"received {len(nominal)}."
+        )
+    # endif
+    ordered = nominal.sort_values("bin_number")
+    expected_bins = np.arange(1, NUMBER_OF_BINS + 1, dtype=int)
+    actual_bins = ordered["bin_number"].to_numpy(dtype=int)
+    if not np.array_equal(actual_bins, expected_bins):
+        raise ValueError(
+            "Migration matrix assumes nominal bins are numbered consecutively "
+            f"1..{NUMBER_OF_BINS}; received {actual_bins.tolist()}."
+        )
+    # endif
+
+    row_sums = MIGRATION_MATRIX.sum(axis=1)
+    if np.any(~np.isfinite(row_sums)) or np.any(row_sums <= 0.0):
+        raise ValueError("Migration matrix contains a non-finite or empty row.")
+    # endif
+    matrix_normalized = MIGRATION_MATRIX / row_sums[:, None]
+
+    # Sanity check: row normalization must preserve a constant observable.
+    constant_check = matrix_normalized @ np.ones(NUMBER_OF_BINS, dtype=float)
+    if not np.allclose(constant_check, 1.0, rtol=0.0, atol=1.0e-12):
+        raise RuntimeError("Normalized migration matrix does not preserve constants.")
+    # endif
+
+    migrated: dict[str, np.ndarray] = {}
+    assigned: dict[str, np.ndarray] = {}
+    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+        values = pd.to_numeric(ordered[parameter], errors="coerce").to_numpy(dtype=float)
+        if not np.all(np.isfinite(values)):
+            raise ValueError(
+                f"Cannot calculate migration systematic for {parameter}: "
+                "nominal values contain non-finite entries."
+            )
+        # endif
+        smeared = matrix_normalized @ values
+        migrated[parameter] = smeared
+        assigned[parameter] = MIGRATION_RESOLUTION_SCALE * np.abs(smeared - values)
+    # endfor
+    return migrated, assigned, matrix_normalized
+
+
+def write_migration_systematic_products(
+    nominal: pd.DataFrame,
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Write migration matrix, per-bin shifts, covariance, and diagnostics."""
+    tables_dir = output_dir / "tables"
+    plots_dir = output_dir / "plots"
+    covariance_dir = output_dir / "covariance"
+    for directory in (tables_dir, plots_dir, covariance_dir):
+        ensure_directory(directory)
+    # endfor
+
+    ordered = nominal.sort_values("bin_number").reset_index(drop=True)
+    migrated, assigned, matrix_normalized = calculate_migration_systematics(ordered)
+    row_sums = MIGRATION_MATRIX.sum(axis=1)
+
+    matrix_raw_path = tables_dir / "migration_matrix_published_rounded.csv"
+    matrix_norm_path = tables_dir / "migration_matrix_row_normalized.csv"
+    pd.DataFrame(MIGRATION_MATRIX).to_csv(matrix_raw_path, index=False)
+    pd.DataFrame(matrix_normalized).to_csv(matrix_norm_path, index=False)
+
+    columns: dict[str, Any] = {
+        "bin_number": ordered["bin_number"].to_numpy(dtype=int),
+        "x_index": ordered["x_index"].to_numpy(dtype=int),
+        "t_index": ordered["t_index"].to_numpy(dtype=int),
+        "migration_matrix_published_row_sum": row_sums,
+    }
+    covariance_products: dict[str, str] = {}
+    plot_paths: list[str] = []
+    x = ordered["bin_number"].to_numpy(dtype=float)
+
+    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+        nominal_values = ordered[parameter].to_numpy(dtype=float)
+        smeared = migrated[parameter]
+        signed_base_shift = smeared - nominal_values
+        signed_assigned_shift = MIGRATION_RESOLUTION_SCALE * signed_base_shift
+        systematic = assigned[parameter]
+        stat = ordered[f"{parameter}_stat"].to_numpy(dtype=float)
+
+        columns[f"{parameter}_nominal"] = nominal_values
+        columns[f"{parameter}_migrated"] = smeared
+        columns[f"{parameter}_migration_signed_shift_unscaled"] = signed_base_shift
+        columns[f"{parameter}_migration_signed_shift_scaled"] = signed_assigned_shift
+        columns[f"{parameter}_migration_systematic"] = systematic
+        columns[f"{parameter}_migration_systematic_to_stat"] = np.divide(
+            systematic,
+            stat,
+            out=np.full_like(systematic, np.nan),
+            where=stat > 0.0,
+        )
+
+        covariance_path = covariance_dir / f"{parameter}_migration_covariance.npy"
+        np.save(covariance_path, np.outer(signed_assigned_shift, signed_assigned_shift))
+        covariance_products[parameter] = str(covariance_path)
+
+        fig, axes = plt.subplots(3, 1, figsize=SYSTEMATIC_COMPARISON_FIGSIZE, sharex=True)
+        axes[0].errorbar(
+            x, nominal_values, yerr=stat, marker="o", linestyle="none",
+            capsize=2, label="Nominal extraction",
+        )
+        axes[0].plot(x, smeared, "s", label="Migration-smeared nominal values")
+        axes[0].set_ylabel(PARAMETER_LABELS[parameter])
+        apply_parameter_y_limits(axes[0], parameter)
+        axes[0].legend()
+        axes[0].grid(alpha=0.25)
+
+        axes[1].bar(x, systematic, width=0.70, alpha=0.55)
+        axes[1].set_ylabel("Assigned systematic")
+        axes[1].text(
+            0.02, 0.95,
+            r"$\delta_{\rm migr}=1.5\,|M_{\rm row\,norm}a-a|$",
+            transform=axes[1].transAxes, va="top",
+        )
+        axes[1].set_ylim(*systematic_size_y_limits(parameter))
+        axes[1].grid(alpha=0.25)
+
+        ratio = np.divide(
+            systematic, stat, out=np.full_like(systematic, np.nan), where=stat > 0.0,
+        )
+        axes[2].plot(x, ratio, "o")
+        axes[2].axhline(1.0, linewidth=0.8)
+        axes[2].set_yscale("log")
+        axes[2].set_ylim(*SYSTEMATIC_TO_STAT_RATIO_Y_LIMITS)
+        axes[2].set_ylabel(r"$\delta_{\rm migr}/\sigma_{\rm stat}$")
+        axes[2].set_xlabel("Combined kinematic-bin number")
+        axes[2].grid(alpha=0.25)
+        fig.tight_layout()
+        path = plots_dir / f"migration_{parameter}.png"
+        fig.savefig(path, dpi=SYSTEMATIC_COMPARISON_DPI)
+        plt.close(fig)
+        plot_paths.append(str(path))
+    # endfor
+
+    frame = pd.DataFrame(columns)
+    csv_path = tables_dir / "migration_systematics.csv"
+    json_path = tables_dir / "migration_systematics.json"
+    frame.to_csv(csv_path, index=False)
+    write_json(json_path, {
+        "schema_version": 1,
+        "published_parameters_only": list(PUBLISHED_SYSTEMATIC_PARAMETERS),
+        "matrix_definition": (
+            "Published row i gives generated-bin composition j of reconstructed bin i. "
+            "Rows are renormalized before application because the published entries are "
+            "rounded to two decimal places."
+        ),
+        "resolution_scale_factor": MIGRATION_RESOLUTION_SCALE,
+        "systematic_definition": (
+            "delta_migration[i] = 1.5 * abs(sum_j M_row_normalized[i,j] * "
+            "a_nominal[j] - a_nominal[i])"
+        ),
+        "published_matrix_row_sums_before_normalization": row_sums.tolist(),
+        "raw_matrix_csv": str(matrix_raw_path),
+        "normalized_matrix_csv": str(matrix_norm_path),
+        "covariance": covariance_products,
+        "rows": frame.to_dict(orient="records"),
+    })
+    return {
+        "csv": str(csv_path),
+        "json": str(json_path),
+        "raw_matrix_csv": str(matrix_raw_path),
+        "normalized_matrix_csv": str(matrix_norm_path),
+        "plots": plot_paths,
+        "covariance": covariance_products,
+    }
+
+
 def attach_point_to_point_systematics(
     nominal: pd.DataFrame,
     isr: pd.DataFrame | None,
@@ -5305,35 +5556,44 @@ def attach_point_to_point_systematics(
     channel_tight: pd.DataFrame | None,
     channel_loose: pd.DataFrame | None,
 ) -> pd.DataFrame:
-    """Attach radiation, momentum, channel-selection, and total point-to-point errors.
+    """Attach source-by-source and final point-to-point uncertainties.
 
-    The three assigned sources are combined independently in quadrature:
+    For the five published polarized observables, the assigned total is
 
-        delta_ptp = sqrt(delta_rad^2 + delta_mom^2 + delta_ch^2),
+        delta_ptp = sqrt(delta_rad^2 + delta_axis^2
+                         + delta_ch^2 + delta_migration^2).
 
-    where delta_ch is the RMS of the tight and loose shifts about nominal.
-    Missing disabled studies contribute zero, while non-finite values in an
-    enabled study remain non-finite so incomplete systematic coverage is not
-    silently hidden.
+    The momentum-correction on/off difference is retained in its own diagnostic
+    column but is deliberately excluded from the assigned total.  The two UU
+    modulations are fitted nuisance quantities and receive no migration term;
+    they are excluded from publication-level systematic summaries.
     """
-    output = nominal.copy()
+    output = nominal.copy().sort_values("bin_number").reset_index(drop=True)
+    _, migration_assigned, _ = calculate_migration_systematics(output)
+
     for parameter in PHYSICS_PARAMETERS:
         nominal_values = pd.to_numeric(output[parameter], errors="coerce").to_numpy(dtype=float)
 
         if isr is None:
             radiation = np.zeros_like(nominal_values)
         else:
+            isr_ordered = isr.sort_values("bin_number")
             radiation = np.abs(
-                pd.to_numeric(isr[parameter], errors="coerce").to_numpy(dtype=float)
+                pd.to_numeric(isr_ordered[parameter], errors="coerce").to_numpy(dtype=float)
                 - nominal_values
             )
         # endif
 
+        target_axis = pd.to_numeric(
+            output[f"{parameter}_target_axis_sys"], errors="coerce"
+        ).to_numpy(dtype=float)
+
         if momentum_uncorrected is None:
-            momentum = np.zeros_like(nominal_values)
+            momentum_diagnostic = np.zeros_like(nominal_values)
         else:
-            momentum = np.abs(
-                pd.to_numeric(momentum_uncorrected[parameter], errors="coerce").to_numpy(dtype=float)
+            momentum_ordered = momentum_uncorrected.sort_values("bin_number")
+            momentum_diagnostic = np.abs(
+                pd.to_numeric(momentum_ordered[parameter], errors="coerce").to_numpy(dtype=float)
                 - nominal_values
             )
         # endif
@@ -5341,30 +5601,41 @@ def attach_point_to_point_systematics(
         if channel_tight is None or channel_loose is None:
             channel = np.zeros_like(nominal_values)
         else:
+            tight_ordered = channel_tight.sort_values("bin_number")
+            loose_ordered = channel_loose.sort_values("bin_number")
             tight_shift = (
-                pd.to_numeric(channel_tight[parameter], errors="coerce").to_numpy(dtype=float)
+                pd.to_numeric(tight_ordered[parameter], errors="coerce").to_numpy(dtype=float)
                 - nominal_values
             )
             loose_shift = (
-                pd.to_numeric(channel_loose[parameter], errors="coerce").to_numpy(dtype=float)
+                pd.to_numeric(loose_ordered[parameter], errors="coerce").to_numpy(dtype=float)
                 - nominal_values
             )
             channel = np.sqrt(0.5 * (tight_shift**2 + loose_shift**2))
         # endif
 
-        total = np.sqrt(radiation**2 + momentum**2 + channel**2)
+        migration = (
+            migration_assigned[parameter]
+            if parameter in PUBLISHED_SYSTEMATIC_PARAMETERS
+            else np.zeros_like(nominal_values)
+        )
+        total = np.sqrt(radiation**2 + target_axis**2 + channel**2 + migration**2)
+
         output[f"{parameter}_radiation_systematic"] = radiation
-        output[f"{parameter}_momentum_correction_systematic"] = momentum
+        output[f"{parameter}_target_axis_systematic"] = target_axis
+        output[f"{parameter}_momentum_correction_difference_diagnostic"] = momentum_diagnostic
+        # Keep the legacy column name for downstream compatibility, but make
+        # its diagnostic-only status explicit in the new manifest and JSON.
+        output[f"{parameter}_momentum_correction_systematic"] = momentum_diagnostic
         output[f"{parameter}_channel_selection_systematic"] = channel
+        output[f"{parameter}_bin_migration_systematic"] = migration
         output[f"{parameter}_point_to_point_systematic"] = total
+        stat = pd.to_numeric(output[f"{parameter}_stat"], errors="coerce").to_numpy(dtype=float)
         output[f"{parameter}_point_to_point_systematic_to_stat"] = np.divide(
             total,
-            pd.to_numeric(output[f"{parameter}_stat"], errors="coerce").to_numpy(dtype=float),
+            stat,
             out=np.full_like(total, np.nan),
-            where=(
-                pd.to_numeric(output[f"{parameter}_stat"], errors="coerce").to_numpy(dtype=float)
-                > 0.0
-            ),
+            where=stat > 0.0,
         )
     # endfor
     return output
@@ -5963,6 +6234,10 @@ def main() -> int:
         )
     # endif
 
+    migration_products = write_migration_systematic_products(
+        nominal_result["frame"], diagnostics_dir / "bin_migration"
+    )
+
     nominal_with_systematics = attach_point_to_point_systematics(
         nominal=nominal_result["frame"],
         isr=(isr_result["frame"] if isr_result is not None else None),
@@ -5982,17 +6257,25 @@ def main() -> int:
     # Also update the production CSV so downstream consumers receive the
     # source-by-source and total point-to-point systematic columns directly.
     nominal_with_systematics.to_csv(Path(nominal_result["csv"]), index=False)
+    # Rewrite the publication-facing nominal LaTeX table now that the final
+    # point-to-point systematic has been assembled.
+    write_latex_table(
+        nominal_with_systematics,
+        Path(nominal_result["latex"]),
+        include_target_axis_uncertainty=False,
+        sample_variant="nominal",
+    )
 
     if not args.skip_plots:
         plot_parameter_summaries(
             nominal_with_systematics,
             nominal_dir / "plots/all_bins",
-            include_target_axis_uncertainty=True,
+            include_target_axis_uncertainty=False,
         )
         plot_aggregated_by_x(
             nominal_with_systematics,
             nominal_dir / "plots/aggregated",
-            include_target_axis_uncertainty=True,
+            include_target_axis_uncertainty=False,
         )
     # endif
 
@@ -6008,8 +6291,15 @@ def main() -> int:
     if channel_comparison is not None:
         all_barlow_records.extend(channel_comparison["barlow_summary"])
     # endif
+    # Publication-level Barlow summaries exclude the two fitted UU nuisance
+    # modulations.  Their detailed diagnostic files remain available in each
+    # source-specific directory.
+    published_barlow_records = [
+        record for record in all_barlow_records
+        if record.get("parameter") in PUBLISHED_SYSTEMATIC_PARAMETERS
+    ]
     barlow_summary_products = write_barlow_summary_products(
-        all_barlow_records, diagnostics_dir / "barlow"
+        published_barlow_records, diagnostics_dir / "barlow"
     )
 
     manifest_path = root / "asymmetry_extraction_manifest.json"
@@ -6024,8 +6314,12 @@ def main() -> int:
             "recommended per-bin channel-selection uncertainty is the RMS of "
             "the tight-minus-nominal and loose-minus-nominal shifts, while the "
             "complete variation vectors are retained as coherent alternatives. "
-            "Radiation, momentum-correction, and channel-selection point-to-point "
-            "uncertainties are combined in quadrature and drawn as bars from y=0."
+            "The momentum-correction on/off comparison is diagnostic only and is "
+            "not assigned as a systematic. For the five published polarized ratios, "
+            "radiation, target-axis, channel-selection RMS, and 1.5-scaled bin-migration "
+            "uncertainties are combined in quadrature and drawn as bars from y=0. "
+            "The two fitted UU modulations are excluded from publication-level "
+            "systematic summaries."
         ),
         "nominal": {
             key: value for key, value in nominal_result.items()
@@ -6048,6 +6342,11 @@ def main() -> int:
             if momentum_result else None
         ),
         "momentum_correction_comparison": momentum_comparison,
+        "momentum_correction_policy": (
+            "Diagnostic only; abs(uncorrected-corrected) is not included in the "
+            "assigned point-to-point systematic."
+        ),
+        "bin_migration": migration_products,
         "channel_selection": {
             label: {
                 key: value for key, value in result.items()
@@ -6058,7 +6357,8 @@ def main() -> int:
         "channel_selection_comparison": channel_comparison,
         "point_to_point_systematics_csv": str(point_to_point_csv),
         "point_to_point_systematic_definition": (
-            "sqrt(radiation^2 + momentum_corrections^2 + channel_selection_RMS^2)"
+            "sqrt(radiation^2 + target_axis^2 + channel_selection_RMS^2 + "
+            "bin_migration^2), for published polarized observables"
         ),
         "barlow_summary": barlow_summary_products,
     })
@@ -6086,10 +6386,10 @@ def main() -> int:
     print(f"  Barlow readout:    {barlow_summary_products['text']}")
     print(f"  Manifest:          {manifest_path}")
 
-    total_pass = sum(record["number_pass"] for record in all_barlow_records)
-    total_fail = sum(record["number_fail"] for record in all_barlow_records)
+    total_pass = sum(record["number_pass"] for record in published_barlow_records)
+    total_fail = sum(record["number_fail"] for record in published_barlow_records)
     total_undefined = sum(
-        record["number_undefined"] for record in all_barlow_records
+        record["number_undefined"] for record in published_barlow_records
     )
     total_defined = total_pass + total_fail
     total_pass_percent = (
