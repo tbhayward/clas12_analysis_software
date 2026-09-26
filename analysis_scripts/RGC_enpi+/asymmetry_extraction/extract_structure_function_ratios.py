@@ -6075,8 +6075,18 @@ RGA_PUBLISHED = {
 def _points_in_polygon(x, y, vertices):
     from matplotlib.path import Path as MplPath
     pts = np.column_stack((x, y))
-    # Tiny positive radius includes boundary points without materially changing bins.
-    return MplPath(np.asarray(vertices, dtype=float), closed=True).contains_points(pts, radius=1e-12)
+
+    # IMPORTANT: when Path(..., closed=True) is given an un-repeated vertex
+    # list, Matplotlib treats the final supplied vertex as the CLOSEPOLY
+    # placeholder and ignores its coordinates.  That made the three-vertex
+    # Diehl panel 1 degenerate and also dropped the final physical vertex from
+    # every other Diehl polygon.  Explicitly repeat the first vertex so the
+    # CLOSEPOLY placeholder is the duplicate rather than a physical vertex.
+    verts = np.asarray(vertices, dtype=float)
+    closed_verts = np.vstack((verts, verts[0]))
+    return MplPath(closed_verts, closed=True).contains_points(
+        pts, radius=1e-12
+    )
 
 
 def _assign_rga_bins(events):
@@ -6801,7 +6811,11 @@ def run_rga_cross_check(args):
         ].copy()
 
         # Final 3x3 overlay: inner bars are statistical, outer bars are
-        # stat+point-to-point.  The common 2.8% Moller scale cancels from this comparison.
+        # stat+point-to-point.  The common 2.8% Moller scale cancels from this
+        # comparison.  The legend identifies datasets only; the nested error
+        # bars make the statistical versus total point-to-point treatment clear.
+        from matplotlib.lines import Line2D
+
         fig, axes = plt.subplots(3, 3, figsize=(12, 10), sharey=True)
         for ip, ax in enumerate(axes.flat, start=1):
             data = valid[valid.rga_panel == ip]
@@ -6809,26 +6823,27 @@ def run_rga_cross_check(args):
             rga_outer = np.sqrt(pub[:,5]**2 + pub[:,6]**2)
             ax.errorbar(
                 pub[:,2], pub[:,4], yerr=rga_outer, fmt="o",
-                capsize=2, label="RGA stat+ptp"
+                capsize=2, color="tab:blue"
             )
             ax.errorbar(
                 pub[:,2], pub[:,4], yerr=pub[:,5], fmt="none",
-                capsize=4, label="RGA stat"
+                capsize=4, color="tab:blue"
             )
             if len(data):
                 rgc_outer = np.sqrt(data.stat_rgc**2 + data.ptp_rgc**2)
                 ax.errorbar(
                     data.mean_minus_t_rgc, data.lu1_rgc,
                     yerr=rgc_outer, fmt="s", capsize=2,
-                    label="RGC stat+ptp"
+                    color="tab:orange"
                 )
                 ax.errorbar(
                     data.mean_minus_t_rgc, data.lu1_rgc,
                     yerr=data.stat_rgc, fmt="none", capsize=4,
-                    label="RGC stat"
+                    color="tab:orange"
                 )
             # endif
             ax.axhline(0.0, lw=0.8)
+            ax.set_ylim(-0.1, 0.3)
             ax.set_title(f"RGA $Q^2$-$x_B$ bin {ip}")
             ax.set_xlabel(r"$-t$ (GeV$^2$)")
             if ip in (1,4,7):
@@ -6838,16 +6853,22 @@ def run_rga_cross_check(args):
                 )
             # endif
         # endfor
-        # Explicit proxy artists: panel 1 currently has no RGC points, so a
-        # data-driven legend there would otherwise omit the RGC entries.
+
+        # Hard-coded two-entry dataset legend so it is independent of whether
+        # a particular panel contains RGC points.
         legend_ax = axes.flat[0]
-        rga_outer_proxy = legend_ax.errorbar([], [], yerr=[[]], fmt="o", capsize=2, label="RGA stat+ptp")
-        rga_stat_proxy = legend_ax.errorbar([], [], yerr=[[]], fmt="none", capsize=4, label="RGA stat")
-        rgc_outer_proxy = legend_ax.errorbar([], [], yerr=[[]], fmt="s", capsize=2, label="RGC stat+ptp")
-        rgc_stat_proxy = legend_ax.errorbar([], [], yerr=[[]], fmt="none", capsize=4, label="RGC stat")
         legend_ax.legend(
-            handles=[rga_outer_proxy, rga_stat_proxy, rgc_outer_proxy, rgc_stat_proxy],
-            fontsize=7,
+            handles=[
+                Line2D(
+                    [0], [0], marker="o", linestyle="none",
+                    color="tab:blue", label="RGA"
+                ),
+                Line2D(
+                    [0], [0], marker="s", linestyle="none",
+                    color="tab:orange", label="RGC"
+                ),
+            ],
+            fontsize=8,
         )
         fig.tight_layout()
         fig.savefig(plots / "rga_rgc_final_overlay.png", dpi=200)
