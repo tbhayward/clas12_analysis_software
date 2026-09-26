@@ -6291,26 +6291,52 @@ def _fit_rga_uu_lu(events, run_states, mask):
         )
     )
     if not good:
-        retry = Minuit(nll, u1=0.0, u2=0.0, lu1=0.0)
-        retry.errordef = Minuit.LIKELIHOOD
-        retry.print_level = 0
-        retry.strategy = 2
-        for name in ("u1", "u2", "lu1"):
-            retry.limits[name] = PARAMETER_LIMITS[name]
-        # endfor
-        retry.migrad()
-        retry.hesse()
-        if (
-            bool(retry.valid)
-            and retry.covariance is not None
-            and all(
-                np.isfinite(float(retry.errors[name]))
-                and float(retry.errors[name]) > 0.0
-                for name in ("u1", "u2", "lu1")
+        # Comparison-only systematic samples can be less well conditioned.
+        # Try several deterministic starts, including SIMPLEX recovery, before
+        # declaring the Diehl-bin fit invalid.
+        starts = (
+            (0.0, 0.0, 0.0),
+            (float(m.values["u1"]), float(m.values["u2"]), 0.0),
+            (0.0, 0.0, float(m.values["lu1"])),
+        )
+        best = m
+        best_fval = float(m.fval) if np.isfinite(float(m.fval)) else np.inf
+        for u1_start, u2_start, lu1_start in starts:
+            retry = Minuit(
+                nll, u1=u1_start, u2=u2_start, lu1=lu1_start
             )
-        ):
-            m = retry
-        # endif
+            retry.errordef = Minuit.LIKELIHOOD
+            retry.print_level = 0
+            retry.strategy = 2
+            for name in ("u1", "u2", "lu1"):
+                retry.limits[name] = PARAMETER_LIMITS[name]
+            # endfor
+            retry.migrad(ncall=20000)
+            if not retry.valid:
+                retry.simplex(ncall=20000)
+                retry.migrad(ncall=20000)
+            # endif
+            retry.hesse()
+            retry_good = (
+                bool(retry.valid)
+                and retry.covariance is not None
+                and all(
+                    np.isfinite(float(retry.errors[name]))
+                    and float(retry.errors[name]) > 0.0
+                    for name in ("u1", "u2", "lu1")
+                )
+            )
+            retry_fval = (
+                float(retry.fval)
+                if np.isfinite(float(retry.fval))
+                else np.inf
+            )
+            if retry_good and retry_fval < best_fval:
+                best = retry
+                best_fval = retry_fval
+            # endif
+        # endfor
+        m = best
     # endif
     return m, idx
 
@@ -6641,17 +6667,27 @@ def run_rga_cross_check(args):
         variant_frames[name], _ = _rga_fit_cache(events, run_states)
     # endfor
 
-    def keyed(frame, column):
+    def variant_records(frame):
         return {
-            (int(row.rga_panel), int(row.t_bin)): float(getattr(row, column))
+            (int(row.rga_panel), int(row.t_bin)): row
             for row in frame.itertuples()
-            if bool(row.fit_valid)
         }
 
-    nominal_lu = keyed(nominal_fit, "lu1")
-    radiation_lu = keyed(variant_frames["radiation"], "lu1")
-    tight_lu = keyed(variant_frames["tight"], "lu1")
-    loose_lu = keyed(variant_frames["loose"], "lu1")
+    radiation_records = variant_records(variant_frames["radiation"])
+    tight_records = variant_records(variant_frames["tight"])
+    loose_records = variant_records(variant_frames["loose"])
+
+    def valid_lu(records, key):
+        row = records.get(key)
+        if row is None or not bool(row.fit_valid):
+            return np.nan
+        # endif
+        value = float(row.lu1)
+        return value if np.isfinite(value) else np.nan
+
+    def diagnostic(records, key, field, default=np.nan):
+        row = records.get(key)
+        return default if row is None else getattr(row, field)
 
     rows = []
     for row in nominal_fit.itertuples():
@@ -6660,16 +6696,22 @@ def run_rga_cross_check(args):
         rga_q2, rga_x, rga_t, rga_eps, rga_val, rga_stat, rga_sys = pub
         key = (ip, it)
 
+        radiation_value = valid_lu(radiation_records, key)
+        tight_value = valid_lu(tight_records, key)
+        loose_value = valid_lu(loose_records, key)
+
         rad = (
-            abs(radiation_lu[key] - row.lu1)
-            if key in radiation_lu and bool(row.fit_valid)
+            abs(radiation_value - row.lu1)
+            if bool(row.fit_valid) and np.isfinite(radiation_value)
             else np.nan
         )
         if (
-            key in tight_lu and key in loose_lu and bool(row.fit_valid)
+            bool(row.fit_valid)
+            and np.isfinite(tight_value)
+            and np.isfinite(loose_value)
         ):
-            dt = tight_lu[key] - row.lu1
-            dl = loose_lu[key] - row.lu1
+            dt = tight_value - row.lu1
+            dl = loose_value - row.lu1
             channel = math.sqrt(0.5 * (dt * dt + dl * dl))
         else:
             channel = np.nan
@@ -6718,6 +6760,35 @@ def run_rga_cross_check(args):
             "ptp_rgc": rgc_ptp,
             "fit_valid": bool(row.fit_valid),
             "edm": row.edm,
+            "radiation_n": int(diagnostic(radiation_records, key, "n", 0)),
+            "radiation_fit_valid": bool(diagnostic(
+                radiation_records, key, "fit_valid", False
+            )),
+            "radiation_edm": float(diagnostic(radiation_records, key, "edm")),
+            "radiation_lu1": float(diagnostic(radiation_records, key, "lu1")),
+            "radiation_lu1_stat": float(diagnostic(
+                radiation_records, key, "lu1_stat"
+            )),
+            "tight_n": int(diagnostic(tight_records, key, "n", 0)),
+            "tight_fit_valid": bool(diagnostic(
+                tight_records, key, "fit_valid", False
+            )),
+            "tight_edm": float(diagnostic(tight_records, key, "edm")),
+            "tight_lu1": float(diagnostic(tight_records, key, "lu1")),
+            "tight_lu1_stat": float(diagnostic(
+                tight_records, key, "lu1_stat"
+            )),
+            "loose_n": int(diagnostic(loose_records, key, "n", 0)),
+            "loose_fit_valid": bool(diagnostic(
+                loose_records, key, "fit_valid", False
+            )),
+            "loose_edm": float(diagnostic(loose_records, key, "edm")),
+            "loose_lu1": float(diagnostic(loose_records, key, "lu1")),
+            "loose_lu1_stat": float(diagnostic(
+                loose_records, key, "lu1_stat"
+            )),
+            "radiation_fallback_used": False,
+            "channel_fallback_used": False,
             "xB_rga": rga_x,
             "Q2_rga": rga_q2,
             "minus_t_rga": rga_t,
@@ -6732,6 +6803,66 @@ def run_rga_cross_check(args):
     # endfor
 
     frame = pd.DataFrame(rows)
+
+    # Last-resort comparison-only prescription: after the robust retries above,
+    # copy any still-missing systematic component from the closest available
+    # adjacent -t bin in the SAME Diehl Q2-xB panel.  Central values and
+    # statistical errors are never replaced.  Every fallback is recorded.
+    frame["radiation_rgc_fallback_source_t_bin"] = np.nan
+    frame["channel_selection_rgc_fallback_source_t_bin"] = np.nan
+
+    def fill_adjacent_systematic(column, flag_column, source_column):
+        missing = frame.index[~np.isfinite(frame[column].to_numpy(float))]
+        for idx in missing:
+            panel = int(frame.at[idx, "rga_panel"])
+            tbin = int(frame.at[idx, "t_bin"])
+            candidates = frame[
+                (frame["rga_panel"] == panel)
+                & np.isfinite(frame[column])
+            ].copy()
+            if candidates.empty:
+                continue
+            # endif
+            candidates["_distance"] = np.abs(
+                candidates["t_bin"].astype(int) - tbin
+            )
+            source_idx = candidates.sort_values(
+                ["_distance", "t_bin"]
+            ).index[0]
+            frame.at[idx, column] = float(frame.at[source_idx, column])
+            frame.at[idx, flag_column] = True
+            frame.at[idx, source_column] = int(
+                frame.at[source_idx, "t_bin"]
+            )
+        # endfor
+
+    fill_adjacent_systematic(
+        "radiation_rgc",
+        "radiation_fallback_used",
+        "radiation_rgc_fallback_source_t_bin",
+    )
+    fill_adjacent_systematic(
+        "channel_selection_rgc",
+        "channel_fallback_used",
+        "channel_selection_rgc_fallback_source_t_bin",
+    )
+
+    # Recompute the total point-to-point uncertainty after any fallback.
+    frame["ptp_rgc"] = np.sqrt(
+        frame["radiation_rgc"]**2
+        + frame["channel_selection_rgc"]**2
+        + frame["migration_remap_rgc"]**2
+    )
+    frame["uncorr_sigma"] = np.sqrt(
+        frame["stat_rgc"]**2
+        + frame["ptp_rgc"]**2
+        + frame["stat_rga"]**2
+        + frame["ptp_rga"]**2
+    )
+    frame["raw_pull_with_ptp"] = (
+        frame["delta_rgc_minus_rga"] / frame["uncorr_sigma"]
+    )
+
     compatibility = _rga_rgc_compatibility(frame)
     frame["pull"] = np.nan
     frame.loc[compatibility["use_mask"], "pull"] = compatibility["pulls"]
@@ -6786,6 +6917,27 @@ def run_rga_cross_check(args):
             float(np.median(valid_pulls)) if valid_pulls.size else np.nan
         ),
     }
+
+    fallback_rows = frame[
+        frame["radiation_fallback_used"]
+        | frame["channel_fallback_used"]
+    ]
+    if len(fallback_rows):
+        print(
+            "\n[RGA cross-check] adjacent-bin systematic fallback usage:",
+            flush=True,
+        )
+        print(
+            fallback_rows[[
+                "rga_panel", "t_bin",
+                "radiation_fallback_used",
+                "radiation_rgc_fallback_source_t_bin",
+                "channel_fallback_used",
+                "channel_selection_rgc_fallback_source_t_bin",
+            ]].to_string(index=False),
+            flush=True,
+        )
+    # endif
 
     print("\n[RGA cross-check] uncertainty summary", flush=True)
     print(uncertainty_summary.to_string(index=False), flush=True)
@@ -6957,6 +7109,13 @@ def run_rga_cross_check(args):
         "migration": (
             "event-weighted remap of the established production-bin LU "
             "migration systematic using each event's original (xB,-t') bin"
+        ),
+        "failed_variation_fit_fallback": (
+            "After deterministic Minuit retries, any still-missing radiation "
+            "or channel-selection systematic is copied from the closest "
+            "available adjacent -t bin within the same Diehl Q2-xB panel. "
+            "Fallback use and source t-bin are recorded explicitly. Nominal "
+            "central values and statistical uncertainties are never replaced."
         ),
         "rga_point_to_point": (
             "published Diehl et al. systematic uncertainty for each point"
