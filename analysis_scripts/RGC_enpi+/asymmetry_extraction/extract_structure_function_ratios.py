@@ -6030,6 +6030,211 @@ def write_target_axis_study_products(
         "barlow_summary": records,
     }
 
+
+# =============================================================================
+# RGA Diehl et al. exclusive-pi+ cross-check
+# =============================================================================
+# Supplemental material to S. Diehl et al., Phys. Lett. B 839 (2023) 137761.
+# Q2-xB polygon vertices are connected in the order listed in supplemental
+# Table 10; -t edges are supplemental Table 11.  Published points below are
+# supplemental Tables 1--9.
+RGA_Q2_XB_POLYGONS = {
+    1: ((0.095,1.5),(0.21,3.2),(0.21,1.5)),
+    2: ((0.21,1.5),(0.21,2.2),(0.30,2.7),(0.30,1.5)),
+    3: ((0.21,2.2),(0.21,3.2),(0.30,4.56),(0.30,2.7)),
+    4: ((0.30,1.5),(0.30,2.7),(0.37,3.2),(0.37,1.765),(0.332,1.5)),
+    5: ((0.30,2.7),(0.30,4.57),(0.37,5.62),(0.37,3.2)),
+    6: ((0.37,1.765),(0.37,3.2),(0.45,3.85),(0.45,2.48)),
+    7: ((0.37,3.2),(0.37,5.62),(0.45,6.8),(0.45,3.85)),
+    8: ((0.45,2.48),(0.45,3.85),(0.67,6.14),(0.63,5.15),(0.57,4.05),(0.50,3.05)),
+    9: ((0.45,3.85),(0.45,6.8),(0.677,10.185),(0.7896,11.351),(0.75,9.52),(0.708,7.42),(0.67,6.14)),
+}
+RGA_MINUS_T_EDGES = {
+    1:(0.01,0.07,0.12,0.21,0.35,0.60,0.90),
+    2:(0.02,0.15,0.25,0.40,0.60,0.85),
+    3:(0.02,0.15,0.25,0.40,0.66,0.90),
+    4:(0.05,0.21,0.31,0.45,0.65,0.90),
+    5:(0.05,0.23,0.34,0.55,0.90),
+    6:(0.10,0.31,0.425,0.59,0.90),
+    7:(0.10,0.34,0.46,0.63,0.90),
+    8:(0.20,0.52,0.75,0.95,1.20),
+    9:(0.20,0.62,0.85,1.00,1.20),
+}
+RGA_PUBLISHED = {
+1:[(1.811,.175,.052,.710,.0292,.0117,.0095),(1.841,.183,.093,.730,.0766,.0109,.0072),(1.851,.182,.160,.721,.1111,.0137,.0092),(1.858,.180,.273,.709,.1073,.0129,.0102),(1.861,.178,.464,.700,.0695,.0123,.0059),(1.864,.177,.740,.694,.0560,.0136,.0070)],
+2:[(1.856,.252,.111,.866,.0556,.0078,.0064),(1.884,.263,.195,.874,.1202,.0094,.0112),(1.881,.264,.317,.875,.1450,.0108,.0105),(1.875,.263,.492,.875,.1096,.0114,.0102),(1.873,.263,.716,.875,.1112,.0124,.0123)],
+3:[(2.784,.248,.111,.661,.0670,.0126,.0048),(2.882,.260,.195,.668,.1220,.0157,.0112),(2.900,.260,.318,.663,.1070,.0166,.0099),(2.909,.259,.517,.657,.0960,.0158,.0077),(2.913,.259,.774,.655,.0580,.0209,.0119)],
+4:[(2.028,.327,.171,.906,.0887,.0102,.0066),(2.090,.334,.257,.904,.1092,.0099,.0092),(2.091,.335,.375,.905,.1443,.0123,.0130),(2.084,.335,.542,.906,.1540,.0118,.0132),(2.097,.335,.765,.904,.1253,.0126,.0110)],
+5:[(3.440,.327,.185,.700,.0561,.0155,.0093),(3.515,.335,.281,.701,.1217,.0155,.0119),(3.530,.336,.434,.699,.1886,.0182,.0138),(3.549,.336,.706,.695,.1015,.0178,.0064)],
+6:[(2.518,.395,.260,.899,.1016,.0126,.0104),(2.629,.405,.365,.895,.1337,.0119,.0119),(2.646,.407,.502,.894,.1781,.0140,.0123),(2.644,.407,.729,.895,.1580,.0120,.0118)],
+7:[(4.108,.398,.282,.707,.1210,.0174,.0133),(4.224,.408,.398,.704,.1670,.0187,.0127),(4.237,.409,.540,.704,.1282,.0220,.0125),(4.257,.410,.754,.702,.0991,.0202,.0096)],
+8:[(3.332,.477,.432,.875,.1036,.0145,.0085),(3.594,.498,.632,.865,.1329,.0134,.0114),(3.734,.508,.845,.860,.1694,.0168,.0128),(3.781,.511,1.068,.858,.1569,.0175,.0087)],
+9:[(5.065,.486,.499,.695,.1155,.0150,.0084),(5.444,.517,.734,.685,.1272,.0160,.0116),(5.673,.537,.924,.682,.1117,.0220,.0100),(5.842,.549,1.098,.677,.1386,.0190,.0126)],
+}
+
+def _points_in_polygon(x, y, vertices):
+    from matplotlib.path import Path as MplPath
+    pts = np.column_stack((x, y))
+    # Tiny positive radius includes boundary points without materially changing bins.
+    return MplPath(np.asarray(vertices, dtype=float), closed=True).contains_points(pts, radius=1e-12)
+
+
+def _assign_rga_bins(events):
+    x = np.asarray(events["xB"], dtype=float)
+    q2 = np.asarray(events["Q2"], dtype=float)
+    mt = np.asarray(events["minus_t"], dtype=float)
+    w = np.asarray(events["W"], dtype=float)
+    period_index = np.asarray(events["period_index"], dtype=np.int8)
+    y = np.empty_like(x)
+    for period in PERIODS:
+        m = period_index == PERIOD_INDEX[period]
+        y[m] = q2[m] / (2.0 * PROTON_MASS_GEV * BEAM_ENERGY_GEV[period] * x[m])
+    # endfor
+    base = np.isfinite(y) & (q2 > 1.5) & (w > 2.0) & (y < 0.75)
+    panel = np.full(x.shape, -1, dtype=np.int16)
+    subbin = np.full(x.shape, -1, dtype=np.int16)
+    global_bin = np.full(x.shape, -1, dtype=np.int16)
+    offset = 0
+    mapping = {}
+    for ip in range(1,10):
+        pmask = base & _points_in_polygon(x, q2, RGA_Q2_XB_POLYGONS[ip])
+        edges = RGA_MINUS_T_EDGES[ip]
+        for it,(lo,hi) in enumerate(zip(edges[:-1], edges[1:]), start=1):
+            g = offset + it
+            m = pmask & (mt >= lo) & (mt < hi)
+            panel[m], subbin[m], global_bin[m] = ip, it, g
+            mapping[g] = (ip,it,lo,hi)
+        # endfor
+        offset += len(edges)-1
+    # endfor
+    return panel, subbin, global_bin, y, mapping
+
+
+def _make_rga_nll(events, run_states, dilution_records, mask):
+    # Keep the production seven-parameter likelihood so the polarized RGC target
+    # cannot leak UL/LL structure into LU.  Only LU is reported by this cross-check.
+    idx = np.flatnonzero(mask)
+    if idx.size == 0:
+        raise RuntimeError("Empty RGA comparison bin")
+    period_idx = events["period_index"][idx].astype(np.int8)
+    runnum = events["runnum"][idx].astype(np.int32)
+    h = events["helicity"][idx].astype(float)
+    phi = events["phi"][idx].astype(float)
+    rb,rc,rv,rw = (events[k][idx].astype(float) for k in ("rB","rC","rV","rW"))
+    original_bin = events["bin_number"][idx].astype(int)
+    run_lookup={p:{int(r):i for i,r in enumerate(run_states[p]["run"])} for p in PERIODS}
+    pdata={}
+    for p in PERIODS:
+        loc=np.flatnonzero(period_idx==PERIOD_INDEX[p])
+        state=run_states[p]
+        ridx=np.fromiter((run_lookup[p][int(r)] for r in runnum[loc]),count=loc.size,dtype=np.int32)
+        evh=h[loc]
+        df=np.asarray([dilution_records[(p,int(b))].value for b in original_bin[loc]],float)
+        pdata[p]={"loc":loc,"pt":state["pt"][ridx],"df":df,
+                  "obsq":np.where(evh>0,state["q_plus"][ridx],state["q_minus"][ridx]),
+                  "qp":state["q_plus"][ridx],"qm":state["q_minus"][ridx]}
+    # endfor
+    def nll(u1,u2,lu1,ul1,ul2,ll0,ll1):
+        vals=(u1,u2,lu1,ul1,ul2,ll0,ll1)
+        if not all(math.isfinite(v) for v in vals): return INVALID_NLL
+        total=0.0
+        for p,d in pdata.items():
+            loc=d["loc"]
+            if loc.size==0: continue
+            pp=phi[loc]; hh=h[loc]; pt=d["pt"]; df=d["df"]
+            unp=1.0+rv[loc]*u1*np.cos(pp)+rb[loc]*u2*np.cos(2*pp)
+            bcoef=BEAM_POLARIZATION[p]*rw[loc]*lu1*np.sin(pp)
+            targ=df*pt*(rv[loc]*ul1*np.sin(pp)+rb[loc]*ul2*np.sin(2*pp))
+            dbl=BEAM_POLARIZATION[p]*df*pt*(rc[loc]*ll0+rw[loc]*ll1*np.cos(pp))
+            fac=unp+hh*bcoef+targ+hh*dbl
+            den=d["qp"]*(unp+bcoef+targ+dbl)+d["qm"]*(unp-bcoef+targ-dbl)
+            prob=d["obsq"]*fac/den
+            if np.any(~np.isfinite(prob)) or np.any(prob<=0) or np.any(prob>1+1e-10): return INVALID_NLL
+            total-=float(np.sum(np.log(np.maximum(prob,PROBABILITY_FLOOR))))
+        # endfor
+        return total
+    return nll, idx
+
+
+def run_rga_cross_check(args):
+    out=args.output_dir.expanduser().resolve()/"rga_cross_check"
+    tables=out/"tables"; plots=out/"plots"; cache_dir=out/"cache"
+    for d in (out,tables,plots,cache_dir): ensure_directory(d)
+    # Reuse/build the ordinary nominal selected-event sample.  This deliberately
+    # preserves the RGC production exclusivity selection; only the DIS cuts and
+    # comparison binning are changed here.
+    nominal_cache=(args.cache.expanduser().resolve() if args.cache else args.output_dir.expanduser().resolve()/"nominal/cache/selected_events.npz")
+    run_records=parse_run_info_csv(args.run_info_csv.expanduser().resolve())
+    run_states=run_state_arrays(run_records)
+    dilution_json=(args.dilution_json.expanduser().resolve() if args.dilution_json else find_default_dilution_json(args.dilution_dir.expanduser().resolve()).resolve())
+    dilution=load_dilution_factors(dilution_json,cut_label="nominal")
+    if nominal_cache.is_file():
+        print(f"[RGA cross-check] loading nominal selected-event cache: {nominal_cache}",flush=True)
+        events=load_event_cache(nominal_cache)
+    else:
+        print("[RGA cross-check] nominal cache missing; building it directly.",flush=True)
+        inputs={p:Path(v) for p,v in DEFAULT_INPUTS.items()}
+        for period,path in args.input: inputs[period]=path
+        cuts=load_channel_cuts(args.cut_json.expanduser().resolve(),cut_label="nominal")
+        build_event_cache(inputs,args.tree,args.chunk_size,run_records,cuts,nominal_cache)
+        events=load_event_cache(nominal_cache)
+    # endif
+    panel,subbin,gbin,y,mapping=_assign_rga_bins(events)
+    print(f"[RGA cross-check] events after Diehl cuts and binning: {np.count_nonzero(gbin>0):,}",flush=True)
+    from iminuit import Minuit
+    rows=[]
+    for g,(ip,it,lo,hi) in mapping.items():
+        mask=gbin==g
+        n=int(np.count_nonzero(mask))
+        if n<20:
+            print(f"[RGA cross-check] panel {ip} t-bin {it}: only {n} events; skipping",flush=True); continue
+        nll,idx=_make_rga_nll(events,run_states,dilution,mask)
+        m=Minuit(nll,**PARAMETER_INITIAL_VALUES)
+        m.errordef=Minuit.LIKELIHOOD
+        for name in PHYSICS_PARAMETERS: m.limits[name]=PARAMETER_LIMITS[name]
+        m.migrad(); m.hesse()
+        pub=RGA_PUBLISHED[ip][it-1]
+        rgc_lu=float(m.values["lu1"]); rgc_stat=float(m.errors["lu1"])
+        rga_q2,rga_x,rga_t,rga_eps,rga_val,rga_stat,rga_sys=pub
+        combined=math.sqrt(rgc_stat**2+rga_stat**2+rga_sys**2)
+        delta=rgc_lu-rga_val
+        rows.append({"rga_panel":ip,"t_bin":it,"minus_t_low":lo,"minus_t_high":hi,
+          "n_rgc":n,"mean_xB_rgc":float(np.mean(events["xB"][idx])),"mean_Q2_rgc":float(np.mean(events["Q2"][idx])),
+          "mean_minus_t_rgc":float(np.mean(events["minus_t"][idx])),"mean_y_rgc":float(np.mean(y[idx])),
+          "lu1_rgc":rgc_lu,"stat_rgc":rgc_stat,"fit_valid":bool(m.valid),"edm":float(m.fmin.edm),
+          "xB_rga":rga_x,"Q2_rga":rga_q2,"minus_t_rga":rga_t,"epsilon_rga":rga_eps,
+          "lu1_rga":rga_val,"stat_rga":rga_stat,"sys_rga":rga_sys,"delta_rgc_minus_rga":delta,
+          "combined_uncertainty":combined,"pull":delta/combined if combined>0 else np.nan})
+        print(f"[RGA cross-check] panel {ip} t{it}: N={n:,}, LU={rgc_lu:+.4f} +/- {rgc_stat:.4f}; RGA={rga_val:+.4f}",flush=True)
+    # endfor
+    frame=pd.DataFrame(rows)
+    csv=tables/"rga_cross_check.csv"; frame.to_csv(csv,index=False)
+    # Nine-panel overlay and nine-panel pull diagnostic.
+    if not args.skip_plots:
+        fig,axes=plt.subplots(3,3,figsize=(12,10),sharey=True)
+        for ip,ax in enumerate(axes.flat,start=1):
+            d=frame[frame.rga_panel==ip]
+            pub=np.asarray(RGA_PUBLISHED[ip],float)
+            ax.errorbar(pub[:,2],pub[:,4],yerr=np.hypot(pub[:,5],pub[:,6]),fmt='o',label='RGA (Diehl et al.)')
+            if len(d): ax.errorbar(d.mean_minus_t_rgc,d.lu1_rgc,yerr=d.stat_rgc,fmt='s',label='RGC cross-check')
+            ax.axhline(0,lw=.8); ax.set_title(f"RGA $Q^2$-$x_B$ bin {ip}"); ax.set_xlabel(r"$-t$ (GeV$^2$)")
+            if ip in (1,4,7): ax.set_ylabel(r"$F_{LU}^{\sin\phi}/F_{UU}=\sigma_{LT'}/\sigma_0$")
+            if ip==1: ax.legend(fontsize=8)
+        fig.tight_layout(); fig.savefig(plots/"rga_rgc_lu_overlay.png",dpi=200); plt.close(fig)
+        fig,axes=plt.subplots(3,3,figsize=(12,10),sharey=True)
+        for ip,ax in enumerate(axes.flat,start=1):
+            d=frame[frame.rga_panel==ip]
+            if len(d): ax.axhline(0,lw=.8); ax.plot(d.mean_minus_t_rgc,d.pull,'o')
+            ax.set_title(f"RGA $Q^2$-$x_B$ bin {ip}"); ax.set_xlabel(r"$-t$ (GeV$^2$)")
+            if ip in (1,4,7): ax.set_ylabel("RGC - RGA pull")
+        fig.tight_layout(); fig.savefig(plots/"rga_rgc_lu_pulls.png",dpi=200); plt.close(fig)
+    # endif
+    write_json(out/"rga_cross_check_manifest.json",{"selection":{"Q2_min_gev2":1.5,"W_min_gev":2.0,"y_max":0.75},
+      "observable":"F_LU^{sin(phi)}/F_UU = sigma_LT'/sigma_0","number_of_comparison_points":len(frame),
+      "important_note":"RGC events retain the nominal production exclusivity selection and original RGC phase-space limits; the Diehl binning is applied to that selected sample. The seven production physics parameters are fitted so target-spin terms cannot leak into LU; only LU is reported."})
+    print(f"[RGA cross-check] wrote {csv}",flush=True)
+    return 0
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -6078,11 +6283,23 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chunk-size", default=DEFAULT_CHUNK_SIZE)
     parser.add_argument("--workers", type=int, default=MAXIMUM_WORKERS)
     parser.add_argument("--skip-plots", action="store_true")
+    parser.add_argument(
+        "--rga-cross-check", action="store_true",
+        help=(
+            "Run only the Diehl et al. RGA exclusive-pi+ cross-check. "
+            "Uses the published Q2-xB polygons and -t bins, imposes "
+            "Q2>1.5 GeV^2, W>2 GeV, y<0.75, and compares the fitted "
+            "F_LU^{sin(phi)}/F_UU with the published sigma_LT'/sigma_0 points."
+        ),
+    )
     return parser
 
 
 def main() -> int:
     args = build_argument_parser().parse_args()
+    if args.rga_cross_check:
+        return run_rga_cross_check(args)
+    # endif
     workers = max(
         1,
         min(int(args.workers), MAXIMUM_WORKERS, os.cpu_count() or 1, NUMBER_OF_BINS),
