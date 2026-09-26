@@ -6110,51 +6110,111 @@ def _assign_rga_bins(events):
     return panel, subbin, global_bin, y, mapping
 
 
-def _make_rga_nll(events, run_states, dilution_records, mask):
-    # Keep the production seven-parameter likelihood so the polarized RGC target
-    # cannot leak UL/LL structure into LU.  Only LU is reported by this cross-check.
+def _load_rga_fixed_production_parameters(args):
+    """Load the nominal 24-bin production fit used to fix non-LU terms."""
+    path = args.output_dir.expanduser().resolve() / "nominal/tables/structure_function_ratios.csv"
+    if not path.is_file():
+        raise FileNotFoundError(
+            "RGA cross-check requires the completed nominal production table: "
+            f"{path}"
+        )
+    frame = pd.read_csv(path)
+    required = {"bin_number", "u1", "u2", "ul1", "ul2", "ll0", "ll1"}
+    missing = sorted(required.difference(frame.columns))
+    if missing:
+        raise RuntimeError(f"Nominal production table is missing columns: {missing}")
+    fixed = {}
+    for _, row in frame.iterrows():
+        b = int(row["bin_number"])
+        fixed[b] = {name: float(row[name]) for name in ("u1", "u2", "ul1", "ul2", "ll0", "ll1")}
+    return fixed, path
+
+
+def _make_rga_lu_only_nll(events, run_states, dilution_records, fixed_production, mask):
+    """One-parameter RGA validation fit: float LU, fix all other terms to production."""
     idx = np.flatnonzero(mask)
     if idx.size == 0:
         raise RuntimeError("Empty RGA comparison bin")
+
     period_idx = events["period_index"][idx].astype(np.int8)
     runnum = events["runnum"][idx].astype(np.int32)
     h = events["helicity"][idx].astype(float)
     phi = events["phi"][idx].astype(float)
-    rb,rc,rv,rw = (events[k][idx].astype(float) for k in ("rB","rC","rV","rW"))
+    rb, rc, rv, rw = (events[k][idx].astype(float) for k in ("rB", "rC", "rV", "rW"))
     original_bin = events["bin_number"][idx].astype(int)
-    run_lookup={p:{int(r):i for i,r in enumerate(run_states[p]["run"])} for p in PERIODS}
-    pdata={}
+
+    # Every event keeps the non-LU amplitudes from its original nominal RGC
+    # production bin.  This accounts for the polarized target without asking the
+    # much finer Diehl bins to determine six extra amplitudes independently.
+    fixed = {
+        name: np.asarray([fixed_production[int(b)][name] for b in original_bin], dtype=float)
+        for name in ("u1", "u2", "ul1", "ul2", "ll0", "ll1")
+    }
+
+    run_lookup = {
+        p: {int(r): i for i, r in enumerate(run_states[p]["run"])}
+        for p in PERIODS
+    }
+    pdata = {}
     for p in PERIODS:
-        loc=np.flatnonzero(period_idx==PERIOD_INDEX[p])
-        state=run_states[p]
-        ridx=np.fromiter((run_lookup[p][int(r)] for r in runnum[loc]),count=loc.size,dtype=np.int32)
-        evh=h[loc]
-        df=np.asarray([dilution_records[(p,int(b))].value for b in original_bin[loc]],float)
-        pdata[p]={"loc":loc,"pt":state["pt"][ridx],"df":df,
-                  "obsq":np.where(evh>0,state["q_plus"][ridx],state["q_minus"][ridx]),
-                  "qp":state["q_plus"][ridx],"qm":state["q_minus"][ridx]}
+        loc = np.flatnonzero(period_idx == PERIOD_INDEX[p])
+        if loc.size == 0:
+            pdata[p] = {"loc": loc}
+            continue
+        state = run_states[p]
+        ridx = np.fromiter(
+            (run_lookup[p][int(r)] for r in runnum[loc]),
+            count=loc.size,
+            dtype=np.int32,
+        )
+        evh = h[loc]
+        df = np.asarray(
+            [dilution_records[(p, int(b))].value for b in original_bin[loc]],
+            dtype=float,
+        )
+        pdata[p] = {
+            "loc": loc,
+            "pt": state["pt"][ridx],
+            "df": df,
+            "obsq": np.where(evh > 0, state["q_plus"][ridx], state["q_minus"][ridx]),
+            "qp": state["q_plus"][ridx],
+            "qm": state["q_minus"][ridx],
+        }
     # endfor
-    def nll(u1,u2,lu1,ul1,ul2,ll0,ll1):
-        vals=(u1,u2,lu1,ul1,ul2,ll0,ll1)
-        if not all(math.isfinite(v) for v in vals): return INVALID_NLL
-        total=0.0
-        for p,d in pdata.items():
-            loc=d["loc"]
-            if loc.size==0: continue
-            pp=phi[loc]; hh=h[loc]; pt=d["pt"]; df=d["df"]
-            unp=1.0+rv[loc]*u1*np.cos(pp)+rb[loc]*u2*np.cos(2*pp)
-            bcoef=BEAM_POLARIZATION[p]*rw[loc]*lu1*np.sin(pp)
-            targ=df*pt*(rv[loc]*ul1*np.sin(pp)+rb[loc]*ul2*np.sin(2*pp))
-            dbl=BEAM_POLARIZATION[p]*df*pt*(rc[loc]*ll0+rw[loc]*ll1*np.cos(pp))
-            fac=unp+hh*bcoef+targ+hh*dbl
-            den=d["qp"]*(unp+bcoef+targ+dbl)+d["qm"]*(unp-bcoef+targ-dbl)
-            prob=d["obsq"]*fac/den
-            if np.any(~np.isfinite(prob)) or np.any(prob<=0) or np.any(prob>1+1e-10): return INVALID_NLL
-            total-=float(np.sum(np.log(np.maximum(prob,PROBABILITY_FLOOR))))
+
+    def nll(lu1):
+        if not math.isfinite(lu1):
+            return INVALID_NLL
+        total = 0.0
+        for p, d in pdata.items():
+            loc = d["loc"]
+            if loc.size == 0:
+                continue
+            pp = phi[loc]
+            hh = h[loc]
+            pt = d["pt"]
+            df = d["df"]
+
+            unp = 1.0 + rv[loc] * fixed["u1"][loc] * np.cos(pp) + rb[loc] * fixed["u2"][loc] * np.cos(2.0 * pp)
+            bcoef = BEAM_POLARIZATION[p] * rw[loc] * lu1 * np.sin(pp)
+            targ = df * pt * (
+                rv[loc] * fixed["ul1"][loc] * np.sin(pp)
+                + rb[loc] * fixed["ul2"][loc] * np.sin(2.0 * pp)
+            )
+            dbl = BEAM_POLARIZATION[p] * df * pt * (
+                rc[loc] * fixed["ll0"][loc]
+                + rw[loc] * fixed["ll1"][loc] * np.cos(pp)
+            )
+            fac = unp + hh * bcoef + targ + hh * dbl
+            den = d["qp"] * (unp + bcoef + targ + dbl) + d["qm"] * (unp - bcoef + targ - dbl)
+            prob = d["obsq"] * fac / den
+            if np.any(~np.isfinite(prob)) or np.any(prob <= 0) or np.any(prob > 1 + 1e-10):
+                return INVALID_NLL
+            total -= float(np.sum(np.log(np.maximum(prob, PROBABILITY_FLOOR))))
         # endfor
         return total
-    return nll, idx
 
+    return nll, idx
 
 def run_rga_cross_check(args):
     out=args.output_dir.expanduser().resolve()/"rga_cross_check"
@@ -6168,6 +6228,8 @@ def run_rga_cross_check(args):
     run_states=run_state_arrays(run_records)
     dilution_json=(args.dilution_json.expanduser().resolve() if args.dilution_json else find_default_dilution_json(args.dilution_dir.expanduser().resolve()).resolve())
     dilution=load_dilution_factors(dilution_json,cut_label="nominal")
+    fixed_production, production_table = _load_rga_fixed_production_parameters(args)
+    print(f"[RGA cross-check] fixing non-LU amplitudes to nominal production values from: {production_table}", flush=True)
     if nominal_cache.is_file():
         print(f"[RGA cross-check] loading nominal selected-event cache: {nominal_cache}",flush=True)
         events=load_event_cache(nominal_cache)
@@ -6188,10 +6250,10 @@ def run_rga_cross_check(args):
         n=int(np.count_nonzero(mask))
         if n<20:
             print(f"[RGA cross-check] panel {ip} t-bin {it}: only {n} events; skipping",flush=True); continue
-        nll,idx=_make_rga_nll(events,run_states,dilution,mask)
-        m=Minuit(nll,**PARAMETER_INITIAL_VALUES)
+        nll,idx=_make_rga_lu_only_nll(events,run_states,dilution,fixed_production,mask)
+        m=Minuit(nll,lu1=PARAMETER_INITIAL_VALUES["lu1"])
         m.errordef=Minuit.LIKELIHOOD
-        for name in PHYSICS_PARAMETERS: m.limits[name]=PARAMETER_LIMITS[name]
+        m.limits["lu1"]=PARAMETER_LIMITS["lu1"]
         m.migrad(); m.hesse()
         pub=RGA_PUBLISHED[ip][it-1]
         rgc_lu=float(m.values["lu1"]); rgc_stat=float(m.errors["lu1"])
@@ -6205,7 +6267,8 @@ def run_rga_cross_check(args):
           "xB_rga":rga_x,"Q2_rga":rga_q2,"minus_t_rga":rga_t,"epsilon_rga":rga_eps,
           "lu1_rga":rga_val,"stat_rga":rga_stat,"sys_rga":rga_sys,"delta_rgc_minus_rga":delta,
           "combined_uncertainty":combined,"pull":delta/combined if combined>0 else np.nan})
-        print(f"[RGA cross-check] panel {ip} t{it}: N={n:,}, LU={rgc_lu:+.4f} +/- {rgc_stat:.4f}; RGA={rga_val:+.4f}",flush=True)
+        status = "OK" if m.valid and np.isfinite(rgc_stat) and rgc_stat > 0 else "INVALID"
+        print(f"[RGA cross-check] panel {ip} t{it}: N={n:,}, LU={rgc_lu:+.4f} +/- {rgc_stat:.4f}; RGA={rga_val:+.4f} [{status}]",flush=True)
     # endfor
     frame=pd.DataFrame(rows)
     csv=tables/"rga_cross_check.csv"; frame.to_csv(csv,index=False)
@@ -6231,7 +6294,7 @@ def run_rga_cross_check(args):
     # endif
     write_json(out/"rga_cross_check_manifest.json",{"selection":{"Q2_min_gev2":1.5,"W_min_gev":2.0,"y_max":0.75},
       "observable":"F_LU^{sin(phi)}/F_UU = sigma_LT'/sigma_0","number_of_comparison_points":len(frame),
-      "important_note":"RGC events retain the nominal production exclusivity selection and original RGC phase-space limits; the Diehl binning is applied to that selected sample. The seven production physics parameters are fitted so target-spin terms cannot leak into LU; only LU is reported."})
+      "important_note":"RGC events retain the nominal production exclusivity selection and original RGC phase-space limits. In each Diehl comparison bin only LU is floated; u1, u2, UL1, UL2, LL0, and LL1 are fixed event-by-event to the values from each event's original nominal 24-bin RGC production fit. Production extraction is unchanged."})
     print(f"[RGA cross-check] wrote {csv}",flush=True)
     return 0
 
