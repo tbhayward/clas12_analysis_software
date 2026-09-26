@@ -214,25 +214,52 @@ def make_period_plot(period, filename):
     h_exclusive, _, _ = np.histogram2d(
         p[exclusive], beta[exclusive], bins=(P_BINS, BETA_BINS)
     )
+    # Density views for the inclusive and PID-selected samples.  Each panel
+    # uses its own logarithmic count normalization.
     for ax, mask, title in (
         (axes[0], before, "Before PID cuts"),
         (axes[1], after, r"After $|\chi^2_{\rm PID}|<3.5$, $0.5<p<5.0$ GeV"),
-        (
-            axes[2], exclusive,
-            rf"PID + $W>2$, $y<0.8$, ${MX2_MIN:.2f}<M_X^2<{MX2_MAX:.2f}$ GeV$^2$"
-        ),
     ):
+        counts, _, _ = np.histogram2d(
+            p[mask], beta[mask], bins=(P_BINS, BETA_BINS)
+        )
+        panel_vmax = max(float(counts.max()), 1.0)
         h = ax.hist2d(
             p[mask],
             beta[mask],
             bins=(P_BINS, BETA_BINS),
-            norm=LogNorm(vmin=1.0),
+            norm=LogNorm(vmin=1.0, vmax=panel_vmax),
             cmap="turbo",
         )
         ax.set_xlabel(r"$p$ (GeV)")
         ax.set_title(title)
         fig.colorbar(h[3], ax=ax, label="Counts")
     # endfor
+
+    # For the exclusive sample, show the assigned pi+ and K+ populations
+    # directly rather than as a density map.  This makes their beta(p)
+    # separation visually explicit.
+    pi_exclusive = exclusive & (pid == 211)
+    k_exclusive = exclusive & (pid == 321)
+
+    axes[2].scatter(
+        p[pi_exclusive], beta[pi_exclusive],
+        s=5, marker=".", c="red", alpha=0.45, linewidths=0,
+        label=rf"$\pi^+$ assigned ($N={pi_exclusive.sum():,}$)",
+        rasterized=True,
+    )
+    axes[2].scatter(
+        p[k_exclusive], beta[k_exclusive],
+        s=7, marker=".", c="blue", alpha=0.65, linewidths=0,
+        label=rf"$K^+$ assigned ($N={k_exclusive.sum():,}$)",
+        rasterized=True,
+    )
+    axes[2].set_xlabel(r"$p$ (GeV)")
+    axes[2].set_title(
+        rf"PID + $W>2$, $y<0.8$, "
+        rf"${MX2_MIN:.2f}<M_X^2<{MX2_MAX:.2f}$ GeV$^2$"
+    )
+    axes[2].legend(loc="lower right", frameon=True, markerscale=3)
 
     # Keep the first panel as the broad diagnostic view and zoom the
     # post-selection panel onto the accepted pion band.
