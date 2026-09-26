@@ -6375,11 +6375,13 @@ def _rga_migration_remap(events, gbin, nominal_production_frame):
     return result
 
 
-def _profile_rga_rgc_scales(frame, scale_sigma=0.028):
-    """Profile independent RGC and RGA multiplicative scale nuisances.
+def _rga_rgc_compatibility(frame):
+    """Direct RGC-RGA compatibility using stat+point-to-point errors.
 
-    The two priors have the same width but are independent because the RGA and
-    RGC Moller measurements were performed in different running periods.
+    The Moller beam-polarization scale systematic is common-mode between the
+    two measurements and therefore cancels from their relative comparison.  It
+    is intentionally not included as either a nuisance parameter or a
+    point-to-point uncertainty here.
     """
     use = (
         frame["fit_valid"].astype(bool).to_numpy()
@@ -6388,68 +6390,36 @@ def _profile_rga_rgc_scales(frame, scale_sigma=0.028):
         & np.isfinite(frame["uncorr_sigma"].to_numpy(float))
         & (frame["uncorr_sigma"].to_numpy(float) > 0.0)
     )
-    rgc = frame.loc[use, "lu1_rgc"].to_numpy(float)
-    rga = frame.loc[use, "lu1_rga"].to_numpy(float)
-    sig = frame.loc[use, "uncorr_sigma"].to_numpy(float)
-    w = 1.0 / sig**2
-    d = rgc - rga
-
-    # Minimize sum[(d + b_RGC*RGC - b_RGA*RGA)^2/sig^2]
-    # plus independent Gaussian priors b^2/s_scale^2.
-    a11 = float(np.sum(w * rgc**2) + 1.0 / scale_sigma**2)
-    a22 = float(np.sum(w * rga**2) + 1.0 / scale_sigma**2)
-    a12 = float(-np.sum(w * rgc * rga))
-    rhs = np.asarray([
-        -float(np.sum(w * rgc * d)),
-        +float(np.sum(w * rga * d)),
-    ])
-    beta_rgc, beta_rga = np.linalg.solve(
-        np.asarray([[a11, a12], [a12, a22]]), rhs
+    residual = (
+        frame.loc[use, "lu1_rgc"].to_numpy(float)
+        - frame.loc[use, "lu1_rga"].to_numpy(float)
     )
-
-    residual = (1.0 + beta_rgc) * rgc - (1.0 + beta_rga) * rga
-    pulls = residual / sig
-    chi2_data = float(np.sum(pulls**2))
-    chi2_prior = float(
-        (beta_rgc / scale_sigma)**2 + (beta_rga / scale_sigma)**2
-    )
-    chi2 = chi2_data + chi2_prior
-    n = int(rgc.size)
-    # Two constrained nuisance parameters add two prior observations, so the
-    # effective goodness-of-fit ndf remains N comparison points.
-    ndf = n
+    sigma = frame.loc[use, "uncorr_sigma"].to_numpy(float)
+    pulls = residual / sigma
+    chi2 = float(np.sum(pulls**2))
+    ndf = int(pulls.size)
     try:
         from scipy.stats import chi2 as chi2_distribution
         p_value = float(chi2_distribution.sf(chi2, ndf))
     except Exception:
         p_value = np.nan
     # endtry
-
     return {
-        "beta_rgc": float(beta_rgc),
-        "beta_rga": float(beta_rga),
-        "beta_rgc_pull": float(beta_rgc / scale_sigma),
-        "beta_rga_pull": float(beta_rga / scale_sigma),
-        "relative_scale_rgc_over_rga": float(
-            (1.0 + beta_rgc) / (1.0 + beta_rga)
-        ),
-        "chi2_data": chi2_data,
-        "chi2_prior": chi2_prior,
         "chi2": chi2,
         "ndf": ndf,
         "chi2_per_ndf": float(chi2 / ndf) if ndf else np.nan,
         "p_value": p_value,
-        "n_points": n,
-        "profiled_pulls": pulls,
+        "n_points": int(pulls.size),
+        "pulls": pulls,
         "use_mask": use,
     }
 
-
 def _rga_raw_cutflow(args, run_records, output_csv):
-    """Diagnose where raw nominal ROOT events disappear from Diehl panels.
+    """Raw-ROOT cut flow for every one of the 41 published Diehl bins.
 
-    This is diagnostic only.  It does not alter any selected-event cache or
-    production selection.
+    Diagnostic only: no production or RGA-cross-check selection is changed.
+    The table is deliberately evaluated before the selected-event cache so we
+    can identify exactly where apparently missing RGC comparison bins vanish.
     """
     cuts = load_channel_cuts(
         args.cut_json.expanduser().resolve(), cut_label="nominal"
@@ -6460,20 +6430,22 @@ def _rga_raw_cutflow(args, run_records, output_csv):
     # endfor
 
     stages = (
-        "polygon",
+        "inside_Q2_xB_polygon",
         "Q2_gt_1p5",
         "W_gt_2",
         "y_lt_0p75",
-        "inside_published_t_range",
+        "inside_Diehl_t_bin",
         "inside_production_xB_tprime",
         "nominal_Mx2",
     )
-    counts = {
-        (period, ip, stage): 0
+    keys = [
+        (period, ip, it, stage)
         for period in PERIODS
         for ip in range(1, 10)
+        for it in range(1, len(RGA_MINUS_T_EDGES[ip]))
         for stage in stages
-    }
+    ]
+    counts = {key: 0 for key in keys}
 
     for period in PERIODS:
         path = inputs[period].expanduser().resolve()
@@ -6500,64 +6472,78 @@ def _rga_raw_cutflow(args, run_records, output_csv):
                 _, _, old_bin = bin_indices(x, mtp)
 
                 for ip in range(1, 10):
-                    polygon = _points_in_polygon(
-                        x, q2, RGA_Q2_XB_POLYGONS[ip]
-                    )
-                    m = polygon
-                    counts[(period, ip, "polygon")] += int(np.count_nonzero(m))
+                    polygon = _points_in_polygon(x, q2, RGA_Q2_XB_POLYGONS[ip])
+                    m_q2 = polygon & (q2 > 1.5)
+                    m_w = m_q2 & (w > 2.0)
+                    m_y = m_w & (y < 0.75)
+                    edges = RGA_MINUS_T_EDGES[ip]
 
-                    m = m & (q2 > 1.5)
-                    counts[(period, ip, "Q2_gt_1p5")] += int(np.count_nonzero(m))
-                    m = m & (w > 2.0)
-                    counts[(period, ip, "W_gt_2")] += int(np.count_nonzero(m))
-                    m = m & (y < 0.75)
-                    counts[(period, ip, "y_lt_0p75")] += int(np.count_nonzero(m))
+                    for it in range(1, len(edges)):
+                        counts[(period, ip, it, "inside_Q2_xB_polygon")] += int(np.count_nonzero(polygon))
+                        counts[(period, ip, it, "Q2_gt_1p5")] += int(np.count_nonzero(m_q2))
+                        counts[(period, ip, it, "W_gt_2")] += int(np.count_nonzero(m_w))
+                        counts[(period, ip, it, "y_lt_0p75")] += int(np.count_nonzero(m_y))
 
-                    t_edges = RGA_MINUS_T_EDGES[ip]
-                    m = m & (mt >= t_edges[0]) & (mt < t_edges[-1])
-                    counts[(period, ip, "inside_published_t_range")] += int(
-                        np.count_nonzero(m)
-                    )
+                        m_t = m_y & (mt >= edges[it - 1]) & (mt < edges[it])
+                        counts[(period, ip, it, "inside_Diehl_t_bin")] += int(np.count_nonzero(m_t))
 
-                    m_prod = m & (old_bin >= 1)
-                    counts[
-                        (period, ip, "inside_production_xB_tprime")
-                    ] += int(np.count_nonzero(m_prod))
+                        m_prod = m_t & (old_bin >= 1)
+                        counts[(period, ip, it, "inside_production_xB_tprime")] += int(np.count_nonzero(m_prod))
 
-                    m_mx = np.zeros_like(m_prod)
-                    for b in range(1, NUMBER_OF_BINS + 1):
-                        cut = cuts[(period, b)]
-                        m_mx |= (
-                            m_prod
-                            & (old_bin == b)
-                            & (mx2 >= cut.low_gev2)
-                            & (mx2 < cut.high_gev2)
-                        )
+                        m_mx = np.zeros_like(m_prod)
+                        for old in range(1, NUMBER_OF_BINS + 1):
+                            channel_cut = cuts[(period, old)]
+                            m_mx |= (
+                                m_prod
+                                & (old_bin == old)
+                                & (mx2 >= channel_cut.low_gev2)
+                                & (mx2 < channel_cut.high_gev2)
+                            )
+                        # endfor
+                        counts[(period, ip, it, "nominal_Mx2")] += int(np.count_nonzero(m_mx))
                     # endfor
-                    counts[(period, ip, "nominal_Mx2")] += int(
-                        np.count_nonzero(m_mx)
-                    )
                 # endfor
             # endfor
         # endwith
     # endfor
 
     rows = []
+    global_bin = 0
     for ip in range(1, 10):
-        row = {"rga_panel": ip}
-        for stage in stages:
-            row[stage] = int(sum(
-                counts[(period, ip, stage)] for period in PERIODS
-            ))
+        edges = RGA_MINUS_T_EDGES[ip]
+        for it in range(1, len(edges)):
+            global_bin += 1
+            row = {
+                "global_bin": global_bin,
+                "rga_panel": ip,
+                "t_bin": it,
+                "minus_t_low": float(edges[it - 1]),
+                "minus_t_high": float(edges[it]),
+            }
+            for stage in stages:
+                row[stage] = int(sum(
+                    counts[(period, ip, it, stage)] for period in PERIODS
+                ))
+            # endfor
+            # Useful survival fractions that immediately expose the killing cut.
+            before_prod = row["inside_Diehl_t_bin"]
+            after_prod = row["inside_production_xB_tprime"]
+            after_mx = row["nominal_Mx2"]
+            row["production_phase_space_survival"] = (
+                after_prod / before_prod if before_prod else np.nan
+            )
+            row["Mx2_survival_after_production_phase_space"] = (
+                after_mx / after_prod if after_prod else np.nan
+            )
+            rows.append(row)
         # endfor
-        rows.append(row)
     # endfor
+
     frame = pd.DataFrame(rows)
     frame.to_csv(output_csv, index=False)
-    print("[RGA cutflow] combined panel cut flow:", flush=True)
+    print("[RGA cutflow] 41-bin raw-event cut flow:", flush=True)
     print(frame.to_string(index=False), flush=True)
     return frame
-
 
 def _rga_variant_cache_paths(args):
     root = args.output_dir.expanduser().resolve()
@@ -6583,8 +6569,9 @@ def run_rga_cross_check(args):
         the original 24-bin (xB,-t') scheme;
       * combines RGC point-to-point systematics in quadrature;
       * compares against published RGA statistical and systematic errors;
-      * profiles independent 2.8% RGA/RGC beam-polarization scale nuisances;
-      * writes pull distributions and a raw-ROOT panel cut flow.
+      * treats the 2.8% Moller scale systematic as common-mode and therefore
+        excludes it from the relative RGA-RGC compatibility test;
+      * writes pull distributions and a raw-ROOT 41-bin cut flow.
     """
     out = args.output_dir.expanduser().resolve() / "rga_cross_check"
     tables = out / "tables"
@@ -6735,15 +6722,9 @@ def run_rga_cross_check(args):
     # endfor
 
     frame = pd.DataFrame(rows)
-    profile = _profile_rga_rgc_scales(frame, scale_sigma=0.028)
-    frame["profiled_pull"] = np.nan
-    frame.loc[profile["use_mask"], "profiled_pull"] = profile["profiled_pulls"]
-    frame["lu1_rgc_profiled"] = (
-        (1.0 + profile["beta_rgc"]) * frame["lu1_rgc"]
-    )
-    frame["lu1_rga_profiled"] = (
-        (1.0 + profile["beta_rga"]) * frame["lu1_rga"]
-    )
+    compatibility = _rga_rgc_compatibility(frame)
+    frame["pull"] = np.nan
+    frame.loc[compatibility["use_mask"], "pull"] = compatibility["pulls"]
 
     csv = tables / "rga_rgc_final_comparison.csv"
     frame.to_csv(csv, index=False)
@@ -6775,10 +6756,10 @@ def run_rga_cross_check(args):
 
     # Raw ROOT cut flow for the panel-1 investigation.
     cutflow = _rga_raw_cutflow(
-        args, run_records, tables / "rga_panel_cutflow.csv"
+        args, run_records, tables / "rga_41bin_cutflow.csv"
     )
 
-    valid_pulls = frame["profiled_pull"].to_numpy(float)
+    valid_pulls = frame["pull"].to_numpy(float)
     valid_pulls = valid_pulls[np.isfinite(valid_pulls)]
     pull_stats = {
         "n": int(valid_pulls.size),
@@ -6799,17 +6780,14 @@ def run_rga_cross_check(args):
     print("\n[RGA cross-check] uncertainty summary", flush=True)
     print(uncertainty_summary.to_string(index=False), flush=True)
     print(
-        "[RGA cross-check] profiled compatibility: "
-        f"chi2/ndf={profile['chi2']:.3f}/{profile['ndf']}="
-        f"{profile['chi2_per_ndf']:.3f}, p={profile['p_value']:.4g}; "
-        f"beta_RGC={profile['beta_rgc']:+.4f} "
-        f"({profile['beta_rgc_pull']:+.2f} sigma), "
-        f"beta_RGA={profile['beta_rga']:+.4f} "
-        f"({profile['beta_rga_pull']:+.2f} sigma)",
+        "[RGA cross-check] direct compatibility (common Moller scale cancels): "
+        f"chi2/ndf={compatibility['chi2']:.3f}/{compatibility['ndf']}="
+        f"{compatibility['chi2_per_ndf']:.3f}, "
+        f"p={compatibility['p_value']:.4g}",
         flush=True,
     )
     print(
-        "[RGA cross-check] profiled pull distribution: "
+        "[RGA cross-check] pull distribution: "
         f"N={pull_stats['n']}, mean={pull_stats['mean']:+.3f}, "
         f"sigma={pull_stats['sample_sigma']:.3f}, "
         f"RMS={pull_stats['rms']:.3f}",
@@ -6823,7 +6801,7 @@ def run_rga_cross_check(args):
         ].copy()
 
         # Final 3x3 overlay: inner bars are statistical, outer bars are
-        # stat+point-to-point.  The 2.8% scales are profiled separately.
+        # stat+point-to-point.  The common 2.8% Moller scale cancels from this comparison.
         fig, axes = plt.subplots(3, 3, figsize=(12, 10), sharey=True)
         for ip, ax in enumerate(axes.flat, start=1):
             data = valid[valid.rga_panel == ip]
@@ -6859,10 +6837,18 @@ def run_rga_cross_check(args):
                     r"=\sigma_{LT'}/\sigma_0$"
                 )
             # endif
-            if ip == 1:
-                ax.legend(fontsize=7)
-            # endif
         # endfor
+        # Explicit proxy artists: panel 1 currently has no RGC points, so a
+        # data-driven legend there would otherwise omit the RGC entries.
+        legend_ax = axes.flat[0]
+        rga_outer_proxy = legend_ax.errorbar([], [], yerr=[[]], fmt="o", capsize=2, label="RGA stat+ptp")
+        rga_stat_proxy = legend_ax.errorbar([], [], yerr=[[]], fmt="none", capsize=4, label="RGA stat")
+        rgc_outer_proxy = legend_ax.errorbar([], [], yerr=[[]], fmt="s", capsize=2, label="RGC stat+ptp")
+        rgc_stat_proxy = legend_ax.errorbar([], [], yerr=[[]], fmt="none", capsize=4, label="RGC stat")
+        legend_ax.legend(
+            handles=[rga_outer_proxy, rga_stat_proxy, rgc_outer_proxy, rgc_stat_proxy],
+            fontsize=7,
+        )
         fig.tight_layout()
         fig.savefig(plots / "rga_rgc_final_overlay.png", dpi=200)
         plt.close(fig)
@@ -6894,12 +6880,12 @@ def run_rga_cross_check(args):
         fig.savefig(plots / "rgc_ptp_systematic_breakdown.png", dpi=200)
         plt.close(fig)
 
-        # Pull histogram after profiling the two independent scale nuisances.
+        # Pull histogram for the direct RGC-RGA comparison.
         fig, ax = plt.subplots(figsize=(7.5, 5.5))
         bins = np.linspace(-4.0, 4.0, 17)
         ax.hist(valid_pulls, bins=bins, histtype="stepfilled", alpha=0.65)
         ax.axvline(0.0, lw=1.0)
-        ax.set_xlabel("Profiled RGC - RGA pull")
+        ax.set_xlabel("RGC - RGA pull")
         ax.set_ylabel("Comparison points")
         ax.text(
             0.03, 0.97,
@@ -6907,23 +6893,23 @@ def run_rga_cross_check(args):
             f"mean = {pull_stats['mean']:+.2f}\n"
             f"sigma = {pull_stats['sample_sigma']:.2f}\n"
             f"RMS = {pull_stats['rms']:.2f}\n"
-            f"chi2/ndf = {profile['chi2_per_ndf']:.2f}",
+            f"chi2/ndf = {compatibility['chi2_per_ndf']:.2f}",
             transform=ax.transAxes, va="top"
         )
         fig.tight_layout()
-        fig.savefig(plots / "rga_rgc_profiled_pull_histogram.png", dpi=200)
+        fig.savefig(plots / "rga_rgc_pull_histogram.png", dpi=200)
         plt.close(fig)
 
-        # Pull versus point after profiling.
+        # Pull versus matched comparison point.
         fig, ax = plt.subplots(figsize=(11, 5.5))
         ax.axhline(0.0, lw=0.8)
         ax.axhline(+1.0, lw=0.7, ls="--")
         ax.axhline(-1.0, lw=0.7, ls="--")
         ax.plot(np.arange(len(valid_pulls)), valid_pulls, "o")
         ax.set_xlabel("Matched RGA/RGC comparison point")
-        ax.set_ylabel("Profiled RGC - RGA pull")
+        ax.set_ylabel("RGC - RGA pull")
         fig.tight_layout()
-        fig.savefig(plots / "rga_rgc_profiled_pulls.png", dpi=200)
+        fig.savefig(plots / "rga_rgc_pulls.png", dpi=200)
         plt.close(fig)
     # endif
 
@@ -6955,23 +6941,23 @@ def run_rga_cross_check(args):
             "published Diehl et al. systematic uncertainty for each point"
         ),
         "beam_polarization_scale": {
-            "RGC": 0.028,
-            "RGA": 0.028,
-            "correlation": (
-                "100% within each dataset; independent between datasets"
+            "fractional_uncertainty": 0.028,
+            "treatment_in_comparison": (
+                "common-mode between RGA and RGC; cancels from the relative "
+                "comparison and is not included in chi2 or pulls"
             ),
         },
-        "profiled_compatibility": {
-            key: value for key, value in profile.items()
-            if key not in ("profiled_pulls", "use_mask")
+        "compatibility": {
+            key: value for key, value in compatibility.items()
+            if key not in ("pulls", "use_mask")
         },
-        "profiled_pull_distribution": pull_stats,
+        "pull_distribution": pull_stats,
         "products": {
             "comparison_csv": str(csv),
             "uncertainty_summary_csv": str(
                 tables / "rga_rgc_uncertainty_summary.csv"
             ),
-            "raw_cutflow_csv": str(tables / "rga_panel_cutflow.csv"),
+            "raw_cutflow_csv": str(tables / "rga_41bin_cutflow.csv"),
             "plots_directory": str(plots),
         },
         "important_note": (
