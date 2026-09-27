@@ -19,8 +19,6 @@ import org.jlab.io.hipo.*
 import org.jlab.io.base.DataEvent
 import org.jlab.clas.physics.*
 import org.jlab.clas12.physics.*
-import extended_kinematic_fitters.*
-import analyzers.*
 import clasqa.QADB
 
 class PIDExclusivitySkim {
@@ -117,8 +115,9 @@ class PIDExclusivitySkim {
     }
 
     static int electronIndex(HipoDataBank rec) {
-        // analysis_fitter convention is led by the reconstructed electron. For this
-        // diagnostic retain the highest-momentum REC pid=11 candidate if >1 exists.
+        // Raw-bank PID diagnostic: do NOT gate on analysis_fitter. Identify the
+        // electron directly from REC::Particle; if more than one REC pid=11 exists,
+        // retain the highest-momentum candidate.
         int best=-1; double bestp=-1
         for (int i=0; i<rec.rows(); ++i) {
             if (rec.getInt('pid',i) != 11) continue
@@ -138,7 +137,6 @@ class PIDExclusivitySkim {
         if (!MX2_SIGMA.containsKey(period)) throw new IllegalArgumentException('Unknown period '+period)
 
         QADB qa=makeQA()
-        GenericKinematicFitter fitter = new analysis_fitter(10.6041)
         BufferedWriter out = new BufferedWriter(new FileWriter(output))
 
         // Header is deliberately a comment; numpy/pandas can ignore it.
@@ -150,7 +148,7 @@ class PIDExclusivitySkim {
         HipoDataSource reader=new HipoDataSource()
         reader.open(input)
         long nev=0, ncand=0
-        long nBanks=0, nRunAccepted=0, nQA=0, nFitterElectron=0, nRecElectron=0, nPosTracks=0
+        long nBanks=0, nRunAccepted=0, nQA=0, nRecElectron=0, nPosTracks=0
         long processingStartTime = System.currentTimeMillis()
         long lastDiagTime = processingStartTime
         while (reader.hasEvent()) {
@@ -165,8 +163,8 @@ class PIDExclusivitySkim {
                 double avgRate = elapsedSec > 0.0 ? nev / elapsedSec : 0.0
                 double recentRate = intervalSec > 0.0 ? 100000.0 / intervalSec : 0.0
                 println(String.format(java.util.Locale.US,
-                    '[diag] %s | %,d raw events | banks %,d | run-ok %,d | QA %,d | fitter-e %,d | REC-e %,d | +tracks %,d | written %,d | %.1f min | %.0f ev/s recent | %.0f ev/s avg',
-                    new File(input).name, nev, nBanks, nRunAccepted, nQA, nFitterElectron,
+                    '[diag] %s | %,d raw events | banks %,d | run-ok %,d | QA %,d | REC-e %,d | +tracks %,d | written %,d | %.1f min | %.0f ev/s recent | %.0f ev/s avg',
+                    new File(input).name, nev, nBanks, nRunAccepted, nQA,
                     nRecElectron, nPosTracks, ncand, elapsedSec/60.0, recentRate, avgRate))
                 System.out.flush()
                 out.flush()
@@ -184,9 +182,6 @@ class PIDExclusivitySkim {
             if (!passQA) continue
             ++nQA
 
-            PhysicsEvent research=fitter.getPhysicsEvent(event)
-            if (research == null || research.countByPid(11) < 1) continue
-            ++nFitterElectron
             // Use the nominal beam energy for the requested RGC run period.
             // This keeps this standalone diagnostic independent of the analysis-local
             // BeamEnergy helper, which is not on this GROOVY classpath.
@@ -277,8 +272,8 @@ class PIDExclusivitySkim {
         double totalSec = (System.currentTimeMillis() - processingStartTime) / 1000.0
         double avgRate = totalSec > 0.0 ? nev / totalSec : 0.0
         println(String.format(java.util.Locale.US,
-            'DONE %s | %,d raw events | banks %,d | run-ok %,d | QA %,d | fitter-e %,d | REC-e %,d | +tracks %,d | %,d written | %.1f min | %.0f events/s | output: %s',
-            new File(input).name, nev, nBanks, nRunAccepted, nQA, nFitterElectron,
+            'DONE %s | %,d raw events | banks %,d | run-ok %,d | QA %,d | REC-e %,d | +tracks %,d | %,d written | %.1f min | %.0f events/s | output: %s',
+            new File(input).name, nev, nBanks, nRunAccepted, nQA,
             nRecElectron, nPosTracks, ncand, totalSec / 60.0, avgRate, output))
     }
 }
