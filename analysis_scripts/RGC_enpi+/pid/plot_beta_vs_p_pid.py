@@ -3,28 +3,29 @@
 """
 RGC positive-hadron beta PID study.
 
-Produces, for each RGC period:
+For each RGC period this script produces:
 
 1. A two-panel beta-vs-p diagnostic:
    - all positive FD hadron tracks before the chi2pid cut;
-   - the same REC-assigned positive hadrons after
-       |chi2pid| < 3.5 and 0.5 < p < 5.0 GeV.
+   - the same tracks after |chi2pid| < 3.5 and 0.5 < p < 5 GeV.
 
-2. Momentum-sliced beta distributions from 1.50 to 5.00 GeV in
-   0.25-GeV bins.
+   The expected beta(p) curves for pi+, K+, and p are overlaid.
 
-   The beta spectra are fit with pi/K/p Gaussian components, using the
-   expected beta values to initialize and constrain the peak positions.
+2. Momentum-sliced beta distributions:
+   - p = 1.50--5.00 GeV;
+   - 0.25-GeV momentum bins;
+   - beta = 0.8--1.1;
+   - no integrated panel;
+   - four columns;
+   - PNG output only.
 
-Important:
------------
-The fitted Gaussian overlap is a detector/PID diagnostic. It is NOT a
-reinterpretation of the CLAS12 REC::Particle chi2pid variable.
+Per the analysis prescription for this study, contamination below 1.50 GeV
+is assumed negligible and is not quantified.
 
-Per the analysis prescription for this study, no contamination estimate is
-made below p = 1.50 GeV.
-
-Only PNG figures are produced.
+The beta spectra above 1.50 GeV are fit with pi/K/p components. The resulting
+non-pion contribution inside an illustrative fitted pion beta band is used
+only as a detector/PID overlap diagnostic. It is NOT a reinterpretation of
+REC::Particle.chi2pid.
 """
 
 from pathlib import Path
@@ -71,7 +72,6 @@ OUTDIR = Path(
 )
 
 
-# Positive hadron assignments retained in the calibration trees.
 POSITIVE_HADRON_PIDS = (
     211,
     321,
@@ -79,7 +79,6 @@ POSITIVE_HADRON_PIDS = (
 )
 
 
-# Particle masses in GeV.
 MASS = {
     "pi": 0.13957039,
     "K": 0.493677,
@@ -87,9 +86,9 @@ MASS = {
 }
 
 
-# -----------------------------------------------------------------------------
-# 2D beta-vs-p plot
-# -----------------------------------------------------------------------------
+# =============================================================================
+# 2D beta-vs-p configuration
+# =============================================================================
 
 PLOT_2D_P_RANGE = (
     0.5,
@@ -105,11 +104,11 @@ PLOT_2D_P_BINS = 180
 PLOT_2D_BETA_BINS = 200
 
 
-# -----------------------------------------------------------------------------
-# Momentum-sliced beta fits
+# =============================================================================
+# Momentum-slice configuration
 #
-# 1.50 -> 5.00 GeV in 0.25-GeV bins = 14 panels.
-# -----------------------------------------------------------------------------
+# 1.50 -> 5.00 GeV in 0.25-GeV intervals gives 14 panels.
+# =============================================================================
 
 P_SLICE_EDGES = np.arange(
     1.50,
@@ -120,10 +119,10 @@ P_SLICE_EDGES = np.arange(
 
 P_RANGES = [
     (
-        float(P_SLICE_EDGES[i]),
-        float(P_SLICE_EDGES[i + 1]),
+        float(P_SLICE_EDGES[index]),
+        float(P_SLICE_EDGES[index + 1]),
     )
-    for i in range(
+    for index in range(
         len(P_SLICE_EDGES) - 1
     )
 ]
@@ -136,16 +135,10 @@ SLICE_BETA_RANGE = (
 
 N_SLICE_BETA_BINS = 240
 
-
-# Minimum number of entries required before attempting a fit.
 MIN_FIT_ENTRIES = 200
 
-
-# Allowed displacement of fitted mean from expected beta.
 MEAN_WINDOW = 0.025
 
-
-# Gaussian width bounds.
 SIGMA_MIN = 0.0015
 SIGMA_MAX = 0.050
 
@@ -157,9 +150,6 @@ SIGMA_MAX = 0.050
 def find_tree(
     root_file,
 ):
-    """
-    Return the first TTree found in the ROOT file.
-    """
 
     for _, obj in root_file.items(
         recursive=True
@@ -181,9 +171,6 @@ def find_branch(
     tree,
     *aliases,
 ):
-    """
-    Return the first branch name present from the supplied aliases.
-    """
 
     names = {
         str(key).split(";")[0]
@@ -204,18 +191,13 @@ def find_branch(
 
 
 # =============================================================================
-# Physics helpers
+# Physics
 # =============================================================================
 
 def beta_expected(
     momentum,
     mass,
 ):
-    """
-    Relativistic beta:
-
-        beta = p / sqrt(p^2 + m^2)
-    """
 
     momentum = np.asarray(
         momentum,
@@ -242,12 +224,6 @@ def gaussian_counts(
     sigma,
     bin_width,
 ):
-    """
-    Gaussian expressed in histogram counts.
-
-    'area' is approximately the integrated number of particles represented
-    by the component.
-    """
 
     normalization = (
         area
@@ -279,15 +255,6 @@ def mixture_model(
     x,
     bin_width,
 ):
-    """
-    pi + K + proton Gaussian model.
-
-    Parameter ordering:
-
-        Npi, mu_pi, sigma_pi,
-        NK,  mu_K,  sigma_K,
-        Np,  mu_p,  sigma_p
-    """
 
     result = np.zeros_like(
         x,
@@ -298,23 +265,21 @@ def mixture_model(
         3
     ):
 
-        area = parameters[
-            3 * index
-        ]
-
-        mu = parameters[
-            3 * index + 1
-        ]
-
-        sigma = parameters[
-            3 * index + 2
-        ]
-
         result += gaussian_counts(
             x,
-            area,
-            mu,
-            sigma,
+
+            parameters[
+                3 * index
+            ],
+
+            parameters[
+                3 * index + 1
+            ],
+
+            parameters[
+                3 * index + 2
+            ],
+
             bin_width,
         )
 
@@ -328,9 +293,6 @@ def gaussian_integral(
     lower,
     upper,
 ):
-    """
-    Integral of a fitted Gaussian between lower and upper beta.
-    """
 
     return (
         area
@@ -353,17 +315,12 @@ def gaussian_integral(
 
 
 # =============================================================================
-# Input
+# Load one period
 # =============================================================================
 
 def load_period(
     filename,
 ):
-    """
-    Load positive FD hadrons from one calibration ROOT tree.
-
-    No chi2pid cut is applied at this stage.
-    """
 
     with uproot.open(
         filename
@@ -417,6 +374,7 @@ def load_period(
                 chi2pid_branch,
                 status_branch,
             ],
+
             library="np",
         )
 
@@ -461,13 +419,6 @@ def load_period(
     )
 
 
-    # -------------------------------------------------------------------------
-    # Positive FD hadrons.
-    #
-    # The calibration skim retained the positive hadron assignments pi+, K+,
-    # and proton.
-    # -------------------------------------------------------------------------
-
     positive_fd = (
         np.isin(
             pid,
@@ -475,13 +426,11 @@ def load_period(
         )
 
         & (
-            status
-            >= 2000
+            status >= 2000
         )
 
         & (
-            status
-            < 4000
+            status < 4000
         )
 
         & np.isfinite(
@@ -522,24 +471,13 @@ def load_period(
 
 
 # =============================================================================
-# 2D beta-vs-p plots
+# 2D beta-vs-p diagnostic
 # =============================================================================
 
 def plot_beta_vs_p(
     period,
     data,
 ):
-    """
-    Produce the two requested beta-vs-p panels.
-
-    Left:
-        all positive FD hadrons.
-
-    Right:
-        same positive FD hadrons after
-            |chi2pid| < 3.5
-            0.5 < p < 5.0 GeV
-    """
 
     momentum = data[
         "p"
@@ -555,15 +493,31 @@ def plot_beta_vs_p(
 
 
     before = (
-        (momentum >= PLOT_2D_P_RANGE[0])
-        & (momentum < PLOT_2D_P_RANGE[1])
-        & (beta >= PLOT_2D_BETA_RANGE[0])
-        & (beta <= PLOT_2D_BETA_RANGE[1])
+        (
+            momentum
+            >= PLOT_2D_P_RANGE[0]
+        )
+
+        & (
+            momentum
+            < PLOT_2D_P_RANGE[1]
+        )
+
+        & (
+            beta
+            >= PLOT_2D_BETA_RANGE[0]
+        )
+
+        & (
+            beta
+            <= PLOT_2D_BETA_RANGE[1]
+        )
     )
 
 
     after = (
         before
+
         & (
             np.abs(
                 chi2pid
@@ -576,6 +530,7 @@ def plot_beta_vs_p(
     fig, axes = plt.subplots(
         1,
         2,
+
         figsize=(
             14,
             5.5,
@@ -595,6 +550,13 @@ def plot_beta_vs_p(
             r"$0.5<p<5.0$ GeV",
         ),
     ]
+
+
+    p_curve = np.linspace(
+        PLOT_2D_P_RANGE[0],
+        PLOT_2D_P_RANGE[1],
+        600,
+    )
 
 
     for ax, (
@@ -638,6 +600,62 @@ def plot_beta_vs_p(
         )
 
 
+        # ---------------------------------------------------------------------
+        # Theoretical beta(p) curves.
+        #
+        # These are especially useful at low momentum, where the proton and
+        # kaon bands curve rapidly and therefore generate broad structures when
+        # projected over a finite momentum interval.
+        # ---------------------------------------------------------------------
+
+        ax.plot(
+            p_curve,
+
+            beta_expected(
+                p_curve,
+                MASS[
+                    "pi"
+                ],
+            ),
+
+            linewidth=1.4,
+
+            label=r"$\pi^+$",
+        )
+
+
+        ax.plot(
+            p_curve,
+
+            beta_expected(
+                p_curve,
+                MASS[
+                    "K"
+                ],
+            ),
+
+            linewidth=1.4,
+
+            label=r"$K^+$",
+        )
+
+
+        ax.plot(
+            p_curve,
+
+            beta_expected(
+                p_curve,
+                MASS[
+                    "p"
+                ],
+            ),
+
+            linewidth=1.4,
+
+            label=r"$p$",
+        )
+
+
         ax.set_xlabel(
             r"$p$ (GeV)"
         )
@@ -653,9 +671,14 @@ def plot_beta_vs_p(
         )
 
 
+        ax.legend(
+            loc="lower right",
+            fontsize=9,
+        )
+
+
     fig.suptitle(
-        f"{period} FD positive hadrons "
-        r"($\pi^+$, $K^+$, $p$)",
+        f"{period} FD positive hadrons",
         fontsize=15,
     )
 
@@ -678,7 +701,9 @@ def plot_beta_vs_p(
 
     fig.savefig(
         output,
+
         dpi=200,
+
         bbox_inches="tight",
     )
 
@@ -695,7 +720,7 @@ def plot_beta_vs_p(
 
 
 # =============================================================================
-# Momentum-slice fitting
+# Fit one 0.25-GeV momentum interval
 # =============================================================================
 
 def fit_beta_slice(
@@ -703,19 +728,12 @@ def fit_beta_slice(
     p_min,
     p_max,
 ):
-    """
-    Fit one 0.25-GeV momentum slice.
-
-    The expected beta values at the center of the momentum bin initialize the
-    pi/K/p means.
-
-    Narrower momentum bins substantially reduce the artificial broadening
-    caused by the curvature of the beta(p) bands.
-    """
 
     counts, edges = np.histogram(
         beta_values,
+
         bins=N_SLICE_BETA_BINS,
+
         range=SLICE_BETA_RANGE,
     )
 
@@ -746,10 +764,6 @@ def fit_beta_slice(
         )
 
 
-    # -------------------------------------------------------------------------
-    # Expected positions at the center of the momentum bin.
-    # -------------------------------------------------------------------------
-
     p_center = 0.5 * (
         p_min
         + p_max
@@ -776,9 +790,9 @@ def fit_beta_slice(
     )
 
 
-    # -------------------------------------------------------------------------
-    # Initial populations.
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Initial component populations
+    # =========================================================================
 
     initial_areas = []
 
@@ -789,7 +803,7 @@ def fit_beta_slice(
             np.abs(
                 centers - mu
             )
-            < 0.015
+            < 0.012
         )
 
 
@@ -808,13 +822,11 @@ def fit_beta_slice(
         )
 
 
-    # Narrower p bins should yield narrower distributions than the old
-    # 0.5-GeV slices.
     initial_sigmas = np.array(
         [
-            0.008,
-            0.010,
-            0.012,
+            0.007,
+            0.009,
+            0.011,
         ]
     )
 
@@ -832,9 +844,9 @@ def fit_beta_slice(
     ).ravel()
 
 
-    # -------------------------------------------------------------------------
+    # =========================================================================
     # Bounds
-    # -------------------------------------------------------------------------
+    # =========================================================================
 
     lower_bounds = []
     upper_bounds = []
@@ -858,7 +870,8 @@ def fit_beta_slice(
 
         upper_bounds.extend(
             [
-                10.0 * n_entries,
+                10.0
+                * n_entries,
 
                 min(
                     SLICE_BETA_RANGE[1],
@@ -879,10 +892,6 @@ def fit_beta_slice(
         upper_bounds
     )
 
-
-    # -------------------------------------------------------------------------
-    # Least-squares fit with approximately Poisson histogram errors.
-    # -------------------------------------------------------------------------
 
     errors = np.sqrt(
         np.maximum(
@@ -975,9 +984,9 @@ def fit_beta_slice(
     )
 
 
-    # -------------------------------------------------------------------------
-    # Fitted components
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Components
+    # =========================================================================
 
     components = {}
 
@@ -1019,17 +1028,14 @@ def fit_beta_slice(
     ]
 
 
-    # -------------------------------------------------------------------------
-    # Peak-separation diagnostics
+    # =========================================================================
+    # Peak separation
     #
-    # These used to be called S_piK and S_Kp.
+    # This is what was previously labeled "S".
     #
-    # They measure the fitted difference between two peak centers relative to
-    # the quadrature sum of their fitted Gaussian widths.
-    #
-    # We keep them in the CSV because they are useful diagnostics, but use
-    # explicit names in the figure rather than the cryptic "S".
-    # -------------------------------------------------------------------------
+    # A value of 3 means that the fitted peak centers differ by three times the
+    # quadrature combination of their fitted widths.
+    # =========================================================================
 
     separation_pi_k = (
         abs(
@@ -1075,11 +1081,12 @@ def fit_beta_slice(
     )
 
 
-    # -------------------------------------------------------------------------
-    # Fitted overlap inside an illustrative +/-3.5 sigma pion beta band.
+    # =========================================================================
+    # Fitted contamination in the pion beta region
     #
-    # This is deliberately NOT called the production PID acceptance.
-    # -------------------------------------------------------------------------
+    # Use +/-3.5 fitted pion sigma only as an empirical beta-band overlap
+    # diagnostic.
+    # =========================================================================
 
     pion_lower = (
         pi_component[
@@ -1158,14 +1165,6 @@ def fit_beta_slice(
         fitted_nonpion_fraction = np.nan
 
 
-    # -------------------------------------------------------------------------
-    # Basic reliability flag.
-    #
-    # This is diagnostic only. We should inspect the new 0.25-GeV spectra
-    # before deciding whether a numerical threshold should be used in the
-    # analysis note.
-    # -------------------------------------------------------------------------
-
     fit_reliable = bool(
         fit.success
 
@@ -1213,18 +1212,13 @@ def fit_beta_slice(
 
 
 # =============================================================================
-# Plot momentum slices
+# Momentum-sliced beta distributions
 # =============================================================================
 
 def plot_momentum_slices(
     period,
     data,
 ):
-    """
-    Plot beta distributions from 1.50 to 5.00 GeV in 0.25-GeV bins.
-
-    No integrated panel is produced.
-    """
 
     momentum = data[
         "p"
@@ -1235,12 +1229,7 @@ def plot_momentum_slices(
     ]
 
 
-    # -------------------------------------------------------------------------
-    # Four columns as requested.
-    #
-    # 14 bins -> 4 x 4 canvas, with final two axes disabled.
-    # -------------------------------------------------------------------------
-
+    # 14 momentum bins on a 4x4 canvas.
     n_columns = 4
 
     n_rows = int(
@@ -1338,7 +1327,7 @@ def plot_momentum_slices(
 
 
         # ---------------------------------------------------------------------
-        # Data histogram
+        # Data
         # ---------------------------------------------------------------------
 
         ax.step(
@@ -1354,13 +1343,16 @@ def plot_momentum_slices(
 
 
         # ---------------------------------------------------------------------
-        # Expected pi/K/p beta at the center of the momentum slice.
+        # Expected beta positions at center of momentum interval.
         # ---------------------------------------------------------------------
 
         p_center = 0.5 * (
             p_min
             + p_max
         )
+
+
+        expected_positions = {}
 
 
         for species in (
@@ -1371,10 +1363,16 @@ def plot_momentum_slices(
 
             expected = beta_expected(
                 p_center,
+
                 MASS[
                     species
                 ],
             )
+
+
+            expected_positions[
+                species
+            ] = expected
 
 
             ax.axvline(
@@ -1451,9 +1449,13 @@ def plot_momentum_slices(
                 )
 
 
-            # -----------------------------------------------------------------
-            # Human-readable fit diagnostics.
-            # -----------------------------------------------------------------
+            nonpion_percent = (
+                100.0
+                * result[
+                    "fitted_nonpion_fraction"
+                ]
+            )
+
 
             if result[
                 "fit_reliable"
@@ -1470,14 +1472,7 @@ def plot_momentum_slices(
                 )
 
 
-            nonpion_percent = (
-                100.0
-                * result[
-                    "fitted_nonpion_fraction"
-                ]
-            )
-
-
+            # No more cryptic "S" labels.
             annotation = (
                 f"N = {len(beta_bin):,}\n"
 
@@ -1487,7 +1482,7 @@ def plot_momentum_slices(
                 f"K/p sep. = "
                 f"{result['separation_Kp']:.2f}\n"
 
-                f"fit overlap = "
+                f"non-pion overlap = "
                 f"{nonpion_percent:.2f}%\n"
 
                 f"{quality}"
@@ -1509,9 +1504,9 @@ def plot_momentum_slices(
             )
 
 
-            # -----------------------------------------------------------------
-            # Numerical fit output
-            # -----------------------------------------------------------------
+            # =================================================================
+            # Fit summary
+            # =================================================================
 
             row = {
                 "period":
@@ -1559,16 +1554,25 @@ def plot_momentum_slices(
             ):
 
                 row[
+                    f"{species}_expected_mu"
+                ] = expected_positions[
+                    species
+                ]
+
+
+                row[
                     f"{species}_area"
                 ] = parameters[
                     3 * index
                 ]
+
 
                 row[
                     f"{species}_mu"
                 ] = parameters[
                     3 * index + 1
                 ]
+
 
                 row[
                     f"{species}_sigma"
@@ -1582,9 +1586,9 @@ def plot_momentum_slices(
             )
 
 
-            # -----------------------------------------------------------------
-            # Overlap output
-            # -----------------------------------------------------------------
+            # =================================================================
+            # Overlap summary
+            # =================================================================
 
             overlap_rows.append(
                 {
@@ -1660,12 +1664,9 @@ def plot_momentum_slices(
             )
 
 
-        # ---------------------------------------------------------------------
-        # Panel formatting
-        # ---------------------------------------------------------------------
-
         ax.set_title(
             f"{p_min:.2f} < p < {p_max:.2f} GeV",
+
             fontsize=10,
         )
 
@@ -1685,9 +1686,9 @@ def plot_momentum_slices(
         )
 
 
-    # -------------------------------------------------------------------------
-    # Disable unused axes.
-    # -------------------------------------------------------------------------
+    # =========================================================================
+    # Empty final two panels
+    # =========================================================================
 
     for panel in range(
         len(
@@ -1723,6 +1724,7 @@ def plot_momentum_slices(
     )
 
 
+    # PNG ONLY.
     output = (
         OUTDIR
         / f"beta_momentum_slices_{period.lower()}.png"
@@ -1750,13 +1752,8 @@ def plot_momentum_slices(
 
 
     # =========================================================================
-    # Save fit tables
+    # Numerical summaries
     # =========================================================================
-
-    fit_table = pd.DataFrame(
-        fit_rows
-    )
-
 
     fit_output = (
         OUTDIR
@@ -1764,14 +1761,12 @@ def plot_momentum_slices(
     )
 
 
-    fit_table.to_csv(
+    pd.DataFrame(
+        fit_rows
+    ).to_csv(
         fit_output,
+
         index=False,
-    )
-
-
-    overlap_table = pd.DataFrame(
-        overlap_rows
     )
 
 
@@ -1781,8 +1776,11 @@ def plot_momentum_slices(
     )
 
 
-    overlap_table.to_csv(
+    pd.DataFrame(
+        overlap_rows
+    ).to_csv(
         overlap_output,
+
         index=False,
     )
 
@@ -1830,6 +1828,7 @@ def main():
             "============================================================\n"
             f" {period}\n"
             "============================================================",
+
             flush=True,
         )
 
@@ -1842,18 +1841,19 @@ def main():
         print(
             f"[{period}] positive FD hadron tracks: "
             f"{len(data['p']):,}",
+
             flush=True,
         )
 
 
-        # Two-panel beta-vs-p diagnostic.
+        # 2D beta-vs-p before/after PID.
         plot_beta_vs_p(
             period,
             data,
         )
 
 
-        # 0.25-GeV beta slices, beginning at p = 1.50 GeV.
+        # Quantitative study begins at p = 1.50 GeV.
         plot_momentum_slices(
             period,
             data,
