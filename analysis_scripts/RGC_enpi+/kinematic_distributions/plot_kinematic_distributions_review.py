@@ -1070,14 +1070,14 @@ def plot_pion_momentum_by_analysis_bin(
     path,
 ):
 
-    """Four xB panels, each containing the six -t' momentum distributions."""
+    """Six -t' panels, each containing the four xB pion-momentum distributions."""
 
     fig, axes = plt.subplots(
         1,
-        4,
+        6,
         figsize=(
-            18.0,
-            4.5,
+            20.0,
+            4.3,
         ),
         sharex=True,
         sharey=True,
@@ -1098,24 +1098,24 @@ def plot_pion_momentum_by_analysis_bin(
     )
 
 
-    for xb_index, (
+    for tp_index, (
         ax,
         (
-            xb_low,
-            xb_high,
+            tp_low,
+            tp_high,
         ),
     ) in enumerate(
         zip(
             axes,
-            XB_BINS,
+            TP_BINS,
         )
     ):
 
-        for tp_index, (
-            tp_low,
-            tp_high,
+        for xb_index, (
+            xb_low,
+            xb_high,
         ) in enumerate(
-            TP_BINS
+            XB_BINS
         ):
 
             analysis_bin = (
@@ -1197,14 +1197,14 @@ def plot_pion_momentum_by_analysis_bin(
                 where="mid",
                 linewidth=1.35,
                 label=(
-                    fr"${tp_low:.2f}\leq -t'<{tp_high:.2f}$"
+                    fr"${xb_low:.2f}\leq x_B<{xb_high:.2f}$"
                     fr" ($N={total:,}$)"
                 ),
             )
 
 
         ax.set_title(
-            fr"${xb_low:.2f}\leq x_B<{xb_high:.2f}$"
+            fr"${tp_low:.2f}\leq -t'<{tp_high:.2f}$"
         )
 
 
