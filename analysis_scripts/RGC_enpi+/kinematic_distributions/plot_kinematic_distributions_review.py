@@ -1070,7 +1070,11 @@ def plot_pion_momentum_by_analysis_bin(
     path,
 ):
 
-    """Six -t' panels, each containing the four xB pion-momentum distributions."""
+    """Six -t' panels, each containing the four xB pion-momentum distributions.
+
+    Histograms show the actual number of selected events; they are not
+    normalized to unit area.
+    """
 
     fig, axes = plt.subplots(
         1,
@@ -1084,7 +1088,8 @@ def plot_pion_momentum_by_analysis_bin(
     )
 
 
-    # Slightly finer plotting bins than the exported contamination histogram.
+    # Fine plotting bins. The portable contamination CSV separately uses
+    # the 0.25-GeV bins matched exactly to the beta_pid_2d_fit study.
     plot_edges = np.linspace(
         PION_P_MIN,
         PION_P_MAX,
@@ -1176,24 +1181,9 @@ def plot_pion_momentum_by_analysis_bin(
             )
 
 
-            if total > 0:
-
-                fraction = (
-                    counts
-                    / total
-                )
-
-
-            else:
-
-                fraction = counts.astype(
-                    float
-                )
-
-
             ax.step(
                 centers,
-                fraction,
+                counts,
                 where="mid",
                 linewidth=1.35,
                 label=(
@@ -1236,7 +1226,7 @@ def plot_pion_momentum_by_analysis_bin(
     axes[
         0
     ].set_ylabel(
-        "Fraction of events / momentum bin"
+        "Events"
     )
 
 
@@ -1260,7 +1250,6 @@ def plot_pion_momentum_by_analysis_bin(
         fig,
         path,
     )
-
 
 # =============================================================================
 # NEW: portable period-resolved pion-momentum histogram
