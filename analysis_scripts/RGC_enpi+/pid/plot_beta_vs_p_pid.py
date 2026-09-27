@@ -1,31 +1,97 @@
 #!/usr/bin/env python3
 
 """
-RGC positive-hadron beta PID study.
+RGC positive-hadron PID study using a native (p, beta) mixture model.
 
-For each RGC period this script produces:
+Purpose
+-------
+Estimate residual kaon/proton contamination in the actual pion PID sample
+as a function of momentum, for later folding through the pion momentum
+distributions in the 24 final analysis bins.
 
-1. A two-panel beta-vs-p diagnostic:
-   - all positive FD hadron tracks before the chi2pid cut;
-   - the same tracks after |chi2pid| < 3.5 and 0.5 < p < 5 GeV.
+The key improvement over the previous projected-beta study is that every
+track is evaluated at its own momentum:
 
-   The expected beta(p) curves for pi+, K+, and p are overlaid.
+    beta_h(p) = p / sqrt(p^2 + m_h^2)
 
-2. Momentum-sliced beta distributions:
-   - p = 1.50--5.00 GeV;
-   - 0.25-GeV momentum bins;
-   - beta = 0.8--1.1;
-   - no integrated panel;
-   - four columns;
-   - PNG output only.
+rather than approximating all tracks in a finite momentum interval by a
+single Gaussian centered at beta_h(p_center).
 
-Per the analysis prescription for this study, contamination below 1.50 GeV
-is assumed negligible and is not quantified.
+Two samples are fit independently:
 
-The beta spectra above 1.50 GeV are fit with pi/K/p components. The resulting
-non-pion contribution inside an illustrative fitted pion beta band is used
-only as a detector/PID overlap diagnostic. It is NOT a reinterpretation of
-REC::Particle.chi2pid.
+    1. all_positive
+       All positive FD tracks assigned by REC as pi+, K+, or proton.
+       This is primarily a validation of the three-species mixture model.
+
+    2. pion_selected
+       REC PID == 211 and |chi2pid| < 3.5.
+       This is the sample that matters for the contamination estimate.
+
+The stored REC::Particle chi2pid value is used only for the hypothesis to
+which it actually corresponds. In particular, the stored chi2pid of an
+assigned kaon is NOT interpreted as its pion-hypothesis chi2pid.
+
+Detector response
+-----------------
+For each species, clean REC-assigned control tracks are used to measure
+
+    Delta beta_h = beta_measured - beta_expected_h(p)
+
+versus momentum.
+
+In narrow momentum bins the robust median gives the offset and the robust
+MAD gives the Gaussian-core resolution. Smooth functions in 1/p are then
+fit to the measured offset and resolution.
+
+These response functions are fixed in the subsequent mixture fits. This
+prevents unresolved high-momentum pi/K populations from being accommodated
+by arbitrarily broad Gaussian components.
+
+Mixture fit
+-----------
+Within each 0.25-GeV momentum interval, the conditional likelihood is
+
+    P(beta_j | p_j) =
+          f_pi G_pi(beta_j | p_j)
+        + f_K  G_K (beta_j | p_j)
+        + f_p  G_p (beta_j | p_j),
+
+with
+
+    f_pi + f_K + f_p = 1.
+
+The three fractions are the only free parameters in each mixture fit.
+
+Bootstrap replicas provide statistical uncertainties on the fitted species
+fractions.
+
+Important interpretation
+------------------------
+For the pion_selected sample, the fitted f_K is an empirical estimate of
+the residual kaon-like component in the tracks that REC classified as pi+
+and that passed the actual |chi2pid| < 3.5 requirement.
+
+This is therefore the quantity intended for later folding with the momentum
+distribution in each of the 24 final analysis bins.
+
+No contamination estimate is assigned below p = 1.50 GeV in this study.
+
+Outputs
+-------
+For each period:
+
+    beta_vs_p_<period>.png
+    beta_response_<period>.png
+    mixture_slices_all_positive_<period>.png
+    mixture_slices_pion_selected_<period>.png
+
+    response_points_<period>.csv
+    mixture_all_positive_<period>.csv
+    mixture_pion_selected_<period>.csv
+    kaon_contamination_<period>.csv
+
+The last file is the compact f_K(p) result intended for the eventual
+24-bin folding study.
 """
 
 from pathlib import Path
@@ -33,13 +99,13 @@ import warnings
 
 import numpy as np
 import pandas as pd
+
 import matplotlib.pyplot as plt
 from matplotlib.colors import LogNorm
 
 import uproot
 
-from scipy.optimize import least_squares
-from scipy.special import ndtr
+from scipy.optimize import minimize
 
 
 # =============================================================================
@@ -68,15 +134,26 @@ INPUTS = {
 
 
 OUTDIR = Path(
-    "output/beta_pid_study"
+    "output/beta_pid_2d_fit"
 )
 
 
-POSITIVE_HADRON_PIDS = (
-    211,
-    321,
-    2212,
+# =============================================================================
+# Species definitions
+# =============================================================================
+
+SPECIES = (
+    "pi",
+    "K",
+    "p",
 )
+
+
+PID_MAP = {
+    "pi": 211,
+    "K": 321,
+    "p": 2212,
+}
 
 
 MASS = {
@@ -87,33 +164,19 @@ MASS = {
 
 
 # =============================================================================
-# 2D beta-vs-p configuration
+# Analysis momentum range
 # =============================================================================
 
-PLOT_2D_P_RANGE = (
-    0.5,
-    5.0,
-)
+P_MIN = 1.50
+P_MAX = 5.00
 
-PLOT_2D_BETA_RANGE = (
-    0.20,
-    1.20,
-)
+P_SLICE_WIDTH = 0.25
 
-PLOT_2D_P_BINS = 180
-PLOT_2D_BETA_BINS = 200
-
-
-# =============================================================================
-# Momentum-slice configuration
-#
-# 1.50 -> 5.00 GeV in 0.25-GeV intervals gives 14 panels.
-# =============================================================================
 
 P_SLICE_EDGES = np.arange(
-    1.50,
-    5.00 + 0.25,
-    0.25,
+    P_MIN,
+    P_MAX + P_SLICE_WIDTH,
+    P_SLICE_WIDTH,
 )
 
 
@@ -128,19 +191,82 @@ P_RANGES = [
 ]
 
 
-SLICE_BETA_RANGE = (
+# =============================================================================
+# Response calibration
+# =============================================================================
+
+# Use somewhat finer bins for measuring detector response.
+RESPONSE_P_BIN_WIDTH = 0.10
+
+
+RESPONSE_P_EDGES = np.arange(
+    0.50,
+    P_MAX + RESPONSE_P_BIN_WIDTH,
+    RESPONSE_P_BIN_WIDTH,
+)
+
+
+# Tight assigned-hypothesis requirement used only to measure the detector
+# response around the clearly identified REC species bands.
+#
+# This is NOT the production pion selection.
+RESPONSE_CHI2_MAX = 2.0
+
+
+# Minimum entries required to retain a response point.
+MIN_RESPONSE_ENTRIES = 150
+
+
+# Robust trimming around the median, in robust sigma units.
+RESPONSE_TRIM_NSIGMA = 4.0
+
+
+# Polynomial order in x = 1/p for the smooth response functions.
+RESPONSE_OFFSET_POLY_ORDER = 2
+RESPONSE_SIGMA_POLY_ORDER = 2
+
+
+# Conservative lower/upper limits on response width.
+SIGMA_FLOOR = 0.0010
+SIGMA_CEILING = 0.0500
+
+
+# =============================================================================
+# Mixture fits
+# =============================================================================
+
+MIN_MIXTURE_ENTRIES = 300
+
+
+# Limit the number of tracks used in a single likelihood fit.
+#
+# The selection is deterministic through RNG_SEED. This keeps bootstrap
+# runtime manageable without changing the sample definition.
+MAX_FIT_EVENTS_PER_BIN = 150000
+
+
+N_BOOTSTRAP = 50
+
+RNG_SEED = 20260927
+
+
+# =============================================================================
+# Plotting
+# =============================================================================
+
+BETA_2D_RANGE = (
+    0.20,
+    1.20,
+)
+
+
+BETA_SLICE_RANGE = (
     0.80,
     1.10,
 )
 
-N_SLICE_BETA_BINS = 240
 
-MIN_FIT_ENTRIES = 200
-
-MEAN_WINDOW = 0.025
-
-SIGMA_MIN = 0.0015
-SIGMA_MAX = 0.050
+N_BETA_SLICE_BINS = 180
 
 
 # =============================================================================
@@ -177,10 +303,12 @@ def find_branch(
         for key in tree.keys()
     }
 
+
     for alias in aliases:
 
         if alias in names:
             return alias
+
 
     raise KeyError(
         "Could not find any of these branches:\n"
@@ -191,7 +319,7 @@ def find_branch(
 
 
 # =============================================================================
-# Physics
+# Physics helpers
 # =============================================================================
 
 def beta_expected(
@@ -204,6 +332,7 @@ def beta_expected(
         dtype=float,
     )
 
+
     return (
         momentum
         / np.sqrt(
@@ -213,21 +342,28 @@ def beta_expected(
     )
 
 
-# =============================================================================
-# Gaussian model
-# =============================================================================
-
-def gaussian_counts(
+def gaussian_pdf(
     x,
-    area,
     mu,
     sigma,
-    bin_width,
 ):
 
-    normalization = (
-        area
-        * bin_width
+    sigma = np.clip(
+        sigma,
+        SIGMA_FLOOR,
+        SIGMA_CEILING,
+    )
+
+
+    z = (
+        x - mu
+    ) / sigma
+
+
+    return (
+        np.exp(
+            -0.5 * z * z
+        )
         / (
             np.sqrt(
                 2.0 * np.pi
@@ -236,86 +372,150 @@ def gaussian_counts(
         )
     )
 
-    return (
-        normalization
-        * np.exp(
-            -0.5
-            * (
-                (
-                    x - mu
-                )
-                / sigma
-            ) ** 2
-        )
-    )
 
-
-def mixture_model(
-    parameters,
-    x,
-    bin_width,
+def robust_location_scale(
+    values,
 ):
 
-    result = np.zeros_like(
-        x,
+    values = np.asarray(
+        values,
         dtype=float,
     )
 
-    for index in range(
-        3
+
+    values = values[
+        np.isfinite(
+            values
+        )
+    ]
+
+
+    if len(
+        values
+    ) == 0:
+
+        return (
+            np.nan,
+            np.nan,
+            0,
+        )
+
+
+    median = np.median(
+        values
+    )
+
+
+    mad = np.median(
+        np.abs(
+            values - median
+        )
+    )
+
+
+    sigma = (
+        1.4826
+        * mad
+    )
+
+
+    if (
+        not np.isfinite(
+            sigma
+        )
+        or sigma <= 0
     ):
 
-        result += gaussian_counts(
-            x,
-
-            parameters[
-                3 * index
-            ],
-
-            parameters[
-                3 * index + 1
-            ],
-
-            parameters[
-                3 * index + 2
-            ],
-
-            bin_width,
+        sigma = np.std(
+            values
         )
 
-    return result
+
+    if (
+        not np.isfinite(
+            sigma
+        )
+        or sigma <= 0
+    ):
+
+        return (
+            median,
+            np.nan,
+            len(
+                values
+            ),
+        )
 
 
-def gaussian_integral(
-    area,
-    mu,
-    sigma,
-    lower,
-    upper,
-):
+    keep = (
+        np.abs(
+            values - median
+        )
+        <= RESPONSE_TRIM_NSIGMA * sigma
+    )
+
+
+    trimmed = values[
+        keep
+    ]
+
+
+    if len(
+        trimmed
+    ) < 10:
+
+        trimmed = values
+
+
+    location = np.median(
+        trimmed
+    )
+
+
+    mad_trimmed = np.median(
+        np.abs(
+            trimmed - location
+        )
+    )
+
+
+    scale = (
+        1.4826
+        * mad_trimmed
+    )
+
+
+    if (
+        not np.isfinite(
+            scale
+        )
+        or scale <= 0
+    ):
+
+        scale = np.std(
+            trimmed
+        )
+
 
     return (
-        area
-        * (
-            ndtr(
-                (
-                    upper - mu
-                )
-                / sigma
+        float(
+            location
+        ),
+
+        float(
+            scale
+        ),
+
+        int(
+            len(
+                trimmed
             )
-            -
-            ndtr(
-                (
-                    lower - mu
-                )
-                / sigma
-            )
-        )
+        ),
     )
 
 
 # =============================================================================
-# Load one period
+# Input
 # =============================================================================
 
 def load_period(
@@ -382,7 +582,8 @@ def load_period(
     pid = np.asarray(
         arrays[
             pid_branch
-        ]
+        ],
+        dtype=int,
     )
 
 
@@ -422,7 +623,9 @@ def load_period(
     positive_fd = (
         np.isin(
             pid,
-            POSITIVE_HADRON_PIDS,
+            tuple(
+                PID_MAP.values()
+            ),
         )
 
         & (
@@ -471,7 +674,573 @@ def load_period(
 
 
 # =============================================================================
-# 2D beta-vs-p diagnostic
+# Response calibration
+# =============================================================================
+
+def measure_response_points(
+    period,
+    data,
+):
+
+    rows = []
+
+
+    for species in SPECIES:
+
+        pid_value = PID_MAP[
+            species
+        ]
+
+
+        mass = MASS[
+            species
+        ]
+
+
+        species_selection = (
+            (
+                data[
+                    "pid"
+                ]
+                == pid_value
+            )
+
+            & (
+                np.abs(
+                    data[
+                        "chi2pid"
+                    ]
+                )
+                < RESPONSE_CHI2_MAX
+            )
+        )
+
+
+        p_species = data[
+            "p"
+        ][
+            species_selection
+        ]
+
+
+        beta_species = data[
+            "beta"
+        ][
+            species_selection
+        ]
+
+
+        residual_species = (
+            beta_species
+
+            - beta_expected(
+                p_species,
+                mass,
+            )
+        )
+
+
+        for index in range(
+            len(
+                RESPONSE_P_EDGES
+            ) - 1
+        ):
+
+            p_low = RESPONSE_P_EDGES[
+                index
+            ]
+
+
+            p_high = RESPONSE_P_EDGES[
+                index + 1
+            ]
+
+
+            selection = (
+                (
+                    p_species
+                    >= p_low
+                )
+
+                & (
+                    p_species
+                    < p_high
+                )
+            )
+
+
+            values = residual_species[
+                selection
+            ]
+
+
+            if len(
+                values
+            ) < MIN_RESPONSE_ENTRIES:
+
+                continue
+
+
+            (
+                offset,
+                sigma,
+                n_used,
+            ) = robust_location_scale(
+                values
+            )
+
+
+            if (
+                not np.isfinite(
+                    offset
+                )
+
+                or not np.isfinite(
+                    sigma
+                )
+
+                or sigma <= 0
+            ):
+
+                continue
+
+
+            rows.append(
+                {
+                    "period":
+                        period,
+
+                    "species":
+                        species,
+
+                    "p_min_GeV":
+                        p_low,
+
+                    "p_max_GeV":
+                        p_high,
+
+                    "p_center_GeV":
+                        0.5
+                        * (
+                            p_low
+                            + p_high
+                        ),
+
+                    "N_raw":
+                        int(
+                            len(
+                                values
+                            )
+                        ),
+
+                    "N_used":
+                        n_used,
+
+                    "delta_beta":
+                        offset,
+
+                    "sigma_beta":
+                        sigma,
+                }
+            )
+
+
+    return pd.DataFrame(
+        rows
+    )
+
+
+# =============================================================================
+# Smooth response functions
+# =============================================================================
+
+def fit_response_model(
+    response_table,
+):
+
+    models = {}
+
+
+    for species in SPECIES:
+
+        table = response_table[
+            response_table[
+                "species"
+            ]
+            == species
+        ].copy()
+
+
+        if len(
+            table
+        ) < 4:
+
+            raise RuntimeError(
+                f"Not enough response points for {species}."
+            )
+
+
+        p = table[
+            "p_center_GeV"
+        ].to_numpy(
+            dtype=float
+        )
+
+
+        x = 1.0 / p
+
+
+        offset = table[
+            "delta_beta"
+        ].to_numpy(
+            dtype=float
+        )
+
+
+        sigma = table[
+            "sigma_beta"
+        ].to_numpy(
+            dtype=float
+        )
+
+
+        n = table[
+            "N_used"
+        ].to_numpy(
+            dtype=float
+        )
+
+
+        weights = np.sqrt(
+            np.maximum(
+                n,
+                1.0,
+            )
+        )
+
+
+        offset_coefficients = np.polyfit(
+            x,
+            offset,
+
+            deg=RESPONSE_OFFSET_POLY_ORDER,
+
+            w=weights,
+        )
+
+
+        # Fit log(sigma) so the smooth model is intrinsically positive.
+        sigma_coefficients = np.polyfit(
+            x,
+            np.log(
+                np.clip(
+                    sigma,
+                    SIGMA_FLOOR,
+                    SIGMA_CEILING,
+                )
+            ),
+
+            deg=RESPONSE_SIGMA_POLY_ORDER,
+
+            w=weights,
+        )
+
+
+        models[
+            species
+        ] = {
+            "offset_coefficients":
+                offset_coefficients,
+
+            "sigma_coefficients":
+                sigma_coefficients,
+        }
+
+
+    return models
+
+
+def response_offset(
+    momentum,
+    species,
+    models,
+):
+
+    momentum = np.asarray(
+        momentum,
+        dtype=float,
+    )
+
+
+    x = 1.0 / np.clip(
+        momentum,
+        0.2,
+        None,
+    )
+
+
+    return np.polyval(
+        models[
+            species
+        ][
+            "offset_coefficients"
+        ],
+
+        x,
+    )
+
+
+def response_sigma(
+    momentum,
+    species,
+    models,
+):
+
+    momentum = np.asarray(
+        momentum,
+        dtype=float,
+    )
+
+
+    x = 1.0 / np.clip(
+        momentum,
+        0.2,
+        None,
+    )
+
+
+    log_sigma = np.polyval(
+        models[
+            species
+        ][
+            "sigma_coefficients"
+        ],
+
+        x,
+    )
+
+
+    sigma = np.exp(
+        log_sigma
+    )
+
+
+    return np.clip(
+        sigma,
+        SIGMA_FLOOR,
+        SIGMA_CEILING,
+    )
+
+
+def response_mean(
+    momentum,
+    species,
+    models,
+):
+
+    return (
+        beta_expected(
+            momentum,
+            MASS[
+                species
+            ],
+        )
+
+        + response_offset(
+            momentum,
+            species,
+            models,
+        )
+    )
+
+
+# =============================================================================
+# Plot detector response
+# =============================================================================
+
+def plot_response(
+    period,
+    response_table,
+    models,
+):
+
+    fig, axes = plt.subplots(
+        2,
+        1,
+
+        figsize=(
+            8,
+            8,
+        ),
+
+        sharex=True,
+    )
+
+
+    p_curve = np.linspace(
+        0.5,
+        5.0,
+        500,
+    )
+
+
+    for species in SPECIES:
+
+        table = response_table[
+            response_table[
+                "species"
+            ]
+            == species
+        ]
+
+
+        axes[
+            0
+        ].plot(
+            table[
+                "p_center_GeV"
+            ],
+
+            table[
+                "delta_beta"
+            ],
+
+            marker="o",
+
+            linestyle="none",
+
+            label=species,
+        )
+
+
+        axes[
+            0
+        ].plot(
+            p_curve,
+
+            response_offset(
+                p_curve,
+                species,
+                models,
+            ),
+
+            linewidth=1.5,
+        )
+
+
+        axes[
+            1
+        ].plot(
+            table[
+                "p_center_GeV"
+            ],
+
+            table[
+                "sigma_beta"
+            ],
+
+            marker="o",
+
+            linestyle="none",
+
+            label=species,
+        )
+
+
+        axes[
+            1
+        ].plot(
+            p_curve,
+
+            response_sigma(
+                p_curve,
+                species,
+                models,
+            ),
+
+            linewidth=1.5,
+        )
+
+
+    axes[
+        0
+    ].axhline(
+        0.0,
+
+        linewidth=0.8,
+    )
+
+
+    axes[
+        0
+    ].set_ylabel(
+        r"$\Delta\beta$"
+    )
+
+
+    axes[
+        0
+    ].set_title(
+        f"{period}: measured TOF response offsets"
+    )
+
+
+    axes[
+        0
+    ].legend()
+
+
+    axes[
+        1
+    ].set_xlabel(
+        r"$p$ (GeV)"
+    )
+
+
+    axes[
+        1
+    ].set_ylabel(
+        r"$\sigma_\beta$"
+    )
+
+
+    axes[
+        1
+    ].set_title(
+        "Measured TOF response widths"
+    )
+
+
+    axes[
+        1
+    ].legend()
+
+
+    fig.tight_layout()
+
+
+    output = (
+        OUTDIR
+        / f"beta_response_{period.lower()}.png"
+    )
+
+
+    fig.savefig(
+        output,
+
+        dpi=200,
+
+        bbox_inches="tight",
+    )
+
+
+    plt.close(
+        fig
+    )
+
+
+# =============================================================================
+# Two-dimensional beta-vs-p diagnostic
 # =============================================================================
 
 def plot_beta_vs_p(
@@ -487,36 +1256,40 @@ def plot_beta_vs_p(
         "beta"
     ]
 
+    pid = data[
+        "pid"
+    ]
+
     chi2pid = data[
         "chi2pid"
     ]
 
 
-    before = (
+    base = (
         (
-            momentum
-            >= PLOT_2D_P_RANGE[0]
+            momentum >= 0.5
         )
 
         & (
-            momentum
-            < PLOT_2D_P_RANGE[1]
+            momentum < 5.0
         )
 
         & (
-            beta
-            >= PLOT_2D_BETA_RANGE[0]
+            beta >= BETA_2D_RANGE[0]
         )
 
         & (
-            beta
-            <= PLOT_2D_BETA_RANGE[1]
+            beta <= BETA_2D_RANGE[1]
         )
     )
 
 
-    after = (
-        before
+    pion_selected = (
+        base
+
+        & (
+            pid == 211
+        )
 
         & (
             np.abs(
@@ -540,21 +1313,20 @@ def plot_beta_vs_p(
 
     selections = [
         (
-            before,
-            "Before PID cuts",
+            base,
+            "All positive FD tracks",
         ),
 
         (
-            after,
-            r"After $|\chi^2_{\rm PID}|<3.5$, "
-            r"$0.5<p<5.0$ GeV",
+            pion_selected,
+            r"REC $\pi^+$, $|\chi^2_{\rm PID}|<3.5$",
         ),
     ]
 
 
     p_curve = np.linspace(
-        PLOT_2D_P_RANGE[0],
-        PLOT_2D_P_RANGE[1],
+        0.5,
+        5.0,
         600,
     )
 
@@ -567,7 +1339,6 @@ def plot_beta_vs_p(
         selections,
     ):
 
-
         hist = ax.hist2d(
             momentum[
                 selection
@@ -578,13 +1349,17 @@ def plot_beta_vs_p(
             ],
 
             bins=[
-                PLOT_2D_P_BINS,
-                PLOT_2D_BETA_BINS,
+                180,
+                200,
             ],
 
             range=[
-                PLOT_2D_P_RANGE,
-                PLOT_2D_BETA_RANGE,
+                (
+                    0.5,
+                    5.0,
+                ),
+
+                BETA_2D_RANGE,
             ],
 
             norm=LogNorm(
@@ -594,66 +1369,47 @@ def plot_beta_vs_p(
 
 
         fig.colorbar(
-            hist[3],
+            hist[
+                3
+            ],
+
             ax=ax,
+
             label="Counts",
         )
 
 
-        # ---------------------------------------------------------------------
-        # Theoretical beta(p) curves.
-        #
-        # These are especially useful at low momentum, where the proton and
-        # kaon bands curve rapidly and therefore generate broad structures when
-        # projected over a finite momentum interval.
-        # ---------------------------------------------------------------------
-
-        ax.plot(
-            p_curve,
-
-            beta_expected(
-                p_curve,
-                MASS[
-                    "pi"
-                ],
+        for species, label in (
+            (
+                "pi",
+                r"$\pi^+$",
             ),
 
-            linewidth=1.4,
-
-            label=r"$\pi^+$",
-        )
-
-
-        ax.plot(
-            p_curve,
-
-            beta_expected(
-                p_curve,
-                MASS[
-                    "K"
-                ],
+            (
+                "K",
+                r"$K^+$",
             ),
 
-            linewidth=1.4,
-
-            label=r"$K^+$",
-        )
-
-
-        ax.plot(
-            p_curve,
-
-            beta_expected(
-                p_curve,
-                MASS[
-                    "p"
-                ],
+            (
+                "p",
+                r"$p$",
             ),
+        ):
 
-            linewidth=1.4,
+            ax.plot(
+                p_curve,
 
-            label=r"$p$",
-        )
+                beta_expected(
+                    p_curve,
+                    MASS[
+                        species
+                    ],
+                ),
+
+                linewidth=1.3,
+
+                label=label,
+            )
 
 
         ax.set_xlabel(
@@ -678,7 +1434,7 @@ def plot_beta_vs_p(
 
 
     fig.suptitle(
-        f"{period} FD positive hadrons",
+        f"{period} positive-hadron PID",
         fontsize=15,
     )
 
@@ -713,523 +1469,736 @@ def plot_beta_vs_p(
     )
 
 
-    print(
-        f"[{period}] wrote {output}",
-        flush=True,
-    )
-
-
 # =============================================================================
-# Fit one 0.25-GeV momentum interval
+# Mixture-fraction parameterization
 # =============================================================================
 
-def fit_beta_slice(
-    beta_values,
-    p_min,
-    p_max,
+def softmax_fractions(
+    parameters,
 ):
 
-    counts, edges = np.histogram(
-        beta_values,
-
-        bins=N_SLICE_BETA_BINS,
-
-        range=SLICE_BETA_RANGE,
-    )
-
-
-    centers = 0.5 * (
-        edges[:-1]
-        + edges[1:]
-    )
-
-
-    bin_width = (
-        edges[1]
-        - edges[0]
-    )
-
-
-    n_entries = int(
-        counts.sum()
-    )
-
-
-    if n_entries < MIN_FIT_ENTRIES:
-
-        return (
-            counts,
-            edges,
-            None,
-        )
-
-
-    p_center = 0.5 * (
-        p_min
-        + p_max
-    )
-
-
-    species = (
-        "pi",
-        "K",
-        "p",
-    )
-
-
-    expected_mu = np.array(
+    # Fix the pion log-weight to zero.
+    logits = np.array(
         [
-            beta_expected(
-                p_center,
-                MASS[
-                    name
-                ],
-            )
-            for name in species
-        ]
+            0.0,
+            parameters[
+                0
+            ],
+            parameters[
+                1
+            ],
+        ],
+        dtype=float,
     )
 
 
-    # =========================================================================
-    # Initial component populations
-    # =========================================================================
-
-    initial_areas = []
+    logits -= np.max(
+        logits
+    )
 
 
-    for mu in expected_mu:
+    weights = np.exp(
+        logits
+    )
 
-        near_peak = (
-            np.abs(
-                centers - mu
-            )
-            < 0.012
+
+    fractions = (
+        weights
+        / np.sum(
+            weights
+        )
+    )
+
+
+    return fractions
+
+
+# =============================================================================
+# Native (p, beta) mixture likelihood
+# =============================================================================
+
+def fit_mixture(
+    momentum,
+    beta,
+    models,
+    initial_fractions=None,
+):
+
+    momentum = np.asarray(
+        momentum,
+        dtype=float,
+    )
+
+
+    beta = np.asarray(
+        beta,
+        dtype=float,
+    )
+
+
+    if len(
+        momentum
+    ) < MIN_MIXTURE_ENTRIES:
+
+        return None
+
+
+    pdf_components = []
+
+
+    for species in SPECIES:
+
+        mu = response_mean(
+            momentum,
+            species,
+            models,
         )
 
 
-        estimate = float(
-            counts[
-                near_peak
-            ].sum()
+        sigma = response_sigma(
+            momentum,
+            species,
+            models,
         )
 
 
-        initial_areas.append(
-            max(
-                estimate,
-                0.02 * n_entries,
-            )
+        pdf = gaussian_pdf(
+            beta,
+            mu,
+            sigma,
         )
 
 
-    initial_sigmas = np.array(
+        pdf_components.append(
+            pdf
+        )
+
+
+    pdf_components = np.asarray(
+        pdf_components
+    )
+
+
+    if initial_fractions is None:
+
+        initial_fractions = np.array(
+            [
+                0.90,
+                0.07,
+                0.03,
+            ]
+        )
+
+
+    initial_fractions = np.asarray(
+        initial_fractions,
+        dtype=float,
+    )
+
+
+    initial_fractions = np.clip(
+        initial_fractions,
+        1.0e-6,
+        None,
+    )
+
+
+    initial_fractions /= np.sum(
+        initial_fractions
+    )
+
+
+    initial_parameters = np.array(
         [
-            0.007,
-            0.009,
-            0.011,
-        ]
-    )
-
-
-    initial_parameters = np.column_stack(
-        (
-            np.asarray(
-                initial_areas
+            np.log(
+                initial_fractions[
+                    1
+                ]
+                / initial_fractions[
+                    0
+                ]
             ),
 
-            expected_mu,
-
-            initial_sigmas,
-        )
-    ).ravel()
-
-
-    # =========================================================================
-    # Bounds
-    # =========================================================================
-
-    lower_bounds = []
-    upper_bounds = []
-
-
-    for mu in expected_mu:
-
-        lower_bounds.extend(
-            [
-                0.0,
-
-                max(
-                    SLICE_BETA_RANGE[0],
-                    mu - MEAN_WINDOW,
-                ),
-
-                SIGMA_MIN,
-            ]
-        )
-
-
-        upper_bounds.extend(
-            [
-                10.0
-                * n_entries,
-
-                min(
-                    SLICE_BETA_RANGE[1],
-                    mu + MEAN_WINDOW,
-                ),
-
-                SIGMA_MAX,
-            ]
-        )
-
-
-    lower_bounds = np.asarray(
-        lower_bounds
+            np.log(
+                initial_fractions[
+                    2
+                ]
+                / initial_fractions[
+                    0
+                ]
+            ),
+        ]
     )
 
 
-    upper_bounds = np.asarray(
-        upper_bounds
-    )
-
-
-    errors = np.sqrt(
-        np.maximum(
-            counts,
-            1.0,
-        )
-    )
-
-
-    def residual(
+    def nll(
         parameters,
     ):
 
-        prediction = mixture_model(
-            parameters,
-            centers,
-            bin_width,
-        )
-
-        return (
-            prediction
-            - counts
-        ) / errors
-
-
-    try:
-
-        fit = least_squares(
-            residual,
-
-            initial_parameters,
-
-            bounds=(
-                lower_bounds,
-                upper_bounds,
-            ),
-
-            x_scale="jac",
-
-            max_nfev=5000,
-        )
-
-
-    except Exception as error:
-
-        warnings.warn(
-            f"Fit failed for "
-            f"{p_min:.2f} < p < {p_max:.2f} GeV: "
-            f"{error}"
-        )
-
-        return (
-            counts,
-            edges,
-            None,
-        )
-
-
-    parameters = fit.x
-
-
-    prediction = mixture_model(
-        parameters,
-        centers,
-        bin_width,
-    )
-
-
-    chi2 = float(
-        np.sum(
-            (
-                (
-                    counts
-                    - prediction
-                )
-                / errors
-            ) ** 2
-        )
-    )
-
-
-    ndf = max(
-        len(
-            counts
-        )
-        - len(
+        fractions = softmax_fractions(
             parameters
-        ),
-        1,
-    )
-
-
-    # =========================================================================
-    # Components
-    # =========================================================================
-
-    components = {}
-
-
-    for index, name in enumerate(
-        species
-    ):
-
-        components[
-            name
-        ] = {
-            "area":
-                parameters[
-                    3 * index
-                ],
-
-            "mu":
-                parameters[
-                    3 * index + 1
-                ],
-
-            "sigma":
-                parameters[
-                    3 * index + 2
-                ],
-        }
-
-
-    pi_component = components[
-        "pi"
-    ]
-
-    k_component = components[
-        "K"
-    ]
-
-    p_component = components[
-        "p"
-    ]
-
-
-    # =========================================================================
-    # Peak separation
-    #
-    # This is what was previously labeled "S".
-    #
-    # A value of 3 means that the fitted peak centers differ by three times the
-    # quadrature combination of their fitted widths.
-    # =========================================================================
-
-    separation_pi_k = (
-        abs(
-            pi_component[
-                "mu"
-            ]
-            - k_component[
-                "mu"
-            ]
-        )
-
-        / np.sqrt(
-            pi_component[
-                "sigma"
-            ] ** 2
-
-            + k_component[
-                "sigma"
-            ] ** 2
-        )
-    )
-
-
-    separation_k_p = (
-        abs(
-            k_component[
-                "mu"
-            ]
-            - p_component[
-                "mu"
-            ]
-        )
-
-        / np.sqrt(
-            k_component[
-                "sigma"
-            ] ** 2
-
-            + p_component[
-                "sigma"
-            ] ** 2
-        )
-    )
-
-
-    # =========================================================================
-    # Fitted contamination in the pion beta region
-    #
-    # Use +/-3.5 fitted pion sigma only as an empirical beta-band overlap
-    # diagnostic.
-    # =========================================================================
-
-    pion_lower = (
-        pi_component[
-            "mu"
-        ]
-
-        - 3.5
-        * pi_component[
-            "sigma"
-        ]
-    )
-
-
-    pion_upper = (
-        pi_component[
-            "mu"
-        ]
-
-        + 3.5
-        * pi_component[
-            "sigma"
-        ]
-    )
-
-
-    inside = {}
-
-
-    for name in species:
-
-        component = components[
-            name
-        ]
-
-
-        inside[
-            name
-        ] = gaussian_integral(
-            component[
-                "area"
-            ],
-
-            component[
-                "mu"
-            ],
-
-            component[
-                "sigma"
-            ],
-
-            pion_lower,
-            pion_upper,
         )
 
 
-    total_inside = sum(
-        inside.values()
-    )
-
-
-    if total_inside > 0:
-
-        fitted_nonpion_fraction = (
-            inside[
-                "K"
+        total_pdf = np.sum(
+            fractions[
+                :,
+                None,
             ]
 
-            + inside[
-                "p"
-            ]
-        ) / total_inside
+            * pdf_components,
+
+            axis=0,
+        )
 
 
-    else:
-
-        fitted_nonpion_fraction = np.nan
-
-
-    fit_reliable = bool(
-        fit.success
-
-        and separation_pi_k
-        >= 1.0
-    )
+        total_pdf = np.clip(
+            total_pdf,
+            1.0e-300,
+            None,
+        )
 
 
-    return (
-        counts,
-        edges,
+        return -np.sum(
+            np.log(
+                total_pdf
+            )
+        )
 
-        {
-            "parameters":
-                parameters,
 
-            "components":
-                components,
+    fit = minimize(
+        nll,
 
-            "chi2_ndf":
-                chi2 / ndf,
+        initial_parameters,
 
-            "separation_piK":
-                separation_pi_k,
+        method="BFGS",
 
-            "separation_Kp":
-                separation_k_p,
+        options={
+            "maxiter":
+                1000,
 
-            "pion_window":
-                (
-                    pion_lower,
-                    pion_upper,
-                ),
-
-            "inside":
-                inside,
-
-            "fitted_nonpion_fraction":
-                fitted_nonpion_fraction,
-
-            "fit_reliable":
-                fit_reliable,
+            "gtol":
+                1.0e-7,
         },
     )
 
 
+    fractions = softmax_fractions(
+        fit.x
+    )
+
+
+    # =========================================================================
+    # Per-event posterior species probabilities
+    # =========================================================================
+
+    weighted_pdf = (
+        fractions[
+            :,
+            None,
+        ]
+
+        * pdf_components
+    )
+
+
+    denominator = np.sum(
+        weighted_pdf,
+        axis=0,
+    )
+
+
+    denominator = np.clip(
+        denominator,
+        1.0e-300,
+        None,
+    )
+
+
+    posterior = (
+        weighted_pdf
+        / denominator[
+            None,
+            :,
+        ]
+    )
+
+
+    return {
+        "success":
+            bool(
+                fit.success
+            ),
+
+        "message":
+            str(
+                fit.message
+            ),
+
+        "nll":
+            float(
+                fit.fun
+            ),
+
+        "fractions":
+            fractions,
+
+        "posterior":
+            posterior,
+
+        "pdf_components":
+            pdf_components,
+    }
+
+
 # =============================================================================
-# Momentum-sliced beta distributions
+# Bootstrap
 # =============================================================================
 
-def plot_momentum_slices(
-    period,
-    data,
+def bootstrap_mixture(
+    momentum,
+    beta,
+    models,
+    nominal_fractions,
+    rng,
 ):
 
-    momentum = data[
-        "p"
-    ]
-
-    beta = data[
-        "beta"
-    ]
+    n = len(
+        momentum
+    )
 
 
-    # 14 momentum bins on a 4x4 canvas.
+    replicas = []
+
+
+    for _ in range(
+        N_BOOTSTRAP
+    ):
+
+        indices = rng.integers(
+            0,
+            n,
+
+            size=n,
+        )
+
+
+        result = fit_mixture(
+            momentum[
+                indices
+            ],
+
+            beta[
+                indices
+            ],
+
+            models,
+
+            initial_fractions=nominal_fractions,
+        )
+
+
+        if result is None:
+
+            continue
+
+
+        if not np.all(
+            np.isfinite(
+                result[
+                    "fractions"
+                ]
+            )
+        ):
+
+            continue
+
+
+        replicas.append(
+            result[
+                "fractions"
+            ]
+        )
+
+
+    if len(
+        replicas
+    ) < 5:
+
+        return {
+            "n_bootstrap":
+                len(
+                    replicas
+                ),
+
+            "std":
+                np.full(
+                    3,
+                    np.nan,
+                ),
+
+            "p16":
+                np.full(
+                    3,
+                    np.nan,
+                ),
+
+            "p84":
+                np.full(
+                    3,
+                    np.nan,
+                ),
+        }
+
+
+    replicas = np.asarray(
+        replicas
+    )
+
+
+    return {
+        "n_bootstrap":
+            len(
+                replicas
+            ),
+
+        "std":
+            np.std(
+                replicas,
+
+                axis=0,
+
+                ddof=1,
+            ),
+
+        "p16":
+            np.percentile(
+                replicas,
+                16,
+
+                axis=0,
+            ),
+
+        "p84":
+            np.percentile(
+                replicas,
+                84,
+
+                axis=0,
+            ),
+    }
+
+
+# =============================================================================
+# Fit all momentum intervals for one sample
+# =============================================================================
+
+def fit_sample_by_momentum(
+    period,
+    sample_name,
+    data,
+    sample_selection,
+    models,
+    rng,
+):
+
+    rows = []
+
+    plot_payload = []
+
+
+    for bin_index, (
+        p_min,
+        p_max,
+    ) in enumerate(
+        P_RANGES,
+        start=1,
+    ):
+
+        selection = (
+            sample_selection
+
+            & (
+                data[
+                    "p"
+                ]
+                >= p_min
+            )
+
+            & (
+                data[
+                    "p"
+                ]
+                < p_max
+            )
+
+            & (
+                data[
+                    "beta"
+                ]
+                >= BETA_SLICE_RANGE[0]
+            )
+
+            & (
+                data[
+                    "beta"
+                ]
+                <= BETA_SLICE_RANGE[1]
+            )
+        )
+
+
+        momentum = data[
+            "p"
+        ][
+            selection
+        ]
+
+
+        beta = data[
+            "beta"
+        ][
+            selection
+        ]
+
+
+        n_original = len(
+            momentum
+        )
+
+
+        # ---------------------------------------------------------------------
+        # Deterministic downsampling for likelihood speed.
+        # ---------------------------------------------------------------------
+
+        if (
+            MAX_FIT_EVENTS_PER_BIN is not None
+
+            and len(
+                momentum
+            ) > MAX_FIT_EVENTS_PER_BIN
+        ):
+
+            indices = rng.choice(
+                len(
+                    momentum
+                ),
+
+                size=MAX_FIT_EVENTS_PER_BIN,
+
+                replace=False,
+            )
+
+
+            momentum_fit = momentum[
+                indices
+            ]
+
+
+            beta_fit = beta[
+                indices
+            ]
+
+
+        else:
+
+            momentum_fit = momentum
+            beta_fit = beta
+
+
+        if len(
+            momentum_fit
+        ) < MIN_MIXTURE_ENTRIES:
+
+            print(
+                f"[{period}] {sample_name} "
+                f"{p_min:.2f}-{p_max:.2f} GeV: "
+                f"only {len(momentum_fit):,} events; skipping.",
+
+                flush=True,
+            )
+
+            continue
+
+
+        result = fit_mixture(
+            momentum_fit,
+            beta_fit,
+            models,
+        )
+
+
+        if result is None:
+
+            continue
+
+
+        fractions = result[
+            "fractions"
+        ]
+
+
+        bootstrap = bootstrap_mixture(
+            momentum_fit,
+            beta_fit,
+            models,
+            fractions,
+            rng,
+        )
+
+
+        row = {
+            "period":
+                period,
+
+            "sample":
+                sample_name,
+
+            "momentum_bin":
+                bin_index,
+
+            "p_min_GeV":
+                p_min,
+
+            "p_max_GeV":
+                p_max,
+
+            "p_mean_GeV":
+                float(
+                    np.mean(
+                        momentum
+                    )
+                ),
+
+            "N_total":
+                n_original,
+
+            "N_fit":
+                len(
+                    momentum_fit
+                ),
+
+            "fit_success":
+                result[
+                    "success"
+                ],
+
+            "fit_message":
+                result[
+                    "message"
+                ],
+
+            "nll":
+                result[
+                    "nll"
+                ],
+
+            "bootstrap_replicas":
+                bootstrap[
+                    "n_bootstrap"
+                ],
+        }
+
+
+        for species_index, species in enumerate(
+            SPECIES
+        ):
+
+            row[
+                f"f_{species}"
+            ] = fractions[
+                species_index
+            ]
+
+
+            row[
+                f"f_{species}_bootstrap_std"
+            ] = bootstrap[
+                "std"
+            ][
+                species_index
+            ]
+
+
+            row[
+                f"f_{species}_p16"
+            ] = bootstrap[
+                "p16"
+            ][
+                species_index
+            ]
+
+
+            row[
+                f"f_{species}_p84"
+            ] = bootstrap[
+                "p84"
+            ][
+                species_index
+            ]
+
+
+        rows.append(
+            row
+        )
+
+
+        plot_payload.append(
+            {
+                "p_min":
+                    p_min,
+
+                "p_max":
+                    p_max,
+
+                "momentum":
+                    momentum_fit,
+
+                "beta":
+                    beta_fit,
+
+                "result":
+                    result,
+
+                "bootstrap":
+                    bootstrap,
+            }
+        )
+
+
+        print(
+            f"[{period}] {sample_name} "
+            f"{p_min:.2f}-{p_max:.2f} GeV | "
+            f"N={n_original:,} | "
+            f"pi={fractions[0]:.4f} | "
+            f"K={fractions[1]:.4f} | "
+            f"p={fractions[2]:.4f} | "
+            f"sigma_K={bootstrap['std'][1]:.4f}",
+
+            flush=True,
+        )
+
+
+    return (
+        pd.DataFrame(
+            rows
+        ),
+
+        plot_payload,
+    )
+
+
+# =============================================================================
+# Plot native-fit momentum slices
+# =============================================================================
+
+def plot_mixture_slices(
+    period,
+    sample_name,
+    payload,
+    models,
+):
+
     n_columns = 4
 
     n_rows = int(
@@ -1258,8 +2227,20 @@ def plot_momentum_slices(
     ).ravel()
 
 
-    fit_rows = []
-    overlap_rows = []
+    payload_by_range = {
+        (
+            item[
+                "p_min"
+            ],
+
+            item[
+                "p_max"
+            ],
+        ):
+            item
+
+        for item in payload
+    }
 
 
     for panel, (
@@ -1269,48 +2250,66 @@ def plot_momentum_slices(
         P_RANGES
     ):
 
-
         ax = axes[
             panel
         ]
 
 
-        selection = (
-            (
-                momentum
-                >= p_min
-            )
-
-            & (
-                momentum
-                < p_max
-            )
-
-            & (
-                beta
-                >= SLICE_BETA_RANGE[0]
-            )
-
-            & (
-                beta
-                <= SLICE_BETA_RANGE[1]
-            )
+        key = (
+            p_min,
+            p_max,
         )
 
 
-        beta_bin = beta[
-            selection
+        if key not in payload_by_range:
+
+            ax.axis(
+                "off"
+            )
+
+            continue
+
+
+        item = payload_by_range[
+            key
         ]
 
 
-        (
-            counts,
-            edges,
-            result,
-        ) = fit_beta_slice(
-            beta_bin,
-            p_min,
-            p_max,
+        momentum = item[
+            "momentum"
+        ]
+
+
+        beta = item[
+            "beta"
+        ]
+
+
+        result = item[
+            "result"
+        ]
+
+
+        bootstrap = item[
+            "bootstrap"
+        ]
+
+
+        fractions = result[
+            "fractions"
+        ]
+
+
+        # ---------------------------------------------------------------------
+        # Data histogram
+        # ---------------------------------------------------------------------
+
+        counts, edges = np.histogram(
+            beta,
+
+            bins=N_BETA_SLICE_BINS,
+
+            range=BETA_SLICE_RANGE,
         )
 
 
@@ -1321,14 +2320,14 @@ def plot_momentum_slices(
 
 
         bin_width = (
-            edges[1]
-            - edges[0]
+            edges[
+                1
+            ]
+            - edges[
+                0
+            ]
         )
 
-
-        # ---------------------------------------------------------------------
-        # Data
-        # ---------------------------------------------------------------------
 
         ax.step(
             centers,
@@ -1343,325 +2342,209 @@ def plot_momentum_slices(
 
 
         # ---------------------------------------------------------------------
-        # Expected beta positions at center of momentum interval.
+        # Projection of the native event-level model onto beta.
+        #
+        # For every event momentum, evaluate the fitted response density on
+        # the beta grid, then average over the actual p distribution.
         # ---------------------------------------------------------------------
 
-        p_center = 0.5 * (
-            p_min
-            + p_max
+        total_curve = np.zeros_like(
+            centers
         )
 
 
-        expected_positions = {}
-
-
-        for species in (
-            "pi",
-            "K",
-            "p",
+        for species_index, species in enumerate(
+            SPECIES
         ):
 
-            expected = beta_expected(
-                p_center,
-
-                MASS[
-                    species
-                ],
+            component_curve = np.zeros_like(
+                centers
             )
 
 
-            expected_positions[
-                species
-            ] = expected
+            # Chunking avoids constructing an unnecessarily huge 2D array.
+            chunk_size = 10000
 
 
-            ax.axvline(
-                expected,
+            for start in range(
+                0,
+                len(
+                    momentum
+                ),
+                chunk_size,
+            ):
 
-                linestyle=":",
+                stop = min(
+                    start + chunk_size,
+                    len(
+                        momentum
+                    ),
+                )
+
+
+                p_chunk = momentum[
+                    start:stop
+                ]
+
+
+                mu = response_mean(
+                    p_chunk,
+                    species,
+                    models,
+                )
+
+
+                sigma = response_sigma(
+                    p_chunk,
+                    species,
+                    models,
+                )
+
+
+                z = (
+                    centers[
+                        None,
+                        :
+                    ]
+
+                    - mu[
+                        :,
+                        None,
+                    ]
+                ) / sigma[
+                    :,
+                    None,
+                ]
+
+
+                pdf = (
+                    np.exp(
+                        -0.5
+                        * z
+                        * z
+                    )
+
+                    / (
+                        np.sqrt(
+                            2.0
+                            * np.pi
+                        )
+
+                        * sigma[
+                            :,
+                            None,
+                        ]
+                    )
+                )
+
+
+                component_curve += np.sum(
+                    pdf,
+
+                    axis=0,
+                )
+
+
+            component_curve *= (
+                fractions[
+                    species_index
+                ]
+
+                * bin_width
+            )
+
+
+            total_curve += component_curve
+
+
+            ax.plot(
+                centers,
+                component_curve,
+
+                linestyle="--",
 
                 linewidth=1.0,
             )
 
 
+        ax.plot(
+            centers,
+            total_curve,
+
+            linewidth=1.5,
+
+            label="Mixture fit",
+        )
+
+
         # ---------------------------------------------------------------------
-        # Fit
+        # Annotation
         # ---------------------------------------------------------------------
 
-        if result is not None:
+        k_error = bootstrap[
+            "std"
+        ][
+            1
+        ]
 
-            parameters = result[
-                "parameters"
-            ]
+
+        p_error = bootstrap[
+            "std"
+        ][
+            2
+        ]
 
 
-            total_prediction = mixture_model(
-                parameters,
-                centers,
-                bin_width,
+        annotation = (
+            f"N = {len(momentum):,}\n"
+
+            f"pi = "
+            f"{100.0 * fractions[0]:.2f}%\n"
+
+            f"K = "
+            f"{100.0 * fractions[1]:.2f}%"
+        )
+
+
+        if np.isfinite(
+            k_error
+        ):
+
+            annotation += (
+                f" +/- "
+                f"{100.0 * k_error:.2f}%"
             )
 
 
-            ax.plot(
-                centers,
-                total_prediction,
+        annotation += (
+            f"\np = "
+            f"{100.0 * fractions[2]:.2f}%"
+        )
 
-                linewidth=1.5,
 
-                label="Total fit",
+        if np.isfinite(
+            p_error
+        ):
+
+            annotation += (
+                f" +/- "
+                f"{100.0 * p_error:.2f}%"
             )
 
 
-            for index, species in enumerate(
-                (
-                    "pi",
-                    "K",
-                    "p",
-                )
-            ):
+        ax.text(
+            0.03,
+            0.96,
 
-                component_prediction = gaussian_counts(
-                    centers,
+            annotation,
 
-                    parameters[
-                        3 * index
-                    ],
+            transform=ax.transAxes,
 
-                    parameters[
-                        3 * index + 1
-                    ],
+            va="top",
+            ha="left",
 
-                    parameters[
-                        3 * index + 2
-                    ],
-
-                    bin_width,
-                )
-
-
-                ax.plot(
-                    centers,
-                    component_prediction,
-
-                    linestyle="--",
-
-                    linewidth=1.0,
-                )
-
-
-            nonpion_percent = (
-                100.0
-                * result[
-                    "fitted_nonpion_fraction"
-                ]
-            )
-
-
-            if result[
-                "fit_reliable"
-            ]:
-
-                quality = (
-                    "resolved"
-                )
-
-            else:
-
-                quality = (
-                    "fit caution"
-                )
-
-
-            # No more cryptic "S" labels.
-            annotation = (
-                f"N = {len(beta_bin):,}\n"
-
-                f"pi/K sep. = "
-                f"{result['separation_piK']:.2f}\n"
-
-                f"K/p sep. = "
-                f"{result['separation_Kp']:.2f}\n"
-
-                f"non-pion overlap = "
-                f"{nonpion_percent:.2f}%\n"
-
-                f"{quality}"
-            )
-
-
-            ax.text(
-                0.03,
-                0.96,
-
-                annotation,
-
-                transform=ax.transAxes,
-
-                va="top",
-                ha="left",
-
-                fontsize=7.5,
-            )
-
-
-            # =================================================================
-            # Fit summary
-            # =================================================================
-
-            row = {
-                "period":
-                    period,
-
-                "p_min_GeV":
-                    p_min,
-
-                "p_max_GeV":
-                    p_max,
-
-                "N":
-                    len(
-                        beta_bin
-                    ),
-
-                "chi2_ndf":
-                    result[
-                        "chi2_ndf"
-                    ],
-
-                "pi_K_separation":
-                    result[
-                        "separation_piK"
-                    ],
-
-                "K_p_separation":
-                    result[
-                        "separation_Kp"
-                    ],
-
-                "fit_reliable":
-                    result[
-                        "fit_reliable"
-                    ],
-            }
-
-
-            for index, species in enumerate(
-                (
-                    "pi",
-                    "K",
-                    "p",
-                )
-            ):
-
-                row[
-                    f"{species}_expected_mu"
-                ] = expected_positions[
-                    species
-                ]
-
-
-                row[
-                    f"{species}_area"
-                ] = parameters[
-                    3 * index
-                ]
-
-
-                row[
-                    f"{species}_mu"
-                ] = parameters[
-                    3 * index + 1
-                ]
-
-
-                row[
-                    f"{species}_sigma"
-                ] = parameters[
-                    3 * index + 2
-                ]
-
-
-            fit_rows.append(
-                row
-            )
-
-
-            # =================================================================
-            # Overlap summary
-            # =================================================================
-
-            overlap_rows.append(
-                {
-                    "period":
-                        period,
-
-                    "p_min_GeV":
-                        p_min,
-
-                    "p_max_GeV":
-                        p_max,
-
-                    "pion_fit_window_min":
-                        result[
-                            "pion_window"
-                        ][0],
-
-                    "pion_fit_window_max":
-                        result[
-                            "pion_window"
-                        ][1],
-
-                    "fit_pi_in_window":
-                        result[
-                            "inside"
-                        ][
-                            "pi"
-                        ],
-
-                    "fit_K_in_window":
-                        result[
-                            "inside"
-                        ][
-                            "K"
-                        ],
-
-                    "fit_p_in_window":
-                        result[
-                            "inside"
-                        ][
-                            "p"
-                        ],
-
-                    "fit_nonpi_fraction_in_pion_window":
-                        result[
-                            "fitted_nonpion_fraction"
-                        ],
-
-                    "fit_reliable":
-                        result[
-                            "fit_reliable"
-                        ],
-                }
-            )
-
-
-        else:
-
-            ax.text(
-                0.03,
-                0.96,
-
-                (
-                    f"N = {len(beta_bin):,}\n"
-                    "fit unavailable"
-                ),
-
-                transform=ax.transAxes,
-
-                va="top",
-
-                fontsize=8,
-            )
+            fontsize=7.5,
+        )
 
 
         ax.set_title(
@@ -1672,7 +2555,7 @@ def plot_momentum_slices(
 
 
         ax.set_xlim(
-            *SLICE_BETA_RANGE
+            *BETA_SLICE_RANGE
         )
 
 
@@ -1685,10 +2568,6 @@ def plot_momentum_slices(
             "Counts"
         )
 
-
-    # =========================================================================
-    # Empty final two panels
-    # =========================================================================
 
     for panel in range(
         len(
@@ -1706,11 +2585,26 @@ def plot_momentum_slices(
         )
 
 
-    fig.suptitle(
-        f"{period} FD positive hadrons: "
-        r"$\beta$ distributions in 0.25-GeV momentum bins",
+    if sample_name == "pion_selected":
 
-        fontsize=15,
+        sample_title = (
+            r"REC $\pi^+$ with "
+            r"$|\chi^2_{\rm PID}|<3.5$"
+        )
+
+
+    else:
+
+        sample_title = (
+            "all positive FD tracks"
+        )
+
+
+    fig.suptitle(
+        f"{period}: native $(p,\\beta)$ mixture fit, "
+        f"{sample_title}",
+
+        fontsize=14,
     )
 
 
@@ -1724,10 +2618,13 @@ def plot_momentum_slices(
     )
 
 
-    # PNG ONLY.
     output = (
         OUTDIR
-        / f"beta_momentum_slices_{period.lower()}.png"
+        / (
+            f"mixture_slices_"
+            f"{sample_name}_"
+            f"{period.lower()}.png"
+        )
     )
 
 
@@ -1745,55 +2642,54 @@ def plot_momentum_slices(
     )
 
 
-    print(
-        f"[{period}] wrote {output}",
-        flush=True,
-    )
+# =============================================================================
+# Compact kaon-contamination output
+# =============================================================================
+
+def write_kaon_contamination_table(
+    period,
+    pion_table,
+):
+
+    if len(
+        pion_table
+    ) == 0:
+
+        return
 
 
-    # =========================================================================
-    # Numerical summaries
-    # =========================================================================
+    columns = [
+        "period",
+        "momentum_bin",
+        "p_min_GeV",
+        "p_max_GeV",
+        "p_mean_GeV",
+        "N_total",
+        "f_K",
+        "f_K_bootstrap_std",
+        "f_K_p16",
+        "f_K_p84",
+        "f_p",
+        "f_p_bootstrap_std",
+        "fit_success",
+    ]
 
-    fit_output = (
+
+    output_table = pion_table[
+        columns
+    ].copy()
+
+
+    output = (
         OUTDIR
-        / f"beta_fit_summary_{period.lower()}.csv"
+        / f"kaon_contamination_{period.lower()}.csv"
     )
 
 
-    pd.DataFrame(
-        fit_rows
-    ).to_csv(
-        fit_output,
+    output_table.to_csv(
+        output,
 
         index=False,
-    )
-
-
-    overlap_output = (
-        OUTDIR
-        / f"beta_overlap_summary_{period.lower()}.csv"
-    )
-
-
-    pd.DataFrame(
-        overlap_rows
-    ).to_csv(
-        overlap_output,
-
-        index=False,
-    )
-
-
-    print(
-        f"[{period}] wrote {fit_output}",
-        flush=True,
-    )
-
-
-    print(
-        f"[{period}] wrote {overlap_output}",
-        flush=True,
     )
 
 
@@ -1809,19 +2705,17 @@ def main():
     )
 
 
-    for (
+    master_rng = np.random.default_rng(
+        RNG_SEED
+    )
+
+
+    for period_index, (
         period,
         filename,
-    ) in INPUTS.items():
-
-
-        if not filename.is_file():
-
-            raise FileNotFoundError(
-                f"Missing calibration ROOT file:\n"
-                f"{filename}"
-            )
-
+    ) in enumerate(
+        INPUTS.items()
+    ):
 
         print(
             "\n"
@@ -1833,31 +2727,244 @@ def main():
         )
 
 
+        if not filename.is_file():
+
+            raise FileNotFoundError(
+                f"Missing calibration ROOT file:\n"
+                f"{filename}"
+            )
+
+
         data = load_period(
             filename
         )
 
 
         print(
-            f"[{period}] positive FD hadron tracks: "
+            f"[{period}] positive FD tracks: "
             f"{len(data['p']):,}",
 
             flush=True,
         )
 
 
-        # 2D beta-vs-p before/after PID.
+        # =====================================================================
+        # Basic 2D diagnostic
+        # =====================================================================
+
         plot_beta_vs_p(
             period,
             data,
         )
 
 
-        # Quantitative study begins at p = 1.50 GeV.
-        plot_momentum_slices(
+        # =====================================================================
+        # Determine detector response
+        # =====================================================================
+
+        response_table = measure_response_points(
             period,
             data,
         )
+
+
+        response_output = (
+            OUTDIR
+            / f"response_points_{period.lower()}.csv"
+        )
+
+
+        response_table.to_csv(
+            response_output,
+
+            index=False,
+        )
+
+
+        models = fit_response_model(
+            response_table
+        )
+
+
+        plot_response(
+            period,
+            response_table,
+            models,
+        )
+
+
+        # =====================================================================
+        # Sample 1:
+        #
+        # all positive FD tracks.
+        #
+        # This is primarily the validation fit.
+        # =====================================================================
+
+        all_positive_selection = (
+            (
+                data[
+                    "p"
+                ]
+                >= P_MIN
+            )
+
+            & (
+                data[
+                    "p"
+                ]
+                < P_MAX
+            )
+        )
+
+
+        rng_all = np.random.default_rng(
+            master_rng.integers(
+                0,
+                2**32 - 1,
+            )
+        )
+
+
+        (
+            all_table,
+            all_payload,
+        ) = fit_sample_by_momentum(
+            period,
+            "all_positive",
+            data,
+            all_positive_selection,
+            models,
+            rng_all,
+        )
+
+
+        all_output = (
+            OUTDIR
+            / f"mixture_all_positive_{period.lower()}.csv"
+        )
+
+
+        all_table.to_csv(
+            all_output,
+
+            index=False,
+        )
+
+
+        plot_mixture_slices(
+            period,
+            "all_positive",
+            all_payload,
+            models,
+        )
+
+
+        # =====================================================================
+        # Sample 2:
+        #
+        # Actual pion-selected sample.
+        #
+        # THIS is the sample from which the residual kaon-like fraction will
+        # ultimately be propagated through the final 24-bin momentum spectra.
+        # =====================================================================
+
+        pion_selected = (
+            (
+                data[
+                    "pid"
+                ]
+                == 211
+            )
+
+            & (
+                np.abs(
+                    data[
+                        "chi2pid"
+                    ]
+                )
+                < 3.5
+            )
+
+            & (
+                data[
+                    "p"
+                ]
+                >= P_MIN
+            )
+
+            & (
+                data[
+                    "p"
+                ]
+                < P_MAX
+            )
+        )
+
+
+        rng_pion = np.random.default_rng(
+            master_rng.integers(
+                0,
+                2**32 - 1,
+            )
+        )
+
+
+        (
+            pion_table,
+            pion_payload,
+        ) = fit_sample_by_momentum(
+            period,
+            "pion_selected",
+            data,
+            pion_selected,
+            models,
+            rng_pion,
+        )
+
+
+        pion_output = (
+            OUTDIR
+            / f"mixture_pion_selected_{period.lower()}.csv"
+        )
+
+
+        pion_table.to_csv(
+            pion_output,
+
+            index=False,
+        )
+
+
+        plot_mixture_slices(
+            period,
+            "pion_selected",
+            pion_payload,
+            models,
+        )
+
+
+        write_kaon_contamination_table(
+            period,
+            pion_table,
+        )
+
+
+        print(
+            f"\n[{period}] completed.",
+            flush=True,
+        )
+
+
+    print(
+        "\n"
+        "============================================================\n"
+        " PID 2D-fit study complete\n"
+        "============================================================\n"
+        f"Output directory: {OUTDIR}",
+
+        flush=True,
+    )
 
 
 if __name__ == "__main__":
