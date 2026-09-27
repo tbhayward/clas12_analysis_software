@@ -3,70 +3,45 @@
 """
 RGC positive-hadron PID / particle-misidentification study.
 
-This study has two distinct purposes.
+Final purpose
+-------------
+1. Produce the reviewer-requested beta-versus-p PID validation plots.
 
-(1) Reviewer-requested PID validation
--------------------------------------
-Reproduce the beta-versus-momentum comparison requested by the reviewers:
+2. Use a period-specific native (p,beta) mixture fit to estimate the
+   residual kaon-like component of the actual pion-selected sample:
 
-    left:
-        all positive FD hadrons before the chi2pid requirement
+       REC PID == 211
+       |chi2pid| < 3.5
+       0.5 < p < 5.0 GeV
 
-    right:
-        all positive FD hadrons after
-            |chi2pid| < 3.5
-            0.5 < p < 5.0 GeV
+3. Produce a compact, portable f_K(period,p) lookup and a coherent set of
+   bootstrap replicas that can be loaded by the final kinematic-distribution
+   code and folded through the pion momentum distribution in each of the
+   24 final (x_B,-t') analysis bins.
 
-The REC particle assignments pi+, K+, and proton are all retained in both
-panels.  This figure belongs in the early PID section of the analysis note.
+Physics prescription
+--------------------
+For p < 1.50 GeV:
 
-(2) Residual particle-misidentification study
----------------------------------------------
-Estimate whether the sample actually USED as pion candidates,
+    f_K(p) = 0
 
-    REC PID == 211
-    |chi2pid| < 3.5
-    0.5 < p < 5.0 GeV,
+by the adopted analysis prescription.
 
-contains residual beta-band components statistically consistent with kaons
-or protons.
+For
 
-The contamination fit is performed only for
+    1.50 <= p < 5.00 GeV,
 
-    1.50 <= p < 5.00 GeV.
+the pion-selected sample is fit in 0.25-GeV momentum intervals with
 
-Per the analysis prescription, contamination below 1.50 GeV is taken to
-be negligible.
+    P(beta_j | p_j)
+      = f_pi G_pi(beta_j | p_j)
+      + f_K  G_K (beta_j | p_j)
+      + f_p  G_p(beta_j | p_j),
 
-IMPORTANT CONCEPTUAL POINT
---------------------------
-The same native (p,beta) three-component mixture model is fit twice:
+where every event is evaluated at its own momentum.
 
-    A. all_positive:
-       all positive FD tracks assigned by REC as pi+, K+, or proton.
-
-       This is a validation fit.  The REC assignment is NOT used as the
-       species identity in the likelihood.  The likelihood asks how much
-       of the measured (p,beta) distribution follows each empirically
-       calibrated species response.
-
-    B. pion_selected:
-       only tracks satisfying
-           REC PID == 211
-           |chi2pid| < 3.5.
-
-       AFTER making that selection, the SAME three-component (p,beta)
-       mixture model is fit again.
-
-       Thus the fitted kaon fraction is not obtained by counting tracks
-       assigned as kaons.  It asks whether any of the tracks that REC
-       accepted as pion candidates have measured (p,beta) values that
-       statistically follow the calibrated kaon response.
-
-The REC selection and this purity test are not completely independent:
-chi2pid itself uses detector PID information including TOF.  The result
-should therefore be described as a data-driven residual-band decomposition
-of the post-PID pion sample, not as an independent truth tag.
+No extrapolation beyond 5 GeV is needed because the analysis explicitly
+requires p < 5 GeV.
 
 Detector response
 -----------------
@@ -74,61 +49,69 @@ For each period and species,
 
     Delta beta_h = beta_measured - beta_expected_h(p),
 
-where
+with
 
     beta_expected_h(p) = p / sqrt(p^2 + m_h^2).
 
-Clean REC-assigned control tracks are used to determine robust response
-points in narrow momentum intervals.
+The detector response is determined separately for Su22, Fa22, and Sp23.
+This is intentional because the periods need not share identical
+reconstruction/calibration conditions.
 
-The response is PERIOD SPECIFIC.  This is intentional: Su22 and
-Fa22/Sp23 may have different reconstruction software and TOF calibrations.
-
-Rather than imposing a global polynomial in 1/p, the response points are
-smoothed directly as functions of momentum using weighted smoothing
-splines.  The mixture fit therefore follows the measured detector response
-more locally.
-
-Mixture model
--------------
-Within each 0.25-GeV momentum interval,
-
-    P(beta_j | p_j) =
-          f_pi G_pi(beta_j | p_j)
-        + f_K  G_K (beta_j | p_j)
-        + f_p  G_p (beta_j | p_j),
-
-with
-
-    f_pi = 1 - f_K - f_p,
-    f_K >= 0,
-    f_p >= 0,
-    f_K + f_p <= 1.
-
-The fit is performed directly with bounded physical fractions.  A zero
-kaon or proton fraction is therefore a valid boundary solution and does
-not require a softmax parameter to approach minus infinity.
+The response points are described by moderately smoothed splines.  The
+smoothing is deliberately stronger than in the previous version so that
+individual low-statistics high-p response points cannot generate sharp
+spline excursions near 5 GeV.
 
 Bootstrap
 ---------
-Bootstrap replicas vary BOTH:
+The final contamination bootstrap is coherent across momentum intervals.
 
-    * the response calibration;
-    * the mixture-fit sample.
+For bootstrap replica b:
 
-For every replica:
-    1. bootstrap the clean response-control tracks;
-    2. rebuild the period-specific response splines;
-    3. bootstrap the mixture sample;
-    4. refit f_pi, f_K, f_p.
+    1. one fluctuated period-specific response model is generated;
+    2. every pion-selected momentum interval is independently resampled;
+    3. f_K is refit in every interval using that same response replica.
 
-The resulting f_K replica distribution is intended to be propagated later
-through the actual momentum distributions of the final 24 analysis bins.
+Thus replica b represents one complete possible f_K(p) curve.
 
-No change to the asymmetry extraction is made by this script.
+This is important for the later 24-bin propagation.
+
+The bootstrap replicas are parallelized over 8 worker processes.
+
+Outputs
+-------
+For each period:
+
+    beta_vs_p_reviewer_<period>.png
+    beta_vs_p_pion_selected_<period>.png
+    beta_response_<period>.png
+
+    mixture_slices_all_positive_<period>.png
+    mixture_slices_pion_selected_<period>.png
+    kaon_contamination_<period>.png
+
+    response_points_<period>.csv
+    mixture_all_positive_<period>.csv
+    mixture_pion_selected_<period>.csv
+
+    kaon_contamination_lookup_<period>.csv
+    kaon_contamination_replicas_<period>.csv
+    kaon_contamination_replica_matrix_<period>.csv
+
+Combined portable outputs:
+
+    kaon_contamination_lookup_all_periods.csv
+    kaon_contamination_replicas_all_periods.csv
+
+The two combined files are the intended interface to the later
+kinematic-distribution / 24-bin contamination calculation.
+
+No change to the production asymmetry extraction is made here.
 """
 
 from pathlib import Path
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import multiprocessing as mp
 import warnings
 
 import numpy as np
@@ -173,6 +156,17 @@ OUTDIR = Path(
 )
 
 
+N_WORKERS = 8
+
+N_BOOTSTRAP = 200
+
+RNG_SEED = 20260927
+
+
+# =============================================================================
+# Species
+# =============================================================================
+
 SPECIES = (
     "pi",
     "K",
@@ -195,7 +189,7 @@ MASS = {
 
 
 # =============================================================================
-# Production PID momentum region
+# Production PID region
 # =============================================================================
 
 PID_P_MIN = 0.50
@@ -205,7 +199,7 @@ CHI2PID_MAX = 3.5
 
 
 # =============================================================================
-# Contamination-fit region
+# Contamination region
 # =============================================================================
 
 CONTAMINATION_P_MIN = 1.50
@@ -232,6 +226,25 @@ P_RANGES = [
 ]
 
 
+# Explicit zero-contamination bins below 1.5 GeV.
+LOW_P_EDGES = np.arange(
+    PID_P_MIN,
+    CONTAMINATION_P_MIN + P_SLICE_WIDTH,
+    P_SLICE_WIDTH,
+)
+
+
+LOW_P_RANGES = [
+    (
+        float(LOW_P_EDGES[index]),
+        float(LOW_P_EDGES[index + 1]),
+    )
+    for index in range(
+        len(LOW_P_EDGES) - 1
+    )
+]
+
+
 # =============================================================================
 # Response calibration
 # =============================================================================
@@ -248,11 +261,7 @@ RESPONSE_P_EDGES = np.arange(
 )
 
 
-# Tight assigned-hypothesis control sample.
-#
-# This is only used to determine the measured detector response.
 RESPONSE_CHI2_MAX = 2.0
-
 
 MIN_RESPONSE_ENTRIES = 150
 
@@ -263,37 +272,21 @@ SIGMA_FLOOR = 0.0010
 SIGMA_CEILING = 0.0500
 
 
-# Smoothing strength.
+# Stronger smoothing than the previous iteration.
 #
-# The spline target is approximately:
-#
-#     sum_i [ (y_i - spline_i) / error_i ]^2 ~ N
-#
-# so a value around 1 gives a modest smoothing appropriate to measured
-# response points rather than exact interpolation of every statistical
-# fluctuation.
-SPLINE_SMOOTHING_SCALE_OFFSET = 1.0
-SPLINE_SMOOTHING_SCALE_SIGMA = 1.0
+# The previous value was 1.0.  Four times the nominal smoothing suppresses
+# high-p edge wiggles while retaining the broad measured momentum dependence.
+SPLINE_SMOOTHING_SCALE_OFFSET = 4.0
+SPLINE_SMOOTHING_SCALE_SIGMA = 4.0
 
 
 # =============================================================================
-# Mixture fits
+# Mixture fitting
 # =============================================================================
 
 MIN_MIXTURE_ENTRIES = 300
 
-
 MAX_FIT_EVENTS_PER_BIN = 150000
-
-
-# Full response+mixture bootstrap.
-#
-# 50 is a reasonable first production value.  Increase to 100 or 200 for
-# the final quoted result after the study is stable.
-N_BOOTSTRAP = 50
-
-
-RNG_SEED = 20260927
 
 
 # =============================================================================
@@ -313,6 +306,20 @@ BETA_SLICE_RANGE = (
 
 
 N_BETA_SLICE_BINS = 180
+
+
+# =============================================================================
+# Worker globals
+#
+# On the JLab Linux farm we use fork.  The parent loads the arrays once and
+# the worker processes inherit them copy-on-write instead of serializing the
+# full calibration sample for every bootstrap job.
+# =============================================================================
+
+_WORKER_PERIOD = None
+_WORKER_DATA = None
+_WORKER_PION_BIN_DATA = None
+_WORKER_RESPONSE_TABLE = None
 
 
 # =============================================================================
@@ -457,7 +464,10 @@ def robust_location_scale(
     )
 
 
-    sigma = 1.4826 * mad
+    sigma = (
+        1.4826
+        * mad
+    )
 
 
     if (
@@ -534,7 +544,6 @@ def robust_location_scale(
     )
 
 
-    # Approximate uncertainty of a median for a Gaussian-like core.
     location_error = (
         1.2533
         * scale
@@ -544,7 +553,6 @@ def robust_location_scale(
     )
 
 
-    # Approximate statistical uncertainty on a Gaussian width.
     scale_error = (
         scale
         / np.sqrt(
@@ -726,7 +734,7 @@ def load_period(
 
 
 # =============================================================================
-# Response-control samples
+# Response samples
 # =============================================================================
 
 def get_response_control_sample(
@@ -769,29 +777,20 @@ def get_response_control_sample(
     )
 
 
-    momentum = data[
-        "p"
-    ][
-        selection
-    ]
-
-
-    beta = data[
-        "beta"
-    ][
-        selection
-    ]
-
-
     return (
-        momentum,
-        beta,
+        data[
+            "p"
+        ][
+            selection
+        ],
+
+        data[
+            "beta"
+        ][
+            selection
+        ],
     )
 
-
-# =============================================================================
-# Response-point measurement
-# =============================================================================
 
 def measure_species_response_points(
     period,
@@ -939,16 +938,13 @@ def measure_response_points(
         )
 
 
-        table = measure_species_response_points(
-            period,
-            species,
-            momentum,
-            beta,
-        )
-
-
         tables.append(
-            table
+            measure_species_response_points(
+                period,
+                species,
+                momentum,
+                beta,
+            )
         )
 
 
@@ -959,7 +955,7 @@ def measure_response_points(
 
 
 # =============================================================================
-# Smoothed response model
+# Response model
 # =============================================================================
 
 class SpeciesResponseModel:
@@ -1021,22 +1017,36 @@ class SpeciesResponseModel:
         if len(p) < 4:
 
             raise RuntimeError(
-                "Need at least four response points "
-                "for spline response model."
+                "Need at least four response points."
             )
+
+
+        valid_offset_errors = offset_errors[
+            np.isfinite(
+                offset_errors
+            )
+            & (
+                offset_errors > 0
+            )
+        ]
+
+
+        valid_sigma_errors = sigma_errors[
+            np.isfinite(
+                sigma_errors
+            )
+            & (
+                sigma_errors > 0
+            )
+        ]
 
 
         offset_error_floor = max(
             np.nanmedian(
-                offset_errors[
-                    np.isfinite(
-                        offset_errors
-                    )
-                    & (
-                        offset_errors > 0
-                    )
-                ]
-            ),
+                valid_offset_errors
+            )
+            if len(valid_offset_errors)
+            else 1.0e-5,
 
             1.0e-5,
         )
@@ -1044,15 +1054,10 @@ class SpeciesResponseModel:
 
         sigma_error_floor = max(
             np.nanmedian(
-                sigma_errors[
-                    np.isfinite(
-                        sigma_errors
-                    )
-                    & (
-                        sigma_errors > 0
-                    )
-                ]
-            ),
+                valid_sigma_errors
+            )
+            if len(valid_sigma_errors)
+            else 1.0e-5,
 
             1.0e-5,
         )
@@ -1093,7 +1098,6 @@ class SpeciesResponseModel:
         )
 
 
-        # Fit log(sigma) so the smoothed width remains positive.
         log_sigma = np.log(
             sigmas
         )
@@ -1321,74 +1325,75 @@ def response_mean(
 
 
 # =============================================================================
-# Response bootstrap
+# Efficient response-replica construction
+#
+# We already measured robust response points and their statistical errors.
+# For the final bootstrap we fluctuate those measured points rather than
+# repeatedly resampling millions of control tracks.
+#
+# This retains the measured response uncertainty while making 200 coherent
+# replicas computationally practical.
 # =============================================================================
 
-def bootstrap_response_models(
-    period,
-    data,
+def fluctuate_response_table(
+    response_table,
     rng,
 ):
 
-    tables = []
+    replica = response_table.copy()
 
 
-    for species in SPECIES:
+    replica[
+        "delta_beta"
+    ] = rng.normal(
+        response_table[
+            "delta_beta"
+        ].to_numpy(
+            dtype=float
+        ),
 
-        (
-            momentum,
-            beta,
-        ) = get_response_control_sample(
-            data,
-            species,
-        )
-
-
-        if len(momentum) == 0:
-
-            raise RuntimeError(
-                f"No response-control tracks for {species}."
-            )
-
-
-        indices = rng.integers(
-            0,
-            len(momentum),
-
-            size=len(momentum),
-        )
-
-
-        table = measure_species_response_points(
-            period,
-            species,
-            momentum[
-                indices
-            ],
-            beta[
-                indices
-            ],
-        )
-
-
-        tables.append(
-            table
-        )
-
-
-    response_table = pd.concat(
-        tables,
-        ignore_index=True,
+        response_table[
+            "delta_beta_error"
+        ].to_numpy(
+            dtype=float
+        ),
     )
 
 
-    return build_response_models_from_table(
-        response_table
+    sigma_nominal = response_table[
+        "sigma_beta"
+    ].to_numpy(
+        dtype=float
     )
+
+
+    sigma_error = response_table[
+        "sigma_beta_error"
+    ].to_numpy(
+        dtype=float
+    )
+
+
+    sigma_replica = rng.normal(
+        sigma_nominal,
+        sigma_error,
+    )
+
+
+    replica[
+        "sigma_beta"
+    ] = np.clip(
+        sigma_replica,
+        SIGMA_FLOOR,
+        SIGMA_CEILING,
+    )
+
+
+    return replica
 
 
 # =============================================================================
-# Response plot
+# Response plotting
 # =============================================================================
 
 def plot_response(
@@ -1584,7 +1589,7 @@ def plot_response(
 
 
 # =============================================================================
-# 2D beta-versus-p plot helper
+# 2D beta-p plotting
 # =============================================================================
 
 def draw_beta_panel(
@@ -1698,10 +1703,6 @@ def draw_beta_panel(
         fontsize=9,
     )
 
-
-# =============================================================================
-# Reviewer-requested beta-vs-p figure
-# =============================================================================
 
 def plot_beta_vs_p_reviewer(
     period,
@@ -1822,10 +1823,6 @@ def plot_beta_vs_p_reviewer(
         fig
     )
 
-
-# =============================================================================
-# Pion-selected contamination-study beta-vs-p figure
-# =============================================================================
 
 def plot_beta_vs_p_pion_selected(
     period,
@@ -1957,7 +1954,7 @@ def plot_beta_vs_p_pion_selected(
 
 
 # =============================================================================
-# Physical mixture likelihood
+# Mixture likelihood
 # =============================================================================
 
 def fractions_from_parameters(
@@ -2055,9 +2052,9 @@ def fit_mixture(
 
         initial_fractions = np.array(
             [
-                0.90,
-                0.07,
-                0.03,
+                0.95,
+                0.04,
+                0.01,
             ],
             dtype=float,
         )
@@ -2094,14 +2091,6 @@ def fit_mixture(
         dtype=float,
     )
 
-
-    # -------------------------------------------------------------------------
-    # Physical constraints:
-    #
-    #     f_K >= 0
-    #     f_p >= 0
-    #     f_K + f_p <= 1
-    # -------------------------------------------------------------------------
 
     bounds = [
         (
@@ -2176,14 +2165,19 @@ def fit_mixture(
         )
 
 
-    # Try several starts.  This is cheap because there are only two free
-    # fractions and makes the boundary solution robust.
     starting_points = [
         x0,
 
         np.array(
             [
                 0.0,
+                0.0,
+            ]
+        ),
+
+        np.array(
+            [
+                0.002,
                 0.0,
             ]
         ),
@@ -2262,7 +2256,6 @@ def fit_mixture(
 
 
     if len(fits) == 0:
-
         return None
 
 
@@ -2278,7 +2271,6 @@ def fit_mixture(
     )
 
 
-    # Numerical cleanup at physical boundaries.
     fractions[
         np.abs(
             fractions
@@ -2296,38 +2288,6 @@ def fit_mixture(
 
     fractions /= np.sum(
         fractions
-    )
-
-
-    weighted_pdf = (
-        fractions[
-            :,
-            None,
-        ]
-
-        * pdf_components
-    )
-
-
-    denominator = np.sum(
-        weighted_pdf,
-        axis=0,
-    )
-
-
-    denominator = np.clip(
-        denominator,
-        1.0e-300,
-        None,
-    )
-
-
-    posterior = (
-        weighted_pdf
-        / denominator[
-            None,
-            :,
-        ]
     )
 
 
@@ -2349,234 +2309,136 @@ def fit_mixture(
 
         "fractions":
             fractions,
-
-        "posterior":
-            posterior,
-
-        "pdf_components":
-            pdf_components,
     }
 
 
 # =============================================================================
-# Full response + mixture bootstrap
+# Prepare momentum-bin samples
 # =============================================================================
 
-def bootstrap_mixture_full(
-    period,
+def prepare_pion_bin_data(
     data,
-    momentum,
-    beta,
-    nominal_fractions,
-    rng,
 ):
 
-    n = len(
-        momentum
+    base = (
+        (
+            data[
+                "pid"
+            ]
+            == 211
+        )
+
+        & (
+            np.abs(
+                data[
+                    "chi2pid"
+                ]
+            )
+            < CHI2PID_MAX
+        )
+
+        & (
+            data[
+                "p"
+            ]
+            >= CONTAMINATION_P_MIN
+        )
+
+        & (
+            data[
+                "p"
+            ]
+            < CONTAMINATION_P_MAX
+        )
     )
 
 
-    replicas = []
+    result = []
 
 
-    for replica_index in range(
-        N_BOOTSTRAP
+    for bin_index, (
+        p_min,
+        p_max,
+    ) in enumerate(
+        P_RANGES,
+        start=1,
     ):
 
-        # ---------------------------------------------------------------------
-        # Rebuild detector response from a bootstrapped control sample.
-        # ---------------------------------------------------------------------
+        selection = (
+            base
 
-        try:
-
-            replica_models = bootstrap_response_models(
-                period,
-                data,
-                rng,
+            & (
+                data[
+                    "p"
+                ]
+                >= p_min
             )
 
-
-        except Exception as exc:
-
-            warnings.warn(
-                f"Response bootstrap replica "
-                f"{replica_index} failed: {exc}"
+            & (
+                data[
+                    "p"
+                ]
+                < p_max
             )
 
-            continue
-
-
-        # ---------------------------------------------------------------------
-        # Bootstrap the mixture sample independently.
-        # ---------------------------------------------------------------------
-
-        indices = rng.integers(
-            0,
-            n,
-
-            size=n,
-        )
-
-
-        result = fit_mixture(
-            momentum[
-                indices
-            ],
-
-            beta[
-                indices
-            ],
-
-            replica_models,
-
-            initial_fractions=nominal_fractions,
-        )
-
-
-        if result is None:
-            continue
-
-
-        fractions = result[
-            "fractions"
-        ]
-
-
-        if not np.all(
-            np.isfinite(
-                fractions
+            & (
+                data[
+                    "beta"
+                ]
+                >= BETA_SLICE_RANGE[0]
             )
-        ):
 
-            continue
-
-
-        replicas.append(
-            fractions
+            & (
+                data[
+                    "beta"
+                ]
+                <= BETA_SLICE_RANGE[1]
+            )
         )
 
 
-    if len(replicas) == 0:
+        result.append(
+            {
+                "momentum_bin":
+                    bin_index,
 
-        return {
-            "replicas":
-                np.empty(
-                    (
-                        0,
-                        3,
-                    )
-                ),
+                "p_min":
+                    p_min,
 
-            "n_bootstrap":
-                0,
+                "p_max":
+                    p_max,
 
-            "mean":
-                np.full(
-                    3,
-                    np.nan,
-                ),
+                "p":
+                    np.asarray(
+                        data[
+                            "p"
+                        ][
+                            selection
+                        ],
+                        dtype=float,
+                    ),
 
-            "std":
-                np.full(
-                    3,
-                    np.nan,
-                ),
-
-            "p16":
-                np.full(
-                    3,
-                    np.nan,
-                ),
-
-            "p50":
-                np.full(
-                    3,
-                    np.nan,
-                ),
-
-            "p84":
-                np.full(
-                    3,
-                    np.nan,
-                ),
-        }
-
-
-    replicas = np.asarray(
-        replicas,
-        dtype=float,
-    )
-
-
-    if len(replicas) > 1:
-
-        std = np.std(
-            replicas,
-
-            axis=0,
-
-            ddof=1,
+                "beta":
+                    np.asarray(
+                        data[
+                            "beta"
+                        ][
+                            selection
+                        ],
+                        dtype=float,
+                    ),
+            }
         )
 
 
-    else:
-
-        std = np.full(
-            3,
-            np.nan,
-        )
-
-
-    return {
-        "replicas":
-            replicas,
-
-        "n_bootstrap":
-            len(
-                replicas
-            ),
-
-        "mean":
-            np.mean(
-                replicas,
-
-                axis=0,
-            ),
-
-        "std":
-            std,
-
-        "p16":
-            np.percentile(
-                replicas,
-                16,
-
-                axis=0,
-            ),
-
-        "p50":
-            np.percentile(
-                replicas,
-                50,
-
-                axis=0,
-            ),
-
-        "p84":
-            np.percentile(
-                replicas,
-                84,
-
-                axis=0,
-            ),
-    }
+    return result
 
 
 # =============================================================================
-# Fit one sample in all momentum intervals
+# Nominal sample fits
 # =============================================================================
 
-def fit_sample_by_momentum(
+def fit_nominal_sample(
     period,
     sample_name,
     data,
@@ -2587,9 +2449,7 @@ def fit_sample_by_momentum(
 
     rows = []
 
-    plot_payload = []
-
-    replica_rows = []
+    payload = []
 
 
     for bin_index, (
@@ -2655,12 +2515,12 @@ def fit_sample_by_momentum(
         if (
             MAX_FIT_EVENTS_PER_BIN is not None
 
-            and len(momentum)
+            and n_original
             > MAX_FIT_EVENTS_PER_BIN
         ):
 
             indices = rng.choice(
-                len(momentum),
+                n_original,
 
                 size=MAX_FIT_EVENTS_PER_BIN,
 
@@ -2685,212 +2545,91 @@ def fit_sample_by_momentum(
 
 
         if len(momentum_fit) < MIN_MIXTURE_ENTRIES:
-
-            print(
-                f"[{period}] {sample_name} "
-                f"{p_min:.2f}-{p_max:.2f} GeV: "
-                f"only {len(momentum_fit):,} events; skipping.",
-
-                flush=True,
-            )
-
             continue
 
 
-        result = fit_mixture(
+        fit = fit_mixture(
             momentum_fit,
             beta_fit,
             models,
         )
 
 
-        if result is None:
-
-            print(
-                f"[{period}] {sample_name} "
-                f"{p_min:.2f}-{p_max:.2f} GeV: "
-                "fit failed.",
-
-                flush=True,
-            )
-
+        if fit is None:
             continue
 
 
-        fractions = result[
+        fractions = fit[
             "fractions"
         ]
 
 
-        bootstrap = bootstrap_mixture_full(
-            period,
-            data,
-            momentum_fit,
-            beta_fit,
-            fractions,
-            rng,
-        )
-
-
-        row = {
-            "period":
-                period,
-
-            "sample":
-                sample_name,
-
-            "momentum_bin":
-                bin_index,
-
-            "p_min_GeV":
-                p_min,
-
-            "p_max_GeV":
-                p_max,
-
-            "p_mean_GeV":
-                float(
-                    np.mean(
-                        momentum
-                    )
-                ),
-
-            "N_total":
-                n_original,
-
-            "N_fit":
-                len(
-                    momentum_fit
-                ),
-
-            "fit_success":
-                result[
-                    "success"
-                ],
-
-            "fit_message":
-                result[
-                    "message"
-                ],
-
-            "nll":
-                result[
-                    "nll"
-                ],
-
-            "bootstrap_replicas":
-                bootstrap[
-                    "n_bootstrap"
-                ],
-        }
-
-
-        for species_index, species in enumerate(
-            SPECIES
-        ):
-
-            row[
-                f"f_{species}"
-            ] = fractions[
-                species_index
-            ]
-
-
-            row[
-                f"f_{species}_bootstrap_mean"
-            ] = bootstrap[
-                "mean"
-            ][
-                species_index
-            ]
-
-
-            row[
-                f"f_{species}_bootstrap_std"
-            ] = bootstrap[
-                "std"
-            ][
-                species_index
-            ]
-
-
-            row[
-                f"f_{species}_p16"
-            ] = bootstrap[
-                "p16"
-            ][
-                species_index
-            ]
-
-
-            row[
-                f"f_{species}_p50"
-            ] = bootstrap[
-                "p50"
-            ][
-                species_index
-            ]
-
-
-            row[
-                f"f_{species}_p84"
-            ] = bootstrap[
-                "p84"
-            ][
-                species_index
-            ]
-
-
         rows.append(
-            row
+            {
+                "period":
+                    period,
+
+                "sample":
+                    sample_name,
+
+                "momentum_bin":
+                    bin_index,
+
+                "p_min_GeV":
+                    p_min,
+
+                "p_max_GeV":
+                    p_max,
+
+                "p_mean_GeV":
+                    float(
+                        np.mean(
+                            momentum
+                        )
+                    ),
+
+                "N_total":
+                    n_original,
+
+                "N_fit":
+                    len(
+                        momentum_fit
+                    ),
+
+                "fit_success":
+                    fit[
+                        "success"
+                    ],
+
+                "fit_message":
+                    fit[
+                        "message"
+                    ],
+
+                "nll":
+                    fit[
+                        "nll"
+                    ],
+
+                "f_pi":
+                    fractions[
+                        0
+                    ],
+
+                "f_K":
+                    fractions[
+                        1
+                    ],
+
+                "f_p":
+                    fractions[
+                        2
+                    ],
+            }
         )
 
 
-        for replica_index, replica in enumerate(
-            bootstrap[
-                "replicas"
-            ]
-        ):
-
-            replica_rows.append(
-                {
-                    "period":
-                        period,
-
-                    "sample":
-                        sample_name,
-
-                    "momentum_bin":
-                        bin_index,
-
-                    "p_min_GeV":
-                        p_min,
-
-                    "p_max_GeV":
-                        p_max,
-
-                    "replica":
-                        replica_index,
-
-                    "f_pi":
-                        replica[
-                            0
-                        ],
-
-                    "f_K":
-                        replica[
-                            1
-                        ],
-
-                    "f_p":
-                        replica[
-                            2
-                        ],
-                }
-            )
-
-
-        plot_payload.append(
+        payload.append(
             {
                 "p_min":
                     p_min,
@@ -2904,11 +2643,8 @@ def fit_sample_by_momentum(
                 "beta":
                     beta_fit,
 
-                "result":
-                    result,
-
-                "bootstrap":
-                    bootstrap,
+                "fractions":
+                    fractions,
             }
         )
 
@@ -2919,11 +2655,7 @@ def fit_sample_by_momentum(
             f"N={n_original:,} | "
             f"pi={fractions[0]:.5f} | "
             f"K={fractions[1]:.5f} | "
-            f"p={fractions[2]:.5f} | "
-            f"K bootstrap="
-            f"{bootstrap['p50'][1]:.5f}"
-            f" +{bootstrap['p84'][1] - bootstrap['p50'][1]:.5f}"
-            f" -{bootstrap['p50'][1] - bootstrap['p16'][1]:.5f}",
+            f"p={fractions[2]:.5f}",
 
             flush=True,
         )
@@ -2934,16 +2666,533 @@ def fit_sample_by_momentum(
             rows
         ),
 
-        pd.DataFrame(
-            replica_rows
-        ),
-
-        plot_payload,
+        payload,
     )
 
 
 # =============================================================================
-# Mixture projection plots
+# Parallel coherent bootstrap
+# =============================================================================
+
+def initialize_worker_globals(
+    period,
+    data,
+    pion_bin_data,
+    response_table,
+):
+
+    global _WORKER_PERIOD
+    global _WORKER_DATA
+    global _WORKER_PION_BIN_DATA
+    global _WORKER_RESPONSE_TABLE
+
+
+    _WORKER_PERIOD = period
+    _WORKER_DATA = data
+    _WORKER_PION_BIN_DATA = pion_bin_data
+    _WORKER_RESPONSE_TABLE = response_table
+
+
+def bootstrap_replica_worker(
+    replica_index,
+    seed,
+):
+
+    rng = np.random.default_rng(
+        seed
+    )
+
+
+    # -------------------------------------------------------------------------
+    # One detector-response realization for the ENTIRE f_K(p) curve.
+    # -------------------------------------------------------------------------
+
+    response_replica = fluctuate_response_table(
+        _WORKER_RESPONSE_TABLE,
+        rng,
+    )
+
+
+    models = build_response_models_from_table(
+        response_replica
+    )
+
+
+    rows = []
+
+
+    for item in _WORKER_PION_BIN_DATA:
+
+        momentum = item[
+            "p"
+        ]
+
+
+        beta = item[
+            "beta"
+        ]
+
+
+        n = len(
+            momentum
+        )
+
+
+        if n < MIN_MIXTURE_ENTRIES:
+
+            rows.append(
+                {
+                    "period":
+                        _WORKER_PERIOD,
+
+                    "replica":
+                        replica_index,
+
+                    "momentum_bin":
+                        item[
+                            "momentum_bin"
+                        ],
+
+                    "p_min_GeV":
+                        item[
+                            "p_min"
+                        ],
+
+                    "p_max_GeV":
+                        item[
+                            "p_max"
+                        ],
+
+                    "f_pi":
+                        np.nan,
+
+                    "f_K":
+                        np.nan,
+
+                    "f_p":
+                        np.nan,
+                }
+            )
+
+            continue
+
+
+        # ---------------------------------------------------------------------
+        # Bootstrap the pion-selected tracks in this momentum interval.
+        # ---------------------------------------------------------------------
+
+        indices = rng.integers(
+            0,
+            n,
+
+            size=n,
+        )
+
+
+        momentum_replica = momentum[
+            indices
+        ]
+
+
+        beta_replica = beta[
+            indices
+        ]
+
+
+        if (
+            MAX_FIT_EVENTS_PER_BIN is not None
+
+            and len(
+                momentum_replica
+            ) > MAX_FIT_EVENTS_PER_BIN
+        ):
+
+            sub_indices = rng.choice(
+                len(
+                    momentum_replica
+                ),
+
+                size=MAX_FIT_EVENTS_PER_BIN,
+
+                replace=False,
+            )
+
+
+            momentum_replica = momentum_replica[
+                sub_indices
+            ]
+
+
+            beta_replica = beta_replica[
+                sub_indices
+            ]
+
+
+        fit = fit_mixture(
+            momentum_replica,
+            beta_replica,
+            models,
+        )
+
+
+        if fit is None:
+
+            fractions = np.full(
+                3,
+                np.nan,
+            )
+
+
+        else:
+
+            fractions = fit[
+                "fractions"
+            ]
+
+
+        rows.append(
+            {
+                "period":
+                    _WORKER_PERIOD,
+
+                "replica":
+                    replica_index,
+
+                "momentum_bin":
+                    item[
+                        "momentum_bin"
+                    ],
+
+                "p_min_GeV":
+                    item[
+                        "p_min"
+                    ],
+
+                "p_max_GeV":
+                    item[
+                        "p_max"
+                    ],
+
+                "f_pi":
+                    fractions[
+                        0
+                    ],
+
+                "f_K":
+                    fractions[
+                        1
+                    ],
+
+                "f_p":
+                    fractions[
+                        2
+                    ],
+            }
+        )
+
+
+    return rows
+
+
+def run_parallel_bootstrap(
+    period,
+    data,
+    pion_bin_data,
+    response_table,
+):
+
+    print(
+        f"\n[{period}] Starting {N_BOOTSTRAP} coherent bootstrap replicas "
+        f"with {N_WORKERS} workers...",
+
+        flush=True,
+    )
+
+
+    seed_sequence = np.random.SeedSequence(
+        RNG_SEED
+        + {
+            "Su22":
+                1000,
+
+            "Fa22":
+                2000,
+
+            "Sp23":
+                3000,
+        }[
+            period
+        ]
+    )
+
+
+    child_sequences = seed_sequence.spawn(
+        N_BOOTSTRAP
+    )
+
+
+    seeds = [
+        int(
+            sequence.generate_state(
+                1
+            )[
+                0
+            ]
+        )
+        for sequence in child_sequences
+    ]
+
+
+    all_rows = []
+
+
+    # JLab ifarm is Linux; fork allows the large numpy arrays to be inherited
+    # copy-on-write rather than repeatedly serialized.
+    context = mp.get_context(
+        "fork"
+    )
+
+
+    initialize_worker_globals(
+        period,
+        data,
+        pion_bin_data,
+        response_table,
+    )
+
+
+    with ProcessPoolExecutor(
+        max_workers=N_WORKERS,
+        mp_context=context,
+    ) as executor:
+
+        futures = {
+            executor.submit(
+                bootstrap_replica_worker,
+                replica_index,
+                seeds[
+                    replica_index
+                ],
+            ):
+                replica_index
+
+            for replica_index in range(
+                N_BOOTSTRAP
+            )
+        }
+
+
+        completed = 0
+
+
+        for future in as_completed(
+            futures
+        ):
+
+            replica_index = futures[
+                future
+            ]
+
+
+            try:
+
+                rows = future.result()
+
+
+            except Exception as exc:
+
+                warnings.warn(
+                    f"{period} bootstrap replica "
+                    f"{replica_index} failed: {exc}"
+                )
+
+                continue
+
+
+            all_rows.extend(
+                rows
+            )
+
+
+            completed += 1
+
+
+            if (
+                completed == 1
+
+                or completed % 10 == 0
+
+                or completed == N_BOOTSTRAP
+            ):
+
+                print(
+                    f"[{period}] bootstrap: "
+                    f"{completed}/{N_BOOTSTRAP} replicas complete",
+
+                    flush=True,
+                )
+
+
+    replicas = pd.DataFrame(
+        all_rows
+    )
+
+
+    if len(replicas):
+
+        replicas = replicas.sort_values(
+            [
+                "replica",
+                "momentum_bin",
+            ]
+        ).reset_index(
+            drop=True
+        )
+
+
+    return replicas
+
+
+# =============================================================================
+# Bootstrap summaries
+# =============================================================================
+
+def summarize_bootstrap(
+    nominal_table,
+    replicas,
+):
+
+    rows = []
+
+
+    for _, nominal in nominal_table.iterrows():
+
+        momentum_bin = int(
+            nominal[
+                "momentum_bin"
+            ]
+        )
+
+
+        subset = replicas[
+            replicas[
+                "momentum_bin"
+            ]
+            == momentum_bin
+        ]
+
+
+        row = nominal.to_dict()
+
+
+        for species in SPECIES:
+
+            values = subset[
+                f"f_{species}"
+            ].to_numpy(
+                dtype=float
+            )
+
+
+            values = values[
+                np.isfinite(
+                    values
+                )
+            ]
+
+
+            if len(values) == 0:
+
+                row[
+                    f"f_{species}_bootstrap_mean"
+                ] = np.nan
+
+
+                row[
+                    f"f_{species}_bootstrap_std"
+                ] = np.nan
+
+
+                row[
+                    f"f_{species}_p16"
+                ] = np.nan
+
+
+                row[
+                    f"f_{species}_p50"
+                ] = np.nan
+
+
+                row[
+                    f"f_{species}_p84"
+                ] = np.nan
+
+
+            else:
+
+                row[
+                    f"f_{species}_bootstrap_mean"
+                ] = float(
+                    np.mean(
+                        values
+                    )
+                )
+
+
+                row[
+                    f"f_{species}_bootstrap_std"
+                ] = float(
+                    np.std(
+                        values,
+                        ddof=1,
+                    )
+                ) if len(values) > 1 else np.nan
+
+
+                (
+                    row[
+                        f"f_{species}_p16"
+                    ],
+
+                    row[
+                        f"f_{species}_p50"
+                    ],
+
+                    row[
+                        f"f_{species}_p84"
+                    ],
+
+                ) = np.percentile(
+                    values,
+                    [
+                        16,
+                        50,
+                        84,
+                    ],
+                )
+
+
+        row[
+            "bootstrap_replicas"
+        ] = int(
+            subset[
+                "replica"
+            ].nunique()
+        )
+
+
+        rows.append(
+            row
+        )
+
+
+    return pd.DataFrame(
+        rows
+    )
+
+
+# =============================================================================
+# Mixture plots
 # =============================================================================
 
 def project_component_to_beta(
@@ -3052,6 +3301,7 @@ def plot_mixture_slices(
     sample_name,
     payload,
     models,
+    summary_table=None,
 ):
 
     n_columns = 4
@@ -3140,14 +3390,7 @@ def plot_mixture_slices(
 
 
         fractions = item[
-            "result"
-        ][
             "fractions"
-        ]
-
-
-        bootstrap = item[
-            "bootstrap"
         ]
 
 
@@ -3234,33 +3477,6 @@ def plot_mixture_slices(
         )
 
 
-        k_median = bootstrap[
-            "p50"
-        ][
-            1
-        ]
-
-
-        k_low = (
-            k_median
-            - bootstrap[
-                "p16"
-            ][
-                1
-            ]
-        )
-
-
-        k_high = (
-            bootstrap[
-                "p84"
-            ][
-                1
-            ]
-            - k_median
-        )
-
-
         annotation = (
             f"N = {len(momentum):,}\n"
 
@@ -3275,17 +3491,57 @@ def plot_mixture_slices(
         )
 
 
-        if np.isfinite(
-            k_median
+        if (
+            summary_table is not None
+            and len(summary_table)
         ):
 
-            annotation += (
-                "\n"
-                f"K boot. = "
-                f"{100.0 * k_median:.3f}"
-                f" +{100.0 * k_high:.3f}"
-                f" -{100.0 * k_low:.3f}%"
-            )
+            match = summary_table[
+                np.isclose(
+                    summary_table[
+                        "p_min_GeV"
+                    ],
+                    p_min,
+                )
+
+                & np.isclose(
+                    summary_table[
+                        "p_max_GeV"
+                    ],
+                    p_max,
+                )
+            ]
+
+
+            if len(match):
+
+                match = match.iloc[
+                    0
+                ]
+
+
+                median = match[
+                    "f_K_p50"
+                ]
+
+
+                p16 = match[
+                    "f_K_p16"
+                ]
+
+
+                p84 = match[
+                    "f_K_p84"
+                ]
+
+
+                annotation += (
+                    "\n"
+                    f"K boot. = "
+                    f"{100.0 * median:.3f}"
+                    f" +{100.0 * (p84 - median):.3f}"
+                    f" -{100.0 * (median - p16):.3f}%"
+                )
 
 
         ax.text(
@@ -3390,51 +3646,316 @@ def plot_mixture_slices(
 
 
 # =============================================================================
-# Kaon-contamination summary plot
+# Portable contamination lookup
+# =============================================================================
+
+def build_lookup_table(
+    period,
+    pion_summary,
+):
+
+    rows = []
+
+
+    # -------------------------------------------------------------------------
+    # Explicit adopted zero-contamination region.
+    # -------------------------------------------------------------------------
+
+    for p_min, p_max in LOW_P_RANGES:
+
+        rows.append(
+            {
+                "period":
+                    period,
+
+                "p_min_GeV":
+                    p_min,
+
+                "p_max_GeV":
+                    p_max,
+
+                "p_center_GeV":
+                    0.5
+                    * (
+                        p_min
+                        + p_max
+                    ),
+
+                "N_calibration":
+                    np.nan,
+
+                "f_K_nominal":
+                    0.0,
+
+                "f_K_mean":
+                    0.0,
+
+                "f_K_std":
+                    0.0,
+
+                "f_K_p16":
+                    0.0,
+
+                "f_K_p50":
+                    0.0,
+
+                "f_K_p84":
+                    0.0,
+
+                "prescription":
+                    "assumed_zero_below_1p5_GeV",
+            }
+        )
+
+
+    # -------------------------------------------------------------------------
+    # Fitted region.
+    # -------------------------------------------------------------------------
+
+    for _, row in pion_summary.iterrows():
+
+        rows.append(
+            {
+                "period":
+                    period,
+
+                "p_min_GeV":
+                    row[
+                        "p_min_GeV"
+                    ],
+
+                "p_max_GeV":
+                    row[
+                        "p_max_GeV"
+                    ],
+
+                "p_center_GeV":
+                    row[
+                        "p_mean_GeV"
+                    ],
+
+                "N_calibration":
+                    row[
+                        "N_total"
+                    ],
+
+                "f_K_nominal":
+                    row[
+                        "f_K"
+                    ],
+
+                "f_K_mean":
+                    row[
+                        "f_K_bootstrap_mean"
+                    ],
+
+                "f_K_std":
+                    row[
+                        "f_K_bootstrap_std"
+                    ],
+
+                "f_K_p16":
+                    row[
+                        "f_K_p16"
+                    ],
+
+                "f_K_p50":
+                    row[
+                        "f_K_p50"
+                    ],
+
+                "f_K_p84":
+                    row[
+                        "f_K_p84"
+                    ],
+
+                "prescription":
+                    "native_p_beta_mixture_fit",
+            }
+        )
+
+
+    lookup = pd.DataFrame(
+        rows
+    )
+
+
+    return lookup.sort_values(
+        "p_min_GeV"
+    ).reset_index(
+        drop=True
+    )
+
+
+def build_portable_replica_table(
+    period,
+    replicas,
+):
+
+    rows = []
+
+
+    replica_ids = sorted(
+        replicas[
+            "replica"
+        ].unique()
+    )
+
+
+    for replica_id in replica_ids:
+
+        # ---------------------------------------------------------------------
+        # Explicit zero region.
+        # ---------------------------------------------------------------------
+
+        for p_min, p_max in LOW_P_RANGES:
+
+            rows.append(
+                {
+                    "period":
+                        period,
+
+                    "replica":
+                        int(
+                            replica_id
+                        ),
+
+                    "p_min_GeV":
+                        p_min,
+
+                    "p_max_GeV":
+                        p_max,
+
+                    "f_K":
+                        0.0,
+
+                    "prescription":
+                        "assumed_zero_below_1p5_GeV",
+                }
+            )
+
+
+        # ---------------------------------------------------------------------
+        # Fitted region.
+        # ---------------------------------------------------------------------
+
+        subset = replicas[
+            replicas[
+                "replica"
+            ]
+            == replica_id
+        ]
+
+
+        for _, row in subset.iterrows():
+
+            rows.append(
+                {
+                    "period":
+                        period,
+
+                    "replica":
+                        int(
+                            replica_id
+                        ),
+
+                    "p_min_GeV":
+                        row[
+                            "p_min_GeV"
+                        ],
+
+                    "p_max_GeV":
+                        row[
+                            "p_max_GeV"
+                        ],
+
+                    "f_K":
+                        row[
+                            "f_K"
+                        ],
+
+                    "prescription":
+                        "native_p_beta_mixture_fit",
+                }
+            )
+
+
+    result = pd.DataFrame(
+        rows
+    )
+
+
+    return result.sort_values(
+        [
+            "replica",
+            "p_min_GeV",
+        ]
+    ).reset_index(
+        drop=True
+    )
+
+
+def write_replica_matrix(
+    period,
+    portable_replicas,
+):
+
+    matrix = portable_replicas.pivot(
+        index="replica",
+        columns=[
+            "p_min_GeV",
+            "p_max_GeV",
+        ],
+        values="f_K",
+    )
+
+
+    matrix.columns = [
+        (
+            f"fK_"
+            f"{p_min:.2f}_"
+            f"{p_max:.2f}_GeV"
+        )
+        for p_min, p_max in matrix.columns
+    ]
+
+
+    matrix = matrix.reset_index()
+
+
+    matrix.insert(
+        0,
+        "period",
+        period,
+    )
+
+
+    matrix.to_csv(
+        OUTDIR
+        / (
+            f"kaon_contamination_replica_matrix_"
+            f"{period.lower()}.csv"
+        ),
+
+        index=False,
+    )
+
+
+# =============================================================================
+# Contamination plot
 # =============================================================================
 
 def plot_kaon_contamination(
     period,
-    pion_table,
+    lookup,
 ):
 
-    if len(pion_table) == 0:
-        return
-
-
-    p = pion_table[
-        "p_mean_GeV"
-    ].to_numpy(
-        dtype=float
-    )
-
-
-    nominal = pion_table[
-        "f_K"
-    ].to_numpy(
-        dtype=float
-    )
-
-
-    median = pion_table[
-        "f_K_p50"
-    ].to_numpy(
-        dtype=float
-    )
-
-
-    p16 = pion_table[
-        "f_K_p16"
-    ].to_numpy(
-        dtype=float
-    )
-
-
-    p84 = pion_table[
-        "f_K_p84"
-    ].to_numpy(
-        dtype=float
-    )
+    fitted = lookup[
+        lookup[
+            "prescription"
+        ]
+        == "native_p_beta_mixture_fit"
+    ]
 
 
     fig, ax = plt.subplots(
@@ -3442,6 +3963,41 @@ def plot_kaon_contamination(
             8,
             5,
         )
+    )
+
+
+    p = fitted[
+        "p_center_GeV"
+    ].to_numpy(
+        dtype=float
+    )
+
+
+    median = fitted[
+        "f_K_p50"
+    ].to_numpy(
+        dtype=float
+    )
+
+
+    p16 = fitted[
+        "f_K_p16"
+    ].to_numpy(
+        dtype=float
+    )
+
+
+    p84 = fitted[
+        "f_K_p84"
+    ].to_numpy(
+        dtype=float
+    )
+
+
+    nominal = fitted[
+        "f_K_nominal"
+    ].to_numpy(
+        dtype=float
     )
 
 
@@ -3469,7 +4025,7 @@ def plot_kaon_contamination(
 
         capsize=3,
 
-        label="Full bootstrap",
+        label="Bootstrap median and 68% interval",
     )
 
 
@@ -3479,7 +4035,24 @@ def plot_kaon_contamination(
 
         marker="x",
 
-        label="Nominal response fit",
+        label="Nominal fit",
+    )
+
+
+    ax.plot(
+        [
+            PID_P_MIN,
+            CONTAMINATION_P_MIN,
+        ],
+
+        [
+            0.0,
+            0.0,
+        ],
+
+        linewidth=2.0,
+
+        label=r"Adopted $f_K=0$ below 1.5 GeV",
     )
 
 
@@ -3491,8 +4064,8 @@ def plot_kaon_contamination(
 
 
     ax.set_xlim(
-        CONTAMINATION_P_MIN,
-        CONTAMINATION_P_MAX,
+        PID_P_MIN,
+        PID_P_MAX,
     )
 
 
@@ -3512,7 +4085,9 @@ def plot_kaon_contamination(
     )
 
 
-    ax.legend()
+    ax.legend(
+        fontsize=8,
+    )
 
 
     fig.tight_layout()
@@ -3534,52 +4109,6 @@ def plot_kaon_contamination(
 
 
 # =============================================================================
-# Compact contamination table
-# =============================================================================
-
-def write_kaon_contamination_table(
-    period,
-    pion_table,
-):
-
-    if len(pion_table) == 0:
-        return
-
-
-    columns = [
-        "period",
-        "momentum_bin",
-        "p_min_GeV",
-        "p_max_GeV",
-        "p_mean_GeV",
-        "N_total",
-        "f_K",
-        "f_K_bootstrap_mean",
-        "f_K_bootstrap_std",
-        "f_K_p16",
-        "f_K_p50",
-        "f_K_p84",
-        "f_p",
-        "f_p_bootstrap_mean",
-        "f_p_bootstrap_std",
-        "f_p_p16",
-        "f_p_p50",
-        "f_p_p84",
-        "fit_success",
-    ]
-
-
-    pion_table[
-        columns
-    ].to_csv(
-        OUTDIR
-        / f"kaon_contamination_{period.lower()}.csv",
-
-        index=False,
-    )
-
-
-# =============================================================================
 # Main
 # =============================================================================
 
@@ -3594,6 +4123,11 @@ def main():
     master_rng = np.random.default_rng(
         RNG_SEED
     )
+
+
+    combined_lookup_tables = []
+
+    combined_replica_tables = []
 
 
     for period, filename in INPUTS.items():
@@ -3630,7 +4164,7 @@ def main():
 
 
         # =====================================================================
-        # Reviewer-requested PID figure.
+        # Reviewer figure.
         # =====================================================================
 
         plot_beta_vs_p_reviewer(
@@ -3640,7 +4174,7 @@ def main():
 
 
         # =====================================================================
-        # Separate pion-selected contamination-study figure.
+        # Pion-selected study figure.
         # =====================================================================
 
         plot_beta_vs_p_pion_selected(
@@ -3650,7 +4184,7 @@ def main():
 
 
         # =====================================================================
-        # Period-specific detector response.
+        # Nominal response.
         # =====================================================================
 
         response_table = measure_response_points(
@@ -3680,8 +4214,10 @@ def main():
 
 
         # =====================================================================
-        # Validation fit:
-        # all positive tracks.
+        # All-positive validation.
+        #
+        # Nominal only: no need to spend 200 bootstrap replicas on a control
+        # sample that is not propagated into the final contamination estimate.
         # =====================================================================
 
         all_positive_selection = (
@@ -3711,9 +4247,8 @@ def main():
 
         (
             all_table,
-            all_replicas,
             all_payload,
-        ) = fit_sample_by_momentum(
+        ) = fit_nominal_sample(
             period,
             "all_positive",
             data,
@@ -3731,29 +4266,17 @@ def main():
         )
 
 
-        all_replicas.to_csv(
-            OUTDIR
-            / f"mixture_all_positive_replicas_{period.lower()}.csv",
-
-            index=False,
-        )
-
-
         plot_mixture_slices(
             period,
             "all_positive",
             all_payload,
             models,
+            summary_table=None,
         )
 
 
         # =====================================================================
-        # Physics sample for residual misidentification:
-        #
-        # First make the actual pion-candidate selection.
-        #
-        # THEN fit the surviving tracks with exactly the same pi/K/p
-        # (p,beta) mixture model.
+        # Nominal pion-selected fits.
         # =====================================================================
 
         pion_selected = (
@@ -3798,10 +4321,9 @@ def main():
 
 
         (
-            pion_table,
-            pion_replicas,
+            pion_nominal,
             pion_payload,
-        ) = fit_sample_by_momentum(
+        ) = fit_nominal_sample(
             period,
             "pion_selected",
             data,
@@ -3811,7 +4333,30 @@ def main():
         )
 
 
-        pion_table.to_csv(
+        # =====================================================================
+        # Coherent 8-worker bootstrap.
+        # =====================================================================
+
+        pion_bin_data = prepare_pion_bin_data(
+            data
+        )
+
+
+        replicas = run_parallel_bootstrap(
+            period,
+            data,
+            pion_bin_data,
+            response_table,
+        )
+
+
+        pion_summary = summarize_bootstrap(
+            pion_nominal,
+            replicas,
+        )
+
+
+        pion_summary.to_csv(
             OUTDIR
             / f"mixture_pion_selected_{period.lower()}.csv",
 
@@ -3819,31 +4364,70 @@ def main():
         )
 
 
-        pion_replicas.to_csv(
-            OUTDIR
-            / f"mixture_pion_selected_replicas_{period.lower()}.csv",
-
-            index=False,
-        )
-
+        # =====================================================================
+        # Updated mixture plots with bootstrap intervals.
+        # =====================================================================
 
         plot_mixture_slices(
             period,
             "pion_selected",
             pion_payload,
             models,
+            summary_table=pion_summary,
         )
 
 
-        write_kaon_contamination_table(
+        # =====================================================================
+        # Portable downstream interface.
+        # =====================================================================
+
+        lookup = build_lookup_table(
             period,
-            pion_table,
+            pion_summary,
+        )
+
+
+        portable_replicas = build_portable_replica_table(
+            period,
+            replicas,
+        )
+
+
+        lookup.to_csv(
+            OUTDIR
+            / f"kaon_contamination_lookup_{period.lower()}.csv",
+
+            index=False,
+        )
+
+
+        portable_replicas.to_csv(
+            OUTDIR
+            / f"kaon_contamination_replicas_{period.lower()}.csv",
+
+            index=False,
+        )
+
+
+        write_replica_matrix(
+            period,
+            portable_replicas,
         )
 
 
         plot_kaon_contamination(
             period,
-            pion_table,
+            lookup,
+        )
+
+
+        combined_lookup_tables.append(
+            lookup
+        )
+
+
+        combined_replica_tables.append(
+            portable_replicas
         )
 
 
@@ -3854,12 +4438,50 @@ def main():
         )
 
 
+    # =========================================================================
+    # Combined files intended for the kinematic-distribution code.
+    # =========================================================================
+
+    combined_lookup = pd.concat(
+        combined_lookup_tables,
+        ignore_index=True,
+    )
+
+
+    combined_replicas = pd.concat(
+        combined_replica_tables,
+        ignore_index=True,
+    )
+
+
+    combined_lookup.to_csv(
+        OUTDIR
+        / "kaon_contamination_lookup_all_periods.csv",
+
+        index=False,
+    )
+
+
+    combined_replicas.to_csv(
+        OUTDIR
+        / "kaon_contamination_replicas_all_periods.csv",
+
+        index=False,
+    )
+
+
     print(
         "\n"
         "============================================================\n"
         " PID / particle-misidentification study complete\n"
         "============================================================\n"
-        f"Output directory: {OUTDIR}",
+        f"Output directory:\n"
+        f"  {OUTDIR}\n\n"
+        "Primary downstream files:\n"
+        "  kaon_contamination_lookup_all_periods.csv\n"
+        "  kaon_contamination_replicas_all_periods.csv\n\n"
+        "These are ready to be folded through the final 24-bin pion "
+        "momentum distributions.",
 
         flush=True,
     )
