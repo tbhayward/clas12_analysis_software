@@ -150,20 +150,43 @@ class PIDExclusivitySkim {
         HipoDataSource reader=new HipoDataSource()
         reader.open(input)
         long nev=0, ncand=0
+        long nBanks=0, nRunAccepted=0, nQA=0, nFitterElectron=0, nRecElectron=0, nPosTracks=0
         long processingStartTime = System.currentTimeMillis()
+        long lastDiagTime = processingStartTime
         while (reader.hasEvent()) {
             DataEvent event=reader.getNextEvent(); ++nev
+
+            // IMPORTANT: diagnostics are before every possible `continue`, so they
+            // report raw HIPO progress even when an event fails an early selection.
+            if (nev % 100000 == 0) {
+                long now = System.currentTimeMillis()
+                double elapsedSec = (now - processingStartTime) / 1000.0
+                double intervalSec = (now - lastDiagTime) / 1000.0
+                double avgRate = elapsedSec > 0.0 ? nev / elapsedSec : 0.0
+                double recentRate = intervalSec > 0.0 ? 100000.0 / intervalSec : 0.0
+                println(String.format(java.util.Locale.US,
+                    '[diag] %s | %,d raw events | banks %,d | run-ok %,d | QA %,d | fitter-e %,d | REC-e %,d | +tracks %,d | written %,d | %.1f min | %.0f ev/s recent | %.0f ev/s avg',
+                    new File(input).name, nev, nBanks, nRunAccepted, nQA, nFitterElectron,
+                    nRecElectron, nPosTracks, ncand, elapsedSec/60.0, recentRate, avgRate))
+                System.out.flush()
+                out.flush()
+                lastDiagTime = now
+            }
+
             if (!event.hasBank('RUN::config') || !event.hasBank('REC::Particle')) continue
+            ++nBanks
             HipoDataBank runb=(HipoDataBank)event.getBank('RUN::config')
             HipoDataBank rec=(HipoDataBank)event.getBank('REC::Particle')
             int run=runb.getInt('run',0), ev=runb.getInt('event',0)
             if (rejectRun(run)) continue
+            ++nRunAccepted
             boolean passQA = qa.pass(run,ev)
             if (!passQA) continue
+            ++nQA
 
-            // Use the same run-dependent beam-energy machinery as the production processor.
             PhysicsEvent research=fitter.getPhysicsEvent(event)
             if (research == null || research.countByPid(11) < 1) continue
+            ++nFitterElectron
             // Use the nominal beam energy for the requested RGC run period.
             // This keeps this standalone diagnostic independent of the analysis-local
             // BeamEnergy helper, which is not on this GROOVY classpath.
@@ -180,6 +203,7 @@ class PIDExclusivitySkim {
 
             int ie=electronIndex(rec)
             if (ie<0) continue
+            ++nRecElectron
             double epx=rec.getFloat('px',ie), epy=rec.getFloat('py',ie), epz=rec.getFloat('pz',ie)
             double ep=Math.sqrt(epx*epx+epy*epy+epz*epz)
             double Ee=Math.sqrt(ep*ep+ME*ME)
@@ -201,6 +225,7 @@ class PIDExclusivitySkim {
                 if (ih==ie) continue
                 int charge=(int)rec.getByte('charge',ih)
                 if (charge<=0) continue
+                ++nPosTracks
                 int pid=rec.getInt('pid',ih), status=rec.getInt('status',ih)
                 boolean fd=isFD(status)
 
@@ -247,20 +272,14 @@ class PIDExclusivitySkim {
                     passY?1:0,passPhase?1:0,passMx?1:0,passFinal?1:0))
                 ++ncand
             }
-            if (nev % 1000000 == 0) {
-                double elapsedSec = (System.currentTimeMillis() - processingStartTime) / 1000.0
-                double rate = elapsedSec > 0.0 ? nev / elapsedSec : 0.0
-                println(String.format(java.util.Locale.US,
-                    '[progress] %s | %,d events | %,d candidates | %.1f min | %.0f events/s',
-                    new File(input).name, nev, ncand, elapsedSec / 60.0, rate))
-            }
         }
         reader.close(); out.close()
         double totalSec = (System.currentTimeMillis() - processingStartTime) / 1000.0
         double avgRate = totalSec > 0.0 ? nev / totalSec : 0.0
         println(String.format(java.util.Locale.US,
-            'DONE %s | %,d events | %,d positive candidates | %.1f min | %.0f events/s | output: %s',
-            new File(input).name, nev, ncand, totalSec / 60.0, avgRate, output))
+            'DONE %s | %,d raw events | banks %,d | run-ok %,d | QA %,d | fitter-e %,d | REC-e %,d | +tracks %,d | %,d written | %.1f min | %.0f events/s | output: %s',
+            new File(input).name, nev, nBanks, nRunAccepted, nQA, nFitterElectron,
+            nRecElectron, nPosTracks, ncand, totalSec / 60.0, avgRate, output))
     }
 }
 PIDExclusivitySkim.main(args)
