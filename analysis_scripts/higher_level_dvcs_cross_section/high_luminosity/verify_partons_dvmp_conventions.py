@@ -385,31 +385,90 @@ def clone_stage3_xml_if_possible(
 
 
 def parse_results(text: str) -> list[tuple[float, str]]:
+    """Parse only final DVMP observable results, not internal CFF log messages."""
     out = []
-    for m in RESULT_RE.finditer(text):
+    expect_result = False
+    for line in text.splitlines():
+        if "DVMPObservableResult" in line:
+            expect_result = True
+            continue
+        #endif
+        if not expect_result:
+            continue
+        #endif
+        m = RESULT_RE.search(line)
+        if m is None:
+            continue
+        #endif
         token = m.group(1)
         unit = (m.group(2) or "").strip().strip("[]")
         try:
             value = float(token)
         except ValueError:
+            expect_result = False
             continue
         #endtry
         if np.isfinite(value):
             out.append((value, unit))
         #endif
+        expect_result = False
     #endfor
     return out
 
 
+def lambda_function(a: float, b: float, c: float) -> float:
+    return a * a + b * b + c * c - 2.0 * (a * b + a * c + b * c)
+
+
+def partons_electron_prefactor(E: float, Q2: float, xB: float, epsilon: float) -> float:
+    """Exact common prefactor K in DVMPProcessGK06::CrossSection().
+
+    This reproduces the C++ source before the final 1/(2*pi) phi factor.
+    The returned K multiplies the internal GK response combination
+    sigma_T + epsilon*sigma_L and all interference responses.
+    """
+    alpha = 1.0 / 137.035999084
+    proton_mass = 0.9382720813
+    W2 = Q2 / xB + proton_mass * proton_mass - Q2
+    lam = lambda_function(W2, -Q2, proton_mass * proton_mass)
+    if E <= 0.0 or Q2 <= 0.0 or not (0.0 < xB < 1.0):
+        return np.nan
+    #endif
+    if not (0.0 <= epsilon < 1.0) or lam <= 0.0:
+        return np.nan
+    #endif
+
+    K = alpha * (W2 - proton_mass * proton_mass)
+    K /= (
+        16.0 * math.pi**2 * E**2 * proton_mass**2 * Q2 * (1.0 - epsilon)
+    )
+    K /= (
+        32.0 * math.pi * (W2 - proton_mass * proton_mass) * math.sqrt(lam)
+    )
+    K *= Q2 / xB**2
+    return K
+
+
 
 def build_shared_decomposition_table(df: pd.DataFrame, cols: dict[str, str]) -> pd.DataFrame:
-    """Test the conventional T/L/TT/LT mapping using shared RGA/RGK points.
+    """Verify the source-level PARTONS GK T/L/TT/LT mapping.
 
-    At a shared (Q2,xB,t), the underlying response functions must be independent
-    of beam energy.  Therefore the candidate mapping can be tested by comparing
-    the values inferred independently from RGA and RGK.
+    DVMPProcessGK06::CrossSection() gives
+
+      d sigma / dphi = K/(2*pi) * [
+          sigma_T + eps*sigma_L
+          + 2*sqrt(2*eps*(1+eps))*sigma_LT*cos(phi)
+          + 2*eps*sigma_TT*cos(2phi)
+      ].
+
+    K is the electron-level kinematic/flux/Jacobian prefactor implemented in
+    the C++ source. At shared (Q2,xB,t), dividing K out must make the GK
+    responses independent of beam energy.
     """
-    required = ["point_id", "campaign", "evaluation", "epsilon", "phi", "sigma"]
+    required = [
+        "point_id", "campaign", "evaluation", "E", "epsilon",
+        "Q2", "xB", "minus_t", "phi", "sigma",
+    ]
     missing = [x for x in required if x not in cols]
     if missing:
         raise RuntimeError(
@@ -434,19 +493,32 @@ def build_shared_decomposition_table(df: pd.DataFrame, cols: dict[str, str]) -> 
         s180 = get_phi_value(g, cols["phi"], cols["sigma"], 180.0)
         A, B, C = harmonic_coefficients(s0, s90, s180)
         r0 = g.iloc[0]
+        E = float(r0[cols["E"]])
         eps = float(r0[cols["epsilon"]])
+        Q2 = float(r0[cols["Q2"]])
+        xB = float(r0[cols["xB"]])
+        K = partons_electron_prefactor(E, Q2, xB, eps)
+
+        reduced_A = 2.0 * math.pi * A / K
+        sigma_LT = (
+            2.0 * math.pi * B
+            / (2.0 * K * math.sqrt(2.0 * eps * (1.0 + eps)))
+        )
+        sigma_TT = 2.0 * math.pi * C / (2.0 * K * eps)
+
         harmonic_rows.append({
             "point_id": str(point_id),
             "campaign": str(campaign).lower(),
+            "E": E,
             "epsilon": eps,
-            "Q2": float(r0[cols["Q2"]]),
-            "xB": float(r0[cols["xB"]]),
+            "Q2": Q2,
+            "xB": xB,
             "minus_t": float(r0[cols["minus_t"]]),
+            "K_partons": K,
             "A": A, "B": B, "C": C,
-            # Candidate conventional mapping.  These are hypotheses until the
-            # source-level GK CrossSection() formula is confirmed.
-            "sigma_LT_candidate": 2.0 * math.pi * B / math.sqrt(2.0 * eps * (1.0 + eps)),
-            "sigma_TT_candidate": 2.0 * math.pi * C / eps,
+            "sigma_T_plus_epsilon_sigma_L": reduced_A,
+            "sigma_LT": sigma_LT,
+            "sigma_TT": sigma_TT,
         })
     #endfor
 
@@ -465,15 +537,13 @@ def build_shared_decomposition_table(df: pd.DataFrame, cols: dict[str, str]) -> 
             continue
         #endif
 
-        # Since phi integration established 2*pi*A as the phi-integrated
-        # unpolarized quantity, test 2*pi*A = sigma_T + epsilon*sigma_L.
-        YA = 2.0 * math.pi * float(a.A)
-        YK = 2.0 * math.pi * float(k.A)
+        YA = float(a.sigma_T_plus_epsilon_sigma_L)
+        YK = float(k.sigma_T_plus_epsilon_sigma_L)
         sigma_L = (YK - YA) / de
         sigma_T = YA - float(a.epsilon) * sigma_L
 
-        lt_a = float(a.sigma_LT_candidate); lt_k = float(k.sigma_LT_candidate)
-        tt_a = float(a.sigma_TT_candidate); tt_k = float(k.sigma_TT_candidate)
+        lt_a = float(a.sigma_LT); lt_k = float(k.sigma_LT)
+        tt_a = float(a.sigma_TT); tt_k = float(k.sigma_TT)
         lt_mean = 0.5 * (lt_a + lt_k)
         tt_mean = 0.5 * (tt_a + tt_k)
         lt_rel = (lt_a - lt_k) / lt_mean if lt_mean != 0.0 else np.nan
@@ -482,17 +552,20 @@ def build_shared_decomposition_table(df: pd.DataFrame, cols: dict[str, str]) -> 
         out.append({
             "point_id": point_id,
             "Q2": float(a.Q2), "xB": float(a.xB), "minus_t": float(a.minus_t),
+            "E_rga": float(a.E), "E_rgk": float(k.E),
             "epsilon_rga": float(a.epsilon), "epsilon_rgk": float(k.epsilon),
             "delta_epsilon": de,
-            "two_pi_A_rga": YA, "two_pi_A_rgk": YK,
-            "sigma_T_candidate": sigma_T,
-            "sigma_L_candidate": sigma_L,
-            "sigma_L_over_sigma_T_candidate": sigma_L / sigma_T if sigma_T != 0.0 else np.nan,
-            "sigma_LT_rga_candidate": lt_a,
-            "sigma_LT_rgk_candidate": lt_k,
+            "K_rga": float(a.K_partons), "K_rgk": float(k.K_partons),
+            "K_rga_over_rgk": float(a.K_partons / k.K_partons),
+            "reduced_A_rga": YA, "reduced_A_rgk": YK,
+            "sigma_T": sigma_T,
+            "sigma_L": sigma_L,
+            "sigma_L_over_sigma_T": sigma_L / sigma_T if sigma_T != 0.0 else np.nan,
+            "sigma_LT_rga": lt_a,
+            "sigma_LT_rgk": lt_k,
             "sigma_LT_relative_difference": lt_rel,
-            "sigma_TT_rga_candidate": tt_a,
-            "sigma_TT_rgk_candidate": tt_k,
+            "sigma_TT_rga": tt_a,
+            "sigma_TT_rgk": tt_k,
             "sigma_TT_relative_difference": tt_rel,
         })
     #endfor
@@ -508,10 +581,11 @@ def print_decomposition_summary(tab: pd.DataFrame, npoints: int = 3) -> None:
     pos = np.linspace(0, len(ordered) - 1, min(npoints, len(ordered)))
     inds = sorted(set(int(round(x)) for x in pos))
     print()
-    print("Candidate T/L/TT/LT convention test at shared RGA/RGK kinematics")
-    print("  hypothesis: 2*pi*A = sigma_T + epsilon*sigma_L")
-    print("              2*pi*B = sqrt(2*epsilon*(1+epsilon))*sigma_LT")
-    print("              2*pi*C = epsilon*sigma_TT")
+    print("Source-verified T/L/TT/LT convention test at shared RGA/RGK kinematics")
+    print("  PARTONS source formula:")
+    print("    2*pi*A = K*(sigma_T + epsilon*sigma_L)")
+    print("    2*pi*B = 2*K*sqrt(2*epsilon*(1+epsilon))*sigma_LT")
+    print("    2*pi*C = 2*K*epsilon*sigma_TT")
     for i in inds:
         r = ordered.iloc[i]
         print(
@@ -519,21 +593,29 @@ def print_decomposition_summary(tab: pd.DataFrame, npoints: int = 3) -> None:
             f"eps(RGA,RGK)=({r.epsilon_rga:.5f},{r.epsilon_rgk:.5f})"
         )
         print(
-            f"      sigma_T={r.sigma_T_candidate:.10g}, "
-            f"sigma_L={r.sigma_L_candidate:.10g}, "
-            f"L/T={r.sigma_L_over_sigma_T_candidate:.6g}"
+            f"      K(RGA,RGK)=({r.K_rga:.10g},{r.K_rgk:.10g}), "
+            f"K_RGA/K_RGK={r.K_rga_over_rgk:.8g}"
         )
         print(
-            f"      sigma_LT RGA/RGK={r.sigma_LT_rga_candidate:.10g}/"
-            f"{r.sigma_LT_rgk_candidate:.10g} "
+            f"      sigma_T={r.sigma_T:.10g}, sigma_L={r.sigma_L:.10g}, "
+            f"L/T={r.sigma_L_over_sigma_T:.6g}"
+        )
+        print(
+            f"      sigma_LT RGA/RGK={r.sigma_LT_rga:.10g}/"
+            f"{r.sigma_LT_rgk:.10g} "
             f"(relative difference={r.sigma_LT_relative_difference:.3%})"
         )
         print(
-            f"      sigma_TT RGA/RGK={r.sigma_TT_rga_candidate:.10g}/"
-            f"{r.sigma_TT_rgk_candidate:.10g} "
+            f"      sigma_TT RGA/RGK={r.sigma_TT_rga:.10g}/"
+            f"{r.sigma_TT_rgk:.10g} "
             f"(relative difference={r.sigma_TT_relative_difference:.3%})"
         )
     #endfor
+
+    max_lt = np.nanmax(np.abs(ordered["sigma_LT_relative_difference"].to_numpy(float)))
+    max_tt = np.nanmax(np.abs(ordered["sigma_TT_relative_difference"].to_numpy(float)))
+    print(f"  Maximum |RGA/RGK LT relative difference|: {max_lt:.3e}")
+    print(f"  Maximum |RGA/RGK TT relative difference|: {max_tt:.3e}")
 
 
 def main() -> int:
@@ -571,7 +653,7 @@ def main() -> int:
     cols = infer_columns(df)
 
     decomposition = build_shared_decomposition_table(df, cols)
-    decomposition_csv = outdir / "05_candidate_TLTTLT_decomposition.csv"
+    decomposition_csv = outdir / "05_source_verified_TLTTLT_decomposition.csv"
     decomposition.to_csv(decomposition_csv, index=False)
 
     groups = choose_representative_groups(df, cols, args.npoints)
@@ -645,7 +727,7 @@ def main() -> int:
     #endfor
 
     print_decomposition_summary(decomposition, args.npoints)
-    print(f"Candidate decomposition CSV: {decomposition_csv}")
+    print(f"Source-verified decomposition CSV: {decomposition_csv}")
 
     if args.prepare_only:
         print()
@@ -751,10 +833,9 @@ def main() -> int:
     print()
     print("Interpretation:")
     print("  * The phi-integrated test verifies the overall 2*pi normalization.")
-    print("  * The T/L/TT/LT quantities in 05_candidate_TLTTLT_decomposition.csv")
-    print("    are still explicitly candidate mappings. Their RGA/RGK consistency is")
-    print("    a numerical convention test; final labels require confirming the")
-    print("    DVMPProcessGK06::CrossSection() source formula.")
+    print("  * The T/L/TT/LT mapping now follows DVMPProcessGK06.cpp exactly.")
+    print("  * RGA/RGK LT and TT closure tests whether the common PARTONS K prefactor")
+    print("    and epsilon-dependent interference factors have been removed correctly.")
 
     return 0
 
