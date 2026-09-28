@@ -601,6 +601,9 @@ def partons_electron_factor(E, Q2, xB, epsilon):
         (1.0) )
 
 
+GEVM2_TO_NB = 389379.3721  # 1 GeV^-2 in nb
+
+
 def _source_factors(E,Q2,xB,epsilon):
     """Return (lepton_factor, hadronic_factor, full_K_internal).
 
@@ -637,11 +640,12 @@ def shared_structure_function_diagnostic(raw,harm):
       2pi*C = 2 K eps TT,
     with K = lepton_factor * hadronic_factor.
 
-    T/L/LT/TT below are the *internal GK response combinations* returned by
-    CrossSectionT/L/LT/TT.  They are intentionally not assigned nb units.
-    This distinction matters: the hadronic phase-space factor is also inside
-    K, so these are not yet d sigma_T/dt etc.  The RGA/RGK closure is the
-    convention test and should be numerical-precision level.
+    T/L/LT/TT are first reconstructed as the internal GK amplitude-response
+    combinations returned by CrossSectionT/L/LT/TT.  GK Eq. (43) then fixes
+    the physical virtual-photon partial cross sections: multiply each response
+    by the common hadronic phase-space factor and convert GeV^-4 to nb/GeV^2.
+    The RGA/RGK LT and TT closure remains the convention test and should be
+    numerical-precision level.
     """
     hs=harm[harm.evaluation.eq("shared")].copy()
     if hs.empty: return pd.DataFrame()
@@ -669,6 +673,24 @@ def shared_structure_function_diagnostic(raw,harm):
         TTr=2.0*math.pi*float(r.coefficient_cos2phi)/(2.0*Kr*er)
         TTk=2.0*math.pi*float(k.coefficient_cos2phi)/(2.0*Kk*ek)
         def fd(x,y): return (x-y)/max(0.5*(abs(x)+abs(y)),1e-300)
+
+        # GK Eq. (43): multiplying the internal amplitude combinations by
+        # `hadronic_factor` gives the virtual-photon partial cross sections
+        # d sigma_i / dt in natural units (GeV^-4).  PARTONS CrossSectionL()
+        # already contains the factor 2 needed to turn its common 1/(32 pi)
+        # prefactor into the longitudinal 1/(16 pi) normalization.
+        # Convert GeV^-4 -> nb/GeV^2 using 1 GeV^-2 = 389379.3721 nb.
+        LT=0.5*(LTr+LTk)
+        TT=0.5*(TTr+TTk)
+        dsT=hr*T*GEVM2_TO_NB
+        dsL=hr*L*GEVM2_TO_NB
+        dsLT=hr*LT*GEVM2_TO_NB
+        dsTT=hr*TT*GEVM2_TO_NB
+        dsLTr=hr*LTr*GEVM2_TO_NB
+        dsLTk=hr*LTk*GEVM2_TO_NB
+        dsTTr=hr*TTr*GEVM2_TO_NB
+        dsTTk=hr*TTk*GEVM2_TO_NB
+
         rows.append(dict(point_id=pid,Q2_shared_GeV2=float(r.Q2),xB_shared=float(r.xB),
             minus_t_shared_GeV2=float(r.minus_t),epsilon_rga=er,epsilon_rgk=ek,
             lepton_factor_rga=lr,lepton_factor_rgk=lk,hadronic_factor=hr,
@@ -677,7 +699,12 @@ def shared_structure_function_diagnostic(raw,harm):
             response_LT_rga_internal=LTr,response_LT_rgk_internal=LTk,
             response_LT_fractional_difference=fd(LTr,LTk),
             response_TT_rga_internal=TTr,response_TT_rgk_internal=TTk,
-            response_TT_fractional_difference=fd(TTr,TTk)))
+            response_TT_fractional_difference=fd(TTr,TTk),
+            dsigma_T_dt_nb_per_GeV2=dsT,dsigma_L_dt_nb_per_GeV2=dsL,
+            dsigma_L_over_T=dsL/dsT if dsT else np.nan,
+            dsigma_LT_dt_nb_per_GeV2=dsLT,dsigma_TT_dt_nb_per_GeV2=dsTT,
+            dsigma_LT_rga_dt_nb_per_GeV2=dsLTr,dsigma_LT_rgk_dt_nb_per_GeV2=dsLTk,
+            dsigma_TT_rga_dt_nb_per_GeV2=dsTTr,dsigma_TT_rgk_dt_nb_per_GeV2=dsTTk))
     return pd.DataFrame(rows)
 
 def atomic_to_csv(df, path):
@@ -703,6 +730,7 @@ def write_production_products(out, raw, harm, corr_phi, corr_harm, sfdiag,
     atomic_to_csv(harm,prod/"gk_pi0_harmonics.csv")
     atomic_to_csv(corr_phi,prod/"gk_pi0_native_to_shared_corrections.csv")
     atomic_to_csv(corr_harm,prod/"gk_pi0_harmonic_shift_diagnostics.csv")
+    atomic_to_csv(sfdiag,prod/"gk_pi0_shared_physical_structure_functions.csv")
     atomic_to_csv(sfdiag,prod/"gk_pi0_shared_source_verified_responses.csv")
     atomic_to_csv(stat,prod/"chunk_status.csv")
 
@@ -745,7 +773,8 @@ def write_production_products(out, raw, harm, corr_phi, corr_harm, sfdiag,
             "gk_pi0_model_grid.csv is the irreducible expensive PARTONS result and is intended for downstream reuse.",
             "Raw XML/stdout/stderr under ../xml and ../logs are retained as restart/provenance records.",
             "Three phi points determine A + B cos(phi) + C cos(2phi); harmonic closure is recorded separately.",
-            "Shared-point T/L/LT/TT internal GK responses follow the verified DVMPProcessGK06.cpp convention; they are not mislabeled as physical nb cross sections."
+            "Shared-point T/L/LT/TT responses follow the verified DVMPProcessGK06.cpp convention and GK Eq. (43).",
+            "gk_pi0_shared_physical_structure_functions.csv contains d sigma_T/L/LT/TT / dt in nb/GeV^2; internal response columns are retained for provenance and closure checks."
         ]
     }
     mtmp=prod/"metadata.json.tmp"
@@ -792,11 +821,15 @@ def main():
         atomic_to_csv(corr_phi,prod/"gk_pi0_native_to_shared_corrections.csv")
         atomic_to_csv(corr_harm,prod/"gk_pi0_harmonic_shift_diagnostics.csv")
         atomic_to_csv(sfdiag,prod/"gk_pi0_shared_source_verified_responses.csv")
+        atomic_to_csv(sfdiag,prod/"gk_pi0_shared_physical_structure_functions.csv")
         print(f"Postprocessed existing {raw_path} without invoking PARTONS.")
-        print(f"Source-verified response grid: {prod/'gk_pi0_shared_source_verified_responses.csv'}")
+        print(f"Physical structure-function grid: {prod/'gk_pi0_shared_physical_structure_functions.csv'}")
         if len(sfdiag):
             print(f"Max |LT RGA/RGK fractional difference|: {sfdiag.response_LT_fractional_difference.abs().max():.3e}")
             print(f"Max |TT RGA/RGK fractional difference|: {sfdiag.response_TT_fractional_difference.abs().max():.3e}")
+            print("Physical columns: d sigma_T/dt, d sigma_L/dt, d sigma_LT/dt, d sigma_TT/dt (nb/GeV^2)")
+            print(f"d sigma_T/dt range : {sfdiag.dsigma_T_dt_nb_per_GeV2.min():.6g} -- {sfdiag.dsigma_T_dt_nb_per_GeV2.max():.6g} nb/GeV^2")
+            print(f"d sigma_L/dt range : {sfdiag.dsigma_L_dt_nb_per_GeV2.min():.6g} -- {sfdiag.dsigma_L_dt_nb_per_GeV2.max():.6g} nb/GeV^2")
         return
     if not a.all:
         first=q_retained.iloc[[0]]
@@ -897,8 +930,8 @@ def main():
         print(f"  irreducible model grid: {prod/'gk_pi0_model_grid.csv'}")
         print(f"  provenance metadata   : {prod/'metadata.json'}")
         print("Source convention verified against DVMPProcessGK06.cpp.")
-        print("08_shared_source_verified_responses.csv contains the separated internal GK responses;")
-        print("the public observable grid remains the authoritative physical-unit product.")
+        print("08_shared_source_verified_responses.csv contains both the separated internal GK responses")
+        print("and the GK Eq. (43) physical d sigma_T/L/LT/TT / dt values in nb/GeV^2.")
 
 if __name__=="__main__":
     main()
