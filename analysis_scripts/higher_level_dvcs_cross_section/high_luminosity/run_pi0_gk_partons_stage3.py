@@ -26,7 +26,7 @@ Expected repo location:
 """
 
 from __future__ import annotations
-import argparse, hashlib, math, os, re, shutil, subprocess, sys, time, tarfile
+import argparse, hashlib, json, math, os, re, shutil, subprocess, sys, time, tarfile
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import numpy as np
@@ -35,7 +35,7 @@ import pandas as pd
 DEFAULT_PROJECT = Path("/work/clas12/thayward/partons/partons-example")
 DEFAULT_EXECUTABLE = "./bin/PARTONS_example"
 DEFAULT_WORKERS = 8
-DEFAULT_CHUNK_SIZE = 30
+DEFAULT_CHUNK_SIZE = 6
 COMMON_Y_MAX = 0.90
 # PARTONS MesonType::fromString() expects its canonical string representation.
 # The enum integer (PI0=9) is NOT the XML representation; "PI0" also maps to
@@ -62,7 +62,8 @@ def parse_args():
     p.add_argument("--sif",type=Path,default=None,
                    help="PARTONS SIF. If omitted, search sensible high_luminosity/project/work locations.")
     p.add_argument("--workers",type=int,default=DEFAULT_WORKERS)
-    p.add_argument("--chunk-size",type=int,default=DEFAULT_CHUNK_SIZE)
+    p.add_argument("--chunk-size",type=int,default=DEFAULT_CHUNK_SIZE,
+                   help="PARTONS evaluations per restart-safe chunk (default: 6; ~6 min/chunk at observed runtime).")
     p.add_argument("--all",action="store_true",
                    help="After preflight, evaluate all retained midpoint bins at both native and shared coordinates. Default is a one-point probe.")
     p.add_argument("--force",action="store_true")
@@ -598,6 +599,88 @@ def shared_structure_function_diagnostic(raw,harm):
         ))
     return pd.DataFrame(rows)
 
+def atomic_to_csv(df, path):
+    """Write a CSV atomically so an interrupted write cannot corrupt the durable grid."""
+    path=Path(path); path.parent.mkdir(parents=True,exist_ok=True)
+    tmp=path.with_suffix(path.suffix+".tmp")
+    df.to_csv(tmp,index=False)
+    os.replace(tmp,path)
+
+
+def write_production_products(out, raw, harm, corr_phi, corr_harm, sfdiag,
+                              stat, jobs, args, sif, project, shared):
+    """Persist the expensive GK calculation as a reusable, self-contained product.
+
+    Raw PARTONS stdout/XML remain the restart/checkpoint layer.  These consolidated
+    files are the durable physics layer: downstream Stage-3 work should consume
+    them directly and must not need to invoke PARTONS again.
+    """
+    prod=Path(out)/"production_grid"
+    prod.mkdir(parents=True,exist_ok=True)
+
+    atomic_to_csv(raw,prod/"gk_pi0_model_grid.csv")
+    atomic_to_csv(harm,prod/"gk_pi0_harmonics.csv")
+    atomic_to_csv(corr_phi,prod/"gk_pi0_native_to_shared_corrections.csv")
+    atomic_to_csv(corr_harm,prod/"gk_pi0_harmonic_shift_diagnostics.csv")
+    atomic_to_csv(sfdiag,prod/"gk_pi0_shared_rosenbluth_diagnostic.csv")
+    atomic_to_csv(stat,prod/"chunk_status.csv")
+
+    retained=shared[shared.retain_for_rosenbluth].copy()
+    excluded=shared[~shared.retain_for_rosenbluth].copy()
+    atomic_to_csv(retained,prod/"retained_shared_points.csv")
+    atomic_to_csv(excluded,prod/"excluded_shared_points.csv")
+
+    # Hash the exact XML work list as a compact identity for the expensive grid.
+    xml_hashes=[]
+    for j in jobs:
+        xp=Path(j["xml"])
+        xml_hashes.append(hashlib.sha256(xp.read_bytes()).hexdigest())
+    work_hash=hashlib.sha256("\n".join(xml_hashes).encode()).hexdigest()
+
+    metadata={
+        "product":"PARTONS GK pi0 native/shared model grid",
+        "created_local":time.strftime("%Y-%m-%d %H:%M:%S"),
+        "partons_module_chain":["DVMPCrossSectionUUUMinus","DVMPProcessGK06","DVMPCFFGK06","GPDGK19"],
+        "meson":args.meson_value,
+        "qcd_order":"LO",
+        "partons_executable":args.executable,
+        "partons_project":str(project),
+        "container_sif":str(sif),
+        "beam_energy_rga_GeV":10.604,
+        "beam_energy_rgk_GeV":6.535,
+        "shared_coordinate_prescription":"arithmetic midpoint of campaign-specific flux-weighted Q2, xB, and -t coordinates",
+        "shared_y_max":COMMON_Y_MAX,
+        "phi_deg":[float(x) for x in DEFAULT_PHI_DEG],
+        "n_retained_points":int(len(retained)),
+        "n_excluded_points":int(len(excluded)),
+        "excluded_point_ids":excluded.point_id.astype(str).tolist(),
+        "n_partons_evaluations":int(len(raw)),
+        "workers":int(args.workers),
+        "chunk_size":int(args.chunk_size),
+        "worklist_sha256":work_hash,
+        "units":sorted(str(x) for x in raw.partons_unit.dropna().unique()),
+        "cache_identity":"SHA-256 of exact XML submitted for each chunk",
+        "notes":[
+            "gk_pi0_model_grid.csv is the irreducible expensive PARTONS result and is intended for downstream reuse.",
+            "Raw XML/stdout/stderr under ../xml and ../logs are retained as restart/provenance records.",
+            "Three phi points determine A + B cos(phi) + C cos(2phi); harmonic closure is recorded separately.",
+            "Shared-point T/L/LT/TT reconstruction remains diagnostic only pending normalization/convention verification."
+        ]
+    }
+    mtmp=prod/"metadata.json.tmp"
+    mtmp.write_text(json.dumps(metadata,indent=2)+"\n")
+    os.replace(mtmp,prod/"metadata.json")
+    (prod/"README.txt").write_text(
+        "Durable PARTONS/GK Stage-3 production product.\n\n"
+        "Use gk_pi0_model_grid.csv for the original expensive evaluations.\n"
+        "Use gk_pi0_harmonics.csv and gk_pi0_native_to_shared_corrections.csv "
+        "for normal downstream analysis.  Re-running PARTONS is not required.\n"
+        "metadata.json records the calculation provenance and work-list hash.\n"
+        "The ../logs and ../xml directories are restart-safe checkpoints and raw provenance.\n"
+    )
+    return prod
+
+
 def main():
     a=parse_args(); here=Path(__file__).resolve().parent
     out=a.output.resolve(); out.mkdir(parents=True,exist_ok=True)
@@ -622,6 +705,7 @@ def main():
         print(f"\n[production] {len(q_retained)}/{len(q)} Rosenbluth points retained after shared-y<{COMMON_Y_MAX:.2f} cut")
         print(f"  {len(pts)} PARTONS evaluations = retained points x 2 campaigns x 2 coordinates x {len(DEFAULT_PHI_DEG)} phi")
         print(f"  parallel workers: {a.workers} (default 8; override with --workers N)")
+        print(f"  restart-safe chunk size: {a.chunk_size} evaluations ({math.ceil(len(pts)/a.chunk_size)} chunks total)")
 
     pts.to_csv(out/"01_partons_evaluation_points.csv",index=False)
     skipped.to_csv(out/"01b_partons_skipped_unphysical.csv",index=False)
@@ -645,7 +729,11 @@ def main():
     else:
         with ProcessPoolExecutor(max_workers=a.workers) as ex:
             fut=[ex.submit(run_job,j,sif,project,a.executable,out,a.force,False) for j in jobs]
-            for f in as_completed(fut): results.append(f.result())
+            done=0
+            for f in as_completed(fut):
+                r=f.result(); results.append(r); done+=1
+                state="cache" if r.get("reused",False) else "computed"
+                print(f"  completed chunk {r['chunk']:05d} ({done}/{len(jobs)}; {state})",flush=True)
     stat=pd.DataFrame(results).sort_values("chunk")
     stat.to_csv(out/"03_chunk_status.csv",index=False)
     print(stat.to_string(index=False))
@@ -685,6 +773,11 @@ def main():
     sfdiag=shared_structure_function_diagnostic(raw,harm)
     sfdiag.to_csv(out/"08_shared_rosenbluth_structure_function_diagnostic.csv",index=False)
 
+    prod=None
+    if a.all:
+        prod=write_production_products(out,raw,harm,corr_phi,corr_harm,sfdiag,
+                                       stat,jobs,a,sif,project,shared)
+
     print(f"\nParsed {len(raw)} finite PARTONS results.")
     print("Units reported by PARTONS:",", ".join(sorted(units)))
     print("Max phi-harmonic closure residual:",
@@ -697,6 +790,9 @@ def main():
         print("Shared-point Rosenbluth diagnostic: 08_shared_rosenbluth_structure_function_diagnostic.csv")
     else:
         print(f"\nWrote complete public-observable GK grid to {out}")
+        print(f"Durable reusable production product: {prod}")
+        print(f"  irreducible model grid: {prod/'gk_pi0_model_grid.csv'}")
+        print(f"  provenance metadata   : {prod/'metadata.json'}")
         print("This file deliberately does NOT yet label the harmonic coefficients")
         print("as sigma_T/L/TT/LT; that conversion will be made only after the")
         print("PARTONS electroproduction/reduced-cross-section normalization is verified.")
