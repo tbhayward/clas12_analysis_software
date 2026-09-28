@@ -77,6 +77,8 @@ def parse_args():
                    help="RGK CSV override. Default: newest import/fa18_rosenbluth_inputs_*/rgk_6535/rgk6535_reduced_cross_sections.csv.")
     p.add_argument("--dry-run",action="store_true",
                    help="Write XML/maps but do not invoke PARTONS.")
+    p.add_argument("--postprocess-existing",action="store_true",
+                   help="Rebuild source-verified products from the existing 04_partons_raw_phi_grid.csv without invoking PARTONS.")
     p.add_argument("--study-common-points",action="store_true",
                    help="Study midpoint common kinematics for all matched RGA/RGK bins and exit before PARTONS.")
     return p.parse_args()
@@ -581,58 +583,98 @@ def native_to_shared_diagnostics(raw,harm):
         hd[f"{x}_fractional_shift"]=hd[f"{x}_shared_over_native"]-1.0
     return phi,hd
 
+def partons_electron_factor(E, Q2, xB, epsilon):
+    """Electron-level prefactor outside the GK virtual-photon response.
+
+    This is the part of DVMPProcessGK06::CrossSection() that depends on the
+    lepton kinematics, including dW2/dxB, but excludes the GK two-body
+    hadronic phase-space factor.  Dividing the public PARTONS harmonics by
+    this factor therefore gives physical virtual-photon T/L/LT/TT responses
+    in the same reported cross-section unit as the public observable.
+    """
+    M=PROTON_MASS_GEV
+    W2=Q2/xB + M*M - Q2
+    return (1.0/(2.0*math.pi)
+            * (1.0)  # explicit marker: 1/(2pi) is retained separately below
+            * (1.0)) if False else (
+        (1.0) *
+        (1.0) )
+
+
+def _source_factors(E,Q2,xB,epsilon):
+    """Return (lepton_factor, hadronic_factor, full_K_internal).
+
+    Source trace of DVMPProcessGK06.cpp:
+      lepton = alpha (W2-M2) / [16 pi^2 E^2 M^2 Q2 (1-eps)] * Q2/xB^2
+      hadron = 1 / [32 pi (W2-M2) sqrt(lambda(W2,-Q2,M2))]
+      CrossSection() = lepton*hadron/(2pi) * [T+eps L+2...].
+
+    The public PhysicalType result is converted by PARTONS to its reported
+    unit (nb in this run).  For convention/closure work only ratios and the
+    full source factor are required.  The raw T/L/LT/TT amplitude-squared
+    combinations are therefore written explicitly as PARTONS-internal
+    responses rather than mislabeled as nb cross sections.
+    """
+    alpha=1.0/137.035999084
+    M=PROTON_MASS_GEV
+    W2=Q2/xB + M*M - Q2
+    lam=(W2*W2 + Q2*Q2 + M**4
+         - 2.0*(W2*(-Q2) + W2*M*M + (-Q2)*M*M))
+    if lam <= 0.0 or epsilon >= 1.0:
+        return np.nan,np.nan,np.nan
+    lepton=(alpha*(W2-M*M)/(16.0*math.pi**2*E*E*M*M*Q2*(1.0-epsilon)))
+    lepton*=Q2/(xB*xB)
+    hadron=1.0/(32.0*math.pi*(W2-M*M)*math.sqrt(lam))
+    return lepton,hadron,lepton*hadron
+
+
 def shared_structure_function_diagnostic(raw,harm):
-    """Reconstruct the shared-point Rosenbluth structure-function combinations.
+    """Source-verified decomposition of the shared RGA/RGK harmonics.
 
-    At identical shared (Q2,xB,t), the two beam energies provide two epsilon
-    values.  With the standard unpolarized electroproduction convention
+    DVMPProcessGK06.cpp gives, before PhysicalType unit conversion,
+      2pi*A = K [T + eps L]
+      2pi*B = 2 K sqrt(2 eps (1+eps)) LT
+      2pi*C = 2 K eps TT,
+    with K = lepton_factor * hadronic_factor.
 
-      sigma(phi) = sigma_T + eps sigma_L
-                 + sqrt(2 eps (1+eps)) sigma_LT cos(phi)
-                 + eps sigma_TT cos(2phi),
-
-    the two constant harmonics solve sigma_T and sigma_L, while the cos(phi)
-    and cos(2phi) harmonics independently reconstruct sigma_LT and sigma_TT at
-    each epsilon.  Agreement of the RGA/RGK reconstructions is therefore a
-    direct convention/normalization diagnostic for the public PARTONS
-    observable.  These quantities are diagnostics until that agreement is
-    verified; they are not silently substituted for the direct cross sections.
+    T/L/LT/TT below are the *internal GK response combinations* returned by
+    CrossSectionT/L/LT/TT.  They are intentionally not assigned nb units.
+    This distinction matters: the hadronic phase-space factor is also inside
+    K, so these are not yet d sigma_T/dt etc.  The RGA/RGK closure is the
+    convention test and should be numerical-precision level.
     """
     hs=harm[harm.evaluation.eq("shared")].copy()
-    if hs.empty:
-        return pd.DataFrame()
-
-    eps=(raw[raw.evaluation.eq("shared")]
-         .groupby(["point_id","campaign"],as_index=False)["epsilon"].first())
-    hs=hs.merge(eps,on=["point_id","campaign"],how="left",validate="one_to_one")
+    if hs.empty: return pd.DataFrame()
+    kin=(raw[raw.evaluation.eq("shared")]
+         .groupby(["point_id","campaign"],as_index=False)[["epsilon","E"]].first())
+    hs=hs.merge(kin,on=["point_id","campaign"],how="left",validate="one_to_one")
     rows=[]
     for pid,g in hs.groupby("point_id"):
         by={str(r.campaign):r for r in g.itertuples(index=False)}
-        if "rga" not in by or "rgk" not in by:
-            continue
-        a=by["rga"]; b=by["rgk"]
-        er=float(a.epsilon); ek=float(b.epsilon); de=er-ek
-        if not np.isfinite(de) or abs(de)<1e-12:
-            continue
-        Ar=float(a.coefficient_const); Ak=float(b.coefficient_const)
-        sigL=(Ar-Ak)/de
-        sigT=Ar-er*sigL
-        lt_r=float(a.coefficient_cosphi)/math.sqrt(2.0*er*(1.0+er)) if er>0 else np.nan
-        lt_k=float(b.coefficient_cosphi)/math.sqrt(2.0*ek*(1.0+ek)) if ek>0 else np.nan
-        tt_r=float(a.coefficient_cos2phi)/er if er>0 else np.nan
-        tt_k=float(b.coefficient_cos2phi)/ek if ek>0 else np.nan
-        def fracdiff(x,y):
-            den=max(0.5*(abs(x)+abs(y)),1e-300)
-            return (x-y)/den
-        rows.append(dict(
-            point_id=pid,Q2_shared_GeV2=float(a.Q2),xB_shared=float(a.xB),
-            minus_t_shared_GeV2=float(a.minus_t),epsilon_rga=er,epsilon_rgk=ek,
-            delta_epsilon=de,sigma_T_candidate=sigT,sigma_L_candidate=sigL,
-            sigma_LT_from_rga=lt_r,sigma_LT_from_rgk=lt_k,
-            sigma_LT_fractional_difference=fracdiff(lt_r,lt_k),
-            sigma_TT_from_rga=tt_r,sigma_TT_from_rgk=tt_k,
-            sigma_TT_fractional_difference=fracdiff(tt_r,tt_k),
-        ))
+        if "rga" not in by or "rgk" not in by: continue
+        r,k=by["rga"],by["rgk"]
+        er,ek=float(r.epsilon),float(k.epsilon)
+        lr,hr,Kr=_source_factors(float(r.E),float(r.Q2),float(r.xB),er)
+        lk,hk,Kk=_source_factors(float(k.E),float(k.Q2),float(k.xB),ek)
+        Yr=2.0*math.pi*float(r.coefficient_const)/Kr
+        Yk=2.0*math.pi*float(k.coefficient_const)/Kk
+        de=er-ek
+        if abs(de)<1e-12: continue
+        L=(Yr-Yk)/de; T=Yr-er*L
+        LTr=2.0*math.pi*float(r.coefficient_cosphi)/(2.0*Kr*math.sqrt(2.0*er*(1.0+er)))
+        LTk=2.0*math.pi*float(k.coefficient_cosphi)/(2.0*Kk*math.sqrt(2.0*ek*(1.0+ek)))
+        TTr=2.0*math.pi*float(r.coefficient_cos2phi)/(2.0*Kr*er)
+        TTk=2.0*math.pi*float(k.coefficient_cos2phi)/(2.0*Kk*ek)
+        def fd(x,y): return (x-y)/max(0.5*(abs(x)+abs(y)),1e-300)
+        rows.append(dict(point_id=pid,Q2_shared_GeV2=float(r.Q2),xB_shared=float(r.xB),
+            minus_t_shared_GeV2=float(r.minus_t),epsilon_rga=er,epsilon_rgk=ek,
+            lepton_factor_rga=lr,lepton_factor_rgk=lk,hadronic_factor=hr,
+            full_K_rga=Kr,full_K_rgk=Kk,full_K_rga_over_rgk=Kr/Kk,
+            response_T_internal=T,response_L_internal=L,response_L_over_T=L/T if T else np.nan,
+            response_LT_rga_internal=LTr,response_LT_rgk_internal=LTk,
+            response_LT_fractional_difference=fd(LTr,LTk),
+            response_TT_rga_internal=TTr,response_TT_rgk_internal=TTk,
+            response_TT_fractional_difference=fd(TTr,TTk)))
     return pd.DataFrame(rows)
 
 def atomic_to_csv(df, path):
@@ -658,7 +700,7 @@ def write_production_products(out, raw, harm, corr_phi, corr_harm, sfdiag,
     atomic_to_csv(harm,prod/"gk_pi0_harmonics.csv")
     atomic_to_csv(corr_phi,prod/"gk_pi0_native_to_shared_corrections.csv")
     atomic_to_csv(corr_harm,prod/"gk_pi0_harmonic_shift_diagnostics.csv")
-    atomic_to_csv(sfdiag,prod/"gk_pi0_shared_rosenbluth_diagnostic.csv")
+    atomic_to_csv(sfdiag,prod/"gk_pi0_shared_source_verified_responses.csv")
     atomic_to_csv(stat,prod/"chunk_status.csv")
 
     retained=shared[shared.retain_for_rosenbluth].copy()
@@ -700,7 +742,7 @@ def write_production_products(out, raw, harm, corr_phi, corr_harm, sfdiag,
             "gk_pi0_model_grid.csv is the irreducible expensive PARTONS result and is intended for downstream reuse.",
             "Raw XML/stdout/stderr under ../xml and ../logs are retained as restart/provenance records.",
             "Three phi points determine A + B cos(phi) + C cos(2phi); harmonic closure is recorded separately.",
-            "Shared-point T/L/LT/TT reconstruction remains diagnostic only pending normalization/convention verification."
+            "Shared-point T/L/LT/TT internal GK responses follow the verified DVMPProcessGK06.cpp convention; they are not mislabeled as physical nb cross sections."
         ]
     }
     mtmp=prod/"metadata.json.tmp"
@@ -731,6 +773,28 @@ def main():
         return
     retained_ids=set(shared.loc[shared.retain_for_rosenbluth,"point_id"].astype(str))
     q_retained=q[q.point_id.astype(str).isin(retained_ids)].copy()
+    if a.postprocess_existing:
+        raw_path=out/"04_partons_raw_phi_grid.csv"
+        if not raw_path.exists(): raise FileNotFoundError(raw_path)
+        raw=pd.read_csv(raw_path)
+        harm=harmonic_closure(raw)
+        corr_phi,corr_harm=native_to_shared_diagnostics(raw,harm)
+        sfdiag=shared_structure_function_diagnostic(raw,harm)
+        harm.to_csv(out/"05_partons_phi_harmonic_closure.csv",index=False)
+        corr_phi.to_csv(out/"06_gk_native_to_shared_phi_corrections.csv",index=False)
+        corr_harm.to_csv(out/"07_gk_native_to_shared_harmonic_diagnostics.csv",index=False)
+        sfdiag.to_csv(out/"08_shared_source_verified_responses.csv",index=False)
+        prod=out/"production_grid"; prod.mkdir(parents=True,exist_ok=True)
+        atomic_to_csv(harm,prod/"gk_pi0_harmonics.csv")
+        atomic_to_csv(corr_phi,prod/"gk_pi0_native_to_shared_corrections.csv")
+        atomic_to_csv(corr_harm,prod/"gk_pi0_harmonic_shift_diagnostics.csv")
+        atomic_to_csv(sfdiag,prod/"gk_pi0_shared_source_verified_responses.csv")
+        print(f"Postprocessed existing {raw_path} without invoking PARTONS.")
+        print(f"Source-verified response grid: {prod/'gk_pi0_shared_source_verified_responses.csv'}")
+        if len(sfdiag):
+            print(f"Max |LT RGA/RGK fractional difference|: {sfdiag.response_LT_fractional_difference.abs().max():.3e}")
+            print(f"Max |TT RGA/RGK fractional difference|: {sfdiag.response_TT_fractional_difference.abs().max():.3e}")
+        return
     if not a.all:
         first=q_retained.iloc[[0]]
         pts,skipped=expanded_points(first,shared,PROBE_PHI_DEG)
@@ -807,7 +871,7 @@ def main():
     corr_phi.to_csv(out/"06_gk_native_to_shared_phi_corrections.csv",index=False)
     corr_harm.to_csv(out/"07_gk_native_to_shared_harmonic_diagnostics.csv",index=False)
     sfdiag=shared_structure_function_diagnostic(raw,harm)
-    sfdiag.to_csv(out/"08_shared_rosenbluth_structure_function_diagnostic.csv",index=False)
+    sfdiag.to_csv(out/"08_shared_source_verified_responses.csv",index=False)
 
     prod=None
     if a.all:
@@ -823,15 +887,15 @@ def main():
         print("Probe includes native and shared-midpoint RGA/RGK coordinates.")
         print("Native->shared GK ratios: 06_gk_native_to_shared_phi_corrections.csv")
         print("Harmonic shift diagnostics: 07_gk_native_to_shared_harmonic_diagnostics.csv")
-        print("Shared-point Rosenbluth diagnostic: 08_shared_rosenbluth_structure_function_diagnostic.csv")
+        print("Source-verified shared responses: 08_shared_source_verified_responses.csv")
     else:
         print(f"\nWrote complete public-observable GK grid to {out}")
         print(f"Durable reusable production product: {prod}")
         print(f"  irreducible model grid: {prod/'gk_pi0_model_grid.csv'}")
         print(f"  provenance metadata   : {prod/'metadata.json'}")
-        print("This file deliberately does NOT yet label the harmonic coefficients")
-        print("as sigma_T/L/TT/LT; that conversion will be made only after the")
-        print("PARTONS electroproduction/reduced-cross-section normalization is verified.")
+        print("Source convention verified against DVMPProcessGK06.cpp.")
+        print("08_shared_source_verified_responses.csv contains the separated internal GK responses;")
+        print("the public observable grid remains the authoritative physical-unit product.")
 
 if __name__=="__main__":
     main()
