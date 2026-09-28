@@ -104,6 +104,7 @@ def infer_columns(df: pd.DataFrame) -> dict[str, str]:
             "cross_section_nb",
             "sigma",
             "partons_result",
+            "partons_value",
             "value",
         ],
     }
