@@ -20,6 +20,8 @@ It does NOT modify the Stage-3 production grid or rerun the expensive grid.
 from __future__ import annotations
 
 import argparse
+import os
+import shutil
 import json
 import math
 import re
@@ -30,6 +32,9 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+
+DEFAULT_PROJECT = Path("/work/clas12/thayward/partons/partons-example")
+DEFAULT_EXECUTABLE = "./bin/PARTONS_example"
 
 DEFAULT_STAGE3 = Path(
     "/u/home/thayward/clas12_analysis_software/analysis_scripts/"
@@ -57,23 +62,72 @@ def find_first_existing(base: Path, candidates: list[str]) -> Path:
     )
 
 
-def find_partons_executable(explicit: str | None) -> str:
-    if explicit:
-        return explicit
+def find_sif(explicit: Path | None, here: Path, project: Path) -> Path:
+    if explicit is not None:
+        return explicit.expanduser().resolve()
     #endif
 
-    import shutil
-
-    for name in ("partons", "PARTONS"):
-        found = shutil.which(name)
-        if found:
-            return found
+    candidates = [
+        here / "partons_v4.sif",
+        project / "partons_v4.sif",
+        project.parent / "partons_v4.sif",
+        Path("/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/external_scripts/partons_v4.sif"),
+        Path("/work/clas12/thayward/partons/partons_v4.sif"),
+        Path.cwd() / "partons_v4.sif",
+    ]
+    for p in candidates:
+        if p.exists():
+            return p.resolve()
         #endif
     #endfor
 
-    raise RuntimeError(
-        "Could not find the PARTONS executable in PATH. "
-        "Pass it explicitly with --partons /path/to/PARTONS."
+    raise FileNotFoundError(
+        "Could not locate partons_v4.sif. Searched:\n  "
+        + "\n  ".join(str(x) for x in candidates)
+    )
+
+
+def preflight_partons(sif: Path, project: Path, executable: str) -> None:
+    exe = project / executable.removeprefix("./")
+    bad = []
+    if shutil.which("apptainer") is None:
+        bad.append("apptainer not on PATH")
+    #endif
+    if not sif.exists():
+        bad.append(f"SIF missing: {sif}")
+    #endif
+    if not project.exists():
+        bad.append(f"project missing: {project}")
+    #endif
+    if not exe.exists():
+        bad.append(f"executable missing: {exe}")
+    elif not os.access(exe, os.X_OK):
+        bad.append(f"executable not executable: {exe}")
+    #endif
+    if bad:
+        raise RuntimeError("PARTONS preflight failed:\n  - " + "\n  - ".join(bad))
+    #endif
+
+
+def run_partons_xml(xml_path: Path, sif: Path, project: Path, executable: str) -> subprocess.CompletedProcess:
+    binds = [project.resolve(), xml_path.parent.resolve()]
+    cmd = ["apptainer", "exec"]
+    for b in binds:
+        cmd += ["--bind", f"{b}:{b}"]
+    #endfor
+    cmd += ["--pwd", str(project.resolve()), str(sif), executable, str(xml_path.resolve())]
+
+    env = os.environ.copy()
+    for key in ("OMP_NUM_THREADS", "OPENBLAS_NUM_THREADS", "MKL_NUM_THREADS", "NUMEXPR_NUM_THREADS"):
+        env[key] = "1"
+    #endfor
+
+    return subprocess.run(
+        cmd,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE,
+        text=True,
+        env=env,
     )
 
 
@@ -351,7 +405,9 @@ def main() -> int:
         description="Verify the PARTONS DVMP phi normalization convention."
     )
     ap.add_argument("--stage3", type=Path, default=DEFAULT_STAGE3)
-    ap.add_argument("--partons", default=None, help="PARTONS executable path.")
+    ap.add_argument("--project", type=Path, default=DEFAULT_PROJECT)
+    ap.add_argument("--executable", default=DEFAULT_EXECUTABLE)
+    ap.add_argument("--sif", type=Path, default=None)
     ap.add_argument("--npoints", type=int, default=3)
     ap.add_argument(
         "--output",
@@ -469,21 +525,25 @@ def main() -> int:
         )
     #endif
 
-    partons = find_partons_executable(args.partons)
+    project = args.project.expanduser().resolve()
+    sif = find_sif(args.sif, Path(__file__).resolve().parent, project)
+    preflight_partons(sif, project, args.executable)
+
     log_path = outdir / "03_partons_phi_integrated.log"
+    err_path = outdir / "03_partons_phi_integrated.stderr.log"
 
     print()
-    print(f"Running: {partons} {xml_path}")
-    proc = subprocess.run(
-        [partons, str(xml_path)],
-        stdout=subprocess.PIPE,
-        stderr=subprocess.STDOUT,
-        text=True,
-    )
+    print(f"PARTONS project   : {project}")
+    print(f"PARTONS SIF       : {sif}")
+    print(f"PARTONS executable: {args.executable}")
+    print("Running through Apptainer using the same configuration as Stage 3...")
+    proc = run_partons_xml(xml_path, sif, project, args.executable)
     log_path.write_text(proc.stdout)
+    err_path.write_text(proc.stderr)
 
     print(f"PARTONS exit code : {proc.returncode}")
-    print(f"PARTONS log       : {log_path}")
+    print(f"PARTONS stdout    : {log_path}")
+    print(f"PARTONS stderr    : {err_path}")
 
     results = parse_results(proc.stdout)
     if proc.returncode != 0:
