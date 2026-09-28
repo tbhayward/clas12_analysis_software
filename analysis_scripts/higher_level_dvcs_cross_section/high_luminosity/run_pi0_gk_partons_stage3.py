@@ -645,8 +645,11 @@ def shared_structure_function_diagnostic(raw,harm):
     """
     hs=harm[harm.evaluation.eq("shared")].copy()
     if hs.empty: return pd.DataFrame()
+    # harmonic_closure() already carries E, Q2, xB and -t.  Merge only
+    # epsilon from the raw grid; merging E a second time would create E_x/E_y
+    # and break attribute access through itertuples().
     kin=(raw[raw.evaluation.eq("shared")]
-         .groupby(["point_id","campaign"],as_index=False)[["epsilon","E"]].first())
+         .groupby(["point_id","campaign"],as_index=False)[["epsilon"]].first())
     hs=hs.merge(kin,on=["point_id","campaign"],how="left",validate="one_to_one")
     rows=[]
     for pid,g in hs.groupby("point_id"):
