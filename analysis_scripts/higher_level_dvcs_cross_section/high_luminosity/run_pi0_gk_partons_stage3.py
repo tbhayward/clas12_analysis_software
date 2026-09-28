@@ -47,6 +47,8 @@ DEFAULT_MESON_VALUE = "pi0"
 DEFAULT_PHI_DEG = (0.0, 90.0, 180.0)
 PROBE_PHI_DEG = DEFAULT_PHI_DEG
 PROTON_MASS_GEV = 0.9382720813
+PI0_MASS_GEV = 0.1349768
+KINEMATIC_T_TOL_GEV2 = 1.0e-10
 
 RESULT_RE = re.compile(
     r"Result:\s*([+-]?(?:[\d,]+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?)\s*\[([^\]]+)\]"
@@ -309,6 +311,33 @@ def virtual_photon_kinematics(Q2, xB, E):
     eps=(1.0-y-0.25*gamma2*y*y)/(1.0-y+0.5*y*y+0.25*gamma2*y*y)
     return y,eps
 
+def dvmp_minus_t_limits(Q2, xB, meson_mass=PI0_MASS_GEV):
+    """Return the exact physical (-t)_min and (-t)_max for gamma* p -> meson p.
+
+    The limits are evaluated in the gamma*-proton CM frame.  This catches
+    points that satisfy ordinary DIS y/epsilon requirements but lie just
+    outside the exclusive two-body DVMP phase space.  PARTONS otherwise
+    reports NaN for such points.
+    """
+    Q2=float(Q2); xB=float(xB); m=float(meson_mass); M=PROTON_MASS_GEV
+    if not (Q2 > 0.0 and 0.0 < xB < 1.0):
+        return np.nan,np.nan
+    W2=M*M + Q2*(1.0/xB - 1.0)
+    if W2 <= (M+m)**2:
+        return np.nan,np.nan
+    W=math.sqrt(W2)
+    q0=(W2-M*M-Q2)/(2.0*W)
+    qmag=math.sqrt(max(q0*q0+Q2,0.0))
+    Em=(W2+m*m-M*M)/(2.0*W)
+    pm2=Em*Em-m*m
+    if pm2 < 0.0:
+        return np.nan,np.nan
+    pm=math.sqrt(max(pm2,0.0))
+    # cos(theta)=+1 is forward production and gives t closest to zero.
+    t_forward=-Q2+m*m-2.0*(q0*Em-qmag*pm)
+    t_backward=-Q2+m*m-2.0*(q0*Em+qmag*pm)
+    return -t_forward,-t_backward
+
 def study_common_points(q:pd.DataFrame, out:Path) -> pd.DataFrame:
     """Build and diagnose the symmetric midpoint shared hadronic coordinate."""
     d=q.copy()
@@ -401,13 +430,20 @@ def expanded_points(q, shared_lookup, phi_grid=DEFAULT_PHI_DEG):
                 else:
                     Q2=float(sh["Q2_shared_GeV2"]); xB=float(sh["xB_shared"]); mt=float(sh["minus_t_shared_GeV2"])
                     y=float(sh[f"y_{camp}_at_shared"]); eps=float(sh[f"epsilon_{camp}_at_shared"])
+                mt_min,mt_max=dvmp_minus_t_limits(Q2,xB)
                 base=dict(point_id=r.point_id,campaign=camp,evaluation=evaluation,E=E,y=y,epsilon=eps,
-                    Q2=Q2,xB=xB,minus_t=mt,
+                    Q2=Q2,xB=xB,minus_t=mt,minus_t_physical_min=mt_min,minus_t_physical_max=mt_max,
                     Q2_shared=float(sh["Q2_shared_GeV2"]),xB_shared=float(sh["xB_shared"]),
                     minus_t_shared=float(sh["minus_t_shared_GeV2"]),
                     delta_epsilon_shared=float(sh["delta_epsilon_shared"]))
                 if not (0.0 < y < 1.0):
                     skipped.append({**base,"reason":f"{evaluation} coordinate has y outside (0,1)"}); continue
+                if not (np.isfinite(mt_min) and np.isfinite(mt_max)):
+                    skipped.append({**base,"reason":f"{evaluation} coordinate is below pi0-production threshold"}); continue
+                if mt < mt_min-KINEMATIC_T_TOL_GEV2 or mt > mt_max+KINEMATIC_T_TOL_GEV2:
+                    skipped.append({**base,"reason":
+                        f"{evaluation} coordinate has -t={mt:.9g} GeV^2 outside physical pi0 DVMP range "
+                        f"[{mt_min:.9g}, {mt_max:.9g}] GeV^2"}); continue
                 for phi in phi_grid: rows.append({**base,"phi_deg":float(phi)})
     out=pd.DataFrame(rows)
     if len(out): out.insert(0,"eval_id",[f"E{i:06d}" for i in range(len(out))])
@@ -710,9 +746,9 @@ def main():
     pts.to_csv(out/"01_partons_evaluation_points.csv",index=False)
     skipped.to_csv(out/"01b_partons_skipped_unphysical.csv",index=False)
     if len(skipped):
-        print(f"  prefilter : skipped {len(skipped)} point/campaign combination(s) with y outside (0,1)")
+        print(f"  prefilter : skipped {len(skipped)} unphysical point/campaign/evaluation combination(s)")
         for r in skipped.head(8).itertuples(index=False):
-            print(f"              {r.point_id} {r.campaign}: E={r.E:.3f} GeV, Q2={r.Q2:.4g} GeV^2, xB={r.xB:.4g}, y={r.y:.4f}")
+            print(f"              {r.point_id} {r.campaign}/{r.evaluation}: E={r.E:.3f} GeV, Q2={r.Q2:.4g} GeV^2, xB={r.xB:.4g}, -t={r.minus_t:.4g} GeV^2; {r.reason}")
         if len(skipped)>8: print(f"              ... and {len(skipped)-8} more (see 01b_partons_skipped_unphysical.csv)")
     print(f"  meson XML : {a.meson_value!r} (MesonType::fromString representation)")
     jobs=write_chunks(pts,out,a.chunk_size,a.meson_value)
