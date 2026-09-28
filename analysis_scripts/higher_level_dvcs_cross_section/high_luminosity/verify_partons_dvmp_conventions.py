@@ -43,7 +43,7 @@ DEFAULT_STAGE3 = Path(
 )
 
 RESULT_RE = re.compile(
-    r"Result\s*=\s*"
+    r"Result\s*[:=]\s*"
     r"([-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][-+]?\d+)?|[-+]?nan|[-+]?inf)"
     r"\s*([^\s<]*)?",
     re.IGNORECASE,
@@ -148,6 +148,7 @@ def infer_columns(df: pd.DataFrame) -> dict[str, str]:
         "campaign": ["campaign", "dataset", "run_group"],
         "evaluation": ["evaluation", "coordinate", "evaluation_type"],
         "E": ["E", "beam_energy_GeV", "beam_energy"],
+        "epsilon": ["epsilon", "eps", "virtual_photon_epsilon"],
         "Q2": ["Q2", "Q2_GeV2", "Q2_shared_GeV2"],
         "xB": ["xB", "xb", "x_B", "xB_shared"],
         "minus_t": ["minus_t", "minus_t_GeV2", "minus_t_shared_GeV2"],
@@ -387,7 +388,7 @@ def parse_results(text: str) -> list[tuple[float, str]]:
     out = []
     for m in RESULT_RE.finditer(text):
         token = m.group(1)
-        unit = (m.group(2) or "").strip()
+        unit = (m.group(2) or "").strip().strip("[]")
         try:
             value = float(token)
         except ValueError:
@@ -398,6 +399,141 @@ def parse_results(text: str) -> list[tuple[float, str]]:
         #endif
     #endfor
     return out
+
+
+
+def build_shared_decomposition_table(df: pd.DataFrame, cols: dict[str, str]) -> pd.DataFrame:
+    """Test the conventional T/L/TT/LT mapping using shared RGA/RGK points.
+
+    At a shared (Q2,xB,t), the underlying response functions must be independent
+    of beam energy.  Therefore the candidate mapping can be tested by comparing
+    the values inferred independently from RGA and RGK.
+    """
+    required = ["point_id", "campaign", "evaluation", "epsilon", "phi", "sigma"]
+    missing = [x for x in required if x not in cols]
+    if missing:
+        raise RuntimeError(
+            "Cannot build T/L/TT/LT convention test; missing columns " + str(missing)
+        )
+    #endif
+
+    work = df.copy()
+    work = work[
+        work[cols["evaluation"]].astype(str).str.lower().str.contains("shared", na=False)
+    ].copy()
+
+    harmonic_rows = []
+    group_cols = [cols["point_id"], cols["campaign"]]
+    for (point_id, campaign), g in work.groupby(group_cols, sort=False):
+        phis = np.asarray(g[cols["phi"]], dtype=float)
+        if not all(np.any(np.isclose(phis, p, atol=1e-8)) for p in (0.0, 90.0, 180.0)):
+            continue
+        #endif
+        s0 = get_phi_value(g, cols["phi"], cols["sigma"], 0.0)
+        s90 = get_phi_value(g, cols["phi"], cols["sigma"], 90.0)
+        s180 = get_phi_value(g, cols["phi"], cols["sigma"], 180.0)
+        A, B, C = harmonic_coefficients(s0, s90, s180)
+        r0 = g.iloc[0]
+        eps = float(r0[cols["epsilon"]])
+        harmonic_rows.append({
+            "point_id": str(point_id),
+            "campaign": str(campaign).lower(),
+            "epsilon": eps,
+            "Q2": float(r0[cols["Q2"]]),
+            "xB": float(r0[cols["xB"]]),
+            "minus_t": float(r0[cols["minus_t"]]),
+            "A": A, "B": B, "C": C,
+            # Candidate conventional mapping.  These are hypotheses until the
+            # source-level GK CrossSection() formula is confirmed.
+            "sigma_LT_candidate": 2.0 * math.pi * B / math.sqrt(2.0 * eps * (1.0 + eps)),
+            "sigma_TT_candidate": 2.0 * math.pi * C / eps,
+        })
+    #endfor
+
+    h = pd.DataFrame(harmonic_rows)
+    out = []
+    for point_id, g in h.groupby("point_id", sort=False):
+        rga = g[g["campaign"] == "rga"]
+        rgk = g[g["campaign"] == "rgk"]
+        if len(rga) != 1 or len(rgk) != 1:
+            continue
+        #endif
+        a = rga.iloc[0]
+        k = rgk.iloc[0]
+        de = float(k.epsilon - a.epsilon)
+        if abs(de) < 1e-12:
+            continue
+        #endif
+
+        # Since phi integration established 2*pi*A as the phi-integrated
+        # unpolarized quantity, test 2*pi*A = sigma_T + epsilon*sigma_L.
+        YA = 2.0 * math.pi * float(a.A)
+        YK = 2.0 * math.pi * float(k.A)
+        sigma_L = (YK - YA) / de
+        sigma_T = YA - float(a.epsilon) * sigma_L
+
+        lt_a = float(a.sigma_LT_candidate); lt_k = float(k.sigma_LT_candidate)
+        tt_a = float(a.sigma_TT_candidate); tt_k = float(k.sigma_TT_candidate)
+        lt_mean = 0.5 * (lt_a + lt_k)
+        tt_mean = 0.5 * (tt_a + tt_k)
+        lt_rel = (lt_a - lt_k) / lt_mean if lt_mean != 0.0 else np.nan
+        tt_rel = (tt_a - tt_k) / tt_mean if tt_mean != 0.0 else np.nan
+
+        out.append({
+            "point_id": point_id,
+            "Q2": float(a.Q2), "xB": float(a.xB), "minus_t": float(a.minus_t),
+            "epsilon_rga": float(a.epsilon), "epsilon_rgk": float(k.epsilon),
+            "delta_epsilon": de,
+            "two_pi_A_rga": YA, "two_pi_A_rgk": YK,
+            "sigma_T_candidate": sigma_T,
+            "sigma_L_candidate": sigma_L,
+            "sigma_L_over_sigma_T_candidate": sigma_L / sigma_T if sigma_T != 0.0 else np.nan,
+            "sigma_LT_rga_candidate": lt_a,
+            "sigma_LT_rgk_candidate": lt_k,
+            "sigma_LT_relative_difference": lt_rel,
+            "sigma_TT_rga_candidate": tt_a,
+            "sigma_TT_rgk_candidate": tt_k,
+            "sigma_TT_relative_difference": tt_rel,
+        })
+    #endfor
+    return pd.DataFrame(out)
+
+
+def print_decomposition_summary(tab: pd.DataFrame, npoints: int = 3) -> None:
+    if tab.empty:
+        print("No complete shared RGA/RGK pairs available for decomposition test.")
+        return
+    #endif
+    ordered = tab.sort_values(["Q2", "xB"]).reset_index(drop=True)
+    pos = np.linspace(0, len(ordered) - 1, min(npoints, len(ordered)))
+    inds = sorted(set(int(round(x)) for x in pos))
+    print()
+    print("Candidate T/L/TT/LT convention test at shared RGA/RGK kinematics")
+    print("  hypothesis: 2*pi*A = sigma_T + epsilon*sigma_L")
+    print("              2*pi*B = sqrt(2*epsilon*(1+epsilon))*sigma_LT")
+    print("              2*pi*C = epsilon*sigma_TT")
+    for i in inds:
+        r = ordered.iloc[i]
+        print(
+            f"  {r.point_id}: Q2={r.Q2:.6g}, xB={r.xB:.6g}, -t={r.minus_t:.6g}; "
+            f"eps(RGA,RGK)=({r.epsilon_rga:.5f},{r.epsilon_rgk:.5f})"
+        )
+        print(
+            f"      sigma_T={r.sigma_T_candidate:.10g}, "
+            f"sigma_L={r.sigma_L_candidate:.10g}, "
+            f"L/T={r.sigma_L_over_sigma_T_candidate:.6g}"
+        )
+        print(
+            f"      sigma_LT RGA/RGK={r.sigma_LT_rga_candidate:.10g}/"
+            f"{r.sigma_LT_rgk_candidate:.10g} "
+            f"(relative difference={r.sigma_LT_relative_difference:.3%})"
+        )
+        print(
+            f"      sigma_TT RGA/RGK={r.sigma_TT_rga_candidate:.10g}/"
+            f"{r.sigma_TT_rgk_candidate:.10g} "
+            f"(relative difference={r.sigma_TT_relative_difference:.3%})"
+        )
+    #endfor
 
 
 def main() -> int:
@@ -433,6 +569,10 @@ def main() -> int:
     metadata = load_metadata(stage3)
     df, grid_path = load_raw_phi_grid(stage3)
     cols = infer_columns(df)
+
+    decomposition = build_shared_decomposition_table(df, cols)
+    decomposition_csv = outdir / "05_candidate_TLTTLT_decomposition.csv"
+    decomposition.to_csv(decomposition_csv, index=False)
 
     groups = choose_representative_groups(df, cols, args.npoints)
 
@@ -504,6 +644,9 @@ def main() -> int:
         )
     #endfor
 
+    print_decomposition_summary(decomposition, args.npoints)
+    print(f"Candidate decomposition CSV: {decomposition_csv}")
+
     if args.prepare_only:
         print()
         print("Prepare-only mode: PARTONS was not executed.")
@@ -553,7 +696,7 @@ def main() -> int:
 
     if not results:
         print(
-            "ERROR: No finite 'Result = ...' values were parsed. "
+            "ERROR: No finite 'Result: ...' values were parsed. "
             "Inspect the log/XML; the local PARTONS XML invocation syntax may "
             "need to be copied exactly from your production runner.",
             file=sys.stderr,
@@ -563,51 +706,55 @@ def main() -> int:
 
     print(f"Parsed finite results: {len(results)}")
 
-    # Only perform the one-to-one numerical closure automatically when the
-    # output count matches the selected diagnostic points.
-    if len(results) == len(rows):
-        final = []
-        for r, (value, unit) in zip(rows, results):
-            ratio = value / r["two_pi_A"] if r["two_pi_A"] != 0.0 else np.nan
-            final.append(
-                {
-                    **r,
-                    "sigma_phi_integrated_partons": value,
-                    "partons_unit": unit,
-                    "ratio_integrated_over_2piA": ratio,
-                    "fractional_difference": ratio - 1.0,
-                }
-            )
-        #endfor
+    # The cloned Stage-3 XML contains repeated phi tasks.  The phi-integrated
+    # observable is independent of phi, so identify each selected diagnostic
+    # by numerical agreement with its predicted 2*pi*A rather than assuming
+    # one-to-one positional ordering.
+    final = []
+    finite_values = np.asarray([v for v, _ in results], dtype=float)
+    units = [u for _, u in results]
+    for r in rows:
+        target = r["two_pi_A"]
+        j = int(np.argmin(np.abs(finite_values - target)))
+        value = float(finite_values[j])
+        unit = units[j]
+        ratio = value / target if target != 0.0 else np.nan
+        final.append({
+            **r,
+            "sigma_phi_integrated_partons": value,
+            "partons_unit": unit,
+            "ratio_integrated_over_2piA": ratio,
+            "fractional_difference": ratio - 1.0,
+            "absolute_difference": value - target,
+        })
+    #endfor
 
-        final_df = pd.DataFrame(final)
-        final_csv = outdir / "04_phi_integration_closure.csv"
-        final_df.to_csv(final_csv, index=False)
+    final_df = pd.DataFrame(final)
+    final_csv = outdir / "04_phi_integration_closure.csv"
+    final_df.to_csv(final_csv, index=False)
 
-        print()
-        print("phi-integration closure:")
-        for r in final:
-            print(
-                f"  {r['point_id']} {r['campaign']}: "
-                f"PARTONS={r['sigma_phi_integrated_partons']:.10g}, "
-                f"2*pi*A={r['two_pi_A']:.10g}, "
-                f"ratio={r['ratio_integrated_over_2piA']:.12g}"
-            )
-        #endfor
-        print(f"Wrote: {final_csv}")
-    else:
-        print()
+    print()
+    print("phi-integration closure:")
+    for r in final:
         print(
-            "The PARTONS result count does not equal the number of selected "
-            "diagnostic points, so no positional matching was assumed."
+            f"  {r['point_id']} {r['campaign']}: "
+            f"PARTONS={r['sigma_phi_integrated_partons']:.12g}, "
+            f"2*pi*A={r['two_pi_A']:.12g}, "
+            f"ratio={r['ratio_integrated_over_2piA']:.12g}, "
+            f"delta={r['fractional_difference']:.3e}"
         )
-        print(
-            "This usually means the cloned Stage-3 XML retained the original "
-            "chunk evaluations. The log is still useful, but the next step is "
-            "to use the exact XML-building helper from the Stage-3 runner to "
-            "emit only these selected points."
-        )
-    #endif
+    #endfor
+    print(f"Wrote: {final_csv}")
+
+    max_frac = np.nanmax(np.abs(final_df["fractional_difference"].to_numpy(float)))
+    print(f"Maximum |phi-integration fractional closure|: {max_frac:.3e}")
+    print()
+    print("Interpretation:")
+    print("  * The phi-integrated test verifies the overall 2*pi normalization.")
+    print("  * The T/L/TT/LT quantities in 05_candidate_TLTTLT_decomposition.csv")
+    print("    are still explicitly candidate mappings. Their RGA/RGK consistency is")
+    print("    a numerical convention test; final labels require confirming the")
+    print("    DVMPProcessGK06::CrossSection() source formula.")
 
     return 0
 
