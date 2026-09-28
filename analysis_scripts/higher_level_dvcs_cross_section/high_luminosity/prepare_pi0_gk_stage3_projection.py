@@ -91,10 +91,33 @@ def model_merge(q,gkfile):
     miss=[c for c in REQ_GK if c not in g.columns]
     if miss: raise RuntimeError(f"GK results missing columns: {miss}")
     if g["point_id"].duplicated().any(): raise RuntimeError("Duplicate point_id in GK results")
-    m=q.merge(g[REQ_GK],on="point_id",how="left",validate="one_to_one")
+
+    # The validated PARTONS grid is authoritative for Stage-3 usability.  A
+    # common Stage-2 point can be absent because it fails the shared-y cut or
+    # because the requested (Q2,xB,t) point is outside physical pi0 phase space.
+    # Do not invent/interpolate a model value for such points: remove them from
+    # the projection and propagate that same selection through all downstream
+    # pseudo-data, covariance fits and Rosenbluth results.
+    supplied=set(g["point_id"].astype(str))
+    requested=set(q["point_id"].astype(str))
+    extra=sorted(supplied-requested)
+    if extra:
+        raise RuntimeError(f"GK results contain {len(extra)} unknown point_id values, e.g. {extra[:5]}")
+
+    excluded=q.loc[~q["point_id"].isin(supplied),"point_id"].tolist()
+    q_use=q[q["point_id"].isin(supplied)].copy()
+    m=q_use.merge(g[REQ_GK],on="point_id",how="left",validate="one_to_one")
+
     if m[REQ_GK[1:]].isna().any().any():
         bad=m.loc[m[REQ_GK[1:]].isna().any(axis=1),"point_id"].tolist()
-        raise RuntimeError(f"Missing GK results for {len(bad)} points, e.g. {bad[:5]}")
+        raise RuntimeError(f"Non-finite/missing GK structure functions for {len(bad)} retained points, e.g. {bad[:5]}")
+
+    print("[Stage-3 validated-model selection]")
+    print(f"  Stage-2 candidate points : {len(q)}")
+    print(f"  validated GK points      : {len(m)}")
+    print(f"  excluded from projection : {len(excluded)}")
+    if excluded:
+        print(f"  excluded point IDs       : {', '.join(excluded)}")
     return m
 
 def covariance_for_cell(g, corr, factor, model_y):
@@ -215,7 +238,7 @@ def figures(model,pseudo,hfits,lt,out):
         ax.errorbar(g.phi_deg,g.model_cross_section,yerr=g.projected_absolute_uncertainty,
                     fmt=mark,ms=4,capsize=2,label=camp.upper())
     ax.set_xlabel(r"$\phi$ (degrees)")
-    ax.set_ylabel(r"Model reduced cross section (model units)")
+    ax.set_ylabel(r"Reduced cross section (nb/GeV$^2$)")
     ax.set_title(fr"Representative blinded projection: $Q^2={rr.Q2_common_GeV2:.2f}$, "
                  fr"$x_B={rr.xB_common:.3f}$, $-t={rr.minus_t_common_GeV2:.2f}$")
     ax.legend(); fig.tight_layout()
@@ -250,8 +273,9 @@ cross sections for neutral-pion production at each common point.
 Required columns:
   point_id, sigma_T, sigma_L, sigma_TT, sigma_LT
 
-Keep one consistent cross-section unit for all four quantities. The Stage-3
-projection is homogeneous in that unit.
+The validated PARTONS/GK bridge supplies all four quantities in nb/GeV^2.
+Stage-3 uses only point_ids present in that validated model product; candidate
+points excluded by the shared-y or physical-phase-space selections are omitted.
 
 PARTONS documentation confirms DVMPProcessGK06 contains partial-cross-section
 methods CrossSectionT, CrossSectionL, CrossSectionTT, and CrossSectionLT.
