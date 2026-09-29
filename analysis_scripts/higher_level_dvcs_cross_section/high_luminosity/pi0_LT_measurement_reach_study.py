@@ -1054,13 +1054,14 @@ def plot_internal_LT_quality_xB3_medians(data, outfile):
     )
     g = g.loc[good].copy()
 
-    xb_min = float(data.xB.min())
-    xb_max = float(data.xB.max())
-    edges = np.linspace(xb_min, xb_max, 4)
-    # Include the upper endpoint in the fourth bin.
+    # Fixed xB ranges chosen to preserve the first three definitions from
+    # the earlier four-bin diagnostic, with the high-xB bin truncated at 0.52.
+    edges = np.array([0.075, 0.216, 0.357, 0.52], dtype=float)
     g["xB_group"] = pd.cut(
-        g.xB, bins=edges, include_lowest=True, right=True, labels=False
+        g.xB, bins=edges, include_lowest=True, right=False, labels=False
     )
+    # Include xB = 0.52 in the final bin if it occurs exactly.
+    g.loc[np.isclose(g.xB, edges[-1]), "xB_group"] = 2
 
     fig, ax = plt.subplots(figsize=(9.4, 6.2))
     markers = ["o", "s", "^"]
@@ -1079,11 +1080,12 @@ def plot_internal_LT_quality_xB3_medians(data, outfile):
               .sort_values("Q2_GeV2")
         )
 
-        label = (
-            rf"${edges[ib]:.3g} \leq x_B "
-            + (rf"\leq {edges[ib+1]:.3g}$" if ib == 2
-               else rf"< {edges[ib+1]:.3g}$")
-        )
+        if ib == 0:
+            label = r"$0.075 \leq x_B < 0.216$"
+        elif ib == 1:
+            label = r"$0.216 \leq x_B < 0.357$"
+        else:
+            label = r"$0.357 \leq x_B < 0.52$"
         ax.plot(
             summary.Q2_GeV2,
             summary.median_L_over_T,
