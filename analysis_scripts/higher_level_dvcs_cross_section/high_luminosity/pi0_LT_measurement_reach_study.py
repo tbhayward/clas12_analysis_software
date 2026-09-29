@@ -633,6 +633,27 @@ def _nearest_native_group(df, q2, xb, mt):
     raise RuntimeError("Internal error while matching a native measured cell.")
 
 
+def _fit_single_energy_harmonics(g):
+    """Fit U, LT, TT at one epsilon from measured phi-dependent cross sections."""
+    phi = np.deg2rad(g.phi_deg.to_numpy(float))
+    eps = g.epsilon.to_numpy(float)
+    A = np.column_stack([
+        np.ones(len(g)),
+        np.sqrt(2.0*eps*(1.0+eps))*np.cos(phi),
+        eps*np.cos(2.0*phi),
+    ])
+    y = g.sigma.to_numpy(float)
+    dy = g.delta_sigma.to_numpy(float)
+    W = 1.0/dy**2
+    normal = A.T @ (W[:, None]*A)
+    cov = np.linalg.pinv(normal)
+    theta = cov @ (A.T @ (W*y))
+    residual = y - A@theta
+    chi2 = float(np.sum((residual/dy)**2))
+    ndf = int(len(y)-len(theta))
+    return theta, cov, chi2, ndf
+
+
 def _joint_rosenbluth_fit(rga, rgk):
     """Fit T,L,LT,TT directly to measured phi-dependent cross sections at two epsilons."""
     frames = []
@@ -713,6 +734,32 @@ def build_internal_data_extraction(common, rga_file, rgk_file):
         T, L, LT, TT = map(float, theta)
         dT, dL, dLT, dTT = np.sqrt(np.clip(np.diag(cov), 0.0, np.inf))
 
+        # Independently fit the phi dependence at each beam energy.  The
+        # constant terms are the directly measured sigma_U values that provide
+        # the Rosenbluth numerator.
+        theta_rga, cov_rga, chi2_rga, ndf_rga = _fit_single_energy_harmonics(ga)
+        theta_rgk, cov_rgk, chi2_rgk, ndf_rgk = _fit_single_energy_harmonics(gk)
+        U_rga = float(theta_rga[0])
+        U_rgk = float(theta_rgk[0])
+        dU_rga = math.sqrt(max(float(cov_rga[0, 0]), 0.0))
+        dU_rgk = math.sqrt(max(float(cov_rgk[0, 0]), 0.0))
+        dU = U_rga - U_rgk
+        ddU = math.sqrt(dU_rga**2 + dU_rgk**2)
+        U_mean = 0.5*(U_rga + U_rgk)
+        frac_dU = dU/U_mean if U_mean != 0 else np.nan
+        d_frac_dU = (
+            math.sqrt(
+                (2.0*U_rgk/(U_rga+U_rgk)**2*dU_rga)**2 +
+                (2.0*U_rga/(U_rga+U_rgk)**2*dU_rgk)**2
+            )
+            if (U_rga + U_rgk) != 0 else np.nan
+        )
+        eps_rga = float(np.average(ga.epsilon))
+        eps_rgk = float(np.average(gk.epsilon))
+        deps = eps_rga - eps_rgk
+        L_from_U = dU/deps if deps != 0 else np.nan
+        dL_from_U = ddU/abs(deps) if deps != 0 else np.nan
+
         if T != 0:
             R = L/T
             grad = np.array([-L/T**2, 1.0/T, 0.0, 0.0])
@@ -726,11 +773,27 @@ def build_internal_data_extraction(common, rga_file, rgk_file):
             Q2_GeV2=q2,
             xB=xb,
             minus_t_GeV2=mt,
-            epsilon_rga=float(np.average(ga.epsilon)),
-            epsilon_rgk=float(np.average(gk.epsilon)),
-            delta_epsilon=float(np.average(ga.epsilon)-np.average(gk.epsilon)),
+            epsilon_rga=eps_rga,
+            epsilon_rgk=eps_rgk,
+            delta_epsilon=deps,
             n_phi_rga=len(ga),
             n_phi_rgk=len(gk),
+            sigma_U_rga=U_rga,
+            delta_sigma_U_rga=dU_rga,
+            sigma_U_rgk=U_rgk,
+            delta_sigma_U_rgk=dU_rgk,
+            delta_sigma_U=dU,
+            delta_delta_sigma_U=ddU,
+            fractional_delta_sigma_U=frac_dU,
+            delta_fractional_delta_sigma_U=d_frac_dU,
+            sigma_L_from_independent_U=L_from_U,
+            delta_sigma_L_from_independent_U=dL_from_U,
+            chi2_rga=chi2_rga,
+            ndf_rga=ndf_rga,
+            chi2_ndf_rga=chi2_rga/ndf_rga if ndf_rga > 0 else np.nan,
+            chi2_rgk=chi2_rgk,
+            ndf_rgk=ndf_rgk,
+            chi2_ndf_rgk=chi2_rgk/ndf_rgk if ndf_rgk > 0 else np.nan,
             sigma_T=T,
             delta_sigma_T=dT,
             sigma_L=L,
@@ -977,6 +1040,167 @@ def plot_internal_LT_quality_view(data, outfile):
     fig.savefig(outfile, dpi=200)
     plt.close(fig)
 
+
+def plot_internal_sigmaU_comparison(data, outfile):
+    """Direct comparison of independently fitted RGA and RGK sigma_U."""
+    g = data.sort_values(["Q2_GeV2", "minus_t_GeV2", "xB"]).reset_index(drop=True)
+    x = _spread_q2_by_t(g, half_width=0.085)
+    dx = 0.012
+
+    fig, ax = plt.subplots(figsize=(9.6, 6.3))
+    ax.errorbar(
+        x-dx, g.sigma_U_rga, yerr=g.delta_sigma_U_rga,
+        fmt="o", ms=4.0, capsize=1.5, elinewidth=0.8,
+        alpha=0.75, label="RGA",
+    )
+    ax.errorbar(
+        x+dx, g.sigma_U_rgk, yerr=g.delta_sigma_U_rgk,
+        fmt="s", ms=3.8, capsize=1.5, elinewidth=0.8,
+        alpha=0.75, label="RGK",
+    )
+    ax.set_yscale("symlog", linthresh=1.0)
+    ax.set_xticks(sorted(g.Q2_GeV2.unique()))
+    ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
+    ax.set_ylabel(r"Independently fitted $\sigma_U$ (nb/GeV$^2$)")
+    ax.set_title(r"INTERNAL: direct RGA/RGK $\sigma_U$ comparison")
+    ax.legend(frameon=False)
+    ax.grid(axis="y", alpha=0.14)
+    ax.text(
+        0.01, 0.02,
+        r"Matched cells; equal-$Q^2$ points are spread slightly by $-t$ for visibility.",
+        transform=ax.transAxes, ha="left", va="bottom", fontsize=8.5,
+    )
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=200)
+    plt.close(fig)
+
+
+def plot_internal_fractional_sigmaU_difference(data, outfile):
+    """Relative RGA-RGK sigma_U offset; best normalization diagnostic."""
+    g = data.sort_values(["Q2_GeV2", "minus_t_GeV2", "xB"]).reset_index(drop=True)
+    x = _spread_q2_by_t(g, half_width=0.085)
+    y = 100.0*g.fractional_delta_sigma_U.to_numpy(float)
+    dy = 100.0*g.delta_fractional_delta_sigma_U.to_numpy(float)
+
+    # Keep the readable core visible without altering the saved values.
+    ymin, ymax = -100.0, 100.0
+    inside = np.isfinite(y) & (y >= ymin) & (y <= ymax)
+    fig, ax = plt.subplots(figsize=(9.6, 6.3))
+    sc = ax.scatter(
+        x[inside], y[inside], c=g.loc[inside, "xB"],
+        cmap="viridis", s=42, edgecolor="black", linewidth=0.3, zorder=3,
+    )
+    _plot_clipped_LT_errorbars(ax, x, y, dy, ymin, ymax)
+    ax.axhline(0.0, color="black", linewidth=1.0)
+    ax.set_ylim(ymin, ymax)
+    ax.set_xticks(sorted(g.Q2_GeV2.unique()))
+    ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
+    ax.set_ylabel(
+        r"$2(\sigma_U^{\rm RGA}-\sigma_U^{\rm RGK})/"
+        r"(\sigma_U^{\rm RGA}+\sigma_U^{\rm RGK})$ (%)"
+    )
+    ax.set_title(r"INTERNAL: fractional RGA/RGK $\sigma_U$ difference")
+    ax.grid(axis="y", alpha=0.14)
+    cb = fig.colorbar(sc, ax=ax, pad=0.02)
+    cb.set_label(r"$x_B$")
+    ax.text(
+        0.01, 0.02,
+        "A coherent offset from zero would indicate an RGA/RGK relative difference.\n"
+        "Open triangles denote off-scale central values.",
+        transform=ax.transAxes, ha="left", va="bottom", fontsize=8.4,
+    )
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=200)
+    plt.close(fig)
+
+
+def plot_internal_delta_sigmaU_by_xB(data, outfile):
+    """Facet the Rosenbluth numerator Delta sigma_U by xB."""
+    xb_values = sorted(data.xB.unique())
+    ncols = 3
+    nrows = int(np.ceil(len(xb_values)/ncols))
+    finite_t = data.minus_t_GeV2[np.isfinite(data.minus_t_GeV2)]
+    norm = plt.Normalize(float(finite_t.min()), float(finite_t.max()))
+    cmap = plt.get_cmap("viridis")
+
+    # Robust common display range; raw values remain in the CSV.
+    vals = np.abs(data.delta_sigma_U.to_numpy(float))
+    finite = vals[np.isfinite(vals)]
+    lim = float(np.nanpercentile(finite, 95)) if len(finite) else 1.0
+    lim = max(lim, 1.0)
+
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(11.4, 8.8),
+        sharex=True, sharey=True, squeeze=False, constrained_layout=True,
+    )
+    axes = axes.ravel()
+    for ax, xb in zip(axes, xb_values):
+        g = data[np.isclose(data.xB, xb)].sort_values(
+            ["Q2_GeV2", "minus_t_GeV2"]
+        ).reset_index(drop=True)
+        x = _spread_q2_by_t(g, half_width=0.065)
+        y = g.delta_sigma_U.to_numpy(float)
+        dy = g.delta_delta_sigma_U.to_numpy(float)
+        inside = np.isfinite(y) & (y >= -lim) & (y <= lim)
+        ax.scatter(
+            x[inside], y[inside], c=g.loc[inside, "minus_t_GeV2"],
+            cmap=cmap, norm=norm, s=39, edgecolor="black",
+            linewidth=0.3, zorder=3,
+        )
+        _plot_clipped_LT_errorbars(ax, x, y, dy, -lim, lim)
+        ax.axhline(0.0, color="black", linewidth=0.8)
+        ax.set_title(fr"$x_B={xb:g}$", fontsize=10)
+        ax.grid(axis="y", alpha=0.13)
+
+    for ax in axes[len(xb_values):]:
+        ax.set_visible(False)
+    for i, ax in enumerate(axes[:len(xb_values)]):
+        if i % ncols == 0:
+            ax.set_ylabel(r"$\Delta\sigma_U$ (nb/GeV$^2$)")
+        if i // ncols == nrows-1 or i+ncols >= len(xb_values):
+            ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
+
+    sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+    sm.set_array([])
+    cb = fig.colorbar(sm, ax=list(axes[:len(xb_values)]), pad=0.015, shrink=0.88)
+    cb.set_label(r"$-t$ (GeV$^2$)")
+    fig.suptitle(
+        r"INTERNAL: Rosenbluth numerator "
+        r"$\Delta\sigma_U=\sigma_U^{\rm RGA}-\sigma_U^{\rm RGK}$",
+        fontsize=14,
+    )
+    fig.savefig(outfile, dpi=200)
+    plt.close(fig)
+
+
+def plot_internal_sigmaL_from_U_check(data, outfile):
+    """Compare joint-fit sigma_L to Delta sigma_U / Delta epsilon."""
+    g = data.sort_values(["Q2_GeV2", "minus_t_GeV2", "xB"]).reset_index(drop=True)
+    x = _spread_q2_by_t(g, half_width=0.085)
+    fig, ax = plt.subplots(figsize=(9.6, 6.3))
+    ax.errorbar(
+        x-0.012, g.sigma_L, yerr=g.delta_sigma_L,
+        fmt="o", ms=4.0, capsize=1.5, elinewidth=0.8,
+        alpha=0.7, label="Joint two-energy fit",
+    )
+    ax.errorbar(
+        x+0.012, g.sigma_L_from_independent_U,
+        yerr=g.delta_sigma_L_from_independent_U,
+        fmt="s", ms=3.8, capsize=1.5, elinewidth=0.8,
+        alpha=0.7, label=r"Independent $\sigma_U$: $\Delta\sigma_U/\Delta\epsilon$",
+    )
+    ax.axhline(0.0, color="black", linewidth=1.0)
+    ax.set_yscale("symlog", linthresh=5.0)
+    ax.set_xticks(sorted(g.Q2_GeV2.unique()))
+    ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
+    ax.set_ylabel(r"$\sigma_L$ (nb/GeV$^2$)")
+    ax.set_title(r"INTERNAL: cross-check of the extracted $\sigma_L$")
+    ax.legend(frameon=False, fontsize=9)
+    ax.grid(axis="y", alpha=0.14)
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=200)
+    plt.close(fig)
+
 def run_internal_data_mode(a):
     """Explicitly non-default path using measured, unapproved central values."""
     out = a.internal_output.resolve()
@@ -1006,6 +1230,18 @@ def run_internal_data_mode(a):
     plot_internal_LT_quality_view(
         data, figs/"INTERNAL_05_measured_L_over_T_quality_diagnostic.png",
     )
+    plot_internal_sigmaU_comparison(
+        data, figs/"INTERNAL_06_sigmaU_RGA_RGK_comparison.png",
+    )
+    plot_internal_fractional_sigmaU_difference(
+        data, figs/"INTERNAL_07_fractional_sigmaU_RGA_RGK_difference.png",
+    )
+    plot_internal_delta_sigmaU_by_xB(
+        data, figs/"INTERNAL_08_delta_sigmaU_by_xB.png",
+    )
+    plot_internal_sigmaL_from_U_check(
+        data, figs/"INTERNAL_09_sigmaL_from_sigmaU_crosscheck.png",
+    )
 
     print("\n*** INTERNAL DATA MODE: measured, unapproved RGA/RGK central values ***")
     print(f"Matched Rosenbluth cells: {len(data)}")
@@ -1018,6 +1254,10 @@ def run_internal_data_mode(a):
     print(f"  {figs/'INTERNAL_03_measured_L_over_T_vs_Q2_zoom.png'}")
     print(f"  {figs/'INTERNAL_04_measured_L_over_T_vs_Q2_by_xB_zoom.png'}")
     print(f"  {figs/'INTERNAL_05_measured_L_over_T_quality_diagnostic.png'}")
+    print(f"  {figs/'INTERNAL_06_sigmaU_RGA_RGK_comparison.png'}")
+    print(f"  {figs/'INTERNAL_07_fractional_sigmaU_RGA_RGK_difference.png'}")
+    print(f"  {figs/'INTERNAL_08_delta_sigmaU_by_xB.png'}")
+    print(f"  {figs/'INTERNAL_09_sigmaL_from_sigmaU_crosscheck.png'}")
 
 
 def main():
