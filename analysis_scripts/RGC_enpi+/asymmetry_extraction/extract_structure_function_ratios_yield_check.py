@@ -12,9 +12,10 @@ factor.  Instead it:
   2. extracts Gaussian exclusive-signal areas separately for the four NH3
      (beam helicity, target-polarization sign) states;
   3. extracts beam-helicity-separated exclusive-signal areas from C and CH2;
-  4. obtains a beam-helicity-separated carbon normalization from the broad
-     0.00 <= Mx2 < 0.40 GeV2 control region and subtracts the scaled carbon
-     signal rate directly from each NH3 spin-state signal rate;
+  4. combines Su22, Fa22 and Sp23 into one yield-level data set, obtains one
+     common carbon material-normalization coefficient from the broad
+     0.00 <= Mx2 < 0.40 GeV2 control region, and subtracts beam-helicity-
+     separated carbon rates from each NH3 spin-state rate;
   5. fits the resulting four hydrogen yield/rate distributions simultaneously
      to the same seven longitudinal structure-function ratios used by the
      nominal analysis.
@@ -30,10 +31,10 @@ Run from:
     RGC_enpi+/asymmetry_extraction/
 
 Typical command:
-    python extract_structure_function_ratios_yield_check_carbon_v5.py
+    python extract_structure_function_ratios_yield_check_combined_v6.py
 
 Outputs:
-    output/asymmetry_extraction/yield_check_carbon/
+    output/asymmetry_extraction/yield_check/
 
 Important statistical note
 --------------------------
@@ -92,7 +93,7 @@ MAX_WORKERS = 8
 PHI_EDGES = np.linspace(0.0, 2.0 * math.pi, N_PHI_BINS + 1)
 PHI_CENTERS = 0.5 * (PHI_EDGES[:-1] + PHI_EDGES[1:])
 
-DEFAULT_OUTPUT_DIR = Path("output/asymmetry_extraction/yield_check_carbon")
+DEFAULT_OUTPUT_DIR = Path("output/asymmetry_extraction/yield_check")
 DEFAULT_RUN_INFO = Path("clas12_run_info.csv")
 DEFAULT_CUT_JSON = nominal.DEFAULT_CUT_JSON
 DEFAULT_TREE_NAME = "PhysicsEvents"
@@ -348,19 +349,13 @@ def carbon_subtracted_hydrogen_rate(
     carbon_area: float, carbon_error: float, carbon_charge: float,
     alpha: float, alpha_error: float,
 ) -> tuple[float, float]:
-    """Return the carbon-normalized free-hydrogen signal rate and uncertainty.
+    """Return the combined-period carbon-subtracted free-H signal rate.
 
-    alpha is determined independently for each period and beam helicity from
-    the broad 0.00 <= Mx2 < 0.40 GeV2 control region, using NH3 summed over
-    both target-polarization signs.  Thus the same beam-helicity-specific
-    background normalization is applied to s=+1 and s=-1, preventing the
-    subtraction itself from manufacturing a target-spin asymmetry.
-
-    R_H = N_NH3/Q_NH3 - alpha * N_C/Q_C.
-
-    CH2 is deliberately retained as an auxiliary diagnostic sample but does
-    not enter this subtraction.  He and ET are omitted entirely in this
-    external-check implementation.
+    One common material-normalization coefficient alpha is used for all three
+    periods and both beam helicities.  The carbon *yield* remains explicitly
+    beam-helicity separated, so a genuine carbon LU modulation is retained
+    without allowing statistical fluctuations in the material scale itself to
+    manufacture a beam-spin asymmetry.
     """
     vals = (nh3_area, nh3_error, nh3_charge, carbon_area, carbon_error,
             carbon_charge, alpha, alpha_error)
@@ -379,40 +374,34 @@ def carbon_subtracted_hydrogen_rate(
     return rate, math.sqrt(max(variance, 0.0))
 
 
-def determine_carbon_normalizations(
+def determine_carbon_normalization(
     events: pd.DataFrame,
     charge_map: Mapping[tuple[str, str, int, int], tuple[float, float]],
 ) -> pd.DataFrame:
-    """Determine period/helicity carbon scale factors from the broad control region."""
-    rows = []
+    """Determine one common C->NH3 material scale from all periods/helicities."""
     control = events[(events.Mx2 >= CARBON_CONTROL_MIN_GEV2) &
                      (events.Mx2 < CARBON_CONTROL_MAX_GEV2)]
-    for period in PERIODS:
-        for h in (-1, 1):
-            nh3 = control[(control.period == period) & (control.target == "NH3") &
-                          (control.helicity == h)]
-            carbon = control[(control.period == period) & (control.target == "C") &
-                             (control.helicity == h)]
-            n_a = int(len(nh3))
-            n_c = int(len(carbon))
-            q_a = sum(charge_map[(period, "NH3", h, s)][0] for s in (-1, 1))
-            q_c = charge_map[(period, "C", h, 0)][0]
-            if n_a > 0 and n_c > 0 and q_a > 0.0 and q_c > 0.0:
-                r_a = n_a / q_a
-                r_c = n_c / q_c
-                alpha = r_a / r_c if r_c > 0.0 else np.nan
-                alpha_error = abs(alpha) * math.sqrt(1.0 / n_a + 1.0 / n_c)
-            else:
-                alpha = np.nan
-                alpha_error = np.nan
-            # endif
-            rows.append(dict(period=period, helicity=h, nh3_control_events=n_a,
-                             carbon_control_events=n_c, nh3_control_charge=q_a,
-                             carbon_control_charge=q_c, alpha=alpha,
-                             alpha_error=alpha_error))
-        # endfor
-    # endfor
-    return pd.DataFrame(rows)
+    n_a = int(np.count_nonzero(control.target == "NH3"))
+    n_c = int(np.count_nonzero(control.target == "C"))
+    q_a = sum(charge_map[(period, "NH3", h, s)][0]
+              for period in PERIODS for h in (-1, 1) for s in (-1, 1))
+    q_c = sum(charge_map[(period, "C", h, 0)][0]
+              for period in PERIODS for h in (-1, 1))
+    if n_a > 0 and n_c > 0 and q_a > 0.0 and q_c > 0.0:
+        r_a = n_a / q_a
+        r_c = n_c / q_c
+        alpha = r_a / r_c if r_c > 0.0 else np.nan
+        alpha_error = abs(alpha) * math.sqrt(1.0 / n_a + 1.0 / n_c)
+    else:
+        alpha = np.nan
+        alpha_error = np.nan
+    # endif
+    return pd.DataFrame([dict(
+        nh3_control_events=n_a, carbon_control_events=n_c,
+        nh3_control_charge=q_a, carbon_control_charge=q_c,
+        alpha=alpha, alpha_error=alpha_error,
+    )])
+
 
 def load_events(
     inputs: Mapping[tuple[str, str], Path],
@@ -517,15 +506,15 @@ def charge_for_state(
     return qsum, qpt
 
 
-def physics_shape(phi: float, h: int, pb: float, pt_eff: float,
+def physics_shape(phi: float, h: int, pb_eff: float, pt_eff: float, pbpt_eff: float,
                   rB: float, rC: float, rV: float, rW: float,
                   theta: np.ndarray) -> float:
     u1, u2, lu1, ul1, ul2, ll0, ll1 = theta
     return (
         1.0 + rV * u1 * math.cos(phi) + rB * u2 * math.cos(2.0 * phi)
-        + h * pb * rW * lu1 * math.sin(phi)
+        + h * pb_eff * rW * lu1 * math.sin(phi)
         + pt_eff * (rV * ul1 * math.sin(phi) + rB * ul2 * math.sin(2.0 * phi))
-        + h * pb * pt_eff * (rC * ll0 + rW * ll1 * math.cos(phi))
+        + h * pbpt_eff * (rC * ll0 + rW * ll1 * math.cos(phi))
     )
 
 
@@ -538,36 +527,37 @@ def fit_physics_bin(frame: pd.DataFrame) -> tuple[dict[str, float], np.ndarray, 
         return {name: np.nan for name in PHYSICS_PARAMETERS}, np.full((7, 7), np.nan), np.nan, 0
     # endif
 
-    # One free normalization per period absorbs luminosity-independent acceptance
-    # and the overall unpolarized rate.  Phi-dependent acceptance is assumed to
-    # cancel between spin states, as in the nominal extraction.
-    period_indices = {period: index for index, period in enumerate(PERIODS)}
-
+    # All three RGC periods have already been combined at the yield level, so
+    # only one overall normalization remains in each (xB,-t') physics bin.
     def residuals(pars: np.ndarray) -> np.ndarray:
         theta = pars[:7]
-        norms = np.exp(pars[7:])
+        norm = math.exp(pars[7])
         result = []
         for row in good.itertuples(index=False):
             shape = physics_shape(
-                row.phi_center, int(row.helicity), BEAM_POLARIZATION[row.period],
-                row.pt_effective, row.rB, row.rC, row.rV, row.rW, theta,
+                row.phi_center, int(row.helicity), row.pb_effective,
+                row.pt_effective, row.pbpt_effective,
+                row.rB, row.rC, row.rV, row.rW, theta,
             )
-            prediction = norms[period_indices[row.period]] * shape
+            prediction = norm * shape
             result.append((row.hydrogen_rate - prediction) / row.hydrogen_rate_error)
         # endfor
-        return np.asarray(result)
+        return np.asarray(result, dtype=float)
 
-    initial_rate = max(float(np.nanmedian(good["hydrogen_rate"])), 1.0e-9)
-    x0 = np.r_[np.zeros(7), np.log(np.full(3, initial_rate))]
-    lower = np.r_[np.full(7, -2.5), np.full(3, -30.0)]
-    upper = np.r_[np.full(7, 2.5), np.full(3, 30.0)]
-    result = least_squares(residuals, x0, bounds=(lower, upper), max_nfev=50000)
-    r = residuals(result.x)
-    ndf = max(len(r) - len(result.x), 1)
-    chi2_ndf = float(np.sum(r * r) / ndf)
+    positive = good.loc[good.hydrogen_rate > 0.0, "hydrogen_rate"]
+    norm0 = float(np.nanmedian(positive)) if len(positive) else 1.0
+    norm0 = max(norm0, 1.0e-12)
+    x0 = np.r_[np.zeros(7), math.log(norm0)]
+    lower = np.r_[np.full(7, -1.5), -40.0]
+    upper = np.r_[np.full(7, 1.5), 40.0]
+    result = least_squares(residuals, x0, bounds=(lower, upper), max_nfev=20000)
+    resid = residuals(result.x)
+    ndf = max(len(resid) - len(result.x), 1)
+    chi2_ndf = float(np.dot(resid, resid) / ndf)
     try:
-        covariance_all = np.linalg.inv(result.jac.T @ result.jac) * chi2_ndf
-        covariance = covariance_all[:7, :7]
+        jtj_inv = np.linalg.inv(result.jac.T @ result.jac)
+        covariance = jtj_inv * chi2_ndf
+        covariance = covariance[:7, :7]
     except np.linalg.LinAlgError:
         covariance = np.full((7, 7), np.nan)
     # endtry
@@ -594,15 +584,11 @@ def plot_four_state_rates(path: Path, subset: pd.DataFrame, kin_bin: int) -> Non
     fig, axes = plt.subplots(2, 2, figsize=(12, 9), sharex=True)
     states = [(1, 1), (-1, 1), (1, -1), (-1, -1)]
     for ax, (h, s) in zip(axes.flat, states):
-        state = subset[(subset.helicity == h) & (subset.target_sign == s)]
-        for period in PERIODS:
-            part = state[state.period == period].sort_values("phi_bin")
-            if part.empty:
-                continue
-            # endif
+        part = subset[(subset.helicity == h) & (subset.target_sign == s)].sort_values("phi_bin")
+        if not part.empty:
             ax.errorbar(np.degrees(part.phi_center), part.hydrogen_rate,
-                        yerr=part.hydrogen_rate_error, fmt="o-", ms=3, label=period)
-        # endfor
+                        yerr=part.hydrogen_rate_error, fmt="o-", ms=4)
+        # endif
         ax.set_title(f"h={h:+d}, target sign={s:+d}")
         ax.set_ylabel("Extracted H signal rate (counts / charge)")
         ax.grid(alpha=0.25)
@@ -610,28 +596,112 @@ def plot_four_state_rates(path: Path, subset: pd.DataFrame, kin_bin: int) -> Non
     for ax in axes[-1, :]:
         ax.set_xlabel(r"$\phi$ (deg)")
     # endfor
-    axes[0, 0].legend(fontsize=8)
-    fig.suptitle(f"Yield-check extracted free-H rates: kinematic bin {kin_bin}")
+    fig.suptitle(f"Combined RGC direct-yield free-H rates: kinematic bin {kin_bin}")
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     fig.savefig(path, dpi=160)
     plt.close(fig)
 
 
+def load_nominal_results() -> pd.DataFrame | None:
+    path = Path("output/asymmetry_extraction/nominal/tables/structure_function_ratios.csv")
+    if not path.is_file():
+        print(f"[comparison] nominal table not found: {path}; skipping overlays", flush=True)
+        return None
+    # endif
+    frame = pd.read_csv(path)
+    print(f"[comparison] loaded nominal results: {path}", flush=True)
+    return frame
+
+
+def plot_by_xb(output_dir: Path, results: pd.DataFrame, nominal_results: pd.DataFrame | None) -> None:
+    output_dir.mkdir(parents=True, exist_ok=True)
+    nt = len(TP_BINS)
+    for x_index, (x_low, x_high) in enumerate(XB_BINS):
+        bins = np.arange(x_index * nt + 1, (x_index + 1) * nt + 1)
+        subset = results[results.kin_bin.isin(bins)].copy().sort_values("kin_bin")
+        subset["t_center"] = [0.5 * (TP_BINS[(int(b)-1) % nt][0] + TP_BINS[(int(b)-1) % nt][1]) for b in subset.kin_bin]
+        fig, axes = _grouped_axes()
+        for ip, parameter in enumerate(PHYSICS_PARAMETERS):
+            ax = axes[parameter]
+            ax.errorbar(subset.t_center, subset[parameter], yerr=subset[f"{parameter}_error"],
+                        fmt="o", capsize=2, label="Direct-yield check")
+            if nominal_results is not None:
+                nsub = nominal_results[nominal_results.bin_number.isin(bins)].copy().sort_values("bin_number")
+                if len(nsub):
+                    if "mean_minus_tprime_gev2" in nsub.columns:
+                        nx = nsub.mean_minus_tprime_gev2.to_numpy(float)
+                    else:
+                        nx = np.asarray([0.5 * (TP_BINS[(int(b)-1) % nt][0] + TP_BINS[(int(b)-1) % nt][1]) for b in nsub.bin_number])
+                    errcol = f"{parameter}_stat" if f"{parameter}_stat" in nsub.columns else f"{parameter}_error"
+                    ax.errorbar(nx, nsub[parameter], yerr=nsub[errcol], fmt="s", capsize=2, label="Nominal")
+                # endif
+            # endif
+            ax.axhline(0.0, lw=0.8)
+            ax.set_ylabel(nominal.PARAMETER_LABELS.get(parameter, parameter))
+            ax.grid(alpha=0.25)
+            ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
+        # endfor
+        handles, labels = axes["u1"].get_legend_handles_labels()
+        if handles:
+            fig.legend(handles, labels, loc="lower right", bbox_to_anchor=(0.97, 0.04))
+        # endif
+        fig.suptitle(rf"${x_low:.2f} \leq x_B < {x_high:.2f}$: direct-yield external check", y=0.995)
+        fig.tight_layout(rect=(0, 0.04, 1, 0.97))
+        fig.savefig(output_dir / f"yield_check_xB_{x_index+1}.png", dpi=170)
+        plt.close(fig)
+    # endfor
+
+
+def write_nominal_comparison(path: Path, results: pd.DataFrame, nominal_results: pd.DataFrame | None) -> None:
+    if nominal_results is None:
+        return
+    # endif
+    comp = results.copy()
+    n = nominal_results.copy().rename(columns={"bin_number": "kin_bin"})
+    keep = ["kin_bin"]
+    for p in PHYSICS_PARAMETERS:
+        if p in n.columns:
+            keep.append(p)
+        if f"{p}_stat" in n.columns:
+            keep.append(f"{p}_stat")
+    # endfor
+    n = n[keep].rename(columns={c: f"nominal_{c}" for c in keep if c != "kin_bin"})
+    comp = comp.merge(n, on="kin_bin", how="left")
+    for p in PHYSICS_PARAMETERS:
+        if f"nominal_{p}" in comp.columns:
+            comp[f"delta_{p}"] = comp[p] - comp[f"nominal_{p}"]
+        # endif
+    # endfor
+    comp.to_csv(path, index=False)
+
+
+def _grouped_axes() -> tuple[plt.Figure, dict[str, plt.Axes]]:
+    fig, axes = plt.subplots(3, 4, figsize=(18, 12), sharex=False)
+    mapping = {
+        "u1": axes[0, 0], "u2": axes[0, 1],
+        "lu1": axes[1, 0], "ul1": axes[1, 1], "ul2": axes[1, 2],
+        "ll0": axes[2, 0], "ll1": axes[2, 1],
+    }
+    used = {id(ax) for ax in mapping.values()}
+    for ax in axes.flat:
+        if id(ax) not in used:
+            ax.axis("off")
+        # endif
+    # endfor
+    return fig, mapping
+
+
 def plot_summary(path: Path, results: pd.DataFrame) -> None:
-    fig, axes = plt.subplots(3, 4, figsize=(18, 12), sharex=True)
-    axes = axes.flat
-    for index, parameter in enumerate(PHYSICS_PARAMETERS):
-        ax = axes[index]
+    fig, axes = _grouped_axes()
+    for parameter in PHYSICS_PARAMETERS:
+        ax = axes[parameter]
         ax.errorbar(results.kin_bin, results[parameter], yerr=results[f"{parameter}_error"], fmt="o", ms=4)
         ax.axhline(0.0, lw=0.8)
         ax.set_title(nominal.PARAMETER_LABELS.get(parameter, parameter))
         ax.set_xlabel("Kinematic bin")
         ax.grid(alpha=0.2)
     # endfor
-    for index in range(len(PHYSICS_PARAMETERS), 12):
-        axes[index].axis("off")
-    # endfor
-    fig.suptitle("Direct-yield external extraction")
+    fig.suptitle("Direct-yield external extraction: combined Su22 + Fa22 + Sp23")
     fig.tight_layout(rect=(0, 0, 1, 0.96))
     fig.savefig(path, dpi=170)
     plt.close(fig)
@@ -695,29 +765,12 @@ def main() -> None:
     # endfor
     pd.DataFrame(charge_rows).to_csv(tables / "state_charges.csv", index=False)
 
-    carbon_norms = determine_carbon_normalizations(events, charge_map)
-    carbon_norms.to_csv(tables / "carbon_normalizations.csv", index=False)
-    carbon_norm_map = {
-        (str(row.period), int(row.helicity)): (float(row.alpha), float(row.alpha_error))
-        for row in carbon_norms.itertuples(index=False)
-    }
-    print("[carbon normalization] period/helicity control-region scales:", flush=True)
+    carbon_norms = determine_carbon_normalization(events, charge_map)
+    carbon_norms.to_csv(tables / "carbon_normalization.csv", index=False)
+    alpha = float(carbon_norms.iloc[0].alpha)
+    alpha_error = float(carbon_norms.iloc[0].alpha_error)
+    print("[carbon normalization] one common all-period/all-helicity scale:", flush=True)
     print(carbon_norms.to_string(index=False), flush=True)
-
-    fig, ax = plt.subplots(figsize=(8, 5))
-    for h, marker in ((-1, "o"), (1, "s")):
-        part = carbon_norms[carbon_norms.helicity == h]
-        x = np.arange(len(PERIODS), dtype=float) + (0.08 if h > 0 else -0.08)
-        ax.errorbar(x, part.alpha, yerr=part.alpha_error, fmt=marker, capsize=3,
-                    label=rf"$h={h:+d}$")
-    # endfor
-    ax.set_xticks(np.arange(len(PERIODS)), PERIODS)
-    ax.set_ylabel(r"Carbon normalization $\alpha_p^h$")
-    ax.set_title(r"$0.00 \leq M_X^2 < 0.40$ GeV$^2$ control region")
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(diagnostics / "carbon_normalizations_by_helicity.png", dpi=180)
-    plt.close(fig)
 
     area_rows: list[dict[str, Any]] = []
     area_lookup: dict[tuple[str, str, int, int, int, int], AreaFit] = {}
@@ -806,43 +859,57 @@ def main() -> None:
     area_frame = pd.DataFrame(area_rows)
     area_frame.to_csv(tables / "gaussian_signal_areas.csv", index=False)
 
+    # Combine Su22, Fa22 and Sp23 before the physics extraction.  Gaussian
+    # areas remain period-specific because their fixed Mx2 peak shapes/cuts are
+    # period-specific, but areas, charges and polarization moments are summed
+    # here to form one RGC data set.
     rate_rows = []
-    for period in PERIODS:
-        for kin_bin in range(1, N_KIN_BINS + 1):
-            for phi_bin in range(N_PHI_BINS):
-                for h in (-1, 1):
-                    # Carbon remains beam-helicity separated.  CH2 is fitted and
-                    # retained in diagnostics, but the external-check subtraction
-                    # itself uses the established carbon-normalization construction.
-                    carbon_fit = area_lookup[(period, "C", kin_bin, phi_bin, h, 0)]
-                    qC = charge_map[(period, "C", h, 0)][0]
-                    alpha, alpha_error = carbon_norm_map[(period, h)]
-                    for s in (-1, 1):
-                        nh3_fit = area_lookup[(period, "NH3", kin_bin, phi_bin, h, s)]
-                        qA, qpt = charge_map[(period, "NH3", h, s)]
-                        h_rate, h_error = carbon_subtracted_hydrogen_rate(
-                            nh3_fit.area, nh3_fit.area_error, qA,
-                            carbon_fit.area, carbon_fit.area_error, qC,
-                            alpha, alpha_error,
-                        )
-                        pt_eff = qpt / qA if qA > 0.0 else np.nan
-                        nh3_rows = area_frame[
-                            (area_frame.period == period) & (area_frame.target == "NH3")
-                            & (area_frame.kin_bin == kin_bin) & (area_frame.phi_bin == phi_bin)
-                            & (area_frame.helicity == h) & (area_frame.target_sign == s)
-                        ]
-                        dep = {name: float(nh3_rows.iloc[0][name]) if len(nh3_rows) else np.nan
-                               for name in ("rB", "rC", "rV", "rW")}
-                        rate_rows.append(dict(
-                            period=period, kin_bin=kin_bin, phi_bin=phi_bin,
-                            phi_center=PHI_CENTERS[phi_bin], helicity=h, target_sign=s,
-                            charge=qA, pt_effective=pt_eff, hydrogen_rate=h_rate,
-                            hydrogen_rate_error=h_error, nh3_signal_area=nh3_fit.area,
-                            nh3_signal_area_error=nh3_fit.area_error, carbon_signal_area=carbon_fit.area,
-                            carbon_signal_area_error=carbon_fit.area_error, carbon_alpha=alpha,
-                            carbon_alpha_error=alpha_error, **dep,
-                        ))
+    for kin_bin in range(1, N_KIN_BINS + 1):
+        for phi_bin in range(N_PHI_BINS):
+            for h in (-1, 1):
+                cfits = [area_lookup[(period, "C", kin_bin, phi_bin, h, 0)] for period in PERIODS]
+                cfinite = [f for f in cfits if np.isfinite(f.area) and np.isfinite(f.area_error)]
+                carbon_area = sum(f.area for f in cfinite) if cfinite else np.nan
+                carbon_error = math.sqrt(sum(f.area_error ** 2 for f in cfinite)) if cfinite else np.nan
+                qC = sum(charge_map[(period, "C", h, 0)][0] for period in PERIODS)
+                for s in (-1, 1):
+                    nfits = [area_lookup[(period, "NH3", kin_bin, phi_bin, h, s)] for period in PERIODS]
+                    nfinite = [f for f in nfits if np.isfinite(f.area) and np.isfinite(f.area_error)]
+                    nh3_area = sum(f.area for f in nfinite) if nfinite else np.nan
+                    nh3_error = math.sqrt(sum(f.area_error ** 2 for f in nfinite)) if nfinite else np.nan
+                    qA = sum(charge_map[(period, "NH3", h, s)][0] for period in PERIODS)
+                    qpt = sum(charge_map[(period, "NH3", h, s)][1] for period in PERIODS)
+                    qpb = sum(charge_map[(period, "NH3", h, s)][0] * BEAM_POLARIZATION[period] for period in PERIODS)
+                    qpbpt = sum(charge_map[(period, "NH3", h, s)][1] * BEAM_POLARIZATION[period] for period in PERIODS)
+                    h_rate, h_error = carbon_subtracted_hydrogen_rate(
+                        nh3_area, nh3_error, qA, carbon_area, carbon_error, qC, alpha, alpha_error
+                    )
+                    pt_eff = qpt / qA if qA > 0.0 else np.nan
+                    pb_eff = qpb / qA if qA > 0.0 else np.nan
+                    pbpt_eff = qpbpt / qA if qA > 0.0 else np.nan
+                    nh3_rows = area_frame[
+                        (area_frame.target == "NH3") & (area_frame.kin_bin == kin_bin)
+                        & (area_frame.phi_bin == phi_bin) & (area_frame.helicity == h)
+                        & (area_frame.target_sign == s)
+                    ]
+                    # Event-weighted depolarization ratios over all three periods.
+                    dep = {}
+                    for name in ("rB", "rC", "rV", "rW"):
+                        vals = nh3_rows[name].to_numpy(dtype=float)
+                        weights = np.maximum(nh3_rows.n_events.to_numpy(dtype=float), 1.0)
+                        finite_dep = np.isfinite(vals) & np.isfinite(weights)
+                        dep[name] = (float(np.average(vals[finite_dep], weights=weights[finite_dep]))
+                                     if np.any(finite_dep) else np.nan)
                     # endfor
+                    rate_rows.append(dict(
+                        kin_bin=kin_bin, phi_bin=phi_bin, phi_center=PHI_CENTERS[phi_bin],
+                        helicity=h, target_sign=s, charge=qA, pt_effective=pt_eff,
+                        pb_effective=pb_eff, pbpt_effective=pbpt_eff, hydrogen_rate=h_rate,
+                        hydrogen_rate_error=h_error, nh3_signal_area=nh3_area,
+                        nh3_signal_area_error=nh3_error, carbon_signal_area=carbon_area,
+                        carbon_signal_area_error=carbon_error, carbon_alpha=alpha,
+                        carbon_alpha_error=alpha_error, **dep,
+                    ))
                 # endfor
             # endfor
         # endfor
@@ -870,6 +937,9 @@ def main() -> None:
     results.to_csv(tables / "yield_check_structure_function_ratios.csv", index=False)
     (tables / "yield_check_covariances.json").write_text(json.dumps(covariance_payload, indent=2))
     plot_summary(physics_plots / "yield_check_structure_function_ratios.png", results)
+    nominal_results = load_nominal_results()
+    plot_by_xb(physics_plots / "by_xB", results, nominal_results)
+    write_nominal_comparison(tables / "yield_check_vs_nominal.csv", results, nominal_results)
 
     # Useful stability/quality figures.
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -890,18 +960,20 @@ def main() -> None:
     fig.tight_layout(); fig.savefig(diagnostics / "hydrogen_rate_significance.png", dpi=160); plt.close(fig)
 
     manifest = {
-        "method": "beam-helicity-separated carbon-normalized hydrogen-rate external check",
+        "method": "combined-period direct-yield carbon-subtracted hydrogen-rate external check",
         "n_phi_bins": N_PHI_BINS,
         "phi_edges_rad": PHI_EDGES.tolist(),
         "does_not_use_dilution_factor": True,
         "auxiliary_targets_beam_helicity_separated": True,
+        "periods_combined_before_physics_fit": True,
+        "carbon_material_scale_common_to_periods_and_helicities": True,
         "nh3_beam_and_target_spin_separated": True,
         "signal_shape": "mu/sigma fixed from nominal mu +/- 2 sigma channel-selection cut",
         "statistics_warning": "First implementation uses local Gaussian-fit covariance; full bootstrap shared-target covariance is the planned upgrade.",
         "outputs": {
             "areas": str(tables / "gaussian_signal_areas.csv"),
             "rates": str(tables / "carbon_subtracted_hydrogen_rates.csv"),
-            "carbon_normalizations": str(tables / "carbon_normalizations.csv"),
+            "carbon_normalization": str(tables / "carbon_normalization.csv"),
             "physics": str(tables / "yield_check_structure_function_ratios.csv"),
         },
     }
