@@ -15,6 +15,12 @@ Reorient the Stage-3 RGA+RGK projection around experimentally useful precision:
 This intentionally retains the existing sigma_L significance information as a
 complementary metric rather than replacing it.
 
+The v3 extension explicitly targets the physics motivation for the high-luminosity
+white paper: map the Q2 evolution of transverse dominance and identify kinematic
+regions where additional luminosity creates a qualitatively new L/T constraint.
+It also writes nearest-cell benchmark tables for the Hall-A Defurne (2016) true
+Rosenbluth separation and Dlamini (2021) high-Q2 U/LT/TT/LT' measurements.
+
 The script imports the validated Stage-3 machinery from
 prepare_pi0_gk_stage3_projection.py. It does not rerun PARTONS.
 """
@@ -244,6 +250,162 @@ def plot_absolute_uncertainties(points, f, outfile):
     plt.close(fig)
 
 
+
+def q2_evolution_summary(points):
+    """Summarize longitudinal-fraction reach separately at each Q2 setting."""
+    rows = []
+    for (f, q2), g in points.groupby(
+        ["future_luminosity_multiplier", "Q2_GeV2"], sort=True
+    ):
+        r95 = g.expected_95pct_abs_L_over_T_limit_if_L_zero.to_numpy(float)
+        dR = g.delta_R_L_over_T.to_numpy(float)
+        rows.append(dict(
+            future_luminosity_multiplier=float(f),
+            Q2_GeV2=float(q2),
+            n_bins=len(g),
+            xB_min=float(g.xB.min()),
+            xB_max=float(g.xB.max()),
+            minus_t_min_GeV2=float(g.minus_t_GeV2.min()),
+            minus_t_max_GeV2=float(g.minus_t_GeV2.max()),
+            median_delta_R_L_over_T=finite_median(dR),
+            median_expected_95pct_abs_L_over_T_limit_if_L_zero=finite_median(r95),
+            n_expected_95pct_limit_lt_0p20=int(np.sum(r95 < 0.20)),
+            n_expected_95pct_limit_lt_0p10=int(np.sum(r95 < 0.10)),
+            n_expected_95pct_limit_lt_0p05=int(np.sum(r95 < 0.05)),
+            n_sigmaL_ge_2=int(np.sum(g.sigma_L_significance.to_numpy(float) >= 2.0)),
+            n_sigmaL_ge_3=int(np.sum(g.sigma_L_significance.to_numpy(float) >= 3.0)),
+        ))
+    return pd.DataFrame(rows)
+
+
+def benchmark_regions(points):
+    """
+    Identify CLAS12 cells nearest the principal published Hall-A pi0 regions.
+
+    These are comparison anchors, not claims of identical kinematics:
+      * E07-007 / Defurne 2016: xB=0.36, Q2=1.50,1.75,2.00 GeV^2,
+        true Rosenbluth T/L separation.
+      * E12-06-114 / Dlamini 2021: xB=0.36,0.48,0.60 and Q2 roughly
+        3.1--8.4 GeV^2, U/TT/LT/LT' but no T/L Rosenbluth separation.
+
+    For every luminosity scenario we retain the nearest cells in (Q2,xB);
+    t remains explicit so the user can judge the actual overlap.
+    """
+    anchors = [
+        ("HallA_Defurne2016", 0.36, 1.50),
+        ("HallA_Defurne2016", 0.36, 1.75),
+        ("HallA_Defurne2016", 0.36, 2.00),
+        ("HallA_Dlamini2021", 0.36, 3.11),
+        ("HallA_Dlamini2021", 0.36, 3.57),
+        ("HallA_Dlamini2021", 0.36, 4.44),
+        ("HallA_Dlamini2021", 0.48, 2.67),
+        ("HallA_Dlamini2021", 0.48, 4.06),
+        ("HallA_Dlamini2021", 0.48, 5.16),
+        ("HallA_Dlamini2021", 0.48, 6.56),
+        ("HallA_Dlamini2021", 0.60, 5.49),
+        ("HallA_Dlamini2021", 0.60, 8.31),
+    ]
+
+    rows = []
+    for f, gf in points.groupby("future_luminosity_multiplier"):
+        unique_qx = gf[["Q2_GeV2", "xB"]].drop_duplicates().copy()
+        for experiment, xb0, q20 in anchors:
+            # Dimensionless fractional distance prevents Q2 from trivially
+            # dominating xB in the nearest-cell selection.
+            d2 = ((unique_qx.Q2_GeV2-q20)/max(q20, 0.5))**2
+            d2 += ((unique_qx.xB-xb0)/max(xb0, 0.1))**2
+            best = unique_qx.loc[d2.idxmin()]
+            sel = gf[
+                np.isclose(gf.Q2_GeV2, best.Q2_GeV2) &
+                np.isclose(gf.xB, best.xB)
+            ].copy()
+            for r in sel.itertuples(index=False):
+                rows.append(dict(
+                    experiment=experiment,
+                    anchor_Q2_GeV2=q20,
+                    anchor_xB=xb0,
+                    future_luminosity_multiplier=float(f),
+                    nearest_Q2_GeV2=float(r.Q2_GeV2),
+                    nearest_xB=float(r.xB),
+                    minus_t_GeV2=float(r.minus_t_GeV2),
+                    delta_epsilon=float(r.delta_epsilon),
+                    delta_sigma_T=float(r.delta_sigma_T),
+                    delta_sigma_L=float(r.delta_sigma_L),
+                    delta_sigma_LT=float(r.delta_sigma_LT),
+                    delta_sigma_TT=float(r.delta_sigma_TT),
+                    delta_R_L_over_T=float(r.delta_R_L_over_T),
+                    expected_95pct_abs_L_over_T_limit_if_L_zero=float(
+                        r.expected_95pct_abs_L_over_T_limit_if_L_zero
+                    ),
+                    sigma_L_significance=float(r.sigma_L_significance),
+                ))
+    return pd.DataFrame(rows)
+
+
+def q2_unlock_summary(points):
+    """Count genuinely new L/T constraints, relative to recorded data, versus Q2."""
+    rows = []
+    for (f, q2), g in points.groupby(
+        ["future_luminosity_multiplier", "Q2_GeV2"], sort=True
+    ):
+        if f == 0:
+            continue
+        rows.append(dict(
+            future_luminosity_multiplier=float(f),
+            Q2_GeV2=float(q2),
+            n_bins=len(g),
+            newly_below_20pct_95CL=int(
+                g.newly_constrains_abs_L_over_T_below_0p20.sum()
+            ),
+            newly_below_10pct_95CL=int(
+                g.newly_constrains_abs_L_over_T_below_0p10.sum()
+            ),
+            newly_below_5pct_95CL=int(
+                g.newly_constrains_abs_L_over_T_below_0p05.sum()
+            ),
+        ))
+    return pd.DataFrame(rows)
+
+
+def plot_q2_evolution(q2sum, outfile):
+    """Show the Q2 dependence of the median expected L/T constraint."""
+    fig, ax = plt.subplots(figsize=(7.6, 5.5))
+    for f, g in q2sum.groupby("future_luminosity_multiplier", sort=True):
+        ax.plot(
+            g.Q2_GeV2,
+            g.median_expected_95pct_abs_L_over_T_limit_if_L_zero,
+            marker="o",
+            label=fr"$f={f:g}$",
+        )
+    ax.axhline(0.20, ls=":", label=r"$|L/T|=20\%$")
+    ax.axhline(0.10, ls="--", label=r"$|L/T|=10\%$")
+    ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
+    ax.set_ylabel(r"Median expected 95% sensitivity to $|L/T|$")
+    ax.set_title(r"$Q^2$ evolution of longitudinal-fraction reach")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=180)
+    plt.close(fig)
+
+
+def plot_q2_unlocked(q2unlock, outfile):
+    """Show where luminosity creates new 10%-level L/T capability."""
+    fig, ax = plt.subplots(figsize=(7.6, 5.5))
+    for f, g in q2unlock.groupby("future_luminosity_multiplier", sort=True):
+        ax.plot(
+            g.Q2_GeV2,
+            g.newly_below_10pct_95CL,
+            marker="o",
+            label=fr"$f={f:g}$",
+        )
+    ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
+    ax.set_ylabel(r"New bins with expected $|L/T|<10\%$ sensitivity")
+    ax.set_title("High-luminosity capability unlocked versus $Q^2$")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=180)
+    plt.close(fig)
+
 def main():
     a = args()
     out = a.output.resolve()
@@ -289,8 +451,15 @@ def main():
     points = add_new_capability_flags(points)
     summary = pd.DataFrame(summaries)
 
+    q2sum = q2_evolution_summary(points)
+    q2unlock = q2_unlock_summary(points)
+    benchmarks = benchmark_regions(points)
+
     points.to_csv(tabs/"01_measurement_reach_by_point.csv", index=False)
     summary.to_csv(tabs/"02_measurement_reach_summary.csv", index=False)
+    q2sum.to_csv(tabs/"04_Q2_evolution_summary.csv", index=False)
+    q2unlock.to_csv(tabs/"05_Q2_new_capability_vs_recorded.csv", index=False)
+    benchmarks.to_csv(tabs/"06_HallA_benchmark_nearest_cells.csv", index=False)
 
     unlocked = []
     for f in fs:
@@ -313,6 +482,8 @@ def main():
         plot_ratio_precision_map(points, f, figs/f"02_L_over_T_reach_map_f{tag}.png")
     plot_absolute_uncertainties(points, 1.0 if 1.0 in fs else fs[0],
                                 figs/"03_absolute_structure_function_uncertainties.png")
+    plot_q2_evolution(q2sum, figs/"04_Q2_evolution_L_over_T_reach.png")
+    plot_q2_unlocked(q2unlock, figs/"05_Q2_new_10pct_capability.png")
 
     cols = [
         "future_luminosity_multiplier", "rga_final_factor", "rgk_final_factor",
@@ -331,13 +502,26 @@ def main():
     if unlocked:
         print(pd.DataFrame(unlocked).to_string(index=False))
 
+    print("\n[Q2-dependent 10% longitudinal-fraction reach]")
+    q2print = q2sum[[
+        "future_luminosity_multiplier", "Q2_GeV2", "n_bins",
+        "n_expected_95pct_limit_lt_0p10",
+        "median_expected_95pct_abs_L_over_T_limit_if_L_zero",
+    ]]
+    print(q2print.to_string(index=False))
+
     print("\nWrote:")
     print(f"  {tabs/'01_measurement_reach_by_point.csv'}")
     print(f"  {tabs/'02_measurement_reach_summary.csv'}")
     print(f"  {tabs/'03_new_capability_vs_recorded.csv'}")
+    print(f"  {tabs/'04_Q2_evolution_summary.csv'}")
+    print(f"  {tabs/'05_Q2_new_capability_vs_recorded.csv'}")
+    print(f"  {tabs/'06_HallA_benchmark_nearest_cells.csv'}")
     print(f"  {figs/'01_L_over_T_constraint_counts.png'}")
     print("  per-scenario L/T reach maps")
     print(f"  {figs/'03_absolute_structure_function_uncertainties.png'}")
+    print(f"  {figs/'04_Q2_evolution_L_over_T_reach.png'}")
+    print(f"  {figs/'05_Q2_new_10pct_capability.png'}")
     print("\nCaveat: this inherits the Stage-3 assumption that supplied fractional")
     print("uncertainties scale as 1/sqrt(exposure); irreducible systematic and finite-MC")
     print("floors are not yet separated.")
