@@ -17,21 +17,21 @@ factor.  Instead it:
      0.00 <= Mx2 < 0.40 GeV2 control region, and subtracts beam-helicity-
      separated carbon rates from each NH3 spin-state rate;
   5. fits the resulting four hydrogen yield/rate distributions simultaneously
-     to the same seven longitudinal structure-function ratios used by the
-     nominal analysis.
+     to the five polarized structure-function ratios lu1, ul1, ul2, ll0 and
+     ll1.  The unpolarized u1 and u2 modulations are fixed to zero in this
+     deliberately simplified external check.
 
-The first implementation intentionally uses independent Gaussian-area fits in
-each state.  The peak centroid and width are fixed from the established
-spin-integrated nominal Mx2 selection: because the nominal cut is mu +/- 2sigma,
-mu=(low+high)/2 and sigma=(high-low)/4.  A later version can replace these
-independent fits with one simultaneous Mx2 fit sharing signal/background shape
-parameters across spin states.
+The NH3 Mx2 spectra are fit simultaneously across the four spin states in each
+(period, kinematic bin, phi bin) cell.  The peak centroid and width are fixed
+from the established spin-integrated nominal Mx2 selection: because the nominal
+cut is mu +/- 2sigma, mu=(low+high)/2 and sigma=(high-low)/4.  The four signal
+normalizations remain independent while the smooth background shape is shared.
 
 Run from:
     RGC_enpi+/asymmetry_extraction/
 
 Typical command:
-    python extract_structure_function_ratios_yield_check_combined_v6.py
+    python extract_structure_function_ratios_yield_check_polarized_only_v9.py
 
 Outputs:
     output/asymmetry_extraction/yield_check/
@@ -83,8 +83,8 @@ TARGETS = ("NH3", "C", "CH2")
 AUX_TARGETS = ("C", "CH2")
 CARBON_CONTROL_MIN_GEV2 = 0.0
 CARBON_CONTROL_MAX_GEV2 = 0.40
-PHYSICS_PARAMETERS = nominal.PHYSICS_PARAMETERS
-POLARIZED_PARAMETERS = ("lu1", "ul1", "ul2", "ll0", "ll1")
+PHYSICS_PARAMETERS = ("lu1", "ul1", "ul2", "ll0", "ll1")
+POLARIZED_PARAMETERS = PHYSICS_PARAMETERS
 BEAM_POLARIZATION = nominal.BEAM_POLARIZATION
 XB_BINS = nominal.XB_BINS
 TP_BINS = nominal.MINUS_TPRIME_BINS_GEV2
@@ -608,9 +608,9 @@ def charge_for_state(
 def physics_shape(phi: float, h: int, pb_eff: float, pt_eff: float, pbpt_eff: float,
                   rB: float, rC: float, rV: float, rW: float,
                   theta: np.ndarray) -> float:
-    u1, u2, lu1, ul1, ul2, ll0, ll1 = theta
+    lu1, ul1, ul2, ll0, ll1 = theta
     return (
-        1.0 + rV * u1 * math.cos(phi) + rB * u2 * math.cos(2.0 * phi)
+        1.0
         + h * pb_eff * rW * lu1 * math.sin(phi)
         + pt_eff * (rV * ul1 * math.sin(phi) + rB * ul2 * math.sin(2.0 * phi))
         + h * pbpt_eff * (rC * ll0 + rW * ll1 * math.cos(phi))
@@ -665,7 +665,7 @@ def build_rate_covariance(frame: pd.DataFrame, nh3_cov: Mapping[int, np.ndarray]
 def fit_physics_bin(frame: pd.DataFrame, nh3_cov: Mapping[int, np.ndarray]) -> tuple[dict[str, float], np.ndarray, float, int]:
     good = frame[np.isfinite(frame["hydrogen_rate"])].copy().reset_index(drop=True)
     if len(good) < 18:
-        return {name: np.nan for name in PHYSICS_PARAMETERS}, np.full((7, 7), np.nan), np.nan, 0
+        return {name: np.nan for name in PHYSICS_PARAMETERS}, np.full((5, 5), np.nan), np.nan, 0
     # endif
 
     V = build_rate_covariance(good, nh3_cov)
@@ -675,7 +675,7 @@ def fit_physics_bin(frame: pd.DataFrame, nh3_cov: Mapping[int, np.ndarray]) -> t
         V = build_rate_covariance(good, nh3_cov)
     # endif
     if len(good) < 18:
-        return {name: np.nan for name in PHYSICS_PARAMETERS}, np.full((7, 7), np.nan), np.nan, 0
+        return {name: np.nan for name in PHYSICS_PARAMETERS}, np.full((5, 5), np.nan), np.nan, 0
     # endif
 
     # Stable Cholesky whitening.  Tiny numerical jitter is allowed only at the
@@ -692,8 +692,8 @@ def fit_physics_bin(frame: pd.DataFrame, nh3_cov: Mapping[int, np.ndarray]) -> t
     # endtry
 
     def raw_residuals(pars: np.ndarray) -> np.ndarray:
-        theta = pars[:7]
-        norm = math.exp(pars[7])
+        theta = pars[:5]
+        norm = math.exp(pars[5])
         result = []
         for row in good.itertuples(index=False):
             shape = physics_shape(row.phi_center, int(row.helicity), row.pb_effective,
@@ -708,9 +708,9 @@ def fit_physics_bin(frame: pd.DataFrame, nh3_cov: Mapping[int, np.ndarray]) -> t
 
     positive = good.loc[good.hydrogen_rate > 0.0, "hydrogen_rate"]
     norm0 = max(float(np.nanmedian(positive)) if len(positive) else 1.0, 1.0e-12)
-    x0 = np.r_[np.zeros(7), math.log(norm0)]
-    lower = np.r_[np.full(7, -1.5), -40.0]
-    upper = np.r_[np.full(7, 1.5), 40.0]
+    x0 = np.r_[np.zeros(5), math.log(norm0)]
+    lower = np.r_[np.full(5, -1.5), -40.0]
+    upper = np.r_[np.full(5, 1.5), 40.0]
     result = least_squares(residuals, x0, bounds=(lower, upper), max_nfev=20000)
     resid = residuals(result.x)
     ndf = max(len(resid) - len(result.x), 1)
@@ -723,8 +723,8 @@ def fit_physics_bin(frame: pd.DataFrame, nh3_cov: Mapping[int, np.ndarray]) -> t
     # IMPORTANT: do not multiply by chi2/ndf.  V contains absolute propagated
     # statistical uncertainties; rescaling by goodness-of-fit would incorrectly
     # inflate the polarized errors when nuisance/unpolarized modeling is imperfect.
-    covariance = covariance_full[:7, :7]
-    values = {name: float(value) for name, value in zip(PHYSICS_PARAMETERS, result.x[:7])}
+    covariance = covariance_full[:5, :5]
+    values = {name: float(value) for name, value in zip(PHYSICS_PARAMETERS, result.x[:5])}
     return values, covariance, chi2_ndf, len(good)
 
 
@@ -804,7 +804,7 @@ def plot_by_xb(output_dir: Path, results: pd.DataFrame, nominal_results: pd.Data
             ax.grid(alpha=0.25)
             ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
         # endfor
-        handles, labels = axes["u1"].get_legend_handles_labels()
+        handles, labels = axes["lu1"].get_legend_handles_labels()
         if handles:
             fig.legend(handles, labels, loc="lower right", bbox_to_anchor=(0.97, 0.04))
         # endif
@@ -816,11 +816,11 @@ def plot_by_xb(output_dir: Path, results: pd.DataFrame, nominal_results: pd.Data
 
 
 def write_nominal_comparison(path: Path, results: pd.DataFrame, nominal_results: pd.DataFrame | None) -> None:
-    """Write the nominal cross-check, with final metrics restricted to polarized terms.
+    """Write raw nominal-vs-yield differences for the five polarized terms.
 
-    u1/u2 remain in the extraction as nuisance parameters and are retained in
-    the raw tables/plots, but they are explicitly excluded from the quoted
-    external-check agreement numbers and comparison chi2.
+    The two extractions use the same underlying events, so their statistical
+    errors are correlated.  No quadrature pull or comparison chi2 is formed
+    without an explicit cross-method covariance.
     """
     if nominal_results is None:
         return
@@ -844,71 +844,25 @@ def write_nominal_comparison(path: Path, results: pd.DataFrame, nominal_results:
             comp[f"delta_{p}"] = comp[p] - comp[f"nominal_{p}"]
         # endif
     # endfor
-
-    # Approximate comparison chi2 uses statistical errors in quadrature.  The
-    # two methods use the same events and are therefore correlated, so this is
-    # a diagnostic rather than an independent-samples hypothesis test.  Most
-    # importantly, ONLY the five polarized observables enter it.
-    chi2_rows = []
-    for _, row in comp.iterrows():
-        chi2 = 0.0
-        nused = 0
-        for p in POLARIZED_PARAMETERS:
-            ne = row.get(f"nominal_{p}_stat", row.get(f"nominal_{p}_error", np.nan))
-            ye = row.get(f"{p}_error", np.nan)
-            delta = row.get(f"delta_{p}", np.nan)
-            var = ye * ye + ne * ne if np.isfinite(ye) and np.isfinite(ne) else np.nan
-            if np.isfinite(delta) and np.isfinite(var) and var > 0:
-                chi2 += delta * delta / var
-                nused += 1
-            # endif
-        # endfor
-        chi2_rows.append((chi2 / nused if nused else np.nan, nused))
-    # endfor
-    comp["polarized_comparison_chi2_ndf"] = [x[0] for x in chi2_rows]
-    comp["polarized_comparison_nterms"] = [x[1] for x in chi2_rows]
     comp.to_csv(path, index=False)
 
-    total_chi2 = 0.0
-    total_n = 0
-    for _, row in comp.iterrows():
-        for p in POLARIZED_PARAMETERS:
-            ne = row.get(f"nominal_{p}_stat", row.get(f"nominal_{p}_error", np.nan))
-            ye = row.get(f"{p}_error", np.nan)
-            delta = row.get(f"delta_{p}", np.nan)
-            var = ye * ye + ne * ne if np.isfinite(ye) and np.isfinite(ne) else np.nan
-            if np.isfinite(delta) and np.isfinite(var) and var > 0:
-                total_chi2 += delta * delta / var
-                total_n += 1
-            # endif
-        # endfor
-    # endfor
     summary = {
-        "included_parameters": list(POLARIZED_PARAMETERS),
-        "excluded_nuisance_parameters": ["u1", "u2"],
-        "chi2": total_chi2,
-        "n_terms": total_n,
-        "chi2_per_term": total_chi2 / total_n if total_n else None,
-        "note": "Statistical errors added in quadrature; methods share events, so this is a diagnostic comparison metric, not an independent-samples chi-square test.",
+        "included_parameters": list(PHYSICS_PARAMETERS),
+        "comparison": "raw nominal-vs-yield differences only",
+        "statistical_significance_quoted": False,
+        "reason": "The nominal and direct-yield estimators use the same underlying events and therefore have nonzero cross-method statistical covariance.",
+        "required_for_pull_or_chi2": "Common-replica/bootstrap estimate of Cov(X_yield, X_nominal).",
     }
     path.with_name("polarized_comparison_summary.json").write_text(json.dumps(summary, indent=2))
 
-
 def _grouped_axes() -> tuple[plt.Figure, dict[str, plt.Axes]]:
-    fig, axes = plt.subplots(3, 4, figsize=(18, 12), sharex=False)
+    fig, axes = plt.subplots(2, 3, figsize=(15, 9), sharex=False)
     mapping = {
-        "u1": axes[0, 0], "u2": axes[0, 1],
-        "lu1": axes[1, 0], "ul1": axes[1, 1], "ul2": axes[1, 2],
-        "ll0": axes[2, 0], "ll1": axes[2, 1],
+        "lu1": axes[0, 0], "ul1": axes[0, 1], "ul2": axes[0, 2],
+        "ll0": axes[1, 0], "ll1": axes[1, 1],
     }
-    used = {id(ax) for ax in mapping.values()}
-    for ax in axes.flat:
-        if id(ax) not in used:
-            ax.axis("off")
-        # endif
-    # endfor
+    axes[1, 2].axis("off")
     return fig, mapping
-
 
 def plot_summary(path: Path, results: pd.DataFrame) -> None:
     fig, axes = _grouped_axes()
@@ -1194,7 +1148,7 @@ def main() -> None:
         plot_four_state_rates(rate_plots / f"hydrogen_rates_bin{kin_bin:02d}.png", subset, kin_bin)
         phi_cov = {pb: nh3_cov_combined[(kin_bin, pb)] for pb in range(N_PHI_BINS)}
         values, covariance, chi2_ndf, npoints = fit_physics_bin(subset, phi_cov)
-        row: dict[str, Any] = {"kin_bin": kin_bin, "fit_chi2_ndf_all_terms": chi2_ndf,
+        row: dict[str, Any] = {"kin_bin": kin_bin, "fit_chi2_ndf_polarized_model": chi2_ndf,
                                "chi2_ndf": chi2_ndf, "npoints": npoints}
         for index, name in enumerate(PHYSICS_PARAMETERS):
             row[name] = values[name]
@@ -1242,8 +1196,10 @@ def main() -> None:
         "signal_shape": "mu/sigma fixed from nominal mu +/- 2 sigma channel-selection cut",
         "statistics_treatment": "Full GLS covariance: simultaneous-NH3 area covariance + shared carbon-yield covariance + global alpha nuisance covariance; no chi2/ndf rescaling of parameter covariance.",
         "nh3_mx2_fit": "simultaneous four-state fit with independent signal/background normalizations and shared quadratic background shape",
-        "final_comparison_parameters": list(POLARIZED_PARAMETERS),
-        "unpolarized_parameters": "u1/u2 retained as nuisance parameters in the fit but excluded from final nominal-vs-yield agreement metrics",
+        "fit_and_comparison_parameters": list(POLARIZED_PARAMETERS),
+        "unpolarized_parameters": "u1 and u2 are fixed to zero and are not fit in this polarized-only external check.",
+        "v7_correlation_anecdote": "In the preceding seven-parameter study, mean correlations of u1/u2 with the polarized coefficients were generally only at the few-percent level; this supports using the simplified polarized-only fit as an external check.",
+        "nominal_comparison_statistics": "Raw differences only; no pull or comparison chi2 is quoted because the two methods share underlying events and their cross-method covariance has not been estimated.",
         "outputs": {
             "areas": str(tables / "gaussian_signal_areas.csv"),
             "rates": str(tables / "carbon_subtracted_hydrogen_rates.csv"),
