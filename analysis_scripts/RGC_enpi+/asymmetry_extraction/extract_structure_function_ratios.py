@@ -7157,6 +7157,203 @@ def run_rga_cross_check(args):
     return 0
 
 
+
+def fit_xb_integrated_tprime_zero_uu(
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    x_index: int,
+) -> dict[str, Any]:
+    """Nominal unbinned likelihood integrated over all six -t' bins in one xB bin.
+
+    Each original (xB,-t') bin keeps its own period-dependent dilution-factor
+    nuisance parameters.  Only the five polarized physics amplitudes are shared
+    across -t', and u1=u2=0 are fixed.  This is a diagnostic of statistical
+    stability, not a replacement for the production 24-bin result.
+    """
+    t_count = len(MINUS_TPRIME_BINS_GEV2)
+    bin_numbers = [
+        combined_bin_number(x_index, t_index)
+        for t_index in range(t_count)
+    ]
+    sub_nlls = {
+        bin_number: make_bin_nll(
+            events, run_states, dilution_records, bin_number, "nominal"
+        )[0]
+        for bin_number in bin_numbers
+    }
+
+    physics_names = list(PHYSICS_PARAMETERS)
+    dilution_names = [
+        f"f_{period}_bin{bin_number:02d}"
+        for bin_number in bin_numbers
+        for period in PERIODS
+    ]
+    names = physics_names + dilution_names
+
+    start = [float(PARAMETER_INITIAL_VALUES[name]) for name in physics_names]
+    for bin_number in bin_numbers:
+        for period in PERIODS:
+            start.append(float(dilution_records[(period, bin_number)].value))
+        # endfor
+    # endfor
+
+    def combined_nll(*pars: float) -> float:
+        values = dict(zip(names, pars))
+        total = 0.0
+        for bin_number in bin_numbers:
+            total += sub_nlls[bin_number](
+                values["u1"], values["u2"], values["lu1"],
+                values["ul1"], values["ul2"], values["ll0"], values["ll1"],
+                values[f"f_su22_bin{bin_number:02d}"],
+                values[f"f_fa22_bin{bin_number:02d}"],
+                values[f"f_sp23_bin{bin_number:02d}"],
+            )
+        # endfor
+        return float(total)
+
+    def configured_minuit(start_values: list[float]) -> Minuit:
+        candidate = Minuit(combined_nll, *start_values, name=names)
+        candidate.errordef = Minuit.LIKELIHOOD
+        candidate.print_level = 0
+        candidate.strategy = 1
+        for name in physics_names:
+            candidate.limits[name] = PARAMETER_LIMITS[name]
+        # endfor
+        candidate.values["u1"] = 0.0
+        candidate.values["u2"] = 0.0
+        candidate.fixed["u1"] = True
+        candidate.fixed["u2"] = True
+        for bin_number in bin_numbers:
+            for period in PERIODS:
+                name = f"f_{period}_bin{bin_number:02d}"
+                record = dilution_records[(period, bin_number)]
+                width = max(
+                    8.0 * record.stat_uncertainty,
+                    0.20 * record.value,
+                    0.02,
+                )
+                candidate.limits[name] = (
+                    max(1.0e-6, record.value - width),
+                    record.value + width,
+                )
+                if record.stat_uncertainty == 0.0:
+                    candidate.fixed[name] = True
+                # endif
+            # endfor
+        # endfor
+        return candidate
+
+    # Two deterministic starts are sufficient for this diagnostic and avoid
+    # multiplying the already-larger integrated likelihood cost unnecessarily.
+    starts = [list(start)]
+    zero_physics = list(start)
+    for i, name in enumerate(physics_names):
+        if name not in ("u1", "u2"):
+            zero_physics[i] = 0.0
+        # endif
+    # endfor
+    starts.append(zero_physics)
+
+    attempted = []
+    for start_values in starts:
+        candidate = configured_minuit(start_values)
+        candidate.migrad(ncall=80000)
+        if not candidate.fmin.is_valid:
+            candidate.simplex(ncall=40000)
+            candidate.strategy = 2
+            candidate.migrad(ncall=120000)
+        # endif
+        candidate.hesse()
+        attempted.append(candidate)
+    # endfor
+
+    def quality(candidate: Minuit) -> tuple[int, float, float]:
+        valid = candidate.fmin.is_valid and math.isfinite(float(candidate.fval))
+        return (
+            0 if valid else 1,
+            float(candidate.fval) if math.isfinite(float(candidate.fval)) else math.inf,
+            float(candidate.fmin.edm) if math.isfinite(float(candidate.fmin.edm)) else math.inf,
+        )
+
+    best = min(attempted, key=quality)
+    values = {name: float(best.values[name]) for name in PHYSICS_PARAMETERS}
+    errors = {name: float(best.errors[name]) for name in PHYSICS_PARAMETERS}
+    return {
+        "x_index": x_index,
+        "xB_low": float(XB_BINS[x_index][0]),
+        "xB_high": float(XB_BINS[x_index][1]),
+        "xB_center": 0.5 * float(XB_BINS[x_index][0] + XB_BINS[x_index][1]),
+        "bin_numbers": bin_numbers,
+        "values": values,
+        "errors": errors,
+        "valid": bool(best.fmin.is_valid),
+        "edm": float(best.fmin.edm),
+        "fval": float(best.fval),
+        "nfcn": int(best.fmin.nfcn),
+    }
+
+
+def run_xb_integrated_tprime_zero_uu_study(
+    cache_path: Path,
+    run_info_path: Path,
+    dilution_json_path: Path,
+    output_dir: Path,
+) -> Path:
+    """Run and write the four xB-only, t'-integrated nominal baseline fits."""
+    print("=" * 78, flush=True)
+    print("[xB-integrated] START: nominal unbinned likelihood, u1=u2=0", flush=True)
+    print("=" * 78, flush=True)
+    events = load_event_cache(cache_path)
+    run_records = parse_run_info_csv(run_info_path)
+    run_states = run_state_arrays(run_records)
+    dilution_records = load_dilution_factors(dilution_json_path, cut_label="nominal")
+
+    rows = []
+    details = []
+    for x_index in range(len(XB_BINS)):
+        t0 = time.perf_counter()
+        fit = fit_xb_integrated_tprime_zero_uu(
+            events, run_states, dilution_records, x_index
+        )
+        elapsed = time.perf_counter() - t0
+        row = {
+            "x_index": x_index,
+            "xB_low": fit["xB_low"],
+            "xB_high": fit["xB_high"],
+            "xB_center": fit["xB_center"],
+            "fit_valid": fit["valid"],
+            "edm": fit["edm"],
+            "fval": fit["fval"],
+            "nfcn": fit["nfcn"],
+            "elapsed_seconds": elapsed,
+        }
+        for name in PUBLISHED_SYSTEMATIC_PARAMETERS:
+            row[name] = fit["values"][name]
+            row[f"{name}_error"] = fit["errors"][name]
+        # endfor
+        rows.append(row)
+        details.append(fit)
+        print(
+            f"[xB-integrated] x bin {x_index + 1}/{len(XB_BINS)} DONE | "
+            f"{elapsed:.1f} s | valid={fit['valid']} | EDM={fit['edm']:.3e}",
+            flush=True,
+        )
+    # endfor
+
+    tables = output_dir / "tables"
+    ensure_directory(tables)
+    csv_path = tables / "structure_function_ratios_xB_integrated_tprime.csv"
+    pd.DataFrame(rows).to_csv(csv_path, index=False)
+    write_json(
+        tables / "structure_function_ratios_xB_integrated_tprime_details.json",
+        details,
+    )
+    print(f"[xB-integrated] wrote {csv_path}", flush=True)
+    return csv_path
+
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -7391,6 +7588,12 @@ def main() -> int:
     )
 
     if args.baseline_zero_uu_only:
+        run_xb_integrated_tprime_zero_uu_study(
+            cache_path=nominal_cache,
+            run_info_path=args.run_info_csv.expanduser().resolve(),
+            dilution_json_path=nominal_dilution,
+            output_dir=nominal_dir,
+        )
         print(f"[baseline-zero-uu] complete: {nominal_dir}", flush=True)
         return 0
     # endif

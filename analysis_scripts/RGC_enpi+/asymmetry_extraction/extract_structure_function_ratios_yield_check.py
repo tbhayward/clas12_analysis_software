@@ -815,6 +815,181 @@ def fit_physics_bin(frame: pd.DataFrame, nh3_cov: Mapping[int, np.ndarray]) -> t
     return values, covariance, chi2_ndf, len(good)
 
 
+
+def fit_physics_bin_spin_combinations(
+    frame: pd.DataFrame,
+    nh3_cov: Mapping[int, np.ndarray],
+) -> tuple[dict[str, float], np.ndarray, float, int]:
+    """Polarized fit with the spin-independent yield profiled independently in each phi bin.
+
+    This is the covariance-preserving implementation of the beam-, target- and
+    beam-target spin-combination idea.  A free positive normalization N_phi is
+    assigned to every phi bin, so arbitrary UU(phi) structure is absorbed
+    exactly instead of being modeled as a constant.  The five polarized
+    amplitudes are common to all four spin states and all phi bins.
+    """
+    good = frame[np.isfinite(frame["hydrogen_rate"])].copy().reset_index(drop=True)
+    if len(good) < 18:
+        return {name: np.nan for name in PHYSICS_PARAMETERS}, np.full((5, 5), np.nan), np.nan, 0
+    # endif
+
+    V = build_rate_covariance(good, nh3_cov)
+    finite_diag = np.isfinite(np.diag(V)) & (np.diag(V) > 0.0)
+    if not np.all(finite_diag):
+        good = good.loc[finite_diag].reset_index(drop=True)
+        V = build_rate_covariance(good, nh3_cov)
+    # endif
+    if len(good) < 18:
+        return {name: np.nan for name in PHYSICS_PARAMETERS}, np.full((5, 5), np.nan), np.nan, 0
+    # endif
+
+    scale = float(np.nanmedian(np.diag(V)))
+    jitter = max(scale, 1.0e-30) * 1.0e-12
+    try:
+        L = np.linalg.cholesky(V + jitter * np.eye(len(V)))
+    except np.linalg.LinAlgError:
+        eigval, eigvec = np.linalg.eigh(V)
+        floor = max(float(np.max(eigval)) * 1.0e-12, 1.0e-30)
+        V = (eigvec * np.maximum(eigval, floor)) @ eigvec.T
+        L = np.linalg.cholesky(V)
+    # endtry
+
+    phi_bins = sorted(int(v) for v in good.phi_bin.unique())
+    phi_to_index = {phi_bin: index for index, phi_bin in enumerate(phi_bins)}
+    positive = good.loc[good.hydrogen_rate > 0.0, ["phi_bin", "hydrogen_rate"]]
+    norm0 = []
+    for phi_bin in phi_bins:
+        values = positive.loc[positive.phi_bin == phi_bin, "hydrogen_rate"]
+        fallback = good.loc[good.hydrogen_rate > 0.0, "hydrogen_rate"]
+        value = float(np.nanmedian(values)) if len(values) else (
+            float(np.nanmedian(fallback)) if len(fallback) else 1.0
+        )
+        norm0.append(max(value, 1.0e-12))
+    # endfor
+
+    def raw_residuals(pars: np.ndarray) -> np.ndarray:
+        theta = pars[:5]
+        log_norms = pars[5:]
+        result = []
+        for row in good.itertuples(index=False):
+            norm = math.exp(log_norms[phi_to_index[int(row.phi_bin)]])
+            result.append(
+                row.hydrogen_rate - norm * physics_shape_from_moments(row, theta)
+            )
+        # endfor
+        return np.asarray(result, dtype=float)
+
+    def residuals(pars: np.ndarray) -> np.ndarray:
+        return np.linalg.solve(L, raw_residuals(pars))
+
+    x0 = np.r_[np.zeros(5), np.log(np.asarray(norm0))]
+    lower = np.r_[np.full(5, -1.5), np.full(len(phi_bins), -40.0)]
+    upper = np.r_[np.full(5, 1.5), np.full(len(phi_bins), 40.0)]
+    result = least_squares(residuals, x0, bounds=(lower, upper), max_nfev=30000)
+    resid = residuals(result.x)
+    ndf = max(len(resid) - len(result.x), 1)
+    chi2_ndf = float(resid @ resid / ndf)
+    try:
+        covariance_full = np.linalg.inv(result.jac.T @ result.jac)
+    except np.linalg.LinAlgError:
+        covariance_full = np.linalg.pinv(result.jac.T @ result.jac)
+    # endtry
+    covariance = covariance_full[:5, :5]
+    values = {name: float(value) for name, value in zip(PHYSICS_PARAMETERS, result.x[:5])}
+    return values, covariance, chi2_ndf, len(good)
+
+
+def fit_xb_integrated_spin_combinations(
+    rates: pd.DataFrame,
+    nh3_cov_combined: Mapping[tuple[int, int], np.ndarray],
+    x_index: int,
+) -> tuple[dict[str, float], np.ndarray, float, int]:
+    """Jointly fit all six -t' bins in one xB bin with independent (t',phi) UU baselines."""
+    first_bin = x_index * len(TP_BINS) + 1
+    kin_bins = list(range(first_bin, first_bin + len(TP_BINS)))
+    good = rates[
+        rates.kin_bin.isin(kin_bins) & np.isfinite(rates.hydrogen_rate)
+    ].copy().reset_index(drop=True)
+    if len(good) < 36:
+        return {name: np.nan for name in PHYSICS_PARAMETERS}, np.full((5, 5), np.nan), np.nan, 0
+    # endif
+
+    # Block-diagonal covariance in t'. The global-alpha cross-t' covariance is
+    # intentionally omitted here; this diagnostic is aimed at central-value
+    # stability under increased statistics, not at a final uncertainty model.
+    V = np.zeros((len(good), len(good)), dtype=float)
+    for kin_bin in kin_bins:
+        idx = np.flatnonzero(good.kin_bin.to_numpy(dtype=int) == kin_bin)
+        if idx.size == 0:
+            continue
+        # endif
+        block_frame = good.iloc[idx].reset_index(drop=True)
+        phi_cov = {
+            pb: nh3_cov_combined[(kin_bin, pb)]
+            for pb in range(N_PHI_BINS)
+            if (kin_bin, pb) in nh3_cov_combined
+        }
+        block = build_rate_covariance(block_frame, phi_cov)
+        V[np.ix_(idx, idx)] = block
+    # endfor
+
+    finite_diag = np.isfinite(np.diag(V)) & (np.diag(V) > 0.0)
+    good = good.loc[finite_diag].reset_index(drop=True)
+    V = V[np.ix_(finite_diag, finite_diag)]
+    scale = float(np.nanmedian(np.diag(V)))
+    try:
+        L = np.linalg.cholesky(V + max(scale, 1.0e-30) * 1.0e-12 * np.eye(len(V)))
+    except np.linalg.LinAlgError:
+        eigval, eigvec = np.linalg.eigh(V)
+        floor = max(float(np.max(eigval)) * 1.0e-12, 1.0e-30)
+        V = (eigvec * np.maximum(eigval, floor)) @ eigvec.T
+        L = np.linalg.cholesky(V)
+    # endtry
+
+    cells = sorted({(int(r.kin_bin), int(r.phi_bin)) for r in good.itertuples(index=False)})
+    cell_index = {cell: i for i, cell in enumerate(cells)}
+    norm0 = []
+    for cell in cells:
+        vals = good[
+            (good.kin_bin == cell[0]) & (good.phi_bin == cell[1]) & (good.hydrogen_rate > 0.0)
+        ].hydrogen_rate
+        norm0.append(max(float(np.nanmedian(vals)) if len(vals) else 1.0, 1.0e-12))
+    # endfor
+
+    def residuals(pars: np.ndarray) -> np.ndarray:
+        theta = pars[:5]
+        log_norms = pars[5:]
+        raw = np.asarray([
+            row.hydrogen_rate
+            - math.exp(log_norms[cell_index[(int(row.kin_bin), int(row.phi_bin))]])
+            * physics_shape_from_moments(row, theta)
+            for row in good.itertuples(index=False)
+        ], dtype=float)
+        return np.linalg.solve(L, raw)
+
+    x0 = np.r_[np.zeros(5), np.log(np.asarray(norm0))]
+    result = least_squares(
+        residuals, x0,
+        bounds=(np.r_[np.full(5, -1.5), np.full(len(cells), -40.0)],
+                np.r_[np.full(5, 1.5), np.full(len(cells), 40.0)]),
+        max_nfev=50000,
+    )
+    resid = residuals(result.x)
+    ndf = max(len(resid) - len(result.x), 1)
+    try:
+        covariance_full = np.linalg.inv(result.jac.T @ result.jac)
+    except np.linalg.LinAlgError:
+        covariance_full = np.linalg.pinv(result.jac.T @ result.jac)
+    # endtry
+    return (
+        {name: float(value) for name, value in zip(PHYSICS_PARAMETERS, result.x[:5])},
+        covariance_full[:5, :5],
+        float(resid @ resid / ndf),
+        len(good),
+    )
+
+
+
 def plot_spectrum(path: Path, fit: AreaFit, title: str) -> None:
     fig, ax = plt.subplots(figsize=(8, 6))
     ax.errorbar(fit.hist_x, fit.hist_y, yerr=fit.hist_err, fmt="o", ms=3, label="Data")
@@ -1392,10 +1567,75 @@ def main() -> None:
     results = pd.DataFrame(result_rows)
     results.to_csv(tables / "yield_check_structure_function_ratios.csv", index=False)
     (tables / "yield_check_covariances.json").write_text(json.dumps(covariance_payload, indent=2))
+
+    # Spin-combination / profiled-UU diagnostic.  Unlike the legacy absolute-rate
+    # fit above, this gives each phi bin its own UU normalization.  Therefore only
+    # differences among the four spin states constrain the polarized amplitudes.
+    spin_rows = []
+    spin_covariance_payload = {}
+    for kin_bin in range(1, N_KIN_BINS + 1):
+        sub = rates[rates.kin_bin == kin_bin].copy()
+        phi_cov = {
+            pb: nh3_cov_combined[(kin_bin, pb)]
+            for pb in range(N_PHI_BINS)
+            if (kin_bin, pb) in nh3_cov_combined
+        }
+        values, covariance, chi2_ndf, npoints = fit_physics_bin_spin_combinations(sub, phi_cov)
+        row = {"kin_bin": kin_bin, "chi2_ndf": chi2_ndf, "npoints": npoints}
+        for i, name in enumerate(PHYSICS_PARAMETERS):
+            row[name] = values[name]
+            row[f"{name}_error"] = (
+                math.sqrt(max(float(covariance[i, i]), 0.0))
+                if np.isfinite(covariance[i, i]) else np.nan
+            )
+        # endfor
+        spin_rows.append(row)
+        spin_covariance_payload[str(kin_bin)] = covariance.tolist()
+    # endfor
+    spin_results = pd.DataFrame(spin_rows)
+    spin_results.to_csv(tables / "yield_check_spin_combinations.csv", index=False)
+    (tables / "yield_check_spin_combination_covariances.json").write_text(
+        json.dumps(spin_covariance_payload, indent=2)
+    )
+    plot_summary(physics_plots / "yield_check_spin_combinations.png", spin_results)
+
+    # xB-only diagnostic: share the five polarized amplitudes across all six -t'
+    # bins, while retaining an independent UU normalization for every (t',phi)
+    # cell.  This directly tests whether sparse high--t' cells drive disagreement.
+    xb_rows = []
+    for x_index, (x_low, x_high) in enumerate(XB_BINS):
+        values, covariance, chi2_ndf, npoints = fit_xb_integrated_spin_combinations(
+            rates, nh3_cov_combined, x_index
+        )
+        row = {
+            "x_index": x_index, "xB_low": x_low, "xB_high": x_high,
+            "xB_center": 0.5 * (x_low + x_high),
+            "chi2_ndf": chi2_ndf, "npoints": npoints,
+        }
+        for i, name in enumerate(PHYSICS_PARAMETERS):
+            row[name] = values[name]
+            row[f"{name}_error"] = (
+                math.sqrt(max(float(covariance[i, i]), 0.0))
+                if np.isfinite(covariance[i, i]) else np.nan
+            )
+        # endfor
+        xb_rows.append(row)
+    # endfor
+    pd.DataFrame(xb_rows).to_csv(
+        tables / "yield_check_spin_combinations_xB_integrated_tprime.csv", index=False
+    )
     plot_summary(physics_plots / "yield_check_structure_function_ratios.png", results)
     nominal_results = load_nominal_results()
-    plot_by_xb(physics_plots / "by_xB", results, nominal_results)
-    write_nominal_comparison(tables / "yield_check_vs_nominal.csv", results, nominal_results)
+    plot_by_xb(physics_plots / "by_xB", spin_results, nominal_results)
+    write_nominal_comparison(
+        tables / "yield_check_spin_combinations_vs_nominal.csv",
+        spin_results, nominal_results,
+    )
+    # Retain the old absolute-rate comparison explicitly as a diagnostic.
+    write_nominal_comparison(
+        tables / "yield_check_absolute_rates_vs_nominal.csv",
+        results, nominal_results,
+    )
 
     # Useful stability/quality figures.
     fig, ax = plt.subplots(figsize=(10, 6))
@@ -1435,7 +1675,9 @@ def main() -> None:
             "areas": str(tables / "gaussian_signal_areas.csv"),
             "rates": str(tables / "carbon_subtracted_hydrogen_rates.csv"),
             "carbon_normalization": str(tables / "carbon_normalization.csv"),
-            "physics": str(tables / "yield_check_structure_function_ratios.csv"),
+            "physics_absolute_rate": str(tables / "yield_check_structure_function_ratios.csv"),
+            "physics_spin_combinations": str(tables / "yield_check_spin_combinations.csv"),
+            "physics_xB_integrated_tprime": str(tables / "yield_check_spin_combinations_xB_integrated_tprime.csv"),
             "all_exclusive_bsa": str(tables / "all_exclusive_nh3_bsa.csv"),
         },
     }
