@@ -670,20 +670,45 @@ def build_internal_data_extraction(common, rga_file, rgk_file):
         q2 = float(getattr(r, "Q2_common_GeV2"))
         xb = float(getattr(r, "xB_common"))
         mt = float(getattr(r, "minus_t_common_GeV2"))
-        # Stage-3 common-point tables use point_id_common; older/local
-        # variants may use point_id.  itertuples() preserves either name.
-        if hasattr(r, "point_id_common"):
-            point_id = str(r.point_id_common)
-        elif hasattr(r, "point_id"):
-            point_id = str(r.point_id)
-        else:
-            raise RuntimeError(
-                "Could not identify the common point ID. "
-                f"Available fields: {list(r._fields)}"
-            )
+        # Common-bin identity is the six nominal bin edges.  The Stage-2
+        # common table intentionally has no point_id; RGA and RGK are matched
+        # by these shared edges.  Use the campaign-specific integer bin
+        # indices to select the measured phi rows exactly (no nearest-neighbor
+        # matching in flux-coordinate Q2/xB/t).
+        iq2_rga = int(getattr(r, "iq2_rga"))
+        ixb_rga = int(getattr(r, "ixb_rga"))
+        it_rga = int(getattr(r, "it_rga"))
+        iq2_rgk = int(getattr(r, "iq2_rgk"))
+        ixb_rgk = int(getattr(r, "ixb_rgk"))
+        it_rgk = int(getattr(r, "it_rgk"))
 
-        ga = _nearest_native_group(rga, q2, xb, mt)
-        gk = _nearest_native_group(rgk, q2, xb, mt)
+        point_id = (
+            f"Q2_{float(getattr(r, 'Q2_low_GeV2')):.6g}_"
+            f"{float(getattr(r, 'Q2_high_GeV2')):.6g}__"
+            f"xB_{float(getattr(r, 'xB_low')):.6g}_"
+            f"{float(getattr(r, 'xB_high')):.6g}__"
+            f"mt_{float(getattr(r, 'minus_t_low_GeV2')):.6g}_"
+            f"{float(getattr(r, 'minus_t_high_GeV2')):.6g}"
+        )
+
+        ga = rga[
+            (rga["iq2"] == iq2_rga) &
+            (rga["ixb"] == ixb_rga) &
+            (rga["it"] == it_rga)
+        ].copy()
+        gk = rgk[
+            (rgk["iq2"] == iq2_rgk) &
+            (rgk["ixb"] == ixb_rgk) &
+            (rgk["it"] == it_rgk)
+        ].copy()
+
+        if ga.empty or gk.empty:
+            raise RuntimeError(
+                "Missing measured rows for common cell "
+                f"(Q2={q2:.6g}, xB={xb:.6g}, -t={mt:.6g}); "
+                f"RGA indices=({iq2_rga},{ixb_rga},{it_rga}) n={len(ga)}, "
+                f"RGK indices=({iq2_rgk},{ixb_rgk},{it_rgk}) n={len(gk)}."
+            )
         theta, cov, chi2, ndf = _joint_rosenbluth_fit(ga, gk)
         T, L, LT, TT = map(float, theta)
         dT, dL, dLT, dTT = np.sqrt(np.clip(np.diag(cov), 0.0, np.inf))
