@@ -3444,6 +3444,11 @@ def fit_stage_worker(task: dict[str, Any]) -> dict[str, Any]:
         fit = fit_one_variant(
             events, run_states, dilution_records, bin_number, "nominal"
         )
+    elif kind == "nominal_zero_uu":
+        fit = fit_one_variant(
+            events, run_states, dilution_records, bin_number, "nominal",
+            fixed_physics_parameters={"u1": 0.0, "u2": 0.0},
+        )
     elif kind in {"photon_axis_projection", "external_data_informed"}:
         fit = fit_one_variant(
             events,
@@ -4922,6 +4927,7 @@ def run_analysis_variant(
     include_period_diagnostics: bool = False,
     cut_label: str = "nominal",
     source_cache_path: Path | None = None,
+    zero_uu_baseline: bool = False,
 ) -> dict[str, Any]:
     tables_dir = output_dir / "tables"
     json_dir = output_dir / "json"
@@ -5003,8 +5009,9 @@ def run_analysis_variant(
     # Stage 1: the quoted simultaneous extraction.  These are exactly the
     # original nominal fit_one_variant calls, now returned and checkpointed
     # before any diagnostic minimizations begin.
+    nominal_task_kind = "nominal_zero_uu" if zero_uu_baseline else "nominal"
     nominal_tasks = [
-        {"kind": "nominal", "bin_number": bin_number}
+        {"kind": nominal_task_kind, "bin_number": bin_number}
         for bin_number in range(1, NUMBER_OF_BINS + 1)
     ]
     nominal_stage = run_fit_stage(
@@ -7199,6 +7206,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workers", type=int, default=MAXIMUM_WORKERS)
     parser.add_argument("--skip-plots", action="store_true")
     parser.add_argument(
+        "--baseline-zero-uu-only", action="store_true",
+        help="Run only the baseline nominal likelihood with u1=u2=0 fixed; skip all systematic studies.",
+    )
+    parser.add_argument(
         "--rga-cross-check", action="store_true",
         help=(
             "Run only the Diehl et al. RGA exclusive-pi+ cross-check. "
@@ -7221,7 +7232,12 @@ def main() -> int:
         min(int(args.workers), MAXIMUM_WORKERS, os.cpu_count() or 1, NUMBER_OF_BINS),
     )
     root = args.output_dir.expanduser().resolve()
-    nominal_dir = root / "nominal"
+    if args.baseline_zero_uu_only:
+        args.disable_isr = True
+        args.disable_momentum_corrections = True
+        args.disable_channel_selection = True
+    # endif
+    nominal_dir = root / ("nominal_zero_uu" if args.baseline_zero_uu_only else "nominal")
     isr_dir = root / "isr"
     momentum_dir = root / "momentum_corrections"
     channel_dir = root / "channel_selection"
@@ -7367,11 +7383,17 @@ def main() -> int:
         workers=workers,
         reuse_cache=args.reuse_cache,
         skip_plots=args.skip_plots,
-        include_target_axis_study=True,
-        include_period_diagnostics=True,
+        include_target_axis_study=(not args.baseline_zero_uu_only),
+        include_period_diagnostics=(not args.baseline_zero_uu_only),
         cut_label="nominal",
         source_cache_path=(None if args.reuse_cache else nominal_source_cache),
+        zero_uu_baseline=args.baseline_zero_uu_only,
     )
+
+    if args.baseline_zero_uu_only:
+        print(f"[baseline-zero-uu] complete: {nominal_dir}", flush=True)
+        return 0
+    # endif
 
     target_axis_study = write_target_axis_study_products(
         nominal_result["frame"], diagnostics_dir / "target_axis"

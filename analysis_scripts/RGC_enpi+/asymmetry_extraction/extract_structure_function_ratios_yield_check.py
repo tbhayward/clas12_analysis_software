@@ -559,12 +559,24 @@ def load_events(
                         & (phi_bin >= 0) & (phi_bin < N_PHI_BINS)
                         & np.isfinite(mx2) & np.isfinite(phi)
                     )
+                    selected_run = run[valid]
+                    event_pt = np.zeros(np.count_nonzero(valid), dtype=float)
+                    if target == "NH3":
+                        for unique_run in np.unique(selected_run):
+                            rec = run_info.get((period, target, int(unique_run)))
+                            if rec is not None:
+                                event_pt[selected_run == unique_run] = rec.target_polarization
+                            # endif
+                        # endfor
+                    # endif
                     data = {
                         "period": np.full(np.count_nonzero(valid), period),
                         "target": np.full(np.count_nonzero(valid), target),
-                        "run": run[valid], "helicity": hel[valid],
+                        "run": selected_run, "helicity": hel[valid],
                         "target_sign": target_sign[valid], "kin_bin": kin[valid],
                         "phi_bin": phi_bin[valid], "phi": phi[valid], "Mx2": mx2[valid],
+                        "event_pt": event_pt,
+                        "event_pb": np.full(np.count_nonzero(valid), BEAM_POLARIZATION[period]),
                     }
                     depA = np.asarray(arrays[branches["DepA"]], dtype=float)[valid]
                     for key in ("DepB", "DepC", "DepV", "DepW"):
@@ -605,16 +617,69 @@ def charge_for_state(
     return qsum, qpt
 
 
-def physics_shape(phi: float, h: int, pb_eff: float, pt_eff: float, pbpt_eff: float,
-                  rB: float, rC: float, rV: float, rW: float,
-                  theta: np.ndarray) -> float:
+def physics_shape_from_moments(row: Any, theta: np.ndarray) -> float:
+    """Polarized-only cell model using averages of the exact event-level products.
+
+    This deliberately avoids factorizing, e.g.
+      <Pb Pt rW cos(phi)> -> <Pb Pt><rW>cos(<phi>).
+    The moments are measured from NH3 events inside the nominal Mx2 window.
+    """
     lu1, ul1, ul2, ll0, ll1 = theta
+    h = int(row.helicity)
     return (
         1.0
-        + h * pb_eff * rW * lu1 * math.sin(phi)
-        + pt_eff * (rV * ul1 * math.sin(phi) + rB * ul2 * math.sin(2.0 * phi))
-        + h * pbpt_eff * (rC * ll0 + rW * ll1 * math.cos(phi))
+        + h * row.m_lu1 * lu1
+        + row.m_ul1 * ul1
+        + row.m_ul2 * ul2
+        + h * row.m_ll0 * ll0
+        + h * row.m_ll1 * ll1
     )
+
+
+def exact_cell_moments(
+    events: pd.DataFrame,
+    cuts: Mapping[tuple[str, int], Any],
+    kin_bin: int,
+    phi_bin: int,
+    helicity: int,
+    target_sign: int,
+) -> dict[str, float]:
+    """Exact event-product moments for one combined-period NH3 cell."""
+    pieces = []
+    for period in PERIODS:
+        cut = cuts[(period, kin_bin)]
+        sub = events[
+            (events.target == "NH3")
+            & (events.period == period)
+            & (events.kin_bin == kin_bin)
+            & (events.phi_bin == phi_bin)
+            & (events.helicity == helicity)
+            & (events.target_sign == target_sign)
+            & (events.Mx2 >= cut.low_gev2)
+            & (events.Mx2 <= cut.high_gev2)
+        ]
+        if len(sub):
+            pieces.append(sub)
+        # endif
+    # endfor
+    if not pieces:
+        return {name: np.nan for name in ("m_lu1", "m_ul1", "m_ul2", "m_ll0", "m_ll1")}
+    # endif
+    sub = pd.concat(pieces, ignore_index=True)
+    phi = sub.phi.to_numpy(dtype=float)
+    pb = sub.event_pb.to_numpy(dtype=float)
+    pt = sub.event_pt.to_numpy(dtype=float)
+    rB = sub.rB.to_numpy(dtype=float)
+    rC = sub.rC.to_numpy(dtype=float)
+    rV = sub.rV.to_numpy(dtype=float)
+    rW = sub.rW.to_numpy(dtype=float)
+    return {
+        "m_lu1": float(np.nanmean(pb * rW * np.sin(phi))),
+        "m_ul1": float(np.nanmean(pt * rV * np.sin(phi))),
+        "m_ul2": float(np.nanmean(pt * rB * np.sin(2.0 * phi))),
+        "m_ll0": float(np.nanmean(pb * pt * rC)),
+        "m_ll1": float(np.nanmean(pb * pt * rW * np.cos(phi))),
+    }
 
 
 def build_rate_covariance(frame: pd.DataFrame, nh3_cov: Mapping[int, np.ndarray]) -> np.ndarray:
@@ -696,9 +761,7 @@ def fit_physics_bin(frame: pd.DataFrame, nh3_cov: Mapping[int, np.ndarray]) -> t
         norm = math.exp(pars[5])
         result = []
         for row in good.itertuples(index=False):
-            shape = physics_shape(row.phi_center, int(row.helicity), row.pb_effective,
-                                  row.pt_effective, row.pbpt_effective,
-                                  row.rB, row.rC, row.rV, row.rW, theta)
+            shape = physics_shape_from_moments(row, theta)
             result.append(row.hydrogen_rate - norm * shape)
         # endfor
         return np.asarray(result, dtype=float)
@@ -766,14 +829,19 @@ def plot_four_state_rates(path: Path, subset: pd.DataFrame, kin_bin: int) -> Non
 
 
 def load_nominal_results() -> pd.DataFrame | None:
-    path = Path("output/asymmetry_extraction/nominal/tables/structure_function_ratios.csv")
-    if not path.is_file():
-        print(f"[comparison] nominal table not found: {path}; skipping overlays", flush=True)
-        return None
-    # endif
-    frame = pd.read_csv(path)
-    print(f"[comparison] loaded nominal results: {path}", flush=True)
-    return frame
+    candidates = [
+        Path("output/asymmetry_extraction/nominal_zero_uu/tables/structure_function_ratios.csv"),
+        Path("output/asymmetry_extraction/nominal/tables/structure_function_ratios.csv"),
+    ]
+    for path in candidates:
+        if path.is_file():
+            frame = pd.read_csv(path)
+            print(f"[comparison] loaded nominal results: {path}", flush=True)
+            return frame
+        # endif
+    # endfor
+    print(f"[comparison] no nominal table found in: {candidates}; skipping overlays", flush=True)
+    return None
 
 
 def plot_by_xb(output_dir: Path, results: pd.DataFrame, nominal_results: pd.DataFrame | None) -> None:
@@ -863,6 +931,76 @@ def _grouped_axes() -> tuple[plt.Figure, dict[str, plt.Axes]]:
     }
     axes[1, 2].axis("off")
     return fig, mapping
+
+def fit_all_exclusive_nh3_bsa(
+    frame: pd.DataFrame,
+    nh3_cov: Mapping[int, np.ndarray],
+) -> tuple[float, float, float, int]:
+    """Yield-level BSA from all exclusive NH3 signal events.
+
+    No carbon subtraction and no dilution factor are used.  The other four
+    polarized harmonics are floated as nuisance amplitudes so unequal target-
+    polarization exposure cannot leak trivially into LU.  Only lu1 is reported.
+    """
+    good = frame[np.isfinite(frame["nh3_rate"])].copy().reset_index(drop=True)
+    if len(good) < 18:
+        return np.nan, np.nan, np.nan, 0
+    # endif
+    rows = list(good.itertuples(index=False))
+    V = np.zeros((len(rows), len(rows)), dtype=float)
+    state_order = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+    state_index = {st: i for i, st in enumerate(state_order)}
+    for i, ri in enumerate(rows):
+        for j, rj in enumerate(rows):
+            if int(ri.phi_bin) != int(rj.phi_bin):
+                continue
+            # endif
+            C = nh3_cov.get(int(ri.phi_bin))
+            if C is None or np.shape(C) != (4, 4):
+                continue
+            # endif
+            ii = state_index[(int(ri.helicity), int(ri.target_sign))]
+            jj = state_index[(int(rj.helicity), int(rj.target_sign))]
+            V[i, j] = C[ii, jj] / (ri.charge * rj.charge)
+        # endfor
+    # endfor
+    scale = max(float(np.nanmedian(np.diag(V))), 1.0e-30)
+    try:
+        L = np.linalg.cholesky(V + 1.0e-12 * scale * np.eye(len(V)))
+    except np.linalg.LinAlgError:
+        eigval, eigvec = np.linalg.eigh(V)
+        floor = max(float(np.max(eigval)) * 1.0e-12, 1.0e-30)
+        V = (eigvec * np.maximum(eigval, floor)) @ eigvec.T
+        L = np.linalg.cholesky(V)
+    # endtry
+
+    def residuals(pars: np.ndarray) -> np.ndarray:
+        theta = pars[:5]
+        norm = math.exp(pars[5])
+        raw = np.asarray([
+            row.nh3_rate - norm * physics_shape_from_moments(row, theta)
+            for row in rows
+        ], dtype=float)
+        return np.linalg.solve(L, raw)
+
+    positive = good.loc[good.nh3_rate > 0.0, "nh3_rate"]
+    norm0 = max(float(np.nanmedian(positive)) if len(positive) else 1.0, 1.0e-12)
+    x0 = np.r_[np.zeros(5), math.log(norm0)]
+    result = least_squares(
+        residuals, x0,
+        bounds=(np.r_[np.full(5, -1.5), -40.0], np.r_[np.full(5, 1.5), 40.0]),
+        max_nfev=20000,
+    )
+    resid = residuals(result.x)
+    ndf = max(len(resid) - len(result.x), 1)
+    try:
+        cov = np.linalg.inv(result.jac.T @ result.jac)
+    except np.linalg.LinAlgError:
+        cov = np.linalg.pinv(result.jac.T @ result.jac)
+    # endtry
+    return float(result.x[0]), float(math.sqrt(max(cov[0, 0], 0.0))), float(resid @ resid / ndf), len(resid)
+
+
 
 def plot_summary(path: Path, results: pd.DataFrame) -> None:
     fig, axes = _grouped_axes()
@@ -1114,6 +1252,7 @@ def main() -> None:
                         dep[name] = (float(np.average(vals[finite_dep], weights=weights[finite_dep]))
                                      if np.any(finite_dep) else np.nan)
                     # endfor
+                    moments = exact_cell_moments(events, cuts, kin_bin, phi_bin, h, s)
                     rate_rows.append(dict(
                         kin_bin=kin_bin, phi_bin=phi_bin, phi_center=PHI_CENTERS[phi_bin],
                         helicity=h, target_sign=s, charge=qA, pt_effective=pt_eff,
@@ -1122,7 +1261,7 @@ def main() -> None:
                         nh3_signal_area_error=nh3_error, carbon_signal_area=carbon_area,
                         carbon_signal_area_error=carbon_error, carbon_rate=carbon_rate,
                         carbon_rate_variance=carbon_rate_variance, carbon_alpha=alpha,
-                        carbon_alpha_error=alpha_error, **dep,
+                        carbon_alpha_error=alpha_error, **dep, **moments,
                     ))
                 # endfor
             # endfor
@@ -1139,7 +1278,31 @@ def main() -> None:
         V = build_rate_covariance(sub, phi_cov)
         rates.loc[idx, "hydrogen_rate_error"] = np.sqrt(np.maximum(np.diag(V), 0.0))
     # endfor
+    rates["nh3_rate"] = np.divide(
+        rates["nh3_signal_area"].to_numpy(dtype=float),
+        rates["charge"].to_numpy(dtype=float),
+        out=np.full(len(rates), np.nan, dtype=float),
+        where=rates["charge"].to_numpy(dtype=float) > 0.0,
+    )
     rates.to_csv(tables / "carbon_subtracted_hydrogen_rates.csv", index=False)
+
+    # Apples-to-apples BSA check: use every exclusive NH3 signal event, with no
+    # carbon subtraction and no dilution factor.  This is the yield-level
+    # analogue of the nominal undiluted LU term.
+    all_exclusive_bsa_rows = []
+    for kin_bin in range(1, N_KIN_BINS + 1):
+        sub = rates[rates.kin_bin == kin_bin].copy()
+        phi_cov = {pb: nh3_cov_combined[(kin_bin, pb)] for pb in range(N_PHI_BINS)}
+        lu, lu_err, chi2_ndf, npoints = fit_all_exclusive_nh3_bsa(sub, phi_cov)
+        all_exclusive_bsa_rows.append({
+            "kin_bin": kin_bin, "lu1_all_exclusive_nh3": lu,
+            "lu1_all_exclusive_nh3_error": lu_err,
+            "chi2_ndf": chi2_ndf, "npoints": npoints,
+        })
+    # endfor
+    pd.DataFrame(all_exclusive_bsa_rows).to_csv(
+        tables / "all_exclusive_nh3_bsa.csv", index=False
+    )
 
     result_rows = []
     covariance_payload: dict[str, Any] = {}
@@ -1194,7 +1357,7 @@ def main() -> None:
         "carbon_material_scale_common_to_periods_and_helicities": True,
         "nh3_beam_and_target_spin_separated": True,
         "signal_shape": "mu/sigma fixed from nominal mu +/- 2 sigma channel-selection cut",
-        "statistics_treatment": "Full GLS covariance: simultaneous-NH3 area covariance + shared carbon-yield covariance + global alpha nuisance covariance; no chi2/ndf rescaling of parameter covariance.",
+        "statistics_treatment": "Full GLS covariance with exact event-product harmonic moments inside each phi cell; simultaneous-NH3 area covariance + shared carbon-yield covariance + global alpha nuisance covariance; no chi2/ndf rescaling.",
         "nh3_mx2_fit": "simultaneous four-state fit with independent signal/background normalizations and shared quadratic background shape",
         "fit_and_comparison_parameters": list(POLARIZED_PARAMETERS),
         "unpolarized_parameters": "u1 and u2 are fixed to zero and are not fit in this polarized-only external check.",
@@ -1205,6 +1368,7 @@ def main() -> None:
             "rates": str(tables / "carbon_subtracted_hydrogen_rates.csv"),
             "carbon_normalization": str(tables / "carbon_normalization.csv"),
             "physics": str(tables / "yield_check_structure_function_ratios.csv"),
+            "all_exclusive_bsa": str(tables / "all_exclusive_nh3_bsa.csv"),
         },
     }
     (out / "yield_check_manifest.json").write_text(json.dumps(manifest, indent=2))
