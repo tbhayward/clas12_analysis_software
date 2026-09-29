@@ -15,23 +15,23 @@ tree_name = "PhysicsEvents"
 
 with uproot.open(input_file) as f:
     tree = f[tree_name]
-    arrays = tree.arrays(["pT2", "t2", "z2", "Mx2"], library="np")
+    arrays = tree.arrays(["pT2", "t1", "z2", "Mx2"], library="np")
 
 pT2 = arrays["pT2"]
-t2  = np.abs(arrays["t2"])
+t1  = np.abs(arrays["t1"])
 z2  = arrays["z2"]
 Mx2 = arrays["Mx2"]
 
 # Remove non-finite entries.
 mask = (
     np.isfinite(pT2) &
-    np.isfinite(t2) &
+    np.isfinite(t1) &
     np.isfinite(z2) &
     np.isfinite(Mx2)
 )
 
 pT2 = pT2[mask]
-t2  = t2[mask]
+t1  = t1[mask]
 z2  = z2[mask]
 Mx2 = Mx2[mask]
 
@@ -41,12 +41,12 @@ Mx2 = Mx2[mask]
 
 fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
-# pT2 vs |t2|
+# pT2 vs |t1|
 h = axes[0, 0].hist2d(
-    pT2, t2,
+    pT2, t1,
     bins=(100, 100),
     range=((0.0, 1.4), (0.0, 1.2)),
-    cmap="viridis"
+    cmap="coolwarm"
 )
 axes[0, 0].set_xlabel(r"$p_T^2$ (GeV$^2$)")
 axes[0, 0].set_ylabel(r"$|t|$ (GeV$^2$)")
@@ -58,19 +58,19 @@ h = axes[0, 1].hist2d(
     pT2, z2,
     bins=(100, 100),
     range=((0.0, 1.4), (0.4, 1.2)),
-    cmap="viridis"
+    cmap="coolwarm"
 )
 axes[0, 1].set_xlabel(r"$p_T^2$ (GeV$^2$)")
 axes[0, 1].set_ylabel(r"$z$")
 axes[0, 1].set_title(r"$p_T^2$ vs. $z$")
 fig.colorbar(h[3], ax=axes[0, 1], label="Counts")
 
-# |t2| vs z2
+# |t1| vs z2
 h = axes[1, 0].hist2d(
-    t2, z2,
+    t1, z2,
     bins=(100, 100),
     range=((0.0, 1.2), (0.4, 1.2)),
-    cmap="viridis"
+    cmap="coolwarm"
 )
 axes[1, 0].set_xlabel(r"$|t|$ (GeV$^2$)")
 axes[1, 0].set_ylabel(r"$z$")
@@ -81,9 +81,11 @@ fig.colorbar(h[3], ax=axes[1, 0], label="Counts")
 axes[1, 1].hist(
     Mx2,
     bins=150,
+    range=(-1.0, 1.0),
     histtype="step",
     linewidth=1.5
 )
+axes[1, 1].set_xlim(-1.0, 1.0)
 axes[1, 1].set_xlabel(r"$M_X^2$ (GeV$^2$)")
 axes[1, 1].set_ylabel("Counts")
 axes[1, 1].set_title(r"$M_X^2$ Distribution")
