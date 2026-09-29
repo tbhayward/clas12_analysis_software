@@ -1042,8 +1042,8 @@ def plot_internal_LT_quality_view(data, outfile):
 
 
 
-def plot_internal_LT_quality_xB4_medians(data, outfile):
-    """Aggregate the INTERNAL_05 quality-selected points into four xB bins."""
+def plot_internal_LT_quality_xB3_medians(data, outfile):
+    """Aggregate the INTERNAL_05 quality-selected points into three xB bins."""
     g = data.copy()
     g["T_significance"] = np.abs(g.sigma_T)/g.delta_sigma_T
     good = (
@@ -1056,16 +1056,16 @@ def plot_internal_LT_quality_xB4_medians(data, outfile):
 
     xb_min = float(data.xB.min())
     xb_max = float(data.xB.max())
-    edges = np.linspace(xb_min, xb_max, 5)
+    edges = np.linspace(xb_min, xb_max, 4)
     # Include the upper endpoint in the fourth bin.
     g["xB_group"] = pd.cut(
         g.xB, bins=edges, include_lowest=True, right=True, labels=False
     )
 
     fig, ax = plt.subplots(figsize=(9.4, 6.2))
-    markers = ["o", "s", "^", "D"]
+    markers = ["o", "s", "^"]
 
-    for ib in range(4):
+    for ib in range(3):
         gg = g[g.xB_group == ib]
         if gg.empty:
             continue
@@ -1081,7 +1081,7 @@ def plot_internal_LT_quality_xB4_medians(data, outfile):
 
         label = (
             rf"${edges[ib]:.3g} \leq x_B "
-            + (rf"\leq {edges[ib+1]:.3g}$" if ib == 3
+            + (rf"\leq {edges[ib+1]:.3g}$" if ib == 2
                else rf"< {edges[ib+1]:.3g}$")
         )
         ax.plot(
@@ -1098,7 +1098,7 @@ def plot_internal_LT_quality_xB4_medians(data, outfile):
     ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
     ax.set_ylabel(r"Median measured $\sigma_L/\sigma_T$")
     ax.set_title(
-        r"INTERNAL diagnostic: median measured $L/T$ in four $x_B$ ranges"
+        r"INTERNAL diagnostic: median measured $L/T$ in three $x_B$ ranges"
     )
     ax.set_ylim(-1.0, 1.0)
     ax.grid(axis="y", alpha=0.14)
@@ -1305,8 +1305,8 @@ def run_internal_data_mode(a):
     plot_internal_LT_quality_view(
         data, figs/"INTERNAL_05_measured_L_over_T_quality_diagnostic.png",
     )
-    plot_internal_LT_quality_xB4_medians(
-        data, figs/"INTERNAL_05b_measured_L_over_T_quality_xB4_medians.png",
+    plot_internal_LT_quality_xB3_medians(
+        data, figs/"INTERNAL_05b_measured_L_over_T_quality_xB3_medians.png",
     )
     plot_internal_sigmaU_comparison(
         data, figs/"INTERNAL_06_sigmaU_RGA_RGK_comparison.png",
@@ -1332,7 +1332,7 @@ def run_internal_data_mode(a):
     print(f"  {figs/'INTERNAL_03_measured_L_over_T_vs_Q2_zoom.png'}")
     print(f"  {figs/'INTERNAL_04_measured_L_over_T_vs_Q2_by_xB_zoom.png'}")
     print(f"  {figs/'INTERNAL_05_measured_L_over_T_quality_diagnostic.png'}")
-    print(f"  {figs/'INTERNAL_05b_measured_L_over_T_quality_xB4_medians.png'}")
+    print(f"  {figs/'INTERNAL_05b_measured_L_over_T_quality_xB3_medians.png'}")
     print(f"  {figs/'INTERNAL_06_sigmaU_RGA_RGK_comparison.png'}")
     print(f"  {figs/'INTERNAL_07_fractional_sigmaU_RGA_RGK_difference.png'}")
     print(f"  {figs/'INTERNAL_08_delta_sigmaU_by_xB.png'}")
