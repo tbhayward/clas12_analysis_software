@@ -215,28 +215,37 @@ def _find_campaign_input(explicit:Path|None, stage3:Path, filename:str) -> Path:
     archives=[]
     for root in roots:
         if not root.exists(): continue
+        archives.extend(root.glob("fa18_rosenbluth_inputs_*.zip"))
         archives.extend(root.glob("fa18_rosenbluth_inputs_*.tar.gz"))
         archives.extend(root.glob("fa18_rosenbluth_inputs*.tgz"))
     archives=sorted({a.resolve() for a in archives}, key=lambda p:p.stat().st_mtime, reverse=True)
     member_suffix=f"/{campaign_dir}/{filename}"
     for archive in archives:
         try:
-            with tarfile.open(archive,"r:*") as tf:
-                matches=[m for m in tf.getmembers() if m.isfile() and m.name.endswith(member_suffix)]
-                if len(matches)!=1: continue
-                cache=stage3/"native_campaign_inputs"/campaign_dir/filename
-                cache.parent.mkdir(parents=True,exist_ok=True)
-                src=tf.extractfile(matches[0])
-                if src is None: continue
-                cache.write_bytes(src.read())
-                print(f"  extracted : {archive} -> {cache}")
-                return cache.resolve()
-        except (tarfile.TarError,OSError):
+            cache=stage3/"native_campaign_inputs"/campaign_dir/filename
+            cache.parent.mkdir(parents=True,exist_ok=True)
+            if zipfile.is_zipfile(archive):
+                with zipfile.ZipFile(archive,"r") as zf:
+                    matches=[n for n in zf.namelist() if n.endswith(member_suffix)]
+                    if len(matches)!=1: continue
+                    cache.write_bytes(zf.read(matches[0]))
+            elif tarfile.is_tarfile(archive):
+                with tarfile.open(archive,"r:*") as tf:
+                    matches=[m for m in tf.getmembers() if m.isfile() and m.name.endswith(member_suffix)]
+                    if len(matches)!=1: continue
+                    src=tf.extractfile(matches[0])
+                    if src is None: continue
+                    cache.write_bytes(src.read())
+            else:
+                continue
+            print(f"  extracted : {archive} -> {cache}")
+            return cache.resolve()
+        except (tarfile.TarError, zipfile.BadZipFile, OSError):
             continue
 
     raise FileNotFoundError(
         f"Could not locate native campaign input {campaign_dir}/{filename}, either unpacked "
-        f"or inside fa18_rosenbluth_inputs_*.tar.gz. "
+        f"or inside fa18_rosenbluth_inputs_*.zip/.tar.gz. "
         f"Pass --{'rga-input' if campaign_dir=='rga_10604' else 'rgk-input'} /full/path/{filename}."
     )
 

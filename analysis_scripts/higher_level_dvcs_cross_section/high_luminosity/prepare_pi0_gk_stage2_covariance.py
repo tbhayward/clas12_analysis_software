@@ -12,7 +12,7 @@ Inputs
 ------
   output/pi0_gk_stage1/{01_blinded_rga_bins.csv,02_blinded_rgk_bins.csv,
                         06_exact_common_cells.csv}
-  import/fa18_rosenbluth_inputs_20260924T165948Z.tar.gz
+  import/fa18_rosenbluth_inputs_20260924T165948Z.zip
 
 Optional model input
 --------------------
@@ -37,14 +37,14 @@ The supplied relative_uncertainty column sets the per-bin fractional precision.
 """
 
 from __future__ import annotations
-import argparse, hashlib, math, tarfile, tempfile
+import argparse, hashlib, math, tarfile, tempfile, zipfile
 from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
 
-TAR_NAME = "fa18_rosenbluth_inputs_20260924T165948Z.tar.gz"
+PACKAGE_NAME = "fa18_rosenbluth_inputs_20260924T165948Z.zip"
 
 # Exposure factors relative to the supplied files.  These are configuration,
 # not physics assumptions hidden in the code.
@@ -67,7 +67,7 @@ def parse_args():
     here = Path(__file__).resolve().parent
     p = argparse.ArgumentParser()
     p.add_argument("--stage1", type=Path, default=here/"output"/"pi0_gk_stage1")
-    p.add_argument("--input", type=Path, default=here/"import"/TAR_NAME)
+    p.add_argument("--input", type=Path, default=here/"import"/PACKAGE_NAME)
     p.add_argument("--output", type=Path, default=here/"output"/"pi0_gk_stage2")
     p.add_argument("--rga-current-factor", type=float, default=DEFAULT_RGA_CURRENT_FACTOR)
     p.add_argument("--rgk-final-factor", type=float, default=DEFAULT_RGK_FINAL_FACTOR)
@@ -81,16 +81,25 @@ def assert_blinded(df: pd.DataFrame, name: str):
         raise RuntimeError(f"{name} contains forbidden preliminary central/absolute columns: {bad}")
 
 def locate_package(inp: Path):
+    inp = inp.expanduser().resolve()
     if inp.is_dir():
         return inp, None
     if not inp.exists():
         raise FileNotFoundError(inp)
-    if not tarfile.is_tarfile(inp):
-        raise RuntimeError(f"Not a tar archive: {inp}")
     tmp = tempfile.TemporaryDirectory(prefix="pi0_stage2_")
     root = Path(tmp.name)
-    with tarfile.open(inp, "r:*") as tf:
-        tf.extractall(root, filter="data")
+    if zipfile.is_zipfile(inp):
+        with zipfile.ZipFile(inp, "r") as zf:
+            for name in zf.namelist():
+                q = Path(name)
+                if q.is_absolute() or ".." in q.parts:
+                    raise RuntimeError(f"Unsafe ZIP member: {name}")
+            zf.extractall(root)
+    elif tarfile.is_tarfile(inp):
+        with tarfile.open(inp, "r:*") as tf:
+            tf.extractall(root, filter="data")
+    else:
+        raise RuntimeError(f"Input is not a directory, ZIP, or tar archive: {inp}")
     dirs = [p for p in root.iterdir() if p.is_dir()]
     if len(dirs) == 1:
         root = dirs[0]
@@ -348,7 +357,8 @@ def main():
             "Stage 2 does not invent GK structure functions. The common PARTONS query",
             "grid is prepared for the next model-evaluation step.",
             "",
-            f"Input tar SHA256: {sha256(a.input.resolve())}",
+            f"Input package: {a.input.resolve()}",
+            f"Input package SHA256: {sha256(a.input.resolve())}" if a.input.resolve().is_file() else "Input package SHA256: n/a (extracted directory)",
         ]
         (out/"summary.txt").write_text("\n".join(summary)+"\n")
         print("\n".join(summary))

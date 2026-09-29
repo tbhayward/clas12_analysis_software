@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import tarfile
+import zipfile
 import tempfile
 from pathlib import Path
 import numpy as np
@@ -26,7 +27,7 @@ FORBIDDEN = {
 
 def cli():
     p = argparse.ArgumentParser(description="Prepare blinded CLAS12 pi0 kinematics and PARTONS/GK inputs.")
-    p.add_argument("--input", type=Path, default=None, help="Input tar.gz or extracted package directory; default: ../import/fa18_rosenbluth_inputs_20260924T165948Z.tar.gz relative to this script")
+    p.add_argument("--input", type=Path, default=None, help="Input ZIP, tar archive, or extracted package directory; default: import/fa18_rosenbluth_inputs_20260924T165948Z.zip relative to this script")
     p.add_argument("--outdir", type=Path, default=Path("output/pi0_gk_stage1"))
     p.add_argument("--partons-kinematics-path", default=None)
     p.add_argument("--n-warmups", type=int, default=10000)
@@ -45,16 +46,24 @@ def locate(inp):
     inp = inp.expanduser().resolve()
     if inp.is_dir():
         return inp, None
-    if not tarfile.is_tarfile(inp):
-        raise ValueError("Input must be the package directory or tar archive.")
     tmp = tempfile.TemporaryDirectory(prefix="pi0_gk_stage1_")
     root = Path(tmp.name)
-    with tarfile.open(inp, "r:*") as tf:
-        for m in tf.getmembers():
-            q = Path(m.name)
-            if q.is_absolute() or ".." in q.parts:
-                raise ValueError(f"Unsafe archive member: {m.name}")
-        tf.extractall(root, filter="data")
+    if zipfile.is_zipfile(inp):
+        with zipfile.ZipFile(inp, "r") as zf:
+            for name in zf.namelist():
+                q = Path(name)
+                if q.is_absolute() or ".." in q.parts:
+                    raise ValueError(f"Unsafe ZIP member: {name}")
+            zf.extractall(root)
+    elif tarfile.is_tarfile(inp):
+        with tarfile.open(inp, "r:*") as tf:
+            for m in tf.getmembers():
+                q = Path(m.name)
+                if q.is_absolute() or ".." in q.parts:
+                    raise ValueError(f"Unsafe archive member: {m.name}")
+            tf.extractall(root, filter="data")
+    else:
+        raise ValueError("Input must be the package directory, ZIP, or tar archive.")
     for c in [root] + list(root.iterdir()):
         if c.is_dir() and (c/RGA_REL).exists() and (c/RGK_REL).exists():
             return c, tmp
@@ -216,7 +225,7 @@ def make_diagnostic_plots(rga, rgk, common, plotdir):
 def main():
     a = cli()
     if a.input is None:
-        a.input = Path(__file__).resolve().parent / "import" / "fa18_rosenbluth_inputs_20260924T165948Z.tar.gz"
+        a.input = Path(__file__).resolve().parent / "import" / "fa18_rosenbluth_inputs_20260924T165948Z.zip"
     out = a.outdir.expanduser().resolve()
     out.mkdir(parents=True, exist_ok=True)
     root, tmp = locate(a.input)
