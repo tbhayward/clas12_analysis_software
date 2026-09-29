@@ -30,7 +30,7 @@ Run from:
     RGC_enpi+/asymmetry_extraction/
 
 Typical command:
-    python extract_structure_function_ratios_yield_check.py
+    python extract_structure_function_ratios_yield_check_parallel_v3.py
 
 Outputs:
     output/asymmetry_extraction/yield_check/
@@ -51,7 +51,17 @@ import argparse
 import csv
 import json
 import math
+import os
 import sys
+
+# Each Gaussian fit is already a separate process-level task.  Prevent BLAS/OMP
+# libraries from creating additional threads inside each worker and accidentally
+# oversubscribing an ifarm node.  Users may still override these before launch.
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+from concurrent.futures import ProcessPoolExecutor
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -76,6 +86,7 @@ XB_BINS = nominal.XB_BINS
 TP_BINS = nominal.MINUS_TPRIME_BINS_GEV2
 N_KIN_BINS = nominal.NUMBER_OF_BINS
 N_PHI_BINS = 9
+MAX_WORKERS = 8
 PHI_EDGES = np.linspace(0.0, 2.0 * math.pi, N_PHI_BINS + 1)
 PHI_CENTERS = 0.5 * (PHI_EDGES[:-1] + PHI_EDGES[1:])
 
@@ -316,6 +327,18 @@ def fit_signal_area(values: np.ndarray, mu: float, sigma: float) -> AreaFit:
                        fit_low, fit_high, x, y.astype(float), err,
                        zeros, zeros, zeros)
     # endtry
+
+
+def fit_signal_area_worker(task: tuple[Any, np.ndarray, float, float]) -> tuple[Any, AreaFit]:
+    """Process-pool worker for one independent Mx2 Gaussian-area fit.
+
+    Only the compact Mx2 array and fixed peak parameters are passed to the
+    worker.  No pandas frame, ROOT handle or Matplotlib object crosses the
+    process boundary.
+    """
+    key, values, mu, sigma = task
+    return key, fit_signal_area(values, mu, sigma)
+
 
 
 def direct_method1_hydrogen_rate(
@@ -617,9 +640,14 @@ def main() -> None:
     parser.add_argument("--tree", default=DEFAULT_TREE_NAME)
     parser.add_argument("--chunk-size", default=DEFAULT_CHUNK_SIZE)
     parser.add_argument("--input", action="append", default=[], help="period:target=/path/file.root")
+    parser.add_argument("--workers", type=int, default=min(MAX_WORKERS, os.cpu_count() or 1),
+                        help="Gaussian-fit worker processes (default: up to 8; use 1 for serial).")
     parser.add_argument("--max-spectrum-plots", type=int, default=240,
                         help="Maximum individual Mx2 fit plots (0 means all).")
     args = parser.parse_args()
+    if args.workers < 1 or args.workers > MAX_WORKERS:
+        parser.error(f"--workers must be between 1 and {MAX_WORKERS}")
+    # endif
 
     out = ensure(args.output_dir)
     tables = ensure(out / "tables")
@@ -666,6 +694,18 @@ def main() -> None:
     area_lookup: dict[tuple[str, str, int, int, int, int], AreaFit] = {}
     plot_count = 0
 
+    # Build all independent fit inputs in the parent process.  This keeps ROOT
+    # I/O and pandas filtering out of workers and sends only the Mx2 arrays
+    # required by curve_fit.  The expensive numerical fits then run in parallel.
+    fit_tasks: list[tuple[Any, np.ndarray, float, float]] = []
+    fit_metadata: dict[Any, dict[str, Any]] = {}
+    grouped = {
+        key: group for key, group in events.groupby(
+            ["period", "target", "kin_bin", "phi_bin", "helicity", "target_sign"],
+            sort=False, observed=True,
+        )
+    }
+
     for period in PERIODS:
         for kin_bin in range(1, N_KIN_BINS + 1):
             cut = cuts[(period, kin_bin)]
@@ -676,38 +716,63 @@ def main() -> None:
                     signs = (-1, 1) if target == "NH3" else (0,)
                     for h in (-1, 1):
                         for s in signs:
-                            mask = ((events.period == period) & (events.target == target)
-                                    & (events.kin_bin == kin_bin) & (events.phi_bin == phi_bin)
-                                    & (events.helicity == h))
-                            if target == "NH3":
-                                mask &= events.target_sign == s
-                            # endif
-                            subset = events[mask]
-                            fit = fit_signal_area(subset.Mx2.to_numpy(float), mu, sigma)
                             key = (period, target, kin_bin, phi_bin, h, s)
-                            area_lookup[key] = fit
-                            dep = {name: float(np.nanmean(subset[name])) if len(subset) else np.nan
-                                   for name in ("rB", "rC", "rV", "rW")}
-                            area_rows.append(dict(
+                            subset = grouped.get(key)
+                            if subset is None:
+                                values = np.empty(0, dtype=float)
+                                dep = {name: np.nan for name in ("rB", "rC", "rV", "rW")}
+                            else:
+                                values = subset.Mx2.to_numpy(dtype=float, copy=True)
+                                dep = {name: float(np.nanmean(subset[name])) if len(subset) else np.nan
+                                       for name in ("rB", "rC", "rV", "rW")}
+                            # endif
+                            fit_tasks.append((key, values, mu, sigma))
+                            fit_metadata[key] = dict(
                                 period=period, target=target, kin_bin=kin_bin, phi_bin=phi_bin,
                                 phi_center=PHI_CENTERS[phi_bin], helicity=h, target_sign=s,
-                                area=fit.area, area_error=fit.area_error,
-                                background_area=fit.background_area, chi2_ndf=fit.chi2_ndf,
-                                n_events=fit.n_events, status=fit.status, mu=mu, sigma=sigma, **dep,
-                            ))
-                            if (args.max_spectrum_plots == 0 or plot_count < args.max_spectrum_plots) and fit.status == "ok":
-                                plot_spectrum(
-                                    spectrum_plots / f"{period}_{target}_bin{kin_bin:02d}_phi{phi_bin:02d}_h{h:+d}_s{s:+d}.png",
-                                    fit, f"{period} {target}; bin {kin_bin}; phi bin {phi_bin}; h={h:+d}; s={s:+d}"
-                                )
-                                plot_count += 1
-                            # endif
+                                mu=mu, sigma=sigma, **dep,
+                            )
                         # endfor
                     # endfor
                 # endfor
             # endfor
         # endfor
     # endfor
+
+    print(f"[fits] Gaussian spectra: {len(fit_tasks):,}; workers: {args.workers}", flush=True)
+    if args.workers == 1:
+        fit_results = map(fit_signal_area_worker, fit_tasks)
+    else:
+        executor = ProcessPoolExecutor(max_workers=args.workers)
+        # chunksize amortizes process-IPC overhead without making tasks so coarse
+        # that one worker can dominate the tail of the calculation.
+        chunksize = max(1, len(fit_tasks) // (args.workers * 32))
+        fit_results = executor.map(fit_signal_area_worker, fit_tasks, chunksize=chunksize)
+    # endif
+
+    try:
+        for key, fit in fit_results:
+            area_lookup[key] = fit
+            meta = fit_metadata[key]
+            area_rows.append(dict(
+                **meta, area=fit.area, area_error=fit.area_error,
+                background_area=fit.background_area, chi2_ndf=fit.chi2_ndf,
+                n_events=fit.n_events, status=fit.status,
+            ))
+            if (args.max_spectrum_plots == 0 or plot_count < args.max_spectrum_plots) and fit.status == "ok":
+                period, target, kin_bin, phi_bin, h, s = key
+                plot_spectrum(
+                    spectrum_plots / f"{period}_{target}_bin{kin_bin:02d}_phi{phi_bin:02d}_h{h:+d}_s{s:+d}.png",
+                    fit, f"{period} {target}; bin {kin_bin}; phi bin {phi_bin}; h={h:+d}; s={s:+d}"
+                )
+                plot_count += 1
+            # endif
+        # endfor
+    finally:
+        if args.workers != 1:
+            executor.shutdown(wait=True)
+        # endif
+    # endtry
 
     area_frame = pd.DataFrame(area_rows)
     area_frame.to_csv(tables / "gaussian_signal_areas.csv", index=False)
