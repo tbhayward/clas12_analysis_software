@@ -219,19 +219,72 @@ def plot_constraint_counts(summary, outfile):
 
 
 def plot_ratio_precision_map(points, f, outfile):
+    """Faceted (xB,-t) map of L/T reach, with one panel per Q2 setting."""
     g = points[points.future_luminosity_multiplier == f].copy()
-    fig, ax = plt.subplots(figsize=(7.4, 5.4))
-    sc = ax.scatter(g.Q2_GeV2, g.minus_t_GeV2,
-                    c=g.expected_95pct_abs_L_over_T_limit_if_L_zero, s=34)
-    fig.colorbar(sc, ax=ax,
-                 label=r"Expected 95% sensitivity to $|L/T|$ if $L=0$")
-    ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
-    ax.set_ylabel(r"$-t$ (GeV$^2$)")
-    ax.set_title(fr"Longitudinal-fraction reach, $f={f:g}$")
-    fig.tight_layout()
-    fig.savefig(outfile, dpi=180)
-    plt.close(fig)
+    q2_values = sorted(g.Q2_GeV2.unique())
 
+    ncols = 4
+    nrows = int(np.ceil(len(q2_values) / ncols))
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(13.0, 3.8*nrows),
+        sharex=True, sharey=True, squeeze=False
+    )
+    axes = axes.ravel()
+
+    # Discrete physics-reach categories.  Lower values are better.
+    categories = [
+        (0.00, 0.05, r"$|L/T|<5\%$"),
+        (0.05, 0.10, r"$5\%\leq |L/T|<10\%$"),
+        (0.10, 0.20, r"$10\%\leq |L/T|<20\%$"),
+        (0.20, np.inf, r"weaker than $20\%$"),
+    ]
+    cmap = plt.get_cmap("viridis")
+    colors = [cmap(x) for x in (0.05, 0.35, 0.65, 0.92)]
+
+    for ax, q2 in zip(axes, q2_values):
+        q = g[np.isclose(g.Q2_GeV2, q2)]
+        reach = q.expected_95pct_abs_L_over_T_limit_if_L_zero.to_numpy(float)
+
+        for (lo, hi, label), color in zip(categories, colors):
+            mask = (reach >= lo) & (reach < hi)
+            if np.any(mask):
+                ax.scatter(
+                    q.loc[mask, "xB"], q.loc[mask, "minus_t_GeV2"],
+                    s=55, color=color, edgecolor="black", linewidth=0.35,
+                    label=label,
+                )
+
+        ax.set_title(fr"$Q^2={q2:g}$ GeV$^2$")
+        ax.grid(alpha=0.18)
+
+    for ax in axes[len(q2_values):]:
+        ax.set_visible(False)
+
+    for i, ax in enumerate(axes[:len(q2_values)]):
+        if i // ncols == nrows - 1 or i + ncols >= len(q2_values):
+            ax.set_xlabel(r"$x_B$")
+        if i % ncols == 0:
+            ax.set_ylabel(r"$-t$ (GeV$^2$)")
+
+    # One common legend, in the desired best-to-worst order.
+    handles = []
+    labels = []
+    for (lo, hi, label), color in zip(categories, colors):
+        h = plt.Line2D([], [], linestyle="none", marker="o", markersize=7,
+                       markerfacecolor=color, markeredgecolor="black",
+                       markeredgewidth=0.35)
+        handles.append(h)
+        labels.append(label)
+
+    fig.legend(handles, labels, loc="lower center", ncol=4, frameon=False,
+               bbox_to_anchor=(0.5, 0.005))
+    fig.suptitle(
+        fr"Projected $\pi^0$ longitudinal-fraction reach, $f={f:g}$",
+        y=0.995,
+    )
+    fig.tight_layout(rect=(0, 0.065, 1, 0.96))
+    fig.savefig(outfile, dpi=200)
+    plt.close(fig)
 
 def plot_absolute_uncertainties(points, f, outfile):
     g = points[points.future_luminosity_multiplier == f].copy()
@@ -398,7 +451,11 @@ def plot_q2_evolution(q2sum, outfile):
     ax.set_ylabel(r"Median expected sensitivity to $|L/T|$ (%)")
     ax.set_title(r"Projected $\pi^0$ Rosenbluth reach vs. $Q^2$")
     ax.set_xlim(1.1, 4.45)
-    ax.set_ylim(bottom=0.0)
+    ax.set_yscale("log")
+    ax.set_ylim(5.0, 500.0)
+    ax.set_yticks([5, 10, 20, 50, 100, 200, 500])
+    ax.get_yaxis().set_major_formatter(plt.ScalarFormatter())
+    ax.get_yaxis().set_minor_formatter(plt.NullFormatter())
     ax.legend(frameon=False, ncol=2)
     fig.tight_layout()
     fig.savefig(outfile, dpi=200)
