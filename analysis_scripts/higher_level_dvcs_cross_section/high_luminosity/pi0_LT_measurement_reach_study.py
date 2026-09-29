@@ -55,6 +55,28 @@ def args():
     p.add_argument("--rga-remaining", type=float, default=1.5)
     p.add_argument("--rgk-recorded", type=float, default=9.0)
     p.add_argument("--rgk-remaining", type=float, default=9.0)
+    p.add_argument(
+        "--central-values", choices=("gk", "data"), default="gk",
+        help=("Central values used in the study. Default 'gk' is workshop-safe. "
+              "'data' is INTERNAL ONLY and uses measured RGA/RGK cross sections."),
+    )
+    p.add_argument(
+        "--internal-rga", type=Path,
+        default=here/"import"/"fa18_rosenbluth_inputs_20260924T165948Z"/
+                     "rga_10604"/"combined_reduced_cross_sections.csv",
+        help="INTERNAL ONLY: measured RGA reduced-cross-section CSV.",
+    )
+    p.add_argument(
+        "--internal-rgk", type=Path,
+        default=here/"import"/"fa18_rosenbluth_inputs_20260924T165948Z"/
+                     "rgk_6535"/"rgk6535_reduced_cross_sections.csv",
+        help="INTERNAL ONLY: measured RGK reduced-cross-section CSV.",
+    )
+    p.add_argument(
+        "--internal-output", type=Path,
+        default=here/"output"/"pi0_LT_internal_data",
+        help="Separate output directory used only by --central-values data.",
+    )
     return p.parse_args()
 
 
@@ -484,8 +506,318 @@ def plot_q2_unlocked(q2unlock, outfile):
     fig.savefig(outfile, dpi=180)
     plt.close(fig)
 
+def _pick_col(df, aliases, what, required=True):
+    """Find a column by a compact list of accepted aliases."""
+    lower = {c.lower(): c for c in df.columns}
+    for name in aliases:
+        if name.lower() in lower:
+            return lower[name.lower()]
+    if required:
+        raise RuntimeError(
+            f"Could not identify {what}. Tried {aliases}. Available columns:\n  "
+            + ", ".join(df.columns)
+        )
+    return None
+
+
+def _standardize_internal_cross_sections(path, campaign):
+    """Read an INTERNAL measured reduced-cross-section table into common names."""
+    df = pd.read_csv(path)
+
+    aliases = {
+        "Q2": ["Q2", "q2", "Q2_GeV2", "q2_mean", "mean_Q2", "Q2_mean"],
+        "xB": ["xB", "xb", "x_B", "xB_mean", "mean_xB"],
+        "mt": ["minus_t", "minus_t_GeV2", "-t", "t_abs", "abs_t", "mt", "t_mean"],
+        "phi": ["phi", "phi_deg", "phi_center_deg", "phi_center", "mean_phi", "phi_mean"],
+        "eps": ["epsilon", "eps", "epsilon_mean", "mean_epsilon"],
+        "xs": ["reduced_cross_section", "cross_section", "sigma", "xsec", "xs", "value"],
+        "err": ["total_uncertainty", "cross_section_uncertainty", "sigma_unc", "xsec_unc",
+                "uncertainty", "error", "err", "total_error"],
+        "stat": ["stat_uncertainty", "stat_error", "stat_err", "sigma_stat", "xsec_stat"],
+        "sys": ["sys_uncertainty", "syst_uncertainty", "sys_error", "syst_error",
+                "sigma_sys", "xsec_sys"],
+        "iq2": ["iq2", "iQ2", "q2_bin", "Q2_bin"],
+        "ixb": ["ixb", "iXB", "xb_bin", "xB_bin"],
+        "it": ["it", "iT", "t_bin", "mt_bin"],
+    }
+
+    cols = {k: _pick_col(df, v, k, required=(k in {"Q2", "xB", "mt", "phi", "eps", "xs"}))
+            for k, v in aliases.items()}
+
+    if cols["err"] is not None:
+        err = pd.to_numeric(df[cols["err"]], errors="coerce").to_numpy(float)
+    elif cols["stat"] is not None:
+        stat = pd.to_numeric(df[cols["stat"]], errors="coerce").to_numpy(float)
+        if cols["sys"] is not None:
+            sys = pd.to_numeric(df[cols["sys"]], errors="coerce").to_numpy(float)
+            err = np.sqrt(stat**2 + sys**2)
+        else:
+            err = stat
+    else:
+        raise RuntimeError(
+            f"Could not identify an absolute uncertainty column in {path}. "
+            "For the internal extraction I need measured central values and absolute errors.\n"
+            f"Available columns:\n  {', '.join(df.columns)}"
+        )
+
+    out = pd.DataFrame({
+        "campaign": campaign,
+        "Q2_GeV2": pd.to_numeric(df[cols["Q2"]], errors="coerce"),
+        "xB": pd.to_numeric(df[cols["xB"]], errors="coerce"),
+        "minus_t_GeV2": np.abs(pd.to_numeric(df[cols["mt"]], errors="coerce")),
+        "phi_deg": pd.to_numeric(df[cols["phi"]], errors="coerce"),
+        "epsilon": pd.to_numeric(df[cols["eps"]], errors="coerce"),
+        "sigma": pd.to_numeric(df[cols["xs"]], errors="coerce"),
+        "delta_sigma": err,
+    })
+    for key in ("iq2", "ixb", "it"):
+        if cols[key] is not None:
+            out[key] = df[cols[key]].to_numpy()
+
+    good = np.all(np.isfinite(out[["Q2_GeV2", "xB", "minus_t_GeV2", "phi_deg",
+                                    "epsilon", "sigma", "delta_sigma"]]), axis=1)
+    good &= out.delta_sigma.to_numpy(float) > 0
+    return out.loc[good].reset_index(drop=True)
+
+
+def _group_internal_bins(df):
+    """Return one group per native (Q2,xB,t) cell."""
+    keys = [k for k in ("iq2", "ixb", "it") if k in df.columns]
+    if len(keys) == 3:
+        return list(df.groupby(keys, sort=True))
+
+    # Fallback for source tables without integer bin IDs: rounded native centers.
+    tmp = df.copy()
+    tmp["_Q2key"] = tmp.Q2_GeV2.round(4)
+    tmp["_xBkey"] = tmp.xB.round(5)
+    tmp["_tkey"] = tmp.minus_t_GeV2.round(4)
+    return list(tmp.groupby(["_Q2key", "_xBkey", "_tkey"], sort=True))
+
+
+def _native_cells(df):
+    rows = []
+    for key, g in _group_internal_bins(df):
+        rows.append(dict(
+            native_key=str(key),
+            Q2_GeV2=float(np.average(g.Q2_GeV2)),
+            xB=float(np.average(g.xB)),
+            minus_t_GeV2=float(np.average(g.minus_t_GeV2)),
+            epsilon=float(np.average(g.epsilon)),
+            n_phi=len(g),
+        ))
+    return pd.DataFrame(rows)
+
+
+def _nearest_native_group(df, q2, xb, mt):
+    """Choose the native cell nearest a requested shared cell in fractional distance."""
+    cells = _native_cells(df)
+    d2 = ((cells.Q2_GeV2-q2)/max(abs(q2), 0.5))**2
+    d2 += ((cells.xB-xb)/max(abs(xb), 0.1))**2
+    d2 += ((cells.minus_t_GeV2-mt)/max(abs(mt), 0.15))**2
+    row = cells.loc[d2.idxmin()]
+
+    # Reconstruct the selected group using its native coordinates.  This is only a
+    # fallback path; integer bin IDs, when present, are preserved by the source table.
+    groups = _group_internal_bins(df)
+    for key, g in groups:
+        qg = float(np.average(g.Q2_GeV2))
+        xg = float(np.average(g.xB))
+        tg = float(np.average(g.minus_t_GeV2))
+        if np.isclose(qg, row.Q2_GeV2) and np.isclose(xg, row.xB) and np.isclose(tg, row.minus_t_GeV2):
+            return g.copy()
+    raise RuntimeError("Internal error while matching a native measured cell.")
+
+
+def _joint_rosenbluth_fit(rga, rgk):
+    """Fit T,L,LT,TT directly to measured phi-dependent cross sections at two epsilons."""
+    frames = []
+    for g in (rga, rgk):
+        phi = np.deg2rad(g.phi_deg.to_numpy(float))
+        eps = g.epsilon.to_numpy(float)
+        A = np.column_stack([
+            np.ones(len(g)),
+            eps,
+            np.sqrt(2.0*eps*(1.0+eps))*np.cos(phi),
+            eps*np.cos(2.0*phi),
+        ])
+        frames.append((A, g.sigma.to_numpy(float), g.delta_sigma.to_numpy(float)))
+
+    A = np.vstack([x[0] for x in frames])
+    y = np.concatenate([x[1] for x in frames])
+    dy = np.concatenate([x[2] for x in frames])
+    W = 1.0/dy**2
+    normal = A.T @ (W[:, None]*A)
+    cov = np.linalg.pinv(normal)
+    theta = cov @ (A.T @ (W*y))
+    residual = y - A@theta
+    chi2 = float(np.sum((residual/dy)**2))
+    ndf = int(len(y)-len(theta))
+    return theta, cov, chi2, ndf
+
+
+def build_internal_data_extraction(common, rga_file, rgk_file):
+    """INTERNAL ONLY: extract measured T,L,LT,TT and L/T at common Stage-2 cells."""
+    rga = _standardize_internal_cross_sections(rga_file, "RGA")
+    rgk = _standardize_internal_cross_sections(rgk_file, "RGK")
+    rows = []
+
+    for r in common.itertuples(index=False):
+        q2 = float(getattr(r, "Q2_common_GeV2"))
+        xb = float(getattr(r, "xB_common"))
+        mt = float(getattr(r, "minus_t_common_GeV2"))
+        point_id = str(getattr(r, "point_id"))
+
+        ga = _nearest_native_group(rga, q2, xb, mt)
+        gk = _nearest_native_group(rgk, q2, xb, mt)
+        theta, cov, chi2, ndf = _joint_rosenbluth_fit(ga, gk)
+        T, L, LT, TT = map(float, theta)
+        dT, dL, dLT, dTT = np.sqrt(np.clip(np.diag(cov), 0.0, np.inf))
+
+        if T != 0:
+            R = L/T
+            grad = np.array([-L/T**2, 1.0/T, 0.0, 0.0])
+            varR = float(grad @ cov @ grad)
+            dR = math.sqrt(max(varR, 0.0))
+        else:
+            R, dR = np.nan, np.nan
+
+        rows.append(dict(
+            point_id=point_id,
+            Q2_GeV2=q2,
+            xB=xb,
+            minus_t_GeV2=mt,
+            epsilon_rga=float(np.average(ga.epsilon)),
+            epsilon_rgk=float(np.average(gk.epsilon)),
+            delta_epsilon=float(np.average(ga.epsilon)-np.average(gk.epsilon)),
+            n_phi_rga=len(ga),
+            n_phi_rgk=len(gk),
+            sigma_T=T,
+            delta_sigma_T=dT,
+            sigma_L=L,
+            delta_sigma_L=dL,
+            sigma_LT=LT,
+            delta_sigma_LT=dLT,
+            sigma_TT=TT,
+            delta_sigma_TT=dTT,
+            R_L_over_T=R,
+            delta_R_L_over_T=dR,
+            chi2=chi2,
+            ndf=ndf,
+            chi2_ndf=chi2/ndf if ndf > 0 else np.nan,
+        ))
+    return pd.DataFrame(rows)
+
+
+def _q2_offsets(values, width=0.11):
+    """Small deterministic horizontal offsets so multiple cells at one Q2 remain visible."""
+    values = np.asarray(values, float)
+    out = np.zeros(len(values), float)
+    for q2 in np.unique(values):
+        idx = np.flatnonzero(np.isclose(values, q2))
+        if len(idx) > 1:
+            out[idx] = np.linspace(-width, width, len(idx))
+    return out
+
+
+def plot_internal_LT_vs_Q2(data, outfile):
+    """Harut study: every measured matched-cell L/T extraction versus Q2."""
+    g = data.sort_values(["Q2_GeV2", "xB", "minus_t_GeV2"]).reset_index(drop=True)
+    x = g.Q2_GeV2.to_numpy(float) + _q2_offsets(g.Q2_GeV2.to_numpy(float))
+
+    fig, ax = plt.subplots(figsize=(9.0, 6.0))
+    sc = ax.scatter(
+        x, g.R_L_over_T, c=g.xB, s=42 + 34*g.minus_t_GeV2,
+        cmap="viridis", edgecolor="black", linewidth=0.35, zorder=3,
+    )
+    ax.errorbar(
+        x, g.R_L_over_T, yerr=g.delta_R_L_over_T,
+        fmt="none", ecolor="0.45", elinewidth=0.9, capsize=1.8, alpha=0.75, zorder=2,
+    )
+    ax.axhline(0.0, linewidth=1.0, color="black")
+    ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
+    ax.set_ylabel(r"Measured $\sigma_L/\sigma_T$")
+    ax.set_title(r"INTERNAL: measured $\pi^0$ Rosenbluth $L/T$ vs. $Q^2$")
+    cb = fig.colorbar(sc, ax=ax)
+    cb.set_label(r"$x_B$")
+    ax.text(
+        0.99, 0.02, r"Marker size increases with $-t$",
+        transform=ax.transAxes, ha="right", va="bottom", fontsize=9,
+    )
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=200)
+    plt.close(fig)
+
+
+def plot_internal_LT_by_xB(data, outfile):
+    """Faceted internal view so Q2 evolution is not confused with xB/t evolution."""
+    xb_values = sorted(data.xB.unique())
+    ncols = min(4, max(1, len(xb_values)))
+    nrows = int(np.ceil(len(xb_values)/ncols))
+    fig, axes = plt.subplots(nrows, ncols, figsize=(4.0*ncols, 3.5*nrows),
+                             sharex=True, sharey=True, squeeze=False)
+    axes = axes.ravel()
+
+    finite_t = data.minus_t_GeV2[np.isfinite(data.minus_t_GeV2)]
+    tmin = float(finite_t.min()) if len(finite_t) else 0.0
+    tmax = float(finite_t.max()) if len(finite_t) else 1.0
+
+    for ax, xb in zip(axes, xb_values):
+        g = data[np.isclose(data.xB, xb)].sort_values(["Q2_GeV2", "minus_t_GeV2"])
+        sc = ax.scatter(g.Q2_GeV2, g.R_L_over_T, c=g.minus_t_GeV2,
+                        cmap="viridis", vmin=tmin, vmax=tmax,
+                        s=48, edgecolor="black", linewidth=0.35, zorder=3)
+        ax.errorbar(g.Q2_GeV2, g.R_L_over_T, yerr=g.delta_R_L_over_T,
+                    fmt="none", ecolor="0.45", elinewidth=0.9, capsize=1.8, alpha=0.75)
+        ax.axhline(0.0, linewidth=0.8, color="black")
+        ax.set_title(fr"$x_B={xb:g}$")
+        ax.grid(alpha=0.15)
+
+    for ax in axes[len(xb_values):]:
+        ax.set_visible(False)
+    for i, ax in enumerate(axes[:len(xb_values)]):
+        if i//ncols == nrows-1 or i+ncols >= len(xb_values):
+            ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
+        if i % ncols == 0:
+            ax.set_ylabel(r"$\sigma_L/\sigma_T$")
+
+    cbar = fig.colorbar(sc, ax=list(axes[:len(xb_values)]), shrink=0.88, pad=0.02)
+    cbar.set_label(r"$-t$ (GeV$^2$)")
+    fig.suptitle(r"INTERNAL: measured $\pi^0$ $L/T$ evolution at fixed $x_B$", y=0.995)
+    fig.subplots_adjust(left=0.07, right=0.90, bottom=0.09, top=0.91, wspace=0.12, hspace=0.28)
+    fig.savefig(outfile, dpi=200)
+    plt.close(fig)
+
+
+def run_internal_data_mode(a):
+    """Explicitly non-default path using measured, unapproved central values."""
+    out = a.internal_output.resolve()
+    tabs, figs = out/"tables", out/"figures"
+    tabs.mkdir(parents=True, exist_ok=True)
+    figs.mkdir(parents=True, exist_ok=True)
+
+    common = pd.read_csv(a.stage2.resolve()/"tables"/"03_common_rosenbluth_model_points.csv")
+    data = build_internal_data_extraction(common, a.internal_rga.resolve(), a.internal_rgk.resolve())
+    data.to_csv(tabs/"INTERNAL_01_measured_LT_by_point.csv", index=False)
+    plot_internal_LT_vs_Q2(data, figs/"INTERNAL_01_measured_L_over_T_vs_Q2.png")
+    plot_internal_LT_by_xB(data, figs/"INTERNAL_02_measured_L_over_T_vs_Q2_by_xB.png")
+
+    print("\n*** INTERNAL DATA MODE: measured, unapproved RGA/RGK central values ***")
+    print(f"Matched Rosenbluth cells: {len(data)}")
+    print("No clipping or positivity constraint is applied to sigma_L or L/T.")
+    print("Negative/noisy values are retained intentionally.")
+    print("\nWrote:")
+    print(f"  {tabs/'INTERNAL_01_measured_LT_by_point.csv'}")
+    print(f"  {figs/'INTERNAL_01_measured_L_over_T_vs_Q2.png'}")
+    print(f"  {figs/'INTERNAL_02_measured_L_over_T_vs_Q2_by_xB.png'}")
+
+
 def main():
     a = args()
+
+    if a.central_values == "data":
+        run_internal_data_mode(a)
+        return
+
     out = a.output.resolve()
     tabs = out/"tables"
     figs = out/"figures"
