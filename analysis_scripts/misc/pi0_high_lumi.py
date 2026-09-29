@@ -17,22 +17,22 @@ with uproot.open(input_file) as f:
     tree = f[tree_name]
     arrays = tree.arrays(["pT2", "t1", "z2", "Mx2"], library="np")
 
-pT2 = arrays["pT2"]
-t1  = np.abs(arrays["t1"])
-z2  = arrays["z2"]
+pT = arrays["pT2"]
+t  = np.abs(arrays["t1"])
+z  = arrays["z2"]
 Mx2 = arrays["Mx2"]
 
 # Remove non-finite entries.
 mask = (
-    np.isfinite(pT2) &
-    np.isfinite(t1) &
-    np.isfinite(z2) &
+    np.isfinite(pT) &
+    np.isfinite(t) &
+    np.isfinite(z) &
     np.isfinite(Mx2)
 )
 
-pT2 = pT2[mask]
-t1  = t1[mask]
-z2  = z2[mask]
+pT  = pT[mask]
+t   = t[mask]
+z   = z[mask]
 Mx2 = Mx2[mask]
 
 # ----------------------------------------------------------------------
@@ -41,37 +41,43 @@ Mx2 = Mx2[mask]
 
 fig, axes = plt.subplots(2, 2, figsize=(12, 10))
 
-# pT2 vs |t1|
+# pT vs |t|
 h = axes[0, 0].hist2d(
-    pT2, t1,
+    pT,
+    t,
     bins=(100, 100),
     range=((0.0, 1.4), (0.0, 1.2)),
     cmap="coolwarm"
 )
-axes[0, 0].set_xlabel(r"$p_T^2$ (GeV$^2$)")
+
+axes[0, 0].set_xlabel(r"$p_T$ (GeV)")
 axes[0, 0].set_ylabel(r"$|t|$ (GeV$^2$)")
-axes[0, 0].set_title(r"$p_T^2$ vs. $|t|$")
+axes[0, 0].set_title(r"$p_T$ vs. $|t|$")
 fig.colorbar(h[3], ax=axes[0, 0], label="Counts")
 
-# pT2 vs z2
+# pT vs z
 h = axes[0, 1].hist2d(
-    pT2, z2,
+    pT,
+    z,
     bins=(100, 100),
     range=((0.0, 1.4), (0.4, 1.2)),
     cmap="coolwarm"
 )
-axes[0, 1].set_xlabel(r"$p_T^2$ (GeV$^2$)")
+
+axes[0, 1].set_xlabel(r"$p_T$ (GeV)")
 axes[0, 1].set_ylabel(r"$z$")
-axes[0, 1].set_title(r"$p_T^2$ vs. $z$")
+axes[0, 1].set_title(r"$p_T$ vs. $z$")
 fig.colorbar(h[3], ax=axes[0, 1], label="Counts")
 
-# |t1| vs z2
+# |t| vs z
 h = axes[1, 0].hist2d(
-    t1, z2,
+    t,
+    z,
     bins=(100, 100),
     range=((0.0, 1.2), (0.4, 1.2)),
     cmap="coolwarm"
 )
+
 axes[1, 0].set_xlabel(r"$|t|$ (GeV$^2$)")
 axes[1, 0].set_ylabel(r"$z$")
 axes[1, 0].set_title(r"$|t|$ vs. $z$")
@@ -81,14 +87,19 @@ fig.colorbar(h[3], ax=axes[1, 0], label="Counts")
 axes[1, 1].hist(
     Mx2,
     bins=150,
-    range=(-1.0, 1.0),
+    range=(-0.25, 0.25),
     histtype="step",
     linewidth=1.5
 )
-axes[1, 1].set_xlim(-1.0, 1.0)
+
+axes[1, 1].set_xlim(-0.25, 0.25)
 axes[1, 1].set_xlabel(r"$M_X^2$ (GeV$^2$)")
 axes[1, 1].set_ylabel("Counts")
 axes[1, 1].set_title(r"$M_X^2$ Distribution")
+
+# ----------------------------------------------------------------------
+# Save
+# ----------------------------------------------------------------------
 
 plt.tight_layout()
 plt.savefig(output_file, dpi=200, bbox_inches="tight")
