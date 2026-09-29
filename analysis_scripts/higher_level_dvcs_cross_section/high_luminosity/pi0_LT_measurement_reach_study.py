@@ -525,13 +525,14 @@ def _standardize_internal_cross_sections(path, campaign):
     df = pd.read_csv(path)
 
     aliases = {
-        "Q2": ["Q2", "q2", "Q2_GeV2", "q2_mean", "mean_Q2", "Q2_mean"],
-        "xB": ["xB", "xb", "x_B", "xB_mean", "mean_xB"],
-        "mt": ["minus_t", "minus_t_GeV2", "-t", "t_abs", "abs_t", "mt", "t_mean"],
+        "Q2": ["Q2_flux_coordinate_GeV2", "Q2", "q2", "Q2_GeV2", "q2_mean", "mean_Q2", "Q2_mean"],
+        "xB": ["xB_flux_coordinate", "xB", "xb", "x_B", "xB_mean", "mean_xB"],
+        "mt": ["minus_t_center_GeV2", "minus_t", "minus_t_GeV2", "-t", "t_abs", "abs_t", "mt", "t_mean"],
         "phi": ["phi", "phi_deg", "phi_center_deg", "phi_center", "mean_phi", "phi_mean"],
-        "eps": ["epsilon", "eps", "epsilon_mean", "mean_epsilon"],
-        "xs": ["reduced_cross_section", "cross_section", "sigma", "xsec", "xs", "value"],
-        "err": ["total_uncertainty", "cross_section_uncertainty", "sigma_unc", "xsec_unc",
+        "eps": ["virtual_photon_epsilon", "epsilon", "eps", "epsilon_mean", "mean_epsilon"],
+        "xs": ["reduced_cross_section_nb_per_GeV2_rad", "reduced_cross_section", "cross_section", "sigma", "xsec", "xs", "value"],
+        "err": ["propagated_statistical_and_finite_MC_uncertainty_nb_per_GeV2_rad",
+                "total_uncertainty", "cross_section_uncertainty", "sigma_unc", "xsec_unc",
                 "uncertainty", "error", "err", "total_error"],
         "stat": ["stat_uncertainty", "stat_error", "stat_err", "sigma_stat", "xsec_stat"],
         "sys": ["sys_uncertainty", "syst_uncertainty", "sys_error", "syst_error",
@@ -543,6 +544,10 @@ def _standardize_internal_cross_sections(path, campaign):
 
     cols = {k: _pick_col(df, v, k, required=(k in {"Q2", "xB", "mt", "phi", "eps", "xs"}))
             for k, v in aliases.items()}
+
+    print(f"[INTERNAL {campaign} measured-data columns]")
+    for key in ("Q2", "xB", "mt", "phi", "eps", "xs", "err"):
+        print(f"  {key:>4s} <- {cols[key]}")
 
     if cols["err"] is not None:
         err = pd.to_numeric(df[cols["err"]], errors="coerce").to_numpy(float)
