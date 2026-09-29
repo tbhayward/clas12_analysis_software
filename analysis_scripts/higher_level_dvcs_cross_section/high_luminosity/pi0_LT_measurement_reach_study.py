@@ -73,6 +73,11 @@ def args():
         help="INTERNAL ONLY: measured RGK reduced-cross-section CSV.",
     )
     p.add_argument(
+        "--internal-rga-scale", type=float, default=1.0,
+        help=("INTERNAL DATA MODE ONLY: multiply every RGA measured cross section "
+              "and its absolute uncertainty by this factor. Default 1.0."),
+    )
+    p.add_argument(
         "--internal-output", type=Path,
         default=here/"output"/"pi0_LT_internal_data",
         help="Separate output directory used only by --central-values data.",
@@ -681,10 +686,19 @@ def _joint_rosenbluth_fit(rga, rgk):
     return theta, cov, chi2, ndf
 
 
-def build_internal_data_extraction(common, rga_file, rgk_file):
+def build_internal_data_extraction(common, rga_file, rgk_file, rga_scale=1.0):
     """INTERNAL ONLY: extract measured T,L,LT,TT and L/T at common Stage-2 cells."""
     rga = _standardize_internal_cross_sections(rga_file, "RGA")
     rgk = _standardize_internal_cross_sections(rgk_file, "RGK")
+
+    # Explicit RGA normalization stress test.  Scale the absolute uncertainty
+    # with the cross section so the measured RGA fractional precision is unchanged.
+    rga_scale = float(rga_scale)
+    if not np.isfinite(rga_scale) or rga_scale <= 0:
+        raise ValueError(f"internal RGA scale must be positive and finite, got {rga_scale}")
+    rga["sigma"] *= rga_scale
+    rga["delta_sigma"] *= rga_scale
+
     rows = []
 
     for r in common.itertuples(index=False):
@@ -770,6 +784,7 @@ def build_internal_data_extraction(common, rga_file, rgk_file):
 
         rows.append(dict(
             point_id=point_id,
+            internal_rga_scale=rga_scale,
             Q2_GeV2=q2,
             xB=xb,
             minus_t_GeV2=mt,
@@ -1204,12 +1219,18 @@ def plot_internal_sigmaL_from_U_check(data, outfile):
 def run_internal_data_mode(a):
     """Explicitly non-default path using measured, unapproved central values."""
     out = a.internal_output.resolve()
+    if not np.isclose(a.internal_rga_scale, 1.0):
+        tag = f"rga_scale_{a.internal_rga_scale:g}".replace(".", "p")
+        out = out.parent / f"{out.name}_{tag}"
     tabs, figs = out/"tables", out/"figures"
     tabs.mkdir(parents=True, exist_ok=True)
     figs.mkdir(parents=True, exist_ok=True)
 
     common = pd.read_csv(a.stage2.resolve()/"tables"/"03_common_rosenbluth_model_points.csv")
-    data = build_internal_data_extraction(common, a.internal_rga.resolve(), a.internal_rgk.resolve())
+    data = build_internal_data_extraction(
+        common, a.internal_rga.resolve(), a.internal_rgk.resolve(),
+        rga_scale=a.internal_rga_scale,
+    )
     data.to_csv(tabs/"INTERNAL_01_measured_LT_by_point.csv", index=False)
     plot_internal_LT_vs_Q2(
         data, figs/"INTERNAL_01_measured_L_over_T_vs_Q2.png",
@@ -1244,6 +1265,9 @@ def run_internal_data_mode(a):
     )
 
     print("\n*** INTERNAL DATA MODE: measured, unapproved RGA/RGK central values ***")
+    print(f"RGA normalization test factor: {a.internal_rga_scale:g}x")
+    if not np.isclose(a.internal_rga_scale, 1.0):
+        print("NOTE: normalization stress test; this is not the nominal extraction.")
     print(f"Matched Rosenbluth cells: {len(data)}")
     print("No clipping or positivity constraint is applied to sigma_L or L/T.")
     print("Negative/noisy values are retained intentionally.")
