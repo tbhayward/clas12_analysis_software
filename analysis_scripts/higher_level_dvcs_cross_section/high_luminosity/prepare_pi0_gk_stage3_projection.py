@@ -36,14 +36,12 @@ def args():
     p.add_argument("--gk-results",type=Path,default=None)
     p.add_argument("--rga-factor",type=float,default=1.5)
     p.add_argument("--rgk-factor",type=float,default=8.0)
-    p.add_argument(
-        "--exposure-scan-multipliers",
-        type=str,
-        default="0.25,0.5,1,2,4,8,16",
-        help="Comma-separated multipliers applied jointly to the nominal "
-             "RGA and RGK exposure factors. A multiplier of 1 corresponds "
-             "to --rga-factor and --rgk-factor.",
-    )
+    p.add_argument("--future-lumi-scan",type=str,default="0,1,2,3,5,10",
+                   help="Luminosity multipliers applied only to future beam time.")
+    p.add_argument("--rga-remaining-factor",type=float,default=1.5,
+                   help="Remaining RGA exposure at nominal luminosity, relative to supplied Fa18.")
+    p.add_argument("--rgk-future-factor",type=float,default=0.0,
+                   help="Optional future RGK nominal exposure, relative to supplied 6.535-GeV subset.")
     p.add_argument("--seed",type=int,default=20260924)
     return p.parse_args()
 
@@ -208,83 +206,49 @@ def lt_from_u(model,hfits):
             L_significance_abs=abs(L)/np.sqrt(max(varL,1e-300))))
     return pd.DataFrame(out)
 
-def luminosity_scan(model,stage1,stage2,nominal_rga,nominal_rgk,multipliers):
-    """
-    Re-run the complete pseudo-data covariance propagation and Rosenbluth
-    separation while scaling both beam-energy data sets.
-
-    A multiplier m corresponds to:
-        RGA exposure = m * nominal_rga
-        RGK exposure = m * nominal_rgk
-
-    This is the relevant scan when additional beam time improves both arms
-    of the Rosenbluth separation, rather than imposing an artificial fixed-RGA
-    statistical floor.
-    """
-    rows=[]
-    per_point=[]
-
-    for multiplier in multipliers:
-        rga_factor=float(nominal_rga)*float(multiplier)
-        rgk_factor=float(nominal_rgk)*float(multiplier)
-
-        pseudo,hfits=make_pseudodata(
-            model,stage1,stage2,rga_factor,rgk_factor
-        )
+def luminosity_scan(model,stage1,stage2,rga_recorded,rgk_recorded,
+                    rga_remaining,rgk_future,future_lumi):
+    """Apply luminosity enhancement only to future running."""
+    rows=[]; per_point=[]
+    for f in future_lumi:
+        rga=float(rga_recorded)+float(f)*float(rga_remaining)
+        rgk=float(rgk_recorded)+float(f)*float(rgk_future)
+        pseudo,hfits=make_pseudodata(model,stage1,stage2,rga,rgk)
         lt=lt_from_u(model,hfits)
-
-        relL=lt.sigma_L_unc/np.maximum(np.abs(lt.sigma_L_truth),1e-300)
+        rel=lt.sigma_L_unc/np.maximum(np.abs(lt.sigma_L_truth),1e-300)
         sig=lt.L_significance_abs.to_numpy(float)
-
-        finite_rel=relL[np.isfinite(relL)]
-        finite_sig=sig[np.isfinite(sig)]
-
+        fs=sig[np.isfinite(sig)]; fr=rel[np.isfinite(rel)]
         rows.append(dict(
-            exposure_multiplier=float(multiplier),
-            rga_factor=rga_factor,
-            rgk_factor=rgk_factor,
-            n_points=len(lt),
-            n_ge_1sigma=int(np.sum(finite_sig >= 1.0)),
-            n_ge_2sigma=int(np.sum(finite_sig >= 2.0)),
-            n_ge_3sigma=int(np.sum(finite_sig >= 3.0)),
-            n_ge_5sigma=int(np.sum(finite_sig >= 5.0)),
-            median_L_significance=float(np.nanmedian(finite_sig)),
-            max_L_significance=float(np.nanmax(finite_sig)),
-            median_rel_sigma_L=float(np.nanmedian(finite_rel)),
-            p25_rel_sigma_L=float(np.nanpercentile(finite_rel,25)),
-            p75_rel_sigma_L=float(np.nanpercentile(finite_rel,75)),
-        ))
-
-        t=lt[[
-            "point_id","Q2_GeV2","xB","minus_t_GeV2","delta_epsilon",
-            "sigma_T_truth","sigma_L_truth","sigma_L_unc",
-            "L_significance_abs"
-        ]].copy()
-        t.insert(0,"rgk_factor",rgk_factor)
-        t.insert(0,"rga_factor",rga_factor)
-        t.insert(0,"exposure_multiplier",float(multiplier))
-        t["relative_sigma_L_uncertainty"] = (
-            t.sigma_L_unc/np.maximum(np.abs(t.sigma_L_truth),1e-300)
-        )
+            future_luminosity_multiplier=float(f),
+            rga_final_factor=rga,rgk_final_factor=rgk,n_points=len(lt),
+            n_ge_1sigma=int(np.sum(fs>=1)),n_ge_2sigma=int(np.sum(fs>=2)),
+            n_ge_3sigma=int(np.sum(fs>=3)),n_ge_5sigma=int(np.sum(fs>=5)),
+            median_L_significance=float(np.nanmedian(fs)),
+            max_L_significance=float(np.nanmax(fs)),
+            median_rel_sigma_L=float(np.nanmedian(fr)),
+            p25_rel_sigma_L=float(np.nanpercentile(fr,25)),
+            p75_rel_sigma_L=float(np.nanpercentile(fr,75))))
+        t=lt[["point_id","Q2_GeV2","xB","minus_t_GeV2","delta_epsilon",
+              "sigma_T_truth","sigma_L_truth","sigma_L_unc",
+              "L_significance_abs"]].copy()
+        t.insert(0,"rgk_final_factor",rgk); t.insert(0,"rga_final_factor",rga)
+        t.insert(0,"future_luminosity_multiplier",float(f))
+        t["relative_sigma_L_uncertainty"]=rel
         per_point.append(t)
-
     return pd.DataFrame(rows),pd.concat(per_point,ignore_index=True)
 
 
 def luminosity_scan_figure(scan,outfile):
     fig,ax=plt.subplots(figsize=(7.2,5.4))
-    ax.plot(scan.exposure_multiplier,scan.n_ge_1sigma,marker="o",label=r"$\geq1\sigma$")
-    ax.plot(scan.exposure_multiplier,scan.n_ge_2sigma,marker="o",label=r"$\geq2\sigma$")
-    ax.plot(scan.exposure_multiplier,scan.n_ge_3sigma,marker="o",label=r"$\geq3\sigma$")
-    ax.axvline(1.0,ls="--",label="Nominal projected exposure")
-    ax.set_xscale("log",base=2)
-    ax.set_xlabel("Joint exposure multiplier")
+    x=scan.future_luminosity_multiplier
+    ax.plot(x,scan.n_ge_1sigma,marker="o",label=r"$\geq1\sigma$")
+    ax.plot(x,scan.n_ge_2sigma,marker="o",label=r"$\geq2\sigma$")
+    ax.plot(x,scan.n_ge_3sigma,marker="o",label=r"$\geq3\sigma$")
+    ax.axvline(1.0,ls="--",label="Remaining beam time at nominal luminosity")
+    ax.set_xlabel("Luminosity multiplier for future running")
     ax.set_ylabel(r"Number of bins with resolved $\sigma_L$")
-    ax.set_title(r"$\pi^0$ Rosenbluth sensitivity versus joint exposure")
-    ax.legend()
-    fig.tight_layout()
-    fig.savefig(outfile,dpi=180)
-    plt.close(fig)
+    ax.set_title(r"$\pi^0$ Rosenbluth sensitivity versus future luminosity")
+    ax.legend(); fig.tight_layout(); fig.savefig(outfile,dpi=180); plt.close(fig)
 
 
 
@@ -402,48 +366,34 @@ Once an actual PARTONS result is available, pass the converted CSV with:
     figures(model,pseudo,hfits,lt,figs)
 
     try:
-        exposure_scan_multipliers=[
-            float(x.strip()) for x in a.exposure_scan_multipliers.split(",")
-            if x.strip()
-        ]
+        future_lumi=[float(x.strip()) for x in a.future_lumi_scan.split(",") if x.strip()]
     except ValueError as exc:
-        raise RuntimeError(
-            "Could not parse --exposure-scan-multipliers="
-            f"{a.exposure_scan_multipliers!r}"
-        ) from exc
-    if (not exposure_scan_multipliers
-            or any(x <= 0 for x in exposure_scan_multipliers)):
-        raise RuntimeError(
-            "--exposure-scan-multipliers must contain positive values"
-        )
+        raise RuntimeError(f"Could not parse --future-lumi-scan={a.future_lumi_scan!r}") from exc
+    if not future_lumi or any(x < 0 for x in future_lumi):
+        raise RuntimeError("--future-lumi-scan must contain non-negative values")
+    if a.rga_remaining_factor < 0 or a.rgk_future_factor < 0:
+        raise RuntimeError("Future exposure factors must be non-negative")
 
     scan,scan_points=luminosity_scan(
-        model,s1,s2,a.rga_factor,a.rgk_factor,exposure_scan_multipliers
-    )
-    scan.to_csv(tabs/"05_joint_luminosity_scan_summary.csv",index=False)
-    scan_points.to_csv(tabs/"06_joint_luminosity_scan_by_point.csv",index=False)
-    luminosity_scan_figure(
-        scan,figs/"06_joint_luminosity_scan_sigmaL_counts.png"
-    )
+        model,s1,s2,a.rga_factor,a.rgk_factor,
+        a.rga_remaining_factor,a.rgk_future_factor,future_lumi)
+    scan.to_csv(tabs/"05_future_running_luminosity_scan_summary.csv",index=False)
+    scan_points.to_csv(tabs/"06_future_running_luminosity_scan_by_point.csv",index=False)
+    luminosity_scan_figure(scan,figs/"06_future_running_luminosity_scan_sigmaL_counts.png")
 
-    print("\n[Joint RGA + RGK luminosity scan]")
-    print(f"  nominal RGA factor : {a.rga_factor:g}x")
-    print(f"  nominal RGK factor : {a.rgk_factor:g}x")
-    print(scan.to_string(
-        index=False,
-        columns=[
-            "exposure_multiplier","rga_factor","rgk_factor",
-            "n_ge_1sigma","n_ge_2sigma","n_ge_3sigma",
-            "max_L_significance","median_rel_sigma_L"
-        ],
-        formatters={
-            "exposure_multiplier":lambda x:f"{x:g}",
-            "rga_factor":lambda x:f"{x:g}",
-            "rgk_factor":lambda x:f"{x:g}",
-            "max_L_significance":lambda x:f"{x:.3f}",
-            "median_rel_sigma_L":lambda x:f"{x:.3f}",
-        }
-    ))
+    print("\n[Future-running luminosity scan]")
+    print(f"  RGA recorded               : {a.rga_factor:g}x Fa18 template")
+    print(f"  RGA remaining nominal      : {a.rga_remaining_factor:g}x Fa18 template")
+    print(f"  RGK recorded               : {a.rgk_factor:g}x 6.535-GeV subset")
+    print(f"  optional RGK future nominal: {a.rgk_future_factor:g}x subset")
+    print(scan.to_string(index=False,columns=[
+        "future_luminosity_multiplier","rga_final_factor","rgk_final_factor",
+        "n_ge_1sigma","n_ge_2sigma","n_ge_3sigma","max_L_significance",
+        "median_rel_sigma_L"],formatters={
+        "future_luminosity_multiplier":lambda x:f"{x:g}",
+        "rga_final_factor":lambda x:f"{x:g}","rgk_final_factor":lambda x:f"{x:g}",
+        "max_L_significance":lambda x:f"{x:.3f}",
+        "median_rel_sigma_L":lambda x:f"{x:.3f}"}))
 
     good2=int((lt.L_significance_abs>=2).sum()); good3=int((lt.L_significance_abs>=3).sum())
     relL=lt.sigma_L_unc/np.maximum(np.abs(lt.sigma_L_truth),1e-300)
@@ -460,13 +410,14 @@ Once an actual PARTONS result is available, pass the converted CSV with:
         "relative uncertainties and within-cell phi correlations.",
         "",
         "",
-        f"Joint luminosity scan: nominal RGA={a.rga_factor:g}x, "
-        f"nominal RGK={a.rgk_factor:g}x; both scaled by multipliers = "
-        + ", ".join(f"{x:g}x" for x in exposure_scan_multipliers),
+        f"Future-running scan: RGA recorded={a.rga_factor:g}x, "
+        f"RGA remaining nominal={a.rga_remaining_factor:g}x; "
+        f"RGK recorded={a.rgk_factor:g}x, optional future nominal={a.rgk_future_factor:g}x.",
+        "Future luminosity multipliers = "+", ".join(f"{x:g}x" for x in future_lumi),
         "Scan outputs:",
-        "  tables/05_joint_luminosity_scan_summary.csv",
-        "  tables/06_joint_luminosity_scan_by_point.csv",
-        "  figures/06_joint_luminosity_scan_sigmaL_counts.png",
+        "  tables/05_future_running_luminosity_scan_summary.csv",
+        "  tables/06_future_running_luminosity_scan_by_point.csv",
+        "  figures/06_future_running_luminosity_scan_sigmaL_counts.png",
         "",
         "Current caveat: all supplied fractional uncertainty components are scaled",
         "as 1/sqrt(exposure); finite-MC and additional systematic floors are not yet",
