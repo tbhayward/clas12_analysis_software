@@ -11,10 +11,10 @@ factor.  Instead it:
   1. divides each of the 24 (xB, -t') bins into nine phi bins;
   2. extracts Gaussian exclusive-signal areas separately for the four NH3
      (beam helicity, target-polarization sign) states;
-  3. extracts beam-helicity-separated exclusive-signal areas from C, CH2, He
-     and empty-target data;
-  4. evaluates the direct five-target Method-1 algebra as a FREE-HYDROGEN RATE
-     rather than first constructing f = N_H/N_NH3;
+  3. extracts beam-helicity-separated exclusive-signal areas from C and CH2;
+  4. obtains a beam-helicity-separated carbon normalization from the broad
+     0.00 <= Mx2 < 0.40 GeV2 control region and subtracts the scaled carbon
+     signal rate directly from each NH3 spin-state signal rate;
   5. fits the resulting four hydrogen yield/rate distributions simultaneously
      to the same seven longitudinal structure-function ratios used by the
      nominal analysis.
@@ -30,19 +30,19 @@ Run from:
     RGC_enpi+/asymmetry_extraction/
 
 Typical command:
-    python extract_structure_function_ratios_yield_check_parallel_v3.py
+    python extract_structure_function_ratios_yield_check_carbon_v5.py
 
 Outputs:
-    output/asymmetry_extraction/yield_check/
+    output/asymmetry_extraction/yield_check_carbon/
 
 Important statistical note
 --------------------------
 This first implementation propagates the per-spectrum Gaussian-area covariance
-through the direct five-target expression and then performs a weighted
+through the beam-helicity-separated carbon subtraction and then performs a weighted
 least-squares physics fit.  It is intended as the first external-check
 implementation.  The next statistical upgrade should bootstrap the complete
-five-target Gaussian extraction so that shared auxiliary-target correlations
-between the four hydrogen spin states are carried exactly.
+carbon-normalized Gaussian extraction so that shared auxiliary-target correlations
+between the four hydrogen spin states can be carried exactly.
 """
 
 from __future__ import annotations
@@ -78,8 +78,10 @@ import extract_structure_function_ratios as nominal
 
 
 PERIODS = nominal.PERIODS
-TARGETS = ("NH3", "C", "CH2", "He", "ET")
-AUX_TARGETS = ("C", "CH2", "He", "ET")
+TARGETS = ("NH3", "C", "CH2")
+AUX_TARGETS = ("C", "CH2")
+CARBON_CONTROL_MIN_GEV2 = 0.0
+CARBON_CONTROL_MAX_GEV2 = 0.40
 PHYSICS_PARAMETERS = nominal.PHYSICS_PARAMETERS
 BEAM_POLARIZATION = nominal.BEAM_POLARIZATION
 XB_BINS = nominal.XB_BINS
@@ -90,7 +92,7 @@ MAX_WORKERS = 8
 PHI_EDGES = np.linspace(0.0, 2.0 * math.pi, N_PHI_BINS + 1)
 PHI_CENTERS = 0.5 * (PHI_EDGES[:-1] + PHI_EDGES[1:])
 
-DEFAULT_OUTPUT_DIR = Path("output/asymmetry_extraction/yield_check")
+DEFAULT_OUTPUT_DIR = Path("output/asymmetry_extraction/yield_check_carbon")
 DEFAULT_RUN_INFO = Path("clas12_run_info.csv")
 DEFAULT_CUT_JSON = nominal.DEFAULT_CUT_JSON
 DEFAULT_TREE_NAME = "PhysicsEvents"
@@ -341,73 +343,76 @@ def fit_signal_area_worker(task: tuple[Any, np.ndarray, float, float]) -> tuple[
 
 
 
-def direct_method1_hydrogen_rate(
-    areas: Mapping[str, float],
-    charges: Mapping[str, float],
-) -> float:
-    """Return the free-H signal rate directly from Method-1 Eq. (10).
+def carbon_subtracted_hydrogen_rate(
+    nh3_area: float, nh3_error: float, nh3_charge: float,
+    carbon_area: float, carbon_error: float, carbon_charge: float,
+    alpha: float, alpha_error: float,
+) -> tuple[float, float]:
+    """Return the carbon-normalized free-hydrogen signal rate and uncertainty.
 
-    Eq. (10) returns f.  Algebraically multiplying Eq. (10) by N_A/Q_A and
-    cancelling N_A gives this expression.  Thus this routine never constructs
-    or consumes a dilution factor.
+    alpha is determined independently for each period and beam helicity from
+    the broad 0.00 <= Mx2 < 0.40 GeV2 control region, using NH3 summed over
+    both target-polarization signs.  Thus the same beam-helicity-specific
+    background normalization is applied to s=+1 and s=-1, preventing the
+    subtraction itself from manufacturing a target-spin asymmetry.
 
-    Charges can be absolute charges rather than fractions: the common charge
-    normalization cancels from the expression.
+    R_H = N_NH3/Q_NH3 - alpha * N_C/Q_C.
+
+    CH2 is deliberately retained as an auxiliary diagnostic sample but does
+    not enter this subtraction.  He and ET are omitted entirely in this
+    external-check implementation.
     """
-    nA, nC = float(areas["NH3"]), float(areas["C"])
-    nCH, nMT, nf = float(areas["CH2"]), float(areas["He"]), float(areas["ET"])
-    qA, qC = float(charges["NH3"]), float(charges["C"])
-    qCH, qHe, qf = float(charges["CH2"]), float(charges["He"]), float(charges["ET"])
-    if min(qA, qC, qCH, qHe, qf) <= 0.0:
-        return np.nan
+    vals = (nh3_area, nh3_error, nh3_charge, carbon_area, carbon_error,
+            carbon_charge, alpha, alpha_error)
+    if not all(np.isfinite(v) for v in vals):
+        return np.nan, np.nan
     # endif
-    first = -nMT * qA + nA * qHe
-    second = (
-        -0.579353 * nMT * qC * qCH * qf
-        + (nf * qC * qCH - 3.50431 * nCH * qC * qf + 3.08366 * nC * qCH * qf) * qHe
-    )
-    bracket = (
-        35.88 * nMT * qC * qCH * qf
-        - nf * qC * qCH * qHe
-        - 43.3586 * nCH * qC * qf * qHe
-        + 8.47866 * nC * qCH * qf * qHe
-    )
-    denominator = qA * qHe * bracket
-    if denominator == 0.0:
-        return np.nan
+    if nh3_charge <= 0.0 or carbon_charge <= 0.0 or nh3_error <= 0.0 or carbon_error <= 0.0:
+        return np.nan, np.nan
     # endif
-    return 12.3729 * first * second / denominator
+    r_nh3 = nh3_area / nh3_charge
+    r_c = carbon_area / carbon_charge
+    rate = r_nh3 - alpha * r_c
+    variance = (nh3_error / nh3_charge) ** 2
+    variance += (alpha * carbon_error / carbon_charge) ** 2
+    variance += (r_c * alpha_error) ** 2
+    return rate, math.sqrt(max(variance, 0.0))
 
 
-def propagate_direct_rate_error(
-    areas: Mapping[str, float],
-    errors: Mapping[str, float],
-    charges: Mapping[str, float],
-) -> float:
-    variance = 0.0
-    for target in TARGETS:
-        error = float(errors[target])
-        if not np.isfinite(error) or error <= 0.0:
-            return np.nan
-        # endif
-        value = float(areas[target])
-        step = max(1.0e-4 * max(abs(value), 1.0), 1.0e-3 * error)
-        plus = dict(areas)
-        minus = dict(areas)
-        plus[target] = value + step
-        minus[target] = max(value - step, 0.0)
-        actual_step = plus[target] - minus[target]
-        if actual_step <= 0.0:
-            return np.nan
-        # endif
-        derivative = (
-            direct_method1_hydrogen_rate(plus, charges)
-            - direct_method1_hydrogen_rate(minus, charges)
-        ) / actual_step
-        variance += derivative * derivative * error * error
+def determine_carbon_normalizations(
+    events: pd.DataFrame,
+    charge_map: Mapping[tuple[str, str, int, int], tuple[float, float]],
+) -> pd.DataFrame:
+    """Determine period/helicity carbon scale factors from the broad control region."""
+    rows = []
+    control = events[(events.Mx2 >= CARBON_CONTROL_MIN_GEV2) &
+                     (events.Mx2 < CARBON_CONTROL_MAX_GEV2)]
+    for period in PERIODS:
+        for h in (-1, 1):
+            nh3 = control[(control.period == period) & (control.target == "NH3") &
+                          (control.helicity == h)]
+            carbon = control[(control.period == period) & (control.target == "C") &
+                             (control.helicity == h)]
+            n_a = int(len(nh3))
+            n_c = int(len(carbon))
+            q_a = sum(charge_map[(period, "NH3", h, s)][0] for s in (-1, 1))
+            q_c = charge_map[(period, "C", h, 0)][0]
+            if n_a > 0 and n_c > 0 and q_a > 0.0 and q_c > 0.0:
+                r_a = n_a / q_a
+                r_c = n_c / q_c
+                alpha = r_a / r_c if r_c > 0.0 else np.nan
+                alpha_error = abs(alpha) * math.sqrt(1.0 / n_a + 1.0 / n_c)
+            else:
+                alpha = np.nan
+                alpha_error = np.nan
+            # endif
+            rows.append(dict(period=period, helicity=h, nh3_control_events=n_a,
+                             carbon_control_events=n_c, nh3_control_charge=q_a,
+                             carbon_control_charge=q_c, alpha=alpha,
+                             alpha_error=alpha_error))
+        # endfor
     # endfor
-    return math.sqrt(max(variance, 0.0))
-
+    return pd.DataFrame(rows)
 
 def load_events(
     inputs: Mapping[tuple[str, str], Path],
@@ -690,6 +695,30 @@ def main() -> None:
     # endfor
     pd.DataFrame(charge_rows).to_csv(tables / "state_charges.csv", index=False)
 
+    carbon_norms = determine_carbon_normalizations(events, charge_map)
+    carbon_norms.to_csv(tables / "carbon_normalizations.csv", index=False)
+    carbon_norm_map = {
+        (str(row.period), int(row.helicity)): (float(row.alpha), float(row.alpha_error))
+        for row in carbon_norms.itertuples(index=False)
+    }
+    print("[carbon normalization] period/helicity control-region scales:", flush=True)
+    print(carbon_norms.to_string(index=False), flush=True)
+
+    fig, ax = plt.subplots(figsize=(8, 5))
+    for h, marker in ((-1, "o"), (1, "s")):
+        part = carbon_norms[carbon_norms.helicity == h]
+        x = np.arange(len(PERIODS), dtype=float) + (0.08 if h > 0 else -0.08)
+        ax.errorbar(x, part.alpha, yerr=part.alpha_error, fmt=marker, capsize=3,
+                    label=rf"$h={h:+d}$")
+    # endfor
+    ax.set_xticks(np.arange(len(PERIODS)), PERIODS)
+    ax.set_ylabel(r"Carbon normalization $\alpha_p^h$")
+    ax.set_title(r"$0.00 \leq M_X^2 < 0.40$ GeV$^2$ control region")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(diagnostics / "carbon_normalizations_by_helicity.png", dpi=180)
+    plt.close(fig)
+
     area_rows: list[dict[str, Any]] = []
     area_lookup: dict[tuple[str, str, int, int, int, int], AreaFit] = {}
     plot_count = 0
@@ -782,24 +811,20 @@ def main() -> None:
         for kin_bin in range(1, N_KIN_BINS + 1):
             for phi_bin in range(N_PHI_BINS):
                 for h in (-1, 1):
-                    # Auxiliary targets retain beam-helicity separation.
-                    aux_areas = {}
-                    aux_errors = {}
-                    aux_charges = {}
-                    for target in AUX_TARGETS:
-                        fit = area_lookup[(period, target, kin_bin, phi_bin, h, 0)]
-                        aux_areas[target] = fit.area
-                        aux_errors[target] = fit.area_error
-                        aux_charges[target] = charge_map[(period, target, h, 0)][0]
-                    # endfor
+                    # Carbon remains beam-helicity separated.  CH2 is fitted and
+                    # retained in diagnostics, but the external-check subtraction
+                    # itself uses the established carbon-normalization construction.
+                    carbon_fit = area_lookup[(period, "C", kin_bin, phi_bin, h, 0)]
+                    qC = charge_map[(period, "C", h, 0)][0]
+                    alpha, alpha_error = carbon_norm_map[(period, h)]
                     for s in (-1, 1):
                         nh3_fit = area_lookup[(period, "NH3", kin_bin, phi_bin, h, s)]
-                        areas = {"NH3": nh3_fit.area, **aux_areas}
-                        errors = {"NH3": nh3_fit.area_error, **aux_errors}
                         qA, qpt = charge_map[(period, "NH3", h, s)]
-                        charges = {"NH3": qA, **aux_charges}
-                        h_rate = direct_method1_hydrogen_rate(areas, charges)
-                        h_error = propagate_direct_rate_error(areas, errors, charges)
+                        h_rate, h_error = carbon_subtracted_hydrogen_rate(
+                            nh3_fit.area, nh3_fit.area_error, qA,
+                            carbon_fit.area, carbon_fit.area_error, qC,
+                            alpha, alpha_error,
+                        )
                         pt_eff = qpt / qA if qA > 0.0 else np.nan
                         nh3_rows = area_frame[
                             (area_frame.period == period) & (area_frame.target == "NH3")
@@ -813,7 +838,9 @@ def main() -> None:
                             phi_center=PHI_CENTERS[phi_bin], helicity=h, target_sign=s,
                             charge=qA, pt_effective=pt_eff, hydrogen_rate=h_rate,
                             hydrogen_rate_error=h_error, nh3_signal_area=nh3_fit.area,
-                            nh3_signal_area_error=nh3_fit.area_error, **dep,
+                            nh3_signal_area_error=nh3_fit.area_error, carbon_signal_area=carbon_fit.area,
+                            carbon_signal_area_error=carbon_fit.area_error, carbon_alpha=alpha,
+                            carbon_alpha_error=alpha_error, **dep,
                         ))
                     # endfor
                 # endfor
@@ -822,7 +849,7 @@ def main() -> None:
     # endfor
 
     rates = pd.DataFrame(rate_rows)
-    rates.to_csv(tables / "direct_hydrogen_rates.csv", index=False)
+    rates.to_csv(tables / "carbon_subtracted_hydrogen_rates.csv", index=False)
 
     result_rows = []
     covariance_payload: dict[str, Any] = {}
@@ -859,11 +886,11 @@ def main() -> None:
     ax.hist(pullscale, bins=60)
     ax.set_xlabel(r"$|R_H|/\delta R_H$")
     ax.set_ylabel("Spin/phi cells")
-    ax.set_title("Direct hydrogen-rate statistical significance")
+    ax.set_title("Carbon-subtracted hydrogen-rate statistical significance")
     fig.tight_layout(); fig.savefig(diagnostics / "hydrogen_rate_significance.png", dpi=160); plt.close(fig)
 
     manifest = {
-        "method": "direct five-target hydrogen-rate external check",
+        "method": "beam-helicity-separated carbon-normalized hydrogen-rate external check",
         "n_phi_bins": N_PHI_BINS,
         "phi_edges_rad": PHI_EDGES.tolist(),
         "does_not_use_dilution_factor": True,
@@ -873,7 +900,8 @@ def main() -> None:
         "statistics_warning": "First implementation uses local Gaussian-fit covariance; full bootstrap shared-target covariance is the planned upgrade.",
         "outputs": {
             "areas": str(tables / "gaussian_signal_areas.csv"),
-            "rates": str(tables / "direct_hydrogen_rates.csv"),
+            "rates": str(tables / "carbon_subtracted_hydrogen_rates.csv"),
+            "carbon_normalizations": str(tables / "carbon_normalizations.csv"),
             "physics": str(tables / "yield_check_structure_function_ratios.csv"),
         },
     }
