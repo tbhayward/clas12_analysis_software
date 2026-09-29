@@ -48,7 +48,12 @@ def args():
     p.add_argument("--longitudinal-strength-scan",type=str,default="1,2,3,5,10",
                    help="Multipliers k for sigma_L relative to GK. For amplitude-level consistency "
                         "sigma_LT is scaled by sqrt(k), while sigma_T and sigma_TT remain GK.")
-    p.add_argument("--seed",type=int,default=20260924)
+    p.add_argument("--seed",type=int,default=20260924, help="Reserved for optional ensembles; current projection is Asimov/deterministic.")
+    p.add_argument("--fractional-systematic-floor",type=float,default=0.03,
+                   help="Exposure-independent per-campaign fractional uncertainty floor.")
+    p.add_argument("--relative-normalization-uncertainty",type=float,default=0.03,
+                   help="RGA/RGK relative-normalization uncertainty propagated into L/T.")
+    p.add_argument("--min-delta-epsilon",type=float,default=0.05)
     return p.parse_args()
 
 def design(phi_deg, eps):
@@ -132,13 +137,14 @@ def model_merge(q,gkfile):
         print(f"  excluded point IDs       : {', '.join(excluded)}")
     return m
 
-def covariance_for_cell(g, corr, factor, model_y):
+def covariance_for_cell(g, corr, factor, model_y, sys_floor=0.0):
     # Fractional uncertainties are transferred onto GK model values.
-    frac=g["relative_uncertainty"].to_numpy(float)/math.sqrt(factor)
+    frac_stat=g["relative_uncertainty"].to_numpy(float)/math.sqrt(factor)
+    frac=np.sqrt(frac_stat**2 + float(sys_floor)**2)
     sig=np.abs(model_y)*frac
     return np.outer(sig,sig)*corr
 
-def make_pseudodata(model,stage1,stage2,rga_factor,rgk_factor):
+def make_pseudodata(model,stage1,stage2,rga_factor,rgk_factor,sys_floor=0.0):
     z=load_corr(stage2)
     rows=[]; fits=[]
     rga=campaign_rows(stage1,"rga"); rgk=campaign_rows(stage1,"rgk")
@@ -154,7 +160,7 @@ def make_pseudodata(model,stage1,stage2,rga_factor,rgk_factor):
             y=A4@theta
             key=f"{camp}_{int(iq)}_{int(ix)}_{int(it)}"
             R=z[key]
-            C=covariance_for_cell(g,R,factor,y)
+            C=covariance_for_cell(g,R,factor,y,sys_floor)
 
             A3=harmonic_design(phi,eps)
             b3,V3=pinv_cov_fit(A3,y,C)
@@ -181,15 +187,19 @@ def make_pseudodata(model,stage1,stage2,rga_factor,rgk_factor):
         # overwrite later via separate table
     return pd.DataFrame(rows),pd.DataFrame(fits)
 
-def lt_from_u(model,hfits):
+def lt_from_u(model,hfits,relative_norm_unc=0.0,min_delta_epsilon=0.05):
     out=[]
     for r in model.itertuples(index=False):
         a=hfits[(hfits.point_id==r.point_id)&(hfits.campaign=="rga")].iloc[0]
         b=hfits[(hfits.point_id==r.point_id)&(hfits.campaign=="rgk")].iloc[0]
         de=a.epsilon-b.epsilon
+        if abs(de) < min_delta_epsilon:
+            continue
         L=(a.sigma_U_fit-b.sigma_U_fit)/de
         # independent campaigns; systematics not yet included
         varL=(a.sigma_U_unc**2+b.sigma_U_unc**2)/(de**2)
+        # Campaign-relative normalization does not scale away with luminosity.
+        varL += (relative_norm_unc**2)*(a.sigma_U_fit**2+b.sigma_U_fit**2)/(de**2)
         T=a.sigma_U_fit-a.epsilon*L
         # derivatives for T wrt U_a,U_b
         da=1-a.epsilon/de
@@ -228,14 +238,15 @@ def scale_longitudinal_model(model,k):
 
 
 def luminosity_scan(model,stage1,stage2,rga_recorded,rgk_recorded,
-                    rga_remaining,rgk_future,future_lumi):
+                    rga_remaining,rgk_future,future_lumi,sys_floor=0.0,
+                    relative_norm_unc=0.0,min_delta_epsilon=0.05):
     """Apply luminosity enhancement only to future running."""
     rows=[]; per_point=[]
     for f in future_lumi:
         rga=float(rga_recorded)+float(f)*float(rga_remaining)
         rgk=float(rgk_recorded)+float(f)*float(rgk_future)
-        pseudo,hfits=make_pseudodata(model,stage1,stage2,rga,rgk)
-        lt=lt_from_u(model,hfits)
+        pseudo,hfits=make_pseudodata(model,stage1,stage2,rga,rgk,sys_floor)
+        lt=lt_from_u(model,hfits,relative_norm_unc,min_delta_epsilon)
         rel=lt.sigma_L_unc/np.maximum(np.abs(lt.sigma_L_truth),1e-300)
         sig=lt.L_significance_abs.to_numpy(float)
         fs=sig[np.isfinite(sig)]; fr=rel[np.isfinite(rel)]
@@ -276,7 +287,8 @@ def luminosity_scan_figure(scan,outfile):
 def longitudinal_model_scan(model,stage1,stage2,
                             rga_recorded,rgk_recorded,
                             rga_remaining,rgk_remaining,
-                            future_lumi,longitudinal_strengths):
+                            future_lumi,longitudinal_strengths,sys_floor=0.0,
+                            relative_norm_unc=0.0,min_delta_epsilon=0.05):
     """Scan both future exposure and longitudinal strength relative to GK."""
     rows=[]
     per_point=[]
@@ -287,8 +299,8 @@ def longitudinal_model_scan(model,stage1,stage2,
 
         for k in longitudinal_strengths:
             m=scale_longitudinal_model(model,float(k))
-            pseudo,hfits=make_pseudodata(m,stage1,stage2,rga,rgk)
-            lt=lt_from_u(m,hfits)
+            pseudo,hfits=make_pseudodata(m,stage1,stage2,rga,rgk,sys_floor)
+            lt=lt_from_u(m,hfits,relative_norm_unc,min_delta_epsilon)
 
             rel=lt.sigma_L_unc/np.maximum(np.abs(lt.sigma_L_truth),1e-300)
             sig=lt.L_significance_abs.to_numpy(float)
@@ -448,10 +460,10 @@ Once an actual PARTONS result is available, pass the converted CSV with:
 
     model=model_merge(q,a.gk_results.resolve())
     model.to_csv(tabs/"01_gk_common_structure_functions.csv",index=False)
-    pseudo,hfits=make_pseudodata(model,s1,s2,a.rga_factor,a.rgk_factor)
+    pseudo,hfits=make_pseudodata(model,s1,s2,a.rga_factor,a.rgk_factor,a.fractional_systematic_floor)
     pseudo.to_csv(tabs/"02_blinded_model_pseudodata.csv",index=False)
     hfits.to_csv(tabs/"03_covariance_aware_harmonic_fits.csv",index=False)
-    lt=lt_from_u(model,hfits)
+    lt=lt_from_u(model,hfits,a.relative_normalization_uncertainty,a.min_delta_epsilon)
     lt.to_csv(tabs/"04_rosenbluth_LT_projection.csv",index=False)
     figures(model,pseudo,hfits,lt,figs)
 
@@ -476,7 +488,8 @@ Once an actual PARTONS result is available, pass the converted CSV with:
 
     scan,scan_points=luminosity_scan(
         model,s1,s2,a.rga_factor,a.rgk_factor,
-        a.rga_remaining_factor,a.rgk_future_factor,future_lumi)
+        a.rga_remaining_factor,a.rgk_future_factor,future_lumi,
+        a.fractional_systematic_floor,a.relative_normalization_uncertainty,a.min_delta_epsilon)
     scan.to_csv(tabs/"05_future_running_luminosity_scan_summary.csv",index=False)
     scan_points.to_csv(tabs/"06_future_running_luminosity_scan_by_point.csv",index=False)
     luminosity_scan_figure(scan,figs/"06_future_running_luminosity_scan_sigmaL_counts.png")
@@ -498,7 +511,8 @@ Once an actual PARTONS result is available, pass the converted CSV with:
     model_scan,model_scan_points=longitudinal_model_scan(
         model,s1,s2,a.rga_factor,a.rgk_factor,
         a.rga_remaining_factor,a.rgk_future_factor,
-        future_lumi,longitudinal_strengths)
+        future_lumi,longitudinal_strengths,a.fractional_systematic_floor,
+        a.relative_normalization_uncertainty,a.min_delta_epsilon)
     model_scan.to_csv(tabs/"07_longitudinal_model_dependence_summary.csv",index=False)
     model_scan_points.to_csv(tabs/"08_longitudinal_model_dependence_by_point.csv",index=False)
     longitudinal_model_scan_figure(

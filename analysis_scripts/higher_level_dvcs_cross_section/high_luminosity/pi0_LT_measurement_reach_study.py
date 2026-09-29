@@ -72,6 +72,18 @@ def args():
                      "rgk_6535"/"rgk6535_reduced_cross_sections.csv",
         help="INTERNAL ONLY: measured RGK reduced-cross-section CSV.",
     )
+    p.add_argument("--internal-corrections", type=Path,
+        default=here/"output"/"pi0_gk_stage3"/"partons_gk"/"06_gk_native_to_shared_phi_corrections.csv",
+        help="GK native-to-shared phi-bin correction table for INTERNAL data mode.")
+    p.add_argument("--internal-covariance", type=Path,
+        default=here/"output"/"pi0_gk_stage2"/"tables"/"02_within_cell_phi_correlations.npz",
+        help="Stage-2 within-cell phi correlation matrices for INTERNAL data mode.")
+    p.add_argument("--min-delta-epsilon", type=float, default=0.05,
+        help="Minimum absolute Rosenbluth epsilon lever arm.")
+    p.add_argument("--relative-normalization-uncertainty", type=float, default=0.03,
+        help="Fractional RGA/RGK relative-normalization systematic (projection and INTERNAL diagnostic).")
+    p.add_argument("--fractional-systematic-floor", type=float, default=0.03,
+        help="Exposure-independent per-campaign fractional systematic floor in projection mode.")
     p.add_argument(
         "--internal-output", type=Path,
         default=here/"output"/"pi0_LT_internal_data",
@@ -394,6 +406,9 @@ def benchmark_regions(points):
             d2 = ((unique_qx.Q2_GeV2-q20)/max(q20, 0.5))**2
             d2 += ((unique_qx.xB-xb0)/max(xb0, 0.1))**2
             best = unique_qx.loc[d2.idxmin()]
+            frac_distance = float(np.sqrt(d2.loc[d2.idxmin()]))
+            q2_outside = bool(q20 < unique_qx.Q2_GeV2.min() or q20 > unique_qx.Q2_GeV2.max())
+            xb_outside = bool(xb0 < unique_qx.xB.min() or xb0 > unique_qx.xB.max())
             sel = gf[
                 np.isclose(gf.Q2_GeV2, best.Q2_GeV2) &
                 np.isclose(gf.xB, best.xB)
@@ -403,6 +418,8 @@ def benchmark_regions(points):
                     experiment=experiment,
                     anchor_Q2_GeV2=q20,
                     anchor_xB=xb0,
+                    fractional_qx_distance=frac_distance,
+                    out_of_coverage=bool(q2_outside or xb_outside),
                     future_luminosity_multiplier=float(f),
                     nearest_Q2_GeV2=float(r.Q2_GeV2),
                     nearest_xB=float(r.xB),
@@ -540,6 +557,7 @@ def _standardize_internal_cross_sections(path, campaign):
         "iq2": ["iq2", "iQ2", "q2_bin", "Q2_bin"],
         "ixb": ["ixb", "iXB", "xb_bin", "xB_bin"],
         "it": ["it", "iT", "t_bin", "mt_bin"],
+        "iphi": ["iphi", "iPhi", "phi_bin", "phibin"],
     }
 
     cols = {k: _pick_col(df, v, k, required=(k in {"Q2", "xB", "mt", "phi", "eps", "xs"}))
@@ -574,7 +592,13 @@ def _standardize_internal_cross_sections(path, campaign):
         "epsilon": pd.to_numeric(df[cols["eps"]], errors="coerce"),
         "sigma": pd.to_numeric(df[cols["xs"]], errors="coerce"),
         "delta_sigma": err,
+        "iphi": pd.to_numeric(df[cols["iphi"]], errors="coerce") if cols.get("iphi") is not None else np.nan,
     })
+    # Source tables are d^2sigma/(dt dphi) in nb/(GeV^2 rad).  Convert to
+    # the CLAS structure-function convention where the bracketed responses
+    # carry nb/GeV^2 and d^2sigma/(dt dphi)=(1/2pi)[...].
+    out["sigma"] *= 2.0*math.pi
+    out["delta_sigma"] *= 2.0*math.pi
     for key in ("iq2", "ixb", "it"):
         if cols[key] is not None:
             out[key] = df[cols[key]].to_numpy()
@@ -633,181 +657,134 @@ def _nearest_native_group(df, q2, xb, mt):
     raise RuntimeError("Internal error while matching a native measured cell.")
 
 
-def _fit_single_energy_harmonics(g):
-    """Fit U, LT, TT at one epsilon from measured phi-dependent cross sections."""
+def _gls_fit(A, y, C, label, cond_max=1.0e8):
+    """Generalized least squares with explicit rank/conditioning guards."""
+    C = np.asarray(C, float)
+    C = 0.5*(C + C.T)
+    eig = np.linalg.eigvalsh(C)
+    if eig.min() < -1.0e-10*max(float(np.max(np.abs(eig))), 1.0):
+        raise RuntimeError(f"{label}: covariance is not PSD (min eigenvalue={eig.min():.3e})")
+    Ci = np.linalg.pinv(C, rcond=1.0e-12)
+    normal = A.T @ Ci @ A
+    cond = float(np.linalg.cond(normal))
+    if not np.isfinite(cond) or cond > cond_max:
+        raise RuntimeError(f"{label}: ill-conditioned normal matrix, cond={cond:.3e}")
+    if np.linalg.matrix_rank(normal) < A.shape[1]:
+        raise RuntimeError(f"{label}: rank-deficient normal matrix")
+    cov = np.linalg.inv(normal)
+    theta = cov @ (A.T @ Ci @ y)
+    residual = y - A@theta
+    chi2 = float(residual @ Ci @ residual)
+    return theta, cov, chi2, int(len(y)-len(theta)), cond
+
+
+def _cell_covariance(g, corr_npz, campaign, iq, ix, it, rel_norm=0.0):
+    """Absolute covariance from supplied errors and Stage-2 phi correlations."""
+    if len(g) < 4:
+        raise RuntimeError(f"{campaign} ({iq},{ix},{it}): fewer than four phi points")
+    order = np.argsort(g.iphi.to_numpy(float)) if np.isfinite(g.iphi).all() else np.argsort(g.phi_deg.to_numpy(float))
+    g = g.iloc[order].copy()
+    key = f"{campaign.lower()}_{int(iq)}_{int(ix)}_{int(it)}"
+    if key not in corr_npz:
+        raise RuntimeError(f"Missing within-cell correlation matrix {key}")
+    R = np.asarray(corr_npz[key], float)
+    if R.shape != (len(g), len(g)):
+        raise RuntimeError(f"{key}: correlation shape {R.shape} != {(len(g),len(g))}")
+    d = g.delta_sigma.to_numpy(float)
+    C = np.outer(d,d)*R
+    if rel_norm > 0:
+        y = g.sigma.to_numpy(float)
+        C += (rel_norm**2)*np.outer(y,y)
+    return g, C
+
+
+def _fit_single_energy_harmonics(g, C):
     phi = np.deg2rad(g.phi_deg.to_numpy(float))
     eps = g.epsilon.to_numpy(float)
-    A = np.column_stack([
-        np.ones(len(g)),
-        np.sqrt(2.0*eps*(1.0+eps))*np.cos(phi),
-        eps*np.cos(2.0*phi),
-    ])
-    y = g.sigma.to_numpy(float)
-    dy = g.delta_sigma.to_numpy(float)
-    W = 1.0/dy**2
-    normal = A.T @ (W[:, None]*A)
-    cov = np.linalg.pinv(normal)
-    theta = cov @ (A.T @ (W*y))
-    residual = y - A@theta
-    chi2 = float(np.sum((residual/dy)**2))
-    ndf = int(len(y)-len(theta))
-    return theta, cov, chi2, ndf
+    A = np.column_stack([np.ones(len(g)), np.sqrt(2*eps*(1+eps))*np.cos(phi), eps*np.cos(2*phi)])
+    return _gls_fit(A, g.sigma.to_numpy(float), C, "single-energy harmonic fit")
 
 
-def _joint_rosenbluth_fit(rga, rgk):
-    """Fit T,L,LT,TT directly to measured phi-dependent cross sections at two epsilons."""
-    frames = []
-    for g in (rga, rgk):
-        phi = np.deg2rad(g.phi_deg.to_numpy(float))
-        eps = g.epsilon.to_numpy(float)
-        A = np.column_stack([
-            np.ones(len(g)),
-            eps,
-            np.sqrt(2.0*eps*(1.0+eps))*np.cos(phi),
-            eps*np.cos(2.0*phi),
-        ])
-        frames.append((A, g.sigma.to_numpy(float), g.delta_sigma.to_numpy(float)))
-
-    A = np.vstack([x[0] for x in frames])
-    y = np.concatenate([x[1] for x in frames])
-    dy = np.concatenate([x[2] for x in frames])
-    W = 1.0/dy**2
-    normal = A.T @ (W[:, None]*A)
-    cov = np.linalg.pinv(normal)
-    theta = cov @ (A.T @ (W*y))
-    residual = y - A@theta
-    chi2 = float(np.sum((residual/dy)**2))
-    ndf = int(len(y)-len(theta))
-    return theta, cov, chi2, ndf
+def _joint_rosenbluth_fit(rga, rgk, C_rga, C_rgk):
+    frames=[]
+    for g in (rga,rgk):
+        phi=np.deg2rad(g.phi_deg.to_numpy(float)); eps=g.epsilon.to_numpy(float)
+        A=np.column_stack([np.ones(len(g)),eps,np.sqrt(2*eps*(1+eps))*np.cos(phi),eps*np.cos(2*phi)])
+        frames.append((A,g.sigma.to_numpy(float)))
+    A=np.vstack([x[0] for x in frames]); y=np.concatenate([x[1] for x in frames])
+    C=np.zeros((len(y),len(y))); n=len(rga); C[:n,:n]=C_rga; C[n:,n:]=C_rgk
+    return _gls_fit(A,y,C,"joint Rosenbluth fit")
 
 
-def build_internal_data_extraction(common, rga_file, rgk_file):
-    """INTERNAL ONLY: extract measured T,L,LT,TT and L/T at common Stage-2 cells."""
-    rga = _standardize_internal_cross_sections(rga_file, "RGA")
-    rgk = _standardize_internal_cross_sections(rgk_file, "RGK")
-    rows = []
+def _epsilon_from_q2_xb_E(Q2, xB, E):
+    M=0.9382720813
+    y=Q2/(2.0*M*E*xB)
+    gamma2=4.0*M*M*xB*xB/Q2
+    return (1.0-y-0.25*gamma2*y*y)/(1.0-y+0.5*y*y+0.25*gamma2*y*y)
 
-    for r in common.itertuples(index=False):
-        q2 = float(getattr(r, "Q2_common_GeV2"))
-        xb = float(getattr(r, "xB_common"))
-        mt = float(getattr(r, "minus_t_common_GeV2"))
-        # Common-bin identity is the six nominal bin edges.  The Stage-2
-        # common table intentionally has no point_id; RGA and RGK are matched
-        # by these shared edges.  Use the campaign-specific integer bin
-        # indices to select the measured phi rows exactly (no nearest-neighbor
-        # matching in flux-coordinate Q2/xB/t).
-        iq2_rga = int(getattr(r, "iq2_rga"))
-        ixb_rga = int(getattr(r, "ixb_rga"))
-        it_rga = int(getattr(r, "it_rga"))
-        iq2_rgk = int(getattr(r, "iq2_rgk"))
-        ixb_rgk = int(getattr(r, "ixb_rgk"))
-        it_rgk = int(getattr(r, "it_rgk"))
 
-        point_id = (
-            f"Q2_{float(getattr(r, 'Q2_low_GeV2')):.6g}_"
-            f"{float(getattr(r, 'Q2_high_GeV2')):.6g}__"
-            f"xB_{float(getattr(r, 'xB_low')):.6g}_"
-            f"{float(getattr(r, 'xB_high')):.6g}__"
-            f"mt_{float(getattr(r, 'minus_t_low_GeV2')):.6g}_"
-            f"{float(getattr(r, 'minus_t_high_GeV2')):.6g}"
-        )
-
-        ga = rga[
-            (rga["iq2"] == iq2_rga) &
-            (rga["ixb"] == ixb_rga) &
-            (rga["it"] == it_rga)
-        ].copy()
-        gk = rgk[
-            (rgk["iq2"] == iq2_rgk) &
-            (rgk["ixb"] == ixb_rgk) &
-            (rgk["it"] == it_rgk)
-        ].copy()
-
-        if ga.empty or gk.empty:
-            raise RuntimeError(
-                "Missing measured rows for common cell "
-                f"(Q2={q2:.6g}, xB={xb:.6g}, -t={mt:.6g}); "
-                f"RGA indices=({iq2_rga},{ixb_rga},{it_rga}) n={len(ga)}, "
-                f"RGK indices=({iq2_rgk},{ixb_rgk},{it_rgk}) n={len(gk)}."
-            )
-        theta, cov, chi2, ndf = _joint_rosenbluth_fit(ga, gk)
-        T, L, LT, TT = map(float, theta)
-        dT, dL, dLT, dTT = np.sqrt(np.clip(np.diag(cov), 0.0, np.inf))
-
-        # Independently fit the phi dependence at each beam energy.  The
-        # constant terms are the directly measured sigma_U values that provide
-        # the Rosenbluth numerator.
-        theta_rga, cov_rga, chi2_rga, ndf_rga = _fit_single_energy_harmonics(ga)
-        theta_rgk, cov_rgk, chi2_rgk, ndf_rgk = _fit_single_energy_harmonics(gk)
-        U_rga = float(theta_rga[0])
-        U_rgk = float(theta_rgk[0])
-        dU_rga = math.sqrt(max(float(cov_rga[0, 0]), 0.0))
-        dU_rgk = math.sqrt(max(float(cov_rgk[0, 0]), 0.0))
-        dU = U_rga - U_rgk
-        ddU = math.sqrt(dU_rga**2 + dU_rgk**2)
-        U_mean = 0.5*(U_rga + U_rgk)
-        frac_dU = dU/U_mean if U_mean != 0 else np.nan
-        d_frac_dU = (
-            math.sqrt(
-                (2.0*U_rgk/(U_rga+U_rgk)**2*dU_rga)**2 +
-                (2.0*U_rga/(U_rga+U_rgk)**2*dU_rgk)**2
-            )
-            if (U_rga + U_rgk) != 0 else np.nan
-        )
-        eps_rga = float(np.average(ga.epsilon))
-        eps_rgk = float(np.average(gk.epsilon))
-        deps = eps_rga - eps_rgk
-        L_from_U = dU/deps if deps != 0 else np.nan
-        dL_from_U = ddU/abs(deps) if deps != 0 else np.nan
-
-        if T != 0:
-            R = L/T
-            grad = np.array([-L/T**2, 1.0/T, 0.0, 0.0])
-            varR = float(grad @ cov @ grad)
-            dR = math.sqrt(max(varR, 0.0))
-        else:
-            R, dR = np.nan, np.nan
-
-        rows.append(dict(
-            point_id=point_id,
-            Q2_GeV2=q2,
-            xB=xb,
-            minus_t_GeV2=mt,
-            epsilon_rga=eps_rga,
-            epsilon_rgk=eps_rgk,
-            delta_epsilon=deps,
-            n_phi_rga=len(ga),
-            n_phi_rgk=len(gk),
-            sigma_U_rga=U_rga,
-            delta_sigma_U_rga=dU_rga,
-            sigma_U_rgk=U_rgk,
-            delta_sigma_U_rgk=dU_rgk,
-            delta_sigma_U=dU,
-            delta_delta_sigma_U=ddU,
-            fractional_delta_sigma_U=frac_dU,
-            delta_fractional_delta_sigma_U=d_frac_dU,
-            sigma_L_from_independent_U=L_from_U,
-            delta_sigma_L_from_independent_U=dL_from_U,
-            chi2_rga=chi2_rga,
-            ndf_rga=ndf_rga,
-            chi2_ndf_rga=chi2_rga/ndf_rga if ndf_rga > 0 else np.nan,
-            chi2_rgk=chi2_rgk,
-            ndf_rgk=ndf_rgk,
-            chi2_ndf_rgk=chi2_rgk/ndf_rgk if ndf_rgk > 0 else np.nan,
-            sigma_T=T,
-            delta_sigma_T=dT,
-            sigma_L=L,
-            delta_sigma_L=dL,
-            sigma_LT=LT,
-            delta_sigma_LT=dLT,
-            sigma_TT=TT,
-            delta_sigma_TT=dTT,
-            R_L_over_T=R,
-            delta_R_L_over_T=dR,
-            chi2=chi2,
-            ndf=ndf,
-            chi2_ndf=chi2/ndf if ndf > 0 else np.nan,
-        ))
+def build_internal_data_extraction(common, rga_file, rgk_file, corrections_file, covariance_file,
+                                   min_delta_epsilon=0.05, relative_norm_unc=0.03):
+    """INTERNAL ONLY: bin-center measured data to shared points, then perform covariance-aware L/T separation."""
+    rga=_standardize_internal_cross_sections(rga_file,"RGA")
+    rgk=_standardize_internal_cross_sections(rgk_file,"RGK")
+    corr=pd.read_csv(corrections_file)
+    covz=np.load(covariance_file,allow_pickle=False)
+    rows=[]
+    for n,r in enumerate(common.itertuples(index=False)):
+        pid=f"R{n:04d}"
+        q2=float(r.Q2_common_GeV2); xb=float(r.xB_common); mt=float(r.minus_t_common_GeV2)
+        ir=(int(r.iq2_rga),int(r.ixb_rga),int(r.it_rga)); ik=(int(r.iq2_rgk),int(r.ixb_rgk),int(r.it_rgk))
+        ga=rga[(rga.iq2==ir[0])&(rga.ixb==ir[1])&(rga.it==ir[2])].copy()
+        gk=rgk[(rgk.iq2==ik[0])&(rgk.ixb==ik[1])&(rgk.it==ik[2])].copy()
+        if ga.empty or gk.empty: continue
+        # Apply the phi-resolved GK native->shared bin-centering factor to both central values and errors.
+        for camp,g in (("rga",ga),("rgk",gk)):
+            cc=corr[(corr.point_id.astype(str)==pid)&(corr.campaign.astype(str).str.lower()==camp)].copy()
+            if cc.empty: raise RuntimeError(f"{pid}/{camp}: missing native->shared corrections")
+            # Corrections are keyed by phi_deg; nearest match is safe only at machine precision of bin centers.
+            fac=[]
+            for ph in g.phi_deg:
+                j=np.argmin(np.abs(cc.phi_deg.to_numpy(float)-float(ph)))
+                if abs(float(cc.phi_deg.iloc[j])-float(ph))>1e-5: raise RuntimeError(f"{pid}/{camp}: phi correction mismatch")
+                fac.append(float(cc.gk_shared_over_native.iloc[j]))
+            fac=np.asarray(fac); g["sigma"]*=fac; g["delta_sigma"]*=np.abs(fac)
+            if camp=="rga": ga=g
+            else: gk=g
+        # Use the shared-coordinate epsilons, never the native flux-coordinate epsilons.
+        eps_rga=float(_epsilon_from_q2_xb_E(q2,xb,10.604))
+        eps_rgk=float(_epsilon_from_q2_xb_E(q2,xb,6.535))
+        ga["epsilon"]=eps_rga; gk["epsilon"]=eps_rgk
+        deps=eps_rga-eps_rgk
+        if abs(deps)<min_delta_epsilon: continue
+        ga,Ca=_cell_covariance(ga,covz,"rga",*ir,rel_norm=0.0)
+        gk,Ck=_cell_covariance(gk,covz,"rgk",*ik,rel_norm=0.0)
+        th,cov,chi2,ndf,cond=_joint_rosenbluth_fit(ga,gk,Ca,Ck)
+        if ndf<=0: continue
+        T,L,LT,TT=map(float,th); dT,dL,dLT,dTT=np.sqrt(np.clip(np.diag(cov),0,np.inf))
+        tr,cr,c2r,nr,condr=_fit_single_energy_harmonics(ga,Ca)
+        tk,ck,c2k,nk,condk=_fit_single_energy_harmonics(gk,Ck)
+        U_rga,U_rgk=float(tr[0]),float(tk[0]); dU_rga=math.sqrt(cr[0,0]); dU_rgk=math.sqrt(ck[0,0])
+        dU=U_rga-U_rgk; ddU_stat=math.hypot(dU_rga,dU_rgk)
+        # Relative campaign normalization is a separate Rosenbluth systematic; it does not average down with phi.
+        ddU_norm=relative_norm_unc*math.sqrt(U_rga**2+U_rgk**2)
+        ddU=math.hypot(ddU_stat,ddU_norm)
+        S=U_rga+U_rgk; frac=2*dU/S if S else np.nan
+        dfrac=(math.sqrt((4*U_rgk/S**2*dU_rga)**2+(4*U_rga/S**2*dU_rgk)**2) if S else np.nan)
+        L_U=dU/deps; dL_U=ddU/abs(deps)
+        if T!=0:
+            R=L/T; grad=np.array([-L/T**2,1/T,0,0]); dR=math.sqrt(max(float(grad@cov@grad),0))
+        else: R=dR=np.nan
+        rows.append(dict(point_id=pid,Q2_GeV2=q2,xB=xb,minus_t_GeV2=mt,
+            epsilon_rga=eps_rga,epsilon_rgk=eps_rgk,delta_epsilon=deps,n_phi_rga=len(ga),n_phi_rgk=len(gk),
+            sigma_U_rga=U_rga,delta_sigma_U_rga=dU_rga,sigma_U_rgk=U_rgk,delta_sigma_U_rgk=dU_rgk,
+            delta_sigma_U=dU,delta_delta_sigma_U=ddU,fractional_delta_sigma_U=frac,
+            delta_fractional_delta_sigma_U=dfrac,sigma_L_from_independent_U=L_U,
+            delta_sigma_L_from_independent_U=dL_U,relative_normalization_uncertainty=relative_norm_unc,
+            sigma_T=T,delta_sigma_T=dT,sigma_L=L,delta_sigma_L=dL,sigma_LT=LT,delta_sigma_LT=dLT,
+            sigma_TT=TT,delta_sigma_TT=dTT,R_L_over_T=R,delta_R_L_over_T=dR,
+            chi2=chi2,ndf=ndf,chi2_ndf=chi2/ndf,condition_number=cond,
+            condition_number_rga=condr,condition_number_rgk=condk,bin_centering_applied=True,covariance_applied=True))
     return pd.DataFrame(rows)
 
 
@@ -1292,9 +1269,7 @@ def plot_internal_rosenbluth_slopes(data, outfile):
 
     # First take the best negative-sigma_L cell from distinct xB bins.  Then
     # fill any remaining panels with the next-best negative-slope cells.
-    neg = good[good.sigma_L_from_independent_U < 0].sort_values(
-        ["L_significance", "mean_frac_U_err"], ascending=[False, True]
-    )
+    neg = good.sort_values(["mean_frac_U_err", "L_significance"], ascending=[True, False])
     chosen = []
     used_xb = set()
     for idx, row in neg.iterrows():
@@ -1391,7 +1366,7 @@ def plot_internal_rosenbluth_slopes(data, outfile):
     #endfor
 
     fig.suptitle(
-        r"INTERNAL: representative measured Rosenbluth separations, "
+        r"INTERNAL / NOT APPROVED: precision-selected measured Rosenbluth separations, "
         r"$\sigma_U=\sigma_T+\epsilon\sigma_L$",
         fontsize=14, y=0.995,
     )
@@ -1438,12 +1413,17 @@ def plot_internal_sigmaL_from_U_check(data, outfile):
 def run_internal_data_mode(a):
     """Explicitly non-default path using measured, unapproved central values."""
     out = a.internal_output.resolve()
+    safe = a.output.resolve()
+    if out == safe or safe in out.parents:
+        raise RuntimeError("INTERNAL data output must be outside the workshop-safe output tree")
     tabs, figs = out/"tables", out/"figures"
     tabs.mkdir(parents=True, exist_ok=True)
     figs.mkdir(parents=True, exist_ok=True)
 
     common = pd.read_csv(a.stage2.resolve()/"tables"/"03_common_rosenbluth_model_points.csv")
-    data = build_internal_data_extraction(common, a.internal_rga.resolve(), a.internal_rgk.resolve())
+    data = build_internal_data_extraction(common, a.internal_rga.resolve(), a.internal_rgk.resolve(),
+                                         a.internal_corrections.resolve(), a.internal_covariance.resolve(),
+                                         a.min_delta_epsilon, a.relative_normalization_uncertainty)
     data.to_csv(tabs/"INTERNAL_01_measured_LT_by_point.csv", index=False)
     plot_internal_LT_vs_Q2(
         data, figs/"INTERNAL_01_measured_L_over_T_vs_Q2.png",
@@ -1537,9 +1517,11 @@ def main():
         rgk = a.rgk_recorded + f*a.rgk_remaining
 
         pseudo, hfits = st3.make_pseudodata(
-            model, a.stage1.resolve(), a.stage2.resolve(), rga, rgk
+            model, a.stage1.resolve(), a.stage2.resolve(), rga, rgk,
+            a.fractional_systematic_floor
         )
-        lt = st3.lt_from_u(model, hfits)
+        lt = st3.lt_from_u(model, hfits, a.relative_normalization_uncertainty,
+                           a.min_delta_epsilon)
         reach = build_reach_table(model, hfits, lt)
         reach.insert(0, "rgk_final_factor", rgk)
         reach.insert(0, "rga_final_factor", rga)

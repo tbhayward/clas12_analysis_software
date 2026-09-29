@@ -343,6 +343,12 @@ def dvmp_minus_t_limits(Q2, xB, meson_mass=PI0_MASS_GEV):
 def study_common_points(q:pd.DataFrame, out:Path) -> pd.DataFrame:
     """Build and diagnose the symmetric midpoint shared hadronic coordinate."""
     d=q.copy()
+    # Independent validation of the upstream/native epsilon convention.
+    for camp in ("rga","rgk"):
+        if all(c in d.columns for c in (f"Q2_{camp}_GeV2",f"xB_{camp}",f"E_{camp}_GeV",f"epsilon_{camp}_native")):
+            _, ec = virtual_photon_kinematics(d[f"Q2_{camp}_GeV2"],d[f"xB_{camp}"],d[f"E_{camp}_GeV"])
+            md=float(np.nanmax(np.abs(ec-d[f"epsilon_{camp}_native"].to_numpy(float))))
+            if md > 1.0e-6: raise RuntimeError(f"{camp.upper()} epsilon formula mismatch: max |delta|={md:.3e}")
     d["Q2_shared_GeV2"]=0.5*(d["Q2_rga_GeV2"].astype(float)+d["Q2_rgk_GeV2"].astype(float))
     d["xB_shared"]=0.5*(d["xB_rga"].astype(float)+d["xB_rgk"].astype(float))
     d["minus_t_shared_GeV2"]=0.5*(d["minus_t_rga_GeV2"].astype(float)+d["minus_t_rgk_GeV2"].astype(float))
@@ -610,8 +616,8 @@ def shared_physical_structure_functions(raw,harm):
     coefficients obey directly
 
       A = Gamma_x [sigma_T + eps sigma_L]
-      B = Gamma_x sqrt(2 eps (1+eps)) sigma_LT
-      C = Gamma_x eps sigma_TT,
+      B = 2 Gamma_x sqrt(2 eps (1+eps)) sigma_LT
+      C = 2 Gamma_x eps sigma_TT,
 
     where Gamma_x is partons_electron_factor() and A/B/C carry the public
     PARTONS unit nb/GeV^4.  RGA and RGK at the same shared (Q2,xB,t) then give
@@ -640,10 +646,10 @@ def shared_physical_structure_functions(raw,harm):
             continue
         L=(Yr-Yk)/de
         T=Yr-er*L
-        LTr=float(r.coefficient_cosphi)/(Gr*math.sqrt(2.0*er*(1.0+er)))
-        LTk=float(k.coefficient_cosphi)/(Gk*math.sqrt(2.0*ek*(1.0+ek)))
-        TTr=float(r.coefficient_cos2phi)/(Gr*er)
-        TTk=float(k.coefficient_cos2phi)/(Gk*ek)
+        LTr=float(r.coefficient_cosphi)/(2.0*Gr*math.sqrt(2.0*er*(1.0+er)))
+        LTk=float(k.coefficient_cosphi)/(2.0*Gk*math.sqrt(2.0*ek*(1.0+ek)))
+        TTr=float(r.coefficient_cos2phi)/(2.0*Gr*er)
+        TTk=float(k.coefficient_cos2phi)/(2.0*Gk*ek)
         def fd(x,y):
             return (x-y)/max(0.5*(abs(x)+abs(y)),1e-300)
         rows.append(dict(

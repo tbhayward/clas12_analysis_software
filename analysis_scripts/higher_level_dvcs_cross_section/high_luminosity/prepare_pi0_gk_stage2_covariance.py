@@ -49,7 +49,7 @@ TAR_NAME = "fa18_rosenbluth_inputs_20260924T165948Z.tar.gz"
 # Exposure factors relative to the supplied files.  These are configuration,
 # not physics assumptions hidden in the code.
 DEFAULT_RGA_CURRENT_FACTOR = 1.5
-DEFAULT_RGK_FINAL_FACTOR = 8.0
+DEFAULT_RGK_FINAL_FACTOR = 9.0
 
 FORBIDDEN = (
     "reduced_cross_section_nb_per_GeV2_rad",
@@ -151,6 +151,8 @@ def extract_cell_correlations(df: pd.DataFrame, npz_path: Path, campaign: str):
         else:
             medabs = maxabs = 0.0
         eig = np.linalg.eigvalsh((corr + corr.T) / 2)
+        if eig.min() < -1.0e-10:
+            raise RuntimeError(f"{key}: correlation matrix is not PSD; min eigenvalue={eig.min():.3e}")
         records.append(dict(
             campaign=campaign, iq2=iq, ixb=ix, it=it, nphi=len(phi_ids),
             median_abs_offdiag_corr=medabs,

@@ -104,6 +104,22 @@ def main():
             + ", ".join(bad[:10])
         )
 
+    # Independent physical sanity checks on the exported GK responses.
+    if not (out["sigma_T"] > 0).all():
+        raise RuntimeError("Non-positive sigma_T in validated GK grid")
+    if not (np.abs(out["sigma_TT"]) <= out["sigma_T"] + 1e-12).all():
+        bad=out.loc[np.abs(out.sigma_TT)>out.sigma_T,"point_id"].tolist()
+        raise RuntimeError(f"|sigma_TT| > sigma_T for {len(bad)} rows: {bad[:10]}")
+    phi=np.linspace(0.0,2.0*np.pi,361)[:,None]
+    for epscol in ("epsilon_rga","epsilon_rgk"):
+        eps=out[epscol].to_numpy(float)[None,:]
+        sig=(out.sigma_T.to_numpy(float)[None,:] + eps*out.sigma_L.to_numpy(float)[None,:]
+             + eps*np.cos(2*phi)*out.sigma_TT.to_numpy(float)[None,:]
+             + np.sqrt(2*eps*(1+eps))*np.cos(phi)*out.sigma_LT.to_numpy(float)[None,:])
+        if np.nanmin(sig) < -1e-10:
+            j=np.unravel_index(np.nanargmin(sig),sig.shape)[1]
+            raise RuntimeError(f"Negative GK phi-differential bracket for {out.point_id.iloc[j]} at {epscol}: {np.nanmin(sig):.6g}")
+
     if out["point_id"].duplicated().any():
         dup = out.loc[out["point_id"].duplicated(False), "point_id"].unique().tolist()
         raise RuntimeError("Duplicate point_id values: " + ", ".join(dup[:10]))
