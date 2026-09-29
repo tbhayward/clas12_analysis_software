@@ -34,14 +34,20 @@ def args():
     p.add_argument("--stage2",type=Path,default=here/"output"/"pi0_gk_stage2")
     p.add_argument("--output",type=Path,default=here/"output"/"pi0_gk_stage3")
     p.add_argument("--gk-results",type=Path,default=None)
-    p.add_argument("--rga-factor",type=float,default=1.5)
-    p.add_argument("--rgk-factor",type=float,default=8.0)
+    p.add_argument("--rga-factor",type=float,default=1.5,
+                   help="RGA exposure already available relative to the Fall18 template.")
+    p.add_argument("--rgk-factor",type=float,default=9.0,
+                   help="RGK exposure already available relative to the Winter18 template: "
+                        "1x analyzed subset + about 8x additional recorded data.")
     p.add_argument("--future-lumi-scan",type=str,default="0,1,2,3,5,10",
                    help="Luminosity multipliers applied only to future beam time.")
     p.add_argument("--rga-remaining-factor",type=float,default=1.5,
                    help="Remaining RGA exposure at nominal luminosity, relative to supplied Fa18.")
-    p.add_argument("--rgk-future-factor",type=float,default=0.0,
-                   help="Optional future RGK nominal exposure, relative to supplied 6.535-GeV subset.")
+    p.add_argument("--rgk-future-factor",type=float,default=9.0,
+                   help="Remaining RGK exposure at nominal luminosity relative to the Winter18 template.")
+    p.add_argument("--longitudinal-strength-scan",type=str,default="1,2,3,5,10",
+                   help="Multipliers k for sigma_L relative to GK. For amplitude-level consistency "
+                        "sigma_LT is scaled by sqrt(k), while sigma_T and sigma_TT remain GK.")
     p.add_argument("--seed",type=int,default=20260924)
     return p.parse_args()
 
@@ -206,6 +212,21 @@ def lt_from_u(model,hfits):
             L_significance_abs=abs(L)/np.sqrt(max(varL,1e-300))))
     return pd.DataFrame(out)
 
+def scale_longitudinal_model(model,k):
+    """Scale the longitudinal amplitude while retaining the GK transverse sector.
+
+    sigma_L  -> k * sigma_L
+    sigma_LT -> sqrt(k) * sigma_LT
+    sigma_T and sigma_TT are unchanged.
+    """
+    if k <= 0:
+        raise ValueError("Longitudinal-strength multiplier k must be positive")
+    m=model.copy()
+    m["sigma_L"]=k*m["sigma_L"]
+    m["sigma_LT"]=math.sqrt(k)*m["sigma_LT"]
+    return m
+
+
 def luminosity_scan(model,stage1,stage2,rga_recorded,rgk_recorded,
                     rga_remaining,rgk_future,future_lumi):
     """Apply luminosity enhancement only to future running."""
@@ -249,6 +270,75 @@ def luminosity_scan_figure(scan,outfile):
     ax.set_ylabel(r"Number of bins with resolved $\sigma_L$")
     ax.set_title(r"$\pi^0$ Rosenbluth sensitivity versus future luminosity")
     ax.legend(); fig.tight_layout(); fig.savefig(outfile,dpi=180); plt.close(fig)
+
+
+
+def longitudinal_model_scan(model,stage1,stage2,
+                            rga_recorded,rgk_recorded,
+                            rga_remaining,rgk_remaining,
+                            future_lumi,longitudinal_strengths):
+    """Scan both future exposure and longitudinal strength relative to GK."""
+    rows=[]
+    per_point=[]
+
+    for f in future_lumi:
+        rga=float(rga_recorded)+float(f)*float(rga_remaining)
+        rgk=float(rgk_recorded)+float(f)*float(rgk_remaining)
+
+        for k in longitudinal_strengths:
+            m=scale_longitudinal_model(model,float(k))
+            pseudo,hfits=make_pseudodata(m,stage1,stage2,rga,rgk)
+            lt=lt_from_u(m,hfits)
+
+            rel=lt.sigma_L_unc/np.maximum(np.abs(lt.sigma_L_truth),1e-300)
+            sig=lt.L_significance_abs.to_numpy(float)
+            fs=sig[np.isfinite(sig)]
+            fr=rel[np.isfinite(rel)]
+
+            rows.append(dict(
+                future_luminosity_multiplier=float(f),
+                rga_final_factor=rga,
+                rgk_final_factor=rgk,
+                sigma_L_over_GK=float(k),
+                longitudinal_amplitude_over_GK=math.sqrt(float(k)),
+                n_points=len(lt),
+                n_ge_1sigma=int(np.sum(fs>=1.0)),
+                n_ge_2sigma=int(np.sum(fs>=2.0)),
+                n_ge_3sigma=int(np.sum(fs>=3.0)),
+                n_ge_5sigma=int(np.sum(fs>=5.0)),
+                median_L_significance=float(np.nanmedian(fs)),
+                max_L_significance=float(np.nanmax(fs)),
+                median_rel_sigma_L=float(np.nanmedian(fr)),
+            ))
+
+            t=lt[[
+                "point_id","Q2_GeV2","xB","minus_t_GeV2","delta_epsilon",
+                "sigma_T_truth","sigma_L_truth","R_L_over_T_truth",
+                "sigma_L_unc","L_significance_abs"
+            ]].copy()
+            t.insert(0,"sigma_L_over_GK",float(k))
+            t.insert(0,"rgk_final_factor",rgk)
+            t.insert(0,"rga_final_factor",rga)
+            t.insert(0,"future_luminosity_multiplier",float(f))
+            t["relative_sigma_L_uncertainty"]=rel
+            per_point.append(t)
+
+    return pd.DataFrame(rows),pd.concat(per_point,ignore_index=True)
+
+
+def longitudinal_model_scan_figure(scan,outfile):
+    fig,ax=plt.subplots(figsize=(7.4,5.5))
+    for k,g in scan.groupby("sigma_L_over_GK",sort=True):
+        ax.plot(g.future_luminosity_multiplier,g.n_ge_2sigma,
+                marker="o",label=fr"$\sigma_L={k:g}\times$ GK")
+    ax.axvline(1.0,ls="--",label="Remaining beam time at nominal luminosity")
+    ax.set_xlabel("Luminosity multiplier for remaining beam time")
+    ax.set_ylabel(r"Number of bins with $|\sigma_L|/\delta\sigma_L\geq2$")
+    ax.set_title(r"Model dependence of projected $\pi^0$ longitudinal sensitivity")
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outfile,dpi=180)
+    plt.close(fig)
 
 
 
@@ -373,6 +463,16 @@ Once an actual PARTONS result is available, pass the converted CSV with:
         raise RuntimeError("--future-lumi-scan must contain non-negative values")
     if a.rga_remaining_factor < 0 or a.rgk_future_factor < 0:
         raise RuntimeError("Future exposure factors must be non-negative")
+    try:
+        longitudinal_strengths=[
+            float(x.strip()) for x in a.longitudinal_strength_scan.split(",") if x.strip()
+        ]
+    except ValueError as exc:
+        raise RuntimeError(
+            f"Could not parse --longitudinal-strength-scan={a.longitudinal_strength_scan!r}"
+        ) from exc
+    if not longitudinal_strengths or any(x <= 0 for x in longitudinal_strengths):
+        raise RuntimeError("--longitudinal-strength-scan must contain positive values")
 
     scan,scan_points=luminosity_scan(
         model,s1,s2,a.rga_factor,a.rgk_factor,
@@ -385,13 +485,36 @@ Once an actual PARTONS result is available, pass the converted CSV with:
     print(f"  RGA recorded               : {a.rga_factor:g}x Fa18 template")
     print(f"  RGA remaining nominal      : {a.rga_remaining_factor:g}x Fa18 template")
     print(f"  RGK recorded               : {a.rgk_factor:g}x 6.535-GeV subset")
-    print(f"  optional RGK future nominal: {a.rgk_future_factor:g}x subset")
+    print(f"  RGK remaining nominal: {a.rgk_future_factor:g}x subset")
     print(scan.to_string(index=False,columns=[
         "future_luminosity_multiplier","rga_final_factor","rgk_final_factor",
         "n_ge_1sigma","n_ge_2sigma","n_ge_3sigma","max_L_significance",
         "median_rel_sigma_L"],formatters={
         "future_luminosity_multiplier":lambda x:f"{x:g}",
         "rga_final_factor":lambda x:f"{x:g}","rgk_final_factor":lambda x:f"{x:g}",
+        "max_L_significance":lambda x:f"{x:.3f}",
+        "median_rel_sigma_L":lambda x:f"{x:.3f}"}))
+
+    model_scan,model_scan_points=longitudinal_model_scan(
+        model,s1,s2,a.rga_factor,a.rgk_factor,
+        a.rga_remaining_factor,a.rgk_future_factor,
+        future_lumi,longitudinal_strengths)
+    model_scan.to_csv(tabs/"07_longitudinal_model_dependence_summary.csv",index=False)
+    model_scan_points.to_csv(tabs/"08_longitudinal_model_dependence_by_point.csv",index=False)
+    longitudinal_model_scan_figure(
+        model_scan,figs/"07_longitudinal_model_dependence_2sigma_counts.png")
+
+    print("\n[Longitudinal model-dependence scan]")
+    print("  sigma_L -> k sigma_L^GK; sigma_LT -> sqrt(k) sigma_LT^GK")
+    print("  sigma_T and sigma_TT remain at GK.")
+    print(model_scan.to_string(index=False,columns=[
+        "future_luminosity_multiplier","rga_final_factor","rgk_final_factor",
+        "sigma_L_over_GK","n_ge_1sigma","n_ge_2sigma","n_ge_3sigma",
+        "max_L_significance","median_rel_sigma_L"],formatters={
+        "future_luminosity_multiplier":lambda x:f"{x:g}",
+        "rga_final_factor":lambda x:f"{x:g}",
+        "rgk_final_factor":lambda x:f"{x:g}",
+        "sigma_L_over_GK":lambda x:f"{x:g}",
         "max_L_significance":lambda x:f"{x:.3f}",
         "median_rel_sigma_L":lambda x:f"{x:.3f}"}))
 
@@ -412,12 +535,18 @@ Once an actual PARTONS result is available, pass the converted CSV with:
         "",
         f"Future-running scan: RGA recorded={a.rga_factor:g}x, "
         f"RGA remaining nominal={a.rga_remaining_factor:g}x; "
-        f"RGK recorded={a.rgk_factor:g}x, optional future nominal={a.rgk_future_factor:g}x.",
+        f"RGK recorded={a.rgk_factor:g}x, remaining nominal={a.rgk_future_factor:g}x.",
         "Future luminosity multipliers = "+", ".join(f"{x:g}x" for x in future_lumi),
         "Scan outputs:",
         "  tables/05_future_running_luminosity_scan_summary.csv",
         "  tables/06_future_running_luminosity_scan_by_point.csv",
         "  figures/06_future_running_luminosity_scan_sigmaL_counts.png",
+        "Longitudinal-model scan:",
+        "  sigma_L/GK = "+", ".join(f"{x:g}" for x in longitudinal_strengths),
+        "  with sigma_LT scaled by sqrt(sigma_L/GK).",
+        "  tables/07_longitudinal_model_dependence_summary.csv",
+        "  tables/08_longitudinal_model_dependence_by_point.csv",
+        "  figures/07_longitudinal_model_dependence_2sigma_counts.png",
         "",
         "Current caveat: all supplied fractional uncertainty components are scaled",
         "as 1/sqrt(exposure); finite-MC and additional systematic floors are not yet",
