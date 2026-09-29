@@ -49,6 +49,7 @@ between the four hydrogen spin states can be carried exactly.
 from __future__ import annotations
 
 import argparse
+import gc
 import csv
 import json
 import math
@@ -62,7 +63,7 @@ os.environ.setdefault("OMP_NUM_THREADS", "1")
 os.environ.setdefault("MKL_NUM_THREADS", "1")
 os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
 os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
-from concurrent.futures import ProcessPoolExecutor
+from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Iterable, Mapping
@@ -636,50 +637,73 @@ def physics_shape_from_moments(row: Any, theta: np.ndarray) -> float:
     )
 
 
-def exact_cell_moments(
-    events: pd.DataFrame,
-    cuts: Mapping[tuple[str, int], Any],
+def accumulate_exact_moments(
+    accumulator: dict[tuple[int, int, int, int], dict[str, float]],
+    subset: pd.DataFrame | None,
+    cut: Any,
     kin_bin: int,
     phi_bin: int,
     helicity: int,
     target_sign: int,
-) -> dict[str, float]:
-    """Exact event-product moments for one combined-period NH3 cell."""
-    pieces = []
-    for period in PERIODS:
-        cut = cuts[(period, kin_bin)]
-        sub = events[
-            (events.target == "NH3")
-            & (events.period == period)
-            & (events.kin_bin == kin_bin)
-            & (events.phi_bin == phi_bin)
-            & (events.helicity == helicity)
-            & (events.target_sign == target_sign)
-            & (events.Mx2 >= cut.low_gev2)
-            & (events.Mx2 <= cut.high_gev2)
-        ]
-        if len(sub):
-            pieces.append(sub)
-        # endif
-    # endfor
-    if not pieces:
-        return {name: np.nan for name in ("m_lu1", "m_ul1", "m_ul2", "m_ll0", "m_ll1")}
+) -> None:
+    """Accumulate exact NH3 event-product moments in one pass.
+
+    Only events inside the nominal Mx2 window enter.  Periods are accumulated
+    before division, reproducing the previous all-period event-weighted mean
+    without repeatedly scanning the full multi-million-row DataFrame.
+    """
+    if subset is None or len(subset) == 0:
+        return
     # endif
-    sub = pd.concat(pieces, ignore_index=True)
-    phi = sub.phi.to_numpy(dtype=float)
-    pb = sub.event_pb.to_numpy(dtype=float)
-    pt = sub.event_pt.to_numpy(dtype=float)
-    rB = sub.rB.to_numpy(dtype=float)
-    rC = sub.rC.to_numpy(dtype=float)
-    rV = sub.rV.to_numpy(dtype=float)
-    rW = sub.rW.to_numpy(dtype=float)
-    return {
-        "m_lu1": float(np.nanmean(pb * rW * np.sin(phi))),
-        "m_ul1": float(np.nanmean(pt * rV * np.sin(phi))),
-        "m_ul2": float(np.nanmean(pt * rB * np.sin(2.0 * phi))),
-        "m_ll0": float(np.nanmean(pb * pt * rC)),
-        "m_ll1": float(np.nanmean(pb * pt * rW * np.cos(phi))),
+    selected = subset[
+        (subset.Mx2 >= cut.low_gev2) & (subset.Mx2 <= cut.high_gev2)
+    ]
+    if len(selected) == 0:
+        return
+    # endif
+
+    phi = selected.phi.to_numpy(dtype=float, copy=False)
+    pb = selected.event_pb.to_numpy(dtype=float, copy=False)
+    pt = selected.event_pt.to_numpy(dtype=float, copy=False)
+    rB = selected.rB.to_numpy(dtype=float, copy=False)
+    rC = selected.rC.to_numpy(dtype=float, copy=False)
+    rV = selected.rV.to_numpy(dtype=float, copy=False)
+    rW = selected.rW.to_numpy(dtype=float, copy=False)
+
+    values = {
+        "m_lu1": pb * rW * np.sin(phi),
+        "m_ul1": pt * rV * np.sin(phi),
+        "m_ul2": pt * rB * np.sin(2.0 * phi),
+        "m_ll0": pb * pt * rC,
+        "m_ll1": pb * pt * rW * np.cos(phi),
     }
+    key = (kin_bin, phi_bin, helicity, target_sign)
+    acc = accumulator.setdefault(
+        key,
+        {f"{name}_sum": 0.0 for name in values}
+        | {f"{name}_count": 0 for name in values},
+    )
+    for name, value in values.items():
+        finite = np.isfinite(value)
+        acc[f"{name}_sum"] += float(np.sum(value[finite]))
+        acc[f"{name}_count"] += int(np.count_nonzero(finite))
+    # endfor
+
+
+def finalize_exact_moments(
+    accumulator: Mapping[tuple[int, int, int, int], Mapping[str, float]],
+) -> dict[tuple[int, int, int, int], dict[str, float]]:
+    result: dict[tuple[int, int, int, int], dict[str, float]] = {}
+    for key, acc in accumulator.items():
+        result[key] = {}
+        for name in ("m_lu1", "m_ul1", "m_ul2", "m_ll0", "m_ll1"):
+            count = int(acc[f"{name}_count"])
+            result[key][name] = (
+                float(acc[f"{name}_sum"]) / count if count > 0 else np.nan
+            )
+        # endfor
+    # endfor
+    return result
 
 
 def build_rate_covariance(frame: pd.DataFrame, nh3_cov: Mapping[int, np.ndarray]) -> np.ndarray:
@@ -1052,6 +1076,11 @@ def main() -> None:
     cuts = nominal.load_channel_cuts(args.cut_json, "nominal")
     events = load_events(inputs, args.tree, args.chunk_size, run_info)
     print(f"[input] selected binned events loaded: {len(events):,}", flush=True)
+    print(
+        "[performance] exact harmonic moments will be accumulated during spectrum grouping; "
+        "the full event DataFrame will be released before Gaussian-fit workers start.",
+        flush=True,
+    )
 
     loaded_runs: dict[tuple[str, str], set[int]] = {
         (period, target): set(events[(events.period == period) & (events.target == target)].run.unique().astype(int))
@@ -1092,6 +1121,7 @@ def main() -> None:
     # independent helicity-separated spectra.
     fit_tasks: list[tuple[Any, ...]] = []
     fit_metadata: dict[Any, dict[str, Any]] = {}
+    exact_moment_accumulator: dict[tuple[int, int, int, int], dict[str, float]] = {}
     grouped = {
         key: group for key, group in events.groupby(
             ["period", "target", "kin_bin", "phi_bin", "helicity", "target_sign"],
@@ -1119,6 +1149,10 @@ def main() -> None:
                         fit_metadata[key] = dict(period=period, target="NH3", kin_bin=kin_bin,
                                                  phi_bin=phi_bin, phi_center=PHI_CENTERS[phi_bin],
                                                  helicity=h, target_sign=ss, mu=mu, sigma=sigma, **dep)
+                        accumulate_exact_moments(
+                            exact_moment_accumulator, subset, cut,
+                            kin_bin, phi_bin, h, ss,
+                        )
                     # endfor
                 # endfor
                 fit_tasks.append(("NH3", (period, kin_bin, phi_bin), values_by_state, mu, sigma))
@@ -1142,55 +1176,86 @@ def main() -> None:
         # endfor
     # endfor
 
-    print(f"[fits] fit tasks: {len(fit_tasks):,} (NH3 quartets + auxiliary spectra); workers: {args.workers}", flush=True)
-    if args.workers == 1:
-        fit_results = map(fit_task_worker, fit_tasks)
-    else:
-        executor = ProcessPoolExecutor(max_workers=args.workers)
-        chunksize = max(1, len(fit_tasks) // (args.workers * 32))
-        fit_results = executor.map(fit_task_worker, fit_tasks, chunksize=chunksize)
-    # endif
+    exact_moment_lookup = finalize_exact_moments(exact_moment_accumulator)
+    del exact_moment_accumulator
+    del grouped
+    del events
+    gc.collect()
+
+    print(
+        f"[fits] fit tasks: {len(fit_tasks):,} (NH3 quartets + auxiliary spectra); "
+        f"workers: {args.workers}",
+        flush=True,
+    )
 
     nh3_area_cov_period: dict[tuple[str, int, int], np.ndarray] = {}
-    try:
-        for task_key, payload, cov in fit_results:
-            if isinstance(payload, dict):
-                period, kin_bin, phi_bin = task_key
-                nh3_area_cov_period[(period, kin_bin, phi_bin)] = cov
-                for (h, ss), fit in payload.items():
-                    key = (period, "NH3", kin_bin, phi_bin, h, ss)
-                    area_lookup[key] = fit
-                    meta = fit_metadata[key]
-                    area_rows.append(dict(**meta, area=fit.area, area_error=fit.area_error,
-                                          background_area=fit.background_area, chi2_ndf=fit.chi2_ndf,
-                                          n_events=fit.n_events, status=fit.status))
-                    if (args.max_spectrum_plots == 0 or plot_count < args.max_spectrum_plots) and fit.status == "ok":
-                        plot_spectrum(spectrum_plots / f"{period}_NH3_bin{kin_bin:02d}_phi{phi_bin:02d}_h{h:+d}_s{ss:+d}.png",
-                                      fit, f"{period} NH3; bin {kin_bin}; phi bin {phi_bin}; h={h:+d}; s={ss:+d}")
-                        plot_count += 1
-                    # endif
-                # endfor
-            else:
-                key, fit = task_key, payload
+    completed_fits = 0
+    progress_step = max(1, len(fit_tasks) // 20)
+
+    def consume_fit_result(result: tuple[Any, Any, np.ndarray]) -> None:
+        nonlocal plot_count, completed_fits
+        task_key, payload, cov = result
+        completed_fits += 1
+        if isinstance(payload, dict):
+            period, kin_bin, phi_bin = task_key
+            nh3_area_cov_period[(period, kin_bin, phi_bin)] = cov
+            for (h, ss), fit in payload.items():
+                key = (period, "NH3", kin_bin, phi_bin, h, ss)
                 area_lookup[key] = fit
                 meta = fit_metadata[key]
                 area_rows.append(dict(**meta, area=fit.area, area_error=fit.area_error,
                                       background_area=fit.background_area, chi2_ndf=fit.chi2_ndf,
                                       n_events=fit.n_events, status=fit.status))
                 if (args.max_spectrum_plots == 0 or plot_count < args.max_spectrum_plots) and fit.status == "ok":
-                    period, target, kin_bin, phi_bin, h, ss = key
-                    plot_spectrum(spectrum_plots / f"{period}_{target}_bin{kin_bin:02d}_phi{phi_bin:02d}_h{h:+d}_s{ss:+d}.png",
-                                  fit, f"{period} {target}; bin {kin_bin}; phi bin {phi_bin}; h={h:+d}; s={ss:+d}")
+                    plot_spectrum(
+                        spectrum_plots / f"{period}_NH3_bin{kin_bin:02d}_phi{phi_bin:02d}_h{h:+d}_s{ss:+d}.png",
+                        fit,
+                        f"{period} NH3; bin {kin_bin}; phi bin {phi_bin}; h={h:+d}; s={ss:+d}",
+                    )
                     plot_count += 1
                 # endif
+            # endfor
+        else:
+            key, fit = task_key, payload
+            area_lookup[key] = fit
+            meta = fit_metadata[key]
+            area_rows.append(dict(**meta, area=fit.area, area_error=fit.area_error,
+                                  background_area=fit.background_area, chi2_ndf=fit.chi2_ndf,
+                                  n_events=fit.n_events, status=fit.status))
+            if (args.max_spectrum_plots == 0 or plot_count < args.max_spectrum_plots) and fit.status == "ok":
+                period, target, kin_bin, phi_bin, h, ss = key
+                plot_spectrum(
+                    spectrum_plots / f"{period}_{target}_bin{kin_bin:02d}_phi{phi_bin:02d}_h{h:+d}_s{ss:+d}.png",
+                    fit,
+                    f"{period} {target}; bin {kin_bin}; phi bin {phi_bin}; h={h:+d}",
+                )
+                plot_count += 1
             # endif
-        # endfor
-    finally:
-        if args.workers != 1:
-            executor.shutdown(wait=True)
         # endif
-    # endtry
+        if completed_fits % progress_step == 0 or completed_fits == len(fit_tasks):
+            print(
+                f"[fits] progress: {completed_fits:,}/{len(fit_tasks):,} "
+                f"({100.0 * completed_fits / len(fit_tasks):.1f}%)",
+                flush=True,
+            )
+        # endif
 
+    if args.workers == 1:
+        for task in fit_tasks:
+            consume_fit_result(fit_task_worker(task))
+        # endfor
+    else:
+        with ProcessPoolExecutor(max_workers=args.workers) as executor:
+            futures = [executor.submit(fit_task_worker, task) for task in fit_tasks]
+            for future in as_completed(futures):
+                consume_fit_result(future.result())
+            # endfor
+        # endwith
+    # endif
+
+
+    del fit_tasks
+    gc.collect()
     area_frame = pd.DataFrame(area_rows)
     area_frame.to_csv(tables / "gaussian_signal_areas.csv", index=False)
 
@@ -1252,7 +1317,10 @@ def main() -> None:
                         dep[name] = (float(np.average(vals[finite_dep], weights=weights[finite_dep]))
                                      if np.any(finite_dep) else np.nan)
                     # endfor
-                    moments = exact_cell_moments(events, cuts, kin_bin, phi_bin, h, s)
+                    moments = exact_moment_lookup.get(
+                        (kin_bin, phi_bin, h, s),
+                        {name: np.nan for name in ("m_lu1", "m_ul1", "m_ul2", "m_ll0", "m_ll1")},
+                    )
                     rate_rows.append(dict(
                         kin_bin=kin_bin, phi_bin=phi_bin, phi_center=PHI_CENTERS[phi_bin],
                         helicity=h, target_sign=s, charge=qA, pt_effective=pt_eff,
