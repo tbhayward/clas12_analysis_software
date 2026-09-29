@@ -49,8 +49,8 @@ def args():
                            "02_gk_structure_function_results.csv")
     p.add_argument("--output", type=Path,
                    default=here/"output"/"pi0_gk_measurement_reach")
-    p.add_argument("--future-lumi-scan", type=str, default="0,1,3,5",
-                   help="Multiplier f applied to the remaining beam time.")
+    p.add_argument("--future-lumi-scan", type=str, default="0,1,3,5,10",
+                   help="Multiplier f applied to the remaining beam time; f=10 is the workshop high-luminosity baseline.")
     p.add_argument("--rga-recorded", type=float, default=1.5)
     p.add_argument("--rga-remaining", type=float, default=1.5)
     p.add_argument("--rgk-recorded", type=float, default=9.0)
