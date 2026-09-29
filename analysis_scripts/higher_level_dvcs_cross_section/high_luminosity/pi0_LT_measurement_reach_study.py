@@ -759,36 +759,74 @@ def _q2_offsets(values, width=0.11):
     return out
 
 
-def plot_internal_LT_vs_Q2(data, outfile):
+def _plot_clipped_LT_errorbars(ax, x, y, dy, ymin, ymax):
+    """Draw L/T points/errors inside a fixed display window with boundary arrows."""
+    x = np.asarray(x, float)
+    y = np.asarray(y, float)
+    dy = np.asarray(dy, float)
+    finite = np.isfinite(x) & np.isfinite(y) & np.isfinite(dy)
+    x, y, dy = x[finite], y[finite], dy[finite]
+
+    yrange = ymax - ymin
+    pad = 0.025 * yrange
+    ydraw = np.clip(y, ymin + pad, ymax - pad)
+    lo = np.maximum(ydraw - np.maximum(y - dy, ymin), 0.0)
+    hi = np.maximum(np.minimum(y + dy, ymax) - ydraw, 0.0)
+
+    ax.errorbar(
+        x, ydraw, yerr=np.vstack([lo, hi]),
+        fmt="none", ecolor="0.45", elinewidth=0.9,
+        capsize=1.8, alpha=0.75, zorder=2,
+    )
+
+    # Mark central values or uncertainty intervals that continue beyond the
+    # plotting window.  The numerical extraction itself remains untouched.
+    upper = (y > ymax) | (y + dy > ymax)
+    lower = (y < ymin) | (y - dy < ymin)
+    if np.any(upper):
+        ax.scatter(x[upper], np.full(np.sum(upper), ymax - pad),
+                   marker="^", s=22, facecolors="none",
+                   edgecolors="0.35", linewidths=0.8, zorder=4)
+    if np.any(lower):
+        ax.scatter(x[lower], np.full(np.sum(lower), ymin + pad),
+                   marker="v", s=22, facecolors="none",
+                   edgecolors="0.35", linewidths=0.8, zorder=4)
+
+
+def plot_internal_LT_vs_Q2(data, outfile, ylim=(-1.0, 1.0), zoom=False):
     """Harut study: every measured matched-cell L/T extraction versus Q2."""
     g = data.sort_values(["Q2_GeV2", "xB", "minus_t_GeV2"]).reset_index(drop=True)
     x = g.Q2_GeV2.to_numpy(float) + _q2_offsets(g.Q2_GeV2.to_numpy(float))
+    y = g.R_L_over_T.to_numpy(float)
+    dy = g.delta_R_L_over_T.to_numpy(float)
+    ymin, ymax = ylim
 
     fig, ax = plt.subplots(figsize=(9.0, 6.0))
+    ydraw = np.clip(y, ymin + 0.025*(ymax-ymin), ymax - 0.025*(ymax-ymin))
     sc = ax.scatter(
-        x, g.R_L_over_T, c=g.xB, s=42 + 34*g.minus_t_GeV2,
+        x, ydraw, c=g.xB, s=42 + 34*g.minus_t_GeV2,
         cmap="viridis", edgecolor="black", linewidth=0.35, zorder=3,
     )
-    ax.errorbar(
-        x, g.R_L_over_T, yerr=g.delta_R_L_over_T,
-        fmt="none", ecolor="0.45", elinewidth=0.9, capsize=1.8, alpha=0.75, zorder=2,
-    )
+    _plot_clipped_LT_errorbars(ax, x, y, dy, ymin, ymax)
     ax.axhline(0.0, linewidth=1.0, color="black")
+    ax.set_ylim(ymin, ymax)
     ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
     ax.set_ylabel(r"Measured $\sigma_L/\sigma_T$")
-    ax.set_title(r"INTERNAL: measured $\pi^0$ Rosenbluth $L/T$ vs. $Q^2$")
+    suffix = " (zoom)" if zoom else ""
+    ax.set_title(r"INTERNAL: measured $\pi^0$ Rosenbluth $L/T$ vs. $Q^2$" + suffix)
     cb = fig.colorbar(sc, ax=ax)
     cb.set_label(r"$x_B$")
     ax.text(
-        0.99, 0.02, r"Marker size increases with $-t$",
-        transform=ax.transAxes, ha="right", va="bottom", fontsize=9,
+        0.99, 0.02,
+        r"Marker size increases with $-t$; triangles indicate off-scale values/errors",
+        transform=ax.transAxes, ha="right", va="bottom", fontsize=8.5,
     )
     fig.tight_layout()
     fig.savefig(outfile, dpi=200)
     plt.close(fig)
 
 
-def plot_internal_LT_by_xB(data, outfile):
+def plot_internal_LT_by_xB(data, outfile, ylim=(-1.0, 1.0), zoom=False):
     """Faceted internal view so Q2 evolution is not confused with xB/t evolution."""
     xb_values = sorted(data.xB.unique())
     ncols = min(4, max(1, len(xb_values)))
@@ -796,19 +834,28 @@ def plot_internal_LT_by_xB(data, outfile):
     fig, axes = plt.subplots(nrows, ncols, figsize=(4.0*ncols, 3.5*nrows),
                              sharex=True, sharey=True, squeeze=False)
     axes = axes.ravel()
+    ymin, ymax = ylim
 
     finite_t = data.minus_t_GeV2[np.isfinite(data.minus_t_GeV2)]
     tmin = float(finite_t.min()) if len(finite_t) else 0.0
     tmax = float(finite_t.max()) if len(finite_t) else 1.0
 
+    sc = None
     for ax, xb in zip(axes, xb_values):
         g = data[np.isclose(data.xB, xb)].sort_values(["Q2_GeV2", "minus_t_GeV2"])
-        sc = ax.scatter(g.Q2_GeV2, g.R_L_over_T, c=g.minus_t_GeV2,
-                        cmap="viridis", vmin=tmin, vmax=tmax,
-                        s=48, edgecolor="black", linewidth=0.35, zorder=3)
-        ax.errorbar(g.Q2_GeV2, g.R_L_over_T, yerr=g.delta_R_L_over_T,
-                    fmt="none", ecolor="0.45", elinewidth=0.9, capsize=1.8, alpha=0.75)
+        x = g.Q2_GeV2.to_numpy(float)
+        y = g.R_L_over_T.to_numpy(float)
+        dy = g.delta_R_L_over_T.to_numpy(float)
+        ydraw = np.clip(y, ymin + 0.025*(ymax-ymin), ymax - 0.025*(ymax-ymin))
+
+        sc = ax.scatter(
+            x, ydraw, c=g.minus_t_GeV2,
+            cmap="viridis", vmin=tmin, vmax=tmax,
+            s=48, edgecolor="black", linewidth=0.35, zorder=3,
+        )
+        _plot_clipped_LT_errorbars(ax, x, y, dy, ymin, ymax)
         ax.axhline(0.0, linewidth=0.8, color="black")
+        ax.set_ylim(ymin, ymax)
         ax.set_title(fr"$x_B={xb:g}$")
         ax.grid(alpha=0.15)
 
@@ -822,7 +869,8 @@ def plot_internal_LT_by_xB(data, outfile):
 
     cbar = fig.colorbar(sc, ax=list(axes[:len(xb_values)]), shrink=0.88, pad=0.02)
     cbar.set_label(r"$-t$ (GeV$^2$)")
-    fig.suptitle(r"INTERNAL: measured $\pi^0$ $L/T$ evolution at fixed $x_B$", y=0.995)
+    suffix = " (zoom)" if zoom else ""
+    fig.suptitle(r"INTERNAL: measured $\pi^0$ $L/T$ evolution at fixed $x_B$" + suffix, y=0.995)
     fig.subplots_adjust(left=0.07, right=0.90, bottom=0.09, top=0.91, wspace=0.12, hspace=0.28)
     fig.savefig(outfile, dpi=200)
     plt.close(fig)
@@ -838,8 +886,22 @@ def run_internal_data_mode(a):
     common = pd.read_csv(a.stage2.resolve()/"tables"/"03_common_rosenbluth_model_points.csv")
     data = build_internal_data_extraction(common, a.internal_rga.resolve(), a.internal_rgk.resolve())
     data.to_csv(tabs/"INTERNAL_01_measured_LT_by_point.csv", index=False)
-    plot_internal_LT_vs_Q2(data, figs/"INTERNAL_01_measured_L_over_T_vs_Q2.png")
-    plot_internal_LT_by_xB(data, figs/"INTERNAL_02_measured_L_over_T_vs_Q2_by_xB.png")
+    plot_internal_LT_vs_Q2(
+        data, figs/"INTERNAL_01_measured_L_over_T_vs_Q2.png",
+        ylim=(-1.0, 1.0),
+    )
+    plot_internal_LT_by_xB(
+        data, figs/"INTERNAL_02_measured_L_over_T_vs_Q2_by_xB.png",
+        ylim=(-1.0, 1.0),
+    )
+    plot_internal_LT_vs_Q2(
+        data, figs/"INTERNAL_03_measured_L_over_T_vs_Q2_zoom.png",
+        ylim=(-0.25, 0.25), zoom=True,
+    )
+    plot_internal_LT_by_xB(
+        data, figs/"INTERNAL_04_measured_L_over_T_vs_Q2_by_xB_zoom.png",
+        ylim=(-0.25, 0.25), zoom=True,
+    )
 
     print("\n*** INTERNAL DATA MODE: measured, unapproved RGA/RGK central values ***")
     print(f"Matched Rosenbluth cells: {len(data)}")
@@ -849,6 +911,8 @@ def run_internal_data_mode(a):
     print(f"  {tabs/'INTERNAL_01_measured_LT_by_point.csv'}")
     print(f"  {figs/'INTERNAL_01_measured_L_over_T_vs_Q2.png'}")
     print(f"  {figs/'INTERNAL_02_measured_L_over_T_vs_Q2_by_xB.png'}")
+    print(f"  {figs/'INTERNAL_03_measured_L_over_T_vs_Q2_zoom.png'}")
+    print(f"  {figs/'INTERNAL_04_measured_L_over_T_vs_Q2_by_xB_zoom.png'}")
 
 
 def main():
