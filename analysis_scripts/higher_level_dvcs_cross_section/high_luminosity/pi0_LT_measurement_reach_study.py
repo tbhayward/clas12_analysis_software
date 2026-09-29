@@ -233,10 +233,10 @@ def plot_ratio_precision_map(points, f, outfile):
 
     # Discrete physics-reach categories.  Lower values are better.
     categories = [
-        (0.00, 0.05, r"$|L/T|<5\%$"),
-        (0.05, 0.10, r"$5\%\leq |L/T|<10\%$"),
-        (0.10, 0.20, r"$10\%\leq |L/T|<20\%$"),
-        (0.20, np.inf, r"weaker than $20\%$"),
+        (0.00, 0.05, r"$<5\%$"),
+        (0.05, 0.10, r"$5$--$10\%$"),
+        (0.10, 0.20, r"$10$--$20\%$"),
+        (0.20, np.inf, r"$>20\%$"),
     ]
     cmap = plt.get_cmap("viridis")
     colors = [cmap(x) for x in (0.05, 0.35, 0.65, 0.92)]
@@ -276,8 +276,12 @@ def plot_ratio_precision_map(points, f, outfile):
         handles.append(h)
         labels.append(label)
 
-    fig.legend(handles, labels, loc="lower center", ncol=4, frameon=False,
-               bbox_to_anchor=(0.5, 0.005))
+    fig.legend(
+        handles, labels,
+        title=r"Expected 95% sensitivity to $|L/T|$",
+        loc="lower center", ncol=4, frameon=False,
+        bbox_to_anchor=(0.5, 0.005),
+    )
     fig.suptitle(
         fr"Projected $\pi^0$ longitudinal-fraction reach, $f={f:g}$",
         y=0.995,
