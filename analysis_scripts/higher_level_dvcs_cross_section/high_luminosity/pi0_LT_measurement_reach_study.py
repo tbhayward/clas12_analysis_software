@@ -368,23 +368,40 @@ def q2_unlock_summary(points):
 
 
 def plot_q2_evolution(q2sum, outfile):
-    """Show the Q2 dependence of the median expected L/T constraint."""
-    fig, ax = plt.subplots(figsize=(7.6, 5.5))
+    """Show how far in Q2 each luminosity scenario can test transverse dominance."""
+    fig, ax = plt.subplots(figsize=(8.0, 5.6))
+
+    label_map = {
+        0.0: "Recorded",
+        1.0: "Nominal completion",
+        3.0: r"$f=3$",
+        5.0: r"$f=5$",
+        10.0: r"$f=10$ (workshop baseline)",
+    }
+
     for f, g in q2sum.groupby("future_luminosity_multiplier", sort=True):
+        g = g.sort_values("Q2_GeV2")
         ax.plot(
             g.Q2_GeV2,
-            g.median_expected_95pct_abs_L_over_T_limit_if_L_zero,
+            100.0 * g.median_expected_95pct_abs_L_over_T_limit_if_L_zero,
             marker="o",
-            label=fr"$f={f:g}$",
+            linewidth=1.8,
+            label=label_map.get(float(f), fr"$f={f:g}$"),
         )
-    ax.axhline(0.20, ls=":", label=r"$|L/T|=20\%$")
-    ax.axhline(0.10, ls="--", label=r"$|L/T|=10\%$")
+
+    ax.axhline(20.0, ls=":", linewidth=1.5)
+    ax.axhline(10.0, ls="--", linewidth=1.5)
+    ax.text(4.27, 20.8, "20%", ha="right", va="bottom")
+    ax.text(4.27, 10.8, "10%", ha="right", va="bottom")
+
     ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
-    ax.set_ylabel(r"Median expected 95% sensitivity to $|L/T|$")
-    ax.set_title(r"$Q^2$ evolution of longitudinal-fraction reach")
-    ax.legend()
+    ax.set_ylabel(r"Median expected sensitivity to $|L/T|$ (%)")
+    ax.set_title(r"Projected $\pi^0$ Rosenbluth reach vs. $Q^2$")
+    ax.set_xlim(1.1, 4.45)
+    ax.set_ylim(bottom=0.0)
+    ax.legend(frameon=False, ncol=2)
     fig.tight_layout()
-    fig.savefig(outfile, dpi=180)
+    fig.savefig(outfile, dpi=200)
     plt.close(fig)
 
 
