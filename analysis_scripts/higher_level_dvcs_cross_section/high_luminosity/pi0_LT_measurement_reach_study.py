@@ -73,11 +73,6 @@ def args():
         help="INTERNAL ONLY: measured RGK reduced-cross-section CSV.",
     )
     p.add_argument(
-        "--internal-rga-scale", type=float, default=1.0,
-        help=("INTERNAL DATA MODE ONLY: multiply every RGA measured cross section "
-              "and its absolute uncertainty by this factor. Default 1.0."),
-    )
-    p.add_argument(
         "--internal-output", type=Path,
         default=here/"output"/"pi0_LT_internal_data",
         help="Separate output directory used only by --central-values data.",
@@ -686,19 +681,10 @@ def _joint_rosenbluth_fit(rga, rgk):
     return theta, cov, chi2, ndf
 
 
-def build_internal_data_extraction(common, rga_file, rgk_file, rga_scale=1.0):
+def build_internal_data_extraction(common, rga_file, rgk_file):
     """INTERNAL ONLY: extract measured T,L,LT,TT and L/T at common Stage-2 cells."""
     rga = _standardize_internal_cross_sections(rga_file, "RGA")
     rgk = _standardize_internal_cross_sections(rgk_file, "RGK")
-
-    # Explicit RGA normalization stress test.  Scale the absolute uncertainty
-    # with the cross section so the measured RGA fractional precision is unchanged.
-    rga_scale = float(rga_scale)
-    if not np.isfinite(rga_scale) or rga_scale <= 0:
-        raise ValueError(f"internal RGA scale must be positive and finite, got {rga_scale}")
-    rga["sigma"] *= rga_scale
-    rga["delta_sigma"] *= rga_scale
-
     rows = []
 
     for r in common.itertuples(index=False):
@@ -784,7 +770,6 @@ def build_internal_data_extraction(common, rga_file, rgk_file, rga_scale=1.0):
 
         rows.append(dict(
             point_id=point_id,
-            internal_rga_scale=rga_scale,
             Q2_GeV2=q2,
             xB=xb,
             minus_t_GeV2=mt,
@@ -1056,6 +1041,81 @@ def plot_internal_LT_quality_view(data, outfile):
     plt.close(fig)
 
 
+
+def plot_internal_LT_quality_xB4_medians(data, outfile):
+    """Aggregate the INTERNAL_05 quality-selected points into four xB bins."""
+    g = data.copy()
+    g["T_significance"] = np.abs(g.sigma_T)/g.delta_sigma_T
+    good = (
+        np.isfinite(g.R_L_over_T) &
+        np.isfinite(g.delta_R_L_over_T) &
+        (g.T_significance >= 2.0) &
+        (g.delta_R_L_over_T <= 0.50)
+    )
+    g = g.loc[good].copy()
+
+    xb_min = float(data.xB.min())
+    xb_max = float(data.xB.max())
+    edges = np.linspace(xb_min, xb_max, 5)
+    # Include the upper endpoint in the fourth bin.
+    g["xB_group"] = pd.cut(
+        g.xB, bins=edges, include_lowest=True, right=True, labels=False
+    )
+
+    fig, ax = plt.subplots(figsize=(9.4, 6.2))
+    markers = ["o", "s", "^", "D"]
+
+    for ib in range(4):
+        gg = g[g.xB_group == ib]
+        if gg.empty:
+            continue
+
+        summary = (
+            gg.groupby("Q2_GeV2", as_index=False)
+              .agg(
+                  median_L_over_T=("R_L_over_T", "median"),
+                  n=("R_L_over_T", "size"),
+              )
+              .sort_values("Q2_GeV2")
+        )
+
+        label = (
+            rf"${edges[ib]:.3g} \leq x_B "
+            + (rf"\leq {edges[ib+1]:.3g}$" if ib == 3
+               else rf"< {edges[ib+1]:.3g}$")
+        )
+        ax.plot(
+            summary.Q2_GeV2,
+            summary.median_L_over_T,
+            marker=markers[ib],
+            markersize=7,
+            linewidth=1.4,
+            label=label,
+        )
+
+    ax.axhline(0.0, color="black", linewidth=1.0)
+    ax.set_xticks(sorted(data.Q2_GeV2.unique()))
+    ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
+    ax.set_ylabel(r"Median measured $\sigma_L/\sigma_T$")
+    ax.set_title(
+        r"INTERNAL diagnostic: median measured $L/T$ in four $x_B$ ranges"
+    )
+    ax.set_ylim(-1.0, 1.0)
+    ax.grid(axis="y", alpha=0.14)
+    ax.legend(frameon=False, fontsize=9, ncol=2)
+    ax.text(
+        0.01, 0.02,
+        r"Same selection as INTERNAL_05: "
+        r"$|\sigma_T|/\delta\sigma_T\geq2$ and $\delta(L/T)\leq0.50$."
+        "\nEach marker is the median of the selected matched cells in that "
+        r"$(Q^2,x_B)$ group.",
+        transform=ax.transAxes, ha="left", va="bottom", fontsize=8.4,
+    )
+    fig.tight_layout()
+    fig.savefig(outfile, dpi=200)
+    plt.close(fig)
+
+
 def plot_internal_sigmaU_comparison(data, outfile):
     """Direct comparison of independently fitted RGA and RGK sigma_U."""
     g = data.sort_values(["Q2_GeV2", "minus_t_GeV2", "xB"]).reset_index(drop=True)
@@ -1219,18 +1279,12 @@ def plot_internal_sigmaL_from_U_check(data, outfile):
 def run_internal_data_mode(a):
     """Explicitly non-default path using measured, unapproved central values."""
     out = a.internal_output.resolve()
-    if not np.isclose(a.internal_rga_scale, 1.0):
-        tag = f"rga_scale_{a.internal_rga_scale:g}".replace(".", "p")
-        out = out.parent / f"{out.name}_{tag}"
     tabs, figs = out/"tables", out/"figures"
     tabs.mkdir(parents=True, exist_ok=True)
     figs.mkdir(parents=True, exist_ok=True)
 
     common = pd.read_csv(a.stage2.resolve()/"tables"/"03_common_rosenbluth_model_points.csv")
-    data = build_internal_data_extraction(
-        common, a.internal_rga.resolve(), a.internal_rgk.resolve(),
-        rga_scale=a.internal_rga_scale,
-    )
+    data = build_internal_data_extraction(common, a.internal_rga.resolve(), a.internal_rgk.resolve())
     data.to_csv(tabs/"INTERNAL_01_measured_LT_by_point.csv", index=False)
     plot_internal_LT_vs_Q2(
         data, figs/"INTERNAL_01_measured_L_over_T_vs_Q2.png",
@@ -1251,6 +1305,9 @@ def run_internal_data_mode(a):
     plot_internal_LT_quality_view(
         data, figs/"INTERNAL_05_measured_L_over_T_quality_diagnostic.png",
     )
+    plot_internal_LT_quality_xB4_medians(
+        data, figs/"INTERNAL_05b_measured_L_over_T_quality_xB4_medians.png",
+    )
     plot_internal_sigmaU_comparison(
         data, figs/"INTERNAL_06_sigmaU_RGA_RGK_comparison.png",
     )
@@ -1265,9 +1322,6 @@ def run_internal_data_mode(a):
     )
 
     print("\n*** INTERNAL DATA MODE: measured, unapproved RGA/RGK central values ***")
-    print(f"RGA normalization test factor: {a.internal_rga_scale:g}x")
-    if not np.isclose(a.internal_rga_scale, 1.0):
-        print("NOTE: normalization stress test; this is not the nominal extraction.")
     print(f"Matched Rosenbluth cells: {len(data)}")
     print("No clipping or positivity constraint is applied to sigma_L or L/T.")
     print("Negative/noisy values are retained intentionally.")
@@ -1278,6 +1332,7 @@ def run_internal_data_mode(a):
     print(f"  {figs/'INTERNAL_03_measured_L_over_T_vs_Q2_zoom.png'}")
     print(f"  {figs/'INTERNAL_04_measured_L_over_T_vs_Q2_by_xB_zoom.png'}")
     print(f"  {figs/'INTERNAL_05_measured_L_over_T_quality_diagnostic.png'}")
+    print(f"  {figs/'INTERNAL_05b_measured_L_over_T_quality_xB4_medians.png'}")
     print(f"  {figs/'INTERNAL_06_sigmaU_RGA_RGK_comparison.png'}")
     print(f"  {figs/'INTERNAL_07_fractional_sigmaU_RGA_RGK_difference.png'}")
     print(f"  {figs/'INTERNAL_08_delta_sigmaU_by_xB.png'}")
