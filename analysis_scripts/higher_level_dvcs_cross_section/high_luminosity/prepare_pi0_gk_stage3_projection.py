@@ -10,7 +10,7 @@ This stage is intentionally split into two modes:
 
   2) With --gk-results:
      require a CSV with GK partial cross sections
-       point_id,sigma_T,sigma_L,sigma_TT,sigma_LT
+       point_id,sigma_T,sigma_L,sigma_TT,sigma_LT  (legacy)\n     or the source-verified dsigma_*_dt_nb_per_GeV2 columns from Stage 3
      for the Stage-3 query points. Then construct blinded phi-dependent
      pseudo-data, covariance-aware harmonic fits, Rosenbluth L/T projections,
      and workshop-oriented diagnostic figures.
@@ -105,8 +105,26 @@ def write_model_template(q,path):
 
 def model_merge(q,gkfile):
     g=pd.read_csv(gkfile)
+
+    # Accept either the legacy Stage-3 bridge schema or the explicit physical
+    # response schema written by run_pi0_gk_partons_stage3.py.  Keep the
+    # downstream projection code on the compact legacy names internally.
+    physical_to_internal = {
+        "dsigma_T_dt_nb_per_GeV2": "sigma_T",
+        "dsigma_L_dt_nb_per_GeV2": "sigma_L",
+        "dsigma_TT_dt_nb_per_GeV2": "sigma_TT",
+        "dsigma_LT_dt_nb_per_GeV2": "sigma_LT",
+    }
+    for physical, internal in physical_to_internal.items():
+        if internal not in g.columns and physical in g.columns:
+            g[internal] = g[physical]
+
     miss=[c for c in REQ_GK if c not in g.columns]
-    if miss: raise RuntimeError(f"GK results missing columns: {miss}")
+    if miss:
+        available=", ".join(g.columns)
+        raise RuntimeError(
+            f"GK results missing columns: {miss}. Available columns: {available}"
+        )
     if g["point_id"].duplicated().any(): raise RuntimeError("Duplicate point_id in GK results")
 
     # The validated PARTONS grid is authoritative for Stage-3 usability.  A
@@ -425,7 +443,7 @@ Fill 02_gk_structure_function_results_template.csv with GK/PARTONS partial
 cross sections for neutral-pion production at each common point.
 
 Required columns:
-  point_id, sigma_T, sigma_L, sigma_TT, sigma_LT
+  point_id, sigma_T, sigma_L, sigma_TT, sigma_LT (legacy), or\n  Stage-3 source-verified dsigma_*_dt_nb_per_GeV2 response columns
 
 The validated PARTONS/GK bridge supplies all four quantities in nb/GeV^2.
 Stage-3 uses only point_ids present in that validated model product; candidate
