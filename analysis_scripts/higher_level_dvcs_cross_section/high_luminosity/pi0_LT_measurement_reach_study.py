@@ -1250,6 +1250,77 @@ def plot_internal_delta_sigmaU_by_xB(data, outfile):
     plt.close(fig)
 
 
+def plot_internal_rosenbluth_slopes(data, outfile):
+    """Show the measured two-energy Rosenbluth slope in every matched cell.
+
+    For each fixed (Q2, xB, -t) cell, sigma_U = sigma_T + epsilon*sigma_L,
+    so the slope of the line connecting the independently fitted RGA and RGK
+    sigma_U values is sigma_L.  A downward line therefore corresponds directly
+    to a negative extracted sigma_L.
+    """
+    xb_values = sorted(data.xB.unique())
+    ncols = 3
+    nrows = int(np.ceil(len(xb_values)/ncols))
+
+    finite_t = data.minus_t_GeV2[np.isfinite(data.minus_t_GeV2)]
+    norm = plt.Normalize(float(finite_t.min()), float(finite_t.max()))
+    cmap = plt.get_cmap("viridis")
+
+    fig, axes = plt.subplots(
+        nrows, ncols, figsize=(11.8, 8.8),
+        sharex=True, sharey=True, squeeze=False, constrained_layout=True,
+    )
+    axes = axes.ravel()
+
+    for ax, xb in zip(axes, xb_values):
+        g = data[np.isclose(data.xB, xb)].sort_values(
+            ["Q2_GeV2", "minus_t_GeV2"]
+        )
+
+        for r in g.itertuples(index=False):
+            eps = np.array([r.epsilon_rgk, r.epsilon_rga], dtype=float)
+            sig = np.array([r.sigma_U_rgk, r.sigma_U_rga], dtype=float)
+            dsig = np.array([r.delta_sigma_U_rgk, r.delta_sigma_U_rga], dtype=float)
+            order = np.argsort(eps)
+            eps, sig, dsig = eps[order], sig[order], dsig[order]
+            color = cmap(norm(r.minus_t_GeV2))
+
+            ax.plot(eps, sig, "-", color=color, linewidth=1.15, alpha=0.72)
+            ax.errorbar(
+                eps, sig, yerr=dsig, fmt="o", color=color,
+                ms=3.2, capsize=1.2, elinewidth=0.65, alpha=0.82,
+            )
+
+        ax.set_title(fr"$x_B={xb:g}$", fontsize=10)
+        ax.grid(alpha=0.13)
+
+    for ax in axes[len(xb_values):]:
+        ax.set_visible(False)
+
+    for i, ax in enumerate(axes[:len(xb_values)]):
+        if i % ncols == 0:
+            ax.set_ylabel(r"Measured $\sigma_U$ (nb/GeV$^2$)")
+        if i // ncols == nrows-1 or i+ncols >= len(xb_values):
+            ax.set_xlabel(r"$\epsilon$")
+
+    sm = plt.cm.ScalarMappable(norm=norm, cmap=cmap)
+    sm.set_array([])
+    cb = fig.colorbar(sm, ax=list(axes[:len(xb_values)]), pad=0.015, shrink=0.88)
+    cb.set_label(r"$-t$ (GeV$^2$)")
+    fig.suptitle(
+        r"INTERNAL: measured Rosenbluth slopes, "
+        r"$\sigma_U=\sigma_T+\epsilon\sigma_L$",
+        fontsize=14,
+    )
+    fig.text(
+        0.5, 0.005,
+        r"Each line is one matched $(Q^2,x_B,-t)$ cell; downward slope $\Rightarrow\sigma_L<0$.",
+        ha="center", va="bottom", fontsize=9,
+    )
+    fig.savefig(outfile, dpi=200)
+    plt.close(fig)
+
+
 def plot_internal_sigmaL_from_U_check(data, outfile):
     """Compare joint-fit sigma_L to Delta sigma_U / Delta epsilon."""
     g = data.sort_values(["Q2_GeV2", "minus_t_GeV2", "xB"]).reset_index(drop=True)
@@ -1322,6 +1393,9 @@ def run_internal_data_mode(a):
     plot_internal_sigmaL_from_U_check(
         data, figs/"INTERNAL_09_sigmaL_from_sigmaU_crosscheck.png",
     )
+    plot_internal_rosenbluth_slopes(
+        data, figs/"INTERNAL_10_measured_Rosenbluth_epsilon_slopes.png",
+    )
 
     print("\n*** INTERNAL DATA MODE: measured, unapproved RGA/RGK central values ***")
     print(f"Matched Rosenbluth cells: {len(data)}")
@@ -1339,6 +1413,7 @@ def run_internal_data_mode(a):
     print(f"  {figs/'INTERNAL_07_fractional_sigmaU_RGA_RGK_difference.png'}")
     print(f"  {figs/'INTERNAL_08_delta_sigmaU_by_xB.png'}")
     print(f"  {figs/'INTERNAL_09_sigmaL_from_sigmaU_crosscheck.png'}")
+    print(f"  {figs/'INTERNAL_10_measured_Rosenbluth_epsilon_slopes.png'}")
 
 
 def main():
