@@ -670,7 +670,17 @@ def build_internal_data_extraction(common, rga_file, rgk_file):
         q2 = float(getattr(r, "Q2_common_GeV2"))
         xb = float(getattr(r, "xB_common"))
         mt = float(getattr(r, "minus_t_common_GeV2"))
-        point_id = str(getattr(r, "point_id"))
+        # Stage-3 common-point tables use point_id_common; older/local
+        # variants may use point_id.  itertuples() preserves either name.
+        if hasattr(r, "point_id_common"):
+            point_id = str(r.point_id_common)
+        elif hasattr(r, "point_id"):
+            point_id = str(r.point_id)
+        else:
+            raise RuntimeError(
+                "Could not identify the common point ID. "
+                f"Available fields: {list(r._fields)}"
+            )
 
         ga = _nearest_native_group(rga, q2, xb, mt)
         gk = _nearest_native_group(rgk, q2, xb, mt)
