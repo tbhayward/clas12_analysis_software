@@ -84,6 +84,7 @@ AUX_TARGETS = ("C", "CH2")
 CARBON_CONTROL_MIN_GEV2 = 0.0
 CARBON_CONTROL_MAX_GEV2 = 0.40
 PHYSICS_PARAMETERS = nominal.PHYSICS_PARAMETERS
+POLARIZED_PARAMETERS = ("lu1", "ul1", "ul2", "ll0", "ll1")
 BEAM_POLARIZATION = nominal.BEAM_POLARIZATION
 XB_BINS = nominal.XB_BINS
 TP_BINS = nominal.MINUS_TPRIME_BINS_GEV2
@@ -332,15 +333,113 @@ def fit_signal_area(values: np.ndarray, mu: float, sigma: float) -> AreaFit:
     # endtry
 
 
-def fit_signal_area_worker(task: tuple[Any, np.ndarray, float, float]) -> tuple[Any, AreaFit]:
-    """Process-pool worker for one independent Mx2 Gaussian-area fit.
+def fit_four_state_signal_areas(
+    values_by_state: Mapping[tuple[int, int], np.ndarray], mu: float, sigma: float,
+) -> tuple[dict[tuple[int, int], AreaFit], np.ndarray]:
+    """Simultaneously fit the four NH3 (h,s) spectra in one phi cell.
 
-    Only the compact Mx2 array and fixed peak parameters are passed to the
-    worker.  No pandas frame, ROOT handle or Matplotlib object crosses the
-    process boundary.
+    The four Gaussian areas and background normalizations are independent.
+    The *shape* of the smooth quadratic background is shared across the four
+    states.  This lets the combined statistics constrain the nuisance shape
+    without forcing any spin-state signal normalization to agree.  mu and
+    sigma remain fixed from the spin-integrated nominal Mx2 selection.
+
+    Returns the four AreaFit objects and their 4x4 Gaussian-area covariance in
+    STATE_ORDER.  The latter is propagated into the final hydrogen-rate GLS.
     """
-    key, values, mu, sigma = task
-    return key, fit_signal_area(values, mu, sigma)
+    state_order = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+    fit_low, fit_high = mu - 5.0 * sigma, mu + 5.0 * sigma
+    selected = {st: np.asarray(values_by_state.get(st, np.empty(0)), dtype=float) for st in state_order}
+    selected = {st: v[np.isfinite(v) & (v >= fit_low) & (v <= fit_high)] for st, v in selected.items()}
+    total_events = sum(len(v) for v in selected.values())
+    n_hist = max(24, min(50, int(round(math.sqrt(max(total_events / 4.0, 1.0)) * 1.8))))
+    edges = np.linspace(fit_low, fit_high, n_hist + 1)
+    x = 0.5 * (edges[:-1] + edges[1:])
+    width = float(edges[1] - edges[0])
+    ys = {st: np.histogram(selected[st], bins=edges)[0].astype(float) for st in state_order}
+    errs = {st: np.sqrt(np.maximum(ys[st], 1.0)) for st in state_order}
+
+    if total_events < 80 or any(len(selected[st]) < 10 for st in state_order):
+        out = {}
+        for st in state_order:
+            z = np.zeros_like(x)
+            out[st] = AreaFit(np.nan, np.nan, np.nan, np.nan, len(selected[st]),
+                              "low_statistics_simultaneous", mu, sigma, fit_low, fit_high,
+                              x, ys[st], errs[st], z, z, z)
+        # endfor
+        return out, np.full((4, 4), np.nan)
+    # endif
+
+    area0, b00 = [], []
+    for st in state_order:
+        side = np.abs(x - mu) > 2.5 * sigma
+        b = float(np.median(ys[st][side]) / width) if np.any(side) else float(np.median(ys[st]) / width)
+        b = max(b, 1.0e-6)
+        b00.append(b)
+        area0.append(max(float(np.sum(ys[st])) - b * (fit_high - fit_low), 1.0))
+    # endfor
+    p0 = np.r_[area0, b00, 0.0, 0.0]
+    lower = np.r_[np.zeros(4), np.zeros(4), -50.0, -500.0]
+    upper = np.r_[np.full(4, max(10.0 * total_events, 10.0)), np.full(4, np.inf), 50.0, 500.0]
+
+    def components(pars: np.ndarray, st_index: int) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+        area = pars[st_index]
+        b0 = pars[4 + st_index]
+        c1, c2 = pars[8], pars[9]
+        z = x - mu
+        signal = width * area * gaussian_density(x, mu, sigma)
+        background = width * b0 * (1.0 + c1 * z + c2 * z * z)
+        return signal + background, signal, background
+
+    def residuals(pars: np.ndarray) -> np.ndarray:
+        chunks = []
+        for i, st in enumerate(state_order):
+            model, _, _ = components(pars, i)
+            chunks.append((ys[st] - model) / errs[st])
+        # endfor
+        return np.concatenate(chunks)
+
+    try:
+        result = least_squares(residuals, p0, bounds=(lower, upper), max_nfev=30000)
+        try:
+            full_cov = np.linalg.inv(result.jac.T @ result.jac)
+        except np.linalg.LinAlgError:
+            full_cov = np.linalg.pinv(result.jac.T @ result.jac)
+        # endtry
+        area_cov = full_cov[:4, :4]
+        out = {}
+        for i, st in enumerate(state_order):
+            model, signal, background = components(result.x, i)
+            chi2 = float(np.sum(((ys[st] - model) / errs[st]) ** 2))
+            ndf = max(len(x) - 3, 1)
+            err = math.sqrt(max(float(area_cov[i, i]), 0.0))
+            out[st] = AreaFit(float(result.x[i]), err, float(np.sum(background)), chi2 / ndf,
+                              len(selected[st]), "ok" if np.isfinite(err) and err > 0 else "bad_covariance",
+                              mu, sigma, fit_low, fit_high, x, ys[st], errs[st], model, signal, background)
+        # endfor
+        return out, area_cov
+    except Exception as exc:
+        out = {}
+        for st in state_order:
+            z = np.zeros_like(x)
+            out[st] = AreaFit(np.nan, np.nan, np.nan, np.nan, len(selected[st]),
+                              f"fit_failed:{type(exc).__name__}", mu, sigma, fit_low, fit_high,
+                              x, ys[st], errs[st], z, z, z)
+        # endfor
+        return out, np.full((4, 4), np.nan)
+    # endtry
+
+
+def fit_task_worker(task: tuple[Any, ...]) -> tuple[Any, Any, Any]:
+    """Worker dispatcher: simultaneous NH3 quartet or one auxiliary spectrum."""
+    kind = task[0]
+    if kind == "NH3":
+        _, key, values_by_state, mu, sigma = task
+        fits, cov = fit_four_state_signal_areas(values_by_state, mu, sigma)
+        return key, fits, cov
+    # endif
+    _, key, values, mu, sigma = task
+    return key, fit_signal_area(values, mu, sigma), None
 
 
 
@@ -518,35 +617,97 @@ def physics_shape(phi: float, h: int, pb_eff: float, pt_eff: float, pbpt_eff: fl
     )
 
 
-def fit_physics_bin(frame: pd.DataFrame) -> tuple[dict[str, float], np.ndarray, float, int]:
-    good = frame[
-        np.isfinite(frame["hydrogen_rate"]) & np.isfinite(frame["hydrogen_rate_error"])
-        & (frame["hydrogen_rate_error"] > 0.0)
-    ].copy()
+def build_rate_covariance(frame: pd.DataFrame, nh3_cov: Mapping[int, np.ndarray]) -> np.ndarray:
+    """Full statistical covariance for the carbon-subtracted hydrogen rates.
+
+    Contributions:
+      * simultaneous-NH3 Gaussian-area covariance within each phi cell;
+      * one shared carbon Gaussian yield for s=+/- at fixed (phi,h);
+      * one global alpha nuisance shared by every rate in the kinematic bin.
+    """
+    rows = list(frame.itertuples(index=False))
+    n = len(rows)
+    V = np.zeros((n, n), dtype=float)
+    state_order = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+    state_index = {st: i for i, st in enumerate(state_order)}
+    for i, ri in enumerate(rows):
+        for j, rj in enumerate(rows):
+            cov = 0.0
+            # NH3 simultaneous-fit covariance exists only within one phi cell.
+            if int(ri.phi_bin) == int(rj.phi_bin):
+                C = nh3_cov.get(int(ri.phi_bin))
+                if C is not None and np.shape(C) == (4, 4) and ri.charge > 0 and rj.charge > 0:
+                    ii = state_index[(int(ri.helicity), int(ri.target_sign))]
+                    jj = state_index[(int(rj.helicity), int(rj.target_sign))]
+                    if np.isfinite(C[ii, jj]):
+                        cov += float(C[ii, jj]) / (ri.charge * rj.charge)
+                    # endif
+                # endif
+            # endif
+            # The same helicity-separated carbon area is subtracted from both
+            # target-spin states at fixed phi.  It is therefore fully shared.
+            if int(ri.phi_bin) == int(rj.phi_bin) and int(ri.helicity) == int(rj.helicity):
+                if np.isfinite(ri.carbon_rate_variance):
+                    cov += (ri.carbon_alpha ** 2) * ri.carbon_rate_variance
+                # endif
+            # endif
+            # alpha is one common global nuisance, hence correlated across all
+            # phi/helicity/target-spin cells.
+            if np.isfinite(ri.carbon_rate) and np.isfinite(rj.carbon_rate):
+                cov += ri.carbon_rate * rj.carbon_rate * (ri.carbon_alpha_error ** 2)
+            # endif
+            V[i, j] = cov
+        # endfor
+    # endfor
+    return 0.5 * (V + V.T)
+
+
+def fit_physics_bin(frame: pd.DataFrame, nh3_cov: Mapping[int, np.ndarray]) -> tuple[dict[str, float], np.ndarray, float, int]:
+    good = frame[np.isfinite(frame["hydrogen_rate"])].copy().reset_index(drop=True)
     if len(good) < 18:
         return {name: np.nan for name in PHYSICS_PARAMETERS}, np.full((7, 7), np.nan), np.nan, 0
     # endif
 
-    # All three RGC periods have already been combined at the yield level, so
-    # only one overall normalization remains in each (xB,-t') physics bin.
-    def residuals(pars: np.ndarray) -> np.ndarray:
+    V = build_rate_covariance(good, nh3_cov)
+    finite_diag = np.isfinite(np.diag(V)) & (np.diag(V) > 0.0)
+    if not np.all(finite_diag):
+        good = good.loc[finite_diag].reset_index(drop=True)
+        V = build_rate_covariance(good, nh3_cov)
+    # endif
+    if len(good) < 18:
+        return {name: np.nan for name in PHYSICS_PARAMETERS}, np.full((7, 7), np.nan), np.nan, 0
+    # endif
+
+    # Stable Cholesky whitening.  Tiny numerical jitter is allowed only at the
+    # 1e-12 scale of the median diagonal; it is not an added physics error.
+    scale = float(np.nanmedian(np.diag(V)))
+    jitter = max(scale, 1.0e-30) * 1.0e-12
+    try:
+        L = np.linalg.cholesky(V + jitter * np.eye(len(V)))
+    except np.linalg.LinAlgError:
+        eigval, eigvec = np.linalg.eigh(V)
+        floor = max(float(np.max(eigval)) * 1.0e-12, 1.0e-30)
+        V = (eigvec * np.maximum(eigval, floor)) @ eigvec.T
+        L = np.linalg.cholesky(V)
+    # endtry
+
+    def raw_residuals(pars: np.ndarray) -> np.ndarray:
         theta = pars[:7]
         norm = math.exp(pars[7])
         result = []
         for row in good.itertuples(index=False):
-            shape = physics_shape(
-                row.phi_center, int(row.helicity), row.pb_effective,
-                row.pt_effective, row.pbpt_effective,
-                row.rB, row.rC, row.rV, row.rW, theta,
-            )
-            prediction = norm * shape
-            result.append((row.hydrogen_rate - prediction) / row.hydrogen_rate_error)
+            shape = physics_shape(row.phi_center, int(row.helicity), row.pb_effective,
+                                  row.pt_effective, row.pbpt_effective,
+                                  row.rB, row.rC, row.rV, row.rW, theta)
+            result.append(row.hydrogen_rate - norm * shape)
         # endfor
         return np.asarray(result, dtype=float)
 
+    def residuals(pars: np.ndarray) -> np.ndarray:
+        return np.linalg.solve(L, raw_residuals(pars))
+
     positive = good.loc[good.hydrogen_rate > 0.0, "hydrogen_rate"]
-    norm0 = float(np.nanmedian(positive)) if len(positive) else 1.0
-    norm0 = max(norm0, 1.0e-12)
+    norm0 = max(float(np.nanmedian(positive)) if len(positive) else 1.0, 1.0e-12)
     x0 = np.r_[np.zeros(7), math.log(norm0)]
     lower = np.r_[np.full(7, -1.5), -40.0]
     upper = np.r_[np.full(7, 1.5), 40.0]
@@ -555,12 +716,14 @@ def fit_physics_bin(frame: pd.DataFrame) -> tuple[dict[str, float], np.ndarray, 
     ndf = max(len(resid) - len(result.x), 1)
     chi2_ndf = float(np.dot(resid, resid) / ndf)
     try:
-        jtj_inv = np.linalg.inv(result.jac.T @ result.jac)
-        covariance = jtj_inv * chi2_ndf
-        covariance = covariance[:7, :7]
+        covariance_full = np.linalg.inv(result.jac.T @ result.jac)
     except np.linalg.LinAlgError:
-        covariance = np.full((7, 7), np.nan)
+        covariance_full = np.linalg.pinv(result.jac.T @ result.jac)
     # endtry
+    # IMPORTANT: do not multiply by chi2/ndf.  V contains absolute propagated
+    # statistical uncertainties; rescaling by goodness-of-fit would incorrectly
+    # inflate the polarized errors when nuisance/unpolarized modeling is imperfect.
+    covariance = covariance_full[:7, :7]
     values = {name: float(value) for name, value in zip(PHYSICS_PARAMETERS, result.x[:7])}
     return values, covariance, chi2_ndf, len(good)
 
@@ -653,6 +816,12 @@ def plot_by_xb(output_dir: Path, results: pd.DataFrame, nominal_results: pd.Data
 
 
 def write_nominal_comparison(path: Path, results: pd.DataFrame, nominal_results: pd.DataFrame | None) -> None:
+    """Write the nominal cross-check, with final metrics restricted to polarized terms.
+
+    u1/u2 remain in the extraction as nuisance parameters and are retained in
+    the raw tables/plots, but they are explicitly excluded from the quoted
+    external-check agreement numbers and comparison chi2.
+    """
     if nominal_results is None:
         return
     # endif
@@ -664,6 +833,9 @@ def write_nominal_comparison(path: Path, results: pd.DataFrame, nominal_results:
             keep.append(p)
         if f"{p}_stat" in n.columns:
             keep.append(f"{p}_stat")
+        elif f"{p}_error" in n.columns:
+            keep.append(f"{p}_error")
+        # endif
     # endfor
     n = n[keep].rename(columns={c: f"nominal_{c}" for c in keep if c != "kin_bin"})
     comp = comp.merge(n, on="kin_bin", how="left")
@@ -672,7 +844,54 @@ def write_nominal_comparison(path: Path, results: pd.DataFrame, nominal_results:
             comp[f"delta_{p}"] = comp[p] - comp[f"nominal_{p}"]
         # endif
     # endfor
+
+    # Approximate comparison chi2 uses statistical errors in quadrature.  The
+    # two methods use the same events and are therefore correlated, so this is
+    # a diagnostic rather than an independent-samples hypothesis test.  Most
+    # importantly, ONLY the five polarized observables enter it.
+    chi2_rows = []
+    for _, row in comp.iterrows():
+        chi2 = 0.0
+        nused = 0
+        for p in POLARIZED_PARAMETERS:
+            ne = row.get(f"nominal_{p}_stat", row.get(f"nominal_{p}_error", np.nan))
+            ye = row.get(f"{p}_error", np.nan)
+            delta = row.get(f"delta_{p}", np.nan)
+            var = ye * ye + ne * ne if np.isfinite(ye) and np.isfinite(ne) else np.nan
+            if np.isfinite(delta) and np.isfinite(var) and var > 0:
+                chi2 += delta * delta / var
+                nused += 1
+            # endif
+        # endfor
+        chi2_rows.append((chi2 / nused if nused else np.nan, nused))
+    # endfor
+    comp["polarized_comparison_chi2_ndf"] = [x[0] for x in chi2_rows]
+    comp["polarized_comparison_nterms"] = [x[1] for x in chi2_rows]
     comp.to_csv(path, index=False)
+
+    total_chi2 = 0.0
+    total_n = 0
+    for _, row in comp.iterrows():
+        for p in POLARIZED_PARAMETERS:
+            ne = row.get(f"nominal_{p}_stat", row.get(f"nominal_{p}_error", np.nan))
+            ye = row.get(f"{p}_error", np.nan)
+            delta = row.get(f"delta_{p}", np.nan)
+            var = ye * ye + ne * ne if np.isfinite(ye) and np.isfinite(ne) else np.nan
+            if np.isfinite(delta) and np.isfinite(var) and var > 0:
+                total_chi2 += delta * delta / var
+                total_n += 1
+            # endif
+        # endfor
+    # endfor
+    summary = {
+        "included_parameters": list(POLARIZED_PARAMETERS),
+        "excluded_nuisance_parameters": ["u1", "u2"],
+        "chi2": total_chi2,
+        "n_terms": total_n,
+        "chi2_per_term": total_chi2 / total_n if total_n else None,
+        "note": "Statistical errors added in quadrature; methods share events, so this is a diagnostic comparison metric, not an independent-samples chi-square test.",
+    }
+    path.with_name("polarized_comparison_summary.json").write_text(json.dumps(summary, indent=2))
 
 
 def _grouped_axes() -> tuple[plt.Figure, dict[str, plt.Axes]]:
@@ -776,10 +995,10 @@ def main() -> None:
     area_lookup: dict[tuple[str, str, int, int, int, int], AreaFit] = {}
     plot_count = 0
 
-    # Build all independent fit inputs in the parent process.  This keeps ROOT
-    # I/O and pandas filtering out of workers and sends only the Mx2 arrays
-    # required by curve_fit.  The expensive numerical fits then run in parallel.
-    fit_tasks: list[tuple[Any, np.ndarray, float, float]] = []
+    # Build fit inputs in the parent process.  NH3 is fit as one simultaneous
+    # four-state (h,s) quartet per period/kinematic/phi cell.  C and CH2 remain
+    # independent helicity-separated spectra.
+    fit_tasks: list[tuple[Any, ...]] = []
     fit_metadata: dict[Any, dict[str, Any]] = {}
     grouped = {
         key: group for key, group in events.groupby(
@@ -794,60 +1013,84 @@ def main() -> None:
             mu = 0.5 * (cut.low_gev2 + cut.high_gev2)
             sigma = 0.25 * (cut.high_gev2 - cut.low_gev2)
             for phi_bin in range(N_PHI_BINS):
-                for target in TARGETS:
-                    signs = (-1, 1) if target == "NH3" else (0,)
+                # Simultaneous NH3 quartet.
+                values_by_state = {}
+                for h in (-1, 1):
+                    for ss in (-1, 1):
+                        key = (period, "NH3", kin_bin, phi_bin, h, ss)
+                        subset = grouped.get(key)
+                        values_by_state[(h, ss)] = (subset.Mx2.to_numpy(dtype=float, copy=True)
+                                                     if subset is not None else np.empty(0, dtype=float))
+                        dep = ({name: float(np.nanmean(subset[name])) if len(subset) else np.nan
+                                for name in ("rB", "rC", "rV", "rW")} if subset is not None
+                               else {name: np.nan for name in ("rB", "rC", "rV", "rW")})
+                        fit_metadata[key] = dict(period=period, target="NH3", kin_bin=kin_bin,
+                                                 phi_bin=phi_bin, phi_center=PHI_CENTERS[phi_bin],
+                                                 helicity=h, target_sign=ss, mu=mu, sigma=sigma, **dep)
+                    # endfor
+                # endfor
+                fit_tasks.append(("NH3", (period, kin_bin, phi_bin), values_by_state, mu, sigma))
+
+                # Auxiliary spectra stay helicity separated.
+                for target in ("C", "CH2"):
                     for h in (-1, 1):
-                        for s in signs:
-                            key = (period, target, kin_bin, phi_bin, h, s)
-                            subset = grouped.get(key)
-                            if subset is None:
-                                values = np.empty(0, dtype=float)
-                                dep = {name: np.nan for name in ("rB", "rC", "rV", "rW")}
-                            else:
-                                values = subset.Mx2.to_numpy(dtype=float, copy=True)
-                                dep = {name: float(np.nanmean(subset[name])) if len(subset) else np.nan
-                                       for name in ("rB", "rC", "rV", "rW")}
-                            # endif
-                            fit_tasks.append((key, values, mu, sigma))
-                            fit_metadata[key] = dict(
-                                period=period, target=target, kin_bin=kin_bin, phi_bin=phi_bin,
-                                phi_center=PHI_CENTERS[phi_bin], helicity=h, target_sign=s,
-                                mu=mu, sigma=sigma, **dep,
-                            )
-                        # endfor
+                        key = (period, target, kin_bin, phi_bin, h, 0)
+                        subset = grouped.get(key)
+                        values = subset.Mx2.to_numpy(dtype=float, copy=True) if subset is not None else np.empty(0, dtype=float)
+                        dep = ({name: float(np.nanmean(subset[name])) if len(subset) else np.nan
+                                for name in ("rB", "rC", "rV", "rW")} if subset is not None
+                               else {name: np.nan for name in ("rB", "rC", "rV", "rW")})
+                        fit_metadata[key] = dict(period=period, target=target, kin_bin=kin_bin,
+                                                 phi_bin=phi_bin, phi_center=PHI_CENTERS[phi_bin],
+                                                 helicity=h, target_sign=0, mu=mu, sigma=sigma, **dep)
+                        fit_tasks.append(("AUX", key, values, mu, sigma))
                     # endfor
                 # endfor
             # endfor
         # endfor
     # endfor
 
-    print(f"[fits] Gaussian spectra: {len(fit_tasks):,}; workers: {args.workers}", flush=True)
+    print(f"[fits] fit tasks: {len(fit_tasks):,} (NH3 quartets + auxiliary spectra); workers: {args.workers}", flush=True)
     if args.workers == 1:
-        fit_results = map(fit_signal_area_worker, fit_tasks)
+        fit_results = map(fit_task_worker, fit_tasks)
     else:
         executor = ProcessPoolExecutor(max_workers=args.workers)
-        # chunksize amortizes process-IPC overhead without making tasks so coarse
-        # that one worker can dominate the tail of the calculation.
         chunksize = max(1, len(fit_tasks) // (args.workers * 32))
-        fit_results = executor.map(fit_signal_area_worker, fit_tasks, chunksize=chunksize)
+        fit_results = executor.map(fit_task_worker, fit_tasks, chunksize=chunksize)
     # endif
 
+    nh3_area_cov_period: dict[tuple[str, int, int], np.ndarray] = {}
     try:
-        for key, fit in fit_results:
-            area_lookup[key] = fit
-            meta = fit_metadata[key]
-            area_rows.append(dict(
-                **meta, area=fit.area, area_error=fit.area_error,
-                background_area=fit.background_area, chi2_ndf=fit.chi2_ndf,
-                n_events=fit.n_events, status=fit.status,
-            ))
-            if (args.max_spectrum_plots == 0 or plot_count < args.max_spectrum_plots) and fit.status == "ok":
-                period, target, kin_bin, phi_bin, h, s = key
-                plot_spectrum(
-                    spectrum_plots / f"{period}_{target}_bin{kin_bin:02d}_phi{phi_bin:02d}_h{h:+d}_s{s:+d}.png",
-                    fit, f"{period} {target}; bin {kin_bin}; phi bin {phi_bin}; h={h:+d}; s={s:+d}"
-                )
-                plot_count += 1
+        for task_key, payload, cov in fit_results:
+            if isinstance(payload, dict):
+                period, kin_bin, phi_bin = task_key
+                nh3_area_cov_period[(period, kin_bin, phi_bin)] = cov
+                for (h, ss), fit in payload.items():
+                    key = (period, "NH3", kin_bin, phi_bin, h, ss)
+                    area_lookup[key] = fit
+                    meta = fit_metadata[key]
+                    area_rows.append(dict(**meta, area=fit.area, area_error=fit.area_error,
+                                          background_area=fit.background_area, chi2_ndf=fit.chi2_ndf,
+                                          n_events=fit.n_events, status=fit.status))
+                    if (args.max_spectrum_plots == 0 or plot_count < args.max_spectrum_plots) and fit.status == "ok":
+                        plot_spectrum(spectrum_plots / f"{period}_NH3_bin{kin_bin:02d}_phi{phi_bin:02d}_h{h:+d}_s{ss:+d}.png",
+                                      fit, f"{period} NH3; bin {kin_bin}; phi bin {phi_bin}; h={h:+d}; s={ss:+d}")
+                        plot_count += 1
+                    # endif
+                # endfor
+            else:
+                key, fit = task_key, payload
+                area_lookup[key] = fit
+                meta = fit_metadata[key]
+                area_rows.append(dict(**meta, area=fit.area, area_error=fit.area_error,
+                                      background_area=fit.background_area, chi2_ndf=fit.chi2_ndf,
+                                      n_events=fit.n_events, status=fit.status))
+                if (args.max_spectrum_plots == 0 or plot_count < args.max_spectrum_plots) and fit.status == "ok":
+                    period, target, kin_bin, phi_bin, h, ss = key
+                    plot_spectrum(spectrum_plots / f"{period}_{target}_bin{kin_bin:02d}_phi{phi_bin:02d}_h{h:+d}_s{ss:+d}.png",
+                                  fit, f"{period} {target}; bin {kin_bin}; phi bin {phi_bin}; h={h:+d}; s={ss:+d}")
+                    plot_count += 1
+                # endif
             # endif
         # endfor
     finally:
@@ -864,6 +1107,18 @@ def main() -> None:
     # period-specific, but areas, charges and polarization moments are summed
     # here to form one RGC data set.
     rate_rows = []
+    # Combined-period NH3 area covariance, indexed by (kin_bin, phi_bin).
+    # Periods are statistically independent, so their covariance matrices add.
+    nh3_cov_combined: dict[tuple[int, int], np.ndarray] = {}
+    for kin_bin in range(1, N_KIN_BINS + 1):
+        for phi_bin in range(N_PHI_BINS):
+            mats = [nh3_area_cov_period.get((period, kin_bin, phi_bin)) for period in PERIODS]
+            mats = [m for m in mats if m is not None and np.shape(m) == (4, 4) and np.all(np.isfinite(m))]
+            nh3_cov_combined[(kin_bin, phi_bin)] = (sum(mats, np.zeros((4, 4))) if mats
+                                                        else np.full((4, 4), np.nan))
+        # endfor
+    # endfor
+
     for kin_bin in range(1, N_KIN_BINS + 1):
         for phi_bin in range(N_PHI_BINS):
             for h in (-1, 1):
@@ -881,9 +1136,13 @@ def main() -> None:
                     qpt = sum(charge_map[(period, "NH3", h, s)][1] for period in PERIODS)
                     qpb = sum(charge_map[(period, "NH3", h, s)][0] * BEAM_POLARIZATION[period] for period in PERIODS)
                     qpbpt = sum(charge_map[(period, "NH3", h, s)][1] * BEAM_POLARIZATION[period] for period in PERIODS)
-                    h_rate, h_error = carbon_subtracted_hydrogen_rate(
+                    h_rate, _ = carbon_subtracted_hydrogen_rate(
                         nh3_area, nh3_error, qA, carbon_area, carbon_error, qC, alpha, alpha_error
                     )
+                    carbon_rate = carbon_area / qC if np.isfinite(carbon_area) and qC > 0 else np.nan
+                    carbon_rate_variance = ((carbon_error / qC) ** 2
+                                            if np.isfinite(carbon_error) and qC > 0 else np.nan)
+                    h_error = np.nan  # filled from the full covariance after the table is assembled
                     pt_eff = qpt / qA if qA > 0.0 else np.nan
                     pb_eff = qpb / qA if qA > 0.0 else np.nan
                     pbpt_eff = qpbpt / qA if qA > 0.0 else np.nan
@@ -907,7 +1166,8 @@ def main() -> None:
                         pb_effective=pb_eff, pbpt_effective=pbpt_eff, hydrogen_rate=h_rate,
                         hydrogen_rate_error=h_error, nh3_signal_area=nh3_area,
                         nh3_signal_area_error=nh3_error, carbon_signal_area=carbon_area,
-                        carbon_signal_area_error=carbon_error, carbon_alpha=alpha,
+                        carbon_signal_area_error=carbon_error, carbon_rate=carbon_rate,
+                        carbon_rate_variance=carbon_rate_variance, carbon_alpha=alpha,
                         carbon_alpha_error=alpha_error, **dep,
                     ))
                 # endfor
@@ -916,6 +1176,15 @@ def main() -> None:
     # endfor
 
     rates = pd.DataFrame(rate_rows)
+    # Populate display/CSV point errors from the diagonal of the same full
+    # covariance matrix used by the generalized least-squares physics fit.
+    for kin_bin in range(1, N_KIN_BINS + 1):
+        idx = rates.index[rates.kin_bin == kin_bin]
+        sub = rates.loc[idx].reset_index(drop=True)
+        phi_cov = {pb: nh3_cov_combined[(kin_bin, pb)] for pb in range(N_PHI_BINS)}
+        V = build_rate_covariance(sub, phi_cov)
+        rates.loc[idx, "hydrogen_rate_error"] = np.sqrt(np.maximum(np.diag(V), 0.0))
+    # endfor
     rates.to_csv(tables / "carbon_subtracted_hydrogen_rates.csv", index=False)
 
     result_rows = []
@@ -923,8 +1192,10 @@ def main() -> None:
     for kin_bin in range(1, N_KIN_BINS + 1):
         subset = rates[rates.kin_bin == kin_bin]
         plot_four_state_rates(rate_plots / f"hydrogen_rates_bin{kin_bin:02d}.png", subset, kin_bin)
-        values, covariance, chi2_ndf, npoints = fit_physics_bin(subset)
-        row: dict[str, Any] = {"kin_bin": kin_bin, "chi2_ndf": chi2_ndf, "npoints": npoints}
+        phi_cov = {pb: nh3_cov_combined[(kin_bin, pb)] for pb in range(N_PHI_BINS)}
+        values, covariance, chi2_ndf, npoints = fit_physics_bin(subset, phi_cov)
+        row: dict[str, Any] = {"kin_bin": kin_bin, "fit_chi2_ndf_all_terms": chi2_ndf,
+                               "chi2_ndf": chi2_ndf, "npoints": npoints}
         for index, name in enumerate(PHYSICS_PARAMETERS):
             row[name] = values[name]
             row[f"{name}_error"] = math.sqrt(max(float(covariance[index, index]), 0.0)) if np.isfinite(covariance[index, index]) else np.nan
@@ -969,7 +1240,10 @@ def main() -> None:
         "carbon_material_scale_common_to_periods_and_helicities": True,
         "nh3_beam_and_target_spin_separated": True,
         "signal_shape": "mu/sigma fixed from nominal mu +/- 2 sigma channel-selection cut",
-        "statistics_warning": "First implementation uses local Gaussian-fit covariance; full bootstrap shared-target covariance is the planned upgrade.",
+        "statistics_treatment": "Full GLS covariance: simultaneous-NH3 area covariance + shared carbon-yield covariance + global alpha nuisance covariance; no chi2/ndf rescaling of parameter covariance.",
+        "nh3_mx2_fit": "simultaneous four-state fit with independent signal/background normalizations and shared quadratic background shape",
+        "final_comparison_parameters": list(POLARIZED_PARAMETERS),
+        "unpolarized_parameters": "u1/u2 retained as nuisance parameters in the fit but excluded from final nominal-vs-yield agreement metrics",
         "outputs": {
             "areas": str(tables / "gaussian_signal_areas.csv"),
             "rates": str(tables / "carbon_subtracted_hydrogen_rates.csv"),
