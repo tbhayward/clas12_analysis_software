@@ -27,18 +27,35 @@ def main():
     ap=argparse.ArgumentParser()
     ap.add_argument('--grid',type=Path,default=here/'output/pi0_gk_stage3/partons_gk/production_grid/gk_pi0_shared_physical_structure_functions.csv')
     ap.add_argument('--corrections',type=Path,default=here/'output/pi0_gk_stage3/partons_gk/06_gk_native_to_shared_phi_corrections.csv')
+    ap.add_argument('--exclusions',type=Path,default=here/'output/pi0_gk_stage3/tables/00_gk_model_exclusions.csv')
     ap.add_argument('--tolerance',type=float,default=1e-8)
     a=ap.parse_args()
     g=pd.read_csv(a.grid); c=pd.read_csv(a.corrections)
+    n_raw=len(g)
+    excluded_ids=set()
+    if a.exclusions.exists():
+        ex=pd.read_csv(a.exclusions)
+        if 'point_id' not in ex.columns:
+            raise RuntimeError(f'Exclusion table has no point_id column: {a.exclusions}')
+        excluded_ids=set(ex.point_id.dropna().astype(str))
+    g=g[~g.point_id.astype(str).isin(excluded_ids)].copy()
+    n_excluded=n_raw-len(g)
+    cols=['dsigma_T_dt_nb_per_GeV2','dsigma_L_dt_nb_per_GeV2','dsigma_TT_dt_nb_per_GeV2','dsigma_LT_dt_nb_per_GeV2']
+    if not np.isfinite(g[cols].to_numpy(float)).all():
+        raise RuntimeError('Non-finite structure function in validated GK closure grid')
+    if not (g.dsigma_T_dt_nb_per_GeV2.astype(float)>0).all():
+        bad=g.loc[g.dsigma_T_dt_nb_per_GeV2.astype(float)<=0,'point_id'].astype(str).tolist()
+        raise RuntimeError(f'Non-positive sigma_T remains in validated GK closure grid: {bad[:10]}')
+    print('[Rosenbluth pipeline closure]')
+    print(f'  raw GK points       : {n_raw}')
+    print(f'  excluded here       : {n_excluded}')
+    print(f'  validated GK points : {len(g)}')
     rows=[]
     for r in g.itertuples(index=False):
         U={}
         for camp,E,eps in [('rga',10.604,float(r.epsilon_rga)),('rgk',6.535,float(r.epsilon_rgk))]:
             cc=c[(c.point_id.astype(str)==str(r.point_id))&(c.campaign.astype(str).str.lower()==camp)].sort_values('phi_deg')
-            expected_phi=np.array([0.0,90.0,180.0])
-            got_phi=np.sort(cc.phi_deg.to_numpy(float))
-            if len(cc)!=3 or not np.allclose(got_phi,expected_phi,rtol=0.0,atol=1e-10):
-                raise RuntimeError(f'{r.point_id}/{camp}: expected correction rows at phi=0,90,180 deg; got {got_phi.tolist()}')
+            if len(cc)<4: raise RuntimeError(f'{r.point_id}/{camp}: insufficient correction rows')
             ph=cc.phi_deg.to_numpy(float)
             shared=(float(r.dsigma_T_dt_nb_per_GeV2)+eps*float(r.dsigma_L_dt_nb_per_GeV2)
                     +eps*np.cos(2*np.deg2rad(ph))*float(r.dsigma_TT_dt_nb_per_GeV2)
