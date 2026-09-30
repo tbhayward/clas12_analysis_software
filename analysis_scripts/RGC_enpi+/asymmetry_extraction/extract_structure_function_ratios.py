@@ -8437,31 +8437,19 @@ def run_clas6_cross_check(args, workers):
             # endif
             x = np.arange(len(valid))
             fig, ax = plt.subplots(figsize=(10.5, 5.5))
+            # Keep the publication-level comparison deliberately simple.  The
+            # common-envelope study is retained in the diagnostic tables, but the
+            # primary figures show only the broad-overlap CLAS6 and RGC results.
             ax.errorbar(
-                x - 0.18, valid[f"broad_{parameter}_clas6"],
+                x - 0.08, valid[f"broad_{parameter}_clas6"],
                 yerr=valid[f"broad_{parameter}_clas6_stat"], fmt="o", capsize=3,
-                label=r"CLAS6 broad overlap ($2\pi-\phi$)",
+                color="red", label=r"CLAS6 ($2\pi-\phi$)",
             )
             ax.errorbar(
-                x - 0.06, valid[f"broad_{parameter}_rgc"],
+                x + 0.08, valid[f"broad_{parameter}_rgc"],
                 yerr=valid[f"broad_{parameter}_rgc_stat"], fmt="s", capsize=3,
-                label="RGC broad overlap",
+                color="blue", label="CLAS12 RGC",
             )
-            matched_valid = valid[np.isfinite(pd.to_numeric(valid.get(f"matched_{parameter}_pull"), errors="coerce"))]
-            if not matched_valid.empty:
-                positions = {int(b): i for i, b in enumerate(valid["bin_number"].astype(int))}
-                xm = np.asarray([positions[int(b)] for b in matched_valid["bin_number"]], dtype=float)
-                ax.errorbar(
-                    xm + 0.06, matched_valid[f"matched_{parameter}_clas6"],
-                    yerr=matched_valid[f"matched_{parameter}_clas6_stat"], fmt="^", capsize=3,
-                    label="CLAS6 common envelope",
-                )
-                ax.errorbar(
-                    xm + 0.18, matched_valid[f"matched_{parameter}_rgc"],
-                    yerr=matched_valid[f"matched_{parameter}_rgc_stat"], fmt="D", capsize=3,
-                    label="RGC common envelope",
-                )
-            # endif
             ax.axhline(0.0, lw=0.8)
             ax.set_xticks(x)
             ax.set_xticklabels(valid["bin_number"].astype(int))
@@ -8470,7 +8458,7 @@ def run_clas6_cross_check(args, workers):
             # Use a common fixed asymmetry range for every CLAS6--RGC amplitude
             # comparison so visual differences are directly comparable panel to panel.
             ax.set_ylim(-1.0, 1.0)
-            ax.legend(ncol=2)
+            ax.legend()
             fig.tight_layout()
             fig.savefig(plots / f"clas6_rgc_{parameter}.png", dpi=200)
             plt.close(fig)
