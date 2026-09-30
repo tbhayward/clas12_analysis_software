@@ -4111,6 +4111,142 @@ def plot_kaon_contamination(
     )
 
 
+
+
+# =============================================================================
+# Joint high-momentum fit across run periods
+# =============================================================================
+
+def fit_joint_mixture(period_samples, period_models, initial_fractions=None):
+    """Fit common species fractions using period-specific TOF responses."""
+    usable = []
+    for period, sample in period_samples.items():
+        mom = np.asarray(sample[0], dtype=float)
+        beta = np.asarray(sample[1], dtype=float)
+        if len(mom):
+            usable.append((period, mom, beta))
+    if sum(len(x[1]) for x in usable) < MIN_MIXTURE_ENTRIES:
+        return None
+    if initial_fractions is None:
+        initial_fractions = np.array([0.95, 0.04, 0.01], dtype=float)
+    initial_fractions = np.clip(np.asarray(initial_fractions, dtype=float), 0.0, 1.0)
+    initial_fractions /= initial_fractions.sum()
+    x0 = np.array([initial_fractions[1], initial_fractions[2]], dtype=float)
+
+    components = {}
+    for period, mom, beta in usable:
+        comps = []
+        for species in SPECIES:
+            comps.append(gaussian_pdf(beta, response_mean(mom, species, period_models[period]),
+                                      response_sigma(mom, species, period_models[period])))
+        components[period] = np.asarray(comps)
+
+    def objective(x):
+        f_k, f_p = float(x[0]), float(x[1])
+        f_pi = 1.0 - f_k - f_p
+        if f_pi < 0.0:
+            return 1.0e30 + 1.0e12 * abs(f_pi)
+        fr = np.array([f_pi, f_k, f_p])
+        nll = 0.0
+        for period, _, _ in usable:
+            pdf = np.sum(fr[:, None] * components[period], axis=0)
+            nll -= np.sum(np.log(np.clip(pdf, 1.0e-300, None)))
+        return float(nll)
+
+    fit = minimize(objective, x0, method='SLSQP', bounds=[(0,1),(0,1)],
+                   constraints=[{'type':'ineq','fun':lambda x: 1.0-x[0]-x[1]}],
+                   options={'maxiter':1000, 'ftol':1.0e-10})
+    fr = fractions_from_parameters(fit.x)
+    return {'success': bool(fit.success), 'message': str(fit.message),
+            'nll': float(fit.fun), 'fractions': fr}
+
+
+def build_joint_high_p(period_data, period_models, rng):
+    """Common f_K above 5 GeV; each period keeps its own calibrated response."""
+    rows, rep_rows = [], []
+    for p_min, p_max in P_RANGES:
+        if p_max <= 5.0:
+            continue
+        samples = {}
+        counts = {}
+        for period, data in period_data.items():
+            sel = ((data['pid'] == 211) & (np.abs(data['chi2pid']) < CHI2PID_MAX) &
+                   (data['p'] >= p_min) & (data['p'] < p_max) &
+                   (data['beta'] >= BETA_SLICE_RANGE[0]) & (data['beta'] <= BETA_SLICE_RANGE[1]))
+            samples[period] = (data['p'][sel], data['beta'][sel])
+            counts[period] = int(np.count_nonzero(sel))
+        fit = fit_joint_mixture(samples, period_models)
+        if fit is None:
+            continue
+        boots = []
+        for ib in range(N_BOOTSTRAP):
+            bs = {}
+            for period, (mom, beta) in samples.items():
+                n = len(mom)
+                if n:
+                    idx = rng.integers(0, n, size=n)
+                    bs[period] = (mom[idx], beta[idx])
+                else:
+                    bs[period] = (mom, beta)
+            bf = fit_joint_mixture(bs, period_models, fit['fractions'])
+            if bf is not None and bf['success']:
+                val = float(bf['fractions'][1])
+                boots.append(val)
+                rep_rows.append({'replica':ib,'p_min_GeV':p_min,'p_max_GeV':p_max,'f_K':val})
+        b=np.asarray(boots,dtype=float)
+        rows.append({'period':'Combined','p_min_GeV':p_min,'p_max_GeV':p_max,
+                     'p_center_GeV':0.5*(p_min+p_max),'N_total':sum(counts.values()),
+                     'N_Su22':counts.get('Su22',0),'N_Fa22':counts.get('Fa22',0),'N_Sp23':counts.get('Sp23',0),
+                     'fit_success':fit['success'],'fit_message':fit['message'],
+                     'f_pi':float(fit['fractions'][0]),'f_K':float(fit['fractions'][1]),'f_p':float(fit['fractions'][2]),
+                     'f_K_bootstrap_mean':float(np.mean(b)) if len(b) else np.nan,
+                     'f_K_bootstrap_std':float(np.std(b,ddof=1)) if len(b)>1 else np.nan,
+                     'f_K_p16':float(np.percentile(b,16)) if len(b) else np.nan,
+                     'f_K_p50':float(np.percentile(b,50)) if len(b) else np.nan,
+                     'f_K_p84':float(np.percentile(b,84)) if len(b) else np.nan})
+    return pd.DataFrame(rows), pd.DataFrame(rep_rows)
+
+
+def build_adopted_lookup(combined_lookup, joint):
+    """Period-specific below 5 GeV, joint-period common fractions above 5 GeV."""
+    low = combined_lookup[combined_lookup['p_max_GeV'] <= 5.0].copy()
+    rows=[low]
+    for period in INPUTS:
+        if len(joint):
+            j=joint.copy()
+            j['period']=period
+            j['N_calibration']=j['N_total']
+            j['f_K_nominal']=j['f_K']
+            j['f_K_mean']=j['f_K_bootstrap_mean']
+            j['f_K_std']=j['f_K_bootstrap_std']
+            j['prescription']='joint_period_high_p_mixture_fit'
+            rows.append(j[['period','p_min_GeV','p_max_GeV','p_center_GeV','N_calibration',
+                           'f_K_nominal','f_K_mean','f_K_std','f_K_p16','f_K_p50','f_K_p84','prescription']])
+    return pd.concat(rows,ignore_index=True).sort_values(['period','p_min_GeV']).reset_index(drop=True)
+
+
+def fold_adopted_contamination(adopted, histogram_path):
+    if not histogram_path.is_file():
+        print(f"[joint high-p] momentum histogram not found: {histogram_path}")
+        print("[joint high-p] run plot_kinematic_distributions_review.py first to enable 24-bin folding.")
+        return None
+    pop=pd.read_csv(histogram_path)
+    merged=pop.merge(adopted,on=['period','p_min_GeV','p_max_GeV'],how='left')
+    out=[]
+    for (period,abin),g in merged.groupby(['period','analysis_bin']):
+        n=float(g['event_count'].sum())
+        covered=g['f_K_mean'].notna()
+        nc=float(g.loc[covered,'event_count'].sum())
+        fk=(g.loc[covered,'event_count']*g.loc[covered,'f_K_mean']).sum()/nc if nc else np.nan
+        out.append({'period':period,'analysis_bin':int(abin),'N_0p5_to_10p5':int(n),
+                    'N_PID_covered':int(nc),'coverage_fraction':nc/n if n else np.nan,
+                    'folded_f_K':fk})
+    result=pd.DataFrame(out)
+    result.to_csv(OUTDIR/'kaon_contamination_folded_24bins_by_period.csv',index=False)
+    print('[joint high-p] wrote kaon_contamination_folded_24bins_by_period.csv')
+    return result
+
+
 # =============================================================================
 # Main
 # =============================================================================
@@ -4132,6 +4268,8 @@ def main():
 
     combined_replica_tables = []
 
+    period_data_cache = {}
+    period_models_cache = {}
 
     for period, filename in INPUTS.items():
 
@@ -4222,6 +4360,9 @@ def main():
         models = build_response_models_from_table(
             response_table
         )
+
+        period_data_cache[period] = data
+        period_models_cache[period] = models
 
 
         plot_response(
@@ -4486,6 +4627,27 @@ def main():
 
         index=False,
     )
+
+    # Joint high-p fit: common fractions, period-specific calibrated responses.
+    joint_rng = np.random.default_rng(master_rng.integers(0, 2**32 - 1))
+    joint_high_p, joint_high_p_replicas = build_joint_high_p(
+        period_data_cache, period_models_cache, joint_rng
+    )
+    joint_high_p.to_csv(OUTDIR / "mixture_pion_selected_joint_high_p.csv", index=False)
+    joint_high_p_replicas.to_csv(OUTDIR / "mixture_pion_selected_joint_high_p_replicas.csv", index=False)
+
+    adopted_lookup = build_adopted_lookup(combined_lookup, joint_high_p)
+    adopted_lookup.to_csv(OUTDIR / "kaon_contamination_lookup_adopted_full_momentum.csv", index=False)
+
+    histogram_path = Path("../kinematic_distributions/output/kinematic_distributions_review/pion_momentum_histograms_by_analysis_bin.csv")
+    fold_adopted_contamination(adopted_lookup, histogram_path)
+
+    if len(joint_high_p):
+        print("\n[joint high-p] common-fraction fit using period-specific response calibrations:")
+        for _, r in joint_high_p.iterrows():
+            print(f"  {r.p_min_GeV:.2f}-{r.p_max_GeV:.2f} GeV: "
+                  f"N={int(r.N_total):6d}, fK={100*r.f_K:.2f}% "
+                  f"+/- {100*r.f_K_bootstrap_std:.2f}%")
 
 
     print(

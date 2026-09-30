@@ -94,13 +94,13 @@ CMAP = "turbo"
 #
 # Deliberately identical to the portable beta_pid_2d_fit output:
 #
-#     0.50--5.00 GeV in 0.25-GeV intervals.
+#     0.50--10.50 GeV in 0.25-GeV intervals.
 #
 # This lets the two CSVs be joined without interpolation.
 # =============================================================================
 
 PION_P_MIN = 0.50
-PION_P_MAX = 5.00
+PION_P_MAX = 10.50
 PION_P_WIDTH = 0.25
 
 
@@ -1431,7 +1431,7 @@ def write_pion_momentum_histograms(
                                     count
                                 ),
 
-                            "analysis_bin_period_events_0p5_to_5":
+                            "analysis_bin_period_events_0p5_to_10p5":
                                 total,
 
                             "fraction_of_analysis_bin_period":
@@ -1453,7 +1453,7 @@ def write_pion_momentum_histograms(
         "p_max_GeV",
         "p_center_GeV",
         "event_count",
-        "analysis_bin_period_events_0p5_to_5",
+        "analysis_bin_period_events_0p5_to_10p5",
         "fraction_of_analysis_bin_period",
     ]
 
@@ -1565,14 +1565,19 @@ def write_pion_momentum_histograms(
         )
 
 
+        n_gt5 = int(np.count_nonzero((momentum >= 5.0) & (momentum < PION_P_MAX)))
+        n_gt6 = int(np.count_nonzero((momentum >= 6.0) & (momentum < PION_P_MAX)))
+        n_gt7 = int(np.count_nonzero((momentum >= 7.0) & (momentum < PION_P_MAX)))
+        n_overflow = int(np.count_nonzero(momentum >= PION_P_MAX))
+
         print(
             f"  bin {analysis_bin:2d}: "
             f"N(all p)={n_total:7d}, "
-            f"N(0.5-5)={n_pid_range:7d}, "
-            f"N(1.5-5)={n_above_15:7d}, "
-            f"fraction p>=1.5="
-            f"{100.0 * fraction_above_15:6.2f}%",
-
+            f"N(0.5-10.5)={n_pid_range:7d}, "
+            f"p>5={100.0*n_gt5/max(n_total,1):5.2f}%, "
+            f"p>6={100.0*n_gt6/max(n_total,1):5.2f}%, "
+            f"p>7={100.0*n_gt7/max(n_total,1):5.2f}%, "
+            f"p>=10.5={n_overflow:5d}",
             flush=True,
         )
 
