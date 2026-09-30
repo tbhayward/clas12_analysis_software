@@ -7538,7 +7538,7 @@ def _diagnostic_period_fit_worker(task: dict[str, Any]) -> dict[str, Any]:
     # endif
     bin_number = int(task["bin_number"])
     period = str(task["period"])
-    active_periods = None if period == COMBINED_PERIOD_KEY else (period,)
+    active_periods = PERIODS if period == COMBINED_PERIOD_KEY else (period,)
     parameter = task.get("profile_parameter")
     points = int(task.get("profile_points", 21))
     fit = fit_one_variant(
