@@ -31,7 +31,7 @@ def parse_args():
         type=Path,
         default=here / "output" / "pi0_gk_stage3" / "partons_gk" /
                 "production_grid" / "gk_pi0_shared_physical_structure_functions.csv",
-        help="Validated PARTONS/GK physical structure-function grid.",
+        help="Raw PARTONS/GK physical structure-function grid; Stage-3 exclusions are applied before bridging.",
     )
     p.add_argument(
         "--stage3",
@@ -64,6 +64,24 @@ def main():
         raise FileNotFoundError(f"Validated GK grid not found: {grid}")
 
     d = pd.read_csv(grid)
+
+    # Apply the authoritative Stage-3 validated-model selection.  The raw
+    # physical GK grid is intentionally immutable and may contain points that
+    # Stage 3 rejected (e.g. non-positive sigma_T or unavailable kinematics).
+    exclusions_file = stage3 / "tables" / "00_gk_model_exclusions.csv"
+    if not exclusions_file.exists():
+        raise FileNotFoundError(
+            f"Stage-3 exclusion table not found: {exclusions_file}\n"
+            "Run prepare_pi0_gk_stage3_projection.py first so this bridge uses "
+            "the same validated point set as the Stage-3 projection."
+        )
+    exclusions = pd.read_csv(exclusions_file)
+    if "point_id" not in exclusions.columns:
+        raise RuntimeError(f"{exclusions_file} is missing required column: point_id")
+    excluded_ids = set(exclusions["point_id"].dropna().astype(str))
+    n_raw = len(d)
+    d = d.loc[~d["point_id"].astype(str).isin(excluded_ids)].copy()
+    n_excluded_present = n_raw - len(d)
 
     required = [
         "point_id",
@@ -136,6 +154,9 @@ def main():
 
     print("[GK -> Rosenbluth projection bridge]")
     print(f"  input physical grid : {grid}")
+    print(f"  Stage-3 exclusions  : {exclusions_file}")
+    print(f"  raw shared points   : {n_raw}")
+    print(f"  excluded here       : {n_excluded_present}")
     print(f"  valid shared points : {len(out)}")
     print(f"  output projection   : {outfile}")
     print("  units               : nb/GeV^2")
