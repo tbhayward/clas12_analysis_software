@@ -239,6 +239,8 @@ except ImportError as exc:
 # Fixed analysis definitions
 # =============================================================================
 
+DIS_W_MIN_GEV = 2.0
+
 PERIODS: tuple[str, ...] = ("su22", "fa22", "sp23")
 PERIOD_LABELS: dict[str, str] = {
     "su22": "Su22",
@@ -1896,11 +1898,17 @@ def build_event_cache(
                     & np.isfinite(dep_v)
                     & np.isfinite(dep_w)
                 )
+                # Re-impose the DIS W cut on the kinematics stored in the
+                # final analysis trees.  These values include the established
+                # momentum corrections, so this explicitly guarantees W > 2
+                # GeV after correction rather than relying on the upstream
+                # pre-correction event selection.
                 base = (
                     finite
                     & active_run
                     & np.isin(helicity, (-1, 1))
                     & (bin_number >= 1)
+                    & (w > DIS_W_MIN_GEV)
                     & (dep_a > 0.0)
                 )
 
@@ -2593,6 +2601,9 @@ def make_bin_nll(
             )
             for period in PERIODS
         },
+        # Publication-facing target-axis kinematic quantity.  Tabulate
+        # <sin(theta_gamma)> directly rather than converting the sample to a
+        # mean theta_gamma.
         "mean_sin_theta_gamma": float(np.mean(sin_theta)),
         "rms_sin_theta_gamma": float(np.std(sin_theta, ddof=1))
         if sin_theta.size > 1 else 0.0,
