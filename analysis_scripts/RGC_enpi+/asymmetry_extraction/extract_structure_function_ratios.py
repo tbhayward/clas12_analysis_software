@@ -3316,6 +3316,10 @@ def period_preflight_worker(task: dict[str, Any]) -> dict[str, Any]:
     bin_number = int(task["bin_number"])
     period = str(task["period"])
     nominal = task["nominal"]
+    # This worker diagnoses a single run period at a time.  The period-only
+    # fit workers pass ``active_periods=(period,)`` explicitly; mirror that
+    # here rather than referring to an undefined outer-scope variable.
+    active_periods = (period,)
     nll, metadata = make_bin_nll(
         _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
         bin_number, "nominal", active_periods=active_periods,
@@ -8539,6 +8543,278 @@ def run_clas6_cross_check(args, workers):
     return 0
 
 
+
+# -----------------------------------------------------------------------------
+# Diagnostic: unbinned MLE versus 12-bin-in-phi chi2 extraction
+# -----------------------------------------------------------------------------
+
+MLE_CHI2_PARAMETERS: tuple[str, ...] = ("lu1", "ul1", "ul2", "ll0", "ll1")
+MLE_CHI2_PHI_BINS = 12
+
+
+def _binned_phi_chi2_fit(
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    bin_number: int,
+) -> dict[str, Any]:
+    """Fit the five polarized amplitudes to 12 charge-normalized phi bins.
+
+    The unpolarized cos(phi) and cos(2phi) amplitudes are fixed to zero.  For
+    each run period and phi bin a free spin-independent normalization is
+    profiled analytically, so acceptance and the unpolarized phi shape are not
+    fitted as physics amplitudes.  The period/bin dilution factors are Gaussian
+    constrained nuisances, exactly paralleling their statistical treatment in
+    the nominal MLE.
+    """
+    phi_edges = np.linspace(0.0, 2.0 * math.pi, MLE_CHI2_PHI_BINS + 1)
+    rows: list[dict[str, float]] = []
+
+    for period in PERIODS:
+        mask = (
+            (events["bin_number"] == bin_number)
+            & (events["period_index"] == PERIOD_INDEX[period])
+        )
+        phi = events["phi"][mask].astype(float, copy=False)
+        runnum = events["runnum"][mask].astype(np.int32, copy=False)
+        helicity = events["helicity"][mask].astype(np.int8, copy=False)
+        state = run_states[period]
+        lookup = {int(run): i for i, run in enumerate(state["run"])}
+        event_state = np.asarray([lookup[int(run)] for run in runnum], dtype=np.int32)
+        target_sign = np.sign(state["pt"][event_state]).astype(np.int8)
+
+        dep_arrays = {
+            "r_b": events["rB"][mask].astype(float, copy=False),
+            "r_c": events["rC"][mask].astype(float, copy=False),
+            "r_v": events["rV"][mask].astype(float, copy=False),
+            "r_w": events["rW"][mask].astype(float, copy=False),
+        }
+        phi_index = np.searchsorted(phi_edges, phi, side="right") - 1
+        phi_index = np.clip(phi_index, 0, MLE_CHI2_PHI_BINS - 1)
+
+        for j in range(MLE_CHI2_PHI_BINS):
+            in_phi = phi_index == j
+            if not np.any(in_phi):
+                continue
+            # endif
+            phi_mean = float(np.angle(np.mean(np.exp(1j * phi[in_phi]))) % (2.0 * math.pi))
+            dep_mean = {name: float(np.mean(values[in_phi])) for name, values in dep_arrays.items()}
+
+            for sgn in (-1, 1):
+                run_mask = np.sign(state["pt"]) == sgn
+                for h in (-1, 1):
+                    charges = state["q_plus"] if h > 0 else state["q_minus"]
+                    charge = float(np.sum(charges[run_mask]))
+                    selected = in_phi & (target_sign == sgn) & (helicity == h)
+                    count = int(np.count_nonzero(selected))
+                    if charge <= 0.0 or count <= 0:
+                        continue
+                    # endif
+                    # Charge-weighted polarization is the appropriate effective
+                    # polarization for this charge-normalized spin-state yield.
+                    qsel = charges[run_mask]
+                    ptsel = state["pt"][run_mask]
+                    pt_eff = float(np.sum(qsel * ptsel) / np.sum(qsel))
+                    rows.append({
+                        "period": period,
+                        "phi_bin": float(j),
+                        "phi": phi_mean,
+                        "h": float(h),
+                        "pt": pt_eff,
+                        "yield": float(count / charge),
+                        "error": float(math.sqrt(count) / charge),
+                        **dep_mean,
+                    })
+                # endfor
+            # endfor
+        # endfor
+    # endfor
+
+    if not rows:
+        raise RuntimeError(f"No binned chi2 data for analysis bin {bin_number}.")
+    # endif
+
+    frame = pd.DataFrame(rows)
+    nuisance_names = [f"f_{period}" for period in PERIODS]
+    names = list(MLE_CHI2_PARAMETERS) + nuisance_names
+    starts = [0.0] * len(MLE_CHI2_PARAMETERS) + [
+        dilution_records[(period, bin_number)].value for period in PERIODS
+    ]
+
+    def objective(*values: float) -> float:
+        pars = dict(zip(names, values))
+        total = 0.0
+        # Profile one arbitrary spin-independent normalization independently in
+        # every period/phi bin.  This makes the comparison insensitive to the
+        # unpolarized phi distribution while retaining the polarized dependence.
+        for (period, phi_bin), group in frame.groupby(["period", "phi_bin"], sort=False):
+            f = float(pars[f"f_{period}"])
+            phi_g = group["phi"].to_numpy(float)
+            h_g = group["h"].to_numpy(float)
+            pt_g = group["pt"].to_numpy(float)
+            factor = evaluate_cross_section_factor(
+                variant="nominal",
+                phi=phi_g,
+                r_b=group["r_b"].to_numpy(float),
+                r_c=group["r_c"].to_numpy(float),
+                r_v=group["r_v"].to_numpy(float),
+                r_w=group["r_w"].to_numpy(float),
+                sin_theta_gamma=np.zeros(len(group), dtype=float),
+                cos_theta_gamma=np.ones(len(group), dtype=float),
+                helicity=h_g,
+                beam_polarization=BEAM_POLARIZATION[period],
+                target_polarization=pt_g,
+                dilution=f,
+                transverse_scales=None,
+                u1=0.0, u2=0.0,
+                lu1=float(pars["lu1"]), ul1=float(pars["ul1"]),
+                ul2=float(pars["ul2"]), ll0=float(pars["ll0"]),
+                ll1=float(pars["ll1"]),
+            )
+            if np.any(~np.isfinite(factor)) or np.any(factor <= 0.0):
+                return 1.0e100
+            # endif
+            y = group["yield"].to_numpy(float)
+            err = group["error"].to_numpy(float)
+            weight = 1.0 / (err * err)
+            denominator = float(np.sum(weight * factor * factor))
+            if denominator <= 0.0:
+                return 1.0e100
+            # endif
+            norm = float(np.sum(weight * factor * y) / denominator)
+            residual = (y - norm * factor) / err
+            total += float(np.sum(residual * residual))
+        # endfor
+
+        # Statistical dilution-factor uncertainty: each period/bin dilution is
+        # a Gaussian-constrained nuisance, just as in the unbinned likelihood.
+        for period in PERIODS:
+            record = dilution_records[(period, bin_number)]
+            f = float(pars[f"f_{period}"])
+            if f <= 0.0:
+                return 1.0e100
+            # endif
+            if record.stat_uncertainty > 0.0:
+                total += ((f - record.value) / record.stat_uncertainty) ** 2
+            # endif
+        # endfor
+        return total
+
+    m = Minuit(objective, *starts, name=names)
+    m.errordef = Minuit.LEAST_SQUARES
+    m.print_level = 0
+    for name in MLE_CHI2_PARAMETERS:
+        m.limits[name] = PARAMETER_LIMITS[name]
+    # endfor
+    for period in PERIODS:
+        name = f"f_{period}"
+        record = dilution_records[(period, bin_number)]
+        width = max(8.0 * record.stat_uncertainty, 0.20 * record.value, 0.02)
+        m.limits[name] = (max(1.0e-6, record.value - width), record.value + width)
+        if record.stat_uncertainty == 0.0:
+            m.fixed[name] = True
+        # endif
+    # endfor
+    m.migrad()
+    m.hesse()
+
+    # There are four spin-state yields per period/phi bin and one profiled
+    # normalization for each such group. Gaussian nuisance constraints add one
+    # datum and one nuisance parameter apiece, so they cancel in the nominal ndf.
+    groups = int(frame.groupby(["period", "phi_bin"]).ngroups)
+    n_data = int(len(frame))
+    ndf = max(0, n_data - groups - len(MLE_CHI2_PARAMETERS))
+    return {
+        "bin_number": int(bin_number),
+        "values": {name: float(m.values[name]) for name in MLE_CHI2_PARAMETERS},
+        "errors": {name: float(m.errors[name]) for name in MLE_CHI2_PARAMETERS},
+        "dilution_values": {period: float(m.values[f"f_{period}"]) for period in PERIODS},
+        "chi2": float(m.fval),
+        "ndf": int(ndf),
+        "chi2_per_ndf": float(m.fval / ndf) if ndf > 0 else math.nan,
+        "valid": bool(m.fmin.is_valid),
+        "number_of_state_yields": n_data,
+        "number_of_profiled_normalizations": groups,
+    }
+
+
+def run_mle_vs_binned_chi2_diagnostic(
+    *, cache_path: Path, run_info_path: Path, dilution_json_path: Path,
+    output_dir: Path,
+) -> None:
+    """Compare polarized-only unbinned MLE and 12-bin phi chi2 fits."""
+    print("[MLE-vs-chi2] START: u1=u2=0, 12 phi bins", flush=True)
+    out = output_dir / "diagnostics" / "mle_vs_binned_chi2"
+    plots = out / "plots"
+    tables = out / "tables"
+    ensure_directory(plots)
+    ensure_directory(tables)
+    events = load_event_cache(cache_path)
+    run_states = run_state_arrays(parse_run_info_csv(run_info_path))
+    dilution_records = load_dilution_factors(dilution_json_path, cut_label="nominal")
+
+    rows: list[dict[str, Any]] = []
+    for bin_number in range(1, NUMBER_OF_BINS + 1):
+        mle = fit_one_variant(
+            events, run_states, dilution_records, bin_number, "nominal",
+            fixed_physics_parameters={"u1": 0.0, "u2": 0.0},
+        )
+        chi2 = _binned_phi_chi2_fit(
+            events, run_states, dilution_records, bin_number,
+        )
+        row: dict[str, Any] = {
+            "bin_number": bin_number,
+            "mle_valid": mle["valid"], "chi2_valid": chi2["valid"],
+            "chi2": chi2["chi2"], "ndf": chi2["ndf"],
+            "chi2_per_ndf": chi2["chi2_per_ndf"],
+        }
+        for parameter in MLE_CHI2_PARAMETERS:
+            row[f"mle_{parameter}"] = mle["values"][parameter]
+            row[f"mle_{parameter}_stat"] = mle["errors"][parameter]
+            row[f"chi2_{parameter}"] = chi2["values"][parameter]
+            row[f"chi2_{parameter}_stat"] = chi2["errors"][parameter]
+        # endfor
+        rows.append(row)
+        print(
+            f"[MLE-vs-chi2] bin {bin_number:02d}/24 | "
+            f"chi2/ndf={chi2['chi2_per_ndf']:.3f} | "
+            f"MLE valid={mle['valid']} | chi2 valid={chi2['valid']}",
+            flush=True,
+        )
+    # endfor
+
+    result = pd.DataFrame(rows)
+    result.to_csv(tables / "mle_vs_12bin_phi_chi2.csv", index=False)
+    x = result["bin_number"].to_numpy(int)
+    for parameter in MLE_CHI2_PARAMETERS:
+        fig, ax = plt.subplots(figsize=(10.5, 5.5))
+        ax.errorbar(
+            x - 0.08, result[f"mle_{parameter}"],
+            yerr=result[f"mle_{parameter}_stat"], fmt="o", capsize=3,
+            color="red", label="Unbinned MLE",
+        )
+        ax.errorbar(
+            x + 0.08, result[f"chi2_{parameter}"],
+            yerr=result[f"chi2_{parameter}_stat"], fmt="s", capsize=3,
+            color="blue", label=r"12-bin $\chi^2$ fit",
+        )
+        ax.axhline(0.0, lw=0.8, color="black")
+        ax.set_xlabel("Analysis bin")
+        ax.set_ylabel(PARAMETER_LABELS[parameter])
+        ax.set_xticks(x)
+        limits = PARAMETER_Y_LIMITS.get(parameter)
+        if limits is not None:
+            ax.set_ylim(*limits)
+        # endif
+        ax.legend(frameon=False)
+        fig.tight_layout()
+        fig.savefig(plots / f"mle_vs_chi2_{parameter}.png", dpi=200)
+        plt.close(fig)
+    # endfor
+    print(f"[MLE-vs-chi2] wrote {tables / 'mle_vs_12bin_phi_chi2.csv'}", flush=True)
+    print(f"[MLE-vs-chi2] wrote five comparison plots to {plots}", flush=True)
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -8891,6 +9167,17 @@ def main() -> int:
 
     target_axis_study = write_target_axis_study_products(
         nominal_result["frame"], diagnostics_dir / "target_axis"
+    )
+
+    # Collaboration-facing estimator cross-check: compare the same five
+    # polarized amplitudes with u1=u2 fixed to zero in an unbinned MLE and a
+    # conventional 12-bin-in-phi chi2 fit. This diagnostic is nominal-only and
+    # does not participate in any systematic or alternative-method studies.
+    run_mle_vs_binned_chi2_diagnostic(
+        cache_path=nominal_cache,
+        run_info_path=args.run_info_csv.expanduser().resolve(),
+        dilution_json_path=nominal_dilution,
+        output_dir=root,
     )
 
     isr_result = None
