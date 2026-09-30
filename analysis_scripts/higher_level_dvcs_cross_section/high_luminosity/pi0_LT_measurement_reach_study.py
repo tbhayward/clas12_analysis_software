@@ -78,6 +78,9 @@ def args():
     p.add_argument("--internal-covariance", type=Path,
         default=here/"output"/"pi0_gk_stage2"/"tables"/"02_within_cell_phi_correlations.npz",
         help="Stage-2 within-cell phi correlation matrices for INTERNAL data mode.")
+    p.add_argument("--internal-exclusions", type=Path,
+        default=here/"output"/"pi0_gk_stage3"/"tables"/"00_gk_model_exclusions.csv",
+        help="Stage-3 model-validity exclusions applied before INTERNAL measured-data extraction.")
     p.add_argument("--min-delta-epsilon", type=float, default=0.05,
         help="Minimum absolute Rosenbluth epsilon lever arm.")
     p.add_argument("--relative-normalization-uncertainty", type=float, default=0.03,
@@ -724,15 +727,25 @@ def _epsilon_from_q2_xb_E(Q2, xB, E):
 
 
 def build_internal_data_extraction(common, rga_file, rgk_file, corrections_file, covariance_file,
-                                   min_delta_epsilon=0.05, relative_norm_unc=0.03):
+                                   exclusions_file, min_delta_epsilon=0.05, relative_norm_unc=0.03):
     """INTERNAL ONLY: bin-center measured data to shared points, then perform covariance-aware L/T separation."""
     rga=_standardize_internal_cross_sections(rga_file,"RGA")
     rgk=_standardize_internal_cross_sections(rgk_file,"RGK")
     corr=pd.read_csv(corrections_file)
     covz=np.load(covariance_file,allow_pickle=False)
+    excluded_ids=set()
+    if exclusions_file.exists():
+        ex=pd.read_csv(exclusions_file)
+        if "point_id" not in ex.columns:
+            raise RuntimeError(f"Exclusion table has no point_id column: {exclusions_file}")
+        excluded_ids=set(ex.point_id.dropna().astype(str))
     rows=[]
+    n_skipped_excluded=0
     for n,r in enumerate(common.itertuples(index=False)):
         pid=f"R{n:04d}"
+        if pid in excluded_ids:
+            n_skipped_excluded+=1
+            continue
         q2=float(r.Q2_common_GeV2); xb=float(r.xB_common); mt=float(r.minus_t_common_GeV2)
         ir=(int(r.iq2_rga),int(r.ixb_rga),int(r.it_rga)); ik=(int(r.iq2_rgk),int(r.ixb_rgk),int(r.it_rgk))
         ga=rga[(rga.iq2==ir[0])&(rga.ixb==ir[1])&(rga.it==ir[2])].copy()
@@ -785,6 +798,10 @@ def build_internal_data_extraction(common, rga_file, rgk_file, corrections_file,
             sigma_TT=TT,delta_sigma_TT=dTT,R_L_over_T=R,delta_R_L_over_T=dR,
             chi2=chi2,ndf=ndf,chi2_ndf=chi2/ndf,condition_number=cond,
             condition_number_rga=condr,condition_number_rgk=condk,bin_centering_applied=True,covariance_applied=True))
+    print("[INTERNAL measured-data model-validity selection]")
+    print(f"  Stage-2 candidate points : {len(common)}")
+    print(f"  excluded before fit      : {n_skipped_excluded}")
+    print(f"  extracted points         : {len(rows)}")
     return pd.DataFrame(rows)
 
 
@@ -1423,6 +1440,7 @@ def run_internal_data_mode(a):
     common = pd.read_csv(a.stage2.resolve()/"tables"/"03_common_rosenbluth_model_points.csv")
     data = build_internal_data_extraction(common, a.internal_rga.resolve(), a.internal_rgk.resolve(),
                                          a.internal_corrections.resolve(), a.internal_covariance.resolve(),
+                                         a.internal_exclusions.resolve(),
                                          a.min_delta_epsilon, a.relative_normalization_uncertainty)
     data.to_csv(tabs/"INTERNAL_01_measured_LT_by_point.csv", index=False)
     plot_internal_LT_vs_Q2(
