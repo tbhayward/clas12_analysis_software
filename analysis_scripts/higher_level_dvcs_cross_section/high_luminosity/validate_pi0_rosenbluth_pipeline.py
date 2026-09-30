@@ -40,8 +40,8 @@ def main():
         excluded_ids=set(ex.point_id.dropna().astype(str))
     g=g[~g.point_id.astype(str).isin(excluded_ids)].copy()
     n_excluded=n_raw-len(g)
-    cols=['dsigma_T_dt_nb_per_GeV2','dsigma_L_dt_nb_per_GeV2','dsigma_TT_dt_nb_per_GeV2','dsigma_LT_dt_nb_per_GeV2']
-    if not np.isfinite(g[cols].to_numpy(float)).all():
+    if not np.isfinite(g[['dsigma_T_dt_nb_per_GeV2','dsigma_L_dt_nb_per_GeV2',
+                          'dsigma_TT_dt_nb_per_GeV2','dsigma_LT_dt_nb_per_GeV2']].to_numpy(float)).all():
         raise RuntimeError('Non-finite structure function in validated GK closure grid')
     if not (g.dsigma_T_dt_nb_per_GeV2.astype(float)>0).all():
         bad=g.loc[g.dsigma_T_dt_nb_per_GeV2.astype(float)<=0,'point_id'].astype(str).tolist()
@@ -55,8 +55,10 @@ def main():
         U={}
         for camp,E,eps in [('rga',10.604,float(r.epsilon_rga)),('rgk',6.535,float(r.epsilon_rgk))]:
             cc=c[(c.point_id.astype(str)==str(r.point_id))&(c.campaign.astype(str).str.lower()==camp)].sort_values('phi_deg')
-            if len(cc)<4: raise RuntimeError(f'{r.point_id}/{camp}: insufficient correction rows')
+            expected_phi=np.array([0.0,90.0,180.0])
             ph=cc.phi_deg.to_numpy(float)
+            if len(cc)!=3 or not np.allclose(ph,expected_phi,rtol=0.0,atol=1e-9):
+                raise RuntimeError(f'{r.point_id}/{camp}: expected correction rows at phi = 0, 90, 180 deg; got {ph.tolist()}')
             shared=(float(r.dsigma_T_dt_nb_per_GeV2)+eps*float(r.dsigma_L_dt_nb_per_GeV2)
                     +eps*np.cos(2*np.deg2rad(ph))*float(r.dsigma_TT_dt_nb_per_GeV2)
                     +np.sqrt(2*eps*(1+eps))*np.cos(np.deg2rad(ph))*float(r.dsigma_LT_dt_nb_per_GeV2))
