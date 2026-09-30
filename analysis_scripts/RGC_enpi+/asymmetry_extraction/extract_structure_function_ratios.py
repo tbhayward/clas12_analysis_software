@@ -8012,7 +8012,37 @@ def _fit_clas6_bin(data, reflect_phi=False):
         "n_ul_points": ul[5], "n_ll_points": ll[5],
     }
 
-def run_clas6_cross_check(args):
+
+
+def initialize_clas6_cross_check_worker(
+    cache_path_text: str,
+    run_state_payload: dict[str, dict[str, list[float] | list[int]]],
+    dilution_payload: dict[str, dict[str, dict[str, float | int]]],
+) -> None:
+    """Load the nominal cache once per CLAS6 worker and apply common W/Q2 cuts."""
+    initialize_fit_worker(cache_path_text, run_state_payload, dilution_payload)
+    global _WORKER_EVENTS
+    common = (
+        (_WORKER_EVENTS["W"] > CLAS6_W_MIN)
+        & (_WORKER_EVENTS["W"] < CLAS6_W_MAX)
+        & (_WORKER_EVENTS["Q2"] > CLAS6_Q2_MIN)
+        & (_WORKER_EVENTS["Q2"] < CLAS6_Q2_MAX)
+    )
+    _WORKER_EVENTS = {key: np.asarray(value)[common] for key, value in _WORKER_EVENTS.items()}
+
+
+def _clas6_rgc_fit_worker(bin_number: int) -> tuple[int, dict[str, Any]]:
+    """Fit one RGC bin for the statistical-only CLAS6 cross-check."""
+    if _WORKER_EVENTS is None or _WORKER_RUN_STATES is None or _WORKER_DILUTION_RECORDS is None:
+        raise RuntimeError("CLAS6 cross-check worker was not initialized.")
+    # endif
+    result = fit_one_variant(
+        _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
+        int(bin_number), "nominal",
+    )
+    return int(bin_number), result
+
+def run_clas6_cross_check(args, workers):
     """Statistical-only CLAS6 EG1b comparison in the common RGC 24-bin scheme."""
     out = args.output_dir.expanduser().resolve() / "clas6_cross_check"
     tables, plots = out / "tables", out / "plots"
@@ -8064,17 +8094,59 @@ def run_clas6_cross_check(args):
     )
     dilution_records = load_dilution_factors(dilution_path, "nominal")
 
-    rows = []
+    eligible_bins = []
     for bin_number in range(1, NUMBER_OF_BINS + 1):
         n_rgc = int(np.count_nonzero(cut_events["bin_number"] == bin_number))
         c6 = clas6[clas6["analysis_bin"] == bin_number]
-        if n_rgc == 0 or c6.empty:
-            continue
+        if n_rgc > 0 and not c6.empty:
+            eligible_bins.append(bin_number)
+            print(
+                f"[CLAS6 cross-check] queue bin {bin_number:02d}: "
+                f"RGC={n_rgc:,}, CLAS6 points={len(c6)}", flush=True,
+            )
         # endif
-        print(f"[CLAS6 cross-check] bin {bin_number:02d}: RGC={n_rgc:,}, CLAS6 points={len(c6)}", flush=True)
-        rgc = fit_one_variant(
-            cut_events, run_states, dilution_records, bin_number, "nominal",
-        )
+    # endfor
+
+    run_state_payload = {
+        period: {key: np.asarray(values).tolist() for key, values in state.items()}
+        for period, state in run_states.items()
+    }
+    dilution_payload = {
+        period: {
+            str(bin_number): {
+                "x_index": record.x_index, "t_index": record.t_index,
+                "value": record.value, "stat_uncertainty": record.stat_uncertainty,
+            }
+            for (record_period, bin_number), record in dilution_records.items()
+            if record_period == period
+        }
+        for period in PERIODS
+    }
+    rgc_fits = {}
+    n_workers = max(1, min(int(workers), 8, len(eligible_bins)))
+    print(f"[CLAS6 cross-check] fitting {len(eligible_bins)} bins with {n_workers} workers", flush=True)
+    mp_context = mp.get_context("spawn")
+    with ProcessPoolExecutor(
+        max_workers=n_workers, mp_context=mp_context,
+        initializer=initialize_clas6_cross_check_worker,
+        initargs=(str(cache_path), run_state_payload, dilution_payload),
+    ) as executor:
+        futures = {executor.submit(_clas6_rgc_fit_worker, b): b for b in eligible_bins}
+        for completed, future in enumerate(as_completed(futures), start=1):
+            bin_number, fit = future.result()
+            rgc_fits[bin_number] = fit
+            print(
+                f"[CLAS6 cross-check] completed bin {bin_number:02d} "
+                f"({completed}/{len(eligible_bins)})", flush=True,
+            )
+        # endfor
+    # endwith
+
+    rows = []
+    for bin_number in eligible_bins:
+        n_rgc = int(np.count_nonzero(cut_events["bin_number"] == bin_number))
+        c6 = clas6[clas6["analysis_bin"] == bin_number]
+        rgc = rgc_fits[bin_number]
         c6fit = _fit_clas6_bin(c6, reflect_phi=False)
         c6fit_reflected = _fit_clas6_bin(c6, reflect_phi=True)
         if c6fit is None or c6fit_reflected is None:
@@ -8141,6 +8213,15 @@ def run_clas6_cross_check(args):
     summary_frame.to_csv(tables / "clas6_rgc_statistical_summary.csv", index=False)
     print("\n[CLAS6 cross-check] statistical-only summary", flush=True)
     print(summary_frame.to_string(index=False), flush=True)
+    print(
+        "\n[CLAS6 cross-check] phi-convention diagnostic: RGC TwoParticles.java uses "
+        "qhat x e'_hat and qhat x PhT, with the sign from (e' x PhT).qhat. "
+        "Bosted defines the planes with q x e_beam and q x p_pi. Because "
+        "q x e_beam = q x e' for q=e_beam-e', incident-vs-scattered electron "
+        "does not itself reverse the plane normal. The reflected fit is therefore only a "
+        "test of the remaining signed-angle/axis-orientation convention.",
+        flush=True,
+    )
 
     if not args.skip_plots and not frame.empty:
         labels = {
@@ -8156,8 +8237,13 @@ def run_clas6_cross_check(args):
             # endif
             x = np.arange(len(valid))
             fig, ax = plt.subplots(figsize=(10.5, 5.5))
-            ax.errorbar(x - 0.08, valid[f"{parameter}_clas6"], yerr=valid[f"{parameter}_clas6_stat"], fmt="o", capsize=3, label="CLAS6 EG1b")
-            ax.errorbar(x + 0.08, valid[f"{parameter}_rgc"], yerr=valid[f"{parameter}_rgc_stat"], fmt="s", capsize=3, label="RGC")
+            ax.errorbar(x - 0.12, valid[f"{parameter}_clas6"], yerr=valid[f"{parameter}_clas6_stat"], fmt="o", capsize=3, label="CLAS6 EG1b (as tabulated)")
+            ax.errorbar(
+                x, valid[f"{parameter}_clas6_phi_reflected"],
+                yerr=valid[f"{parameter}_clas6_phi_reflected_stat"],
+                fmt="^", capsize=3, label=r"CLAS6 diagnostic $\phi\to2\pi-\phi$",
+            )
+            ax.errorbar(x + 0.12, valid[f"{parameter}_rgc"], yerr=valid[f"{parameter}_rgc_stat"], fmt="s", capsize=3, label="RGC")
             ax.axhline(0.0, lw=0.8)
             ax.set_xticks(x)
             ax.set_xticklabels(valid["bin_number"].astype(int))
@@ -8177,7 +8263,14 @@ def run_clas6_cross_check(args):
         "phi_convention_study": (
             "Both the CLAS6 phi values as tabulated and the diagnostic transformation "
             "phi -> 2*pi-phi are fit. The latter flips sine harmonics and leaves cosine "
-            "harmonics unchanged; it is a convention diagnostic, not a correction to the data."
+            "harmonics unchanged; it is a convention diagnostic, not a correction to the data. "
+            "The RGC phi convention is the signed Trento-style angle implemented in TwoParticles.java: "
+            "the lepton-plane normal is qhat x e'_hat, the hadron-plane normal is qhat x PhT, "
+            "and the sign is fixed by (e' x PhT).qhat. Bosted et al. define phi* as the angle "
+            "between (q x e_beam) and (q x p_pi) and follow the MAID convention. Since "
+            "q x e_beam = q x e' for q=e_beam-e', the plane normals themselves are equivalent; "
+            "any observed phi -> 2*pi-phi relation must therefore come from the signed-angle/axis "
+            "orientation convention, not merely from using the incident rather than scattered electron."
         ),
         "clas6_data": str(clas6_path),
         "rgc_cache": str(cache_path),
@@ -8309,16 +8402,16 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_argument_parser().parse_args()
+    workers = max(
+        1,
+        min(int(args.workers), MAXIMUM_WORKERS, 8, os.cpu_count() or 1, NUMBER_OF_BINS),
+    )
     if args.clas6_cross_check:
-        return run_clas6_cross_check(args)
+        return run_clas6_cross_check(args, workers)
     # endif
     if args.rga_cross_check:
         return run_rga_cross_check(args)
     # endif
-    workers = max(
-        1,
-        min(int(args.workers), MAXIMUM_WORKERS, os.cpu_count() or 1, NUMBER_OF_BINS),
-    )
     root = args.output_dir.expanduser().resolve()
     if args.period_stability_diagnostics:
         return run_period_stability_diagnostics(args, root, workers)
