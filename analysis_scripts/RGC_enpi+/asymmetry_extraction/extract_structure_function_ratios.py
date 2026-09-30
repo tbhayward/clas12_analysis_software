@@ -248,10 +248,10 @@ PERIOD_LABELS: dict[str, str] = {
 
 PERIOD_COLORS: dict[str, str] = {
     "su22": "tab:orange",
-    "fa22": "tab:green",
-    "sp23": "tab:red",
+    "fa22": "tab:blue",
+    "sp23": "tab:green",
 }
-COMBINED_COLOR = "tab:blue"
+COMBINED_COLOR = "black"
 
 VARIANT_LABELS: dict[str, str] = {
     "nominal": r"Nominal lab frame: $P_{\parallel}=P_t$",
@@ -7505,6 +7505,338 @@ def run_xb_integrated_tprime_zero_uu_study(
 
 
 
+
+# =============================================================================
+# Targeted run-period stability diagnostics
+# =============================================================================
+
+PERIOD_STABILITY_DIAGNOSTIC_BINS: tuple[int, ...] = (4, 6, 7, 14, 17, 18, 19, 21)
+PERIOD_STABILITY_PROFILE_PARAMETERS: dict[int, str] = {
+    7: "ll0",
+    14: "ll1",
+    17: "ll1",
+    19: "ll1",
+    21: "ll1",
+}
+
+
+def parse_bin_list(value: str) -> tuple[int, ...]:
+    bins = tuple(sorted({int(item.strip()) for item in value.split(",") if item.strip()}))
+    if not bins or any(bin_number < 1 or bin_number > NUMBER_OF_BINS for bin_number in bins):
+        raise argparse.ArgumentTypeError(f"Bins must be comma-separated integers in 1--{NUMBER_OF_BINS}.")
+    # endif
+    return bins
+
+
+def _diagnostic_period_fit_worker(task: dict[str, Any]) -> dict[str, Any]:
+    """Fit one period/bin and optionally profile one physics parameter."""
+    if (_WORKER_EVENTS is None or _WORKER_RUN_STATES is None
+            or _WORKER_DILUTION_RECORDS is None):
+        raise RuntimeError("Diagnostic worker was not initialized.")
+    # endif
+    bin_number = int(task["bin_number"])
+    period = str(task["period"])
+    parameter = task.get("profile_parameter")
+    points = int(task.get("profile_points", 21))
+    fit = fit_one_variant(
+        _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
+        bin_number, "nominal", active_periods=(period,),
+    )
+    result: dict[str, Any] = {
+        "bin_number": bin_number, "period": period, "fit": fit,
+        "profile_parameter": parameter, "profile": None,
+    }
+    if parameter is not None and fit["valid"]:
+        center = float(fit["values"][parameter])
+        sigma = float(fit["errors"][parameter])
+        low_limit, high_limit = PARAMETER_LIMITS[parameter]
+        half_width = max(4.0 * sigma, 0.20)
+        low = max(low_limit, center - half_width)
+        high = min(high_limit, center + half_width)
+        grid = np.linspace(low, high, points)
+        profile_nll: list[float] = []
+        start = dict(fit["values"])
+        for value in grid:
+            profiled = fit_one_variant(
+                _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
+                bin_number, "nominal", active_periods=(period,),
+                initial_values=start,
+                fixed_physics_parameters={parameter: float(value)},
+            )
+            profile_nll.append(float(profiled["minimum_nll"]))
+            if profiled["valid"]:
+                start = dict(profiled["values"])
+            # endif
+        # endfor
+        minimum = min(profile_nll)
+        result["profile"] = {
+            "grid": grid.tolist(),
+            "two_delta_nll": [2.0 * (value - minimum) for value in profile_nll],
+        }
+    # endif
+    return result
+
+
+def _charge_normalized_state_yields(
+    events: Mapping[str, np.ndarray], run_states: Mapping[str, Mapping[str, np.ndarray]],
+    bin_number: int, period: str, phi_edges: np.ndarray,
+) -> dict[str, Any]:
+    """Return raw charge-normalized phi yields for the four target/helicity states."""
+    period_mask = (
+        (events["bin_number"] == bin_number)
+        & (events["period_index"] == PERIOD_INDEX[period])
+    )
+    runnum = events["runnum"][period_mask].astype(np.int32, copy=False)
+    helicity = events["helicity"][period_mask].astype(np.int8, copy=False)
+    phi = events["phi"][period_mask].astype(np.float64, copy=False)
+    state = run_states[period]
+    lookup = {int(run): i for i, run in enumerate(state["run"])}
+    event_state = np.asarray([lookup[int(run)] for run in runnum], dtype=np.int32)
+    event_target_sign = np.sign(state["pt"][event_state]).astype(np.int8)
+    out: dict[str, Any] = {}
+    for target_sign in (-1, 1):
+        run_mask = np.sign(state["pt"]) == target_sign
+        for h in (-1, 1):
+            charge = float(np.sum((state["q_plus"] if h > 0 else state["q_minus"])[run_mask]))
+            selected = (event_target_sign == target_sign) & (helicity == h)
+            counts, _ = np.histogram(phi[selected], bins=phi_edges)
+            if charge > 0.0:
+                yields = counts.astype(float) / charge
+                errors = np.sqrt(counts.astype(float)) / charge
+            else:
+                yields = np.full(counts.shape, np.nan)
+                errors = np.full(counts.shape, np.nan)
+            # endif
+            out[f"t{target_sign:+d}_h{h:+d}"] = {
+                "charge": charge, "counts": counts.tolist(),
+                "yield": yields.tolist(), "error": errors.tolist(),
+            }
+        # endfor
+    # endfor
+    return out
+
+
+def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, workers: int) -> int:
+    """Run focused diagnostics for the largest period-stability excursions."""
+    nominal_dir = root / "period_stability"
+    cache_path = (
+        args.cache.expanduser().resolve() if args.cache
+        else nominal_dir / "cache/selected_events.npz"
+    )
+    if not cache_path.is_file():
+        raise FileNotFoundError(
+            f"Period-stability cache not found: {cache_path}. Run --period-stability-only first."
+        )
+    # endif
+    run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
+    run_states = run_state_arrays(run_records)
+    dilution_path = (
+        args.dilution_json.expanduser().resolve() if args.dilution_json
+        else find_default_dilution_json(args.dilution_dir.expanduser().resolve()).resolve()
+    )
+    dilution_records = load_dilution_factors(dilution_path, cut_label="nominal")
+    cuts = load_channel_cuts(args.cut_json.expanduser().resolve(), cut_label="nominal")
+    events = load_event_cache(cache_path)
+    bins = args.diagnostic_bins
+    diagnostic_dir = nominal_dir / "diagnostics" / "period_excursions"
+    plot_dir = diagnostic_dir / "plots"
+    ensure_directory(diagnostic_dir)
+    ensure_directory(plot_dir)
+
+    run_state_payload = {period: {key: value.tolist() for key, value in state.items()} for period, state in run_states.items()}
+    dilution_payload = {
+        period: {
+            str(bin_number): {
+                "x_index": record.x_index,
+                "t_index": record.t_index,
+                "value": record.value,
+                "stat_uncertainty": record.stat_uncertainty,
+            }
+            for (record_period, bin_number), record in dilution_records.items()
+            if record_period == period
+        }
+        for period in PERIODS
+    }
+    tasks = []
+    for bin_number in bins:
+        for period in PERIODS:
+            tasks.append({
+                "bin_number": bin_number, "period": period,
+                "profile_parameter": PERIOD_STABILITY_PROFILE_PARAMETERS.get(bin_number),
+                "profile_points": args.diagnostic_profile_points,
+            })
+        # endfor
+    # endfor
+    results = []
+    mp_context = mp.get_context("spawn")
+    with ProcessPoolExecutor(
+        max_workers=min(workers, len(tasks)), mp_context=mp_context,
+        initializer=initialize_fit_worker,
+        initargs=(str(cache_path), run_state_payload, dilution_payload),
+    ) as executor:
+        futures = [executor.submit(_diagnostic_period_fit_worker, task) for task in tasks]
+        for index, future in enumerate(as_completed(futures), start=1):
+            results.append(future.result())
+            print(f"[period diagnostics] completed {index}/{len(tasks)} period/bin tasks", flush=True)
+        # endfor
+    # endwith
+
+    by_key = {(item["bin_number"], item["period"]): item for item in results}
+    rows = []
+    phi_edges = np.linspace(0.0, 2.0 * math.pi, 13)
+    phi_centers = 0.5 * (phi_edges[:-1] + phi_edges[1:])
+    raw_yields: dict[str, Any] = {}
+    for bin_number in bins:
+        # Raw four-state charge-normalized yields: one canvas, three period panels.
+        fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.6), sharex=True)
+        for ax, period in zip(axes, PERIODS):
+            payload = _charge_normalized_state_yields(events, run_states, bin_number, period, phi_edges)
+            raw_yields[f"bin_{bin_number:02d}_{period}"] = payload
+            state_specs = (
+                (-1, -1, "o", r"$P_t<0,h=-1$"), (-1, 1, "s", r"$P_t<0,h=+1$"),
+                (1, -1, "^", r"$P_t>0,h=-1$"), (1, 1, "D", r"$P_t>0,h=+1$"),
+            )
+            for target_sign, h, marker, label in state_specs:
+                item = payload[f"t{target_sign:+d}_h{h:+d}"]
+                ax.errorbar(phi_centers, item["yield"], yerr=item["error"], fmt=marker, ms=3.5, capsize=2, label=label)
+            # endfor
+            ax.set_title(PERIOD_LABELS[period])
+            ax.set_xlabel(r"$\phi$ (rad)")
+            ax.grid(alpha=0.25)
+        # endfor
+        axes[0].set_ylabel("charge-normalized yield")
+        axes[-1].legend(fontsize=8, frameon=False)
+        fig.suptitle(f"Bin {bin_number}: raw target/helicity-state yields")
+        fig.tight_layout(rect=(0, 0, 1, 0.94))
+        fig.savefig(plot_dir / f"bin_{bin_number:02d}_raw_state_yields.png", dpi=180)
+        plt.close(fig)
+
+        # Correlation matrices for the three independent period fits.
+        fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.6))
+        for ax, period in zip(axes, PERIODS):
+            fit = by_key[(bin_number, period)]["fit"]
+            order = fit["parameter_order"]
+            physics_indices = [order.index(name) for name in PHYSICS_PARAMETERS]
+            corr = np.asarray(fit["correlation"], dtype=float) if fit["correlation"] is not None else None
+            if corr is None:
+                ax.text(0.5, 0.5, "No covariance", ha="center", va="center")
+                ax.set_axis_off()
+                continue
+            # endif
+            matrix = corr[np.ix_(physics_indices, physics_indices)]
+            image = ax.imshow(matrix, vmin=-1.0, vmax=1.0, cmap="coolwarm")
+            ax.set_xticks(range(len(PHYSICS_PARAMETERS)), PHYSICS_PARAMETERS, rotation=45, ha="right")
+            ax.set_yticks(range(len(PHYSICS_PARAMETERS)), PHYSICS_PARAMETERS)
+            ax.set_title(PERIOD_LABELS[period])
+        # endfor
+        fig.colorbar(image, ax=axes.ravel().tolist(), shrink=0.80, label="correlation")
+        fig.suptitle(f"Bin {bin_number}: period-only MLE parameter correlations")
+        fig.subplots_adjust(left=0.06, right=0.92, bottom=0.16, top=0.86, wspace=0.30)
+        fig.savefig(plot_dir / f"bin_{bin_number:02d}_correlations.png", dpi=180)
+        plt.close(fig)
+
+        for period in PERIODS:
+            fit = by_key[(bin_number, period)]["fit"]
+            state = run_states[period]
+            qtot = state["q_plus"] + state["q_minus"]
+            qsum = float(np.sum(qtot))
+            mean_abs_pt = float(np.sum(np.abs(state["pt"]) * qtot) / qsum) if qsum > 0 else math.nan
+            cut = cuts[(period, bin_number)]
+            row = {
+                "bin_number": bin_number, "period": period,
+                "events": fit["metadata"]["number_of_events"],
+                "beam_polarization": BEAM_POLARIZATION[period],
+                "charge_weighted_mean_abs_target_polarization": mean_abs_pt,
+                "dilution": dilution_records[(period, bin_number)].value,
+                "dilution_stat": dilution_records[(period, bin_number)].stat_uncertainty,
+                "mx2_low_gev2": cut.low_gev2, "mx2_high_gev2": cut.high_gev2,
+                "fit_valid": fit["valid"], "accurate_covariance": fit["accurate_covariance"],
+                "positive_definite_covariance": fit["positive_definite_covariance"],
+                "parameters_at_limit": fit["parameters_at_limit"], "edm": fit["edm"],
+            }
+            for parameter in PHYSICS_PARAMETERS:
+                row[parameter] = fit["values"][parameter]
+                row[f"{parameter}_stat"] = fit["errors"][parameter]
+                if fit["correlation"] is not None:
+                    order = fit["parameter_order"]
+                    row[f"corr_ll1_{parameter}"] = fit["correlation"][order.index("ll1")][order.index(parameter)]
+                    row[f"corr_ll0_{parameter}"] = fit["correlation"][order.index("ll0")][order.index(parameter)]
+                # endif
+            # endfor
+            rows.append(row)
+        # endfor
+
+        profile_parameter = PERIOD_STABILITY_PROFILE_PARAMETERS.get(bin_number)
+        if profile_parameter is not None:
+            fig, ax = plt.subplots(figsize=(7.2, 5.0))
+            profiles = []
+            for period in PERIODS:
+                profile = by_key[(bin_number, period)]["profile"]
+                if profile is None:
+                    continue
+                # endif
+                grid = np.asarray(profile["grid"], dtype=float)
+                delta = np.asarray(profile["two_delta_nll"], dtype=float)
+                profiles.append((period, grid, delta))
+                ax.plot(grid, delta, marker="o", ms=3, color=PERIOD_COLORS[period], label=PERIOD_LABELS[period])
+            # endfor
+            ax.axhline(1.0, color="black", ls="--", lw=1.0, alpha=0.6)
+            ax.axhline(4.0, color="black", ls=":", lw=1.0, alpha=0.6)
+            ax.set_xlabel(PARAMETER_LABELS[profile_parameter])
+            ax.set_ylabel(r"$2\Delta\mathrm{NLL}$")
+            ax.set_ylim(bottom=0.0)
+            ax.grid(alpha=0.25)
+            ax.legend(frameon=False)
+            ax.set_title(f"Bin {bin_number}: period profile likelihoods")
+            fig.tight_layout()
+            fig.savefig(plot_dir / f"bin_{bin_number:02d}_{profile_parameter}_profile_likelihood.png", dpi=180)
+            plt.close(fig)
+
+            # Common-amplitude profile test: interpolate each period profile onto
+            # the overlap grid and compare the summed common minimum with the sum
+            # of independent profile minima.  Other amplitudes are independently
+            # profiled within each period at every fixed value.
+            if len(profiles) == 3:
+                common_low = max(grid[0] for _, grid, _ in profiles)
+                common_high = min(grid[-1] for _, grid, _ in profiles)
+                if common_high > common_low:
+                    common_grid = np.linspace(common_low, common_high, 401)
+                    summed = np.zeros_like(common_grid)
+                    for _, grid, delta in profiles:
+                        summed += np.interp(common_grid, grid, delta)
+                    # endfor
+                    common_stat = float(np.min(summed))
+                    try:
+                        from scipy.stats import chi2 as chi2_distribution
+                        common_p = float(chi2_distribution.sf(common_stat, 2))
+                    except Exception:
+                        common_p = math.nan
+                    # endtry
+                    for row in rows:
+                        if row["bin_number"] == bin_number:
+                            row["profile_common_parameter"] = profile_parameter
+                            row["profile_common_delta_minus2logL"] = common_stat
+                            row["profile_common_pvalue_df2"] = common_p
+                        # endif
+                    # endfor
+                # endif
+            # endif
+        # endif
+    # endfor
+
+    summary = pd.DataFrame(rows).sort_values(["bin_number", "period"])
+    summary_path = diagnostic_dir / "period_excursion_diagnostics.csv"
+    summary.to_csv(summary_path, index=False)
+    write_json(diagnostic_dir / "period_excursion_profiles.json", {
+        "bins": list(bins), "profile_parameters": PERIOD_STABILITY_PROFILE_PARAMETERS,
+        "fit_results": results, "raw_state_yields": raw_yields,
+    })
+    print("[period-stability-diagnostics] complete", flush=True)
+    print(f"  Summary: {summary_path}", flush=True)
+    print(f"  Plots:   {plot_dir}", flush=True)
+    return 0
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -7578,6 +7910,25 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--period-stability-diagnostics", action="store_true",
+        help=(
+            "Run targeted nominal period-only diagnostics for the largest "
+            "run-period excursions using the existing period-stability cache. "
+            "Writes raw phi-state yields, correlation matrices, profile "
+            "likelihoods, and a diagnostic summary table; no systematics."
+        ),
+    )
+    parser.add_argument(
+        "--diagnostic-bins", type=parse_bin_list,
+        default=PERIOD_STABILITY_DIAGNOSTIC_BINS,
+        help="Comma-separated bins for --period-stability-diagnostics "
+             "(default: 4,6,7,14,17,18,19,21).",
+    )
+    parser.add_argument(
+        "--diagnostic-profile-points", type=int, default=21,
+        help="Number of fixed-parameter points per period profile (default: 21).",
+    )
+    parser.add_argument(
         "--baseline-zero-uu-only", action="store_true",
         help="Run only the baseline nominal likelihood with u1=u2=0 fixed; skip all systematic studies.",
     )
@@ -7604,6 +7955,9 @@ def main() -> int:
         min(int(args.workers), MAXIMUM_WORKERS, os.cpu_count() or 1, NUMBER_OF_BINS),
     )
     root = args.output_dir.expanduser().resolve()
+    if args.period_stability_diagnostics:
+        return run_period_stability_diagnostics(args, root, workers)
+    # endif
     if args.period_stability_plot_only:
         csv_path = (
             args.period_stability_csv.expanduser().resolve()
