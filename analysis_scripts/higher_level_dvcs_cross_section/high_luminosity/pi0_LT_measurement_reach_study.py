@@ -741,6 +741,9 @@ def build_internal_data_extraction(common, rga_file, rgk_file, corrections_file,
         excluded_ids=set(ex.point_id.dropna().astype(str))
     rows=[]
     n_skipped_excluded=0
+    n_skipped_missing_data=0
+    n_skipped_phi_coverage=0
+    skipped_phi_coverage=[]
     for n,r in enumerate(common.itertuples(index=False)):
         pid=f"R{n:04d}"
         if pid in excluded_ids:
@@ -750,7 +753,17 @@ def build_internal_data_extraction(common, rga_file, rgk_file, corrections_file,
         ir=(int(r.iq2_rga),int(r.ixb_rga),int(r.it_rga)); ik=(int(r.iq2_rgk),int(r.ixb_rgk),int(r.it_rgk))
         ga=rga[(rga.iq2==ir[0])&(rga.ixb==ir[1])&(rga.it==ir[2])].copy()
         gk=rgk[(rgk.iq2==ik[0])&(rgk.ixb==ik[1])&(rgk.it==ik[2])].copy()
-        if ga.empty or gk.empty: continue
+        if ga.empty or gk.empty:
+            n_skipped_missing_data+=1
+            continue
+        # Each campaign is also fit independently to U, LT and TT below.  Require
+        # at least four measured phi points so those GLS fits have positive ndf.
+        if len(ga)<4 or len(gk)<4:
+            n_skipped_phi_coverage+=1
+            skipped_phi_coverage.append(
+                f"{pid} (RGA={len(ga)}, RGK={len(gk)})"
+            )
+            continue
         # Reconstruct the native and shared GK phi dependence from the three
         # PARTONS sampling angles (0, 90, 180 deg), then evaluate the
         # native->shared correction at each measured phi-bin center.
@@ -823,9 +836,13 @@ def build_internal_data_extraction(common, rga_file, rgk_file, corrections_file,
             sigma_TT=TT,delta_sigma_TT=dTT,R_L_over_T=R,delta_R_L_over_T=dR,
             chi2=chi2,ndf=ndf,chi2_ndf=chi2/ndf,condition_number=cond,
             condition_number_rga=condr,condition_number_rgk=condk,bin_centering_applied=True,covariance_applied=True))
-    print("[INTERNAL measured-data model-validity selection]")
+    print("[INTERNAL measured-data selection]")
     print(f"  Stage-2 candidate points : {len(common)}")
-    print(f"  excluded before fit      : {n_skipped_excluded}")
+    print(f"  model-validity excluded  : {n_skipped_excluded}")
+    print(f"  missing measured data    : {n_skipped_missing_data}")
+    print(f"  insufficient phi coverage: {n_skipped_phi_coverage}")
+    if skipped_phi_coverage:
+        print("  phi-coverage exclusions  : " + ", ".join(skipped_phi_coverage))
     print(f"  extracted points         : {len(rows)}")
     return pd.DataFrame(rows)
 
