@@ -3307,7 +3307,7 @@ def period_preflight_worker(task: dict[str, Any]) -> dict[str, Any]:
     nominal = task["nominal"]
     nll, metadata = make_bin_nll(
         _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
-        bin_number, "nominal", active_periods=(period,),
+        bin_number, "nominal", active_periods=active_periods,
     )
     values = dict(PARAMETER_INITIAL_VALUES)
     values.update({name: float(nominal["values"][name])
@@ -7518,6 +7518,8 @@ PERIOD_STABILITY_PROFILE_PARAMETERS: dict[int, str] = {
     19: "ll1",
     21: "ll1",
 }
+PERIOD_STABILITY_2D_PROFILE_BINS: tuple[int, ...] = (7, 19)
+COMBINED_PERIOD_KEY = "combined"
 
 
 def parse_bin_list(value: str) -> tuple[int, ...]:
@@ -7536,6 +7538,7 @@ def _diagnostic_period_fit_worker(task: dict[str, Any]) -> dict[str, Any]:
     # endif
     bin_number = int(task["bin_number"])
     period = str(task["period"])
+    active_periods = None if period == COMBINED_PERIOD_KEY else (period,)
     parameter = task.get("profile_parameter")
     points = int(task.get("profile_points", 21))
     fit = fit_one_variant(
@@ -7559,7 +7562,7 @@ def _diagnostic_period_fit_worker(task: dict[str, Any]) -> dict[str, Any]:
         for value in grid:
             profiled = fit_one_variant(
                 _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
-                bin_number, "nominal", active_periods=(period,),
+                bin_number, "nominal", active_periods=active_periods,
                 initial_values=start,
                 fixed_physics_parameters={parameter: float(value)},
             )
@@ -7659,7 +7662,7 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
     }
     tasks = []
     for bin_number in bins:
-        for period in PERIODS:
+        for period in (*PERIODS, COMBINED_PERIOD_KEY):
             tasks.append({
                 "bin_number": bin_number, "period": period,
                 "profile_parameter": PERIOD_STABILITY_PROFILE_PARAMETERS.get(bin_number),
@@ -7687,10 +7690,34 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
     phi_centers = 0.5 * (phi_edges[:-1] + phi_edges[1:])
     raw_yields: dict[str, Any] = {}
     for bin_number in bins:
-        # Raw four-state charge-normalized yields: one canvas, three period panels.
-        fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.6), sharex=True)
-        for ax, period in zip(axes, PERIODS):
-            payload = _charge_normalized_state_yields(events, run_states, bin_number, period, phi_edges)
+        # Raw four-state charge-normalized yields: three periods plus the
+        # combined data sample.  The combined panel sums counts and charges
+        # before forming each charge-normalized yield.
+        fig, axes_grid = plt.subplots(2, 2, figsize=(11.5, 8.2), sharex=True)
+        axes = axes_grid.ravel()
+        period_payloads = {
+            period: _charge_normalized_state_yields(
+                events, run_states, bin_number, period, phi_edges
+            )
+            for period in PERIODS
+        }
+        combined_payload: dict[str, Any] = {}
+        for state_key in period_payloads[PERIODS[0]]:
+            charge = sum(period_payloads[p][state_key]["charge"] for p in PERIODS)
+            counts = np.sum(
+                [np.asarray(period_payloads[p][state_key]["counts"], dtype=float) for p in PERIODS],
+                axis=0,
+            )
+            combined_payload[state_key] = {
+                "charge": float(charge),
+                "counts": counts.astype(int).tolist(),
+                "yield": (counts / charge).tolist() if charge > 0.0 else [math.nan] * len(counts),
+                "error": (np.sqrt(counts) / charge).tolist() if charge > 0.0 else [math.nan] * len(counts),
+            }
+        # endfor
+        all_payloads = {**period_payloads, COMBINED_PERIOD_KEY: combined_payload}
+        for ax, period in zip(axes, (*PERIODS, COMBINED_PERIOD_KEY)):
+            payload = all_payloads[period]
             raw_yields[f"bin_{bin_number:02d}_{period}"] = payload
             state_specs = (
                 (-1, -1, "o", r"$P_t<0,h=-1$"), (-1, 1, "s", r"$P_t<0,h=+1$"),
@@ -7700,38 +7727,68 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
                 item = payload[f"t{target_sign:+d}_h{h:+d}"]
                 ax.errorbar(phi_centers, item["yield"], yerr=item["error"], fmt=marker, ms=3.5, capsize=2, label=label)
             # endfor
-            ax.set_title(PERIOD_LABELS[period])
+            ax.set_title("Combined" if period == COMBINED_PERIOD_KEY else PERIOD_LABELS[period])
             ax.set_xlabel(r"$\phi$ (rad)")
             ax.grid(alpha=0.25)
         # endfor
         axes[0].set_ylabel("charge-normalized yield")
+        axes[2].set_ylabel("charge-normalized yield")
         axes[-1].legend(fontsize=8, frameon=False)
         fig.suptitle(f"Bin {bin_number}: raw target/helicity-state yields")
         fig.tight_layout(rect=(0, 0, 1, 0.94))
         fig.savefig(plot_dir / f"bin_{bin_number:02d}_raw_state_yields.png", dpi=180)
         plt.close(fig)
 
-        # Correlation matrices for the three independent period fits.
-        fig, axes = plt.subplots(1, 3, figsize=(15.0, 4.6))
-        for ax, period in zip(axes, PERIODS):
+        # Correlation matrices for the three independent period fits and
+        # the simultaneous combined fit.  Invalid covariance estimates are
+        # never rendered as an identity matrix.
+        fig, axes_grid = plt.subplots(2, 2, figsize=(11.5, 9.0))
+        axes = axes_grid.ravel()
+        image = None
+        for ax, period in zip(axes, (*PERIODS, COMBINED_PERIOD_KEY)):
             fit = by_key[(bin_number, period)]["fit"]
-            order = fit["parameter_order"]
-            physics_indices = [order.index(name) for name in PHYSICS_PARAMETERS]
-            corr = np.asarray(fit["correlation"], dtype=float) if fit["correlation"] is not None else None
-            if corr is None:
-                ax.text(0.5, 0.5, "No covariance", ha="center", va="center")
+            covariance_ok = (
+                bool(fit.get("valid", False))
+                and bool(fit.get("accurate_covariance", False))
+                and bool(fit.get("positive_definite_covariance", False))
+                and not bool(fit.get("parameters_at_limit", False))
+                and fit.get("correlation") is not None
+            )
+            if not covariance_ok:
+                ax.text(
+                    0.5, 0.54, "Covariance unavailable",
+                    ha="center", va="center", fontsize=12, fontweight="bold",
+                    transform=ax.transAxes,
+                )
+                ax.text(
+                    0.5, 0.44, "fit failed covariance-quality requirement",
+                    ha="center", va="center", fontsize=9, transform=ax.transAxes,
+                )
                 ax.set_axis_off()
                 continue
             # endif
+            order = fit["parameter_order"]
+            physics_indices = [order.index(name) for name in PHYSICS_PARAMETERS]
+            corr = np.asarray(fit["correlation"], dtype=float)
             matrix = corr[np.ix_(physics_indices, physics_indices)]
             image = ax.imshow(matrix, vmin=-1.0, vmax=1.0, cmap="coolwarm")
-            ax.set_xticks(range(len(PHYSICS_PARAMETERS)), PHYSICS_PARAMETERS, rotation=45, ha="right")
+            ax.set_xticks(
+                range(len(PHYSICS_PARAMETERS)), PHYSICS_PARAMETERS,
+                rotation=45, ha="right",
+            )
             ax.set_yticks(range(len(PHYSICS_PARAMETERS)), PHYSICS_PARAMETERS)
-            ax.set_title(PERIOD_LABELS[period])
+            ax.set_title(
+                "Combined" if period == COMBINED_PERIOD_KEY else PERIOD_LABELS[period]
+            )
         # endfor
-        fig.colorbar(image, ax=axes.ravel().tolist(), shrink=0.80, label="correlation")
-        fig.suptitle(f"Bin {bin_number}: period-only MLE parameter correlations")
-        fig.subplots_adjust(left=0.06, right=0.92, bottom=0.16, top=0.86, wspace=0.30)
+        if image is not None:
+            # Reserve a dedicated colorbar axis outside the 2x2 grid so it
+            # cannot overlap the Sp23/combined matrices.
+            fig.subplots_adjust(left=0.07, right=0.88, bottom=0.10, top=0.90, hspace=0.30, wspace=0.28)
+            cax = fig.add_axes([0.91, 0.18, 0.018, 0.64])
+            fig.colorbar(image, cax=cax, label="correlation")
+        # endif
+        fig.suptitle(f"Bin {bin_number}: MLE parameter correlations")
         fig.savefig(plot_dir / f"bin_{bin_number:02d}_correlations.png", dpi=180)
         plt.close(fig)
 
@@ -7770,15 +7827,19 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
         if profile_parameter is not None:
             fig, ax = plt.subplots(figsize=(7.2, 5.0))
             profiles = []
-            for period in PERIODS:
+            for period in (*PERIODS, COMBINED_PERIOD_KEY):
                 profile = by_key[(bin_number, period)]["profile"]
                 if profile is None:
                     continue
                 # endif
                 grid = np.asarray(profile["grid"], dtype=float)
                 delta = np.asarray(profile["two_delta_nll"], dtype=float)
-                profiles.append((period, grid, delta))
-                ax.plot(grid, delta, marker="o", ms=3, color=PERIOD_COLORS[period], label=PERIOD_LABELS[period])
+                if period in PERIODS:
+                    profiles.append((period, grid, delta))
+                # endif
+                color = "black" if period == COMBINED_PERIOD_KEY else PERIOD_COLORS[period]
+                label = "Combined" if period == COMBINED_PERIOD_KEY else PERIOD_LABELS[period]
+                ax.plot(grid, delta, marker="o", ms=3, color=color, label=label)
             # endfor
             ax.axhline(1.0, color="black", ls="--", lw=1.0, alpha=0.6)
             ax.axhline(4.0, color="black", ls=":", lw=1.0, alpha=0.6)
@@ -7914,8 +7975,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help=(
             "Run targeted nominal period-only diagnostics for the largest "
             "run-period excursions using the existing period-stability cache. "
-            "Writes raw phi-state yields, correlation matrices, profile "
-            "likelihoods, and a diagnostic summary table; no systematics."
+            "Writes 2x2 raw phi-state yields and correlation matrices (Su22, Fa22, "
+            "Sp23, combined), period and combined profile likelihoods, and a "
+            "diagnostic summary table; no systematics."
         ),
     )
     parser.add_argument(
