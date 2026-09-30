@@ -4638,6 +4638,11 @@ def plot_period_stability_published(
     bin_numbers = frame["bin_number"].to_numpy(dtype=int)
     offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
     markers = {"su22": "o", "fa22": "s", "sp23": "^"}
+    period_colors = {
+        "su22": "tab:orange",
+        "fa22": "tab:blue",
+        "sp23": "tab:green",
+    }
 
     for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
         values_by_period: dict[str, np.ndarray] = {}
@@ -4680,13 +4685,17 @@ def plot_period_stability_published(
         ax = fig.add_subplot(grid[0])
         pull_ax = fig.add_subplot(grid[1], sharex=ax)
 
+        mean_valid = np.isfinite(weighted_mean)
         ax.plot(
-            bin_numbers,
-            weighted_mean,
-            linestyle="none",
-            marker="_",
-            markersize=12,
+            bin_numbers[mean_valid],
+            weighted_mean[mean_valid],
+            color="black",
+            linestyle="-",
+            linewidth=1.0,
+            marker="o",
+            markersize=4.5,
             label="Weighted mean",
+            zorder=4,
         )
         for period in PERIODS:
             valid = valid_by_period[period]
@@ -4698,6 +4707,7 @@ def plot_period_stability_published(
                 marker=markers[period],
                 linestyle="none",
                 capsize=2,
+                color=period_colors[period],
                 label=PERIOD_LABELS[period],
             )
 
@@ -4718,6 +4728,7 @@ def plot_period_stability_published(
             pull_ax.plot(
                 x[pull_valid],
                 pulls[pull_valid],
+                color=period_colors[period],
                 marker=markers[period],
                 linestyle="none",
                 label=PERIOD_LABELS[period],
@@ -4731,7 +4742,7 @@ def plot_period_stability_published(
         ax.legend(ncol=4, loc="best")
         ax.tick_params(labelbottom=False)
 
-        pull_ax.axhline(0.0, linewidth=0.8)
+        pull_ax.axhline(0.0, color="black", linewidth=1.0)
         pull_ax.axhline(1.0, linewidth=0.6, linestyle="--")
         pull_ax.axhline(-1.0, linewidth=0.6, linestyle="--")
         pull_ax.axhline(2.0, linewidth=0.6, linestyle=":")
@@ -4749,11 +4760,9 @@ def plot_period_stability_published(
         fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.975))
         stem = f"period_stability_{parameter}_bins_01_24"
         png_path = output_dir / f"{stem}.png"
-        pdf_path = output_dir / f"{stem}.pdf"
         fig.savefig(png_path, dpi=200)
-        fig.savefig(pdf_path)
         plt.close(fig)
-        paths.extend((str(png_path), str(pdf_path)))
+        paths.append(str(png_path))
     # endfor
     return paths
 
@@ -7554,6 +7563,21 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--period-stability-plot-only", action="store_true",
+        help=(
+            "Regenerate the five published run-period stability PNGs directly "
+            "from an existing period-stability structure_function_ratios.csv; "
+            "do not read ROOT files or rerun any MLE fits."
+        ),
+    )
+    parser.add_argument(
+        "--period-stability-csv", type=Path, default=None,
+        help=(
+            "CSV to use with --period-stability-plot-only. By default uses "
+            "OUTPUT_DIR/period_stability/tables/structure_function_ratios.csv."
+        ),
+    )
+    parser.add_argument(
         "--baseline-zero-uu-only", action="store_true",
         help="Run only the baseline nominal likelihood with u1=u2=0 fixed; skip all systematic studies.",
     )
@@ -7580,6 +7604,26 @@ def main() -> int:
         min(int(args.workers), MAXIMUM_WORKERS, os.cpu_count() or 1, NUMBER_OF_BINS),
     )
     root = args.output_dir.expanduser().resolve()
+    if args.period_stability_plot_only:
+        csv_path = (
+            args.period_stability_csv.expanduser().resolve()
+            if args.period_stability_csv is not None
+            else root / "period_stability/tables/structure_function_ratios.csv"
+        )
+        if not csv_path.is_file():
+            raise FileNotFoundError(
+                f"Period-stability CSV not found: {csv_path}"
+            )
+        # endif
+        frame = pd.read_csv(csv_path)
+        stability_dir = root / "period_stability/plots/period_stability_published"
+        paths = plot_period_stability_published(frame, stability_dir)
+        print("[period-stability-plot-only] complete", flush=True)
+        print(f"  Input:  {csv_path}", flush=True)
+        print(f"  Plots:  {stability_dir}", flush=True)
+        print(f"  Wrote:  {len(paths)} polarized stability PNGs", flush=True)
+        return 0
+    # endif
     if args.baseline_zero_uu_only or args.period_stability_only:
         args.disable_isr = True
         args.disable_momentum_corrections = True
@@ -7755,7 +7799,7 @@ def main() -> int:
         print(f"  Results: {nominal_result['csv']}", flush=True)
         print(f"  Plots:   {stability_dir}", flush=True)
         if paths:
-            print(f"  Wrote:   {len(paths) // 2} polarized stability figures", flush=True)
+            print(f"  Wrote:   {len(paths)} polarized stability PNGs", flush=True)
         # endif
         return 0
     # endif
