@@ -103,7 +103,7 @@ def write_model_template(q,path):
         t[c]=np.nan
     t.to_csv(path,index=False)
 
-def model_merge(q,gkfile):
+def model_merge(q,gkfile, exclusion_path=None):
     g=pd.read_csv(gkfile)
 
     # Accept either the legacy Stage-3 bridge schema or the explicit physical
@@ -139,20 +139,45 @@ def model_merge(q,gkfile):
     if extra:
         raise RuntimeError(f"GK results contain {len(extra)} unknown point_id values, e.g. {extra[:5]}")
 
-    excluded=q.loc[~q["point_id"].isin(supplied),"point_id"].tolist()
+    exclusion_rows=[]
+    missing_ids=q.loc[~q["point_id"].isin(supplied),"point_id"].astype(str).tolist()
+    exclusion_rows.extend({"point_id":pid,"reason":"absent_from_validated_gk_grid"} for pid in missing_ids)
+
     q_use=q[q["point_id"].isin(supplied)].copy()
     m=q_use.merge(g[REQ_GK],on="point_id",how="left",validate="one_to_one")
 
-    if m[REQ_GK[1:]].isna().any().any():
-        bad=m.loc[m[REQ_GK[1:]].isna().any(axis=1),"point_id"].tolist()
-        raise RuntimeError(f"Non-finite/missing GK structure functions for {len(bad)} retained points, e.g. {bad[:5]}")
+    # A successful PARTONS evaluation can still yield unusable model output.
+    # Reject non-finite responses here, at creation of the validated projection
+    # grid, rather than allowing them to fail or contaminate downstream fits.
+    response_cols=REQ_GK[1:]
+    vals=m[response_cols].to_numpy(dtype=float)
+    finite_mask=np.isfinite(vals).all(axis=1)
+    for pid in m.loc[~finite_mask,"point_id"].astype(str):
+        exclusion_rows.append({"point_id":pid,"reason":"nonfinite_model_response"})
 
+    # sigma_T is the positive transverse cross section and is also the
+    # denominator of L/T.  A zero/negative value therefore cannot define a
+    # usable Rosenbluth model point.  Do not apply analogous cuts to L, LT or
+    # TT: zero values for those responses can be physically meaningful.
+    positive_t_mask=m["sigma_T"].to_numpy(dtype=float) > 0.0
+    for pid in m.loc[finite_mask & ~positive_t_mask,"point_id"].astype(str):
+        exclusion_rows.append({"point_id":pid,"reason":"nonpositive_sigma_T"})
+
+    valid_mask=finite_mask & positive_t_mask
+    m=m.loc[valid_mask].copy()
+
+    exclusions=pd.DataFrame(exclusion_rows,columns=["point_id","reason"])
+    if exclusion_path is not None:
+        exclusions.to_csv(exclusion_path,index=False)
+
+    excluded=exclusions["point_id"].tolist()
     print("[Stage-3 validated-model selection]")
     print(f"  Stage-2 candidate points : {len(q)}")
     print(f"  validated GK points      : {len(m)}")
     print(f"  excluded from projection : {len(excluded)}")
     if excluded:
-        print(f"  excluded point IDs       : {', '.join(excluded)}")
+        details=", ".join(f"{r.point_id} ({r.reason})" for r in exclusions.itertuples(index=False))
+        print(f"  excluded points          : {details}")
     return m
 
 def covariance_for_cell(g, corr, factor, model_y, sys_floor=0.0):
@@ -476,7 +501,7 @@ Once an actual PARTONS result is available, pass the converted CSV with:
         print("\n".join(summary)); print(f"\nWrote Stage-3 model bridge to {out}")
         return
 
-    model=model_merge(q,a.gk_results.resolve())
+    model=model_merge(q,a.gk_results.resolve(),tabs/"00_gk_model_exclusions.csv")
     model.to_csv(tabs/"01_gk_common_structure_functions.csv",index=False)
     pseudo,hfits=make_pseudodata(model,s1,s2,a.rga_factor,a.rgk_factor,a.fractional_systematic_floor)
     pseudo.to_csv(tabs/"02_blinded_model_pseudodata.csv",index=False)
