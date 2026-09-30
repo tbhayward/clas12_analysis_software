@@ -7898,6 +7898,243 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
     return 0
 
 
+
+# -----------------------------------------------------------------------------
+# CLAS6 EG1b exclusive-pi+ cross-check (statistical-only, one-pass study)
+# -----------------------------------------------------------------------------
+
+CLAS6_W_MIN = 2.0
+CLAS6_W_MAX = 2.6
+CLAS6_Q2_MIN = 1.0
+CLAS6_Q2_MAX = 5.0
+PION_MASS_GEV = 0.13957039
+NEUTRON_MASS_GEV = 0.93956542
+
+def _clas6_t_and_tprime(w, q2, cos_theta):
+    w = np.asarray(w, dtype=float)
+    q2 = np.asarray(q2, dtype=float)
+    cth = np.asarray(cos_theta, dtype=float)
+    q0 = (w*w - PROTON_MASS_GEV**2 - q2) / (2.0*w)
+    qmag = np.sqrt(np.maximum(q0*q0 + q2, 0.0))
+    epi = (w*w + PION_MASS_GEV**2 - NEUTRON_MASS_GEV**2) / (2.0*w)
+    ppi = np.sqrt(np.maximum(epi*epi - PION_MASS_GEV**2, 0.0))
+    t = -q2 + PION_MASS_GEV**2 - 2.0*(q0*epi - qmag*ppi*cth)
+    tmin = -q2 + PION_MASS_GEV**2 - 2.0*(q0*epi - qmag*ppi)
+    return t, tmin - t
+
+def _clas6_analysis_bin(xb, minus_tprime):
+    xb_edges = np.asarray([0.10, 0.25, 0.35, 0.45, 0.60], dtype=float)
+    tp_edges = np.asarray([0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25], dtype=float)
+    ix = np.searchsorted(xb_edges, xb, side="right") - 1
+    it = np.searchsorted(tp_edges, minus_tprime, side="right") - 1
+    good = (ix >= 0) & (ix < 4) & (it >= 0) & (it < 6)
+    out = np.full(np.asarray(xb).shape, -1, dtype=int)
+    out[good] = ix[good]*6 + it[good] + 1
+    return out
+
+def _load_clas6_exclpip(path):
+    names = [
+        "E", "Code", "W_bin", "Q2_bin", "theta_bin", "phi_bin",
+        "W", "Q2", "cos_theta", "phi", "epsilon",
+        "sin_phi", "sin_2phi", "cos_phi", "cos_2phi",
+        "A_LL", "A_LL_stat", "A_UL", "A_UL_stat",
+    ]
+    frame = pd.read_csv(
+        path, sep=r"\s+", comment="#", skiprows=5, names=names,
+        engine="python", on_bad_lines="skip",
+    )
+    for column in names:
+        frame[column] = pd.to_numeric(frame[column], errors="coerce")
+    # endfor
+    frame = frame.dropna(subset=["E", "Code", "W", "Q2", "cos_theta", "phi"])
+    frame = frame[
+        (frame["Code"] == 1)
+        & (frame["W"] > CLAS6_W_MIN) & (frame["W"] < CLAS6_W_MAX)
+        & (frame["Q2"] > CLAS6_Q2_MIN) & (frame["Q2"] < CLAS6_Q2_MAX)
+    ].copy()
+    frame["xB"] = frame["Q2"] / (frame["W"]**2 - PROTON_MASS_GEV**2 + frame["Q2"])
+    t, tp = _clas6_t_and_tprime(frame["W"], frame["Q2"], frame["cos_theta"])
+    frame["t"] = t
+    frame["minus_tprime"] = tp
+    frame["analysis_bin"] = _clas6_analysis_bin(frame["xB"].to_numpy(), tp)
+    frame = frame[frame["analysis_bin"] > 0].copy()
+    return frame
+
+def _weighted_linear_fit(design, values, errors):
+    x = np.asarray(design, dtype=float)
+    y = np.asarray(values, dtype=float)
+    e = np.asarray(errors, dtype=float)
+    good = np.all(np.isfinite(x), axis=1) & np.isfinite(y) & np.isfinite(e) & (e > 0.0)
+    x, y, e = x[good], y[good], e[good]
+    if len(y) < x.shape[1] + 1:
+        return None
+    # endif
+    w = 1.0/(e*e)
+    normal = x.T @ (w[:, None]*x)
+    rhs = x.T @ (w*y)
+    try:
+        cov = np.linalg.inv(normal)
+        beta = cov @ rhs
+    except np.linalg.LinAlgError:
+        return None
+    # endtry
+    residual = y - x@beta
+    chi2 = float(np.sum((residual/e)**2))
+    return beta, np.sqrt(np.diag(cov)), cov, chi2, int(len(y)-len(beta)), int(len(y))
+
+def _fit_clas6_bin(data):
+    eps = data["epsilon"].to_numpy(float)
+    phi = data["phi"].to_numpy(float)
+    # Bacchetta depolarization-factor ratios used by the RGC likelihood.
+    r_b = eps
+    r_c = np.sqrt(np.maximum(1.0 - eps*eps, 0.0))
+    r_v = np.sqrt(np.maximum(2.0*eps*(1.0 + eps), 0.0))
+    r_w = np.sqrt(np.maximum(2.0*eps*(1.0 - eps), 0.0))
+    ul_design = np.column_stack((r_v*np.sin(phi), r_b*np.sin(2.0*phi)))
+    ll_design = np.column_stack((r_c, r_w*np.cos(phi)))
+    ul = _weighted_linear_fit(ul_design, data["A_UL"], data["A_UL_stat"])
+    ll = _weighted_linear_fit(ll_design, data["A_LL"], data["A_LL_stat"])
+    if ul is None or ll is None:
+        return None
+    # endif
+    return {
+        "ul1": float(ul[0][0]), "ul1_stat": float(ul[1][0]),
+        "ul2": float(ul[0][1]), "ul2_stat": float(ul[1][1]),
+        "ll0": float(ll[0][0]), "ll0_stat": float(ll[1][0]),
+        "ll1": float(ll[0][1]), "ll1_stat": float(ll[1][1]),
+        "ul_chi2": ul[3], "ul_ndf": ul[4],
+        "ll_chi2": ll[3], "ll_ndf": ll[4],
+        "n_ul_points": ul[5], "n_ll_points": ll[5],
+    }
+
+def run_clas6_cross_check(args):
+    """Statistical-only CLAS6 EG1b comparison in the common RGC 24-bin scheme."""
+    out = args.output_dir.expanduser().resolve() / "clas6_cross_check"
+    tables, plots = out / "tables", out / "plots"
+    for directory in (out, tables, plots):
+        ensure_directory(directory)
+    # endfor
+
+    clas6_path = args.clas6_data.expanduser().resolve()
+    if not clas6_path.is_file():
+        raise FileNotFoundError(f"Missing CLAS6 data file: {clas6_path}")
+    # endif
+    clas6 = _load_clas6_exclpip(clas6_path)
+    clas6.to_csv(tables / "clas6_points_common_phase_space.csv", index=False)
+
+    cache_path = _rga_variant_cache_paths(args)["nominal"]
+    if not cache_path.is_file():
+        raise FileNotFoundError(f"Missing nominal selected-event cache: {cache_path}")
+    # endif
+    events = load_event_cache(cache_path)
+    common = (
+        (events["W"] > CLAS6_W_MIN) & (events["W"] < CLAS6_W_MAX)
+        & (events["Q2"] > CLAS6_Q2_MIN) & (events["Q2"] < CLAS6_Q2_MAX)
+    )
+    cut_events = {key: np.asarray(value)[common] for key, value in events.items()}
+
+    run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
+    run_states = run_state_arrays(run_records)
+    dilution_path = (
+        args.dilution_json.expanduser().resolve() if args.dilution_json
+        else find_default_dilution_json(args.dilution_dir.expanduser().resolve()).resolve()
+    )
+    dilution_records = load_dilution_factors(dilution_path, "nominal")
+
+    rows = []
+    for bin_number in range(1, NUMBER_OF_BINS + 1):
+        n_rgc = int(np.count_nonzero(cut_events["bin_number"] == bin_number))
+        c6 = clas6[clas6["analysis_bin"] == bin_number]
+        if n_rgc == 0 or c6.empty:
+            continue
+        # endif
+        print(f"[CLAS6 cross-check] bin {bin_number:02d}: RGC={n_rgc:,}, CLAS6 points={len(c6)}", flush=True)
+        rgc = fit_one_variant(
+            cut_events, run_states, dilution_records, bin_number, "nominal",
+        )
+        c6fit = _fit_clas6_bin(c6)
+        if c6fit is None:
+            continue
+        # endif
+        row = {
+            "bin_number": bin_number, "n_rgc": n_rgc, "n_clas6_points": len(c6),
+            "mean_xB_rgc": float(np.mean(cut_events["xB"][cut_events["bin_number"] == bin_number])),
+            "mean_Q2_rgc": float(np.mean(cut_events["Q2"][cut_events["bin_number"] == bin_number])),
+            "mean_W_rgc": float(np.mean(cut_events["W"][cut_events["bin_number"] == bin_number])),
+            "mean_xB_clas6": float(c6["xB"].mean()),
+            "mean_Q2_clas6": float(c6["Q2"].mean()),
+            "mean_W_clas6": float(c6["W"].mean()),
+            "rgc_fit_valid": bool(rgc["valid"]), "rgc_edm": float(rgc["edm"]),
+        }
+        for parameter in ("ul1", "ul2", "ll0", "ll1"):
+            row[f"{parameter}_rgc"] = float(rgc["values"][parameter])
+            row[f"{parameter}_rgc_stat"] = float(rgc["errors"][parameter])
+            row[f"{parameter}_clas6"] = c6fit[parameter]
+            row[f"{parameter}_clas6_stat"] = c6fit[f"{parameter}_stat"]
+            sigma = math.hypot(row[f"{parameter}_rgc_stat"], row[f"{parameter}_clas6_stat"])
+            row[f"{parameter}_delta"] = row[f"{parameter}_rgc"] - row[f"{parameter}_clas6"]
+            row[f"{parameter}_pull"] = row[f"{parameter}_delta"]/sigma if sigma > 0.0 else np.nan
+        # endfor
+        row.update({key: value for key, value in c6fit.items() if key.endswith("chi2") or key.endswith("ndf")})
+        rows.append(row)
+    # endfor
+
+    frame = pd.DataFrame(rows)
+    frame.to_csv(tables / "clas6_rgc_statistical_comparison.csv", index=False)
+    summary = []
+    for parameter in ("ul1", "ul2", "ll0", "ll1"):
+        pulls = pd.to_numeric(frame.get(f"{parameter}_pull", pd.Series(dtype=float)), errors="coerce").to_numpy(float)
+        pulls = pulls[np.isfinite(pulls)]
+        summary.append({
+            "parameter": parameter, "n": int(len(pulls)),
+            "chi2": float(np.sum(pulls*pulls)), "ndf": int(len(pulls)),
+            "chi2_per_ndf": float(np.mean(pulls*pulls)) if len(pulls) else np.nan,
+            "pull_mean": float(np.mean(pulls)) if len(pulls) else np.nan,
+            "pull_rms": float(np.sqrt(np.mean(pulls*pulls))) if len(pulls) else np.nan,
+        })
+    # endfor
+    summary_frame = pd.DataFrame(summary)
+    summary_frame.to_csv(tables / "clas6_rgc_statistical_summary.csv", index=False)
+    print("\n[CLAS6 cross-check] statistical-only summary", flush=True)
+    print(summary_frame.to_string(index=False), flush=True)
+
+    if not args.skip_plots and not frame.empty:
+        labels = {
+            "ul1": r"$A_{UL,\mathrm{lab}}^{\sin\phi}$",
+            "ul2": r"$A_{UL,\mathrm{lab}}^{\sin2\phi}$",
+            "ll0": r"$A_{LL,\mathrm{lab}}$",
+            "ll1": r"$A_{LL,\mathrm{lab}}^{\cos\phi}$",
+        }
+        for parameter, ylabel in labels.items():
+            valid = frame[np.isfinite(frame[f"{parameter}_pull"])].copy()
+            if valid.empty:
+                continue
+            # endif
+            x = np.arange(len(valid))
+            fig, ax = plt.subplots(figsize=(10.5, 5.5))
+            ax.errorbar(x - 0.08, valid[f"{parameter}_clas6"], yerr=valid[f"{parameter}_clas6_stat"], fmt="o", capsize=3, label="CLAS6 EG1b")
+            ax.errorbar(x + 0.08, valid[f"{parameter}_rgc"], yerr=valid[f"{parameter}_rgc_stat"], fmt="s", capsize=3, label="RGC")
+            ax.axhline(0.0, lw=0.8)
+            ax.set_xticks(x)
+            ax.set_xticklabels(valid["bin_number"].astype(int))
+            ax.set_xlabel("RGC analysis bin")
+            ax.set_ylabel(ylabel)
+            ax.legend()
+            fig.tight_layout()
+            fig.savefig(plots / f"clas6_rgc_{parameter}.png", dpi=200)
+            plt.close(fig)
+        # endfor
+    # endif
+
+    write_json(out / "clas6_cross_check_manifest.json", {
+        "selection": {"W": [CLAS6_W_MIN, CLAS6_W_MAX], "Q2_GeV2": [CLAS6_Q2_MIN, CLAS6_Q2_MAX], "channel_code": 1},
+        "uncertainties": "Statistical only. No RGC or CLAS6 systematic uncertainties are reproduced for this cross-check.",
+        "binning": "Common RGC 24-bin (xB,-tprime) scheme; CLAS6 xB and tprime reconstructed from tabulated W, Q2, cos(theta*).",
+        "clas6_data": str(clas6_path),
+        "rgc_cache": str(cache_path),
+    })
+    return 0
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -7995,6 +8232,20 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Run only the baseline nominal likelihood with u1=u2=0 fixed; skip all systematic studies.",
     )
     parser.add_argument(
+        "--clas6-cross-check", action="store_true",
+        help=(
+            "Run one statistical-only CLAS6 EG1b exclusive-pi+ cross-check. "
+            "Applies 2<W<2.6 GeV and 1<Q2<5 GeV^2 to both datasets, "
+            "re-fits RGC events in the common 24-bin scheme, and fits the "
+            "tabulated CLAS6 A_UL/A_LL phi dependences without systematics."
+        ),
+    )
+    parser.add_argument(
+        "--clas6-data", type=Path,
+        default=Path(__file__).resolve().parent / "exclpip.txt",
+        help="Path to the CLAS6 EG1b exclpip.txt table (default: beside this script).",
+    )
+    parser.add_argument(
         "--rga-cross-check", action="store_true",
         help=(
             "Run only the Diehl et al. RGA exclusive-pi+ cross-check. "
@@ -8009,6 +8260,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_argument_parser().parse_args()
+    if args.clas6_cross_check:
+        return run_clas6_cross_check(args)
+    # endif
     if args.rga_cross_check:
         return run_rga_cross_check(args)
     # endif
