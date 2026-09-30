@@ -229,6 +229,17 @@ P_RANGES = [
 ]
 
 
+# Joint high-momentum bins.  Retain 0.25-GeV resolution through 7.25 GeV,
+# then combine the sparse terminal region into one 7.25--8.00 GeV bin.
+# No PID statement is inferred above 8 GeV; the folding code reports that
+# population explicitly as uncovered.
+JOINT_HIGH_P_RANGES = [
+    (float(x), float(x + P_SLICE_WIDTH))
+    for x in np.arange(5.0, 7.25, P_SLICE_WIDTH)
+]
+JOINT_HIGH_P_RANGES.append((7.25, 8.00))
+
+
 # Explicit zero-contamination bins below 1.5 GeV.
 LOW_P_EDGES = np.arange(
     PID_P_MIN,
@@ -4164,9 +4175,7 @@ def fit_joint_mixture(period_samples, period_models, initial_fractions=None):
 def build_joint_high_p(period_data, period_models, rng):
     """Common f_K above 5 GeV; each period keeps its own calibrated response."""
     rows, rep_rows = [], []
-    for p_min, p_max in P_RANGES:
-        if p_max <= 5.0:
-            continue
+    for p_min, p_max in JOINT_HIGH_P_RANGES:
         samples = {}
         counts = {}
         for period, data in period_data.items():
@@ -4226,24 +4235,88 @@ def build_adopted_lookup(combined_lookup, joint):
 
 
 def fold_adopted_contamination(adopted, histogram_path):
+    """Fold the adopted PID lookup through the final selected momentum spectra.
+
+    Period labels are normalized case-insensitively.  Histogram bins are mapped
+    by their centers into the PID intervals rather than requiring identical bin
+    edges, which allows the terminal 7.25--8.00 GeV joint PID bin to cover the
+    three underlying 0.25-GeV population bins.  Events outside PID coverage are
+    retained in the denominator and reported explicitly.
+    """
     if not histogram_path.is_file():
         print(f"[joint high-p] momentum histogram not found: {histogram_path}")
         print("[joint high-p] run plot_kinematic_distributions_review.py first to enable 24-bin folding.")
         return None
-    pop=pd.read_csv(histogram_path)
-    merged=pop.merge(adopted,on=['period','p_min_GeV','p_max_GeV'],how='left')
-    out=[]
-    for (period,abin),g in merged.groupby(['period','analysis_bin']):
-        n=float(g['event_count'].sum())
-        covered=g['f_K_mean'].notna()
-        nc=float(g.loc[covered,'event_count'].sum())
-        fk=(g.loc[covered,'event_count']*g.loc[covered,'f_K_mean']).sum()/nc if nc else np.nan
-        out.append({'period':period,'analysis_bin':int(abin),'N_0p5_to_10p5':int(n),
-                    'N_PID_covered':int(nc),'coverage_fraction':nc/n if n else np.nan,
-                    'folded_f_K':fk})
-    result=pd.DataFrame(out)
-    result.to_csv(OUTDIR/'kaon_contamination_folded_24bins_by_period.csv',index=False)
+
+    pop = pd.read_csv(histogram_path).copy()
+    lookup = adopted.copy()
+
+    # The kinematic-distribution CSV uses lower-case period names while the PID
+    # lookup historically uses Su22/Fa22/Sp23.  Normalize both before matching.
+    pop['period_key'] = pop['period'].astype(str).str.strip().str.lower()
+    lookup['period_key'] = lookup['period'].astype(str).str.strip().str.lower()
+
+    # Map every population bin to the PID interval containing its center.
+    # This is more robust than an exact floating-point edge merge and supports
+    # deliberately wider PID intervals in the sparse high-momentum tail.
+    fk_mean = np.full(len(pop), np.nan, dtype=float)
+    fk_std = np.full(len(pop), np.nan, dtype=float)
+    prescription = np.full(len(pop), '', dtype=object)
+    pcent = pop['p_center_GeV'].to_numpy(dtype=float)
+
+    for period_key, idx in pop.groupby('period_key').groups.items():
+        lut = lookup[lookup['period_key'] == period_key]
+        for _, row in lut.iterrows():
+            lo = float(row['p_min_GeV'])
+            hi = float(row['p_max_GeV'])
+            mask = np.asarray(idx)[
+                (pcent[np.asarray(idx)] >= lo - 1.0e-9)
+                & (pcent[np.asarray(idx)] < hi - 1.0e-9)
+            ]
+            if len(mask):
+                fk_mean[mask] = row['f_K_mean']
+                fk_std[mask] = row['f_K_std']
+                prescription[mask] = str(row['prescription'])
+
+    pop['f_K_mean'] = fk_mean
+    pop['f_K_std'] = fk_std
+    pop['pid_prescription'] = prescription
+
+    out = []
+    for (period, abin), g in pop.groupby(['period', 'analysis_bin']):
+        counts = g['event_count'].to_numpy(dtype=float)
+        n = float(np.sum(counts))
+        covered = np.isfinite(g['f_K_mean'].to_numpy(dtype=float))
+        nc = float(np.sum(counts[covered]))
+
+        # Fold over the full final-sample denominator.  Uncovered events are not
+        # silently renormalized away; their fraction is reported separately.
+        folded_contribution = float(np.sum(
+            counts[covered] * g.loc[covered, 'f_K_mean'].to_numpy(dtype=float)
+        ) / n) if n else np.nan
+        covered_only_fk = float(np.sum(
+            counts[covered] * g.loc[covered, 'f_K_mean'].to_numpy(dtype=float)
+        ) / nc) if nc else np.nan
+
+        out.append({
+            'period': period,
+            'analysis_bin': int(abin),
+            'N_0p5_to_10p5': int(n),
+            'N_PID_covered': int(nc),
+            'N_PID_uncovered': int(n - nc),
+            'coverage_fraction': nc / n if n else np.nan,
+            'uncovered_fraction': (n - nc) / n if n else np.nan,
+            'folded_f_K_contribution_full_sample': folded_contribution,
+            'folded_f_K_covered_only': covered_only_fk,
+        })
+
+    result = pd.DataFrame(out)
+    result.to_csv(OUTDIR / 'kaon_contamination_folded_24bins_by_period.csv', index=False)
     print('[joint high-p] wrote kaon_contamination_folded_24bins_by_period.csv')
+    if len(result):
+        print('[joint high-p] PID coverage across final bins: '
+              f"{100.0*result['coverage_fraction'].min():.2f}%--"
+              f"{100.0*result['coverage_fraction'].max():.2f}%")
     return result
 
 
