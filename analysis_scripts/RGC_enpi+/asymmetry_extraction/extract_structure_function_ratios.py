@@ -7982,9 +7982,14 @@ def _weighted_linear_fit(design, values, errors):
     chi2 = float(np.sum((residual/e)**2))
     return beta, np.sqrt(np.diag(cov)), cov, chi2, int(len(y)-len(beta)), int(len(y))
 
-def _fit_clas6_bin(data):
+def _fit_clas6_bin(data, reflect_phi=False):
     eps = data["epsilon"].to_numpy(float)
     phi = data["phi"].to_numpy(float)
+    if reflect_phi:
+        # Diagnostic convention transformation: phi -> 2*pi - phi.
+        # This reverses all sine harmonics while leaving cosine harmonics unchanged.
+        phi = np.mod(2.0 * math.pi - phi, 2.0 * math.pi)
+    # endif
     # Bacchetta depolarization-factor ratios used by the RGC likelihood.
     r_b = eps
     r_c = np.sqrt(np.maximum(1.0 - eps*eps, 0.0))
@@ -8022,6 +8027,24 @@ def run_clas6_cross_check(args):
     clas6 = _load_clas6_exclpip(clas6_path)
     clas6.to_csv(tables / "clas6_points_common_phase_space.csv", index=False)
 
+    # First verify how the trigonometric columns in exclpip.txt are related to
+    # its tabulated phi column.  This does not compare to RGC yet; it simply
+    # guards against a unit or parsing mistake in the external table.
+    phi_c6 = clas6["phi"].to_numpy(float)
+    trig_checks = {
+        "sin_phi": np.sin(phi_c6),
+        "sin_2phi": np.sin(2.0 * phi_c6),
+        "cos_phi": np.cos(phi_c6),
+        "cos_2phi": np.cos(2.0 * phi_c6),
+    }
+    print("\n[CLAS6 cross-check] exclpip.txt trigonometric-column check", flush=True)
+    for column, calculated in trig_checks.items():
+        tabulated = clas6[column].to_numpy(float)
+        good = np.isfinite(tabulated) & np.isfinite(calculated)
+        max_abs = float(np.max(np.abs(tabulated[good] - calculated[good]))) if np.any(good) else np.nan
+        print(f"  {column:8s}: max |table - calculated| = {max_abs:.3e}", flush=True)
+    # endfor
+
     cache_path = _rga_variant_cache_paths(args)["nominal"]
     if not cache_path.is_file():
         raise FileNotFoundError(f"Missing nominal selected-event cache: {cache_path}")
@@ -8052,8 +8075,9 @@ def run_clas6_cross_check(args):
         rgc = fit_one_variant(
             cut_events, run_states, dilution_records, bin_number, "nominal",
         )
-        c6fit = _fit_clas6_bin(c6)
-        if c6fit is None:
+        c6fit = _fit_clas6_bin(c6, reflect_phi=False)
+        c6fit_reflected = _fit_clas6_bin(c6, reflect_phi=True)
+        if c6fit is None or c6fit_reflected is None:
             continue
         # endif
         row = {
@@ -8071,9 +8095,24 @@ def run_clas6_cross_check(args):
             row[f"{parameter}_rgc_stat"] = float(rgc["errors"][parameter])
             row[f"{parameter}_clas6"] = c6fit[parameter]
             row[f"{parameter}_clas6_stat"] = c6fit[f"{parameter}_stat"]
+            row[f"{parameter}_clas6_phi_reflected"] = c6fit_reflected[parameter]
+            row[f"{parameter}_clas6_phi_reflected_stat"] = c6fit_reflected[f"{parameter}_stat"]
+
             sigma = math.hypot(row[f"{parameter}_rgc_stat"], row[f"{parameter}_clas6_stat"])
             row[f"{parameter}_delta"] = row[f"{parameter}_rgc"] - row[f"{parameter}_clas6"]
             row[f"{parameter}_pull"] = row[f"{parameter}_delta"]/sigma if sigma > 0.0 else np.nan
+
+            sigma_reflected = math.hypot(
+                row[f"{parameter}_rgc_stat"],
+                row[f"{parameter}_clas6_phi_reflected_stat"],
+            )
+            row[f"{parameter}_delta_phi_reflected"] = (
+                row[f"{parameter}_rgc"] - row[f"{parameter}_clas6_phi_reflected"]
+            )
+            row[f"{parameter}_pull_phi_reflected"] = (
+                row[f"{parameter}_delta_phi_reflected"] / sigma_reflected
+                if sigma_reflected > 0.0 else np.nan
+            )
         # endfor
         row.update({key: value for key, value in c6fit.items() if key.endswith("chi2") or key.endswith("ndf")})
         rows.append(row)
@@ -8082,16 +8121,21 @@ def run_clas6_cross_check(args):
     frame = pd.DataFrame(rows)
     frame.to_csv(tables / "clas6_rgc_statistical_comparison.csv", index=False)
     summary = []
-    for parameter in ("ul1", "ul2", "ll0", "ll1"):
-        pulls = pd.to_numeric(frame.get(f"{parameter}_pull", pd.Series(dtype=float)), errors="coerce").to_numpy(float)
-        pulls = pulls[np.isfinite(pulls)]
-        summary.append({
-            "parameter": parameter, "n": int(len(pulls)),
-            "chi2": float(np.sum(pulls*pulls)), "ndf": int(len(pulls)),
-            "chi2_per_ndf": float(np.mean(pulls*pulls)) if len(pulls) else np.nan,
-            "pull_mean": float(np.mean(pulls)) if len(pulls) else np.nan,
-            "pull_rms": float(np.sqrt(np.mean(pulls*pulls))) if len(pulls) else np.nan,
-        })
+    for convention, suffix in (("as_tabulated", ""), ("phi_reflected", "_phi_reflected")):
+        for parameter in ("ul1", "ul2", "ll0", "ll1"):
+            pulls = pd.to_numeric(
+                frame.get(f"{parameter}_pull{suffix}", pd.Series(dtype=float)),
+                errors="coerce",
+            ).to_numpy(float)
+            pulls = pulls[np.isfinite(pulls)]
+            summary.append({
+                "convention": convention, "parameter": parameter, "n": int(len(pulls)),
+                "chi2": float(np.sum(pulls*pulls)), "ndf": int(len(pulls)),
+                "chi2_per_ndf": float(np.mean(pulls*pulls)) if len(pulls) else np.nan,
+                "pull_mean": float(np.mean(pulls)) if len(pulls) else np.nan,
+                "pull_rms": float(np.sqrt(np.mean(pulls*pulls))) if len(pulls) else np.nan,
+            })
+        # endfor
     # endfor
     summary_frame = pd.DataFrame(summary)
     summary_frame.to_csv(tables / "clas6_rgc_statistical_summary.csv", index=False)
@@ -8130,6 +8174,11 @@ def run_clas6_cross_check(args):
         "selection": {"W": [CLAS6_W_MIN, CLAS6_W_MAX], "Q2_GeV2": [CLAS6_Q2_MIN, CLAS6_Q2_MAX], "channel_code": 1},
         "uncertainties": "Statistical only. No RGC or CLAS6 systematic uncertainties are reproduced for this cross-check.",
         "binning": "Common RGC 24-bin (xB,-tprime) scheme; CLAS6 xB and tprime reconstructed from tabulated W, Q2, cos(theta*).",
+        "phi_convention_study": (
+            "Both the CLAS6 phi values as tabulated and the diagnostic transformation "
+            "phi -> 2*pi-phi are fit. The latter flips sine harmonics and leaves cosine "
+            "harmonics unchanged; it is a convention diagnostic, not a correction to the data."
+        ),
         "clas6_data": str(clas6_path),
         "rgc_cache": str(cache_path),
     })
