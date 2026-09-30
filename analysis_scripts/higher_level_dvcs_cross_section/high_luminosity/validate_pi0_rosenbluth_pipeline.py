@@ -35,7 +35,10 @@ def main():
         U={}
         for camp,E,eps in [('rga',10.604,float(r.epsilon_rga)),('rgk',6.535,float(r.epsilon_rgk))]:
             cc=c[(c.point_id.astype(str)==str(r.point_id))&(c.campaign.astype(str).str.lower()==camp)].sort_values('phi_deg')
-            if len(cc)<4: raise RuntimeError(f'{r.point_id}/{camp}: insufficient correction rows')
+            expected_phi=np.array([0.0,90.0,180.0])
+            got_phi=np.sort(cc.phi_deg.to_numpy(float))
+            if len(cc)!=3 or not np.allclose(got_phi,expected_phi,rtol=0.0,atol=1e-10):
+                raise RuntimeError(f'{r.point_id}/{camp}: expected correction rows at phi=0,90,180 deg; got {got_phi.tolist()}')
             ph=cc.phi_deg.to_numpy(float)
             shared=(float(r.dsigma_T_dt_nb_per_GeV2)+eps*float(r.dsigma_L_dt_nb_per_GeV2)
                     +eps*np.cos(2*np.deg2rad(ph))*float(r.dsigma_TT_dt_nb_per_GeV2)
