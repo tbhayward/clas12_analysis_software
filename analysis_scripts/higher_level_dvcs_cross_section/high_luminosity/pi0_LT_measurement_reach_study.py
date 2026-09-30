@@ -751,17 +751,42 @@ def build_internal_data_extraction(common, rga_file, rgk_file, corrections_file,
         ga=rga[(rga.iq2==ir[0])&(rga.ixb==ir[1])&(rga.it==ir[2])].copy()
         gk=rgk[(rgk.iq2==ik[0])&(rgk.ixb==ik[1])&(rgk.it==ik[2])].copy()
         if ga.empty or gk.empty: continue
-        # Apply the phi-resolved GK native->shared bin-centering factor to both central values and errors.
+        # Reconstruct the native and shared GK phi dependence from the three
+        # PARTONS sampling angles (0, 90, 180 deg), then evaluate the
+        # native->shared correction at each measured phi-bin center.
         for camp,g in (("rga",ga),("rgk",gk)):
             cc=corr[(corr.point_id.astype(str)==pid)&(corr.campaign.astype(str).str.lower()==camp)].copy()
-            if cc.empty: raise RuntimeError(f"{pid}/{camp}: missing native->shared corrections")
-            # Corrections are keyed by phi_deg; nearest match is safe only at machine precision of bin centers.
-            fac=[]
-            for ph in g.phi_deg:
-                j=np.argmin(np.abs(cc.phi_deg.to_numpy(float)-float(ph)))
-                if abs(float(cc.phi_deg.iloc[j])-float(ph))>1e-5: raise RuntimeError(f"{pid}/{camp}: phi correction mismatch")
-                fac.append(float(cc.gk_shared_over_native.iloc[j]))
-            fac=np.asarray(fac); g["sigma"]*=fac; g["delta_sigma"]*=np.abs(fac)
+            if cc.empty:
+                raise RuntimeError(f"{pid}/{camp}: missing native->shared corrections")
+            cc=cc.sort_values("phi_deg")
+            ph_sample=cc.phi_deg.to_numpy(float)
+            expected_phi=np.array([0.0,90.0,180.0])
+            if len(cc)!=3 or not np.allclose(ph_sample,expected_phi,rtol=0.0,atol=1e-9):
+                raise RuntimeError(
+                    f"{pid}/{camp}: expected GK correction samples at phi = 0, 90, 180 deg; "
+                    f"got {ph_sample.tolist()}"
+                )
+            p=np.deg2rad(ph_sample)
+            H=np.column_stack([np.ones(3),np.cos(p),np.cos(2*p)])
+            if np.linalg.matrix_rank(H)!=3:
+                raise RuntimeError(f"{pid}/{camp}: singular GK harmonic reconstruction")
+            native_coeff=np.linalg.solve(H,cc.partons_value_native.to_numpy(float))
+            shared_coeff=np.linalg.solve(H,cc.partons_value_shared.to_numpy(float))
+
+            ph_meas=np.deg2rad(g.phi_deg.to_numpy(float))
+            Hm=np.column_stack([np.ones(len(g)),np.cos(ph_meas),np.cos(2*ph_meas)])
+            native_eval=Hm@native_coeff
+            shared_eval=Hm@shared_coeff
+            scale=max(float(np.max(np.abs(native_eval))),1.0)
+            if np.any(~np.isfinite(native_eval)) or np.any(~np.isfinite(shared_eval)):
+                raise RuntimeError(f"{pid}/{camp}: non-finite reconstructed GK phi dependence")
+            if np.any(np.abs(native_eval)<=1e-12*scale):
+                raise RuntimeError(f"{pid}/{camp}: reconstructed native GK cross section is zero at a measured phi")
+            fac=shared_eval/native_eval
+            if np.any(~np.isfinite(fac)) or np.any(fac<=0):
+                raise RuntimeError(f"{pid}/{camp}: invalid native->shared correction factor")
+            g["sigma"]*=fac
+            g["delta_sigma"]*=np.abs(fac)
             if camp=="rga": ga=g
             else: gk=g
         # Use the shared-coordinate epsilons, never the native flux-coordinate epsilons.
