@@ -7543,7 +7543,7 @@ def _diagnostic_period_fit_worker(task: dict[str, Any]) -> dict[str, Any]:
     points = int(task.get("profile_points", 21))
     fit = fit_one_variant(
         _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
-        bin_number, "nominal", active_periods=(period,),
+        bin_number, "nominal", active_periods=active_periods,
     )
     result: dict[str, Any] = {
         "bin_number": bin_number, "period": period, "fit": fit,
