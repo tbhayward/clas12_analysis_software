@@ -12,7 +12,7 @@ Final purpose
 
        REC PID == 211
        |chi2pid| < 3.5
-       0.5 < p < 5.0 GeV
+       no explicit pion-momentum cut
 
 3. Produce a compact, portable f_K(period,p) lookup and a coherent set of
    bootstrap replicas that can be loaded by the final kinematic-distribution
@@ -25,11 +25,11 @@ For p < 1.50 GeV:
 
     f_K(p) = 0
 
-by the adopted analysis prescription.
+by the adopted low-momentum prescription, where the pion/kaon TOF separation is strong.
 
 For
 
-    1.50 <= p < 5.00 GeV,
+    1.50 <= p < 10.50 GeV,
 
 the pion-selected sample is fit in 0.25-GeV momentum intervals with
 
@@ -40,8 +40,11 @@ the pion-selected sample is fit in 0.25-GeV momentum intervals with
 
 where every event is evaluated at its own momentum.
 
-No extrapolation beyond 5 GeV is needed because the analysis explicitly
-requires p < 5 GeV.
+The previous 5-GeV upper boundary has been removed.  The fit is extended to
+10.5 GeV, covering the physically populated RGC momentum range.  This 10.5-GeV
+value is a numerical study boundary near the beam energy, not an analysis cut;
+tracks above it are reported separately as pathological/overflow entries and
+are not used to define the PID response.
 
 Detector response
 -----------------
@@ -152,7 +155,7 @@ INPUTS = {
 
 
 OUTDIR = Path(
-    "output/beta_pid_2d_fit"
+    "output/beta_pid_2d_fit_full_momentum"
 )
 
 
@@ -192,8 +195,8 @@ MASS = {
 # Production PID region
 # =============================================================================
 
-PID_P_MIN = 0.50
-PID_P_MAX = 5.00
+PID_P_MIN = 0.00
+PID_P_MAX = 10.50
 
 CHI2PID_MAX = 3.5
 
@@ -203,7 +206,7 @@ CHI2PID_MAX = 3.5
 # =============================================================================
 
 CONTAMINATION_P_MIN = 1.50
-CONTAMINATION_P_MAX = 5.00
+CONTAMINATION_P_MAX = 10.50
 
 P_SLICE_WIDTH = 0.25
 
@@ -249,8 +252,8 @@ LOW_P_RANGES = [
 # Response calibration
 # =============================================================================
 
-RESPONSE_P_MIN = 0.50
-RESPONSE_P_MAX = 5.00
+RESPONSE_P_MIN = 0.20
+RESPONSE_P_MAX = 10.50
 RESPONSE_P_BIN_WIDTH = 0.10
 
 
@@ -1788,7 +1791,7 @@ def plot_beta_vs_p_reviewer(
         after_pid,
         (
             r"After $|\chi^2_{\rm PID}|<3.5$, "
-            r"$0.5<p<5.0$ GeV"
+            rf"$0<p<{PID_P_MAX:.1f}$ GeV"
         ),
     )
 
@@ -4159,6 +4162,21 @@ def main():
             f"[{period}] positive FD tracks: "
             f"{len(data['p']):,}",
 
+            flush=True,
+        )
+
+
+        # Full-momentum coverage diagnostic.  The 10.5-GeV endpoint is a
+        # numerical PID-study boundary, not a physics-selection cut.
+        pvals = data["p"]
+        n_all = len(pvals)
+        print(
+            f"[{period}] momentum coverage: "
+            f"p>5: {np.count_nonzero(pvals > 5.0):,} "
+            f"({100.0*np.count_nonzero(pvals > 5.0)/max(n_all,1):.2f}%), "
+            f"p>8: {np.count_nonzero(pvals > 8.0):,} "
+            f"({100.0*np.count_nonzero(pvals > 8.0)/max(n_all,1):.2f}%), "
+            f"p>=10.5 overflow: {np.count_nonzero(pvals >= PID_P_MAX):,}",
             flush=True,
         )
 
