@@ -4616,6 +4616,148 @@ def plot_target_axis_variants(
     return paths
 
 
+def plot_period_stability_published(
+    frame: pd.DataFrame,
+    output_dir: Path,
+) -> list[str]:
+    """Plot the three independent run-period MLE results for the five
+    publication-facing polarized structure-function ratios.
+
+    The top panel shows Su22, Fa22, and Sp23 in combined-bin order 1--24.
+    The reference value in each bin is the inverse-variance weighted mean of
+    the three statistically independent period-only fits.  The lower panel
+    shows the residual pull with respect to that mean,
+
+        (A_p - Abar) / sqrt(sigma_p^2 - sigma_Abar^2),
+
+    where the subtraction accounts for the fact that period p contributes to
+    Abar.  No systematic uncertainties enter this diagnostic.
+    """
+    ensure_directory(output_dir)
+    paths: list[str] = []
+    bin_numbers = frame["bin_number"].to_numpy(dtype=int)
+    offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
+    markers = {"su22": "o", "fa22": "s", "sp23": "^"}
+
+    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+        values_by_period: dict[str, np.ndarray] = {}
+        errors_by_period: dict[str, np.ndarray] = {}
+        valid_by_period: dict[str, np.ndarray] = {}
+        for period in PERIODS:
+            values = frame[f"{parameter}_{period}"].to_numpy(dtype=float)
+            errors = frame[f"{parameter}_stat_{period}"].to_numpy(dtype=float)
+            quality = period_fit_quality_mask(frame, period)
+            valid = quality & np.isfinite(values) & np.isfinite(errors) & (errors > 0.0)
+            values_by_period[period] = values
+            errors_by_period[period] = errors
+            valid_by_period[period] = valid
+        # endfor
+
+        weighted_mean = np.full(len(frame), np.nan, dtype=float)
+        weighted_mean_error = np.full(len(frame), np.nan, dtype=float)
+        for row_index in range(len(frame)):
+            row_values = []
+            row_weights = []
+            for period in PERIODS:
+                if not valid_by_period[period][row_index]:
+                    continue
+                # endif
+                sigma = errors_by_period[period][row_index]
+                row_values.append(values_by_period[period][row_index])
+                row_weights.append(1.0 / sigma**2)
+            # endfor
+            if len(row_values) >= 2:
+                weights = np.asarray(row_weights, dtype=float)
+                vals = np.asarray(row_values, dtype=float)
+                weight_sum = float(np.sum(weights))
+                weighted_mean[row_index] = float(np.sum(weights * vals) / weight_sum)
+                weighted_mean_error[row_index] = math.sqrt(1.0 / weight_sum)
+            # endif
+        # endfor
+
+        fig = plt.figure(figsize=(15, 7.5))
+        grid = fig.add_gridspec(2, 1, height_ratios=(2.2, 1.0), hspace=0.06)
+        ax = fig.add_subplot(grid[0])
+        pull_ax = fig.add_subplot(grid[1], sharex=ax)
+
+        ax.plot(
+            bin_numbers,
+            weighted_mean,
+            linestyle="none",
+            marker="_",
+            markersize=12,
+            label="Weighted mean",
+        )
+        for period in PERIODS:
+            valid = valid_by_period[period]
+            x = bin_numbers.astype(float) + offsets[period]
+            ax.errorbar(
+                x[valid],
+                values_by_period[period][valid],
+                yerr=errors_by_period[period][valid],
+                marker=markers[period],
+                linestyle="none",
+                capsize=2,
+                label=PERIOD_LABELS[period],
+            )
+
+            denominator2 = (
+                errors_by_period[period]**2 - weighted_mean_error**2
+            )
+            pull_valid = (
+                valid
+                & np.isfinite(weighted_mean)
+                & np.isfinite(weighted_mean_error)
+                & (denominator2 > 0.0)
+            )
+            pulls = np.full(len(frame), np.nan, dtype=float)
+            pulls[pull_valid] = (
+                values_by_period[period][pull_valid]
+                - weighted_mean[pull_valid]
+            ) / np.sqrt(denominator2[pull_valid])
+            pull_ax.plot(
+                x[pull_valid],
+                pulls[pull_valid],
+                marker=markers[period],
+                linestyle="none",
+                label=PERIOD_LABELS[period],
+            )
+        # endfor
+
+        ax.axhline(0.0, linewidth=0.8)
+        ax.set_ylabel(PARAMETER_LABELS[parameter])
+        apply_parameter_y_limits(ax, parameter)
+        ax.grid(alpha=0.25)
+        ax.legend(ncol=4, loc="best")
+        ax.tick_params(labelbottom=False)
+
+        pull_ax.axhline(0.0, linewidth=0.8)
+        pull_ax.axhline(1.0, linewidth=0.6, linestyle="--")
+        pull_ax.axhline(-1.0, linewidth=0.6, linestyle="--")
+        pull_ax.axhline(2.0, linewidth=0.6, linestyle=":")
+        pull_ax.axhline(-2.0, linewidth=0.6, linestyle=":")
+        pull_ax.set_ylabel(r"Pull wrt. mean")
+        pull_ax.set_xlabel("Combined kinematic-bin number")
+        pull_ax.set_xticks(bin_numbers)
+        pull_ax.set_xlim(0.4, NUMBER_OF_BINS + 0.6)
+        pull_ax.grid(alpha=0.25)
+
+        fig.suptitle(
+            f"Run-period stability: {PARAMETER_LABELS[parameter]}",
+            y=0.995,
+        )
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.975))
+        stem = f"period_stability_{parameter}_bins_01_24"
+        png_path = output_dir / f"{stem}.png"
+        pdf_path = output_dir / f"{stem}.pdf"
+        fig.savefig(png_path, dpi=200)
+        fig.savefig(pdf_path)
+        plt.close(fig)
+        paths.extend((str(png_path), str(pdf_path)))
+    # endfor
+    return paths
+
+
 def plot_period_stability(
     frame: pd.DataFrame,
     output_dir: Path,
@@ -7403,6 +7545,15 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--workers", type=int, default=MAXIMUM_WORKERS)
     parser.add_argument("--skip-plots", action="store_true")
     parser.add_argument(
+        "--period-stability-only", action="store_true",
+        help=(
+            "Run only the nominal simultaneous MLE plus the three independent "
+            "period-only MLE extractions in each of the 24 bins, then make the "
+            "five polarized run-period comparison/pull plots. No systematic or "
+            "target-axis studies are run."
+        ),
+    )
+    parser.add_argument(
         "--baseline-zero-uu-only", action="store_true",
         help="Run only the baseline nominal likelihood with u1=u2=0 fixed; skip all systematic studies.",
     )
@@ -7429,12 +7580,15 @@ def main() -> int:
         min(int(args.workers), MAXIMUM_WORKERS, os.cpu_count() or 1, NUMBER_OF_BINS),
     )
     root = args.output_dir.expanduser().resolve()
-    if args.baseline_zero_uu_only:
+    if args.baseline_zero_uu_only or args.period_stability_only:
         args.disable_isr = True
         args.disable_momentum_corrections = True
         args.disable_channel_selection = True
     # endif
-    nominal_dir = root / ("nominal_zero_uu" if args.baseline_zero_uu_only else "nominal")
+    nominal_dir = root / (
+        "period_stability" if args.period_stability_only
+        else ("nominal_zero_uu" if args.baseline_zero_uu_only else "nominal")
+    )
     isr_dir = root / "isr"
     momentum_dir = root / "momentum_corrections"
     channel_dir = root / "channel_selection"
@@ -7580,12 +7734,31 @@ def main() -> int:
         workers=workers,
         reuse_cache=args.reuse_cache,
         skip_plots=args.skip_plots,
-        include_target_axis_study=(not args.baseline_zero_uu_only),
+        include_target_axis_study=(
+            not args.baseline_zero_uu_only and not args.period_stability_only
+        ),
         include_period_diagnostics=(not args.baseline_zero_uu_only),
         cut_label="nominal",
         source_cache_path=(None if args.reuse_cache else nominal_source_cache),
         zero_uu_baseline=args.baseline_zero_uu_only,
     )
+
+    if args.period_stability_only:
+        stability_dir = nominal_dir / "plots/period_stability_published"
+        paths = []
+        if not args.skip_plots:
+            paths = plot_period_stability_published(
+                nominal_result["frame"], stability_dir
+            )
+        # endif
+        print("[period-stability-only] complete", flush=True)
+        print(f"  Results: {nominal_result['csv']}", flush=True)
+        print(f"  Plots:   {stability_dir}", flush=True)
+        if paths:
+            print(f"  Wrote:   {len(paths) // 2} polarized stability figures", flush=True)
+        # endif
+        return 0
+    # endif
 
     if args.baseline_zero_uu_only:
         run_xb_integrated_tprime_zero_uu_study(
