@@ -7900,7 +7900,7 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
 
 
 # -----------------------------------------------------------------------------
-# CLAS6 EG1b exclusive-pi+ cross-check (statistical-only, one-pass study)
+# CLAS6 EG1b exclusive-pi+ cross-check
 # -----------------------------------------------------------------------------
 
 CLAS6_W_MIN = 2.0
@@ -7909,6 +7909,8 @@ CLAS6_Q2_MIN = 1.0
 CLAS6_Q2_MAX = 5.0
 PION_MASS_GEV = 0.13957039
 NEUTRON_MASS_GEV = 0.93956542
+CLAS6_MATCH_VARIABLES = ("Q2", "W", "minus_tprime", "pion_p_lab")
+
 
 def _clas6_t_and_tprime(w, q2, cos_theta):
     w = np.asarray(w, dtype=float)
@@ -7922,6 +7924,51 @@ def _clas6_t_and_tprime(w, q2, cos_theta):
     tmin = -q2 + PION_MASS_GEV**2 - 2.0*(q0*epi - qmag*ppi)
     return t, tmin - t
 
+
+def _exclusive_cos_theta_from_t(w, q2, t):
+    """Recover cos(theta_pi*) for gamma*p -> pi+n from W,Q2,t."""
+    w = np.asarray(w, dtype=float)
+    q2 = np.asarray(q2, dtype=float)
+    t = np.asarray(t, dtype=float)
+    q0 = (w*w - PROTON_MASS_GEV**2 - q2) / (2.0*w)
+    qmag = np.sqrt(np.maximum(q0*q0 + q2, 0.0))
+    epi = (w*w + PION_MASS_GEV**2 - NEUTRON_MASS_GEV**2) / (2.0*w)
+    ppi = np.sqrt(np.maximum(epi*epi - PION_MASS_GEV**2, 0.0))
+    denom = 2.0*qmag*ppi
+    out = np.full(np.broadcast(w, q2, t).shape, np.nan, dtype=float)
+    good = np.isfinite(denom) & (denom > 0.0)
+    out[good] = (
+        t[good] + q2[good] - PION_MASS_GEV**2 + 2.0*q0[good]*epi[good]
+    ) / denom[good]
+    out[good] = np.clip(out[good], -1.0, 1.0)
+    return out
+
+
+def _exclusive_pion_lab_momentum(beam_energy, w, q2, cos_theta):
+    """Two-body pi+ lab momentum for a stationary proton target.
+
+    The boost is along q.  This is exact for gamma*p -> pi+n at the supplied
+    W,Q2,cos(theta*) and is used only as a phase-space/acceptance diagnostic.
+    """
+    e0 = np.asarray(beam_energy, dtype=float)
+    w = np.asarray(w, dtype=float)
+    q2 = np.asarray(q2, dtype=float)
+    cth = np.asarray(cos_theta, dtype=float)
+    nu = (w*w + q2 - PROTON_MASS_GEV**2) / (2.0*PROTON_MASS_GEV)
+    qmag_lab = np.sqrt(np.maximum(nu*nu + q2, 0.0))
+    total_e = PROTON_MASS_GEV + nu
+    beta = np.divide(qmag_lab, total_e, out=np.zeros_like(qmag_lab), where=total_e > 0.0)
+    gamma = np.divide(total_e, w, out=np.full_like(total_e, np.nan), where=w > 0.0)
+    epi_star = (w*w + PION_MASS_GEV**2 - NEUTRON_MASS_GEV**2) / (2.0*w)
+    ppi_star = np.sqrt(np.maximum(epi_star*epi_star - PION_MASS_GEV**2, 0.0))
+    epi_lab = gamma*(epi_star + beta*ppi_star*cth)
+    ppi_lab = np.sqrt(np.maximum(epi_lab*epi_lab - PION_MASS_GEV**2, 0.0))
+    # e0 is deliberately accepted/checked here: the same W,Q2 point can only
+    # occur at a beam energy for which the electron kinematics are physical.
+    physical = np.isfinite(e0) & (e0 > nu)
+    return np.where(physical, ppi_lab, np.nan)
+
+
 def _clas6_analysis_bin(xb, minus_tprime):
     xb_edges = np.asarray([0.10, 0.25, 0.35, 0.45, 0.60], dtype=float)
     tp_edges = np.asarray([0.05, 0.25, 0.45, 0.65, 0.85, 1.05, 1.25], dtype=float)
@@ -7931,6 +7978,7 @@ def _clas6_analysis_bin(xb, minus_tprime):
     out = np.full(np.asarray(xb).shape, -1, dtype=int)
     out[good] = ix[good]*6 + it[good] + 1
     return out
+
 
 def _load_clas6_exclpip(path):
     names = [
@@ -7956,9 +8004,14 @@ def _load_clas6_exclpip(path):
     t, tp = _clas6_t_and_tprime(frame["W"], frame["Q2"], frame["cos_theta"])
     frame["t"] = t
     frame["minus_tprime"] = tp
+    frame["pion_p_lab"] = _exclusive_pion_lab_momentum(
+        frame["E"].to_numpy(float), frame["W"].to_numpy(float),
+        frame["Q2"].to_numpy(float), frame["cos_theta"].to_numpy(float),
+    )
     frame["analysis_bin"] = _clas6_analysis_bin(frame["xB"].to_numpy(), tp)
     frame = frame[frame["analysis_bin"] > 0].copy()
     return frame
+
 
 def _weighted_linear_fit(design, values, errors):
     x = np.asarray(design, dtype=float)
@@ -7969,9 +8022,9 @@ def _weighted_linear_fit(design, values, errors):
     if len(y) < x.shape[1] + 1:
         return None
     # endif
-    w = 1.0/(e*e)
-    normal = x.T @ (w[:, None]*x)
-    rhs = x.T @ (w*y)
+    weight = 1.0/(e*e)
+    normal = x.T @ (weight[:, None]*x)
+    rhs = x.T @ (weight*y)
     try:
         cov = np.linalg.inv(normal)
         beta = cov @ rhs
@@ -7982,15 +8035,20 @@ def _weighted_linear_fit(design, values, errors):
     chi2 = float(np.sum((residual/e)**2))
     return beta, np.sqrt(np.diag(cov)), cov, chi2, int(len(y)-len(beta)), int(len(y))
 
-def _fit_clas6_bin(data, reflect_phi=False):
+
+def _fit_clas6_bin(data, reflect_phi=True):
+    """Fit published CLAS6 beam-axis asymmetries using each point's epsilon.
+
+    The adopted comparison convention is phi_RGC = 2*pi - phi_CLAS6.  Thus the
+    CLAS6 sine harmonics are reflected while constant/cosine harmonics are not.
+    Each CLAS6 point retains its own published epsilon, so its beam-energy
+    dependence enters the depolarization factors point by point.
+    """
     eps = data["epsilon"].to_numpy(float)
     phi = data["phi"].to_numpy(float)
     if reflect_phi:
-        # Diagnostic convention transformation: phi -> 2*pi - phi.
-        # This reverses all sine harmonics while leaving cosine harmonics unchanged.
-        phi = np.mod(2.0 * math.pi - phi, 2.0 * math.pi)
+        phi = np.mod(2.0*math.pi - phi, 2.0*math.pi)
     # endif
-    # Bacchetta depolarization-factor ratios used by the RGC likelihood.
     r_b = eps
     r_c = np.sqrt(np.maximum(1.0 - eps*eps, 0.0))
     r_v = np.sqrt(np.maximum(2.0*eps*(1.0 + eps), 0.0))
@@ -8013,15 +8071,94 @@ def _fit_clas6_bin(data, reflect_phi=False):
     }
 
 
+def _add_rgc_crosscheck_kinematics(events):
+    """Add exclusive reconstructed pion momentum to an RGC event dictionary."""
+    out = {key: np.asarray(value) for key, value in events.items()}
+    period_index = np.asarray(out["period_index"], dtype=int)
+    beam = np.asarray([BEAM_ENERGY_GEV[PERIODS[i]] for i in period_index], dtype=float)
+    cos_theta = _exclusive_cos_theta_from_t(
+        out["W"], out["Q2"], -np.asarray(out["minus_t"], dtype=float),
+    )
+    out["cos_theta_star"] = cos_theta
+    out["pion_p_lab"] = _exclusive_pion_lab_momentum(
+        beam, out["W"], out["Q2"], cos_theta,
+    )
+    return out
+
+
+def _common_envelope_for_bin(rgc_events, clas6_bin, bin_number):
+    """Intersection of the populated RGC/CLAS6 ranges in four key variables."""
+    rgc_mask = np.asarray(rgc_events["bin_number"]) == int(bin_number)
+    envelope = {}
+    for variable in CLAS6_MATCH_VARIABLES:
+        r = np.asarray(rgc_events[variable], dtype=float)[rgc_mask]
+        c = pd.to_numeric(clas6_bin[variable], errors="coerce").to_numpy(float)
+        r = r[np.isfinite(r)]
+        c = c[np.isfinite(c)]
+        if len(r) == 0 or len(c) == 0:
+            return None
+        # endif
+        low = max(float(np.min(r)), float(np.min(c)))
+        high = min(float(np.max(r)), float(np.max(c)))
+        if not np.isfinite(low) or not np.isfinite(high) or high <= low:
+            return None
+        # endif
+        envelope[variable] = (low, high)
+    # endfor
+    return envelope
+
+
+def _apply_envelope_to_rgc(events, bin_number, envelope):
+    mask = np.asarray(events["bin_number"]) == int(bin_number)
+    for variable, (low, high) in envelope.items():
+        values = np.asarray(events[variable], dtype=float)
+        mask &= np.isfinite(values) & (values >= low) & (values <= high)
+    # endfor
+    return mask
+
+
+def _apply_envelope_to_clas6(frame, envelope):
+    mask = np.ones(len(frame), dtype=bool)
+    for variable, (low, high) in envelope.items():
+        values = pd.to_numeric(frame[variable], errors="coerce").to_numpy(float)
+        mask &= np.isfinite(values) & (values >= low) & (values <= high)
+    # endfor
+    return frame.loc[mask].copy()
+
+
+def _kinematic_summary(prefix, rgc_events, rgc_mask, clas6_frame):
+    result = {}
+    variables = ("xB", "Q2", "W", "minus_tprime", "epsilon", "pion_p_lab")
+    for variable in variables:
+        r = np.asarray(rgc_events[variable], dtype=float)[rgc_mask]
+        c = pd.to_numeric(clas6_frame[variable], errors="coerce").to_numpy(float)
+        for dataset, values in (("rgc", r), ("clas6", c)):
+            values = values[np.isfinite(values)]
+            if len(values) == 0:
+                continue
+            # endif
+            result[f"{prefix}_{variable}_{dataset}_mean"] = float(np.mean(values))
+            result[f"{prefix}_{variable}_{dataset}_rms"] = float(np.std(values))
+            result[f"{prefix}_{variable}_{dataset}_q10"] = float(np.quantile(values, 0.10))
+            result[f"{prefix}_{variable}_{dataset}_median"] = float(np.median(values))
+            result[f"{prefix}_{variable}_{dataset}_q90"] = float(np.quantile(values, 0.90))
+        # endfor
+    # endfor
+    return result
+
+
+_CLAS6_MATCH_ENVELOPES = None
+
 
 def initialize_clas6_cross_check_worker(
     cache_path_text: str,
     run_state_payload: dict[str, dict[str, list[float] | list[int]]],
     dilution_payload: dict[str, dict[str, dict[str, float | int]]],
+    match_envelopes: dict[int, dict[str, tuple[float, float]]] | None = None,
 ) -> None:
-    """Load the nominal cache once per CLAS6 worker and apply common W/Q2 cuts."""
+    """Load cache once per worker; optionally retain only common-envelope events."""
     initialize_fit_worker(cache_path_text, run_state_payload, dilution_payload)
-    global _WORKER_EVENTS
+    global _WORKER_EVENTS, _CLAS6_MATCH_ENVELOPES
     common = (
         (_WORKER_EVENTS["W"] > CLAS6_W_MIN)
         & (_WORKER_EVENTS["W"] < CLAS6_W_MAX)
@@ -8029,10 +8166,18 @@ def initialize_clas6_cross_check_worker(
         & (_WORKER_EVENTS["Q2"] < CLAS6_Q2_MAX)
     )
     _WORKER_EVENTS = {key: np.asarray(value)[common] for key, value in _WORKER_EVENTS.items()}
+    _WORKER_EVENTS = _add_rgc_crosscheck_kinematics(_WORKER_EVENTS)
+    _CLAS6_MATCH_ENVELOPES = match_envelopes
+    if match_envelopes:
+        keep = np.zeros(len(_WORKER_EVENTS["bin_number"]), dtype=bool)
+        for bin_number, envelope in match_envelopes.items():
+            keep |= _apply_envelope_to_rgc(_WORKER_EVENTS, int(bin_number), envelope)
+        # endfor
+        _WORKER_EVENTS = {key: np.asarray(value)[keep] for key, value in _WORKER_EVENTS.items()}
+    # endif
 
 
 def _clas6_rgc_fit_worker(bin_number: int) -> tuple[int, dict[str, Any]]:
-    """Fit one RGC bin for the statistical-only CLAS6 cross-check."""
     if _WORKER_EVENTS is None or _WORKER_RUN_STATES is None or _WORKER_DILUTION_RECORDS is None:
         raise RuntimeError("CLAS6 cross-check worker was not initialized.")
     # endif
@@ -8042,8 +8187,55 @@ def _clas6_rgc_fit_worker(bin_number: int) -> tuple[int, dict[str, Any]]:
     )
     return int(bin_number), result
 
+
+def _run_clas6_rgc_parallel_fit(
+    cache_path, run_state_payload, dilution_payload, eligible_bins, workers,
+    match_envelopes=None, label="broad",
+):
+    fits = {}
+    n_workers = max(1, min(int(workers), 8, len(eligible_bins)))
+    print(
+        f"[CLAS6 cross-check] {label}: fitting {len(eligible_bins)} bins with "
+        f"{n_workers} workers", flush=True,
+    )
+    mp_context = mp.get_context("spawn")
+    with ProcessPoolExecutor(
+        max_workers=n_workers, mp_context=mp_context,
+        initializer=initialize_clas6_cross_check_worker,
+        initargs=(str(cache_path), run_state_payload, dilution_payload, match_envelopes),
+    ) as executor:
+        futures = {executor.submit(_clas6_rgc_fit_worker, b): b for b in eligible_bins}
+        for completed, future in enumerate(as_completed(futures), start=1):
+            bin_number, fit = future.result()
+            fits[bin_number] = fit
+            print(
+                f"[CLAS6 cross-check] {label}: completed bin {bin_number:02d} "
+                f"({completed}/{len(eligible_bins)})", flush=True,
+            )
+        # endfor
+    # endwith
+    return fits
+
+
+def _comparison_summary(frame, fit_tag):
+    rows = []
+    for parameter in ("ul1", "ul2", "ll0", "ll1"):
+        column = f"{fit_tag}_{parameter}_pull"
+        pulls = pd.to_numeric(frame.get(column, pd.Series(dtype=float)), errors="coerce").to_numpy(float)
+        pulls = pulls[np.isfinite(pulls)]
+        rows.append({
+            "comparison": fit_tag, "parameter": parameter, "n": int(len(pulls)),
+            "chi2": float(np.sum(pulls*pulls)), "ndf": int(len(pulls)),
+            "chi2_per_ndf": float(np.mean(pulls*pulls)) if len(pulls) else np.nan,
+            "pull_mean": float(np.mean(pulls)) if len(pulls) else np.nan,
+            "pull_rms": float(np.sqrt(np.mean(pulls*pulls))) if len(pulls) else np.nan,
+        })
+    # endfor
+    return rows
+
+
 def run_clas6_cross_check(args, workers):
-    """Statistical-only CLAS6 EG1b comparison in the common RGC 24-bin scheme."""
+    """CLAS6 EG1b comparison with broad and common-envelope phase-space fits."""
     out = args.output_dir.expanduser().resolve() / "clas6_cross_check"
     tables, plots = out / "tables", out / "plots"
     for directory in (out, tables, plots):
@@ -8055,17 +8247,12 @@ def run_clas6_cross_check(args, workers):
         raise FileNotFoundError(f"Missing CLAS6 data file: {clas6_path}")
     # endif
     clas6 = _load_clas6_exclpip(clas6_path)
-    clas6.to_csv(tables / "clas6_points_common_phase_space.csv", index=False)
+    clas6.to_csv(tables / "clas6_points_common_W_Q2.csv", index=False)
 
-    # First verify how the trigonometric columns in exclpip.txt are related to
-    # its tabulated phi column.  This does not compare to RGC yet; it simply
-    # guards against a unit or parsing mistake in the external table.
     phi_c6 = clas6["phi"].to_numpy(float)
     trig_checks = {
-        "sin_phi": np.sin(phi_c6),
-        "sin_2phi": np.sin(2.0 * phi_c6),
-        "cos_phi": np.cos(phi_c6),
-        "cos_2phi": np.cos(2.0 * phi_c6),
+        "sin_phi": np.sin(phi_c6), "sin_2phi": np.sin(2.0*phi_c6),
+        "cos_phi": np.cos(phi_c6), "cos_2phi": np.cos(2.0*phi_c6),
     }
     print("\n[CLAS6 cross-check] exclpip.txt trigonometric-column check", flush=True)
     for column, calculated in trig_checks.items():
@@ -8085,6 +8272,7 @@ def run_clas6_cross_check(args, workers):
         & (events["Q2"] > CLAS6_Q2_MIN) & (events["Q2"] < CLAS6_Q2_MAX)
     )
     cut_events = {key: np.asarray(value)[common] for key, value in events.items()}
+    cut_events = _add_rgc_crosscheck_kinematics(cut_events)
 
     run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
     run_states = run_state_arrays(run_records)
@@ -8095,16 +8283,29 @@ def run_clas6_cross_check(args, workers):
     dilution_records = load_dilution_factors(dilution_path, "nominal")
 
     eligible_bins = []
+    envelopes = {}
+    matched_clas6 = {}
     for bin_number in range(1, NUMBER_OF_BINS + 1):
-        n_rgc = int(np.count_nonzero(cut_events["bin_number"] == bin_number))
+        rgc_bin_mask = np.asarray(cut_events["bin_number"]) == bin_number
+        n_rgc = int(np.count_nonzero(rgc_bin_mask))
         c6 = clas6[clas6["analysis_bin"] == bin_number]
-        if n_rgc > 0 and not c6.empty:
-            eligible_bins.append(bin_number)
-            print(
-                f"[CLAS6 cross-check] queue bin {bin_number:02d}: "
-                f"RGC={n_rgc:,}, CLAS6 points={len(c6)}", flush=True,
-            )
+        if n_rgc == 0 or c6.empty:
+            continue
         # endif
+        envelope = _common_envelope_for_bin(cut_events, c6, bin_number)
+        c6_match = _apply_envelope_to_clas6(c6, envelope) if envelope is not None else c6.iloc[0:0].copy()
+        rgc_match = _apply_envelope_to_rgc(cut_events, bin_number, envelope) if envelope is not None else np.zeros(len(cut_events["bin_number"]), dtype=bool)
+        n_rgc_match = int(np.count_nonzero(rgc_match))
+        if envelope is not None and n_rgc_match > 0 and len(c6_match) >= 5:
+            envelopes[bin_number] = envelope
+            matched_clas6[bin_number] = c6_match
+        # endif
+        eligible_bins.append(bin_number)
+        print(
+            f"[CLAS6 cross-check] bin {bin_number:02d}: broad RGC={n_rgc:,}, "
+            f"CLAS6={len(c6):,}; matched RGC={n_rgc_match:,}, CLAS6={len(c6_match):,}",
+            flush=True,
+        )
     # endfor
 
     run_state_payload = {
@@ -8122,106 +8323,105 @@ def run_clas6_cross_check(args, workers):
         }
         for period in PERIODS
     }
-    rgc_fits = {}
-    n_workers = max(1, min(int(workers), 8, len(eligible_bins)))
-    print(f"[CLAS6 cross-check] fitting {len(eligible_bins)} bins with {n_workers} workers", flush=True)
-    mp_context = mp.get_context("spawn")
-    with ProcessPoolExecutor(
-        max_workers=n_workers, mp_context=mp_context,
-        initializer=initialize_clas6_cross_check_worker,
-        initargs=(str(cache_path), run_state_payload, dilution_payload),
-    ) as executor:
-        futures = {executor.submit(_clas6_rgc_fit_worker, b): b for b in eligible_bins}
-        for completed, future in enumerate(as_completed(futures), start=1):
-            bin_number, fit = future.result()
-            rgc_fits[bin_number] = fit
-            print(
-                f"[CLAS6 cross-check] completed bin {bin_number:02d} "
-                f"({completed}/{len(eligible_bins)})", flush=True,
-            )
-        # endfor
-    # endwith
 
+    broad_fits = _run_clas6_rgc_parallel_fit(
+        cache_path, run_state_payload, dilution_payload, eligible_bins, workers,
+        match_envelopes=None, label="broad overlap",
+    )
+    matched_bins = sorted(envelopes)
+    matched_fits = _run_clas6_rgc_parallel_fit(
+        cache_path, run_state_payload, dilution_payload, matched_bins, workers,
+        match_envelopes=envelopes, label="common envelope",
+    ) if matched_bins else {}
+
+    envelope_rows = []
     rows = []
     for bin_number in eligible_bins:
-        n_rgc = int(np.count_nonzero(cut_events["bin_number"] == bin_number))
-        c6 = clas6[clas6["analysis_bin"] == bin_number]
-        rgc = rgc_fits[bin_number]
-        c6fit = _fit_clas6_bin(c6, reflect_phi=False)
-        c6fit_reflected = _fit_clas6_bin(c6, reflect_phi=True)
-        if c6fit is None or c6fit_reflected is None:
+        c6_broad = clas6[clas6["analysis_bin"] == bin_number].copy()
+        broad_mask = np.asarray(cut_events["bin_number"]) == bin_number
+        broad_c6_fit = _fit_clas6_bin(c6_broad, reflect_phi=True)
+        if broad_c6_fit is None or bin_number not in broad_fits:
             continue
         # endif
         row = {
-            "bin_number": bin_number, "n_rgc": n_rgc, "n_clas6_points": len(c6),
-            "mean_xB_rgc": float(np.mean(cut_events["xB"][cut_events["bin_number"] == bin_number])),
-            "mean_Q2_rgc": float(np.mean(cut_events["Q2"][cut_events["bin_number"] == bin_number])),
-            "mean_W_rgc": float(np.mean(cut_events["W"][cut_events["bin_number"] == bin_number])),
-            "mean_xB_clas6": float(c6["xB"].mean()),
-            "mean_Q2_clas6": float(c6["Q2"].mean()),
-            "mean_W_clas6": float(c6["W"].mean()),
-            "rgc_fit_valid": bool(rgc["valid"]), "rgc_edm": float(rgc["edm"]),
+            "bin_number": bin_number,
+            "n_rgc_broad": int(np.count_nonzero(broad_mask)),
+            "n_clas6_broad": int(len(c6_broad)),
         }
-        for parameter in ("ul1", "ul2", "ll0", "ll1"):
-            row[f"{parameter}_rgc"] = float(rgc["values"][parameter])
-            row[f"{parameter}_rgc_stat"] = float(rgc["errors"][parameter])
-            row[f"{parameter}_clas6"] = c6fit[parameter]
-            row[f"{parameter}_clas6_stat"] = c6fit[f"{parameter}_stat"]
-            row[f"{parameter}_clas6_phi_reflected"] = c6fit_reflected[parameter]
-            row[f"{parameter}_clas6_phi_reflected_stat"] = c6fit_reflected[f"{parameter}_stat"]
+        row.update(_kinematic_summary("broad", cut_events, broad_mask, c6_broad))
 
-            sigma = math.hypot(row[f"{parameter}_rgc_stat"], row[f"{parameter}_clas6_stat"])
-            row[f"{parameter}_delta"] = row[f"{parameter}_rgc"] - row[f"{parameter}_clas6"]
-            row[f"{parameter}_pull"] = row[f"{parameter}_delta"]/sigma if sigma > 0.0 else np.nan
+        if bin_number in envelopes:
+            envelope = envelopes[bin_number]
+            rgc_match_mask = _apply_envelope_to_rgc(cut_events, bin_number, envelope)
+            c6_match = matched_clas6[bin_number]
+            row["n_rgc_matched"] = int(np.count_nonzero(rgc_match_mask))
+            row["n_clas6_matched"] = int(len(c6_match))
+            row.update(_kinematic_summary("matched", cut_events, rgc_match_mask, c6_match))
+            envelope_row = {"bin_number": bin_number}
+            for variable, (low, high) in envelope.items():
+                envelope_row[f"{variable}_min"] = low
+                envelope_row[f"{variable}_max"] = high
+            # endfor
+            envelope_rows.append(envelope_row)
+        else:
+            row["n_rgc_matched"] = 0
+            row["n_clas6_matched"] = 0
+        # endif
 
-            sigma_reflected = math.hypot(
-                row[f"{parameter}_rgc_stat"],
-                row[f"{parameter}_clas6_phi_reflected_stat"],
-            )
-            row[f"{parameter}_delta_phi_reflected"] = (
-                row[f"{parameter}_rgc"] - row[f"{parameter}_clas6_phi_reflected"]
-            )
-            row[f"{parameter}_pull_phi_reflected"] = (
-                row[f"{parameter}_delta_phi_reflected"] / sigma_reflected
-                if sigma_reflected > 0.0 else np.nan
-            )
+        for fit_tag, rgc_fit, c6_data in (
+            ("broad", broad_fits.get(bin_number), c6_broad),
+            ("matched", matched_fits.get(bin_number), matched_clas6.get(bin_number)),
+        ):
+            if rgc_fit is None or c6_data is None or len(c6_data) < 5:
+                continue
+            # endif
+            c6_fit = _fit_clas6_bin(c6_data, reflect_phi=True)
+            if c6_fit is None:
+                continue
+            # endif
+            row[f"{fit_tag}_rgc_fit_valid"] = bool(rgc_fit["valid"])
+            row[f"{fit_tag}_rgc_edm"] = float(rgc_fit["edm"])
+            for parameter in ("ul1", "ul2", "ll0", "ll1"):
+                rgc_value = float(rgc_fit["values"][parameter])
+                rgc_stat = float(rgc_fit["errors"][parameter])
+                c6_value = float(c6_fit[parameter])
+                c6_stat = float(c6_fit[f"{parameter}_stat"])
+                sigma = math.hypot(rgc_stat, c6_stat)
+                row[f"{fit_tag}_{parameter}_rgc"] = rgc_value
+                row[f"{fit_tag}_{parameter}_rgc_stat"] = rgc_stat
+                row[f"{fit_tag}_{parameter}_clas6"] = c6_value
+                row[f"{fit_tag}_{parameter}_clas6_stat"] = c6_stat
+                row[f"{fit_tag}_{parameter}_delta"] = rgc_value - c6_value
+                row[f"{fit_tag}_{parameter}_pull"] = (rgc_value - c6_value)/sigma if sigma > 0.0 else np.nan
+            # endfor
         # endfor
-        row.update({key: value for key, value in c6fit.items() if key.endswith("chi2") or key.endswith("ndf")})
         rows.append(row)
     # endfor
 
     frame = pd.DataFrame(rows)
-    frame.to_csv(tables / "clas6_rgc_statistical_comparison.csv", index=False)
-    summary = []
-    for convention, suffix in (("as_tabulated", ""), ("phi_reflected", "_phi_reflected")):
-        for parameter in ("ul1", "ul2", "ll0", "ll1"):
-            pulls = pd.to_numeric(
-                frame.get(f"{parameter}_pull{suffix}", pd.Series(dtype=float)),
-                errors="coerce",
-            ).to_numpy(float)
-            pulls = pulls[np.isfinite(pulls)]
-            summary.append({
-                "convention": convention, "parameter": parameter, "n": int(len(pulls)),
-                "chi2": float(np.sum(pulls*pulls)), "ndf": int(len(pulls)),
-                "chi2_per_ndf": float(np.mean(pulls*pulls)) if len(pulls) else np.nan,
-                "pull_mean": float(np.mean(pulls)) if len(pulls) else np.nan,
-                "pull_rms": float(np.sqrt(np.mean(pulls*pulls))) if len(pulls) else np.nan,
-            })
-        # endfor
-    # endfor
-    summary_frame = pd.DataFrame(summary)
+    frame.to_csv(tables / "clas6_rgc_phase_space_matched_comparison.csv", index=False)
+    pd.DataFrame(envelope_rows).to_csv(tables / "clas6_rgc_common_envelopes.csv", index=False)
+
+    summary_rows = _comparison_summary(frame, "broad") + _comparison_summary(frame, "matched")
+    summary_frame = pd.DataFrame(summary_rows)
     summary_frame.to_csv(tables / "clas6_rgc_statistical_summary.csv", index=False)
-    print("\n[CLAS6 cross-check] statistical-only summary", flush=True)
+    print("\n[CLAS6 cross-check] statistical-only summary (adopted phi reflection)", flush=True)
     print(summary_frame.to_string(index=False), flush=True)
-    print(
-        "\n[CLAS6 cross-check] phi-convention diagnostic: RGC TwoParticles.java uses "
-        "qhat x e'_hat and qhat x PhT, with the sign from (e' x PhT).qhat. "
-        "Bosted defines the planes with q x e_beam and q x p_pi. Because "
-        "q x e_beam = q x e' for q=e_beam-e', incident-vs-scattered electron "
-        "does not itself reverse the plane normal. The reflected fit is therefore only a "
-        "test of the remaining signed-angle/axis-orientation convention.",
-        flush=True,
-    )
+
+    # Compact per-bin phase-space table for immediate inspection.
+    phase_columns = [
+        "bin_number", "n_rgc_broad", "n_clas6_broad", "n_rgc_matched", "n_clas6_matched",
+        "broad_Q2_rgc_mean", "broad_Q2_clas6_mean", "matched_Q2_rgc_mean", "matched_Q2_clas6_mean",
+        "broad_W_rgc_mean", "broad_W_clas6_mean", "matched_W_rgc_mean", "matched_W_clas6_mean",
+        "broad_minus_tprime_rgc_mean", "broad_minus_tprime_clas6_mean",
+        "matched_minus_tprime_rgc_mean", "matched_minus_tprime_clas6_mean",
+        "broad_epsilon_rgc_mean", "broad_epsilon_clas6_mean",
+        "matched_epsilon_rgc_mean", "matched_epsilon_clas6_mean",
+        "broad_pion_p_lab_rgc_mean", "broad_pion_p_lab_clas6_mean",
+        "matched_pion_p_lab_rgc_mean", "matched_pion_p_lab_clas6_mean",
+    ]
+    existing_phase_columns = [column for column in phase_columns if column in frame.columns]
+    frame[existing_phase_columns].to_csv(tables / "clas6_rgc_kinematic_diagnostics.csv", index=False)
 
     if not args.skip_plots and not frame.empty:
         labels = {
@@ -8231,51 +8431,114 @@ def run_clas6_cross_check(args, workers):
             "ll1": r"$A_{LL,\mathrm{lab}}^{\cos\phi}$",
         }
         for parameter, ylabel in labels.items():
-            valid = frame[np.isfinite(frame[f"{parameter}_pull"])].copy()
+            valid = frame[np.isfinite(pd.to_numeric(frame.get(f"broad_{parameter}_pull"), errors="coerce"))].copy()
             if valid.empty:
                 continue
             # endif
             x = np.arange(len(valid))
             fig, ax = plt.subplots(figsize=(10.5, 5.5))
-            ax.errorbar(x - 0.12, valid[f"{parameter}_clas6"], yerr=valid[f"{parameter}_clas6_stat"], fmt="o", capsize=3, label="CLAS6 EG1b (as tabulated)")
             ax.errorbar(
-                x, valid[f"{parameter}_clas6_phi_reflected"],
-                yerr=valid[f"{parameter}_clas6_phi_reflected_stat"],
-                fmt="^", capsize=3, label=r"CLAS6 diagnostic $\phi\to2\pi-\phi$",
+                x - 0.18, valid[f"broad_{parameter}_clas6"],
+                yerr=valid[f"broad_{parameter}_clas6_stat"], fmt="o", capsize=3,
+                label=r"CLAS6 broad overlap ($2\pi-\phi$)",
             )
-            ax.errorbar(x + 0.12, valid[f"{parameter}_rgc"], yerr=valid[f"{parameter}_rgc_stat"], fmt="s", capsize=3, label="RGC")
+            ax.errorbar(
+                x - 0.06, valid[f"broad_{parameter}_rgc"],
+                yerr=valid[f"broad_{parameter}_rgc_stat"], fmt="s", capsize=3,
+                label="RGC broad overlap",
+            )
+            matched_valid = valid[np.isfinite(pd.to_numeric(valid.get(f"matched_{parameter}_pull"), errors="coerce"))]
+            if not matched_valid.empty:
+                positions = {int(b): i for i, b in enumerate(valid["bin_number"].astype(int))}
+                xm = np.asarray([positions[int(b)] for b in matched_valid["bin_number"]], dtype=float)
+                ax.errorbar(
+                    xm + 0.06, matched_valid[f"matched_{parameter}_clas6"],
+                    yerr=matched_valid[f"matched_{parameter}_clas6_stat"], fmt="^", capsize=3,
+                    label="CLAS6 common envelope",
+                )
+                ax.errorbar(
+                    xm + 0.18, matched_valid[f"matched_{parameter}_rgc"],
+                    yerr=matched_valid[f"matched_{parameter}_rgc_stat"], fmt="D", capsize=3,
+                    label="RGC common envelope",
+                )
+            # endif
             ax.axhline(0.0, lw=0.8)
             ax.set_xticks(x)
             ax.set_xticklabels(valid["bin_number"].astype(int))
             ax.set_xlabel("RGC analysis bin")
             ax.set_ylabel(ylabel)
-            ax.legend()
+            # Use a common fixed asymmetry range for every CLAS6--RGC amplitude
+            # comparison so visual differences are directly comparable panel to panel.
+            ax.set_ylim(-1.0, 1.0)
+            ax.legend(ncol=2)
             fig.tight_layout()
             fig.savefig(plots / f"clas6_rgc_{parameter}.png", dpi=200)
+            plt.close(fig)
+        # endfor
+
+        # Mean-kinematics diagnostics: broad and matched means for both experiments.
+        kin_labels = {
+            "Q2": r"$Q^2$ (GeV$^2$)", "W": r"$W$ (GeV)",
+            "minus_tprime": r"$-t'$ (GeV$^2$)", "epsilon": r"$\epsilon$",
+            "pion_p_lab": r"$p_{\pi}$ (GeV)",
+        }
+        for variable, ylabel in kin_labels.items():
+            if f"broad_{variable}_rgc_mean" not in frame.columns:
+                continue
+            # endif
+            x = np.arange(len(frame))
+            fig, ax = plt.subplots(figsize=(10.5, 5.5))
+            ax.plot(x, frame[f"broad_{variable}_clas6_mean"], "o", label="CLAS6 broad")
+            ax.plot(x, frame[f"broad_{variable}_rgc_mean"], "s", label="RGC broad")
+            if f"matched_{variable}_clas6_mean" in frame.columns:
+                ax.plot(x, frame[f"matched_{variable}_clas6_mean"], "^", label="CLAS6 matched")
+                ax.plot(x, frame[f"matched_{variable}_rgc_mean"], "D", label="RGC matched")
+            # endif
+            ax.set_xticks(x)
+            ax.set_xticklabels(frame["bin_number"].astype(int))
+            ax.set_xlabel("RGC analysis bin")
+            ax.set_ylabel(ylabel)
+            ax.legend(ncol=2)
+            fig.tight_layout()
+            fig.savefig(plots / f"clas6_rgc_kinematics_{variable}.png", dpi=200)
             plt.close(fig)
         # endfor
     # endif
 
     write_json(out / "clas6_cross_check_manifest.json", {
-        "selection": {"W": [CLAS6_W_MIN, CLAS6_W_MAX], "Q2_GeV2": [CLAS6_Q2_MIN, CLAS6_Q2_MAX], "channel_code": 1},
-        "uncertainties": "Statistical only. No RGC or CLAS6 systematic uncertainties are reproduced for this cross-check.",
-        "binning": "Common RGC 24-bin (xB,-tprime) scheme; CLAS6 xB and tprime reconstructed from tabulated W, Q2, cos(theta*).",
-        "phi_convention_study": (
-            "Both the CLAS6 phi values as tabulated and the diagnostic transformation "
-            "phi -> 2*pi-phi are fit. The latter flips sine harmonics and leaves cosine "
-            "harmonics unchanged; it is a convention diagnostic, not a correction to the data. "
-            "The RGC phi convention is the signed Trento-style angle implemented in TwoParticles.java: "
-            "the lepton-plane normal is qhat x e'_hat, the hadron-plane normal is qhat x PhT, "
-            "and the sign is fixed by (e' x PhT).qhat. Bosted et al. define phi* as the angle "
-            "between (q x e_beam) and (q x p_pi) and follow the MAID convention. Since "
-            "q x e_beam = q x e' for q=e_beam-e', the plane normals themselves are equivalent; "
-            "any observed phi -> 2*pi-phi relation must therefore come from the signed-angle/axis "
-            "orientation convention, not merely from using the incident rather than scattered electron."
+        "selection": {
+            "broad": {"W_GeV": [CLAS6_W_MIN, CLAS6_W_MAX], "Q2_GeV2": [CLAS6_Q2_MIN, CLAS6_Q2_MAX], "channel_code": 1},
+            "matched": (
+                "Within each RGC (xB,-tprime) bin, both samples are additionally restricted "
+                "to the intersection of their populated Q2, W, -tprime, and reconstructed "
+                "exclusive pion lab-momentum ranges. No arbitrary detector-momentum cut is imposed."
+            ),
+        },
+        "phi_convention": (
+            "Adopt phi_RGC = 2*pi - phi_CLAS6 for this cross-check. This reverses the sine "
+            "harmonics and leaves constant/cosine harmonics unchanged. The earlier diagnostic "
+            "showed that this transformation resolves the sine-only sign disagreement."
         ),
+        "depolarization_factors": (
+            "CLAS6 uses its tabulated epsilon point by point: B/A=epsilon, C/A=sqrt(1-epsilon^2), "
+            "V/A=sqrt(2 epsilon (1+epsilon)), W/A=sqrt(2 epsilon (1-epsilon)). RGC continues to "
+            "use its own event-by-event DepB/DepA, DepC/DepA, DepV/DepA, and DepW/DepA values. "
+            "Thus the different beam energies are not treated with a common depolarization factor."
+        ),
+        "pion_momentum": (
+            "For both experiments p_pi(lab) is reconstructed from exclusive two-body gamma*p -> pi+n "
+            "kinematics. CLAS6 uses tabulated E,W,Q2,cos(theta*); RGC obtains cos(theta*) from W,Q2,t "
+            "and uses the period beam energy. It is a phase-space diagnostic/matching variable, not a "
+            "new production selection."
+        ),
+        "uncertainties": "Statistical only; no RGC or CLAS6 systematic uncertainties are reproduced.",
+        "binning": "Common RGC 24-bin (xB,-tprime) scheme.",
         "clas6_data": str(clas6_path),
         "rgc_cache": str(cache_path),
     })
+    print(f"[CLAS6 cross-check] wrote upgraded study to {out}", flush=True)
     return 0
+
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
