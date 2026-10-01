@@ -5837,7 +5837,14 @@ def plot_final_polynomial_cut_canvases(results: list[dict[str, Any]], cuts: pd.D
                 counts = np.asarray(item["counts"], dtype=float); edges = np.asarray(item["edges"], dtype=float)
                 centers = 0.5 * (edges[:-1] + edges[1:]); errors = np.sqrt(np.maximum(counts, 1.0))
                 model_name = item.get("recommended_background_model") or NOMINAL_BACKGROUND_MODEL
-                model = item["models"][model_name]; dense_x = np.linspace(float(centers.min()), float(centers.max()), 800)
+                model = item["models"][model_name]
+
+                # Keep the fit unchanged, but do not display the high-order
+                # polynomial far outside the neutron-peak region where its
+                # extrapolation can become visually enormous.
+                display_x_min_gev2 = 0.60
+                display_x_max_gev2 = 1.30
+                dense_x = np.linspace(display_x_min_gev2, display_x_max_gev2, 800)
                 evaluated = evaluate_model_dense(item, model_name, dense_x)
                 if evaluated is None:
                     continue
@@ -5855,6 +5862,7 @@ def plot_final_polynomial_cut_canvases(results: list[dict[str, Any]], cuts: pd.D
                 # endfor
                 bn = combined_bin_number(x_index, t_index)
                 ax.set_title(f"Bin {bn}: $\\mu$={mu:.4f}, $\\sigma_{{{period}}}$={sigma:.4f}", fontsize=8)
+                ax.set_xlim(display_x_min_gev2, display_x_max_gev2)
                 ax.grid(alpha=0.22); ax.tick_params(labelsize=7)
                 if x_index == len(XB_BINS)-1: ax.set_xlabel("$M_x^2$ (GeV$^2$)", fontsize=8)
                 # endif
