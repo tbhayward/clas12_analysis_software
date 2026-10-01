@@ -214,6 +214,7 @@ import hashlib
 import json
 import math
 import os
+import re
 from pathlib import Path
 import sys
 from typing import Any, Iterable, Mapping
@@ -1307,7 +1308,31 @@ def load_channel_cuts(
         raise FileNotFoundError(f"Missing channel-selection cut JSON: {path}")
     # endif
 
-    payload = json.loads(path.read_text(encoding="utf-8"))
+    raw_json = path.read_text(encoding="utf-8")
+    try:
+        payload = json.loads(raw_json)
+    except json.JSONDecodeError as exc:
+        # Older channel-selection outputs can contain literal escaped
+        # whitespace after the final JSON object (for example the two
+        # characters "\\n"). Tolerate only that known trailing writer
+        # artifact. Any malformed JSON inside the document still fails.
+        cleaned_json = re.sub(r"(?:\\\\[nrt])+\\s*$", "", raw_json)
+        if cleaned_json == raw_json:
+            raise
+        # endif
+
+        try:
+            payload = json.loads(cleaned_json)
+        except json.JSONDecodeError:
+            raise exc
+        # endtry
+
+        print(
+            f"[channel cuts] WARNING: ignored literal escaped trailing "
+            f"whitespace in {path}"
+        )
+    # endtry
+
     period_payload = payload.get("periods")
     if not isinstance(period_payload, dict):
         raise RuntimeError(
