@@ -2274,6 +2274,7 @@ def make_bin_nll(
     active_periods: tuple[str, ...] = PERIODS,
     transverse_scales: Mapping[str, float] | None = None,
     target_sign_filter: int | None = None,
+    run_ranges_filter: tuple[tuple[int, int], ...] | None = None,
 ):
     mask = events["bin_number"] == bin_number
     if len(active_periods) != len(PERIODS):
@@ -2282,6 +2283,14 @@ def make_bin_nll(
             dtype=np.int8,
         )
         mask &= np.isin(events["period_index"], allowed_indices)
+    # endif
+
+    if run_ranges_filter is not None:
+        run_mask = np.zeros(mask.shape, dtype=bool)
+        for run_low, run_high in run_ranges_filter:
+            run_mask |= (events["runnum"] >= run_low) & (events["runnum"] <= run_high)
+        # endfor
+        mask &= run_mask
     # endif
 
     # Optional fixed-target-orientation diagnostic.  Determine the target sign
@@ -2378,8 +2387,15 @@ def make_bin_nll(
         state_q_minus = state["q_minus"]
         observed_state_index = observed_run_indices[period]
         state_use = np.ones(state_pt.shape, dtype=bool)
+        if run_ranges_filter is not None:
+            state_run = state["run"]
+            state_use = np.zeros(state_pt.shape, dtype=bool)
+            for run_low, run_high in run_ranges_filter:
+                state_use |= (state_run >= run_low) & (state_run <= run_high)
+            # endfor
+        # endif
         if target_sign_filter is not None:
-            state_use = np.sign(state_pt) == int(np.sign(target_sign_filter))
+            state_use &= np.sign(state_pt) == int(np.sign(target_sign_filter))
         # endif
         event_h = helicity[indices].astype(np.float64, copy=False)
 
@@ -2761,6 +2777,7 @@ def fit_one_variant(
     initial_values: Mapping[str, float] | None = None,
     fixed_physics_parameters: Mapping[str, float] | None = None,
     target_sign_filter: int | None = None,
+    run_ranges_filter: tuple[tuple[int, int], ...] | None = None,
 ) -> dict[str, Any]:
     nll, metadata = make_bin_nll(
         events,
@@ -2771,6 +2788,7 @@ def fit_one_variant(
         active_periods=active_periods,
         transverse_scales=transverse_scales,
         target_sign_filter=target_sign_filter,
+        run_ranges_filter=run_ranges_filter,
     )
 
     initial = dict(PARAMETER_INITIAL_VALUES)
@@ -9015,6 +9033,271 @@ def run_double_spin_target_split_diagnostic(
     return 0
 
 
+
+SOLENOID_SPLIT_CONFIG = {
+    "negative": {
+        "label": r"Solenoid $-1$",
+        "run_ranges": ((16043, 16772), (16843, 17183), (17477, 17811)),
+        "active_periods": ("su22", "fa22", "sp23"),
+    },
+    "positive": {
+        "label": r"Solenoid $+1$",
+        "run_ranges": ((17185, 17408),),
+        "active_periods": ("fa22",),
+    },
+}
+
+
+def fit_xb_integrated_solenoid_tprime(
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    t_index: int,
+    solenoid_tag: str,
+) -> dict[str, Any]:
+    """Fit all seven amplitudes in one -t' bin, integrated over xB."""
+    config = SOLENOID_SPLIT_CONFIG[solenoid_tag]
+    active_periods = tuple(config["active_periods"])
+    run_ranges = tuple(config["run_ranges"])
+    bin_numbers = [
+        combined_bin_number(x_index, t_index)
+        for x_index in range(len(XB_BINS))
+    ]
+    sub_nlls = {
+        bin_number: make_bin_nll(
+            events, run_states, dilution_records, bin_number, "nominal",
+            active_periods=active_periods,
+            run_ranges_filter=run_ranges,
+        )[0]
+        for bin_number in bin_numbers
+    }
+
+    physics_names = list(PHYSICS_PARAMETERS)
+    dilution_names = [
+        f"f_{period}_bin{bin_number:02d}"
+        for bin_number in bin_numbers
+        for period in PERIODS
+    ]
+    names = physics_names + dilution_names
+    start = [float(PARAMETER_INITIAL_VALUES[name]) for name in physics_names]
+    for bin_number in bin_numbers:
+        for period in PERIODS:
+            start.append(float(dilution_records[(period, bin_number)].value))
+        # endfor
+    # endfor
+
+    def combined_nll(*pars: float) -> float:
+        values = dict(zip(names, pars))
+        total = 0.0
+        for bin_number in bin_numbers:
+            dilution_args = [
+                values[f"f_{period}_bin{bin_number:02d}"]
+                for period in PERIODS
+            ]
+            total += sub_nlls[bin_number](
+                values["u1"], values["u2"], values["lu1"],
+                values["ul1"], values["ul2"], values["ll0"], values["ll1"],
+                *dilution_args,
+            )
+        # endfor
+        return float(total)
+
+    def configured_minuit(start_values: list[float]) -> Minuit:
+        candidate = Minuit(combined_nll, *start_values, name=names)
+        candidate.errordef = Minuit.LIKELIHOOD
+        candidate.print_level = 0
+        candidate.strategy = 1
+        for name in physics_names:
+            candidate.limits[name] = PARAMETER_LIMITS[name]
+        # endfor
+        for bin_number in bin_numbers:
+            for period in PERIODS:
+                name = f"f_{period}_bin{bin_number:02d}"
+                record = dilution_records[(period, bin_number)]
+                width = max(8.0 * record.stat_uncertainty, 0.20 * record.value, 0.02)
+                candidate.limits[name] = (
+                    max(1.0e-6, record.value - width), record.value + width
+                )
+                if period not in active_periods or record.stat_uncertainty == 0.0:
+                    candidate.fixed[name] = True
+                # endif
+            # endfor
+        # endfor
+        return candidate
+
+    starts = [list(start)]
+    zero_physics = list(start)
+    for i, name in enumerate(physics_names):
+        zero_physics[i] = 0.0
+    # endfor
+    starts.append(zero_physics)
+    attempted = []
+    for start_values in starts:
+        candidate = configured_minuit(start_values)
+        candidate.migrad(ncall=80000)
+        if not candidate.fmin.is_valid:
+            candidate.simplex(ncall=40000)
+            candidate.strategy = 2
+            candidate.migrad(ncall=120000)
+        # endif
+        candidate.hesse()
+        attempted.append(candidate)
+    # endfor
+
+    def quality(candidate: Minuit) -> tuple[int, float, float]:
+        valid = candidate.fmin.is_valid and math.isfinite(float(candidate.fval))
+        return (
+            0 if valid else 1,
+            float(candidate.fval) if math.isfinite(float(candidate.fval)) else math.inf,
+            float(candidate.fmin.edm) if math.isfinite(float(candidate.fmin.edm)) else math.inf,
+        )
+
+    best = min(attempted, key=quality)
+    values = {name: float(best.values[name]) for name in PHYSICS_PARAMETERS}
+    errors = {name: float(best.errors[name]) for name in PHYSICS_PARAMETERS}
+    event_mask = np.isin(events["bin_number"], np.asarray(bin_numbers, dtype=np.int16))
+    run_mask = np.zeros(event_mask.shape, dtype=bool)
+    for run_low, run_high in run_ranges:
+        run_mask |= (events["runnum"] >= run_low) & (events["runnum"] <= run_high)
+    # endfor
+    event_mask &= run_mask
+    return {
+        "t_index": t_index,
+        "solenoid": solenoid_tag,
+        "bin_numbers": bin_numbers,
+        "number_of_events": int(np.count_nonzero(event_mask)),
+        "values": values,
+        "errors": errors,
+        "valid": bool(best.fmin.is_valid),
+        "edm": float(best.fmin.edm),
+        "fval": float(best.fval),
+    }
+
+
+def _solenoid_split_worker(task: tuple[str, int, str, str, str]) -> dict[str, Any]:
+    cache_text, run_info_text, dilution_text, solenoid_tag, t_index_text = task
+    events = load_event_cache(Path(cache_text))
+    run_states = run_state_arrays(parse_run_info_csv(Path(run_info_text)))
+    dilution_records = load_dilution_factors(Path(dilution_text), cut_label="nominal")
+    return fit_xb_integrated_solenoid_tprime(
+        events, run_states, dilution_records, int(t_index_text), solenoid_tag
+    )
+
+
+def run_solenoid_split_diagnostic(
+    *, cache_path: Path, run_info_path: Path, dilution_json_path: Path,
+    output_dir: Path, workers: int, skip_plots: bool = False,
+) -> int:
+    """Compare all seven amplitudes for the two solenoid polarities in six -t' bins."""
+    print("[solenoid split] START: xB-integrated, six -t' bins", flush=True)
+    out = output_dir / "diagnostics" / "solenoid_split"
+    plots = out / "plots"
+    tables = out / "tables"
+    ensure_directory(plots)
+    ensure_directory(tables)
+    if not cache_path.is_file():
+        raise FileNotFoundError(
+            f"Solenoid-split diagnostic requires the nominal cache: {cache_path}"
+        )
+    # endif
+
+    tasks = [
+        (str(cache_path), str(run_info_path), str(dilution_json_path), tag, str(t_index))
+        for t_index in range(len(MINUS_TPRIME_BINS_GEV2))
+        for tag in ("negative", "positive")
+    ]
+    results: list[dict[str, Any]] = []
+    max_workers = max(1, min(int(workers), len(tasks)))
+    with ProcessPoolExecutor(max_workers=max_workers) as executor:
+        futures = {executor.submit(_solenoid_split_worker, task): task for task in tasks}
+        for future in as_completed(futures):
+            result = future.result()
+            results.append(result)
+            print(
+                f"[solenoid split] -t' bin {result['t_index'] + 1}/6 | "
+                f"{result['solenoid']} | N={result['number_of_events']:,} | "
+                f"valid={result['valid']}", flush=True,
+            )
+        # endfor
+    # endwith
+
+    by_key = {(item["t_index"], item["solenoid"]): item for item in results}
+    rows: list[dict[str, Any]] = []
+    for t_index, (t_low, t_high) in enumerate(MINUS_TPRIME_BINS_GEV2):
+        neg = by_key[(t_index, "negative")]
+        pos = by_key[(t_index, "positive")]
+        row: dict[str, Any] = {
+            "t_index": t_index,
+            "t_bin": t_index + 1,
+            "minus_tprime_low": float(t_low),
+            "minus_tprime_high": float(t_high),
+            "solenoid_negative_events": neg["number_of_events"],
+            "solenoid_positive_events": pos["number_of_events"],
+            "solenoid_negative_valid": neg["valid"],
+            "solenoid_positive_valid": pos["valid"],
+        }
+        for parameter in PHYSICS_PARAMETERS:
+            vn, en = neg["values"][parameter], neg["errors"][parameter]
+            vp, ep = pos["values"][parameter], pos["errors"][parameter]
+            sigma = math.sqrt(en * en + ep * ep)
+            row[f"solenoid_negative_{parameter}"] = vn
+            row[f"solenoid_negative_{parameter}_stat"] = en
+            row[f"solenoid_positive_{parameter}"] = vp
+            row[f"solenoid_positive_{parameter}_stat"] = ep
+            row[f"delta_{parameter}"] = vp - vn
+            row[f"pull_{parameter}"] = (vp - vn) / sigma if sigma > 0.0 else math.nan
+        # endfor
+        rows.append(row)
+    # endfor
+
+    frame = pd.DataFrame(rows)
+    csv_path = tables / "solenoid_split.csv"
+    frame.to_csv(csv_path, index=False)
+    x = frame["t_bin"].to_numpy(float)
+    if not skip_plots:
+        for parameter in PHYSICS_PARAMETERS:
+            fig, ax = plt.subplots(figsize=(10.5, 5.8))
+            ax.errorbar(
+                x - 0.06, frame[f"solenoid_negative_{parameter}"],
+                yerr=frame[f"solenoid_negative_{parameter}_stat"],
+                fmt="o", capsize=3, label=r"Solenoid $-1$",
+            )
+            ax.errorbar(
+                x + 0.06, frame[f"solenoid_positive_{parameter}"],
+                yerr=frame[f"solenoid_positive_{parameter}_stat"],
+                fmt="s", capsize=3, label=r"Solenoid $+1$",
+            )
+            ax.axhline(0.0, linewidth=1.0)
+            ax.set_xlabel(r"$-t'$ bin (integrated over $x_B$)")
+            ax.set_ylabel(PARAMETER_LABELS[parameter])
+            ax.set_xticks(np.arange(1, len(MINUS_TPRIME_BINS_GEV2) + 1))
+            limits = PARAMETER_Y_LIMITS.get(parameter)
+            if limits is not None:
+                ax.set_ylim(*limits)
+            # endif
+            ax.legend(frameon=False)
+            fig.tight_layout()
+            fig.savefig(plots / f"solenoid_split_{parameter}.png", dpi=200)
+            plt.close(fig)
+        # endfor
+    # endif
+
+    for parameter in PHYSICS_PARAMETERS:
+        pulls = frame[f"pull_{parameter}"].to_numpy(float)
+        pulls = pulls[np.isfinite(pulls)]
+        if pulls.size:
+            print(
+                f"[solenoid split] {parameter}: mean pull={np.mean(pulls):+.3f}, "
+                f"RMS={np.sqrt(np.mean(pulls**2)):.3f}, "
+                f"chi2/{pulls.size}={np.sum(pulls**2):.2f}/{pulls.size}",
+                flush=True,
+            )
+        # endif
+    # endfor
+    print(f"[solenoid split] table: {csv_path}", flush=True)
+    print(f"[solenoid split] plots: {plots}", flush=True)
+    return 0
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -9136,6 +9419,15 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--solenoid-split", action="store_true",
+        help=(
+            "Run only the solenoid-polarity stability diagnostic. Integrates "
+            "over xB, fits all seven amplitudes independently for solenoid -1 "
+            "and +1 in the six -tprime bins, and uses the existing nominal cache. "
+            "No systematic or alternative-method studies are run."
+        ),
+    )
+    parser.add_argument(
         "--rga-cross-check", action="store_true",
         help=(
             "Run only the Diehl et al. RGA exclusive-pi+ cross-check. "
@@ -9224,6 +9516,20 @@ def main() -> int:
             run_info_path=args.run_info_csv.expanduser().resolve(),
             dilution_json_path=nominal_dilution,
             output_dir=root,
+            skip_plots=args.skip_plots,
+        )
+    # endif
+    if args.solenoid_split:
+        return run_solenoid_split_diagnostic(
+            cache_path=(
+                args.cache.expanduser().resolve()
+                if args.cache
+                else root / "nominal/cache/selected_events.npz"
+            ),
+            run_info_path=args.run_info_csv.expanduser().resolve(),
+            dilution_json_path=nominal_dilution,
+            output_dir=root,
+            workers=workers,
             skip_plots=args.skip_plots,
         )
     # endif
