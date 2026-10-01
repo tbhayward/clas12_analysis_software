@@ -164,7 +164,17 @@ def main():
                 continue
             #endif
 
-            fac = reconstruct_factors(cc, g["phi_center_deg"].to_numpy(float))
+            try:
+                fac = reconstruct_factors(
+                    cc, g["phi_center_deg"].to_numpy(float)
+                )
+            except RuntimeError as exc:
+                print(
+                    f"SKIP {pid} {campaign.upper()} "
+                    f"(iq2={r.iq2}, ixb={r.ixb}, it={r.it}): {exc}"
+                )
+                continue
+            #endtry
 
             for (_, drow), f in zip(g.iterrows(), fac):
                 rows.append(
