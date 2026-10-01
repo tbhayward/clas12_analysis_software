@@ -2273,6 +2273,7 @@ def make_bin_nll(
     variant: str,
     active_periods: tuple[str, ...] = PERIODS,
     transverse_scales: Mapping[str, float] | None = None,
+    target_sign_filter: int | None = None,
 ):
     mask = events["bin_number"] == bin_number
     if len(active_periods) != len(PERIODS):
@@ -2282,6 +2283,39 @@ def make_bin_nll(
         )
         mask &= np.isin(events["period_index"], allowed_indices)
     # endif
+
+    # Optional fixed-target-orientation diagnostic.  Determine the target sign
+    # from the run-state polarization associated with each event; this keeps the
+    # ordinary event selection untouched while restricting the conditional
+    # likelihood to one physical target-polarization orientation.
+    if target_sign_filter is not None:
+        requested_sign = int(np.sign(target_sign_filter))
+        if requested_sign == 0:
+            raise ValueError("target_sign_filter must be +1, -1, or None.")
+        # endif
+        event_target_sign = np.zeros(mask.shape, dtype=np.int8)
+        candidate_indices = np.flatnonzero(mask)
+        for period in active_periods:
+            period_candidates = candidate_indices[
+                events["period_index"][candidate_indices] == PERIOD_INDEX[period]
+            ]
+            if period_candidates.size == 0:
+                continue
+            # endif
+            state = run_states[period]
+            run_to_sign = {
+                int(run): int(np.sign(pt))
+                for run, pt in zip(state["run"], state["pt"])
+            }
+            event_target_sign[period_candidates] = np.fromiter(
+                (run_to_sign[int(run)] for run in events["runnum"][period_candidates]),
+                count=period_candidates.size,
+                dtype=np.int8,
+            )
+        # endfor
+        mask &= event_target_sign == requested_sign
+    # endif
+
     if not np.any(mask):
         raise RuntimeError(
             f"Bin {bin_number} has no selected events for {active_periods}."
@@ -2343,6 +2377,10 @@ def make_bin_nll(
         state_q_plus = state["q_plus"]
         state_q_minus = state["q_minus"]
         observed_state_index = observed_run_indices[period]
+        state_use = np.ones(state_pt.shape, dtype=bool)
+        if target_sign_filter is not None:
+            state_use = np.sign(state_pt) == int(np.sign(target_sign_filter))
+        # endif
         event_h = helicity[indices].astype(np.float64, copy=False)
 
         period_data[period] = {
@@ -2365,15 +2403,15 @@ def make_bin_nll(
                 state_q_plus[observed_state_index],
                 state_q_minus[observed_state_index],
             ),
-            "charge_sum": float(np.sum(state_q_plus + state_q_minus)),
+            "charge_sum": float(np.sum((state_q_plus + state_q_minus)[state_use])),
             "helicity_charge_sum": float(
-                np.sum(state_q_plus - state_q_minus)
+                np.sum((state_q_plus - state_q_minus)[state_use])
             ),
             "target_charge_sum": float(
-                np.sum(state_pt * (state_q_plus + state_q_minus))
+                np.sum((state_pt * (state_q_plus + state_q_minus))[state_use])
             ),
             "helicity_target_charge_sum": float(
-                np.sum(state_pt * (state_q_plus - state_q_minus))
+                np.sum((state_pt * (state_q_plus - state_q_minus))[state_use])
             ),
         }
     # endfor
@@ -2582,6 +2620,7 @@ def make_bin_nll(
 
     metadata = {
         "active_periods": list(active_periods),
+        "target_sign_filter": target_sign_filter,
         "number_of_events": int(np.count_nonzero(mask)),
         "events_by_period": {
             period: int(period_event_indices.get(period, np.empty(0)).size)
@@ -2721,6 +2760,7 @@ def fit_one_variant(
     transverse_scales: Mapping[str, float] | None = None,
     initial_values: Mapping[str, float] | None = None,
     fixed_physics_parameters: Mapping[str, float] | None = None,
+    target_sign_filter: int | None = None,
 ) -> dict[str, Any]:
     nll, metadata = make_bin_nll(
         events,
@@ -2730,6 +2770,7 @@ def fit_one_variant(
         variant,
         active_periods=active_periods,
         transverse_scales=transverse_scales,
+        target_sign_filter=target_sign_filter,
     )
 
     initial = dict(PARAMETER_INITIAL_VALUES)
@@ -2908,6 +2949,7 @@ def fit_one_variant(
             "bin_number": bin_number,
             "variant": variant,
             "active_periods": list(active_periods),
+            "target_sign_filter": target_sign_filter,
             "transverse_scales": (
                 dict(transverse_scales)
                 if transverse_scales is not None else None
@@ -8815,6 +8857,121 @@ def run_mle_vs_binned_chi2_diagnostic(
     print(f"[MLE-vs-chi2] wrote five comparison plots to {plots}", flush=True)
 
 
+
+def run_double_spin_target_split_diagnostic(
+    *, cache_path: Path, run_info_path: Path, dilution_json_path: Path,
+    output_dir: Path, skip_plots: bool = False,
+) -> int:
+    """Fit the nominal likelihood independently for the two target signs.
+
+    Each fit retains the complete seven-term nominal cross-section model.  The
+    comparison of interest is ll0 and ll1: the same physical double-spin
+    amplitudes should be recovered from the P_t>0 and P_t<0 samples.
+    """
+    print("[double-spin target split] START", flush=True)
+    out = output_dir / "diagnostics" / "double_spin_target_split"
+    plots = out / "plots"
+    tables = out / "tables"
+    ensure_directory(plots)
+    ensure_directory(tables)
+
+    if not cache_path.is_file():
+        raise FileNotFoundError(
+            "The target-split diagnostic uses the nominal selected-event cache, "
+            f"but it was not found: {cache_path}. Run the normal extraction once first."
+        )
+    # endif
+
+    events = load_event_cache(cache_path)
+    run_states = run_state_arrays(parse_run_info_csv(run_info_path))
+    dilution_records = load_dilution_factors(dilution_json_path, cut_label="nominal")
+
+    rows: list[dict[str, Any]] = []
+    for bin_number in range(1, NUMBER_OF_BINS + 1):
+        fits: dict[int, dict[str, Any]] = {}
+        for target_sign in (1, -1):
+            fit = fit_one_variant(
+                events, run_states, dilution_records, bin_number, "nominal",
+                target_sign_filter=target_sign,
+            )
+            fits[target_sign] = fit
+        # endfor
+
+        row: dict[str, Any] = {"bin_number": bin_number}
+        for target_sign, tag in ((1, "target_plus"), (-1, "target_minus")):
+            fit = fits[target_sign]
+            row[f"{tag}_valid"] = bool(fit["valid"])
+            row[f"{tag}_events"] = int(fit["metadata"]["number_of_events"])
+            for parameter in PHYSICS_PARAMETERS:
+                row[f"{tag}_{parameter}"] = float(fit["values"][parameter])
+                row[f"{tag}_{parameter}_stat"] = float(fit["errors"][parameter])
+            # endfor
+        # endfor
+        for parameter in ("ll0", "ll1"):
+            vp = row[f"target_plus_{parameter}"]
+            vm = row[f"target_minus_{parameter}"]
+            ep = row[f"target_plus_{parameter}_stat"]
+            em = row[f"target_minus_{parameter}_stat"]
+            sigma = math.sqrt(ep * ep + em * em)
+            row[f"delta_{parameter}"] = vp - vm
+            row[f"pull_{parameter}"] = (vp - vm) / sigma if sigma > 0.0 else math.nan
+        # endfor
+        rows.append(row)
+        print(
+            f"[double-spin target split] bin {bin_number:02d}/24 | "
+            f"A_LL: +={row['target_plus_ll0']:+.4f}, -={row['target_minus_ll0']:+.4f} | "
+            f"A_LL^cosphi: +={row['target_plus_ll1']:+.4f}, -={row['target_minus_ll1']:+.4f}",
+            flush=True,
+        )
+    # endfor
+
+    frame = pd.DataFrame(rows)
+    csv_path = tables / "double_spin_target_split.csv"
+    frame.to_csv(csv_path, index=False)
+
+    x = frame["bin_number"].to_numpy(float)
+    for parameter in (() if skip_plots else ("ll0", "ll1")):
+        fig, ax = plt.subplots(figsize=(12, 6.5))
+        ax.errorbar(
+            x - 0.08, frame[f"target_plus_{parameter}"],
+            yerr=frame[f"target_plus_{parameter}_stat"],
+            fmt="o", capsize=3, label=r"$P_t>0$",
+        )
+        ax.errorbar(
+            x + 0.08, frame[f"target_minus_{parameter}"],
+            yerr=frame[f"target_minus_{parameter}_stat"],
+            fmt="s", capsize=3, label=r"$P_t<0$",
+        )
+        ax.axhline(0.0, linewidth=1.0)
+        ax.set_xlabel("Analysis bin")
+        ax.set_ylabel(PARAMETER_LABELS[parameter])
+        ax.set_xticks(np.arange(1, NUMBER_OF_BINS + 1))
+        limits = PARAMETER_Y_LIMITS.get(parameter)
+        if limits is not None:
+            ax.set_ylim(*limits)
+        # endif
+        ax.legend(frameon=False)
+        fig.tight_layout()
+        fig.savefig(plots / f"double_spin_target_split_{parameter}.png", dpi=200)
+        plt.close(fig)
+    # endfor
+
+    for parameter in ("ll0", "ll1"):
+        pulls = frame[f"pull_{parameter}"].to_numpy(float)
+        pulls = pulls[np.isfinite(pulls)]
+        if pulls.size:
+            print(
+                f"[double-spin target split] {parameter}: "
+                f"mean pull={np.mean(pulls):+.3f}, RMS={np.sqrt(np.mean(pulls**2)):.3f}, "
+                f"max |pull|={np.max(np.abs(pulls)):.3f}",
+                flush=True,
+            )
+        # endif
+    # endfor
+    print(f"[double-spin target split] table: {csv_path}", flush=True)
+    print(f"[double-spin target split] plots: {plots}", flush=True)
+    return 0
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -8926,6 +9083,16 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help="Path to the CLAS6 EG1b exclpip.txt table (default: beside this script).",
     )
     parser.add_argument(
+        "--double-spin-target-split", action="store_true",
+        help=(
+            "Run only the nominal fixed-target-orientation double-spin stability "
+            "test. Fits P_t>0 and P_t<0 samples independently in all 24 bins "
+            "with the full seven-term nominal likelihood and compares A_LL and "
+            "A_LL^cos(phi). Uses the existing nominal selected-event cache; no "
+            "systematic or alternative-method studies are run."
+        ),
+    )
+    parser.add_argument(
         "--rga-cross-check", action="store_true",
         help=(
             "Run only the Diehl et al. RGA exclusive-pi+ cross-check. "
@@ -9004,6 +9171,20 @@ def main() -> int:
             args.dilution_dir.expanduser().resolve()
         ).resolve()
     )
+    if args.double_spin_target_split:
+        return run_double_spin_target_split_diagnostic(
+            cache_path=(
+                args.cache.expanduser().resolve()
+                if args.cache
+                else root / "nominal/cache/selected_events.npz"
+            ),
+            run_info_path=args.run_info_csv.expanduser().resolve(),
+            dilution_json_path=nominal_dilution,
+            output_dir=root,
+            skip_plots=args.skip_plots,
+        )
+    # endif
+
     isr_dilution = None
     if not args.disable_isr:
         isr_dilution = (
