@@ -1316,7 +1316,7 @@ def load_channel_cuts(
         # whitespace after the final JSON object (for example the two
         # characters "\\n"). Tolerate only that known trailing writer
         # artifact. Any malformed JSON inside the document still fails.
-        cleaned_json = re.sub(r"(?:\\\\[nrt])+\\s*$", "", raw_json)
+        cleaned_json = re.sub(r"(?:\\[nrt])+\s*$", "", raw_json)
         if cleaned_json == raw_json:
             raise
         # endif
@@ -3507,8 +3507,16 @@ def run_period_preflight_stage(
 
 
 def _task_key(task: Mapping[str, Any]) -> str:
-    return "|".join(str(task.get(k, "")) for k in
-                    ("kind", "bin_number", "period", "constraint"))
+    # Treat an omitted optional task field and an explicit JSON null as the
+    # same key. Worker results store absent period/constraint values as None,
+    # while the submitted task dictionaries may omit those keys entirely.
+    # Without this normalization, completed checkpoint tasks are loaded but
+    # fail to match the corresponding pending tasks on resume.
+    fields = ("kind", "bin_number", "period", "constraint")
+    return "|".join(
+        "" if task.get(key) is None else str(task.get(key))
+        for key in fields
+    )
 
 def fit_stage_worker(task: dict[str, Any]) -> dict[str, Any]:
     """Execute exactly one existing fit task for staged production.
