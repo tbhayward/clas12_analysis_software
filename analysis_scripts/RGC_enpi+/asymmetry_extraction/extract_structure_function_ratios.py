@@ -5745,6 +5745,8 @@ def write_fit_method_diagnostic_products(
     width_only: pd.DataFrame,
     polynomial: pd.DataFrame,
     output_dir: Path,
+    carbon_cut_json: Path | None = None,
+    polynomial_cut_json: Path | None = None,
 ) -> dict[str, Any]:
     """Write the four-way fit-method decomposition diagnostic."""
     tables_dir = output_dir / "tables"
@@ -5833,7 +5835,78 @@ def write_fit_method_diagnostic_products(
         plt.close(fig)
         plot_paths.append(str(path))
     # endfor
-    return {"csv": str(csv_path), "json": str(json_path), "plots": plot_paths}
+
+    # Relate the displacement of the fitted neutron-peak centroid to the
+    # quality of the polynomial-only missing-mass fit.  This is diagnostic:
+    # it is not used to assign or rescale any systematic uncertainty.
+    centroid_quality_csv = None
+    centroid_quality_plot = None
+    if carbon_cut_json is not None and polynomial_cut_json is not None:
+        carbon_cuts = read_json_tolerating_trailing_escaped_whitespace(carbon_cut_json)
+        polynomial_cuts = read_json_tolerating_trailing_escaped_whitespace(polynomial_cut_json)
+
+        def _mu_by_bin(payload: dict[str, Any]) -> dict[int, float]:
+            rows = payload.get("flat_rows")
+            if rows:
+                return {int(row["bin_number"]): float(row.get("shared_mean_gev2", row.get("mu_gev2"))) for row in rows}
+            # endif
+            first_period = next(iter(payload["periods"].values()))
+            return {int(row["bin_number"]): float(row["mu_gev2"]) for row in first_period}
+
+        carbon_mu = _mu_by_bin(carbon_cuts)
+        polynomial_mu = _mu_by_bin(polynomial_cuts)
+
+        # channel_selection_mx2_fits.py writes the full polynomial fit table
+        # two directory levels above final_polynomial_only_cuts/tables/.
+        fit_table_path = polynomial_cut_json.parents[2] / "tables" / "mx2_peak_fit_results_v27.csv"
+        if fit_table_path.is_file():
+            fit_table = pd.read_csv(fit_table_path)
+            selected = fit_table[(fit_table["stage"] == "after") & fit_table["is_recommended"].astype(bool)].copy()
+            quality = (
+                selected.groupby("bin_number", as_index=False)
+                .agg(polynomial_chi2_ndf=("joint_chi2_ndf", "first"))
+                .sort_values("bin_number")
+            )
+            quality["mu_carbon_gev2"] = quality["bin_number"].map(carbon_mu)
+            quality["mu_polynomial_gev2"] = quality["bin_number"].map(polynomial_mu)
+            quality["delta_mu_gev2"] = quality["mu_polynomial_gev2"] - quality["mu_carbon_gev2"]
+            quality["absolute_delta_mu_gev2"] = quality["delta_mu_gev2"].abs()
+
+            centroid_quality_csv = tables_dir / "polynomial_centroid_shift_vs_fit_quality.csv"
+            quality.to_csv(centroid_quality_csv, index=False)
+
+            fig, ax = plt.subplots(figsize=(9.0, 6.5))
+            ax.scatter(quality["polynomial_chi2_ndf"], quality["absolute_delta_mu_gev2"], s=42, zorder=3)
+            for row in quality.itertuples(index=False):
+                ax.annotate(
+                    f"bin {int(row.bin_number)}",
+                    (row.polynomial_chi2_ndf, row.absolute_delta_mu_gev2),
+                    xytext=(5, 4), textcoords="offset points", fontsize=8,
+                )
+            # endfor
+            ax.set_xlabel(r"Polynomial-only fit $\chi^2/\mathrm{ndf}$")
+            ax.set_ylabel(r"$|\mu_{\rm poly}-\mu_C|$ (GeV$^2$)")
+            ax.set_title("Polynomial-only centroid displacement vs fit quality")
+            ax.grid(alpha=0.25)
+            fig.tight_layout()
+            centroid_quality_plot = plots_dir / "polynomial_centroid_shift_vs_fit_quality.png"
+            fig.savefig(centroid_quality_plot, dpi=180)
+            plt.close(fig)
+            plot_paths.append(str(centroid_quality_plot))
+        else:
+            print(
+                "[fit-method-diagnostic] WARNING: polynomial fit-quality table not found at "
+                f"{fit_table_path}; skipping centroid-shift-vs-chi2 plot.",
+                flush=True,
+            )
+        # endif
+    # endif
+
+    return {
+        "csv": str(csv_path), "json": str(json_path), "plots": plot_paths,
+        "centroid_quality_csv": str(centroid_quality_csv) if centroid_quality_csv else None,
+        "centroid_quality_plot": str(centroid_quality_plot) if centroid_quality_plot else None,
+    }
 
 
 def write_channel_selection_comparison_products(
@@ -9950,6 +10023,8 @@ def main() -> int:
             width_only=diagnostic_results["width_only_extraction"]["frame"],
             polynomial=diagnostic_results["polynomial_extraction"]["frame"],
             output_dir=diagnostic_dir,
+            carbon_cut_json=args.cut_json.expanduser().resolve(),
+            polynomial_cut_json=polynomial_cut_json,
         )
         print("[fit-method-diagnostic] complete", flush=True)
         print(f"  CSV:   {products['csv']}", flush=True)
