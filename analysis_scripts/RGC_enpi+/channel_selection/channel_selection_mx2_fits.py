@@ -3082,7 +3082,7 @@ def execute_fit_jobs(
     joint_config: JointFitConfig,
 ) -> list[dict[str, Any]]:
     """Fit before-correction jobs independently and corrected bins jointly."""
-    actual_workers = max(1, min(int(workers), 8, os.cpu_count() or 1))
+    actual_workers = max(1, min(int(workers), os.cpu_count() or 1))
     print("Running channel_selection_mx2_fits_v31.py", flush=True)
 
     before_jobs = [job for job in jobs if job.stage == "before"]
@@ -5573,13 +5573,7 @@ def plot_carbon_vs_polynomial_mu_sigma(
     production_frame: pd.DataFrame,
     output_path: Path,
 ) -> Path:
-    """
-    Compare fitted mu and sigma values from carbon and polynomial methods.
-
-    Top: shared fitted mu values.
-    Middle: delta mu = mu_carbon - mu_polynomial.
-    Bottom: period-specific fitted sigma values.
-    """
+    """Compare carbon-assisted and polynomial-only fitted mu and sigma values."""
     corrected_carbon = _selected_corrected_carbon_results(carbon_results)
     carbon_by_bin = {
         combined_bin_number(item["x_index"], item["t_index"]): item
@@ -5589,196 +5583,64 @@ def plot_carbon_vs_polynomial_mu_sigma(
         (production_frame["stage"] == "after")
         & production_frame["is_recommended"]
     ].copy()
-
-    bins = np.arange(
-        1,
-        len(XB_BINS) * len(MINUS_TPRIME_BINS_GEV2) + 1,
-    )
-    carbon_mu: list[float] = []
-    carbon_mu_error: list[float] = []
-    polynomial_mu: list[float] = []
-    polynomial_mu_error: list[float] = []
-    classifications: list[str] = []
-
-    carbon_sigma: dict[str, list[float]] = {
-        period: [] for period in ("su22", "fa22", "sp23")
-    }
-    polynomial_sigma: dict[str, list[float]] = {
-        period: [] for period in ("su22", "fa22", "sp23")
-    }
+    bins = np.arange(1, len(XB_BINS) * len(MINUS_TPRIME_BINS_GEV2) + 1)
+    carbon_mu, carbon_mu_error, polynomial_mu, polynomial_mu_error = [], [], [], []
+    carbon_sigma = {period: [] for period in ("su22", "fa22", "sp23")}
+    polynomial_sigma = {period: [] for period in ("su22", "fa22", "sp23")}
 
     for bin_number in bins:
         joint = carbon_by_bin[int(bin_number)]
         carbon_mu.append(float(joint["shared_mean_gev2"]))
         carbon_mu_error.append(float(joint["shared_mean_error_gev2"]))
-        classifications.append(str(joint["classification"]))
-
-        polynomial_bin = polynomial[
-            polynomial["bin_number"] == bin_number
-        ]
+        polynomial_bin = polynomial[polynomial["bin_number"] == bin_number]
         shared_values = polynomial_bin["shared_mean_gev2"].dropna()
-        shared_errors = polynomial_bin[
-            "shared_mean_error_gev2"
-        ].dropna()
-        polynomial_mu.append(
-            float(shared_values.iloc[0])
-            if not shared_values.empty
-            else math.nan
-        )
-        polynomial_mu_error.append(
-            float(shared_errors.iloc[0])
-            if not shared_errors.empty
-            else math.nan
-        )
-
-        carbon_period_records = {
-            record["period"]: record
-            for record in joint["period_records"]
-        }
+        shared_errors = polynomial_bin["shared_mean_error_gev2"].dropna()
+        polynomial_mu.append(float(shared_values.iloc[0]) if not shared_values.empty else math.nan)
+        polynomial_mu_error.append(float(shared_errors.iloc[0]) if not shared_errors.empty else math.nan)
+        carbon_period_records = {record["period"]: record for record in joint["period_records"]}
         for period in ("su22", "fa22", "sp23"):
-            carbon_sigma[period].append(
-                float(carbon_period_records[period]["sigma_gev2"])
-            )
-            polynomial_row = polynomial_bin[
-                polynomial_bin["period"] == period
-            ]
+            carbon_sigma[period].append(float(carbon_period_records[period]["sigma_gev2"]))
+            polynomial_row = polynomial_bin[polynomial_bin["period"] == period]
             polynomial_sigma[period].append(
-                float(polynomial_row["sigma_gev2"].iloc[0])
-                if not polynomial_row.empty
-                else math.nan
+                float(polynomial_row["sigma_gev2"].iloc[0]) if not polynomial_row.empty else math.nan
             )
         # endfor
     # endfor
 
-    carbon_mu_array = np.asarray(carbon_mu, dtype=float)
-    polynomial_mu_array = np.asarray(polynomial_mu, dtype=float)
-    delta_mu = carbon_mu_array - polynomial_mu_array
-    resolved_mask = np.asarray(
-        [value == "resolved" for value in classifications],
-        dtype=bool,
-    )
-    marginal_mask = ~resolved_mask
-
-    fig, axes = plt.subplots(
-        3,
-        1,
-        figsize=(16, 14),
-        sharex=True,
-        gridspec_kw={"height_ratios": [1.0, 0.8, 1.25]},
-    )
-
-    ax_mu = axes[0]
-    ax_mu.errorbar(
-        bins,
-        carbon_mu_array,
-        yerr=np.asarray(carbon_mu_error, dtype=float),
-        marker="o",
-        linewidth=1.2,
-        markersize=4,
-        label="Carbon-assisted",
-    )
-    ax_mu.errorbar(
-        bins,
-        polynomial_mu_array,
-        yerr=np.asarray(polynomial_mu_error, dtype=float),
-        marker="s",
-        linewidth=1.0,
-        markersize=3.5,
-        linestyle="--",
-        label="Polynomial-only",
-    )
-    ax_mu.scatter(
-        bins[resolved_mask],
-        carbon_mu_array[resolved_mask],
-        marker="o",
-        s=42,
-        facecolors="none",
-        label="Resolved",
-        zorder=6,
-    )
-    ax_mu.scatter(
-        bins[marginal_mask],
-        carbon_mu_array[marginal_mask],
-        marker="D",
-        s=34,
-        facecolors="none",
-        label="Marginal",
-        zorder=6,
-    )
-    ax_mu.axhline(
-        NEUTRON_MASS2_GEV2,
-        linestyle=":",
-        linewidth=1.0,
-        label="$m_n^2$",
-    )
+    fig, axes = plt.subplots(2, 1, figsize=(16, 10), sharex=True,
+                             gridspec_kw={"height_ratios": [1.0, 1.15]})
+    ax_mu, ax_sigma = axes
+    ax_mu.errorbar(bins, carbon_mu, yerr=carbon_mu_error, marker="o", linewidth=1.2,
+                   markersize=4, label="Carbon-assisted")
+    ax_mu.errorbar(bins, polynomial_mu, yerr=polynomial_mu_error, marker="s",
+                   linewidth=1.0, markersize=3.5, linestyle="--", label="Polynomial-only")
+    ax_mu.axhline(NEUTRON_MASS2_GEV2, linestyle=":", linewidth=1.0, label="$m_n^2$")
     ax_mu.set_ylabel("Shared fitted $\\mu$ (GeV$^2$)")
-    ax_mu.set_title(
-        "Carbon-assisted versus polynomial-only corrected fits"
-    )
+    ax_mu.set_title("Carbon-assisted versus polynomial-only corrected fits")
     ax_mu.grid(alpha=0.25)
-    ax_mu.legend(ncol=5, fontsize=9)
+    ax_mu.legend(ncol=3, fontsize=9)
 
-    ax_delta = axes[1]
-    ax_delta.axhline(0.0, linestyle=":", linewidth=1.0)
-    ax_delta.scatter(
-        bins[resolved_mask],
-        delta_mu[resolved_mask],
-        marker="o",
-        s=34,
-        label="Resolved",
-    )
-    ax_delta.scatter(
-        bins[marginal_mask],
-        delta_mu[marginal_mask],
-        marker="D",
-        s=34,
-        label="Marginal",
-    )
-    ax_delta.plot(
-        bins,
-        delta_mu,
-        linewidth=0.8,
-        alpha=0.7,
-    )
-    ax_delta.set_ylabel(
-        "$\\Delta\\mu=\\mu_{\\mathrm{C}}-"
-        "\\mu_{\\mathrm{poly}}$ (GeV$^2$)"
-    )
-    ax_delta.grid(alpha=0.25)
-    ax_delta.legend(ncol=2, fontsize=9)
-
-    ax_sigma = axes[2]
+    # One color per run period; line style alone identifies the fit method.
+    period_colors = {"su22": "C0", "fa22": "C1", "sp23": "C2"}
     for period in ("su22", "fa22", "sp23"):
-        ax_sigma.plot(
-            bins,
-            carbon_sigma[period],
-            marker="o",
-            linewidth=1.1,
-            markersize=3.5,
-            label=f"{PERIOD_LABELS[period]}, carbon",
-        )
-        ax_sigma.plot(
-            bins,
-            polynomial_sigma[period],
-            marker="s",
-            linestyle="--",
-            linewidth=1.0,
-            markersize=3.0,
-            label=f"{PERIOD_LABELS[period]}, polynomial",
-        )
+        color = period_colors[period]
+        ax_sigma.plot(bins, carbon_sigma[period], marker="o", color=color,
+                      linewidth=1.2, markersize=3.5, linestyle="-",
+                      label=f"{PERIOD_LABELS[period]}, carbon")
+        ax_sigma.plot(bins, polynomial_sigma[period], marker="s", color=color,
+                      linestyle="--", linewidth=1.1, markersize=3.0,
+                      label=f"{PERIOD_LABELS[period]}, polynomial")
     # endfor
     ax_sigma.set_xlabel("Combined kinematic-bin number")
     ax_sigma.set_ylabel("Fitted $\\sigma$ (GeV$^2$)")
     ax_sigma.set_xticks(bins)
     ax_sigma.grid(alpha=0.25)
     ax_sigma.legend(ncol=3, fontsize=9)
-
     fig.tight_layout()
     ensure_directory(output_path.parent)
     fig.savefig(output_path, dpi=180)
     plt.close(fig)
     return output_path
-
 
 def plot_master_cut_summary(
     cuts: pd.DataFrame,
@@ -5889,6 +5751,165 @@ def plot_master_cut_summary(
     fig.savefig(output_path, dpi=180)
     plt.close(fig)
     return output_path
+
+def build_final_polynomial_cut_table(production_frame: pd.DataFrame) -> pd.DataFrame:
+    """Build tight/nominal/loose windows from the recommended corrected polynomial fits."""
+    selected = production_frame[(production_frame["stage"] == "after") & production_frame["is_recommended"]].copy()
+    rows: list[dict[str, Any]] = []
+    for bin_number in range(1, len(XB_BINS) * len(MINUS_TPRIME_BINS_GEV2) + 1):
+        subset = selected[selected["bin_number"] == bin_number]
+        if subset.empty:
+            raise RuntimeError(f"Missing recommended polynomial fit for bin {bin_number}.")
+        # endif
+        first = subset.iloc[0]
+        mean = float(first["shared_mean_gev2"])
+        mean_error = float(first["shared_mean_error_gev2"])
+        row = {
+            "x_index": int(first["x_index"]), "t_index": int(first["t_index"]),
+            "bin_number": int(bin_number), "bin_id": bin_identifier(int(first["x_index"]), int(first["t_index"])),
+            "xB_min": XB_BINS[int(first["x_index"])][0], "xB_max": XB_BINS[int(first["x_index"])][1],
+            "minus_tprime_min_gev2": MINUS_TPRIME_BINS_GEV2[int(first["t_index"])][0],
+            "minus_tprime_max_gev2": MINUS_TPRIME_BINS_GEV2[int(first["t_index"])][1],
+            "shared_mean_gev2": mean, "shared_mean_error_gev2": mean_error,
+        }
+        sigmas = []
+        for period in ("su22", "fa22", "sp23"):
+            period_row = subset[subset["period"] == period]
+            if period_row.empty:
+                raise RuntimeError(f"Missing polynomial fit for {period}, bin {bin_number}.")
+            # endif
+            record = period_row.iloc[0]
+            sigma = float(record["sigma_gev2"]); sigma_error = float(record["sigma_error_gev2"])
+            sigmas.append(sigma)
+            row[f"sigma_{period}_gev2"] = sigma
+            row[f"sigma_{period}_error_gev2"] = sigma_error
+            for label, multiple in (("tight", 1.0), ("nominal", 2.0), ("loose", 3.0)):
+                row[f"{label}_{period}_min_gev2"] = mean - multiple * sigma
+                row[f"{label}_{period}_max_gev2"] = mean + multiple * sigma
+            # endfor
+        # endfor
+        row["mean_sigma_for_summary_gev2"] = float(np.mean(sigmas))
+        rows.append(row)
+    # endfor
+    return pd.DataFrame(rows)
+
+
+def write_cut_json_from_table(cuts: pd.DataFrame, output_path: Path, method: str) -> Path:
+    """Write a cut JSON with the same downstream schema used by the asymmetry extraction."""
+    payload = {"method": method, "tight_sigma_multiple": 1.0, "nominal_sigma_multiple": 2.0,
+               "loose_sigma_multiple": 3.0, "periods": {}}
+    for period in ("su22", "fa22", "sp23"):
+        payload["periods"][period] = []
+        for row in cuts.itertuples(index=False):
+            payload["periods"][period].append({
+                "x_index": int(row.x_index), "t_index": int(row.t_index), "bin_number": int(row.bin_number),
+                "bin_id": row.bin_id, "xB_min": float(row.xB_min), "xB_max": float(row.xB_max),
+                "minus_tprime_min_gev2": float(row.minus_tprime_min_gev2),
+                "minus_tprime_max_gev2": float(row.minus_tprime_max_gev2),
+                "mu_gev2": float(row.shared_mean_gev2), "mu_error_gev2": float(row.shared_mean_error_gev2),
+                "sigma_gev2": float(getattr(row, f"sigma_{period}_gev2")),
+                "sigma_error_gev2": float(getattr(row, f"sigma_{period}_error_gev2")),
+                "tight": [float(getattr(row, f"tight_{period}_min_gev2")), float(getattr(row, f"tight_{period}_max_gev2"))],
+                "nominal": [float(getattr(row, f"nominal_{period}_min_gev2")), float(getattr(row, f"nominal_{period}_max_gev2"))],
+                "loose": [float(getattr(row, f"loose_{period}_min_gev2")), float(getattr(row, f"loose_{period}_max_gev2"))],
+            })
+        # endfor
+    # endfor
+    payload["flat_rows"] = cuts.to_dict(orient="records")
+    ensure_directory(output_path.parent)
+    output_path.write_text(json.dumps(json_safe(payload), indent=2) + "\\n", encoding="utf-8")
+    return output_path
+
+
+def plot_final_polynomial_cut_canvases(results: list[dict[str, Any]], cuts: pd.DataFrame, output_dir: Path) -> list[Path]:
+    """Make the three final 4x6 polynomial-only canvases matching the carbon-assisted presentation."""
+    ensure_directory(output_dir)
+    lookup = result_lookup(results)
+    cut_lookup = {(int(row.x_index), int(row.t_index)): row for row in cuts.itertuples(index=False)}
+    outputs: list[Path] = []
+    from matplotlib.lines import Line2D
+    from matplotlib.patches import Patch
+    for period in ("su22", "fa22", "sp23"):
+        fig, axes = plt.subplots(len(XB_BINS), len(MINUS_TPRIME_BINS_GEV2), figsize=(24, 15), sharex=True, sharey=False)
+        for x_index in range(len(XB_BINS)):
+            for t_index in range(len(MINUS_TPRIME_BINS_GEV2)):
+                ax = axes[x_index, t_index]; item = lookup[(period, "after", x_index, t_index)]
+                counts = np.asarray(item["counts"], dtype=float); edges = np.asarray(item["edges"], dtype=float)
+                centers = 0.5 * (edges[:-1] + edges[1:]); errors = np.sqrt(np.maximum(counts, 1.0))
+                model_name = item.get("recommended_background_model") or NOMINAL_BACKGROUND_MODEL
+                model = item["models"][model_name]; dense_x = np.linspace(float(centers.min()), float(centers.max()), 800)
+                evaluated = evaluate_model_dense(item, model_name, dense_x)
+                if evaluated is None:
+                    continue
+                # endif
+                total, signal, background = evaluated; cut = cut_lookup[(x_index, t_index)]
+                ax.errorbar(centers, counts, yerr=errors, fmt="o", markersize=2.0, linewidth=0.7, color="C0", zorder=5)
+                ax.plot(dense_x, background, linewidth=1.0, linestyle="--", color="C3", zorder=2)
+                ax.plot(dense_x, signal, linewidth=1.2, color="C2", zorder=3)
+                ax.plot(dense_x, total, linewidth=1.5, color="C4", zorder=4)
+                mu = float(cut.shared_mean_gev2); sigma = float(getattr(cut, f"sigma_{period}_gev2"))
+                ax.axvspan(mu - 2*sigma, mu + 2*sigma, alpha=0.10, color="C0")
+                for multiple, style in ((1.0, ":"), (2.0, "--"), (3.0, "-.")):
+                    ax.axvline(mu - multiple*sigma, linestyle=style, linewidth=0.8, color="C0", alpha=0.85)
+                    ax.axvline(mu + multiple*sigma, linestyle=style, linewidth=0.8, color="C0", alpha=0.85)
+                # endfor
+                bn = combined_bin_number(x_index, t_index)
+                ax.set_title(f"Bin {bn}: $\\mu$={mu:.4f}, $\\sigma_{{{period}}}$={sigma:.4f}", fontsize=8)
+                ax.grid(alpha=0.22); ax.tick_params(labelsize=7)
+                if x_index == len(XB_BINS)-1: ax.set_xlabel("$M_x^2$ (GeV$^2$)", fontsize=8)
+                # endif
+                if t_index == 0: ax.set_ylabel("Counts", fontsize=8)
+                # endif
+            # endfor
+        # endfor
+        handles = [
+            Line2D([], [], marker="o", linestyle="none", color="C0", markersize=5, label="NH$_3$"),
+            Line2D([], [], color="C3", linestyle="--", label="Polynomial background"),
+            Line2D([], [], color="C2", label="Gaussian signal"),
+            Line2D([], [], color="C4", label="Total model"),
+            Patch(facecolor="C0", alpha=0.10, label="Nominal (2$\\sigma$)"),
+            Line2D([], [], color="C0", linestyle=":", label="Tight (1$\\sigma$)"),
+            Line2D([], [], color="C0", linestyle="-.", label="Loose (3$\\sigma$)"),
+        ]
+        fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.945), ncol=7, fontsize=9, frameon=True)
+        fig.suptitle(f"{PERIOD_LABELS[period]}: After momentum corrections\\nFinal polynomial-only missing-neutron cut definitions", fontsize=14, y=0.985)
+        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.88))
+        path = output_dir / f"final_polynomial_only_cuts_{period}_v27.png"; fig.savefig(path, dpi=180); plt.close(fig); outputs.append(path)
+    # endfor
+    return outputs
+
+
+def plot_polynomial_master_cut_summary(cuts: pd.DataFrame, output_path: Path) -> Path:
+    """Polynomial-only analogue of the final carbon cut master summary."""
+    frame = cuts.sort_values("bin_number"); bins = frame["bin_number"].to_numpy(dtype=int)
+    mean = frame["shared_mean_gev2"].to_numpy(dtype=float); mean_error = frame["shared_mean_error_gev2"].to_numpy(dtype=float)
+    sigma_summary = frame["mean_sigma_for_summary_gev2"].to_numpy(dtype=float)
+    fig, axes = plt.subplots(2, 1, figsize=(16, 10), sharex=True, gridspec_kw={"height_ratios": [1.15, 1.0]})
+    ax = axes[0]
+    ax.fill_between(bins, mean-3*sigma_summary, mean+3*sigma_summary, alpha=0.10, label="Loose (3$\\sigma$), mean period width")
+    ax.fill_between(bins, mean-2*sigma_summary, mean+2*sigma_summary, alpha=0.13, label="Nominal (2$\\sigma$), mean period width")
+    ax.fill_between(bins, mean-1*sigma_summary, mean+1*sigma_summary, alpha=0.17, label="Tight (1$\\sigma$), mean period width")
+    ax.errorbar(bins, mean, yerr=mean_error, marker="o", linewidth=1.2, markersize=4, capsize=2, label="Shared fitted $\\mu$")
+    ax.axhline(NEUTRON_MASS2_GEV2, linestyle=":", linewidth=1.0, label="$m_n^2$")
+    ax.set_ylabel("$M_x^2$ position (GeV$^2$)"); ax.set_title("Final polynomial-only missing-neutron cut summary"); ax.grid(alpha=0.25); ax.legend(ncol=3, fontsize=9)
+    offsets={"su22":-0.12,"fa22":0.0,"sp23":0.12}; ax=axes[1]
+    for period in ("su22","fa22","sp23"):
+        ax.errorbar(bins.astype(float)+offsets[period], frame[f"sigma_{period}_gev2"], yerr=frame[f"sigma_{period}_error_gev2"], marker="o", linestyle="none", capsize=3, label=f"{PERIOD_LABELS[period]} $\\sigma$")
+    # endfor
+    ax.set_xlabel("Combined kinematic-bin number"); ax.set_ylabel("Fitted $\\sigma$ (GeV$^2$)"); ax.set_xticks(bins); ax.grid(alpha=0.25); ax.legend(ncol=3, fontsize=9)
+    fig.tight_layout(); ensure_directory(output_path.parent); fig.savefig(output_path, dpi=180); plt.close(fig); return output_path
+
+
+def write_final_polynomial_cut_products(results: list[dict[str, Any]], production_frame: pd.DataFrame, output_dir: Path) -> dict[str, Any]:
+    """Write polynomial-only cut tables/JSON and the four requested final plots."""
+    tables_dir=output_dir/"tables"; plots_dir=output_dir/"plots"; ensure_directory(tables_dir); ensure_directory(plots_dir)
+    cuts=build_final_polynomial_cut_table(production_frame)
+    csv_path=tables_dir/"final_polynomial_only_mx2_cuts.csv"; json_path=tables_dir/"final_polynomial_only_mx2_cuts.json"
+    cuts.to_csv(csv_path,index=False); write_cut_json_from_table(cuts,json_path,"Recommended corrected polynomial-only fit: shared mean with period-specific Gaussian widths.")
+    canvases=plot_final_polynomial_cut_canvases(results,cuts,plots_dir)
+    master=plot_polynomial_master_cut_summary(cuts,plots_dir/"final_polynomial_cut_master_summary_v27.png")
+    return {"csv":csv_path,"json":json_path,"cut_plots":canvases,"master_summary_plot":master}
+
 
 def write_final_carbon_cut_products(
     results: list[dict[str, Any]],
@@ -7485,7 +7506,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--workers",
         type=int,
         default=8,
-        help="Number of worker processes; hard-capped at 8 (default: 8).",
+        help="Number of worker processes (default: 8; values above 8 are allowed).",
     )
     parser.add_argument(
         "--step-size",
@@ -7984,6 +8005,11 @@ def run_analysis_variant(
                     production_frame=frame,
                     output_dir=final_carbon_cut_dir,
                 )
+            )
+            final_polynomial_cut_products = write_final_polynomial_cut_products(
+                results=results,
+                production_frame=frame,
+                output_dir=output_dir / "final_polynomial_only_cuts",
             )
         # endif
     # endif

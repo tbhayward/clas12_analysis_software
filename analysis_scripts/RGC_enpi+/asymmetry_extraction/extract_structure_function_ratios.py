@@ -559,6 +559,11 @@ DEFAULT_CUT_JSON = Path(
     "final_carbon_assisted_cuts/tables/"
     "final_carbon_assisted_mx2_cuts.json"
 )
+DEFAULT_POLYNOMIAL_CUT_JSON = Path(
+    "../channel_selection/output/channel_selection_mx2_fit_stability/"
+    "final_polynomial_only_cuts/tables/"
+    "final_polynomial_only_mx2_cuts.json"
+)
 
 DEFAULT_DILUTION_DIR = Path(
     "../dilution_factor/output/dilution_factor_determination"
@@ -5646,6 +5651,80 @@ def write_momentum_correction_comparison_products(
     write_json(json_path, {"schema_version": 3, "systematic_definition": "delta_mom = abs(uncorrected - corrected)", "middle_panel": "Assigned systematic; filled marker passes Barlow, open marker fails Barlow.", "bottom_panel": "Assigned systematic divided by corrected nominal statistical uncertainty.", "plot_axis_convention": "Top-panel axes are common by parameter family; every assigned-systematic panel uses 0 to 0.2; normalized-size axis is logarithmic from 1e-2 to 1e1.", "barlow_summary": barlow_records, "rows": merged.to_dict(orient="records")})
     return {"csv": str(csv_path), "json": str(json_path), "plots_directory": str(plots_dir), "plots": plot_paths, "summary": summary, "covariance_directory": str(covariance_dir), "covariance": covariance_products, "barlow_summary": barlow_records}
 
+def write_fit_method_diagnostic_products(
+    nominal: pd.DataFrame,
+    polynomial: pd.DataFrame,
+    output_dir: Path,
+) -> dict[str, Any]:
+    """Write the statistical-only carbon-cut versus polynomial-cut diagnostic."""
+    tables_dir = output_dir / "tables"
+    plots_dir = output_dir / "plots"
+    for directory in (output_dir, tables_dir, plots_dir):
+        ensure_directory(directory)
+    # endfor
+    keys = ["bin_number", "x_index", "t_index"]
+    keep = keys + ["number_of_events"] + [
+        item for parameter in PHYSICS_PARAMETERS
+        for item in (parameter, f"{parameter}_stat")
+    ]
+    merged = nominal[keep].merge(
+        polynomial[keep], on=keys,
+        suffixes=("_carbon", "_polynomial"), validate="one_to_one",
+    )
+    for parameter in PHYSICS_PARAMETERS:
+        shift = merged[f"{parameter}_polynomial"] - merged[f"{parameter}_carbon"]
+        merged[f"{parameter}_polynomial_minus_carbon"] = shift
+        merged[f"{parameter}_absolute_shift"] = shift.abs()
+        merged[f"{parameter}_shift_over_carbon_stat"] = np.divide(
+            shift.abs(), merged[f"{parameter}_stat_carbon"]
+        )
+    # endfor
+    csv_path = tables_dir / "carbon_vs_polynomial_structure_function_ratios.csv"
+    merged.to_csv(csv_path, index=False)
+    json_path = tables_dir / "carbon_vs_polynomial_structure_function_ratios.json"
+    write_json(json_path, {
+        "schema_version": 1,
+        "diagnostic_only": True,
+        "systematic_assignment": "none",
+        "nominal_selection": "A(mu_C, sigma_C): carbon-assisted nominal +/-2 sigma cuts",
+        "alternative_selection": "A(mu_poly, sigma_poly): polynomial-only nominal +/-2 sigma cuts",
+        "dilution_factors": "identical nominal dilution factors in both extractions",
+        "rows": merged.to_dict(orient="records"),
+    })
+
+    bins = merged["bin_number"].to_numpy(dtype=float)
+    plot_paths: list[str] = []
+    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+        fig, ax = plt.subplots(figsize=(14, 5.5))
+        ax.errorbar(
+            bins, merged[f"{parameter}_carbon"],
+            yerr=merged[f"{parameter}_stat_carbon"], marker="o",
+            linestyle="none", capsize=2,
+            label=r"Carbon-assisted $A(\mu_C,\sigma_C)$",
+        )
+        ax.errorbar(
+            bins, merged[f"{parameter}_polynomial"],
+            yerr=merged[f"{parameter}_stat_polynomial"], marker="s",
+            linestyle="none", capsize=2,
+            label=r"Polynomial-only $A(\mu_{\rm poly},\sigma_{\rm poly})$",
+        )
+        ax.axhline(0.0, linewidth=0.8)
+        ax.set_xlabel("Combined kinematic-bin number")
+        ax.set_ylabel(PARAMETER_LABELS[parameter])
+        ax.set_xticks(bins)
+        apply_parameter_y_limits(ax, parameter)
+        ax.grid(alpha=0.25)
+        ax.legend()
+        ax.set_title("Fit-method diagnostic (statistical uncertainties only)")
+        fig.tight_layout()
+        path = plots_dir / f"carbon_vs_polynomial_{parameter}.png"
+        fig.savefig(path, dpi=180)
+        plt.close(fig)
+        plot_paths.append(str(path))
+    # endfor
+    return {"csv": str(csv_path), "json": str(json_path), "plots": plot_paths}
+
+
 def write_channel_selection_comparison_products(
     *,
     tight: pd.DataFrame,
@@ -9318,6 +9397,19 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--run-info-csv", type=Path, default=DEFAULT_RUN_INFO_CSV)
     parser.add_argument("--cut-json", type=Path, default=DEFAULT_CUT_JSON)
+    parser.add_argument(
+        "--polynomial-cut-json", type=Path, default=DEFAULT_POLYNOMIAL_CUT_JSON,
+        help="Polynomial-only cut JSON produced by channel_selection_mx2_fits.py.",
+    )
+    parser.add_argument(
+        "--fit-method-diagnostic", action="store_true",
+        help=(
+            "Run only the statistical comparison of the nominal carbon-assisted "
+            "A(mu_C,sigma_C) extraction with the polynomial-only "
+            "A(mu_poly,sigma_poly) extraction. Writes five 24-bin polarized "
+            "comparison canvases plus CSV/JSON tables and assigns no systematic."
+        ),
+    )
     parser.add_argument("--isr-cut-json", type=Path, default=None)
     parser.add_argument("--dilution-json", type=Path, default=None)
     parser.add_argument(
@@ -9535,7 +9627,7 @@ def main() -> int:
     # endif
 
     isr_dilution = None
-    if not args.disable_isr:
+    if not args.disable_isr and not args.fit_method_diagnostic:
         isr_dilution = (
             args.isr_dilution_json.expanduser().resolve()
             if args.isr_dilution_json
@@ -9560,17 +9652,17 @@ def main() -> int:
     print(f"Workers:              {workers} (maximum {MAXIMUM_WORKERS})", flush=True)
     print(f"Reuse cache:          {args.reuse_cache}", flush=True)
     print(f"Skip plots:           {args.skip_plots}", flush=True)
-    print(f"ISR study enabled:    {not args.disable_isr}", flush=True)
+    print(f"ISR study enabled:    {not args.disable_isr and not args.fit_method_diagnostic}", flush=True)
     print(
-        f"Momentum study:       {not args.disable_momentum_corrections}",
+        f"Momentum study:       {not args.disable_momentum_corrections and not args.fit_method_diagnostic}",
         flush=True,
     )
     print(
-        f"Channel-selection:    {not args.disable_channel_selection}",
+        f"Channel-selection:    {not args.disable_channel_selection and not args.fit_method_diagnostic}",
         flush=True,
     )
     print(f"Nominal cache:        {nominal_cache}", flush=True)
-    if not args.disable_channel_selection:
+    if not args.disable_channel_selection and not args.fit_method_diagnostic:
         print(f"Loose superset cache: {channel_loose_cache}", flush=True)
         if args.reuse_cache:
             print(
@@ -9597,7 +9689,7 @@ def main() -> int:
 
     nominal_source_cache: Path | None = None
     channel_loose_cache_ready = False
-    if not args.disable_channel_selection:
+    if not args.disable_channel_selection and not args.fit_method_diagnostic:
         if args.reuse_cache:
             print(
                 f"[startup/cache] checking loose superset cache: "
@@ -9660,8 +9752,11 @@ def main() -> int:
         skip_plots=args.skip_plots,
         include_target_axis_study=(
             not args.baseline_zero_uu_only and not args.period_stability_only
+            and not args.fit_method_diagnostic
         ),
-        include_period_diagnostics=(not args.baseline_zero_uu_only),
+        include_period_diagnostics=(
+            not args.baseline_zero_uu_only and not args.fit_method_diagnostic
+        ),
         cut_label="nominal",
         source_cache_path=(None if args.reuse_cache else nominal_source_cache),
         zero_uu_baseline=args.baseline_zero_uu_only,
@@ -9692,6 +9787,44 @@ def main() -> int:
             output_dir=nominal_dir,
         )
         print(f"[baseline-zero-uu] complete: {nominal_dir}", flush=True)
+        return 0
+    # endif
+
+    if args.fit_method_diagnostic:
+        polynomial_cut_json = args.polynomial_cut_json.expanduser().resolve()
+        if not polynomial_cut_json.is_file():
+            raise FileNotFoundError(
+                "Fit-method diagnostic requires the polynomial-only cut JSON: "
+                f"{polynomial_cut_json}. Run channel_selection_mx2_fits.py first."
+            )
+        # endif
+        diagnostic_dir = root / "fit_method_diagnostic"
+        polynomial_dir = diagnostic_dir / "polynomial_extraction"
+        polynomial_result = run_analysis_variant(
+            sample_variant="fit_method_polynomial",
+            input_paths=nominal_inputs,
+            run_info_path=args.run_info_csv.expanduser().resolve(),
+            cut_json_path=polynomial_cut_json,
+            dilution_json_path=nominal_dilution,
+            output_dir=polynomial_dir,
+            cache_path=polynomial_dir / "cache/selected_events.npz",
+            tree_name=args.tree,
+            chunk_size=args.chunk_size,
+            workers=workers,
+            reuse_cache=args.reuse_cache,
+            skip_plots=True,
+            include_target_axis_study=False,
+            include_period_diagnostics=False,
+            cut_label="nominal",
+        )
+        products = write_fit_method_diagnostic_products(
+            nominal=nominal_result["frame"],
+            polynomial=polynomial_result["frame"],
+            output_dir=diagnostic_dir,
+        )
+        print("[fit-method-diagnostic] complete", flush=True)
+        print(f"  CSV:   {products['csv']}", flush=True)
+        print(f"  Plots: {diagnostic_dir / 'plots'}", flush=True)
         return 0
     # endif
 
