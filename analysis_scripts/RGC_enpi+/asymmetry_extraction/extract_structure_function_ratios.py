@@ -1300,38 +1300,93 @@ def run_state_arrays(
 # Channel-selection cuts
 # =============================================================================
 
-def load_channel_cuts(
-    path: Path,
-    cut_label: str = "nominal",
-) -> dict[tuple[str, int], CutRecord]:
+def read_json_tolerating_trailing_escaped_whitespace(path: Path) -> Any:
+    """Read JSON, tolerating only the known trailing literal ``\\n`` writer artifact."""
     if not path.is_file():
-        raise FileNotFoundError(f"Missing channel-selection cut JSON: {path}")
+        raise FileNotFoundError(f"Missing JSON file: {path}")
     # endif
-
     raw_json = path.read_text(encoding="utf-8")
     try:
-        payload = json.loads(raw_json)
+        return json.loads(raw_json)
     except json.JSONDecodeError as exc:
-        # Older channel-selection outputs can contain literal escaped
-        # whitespace after the final JSON object (for example the two
-        # characters "\\n"). Tolerate only that known trailing writer
-        # artifact. Any malformed JSON inside the document still fails.
         cleaned_json = re.sub(r"(?:\\[nrt])+\s*$", "", raw_json)
         if cleaned_json == raw_json:
             raise
         # endif
-
         try:
             payload = json.loads(cleaned_json)
         except json.JSONDecodeError:
             raise exc
         # endtry
-
         print(
-            f"[channel cuts] WARNING: ignored literal escaped trailing "
-            f"whitespace in {path}"
+            f"[json] WARNING: ignored literal escaped trailing whitespace in {path}",
+            flush=True,
         )
+        return payload
     # endtry
+
+
+def write_hybrid_fit_method_cut_jsons(
+    carbon_path: Path,
+    polynomial_path: Path,
+    output_dir: Path,
+) -> tuple[Path, Path]:
+    """Build nominal +/-2sigma hybrid cuts for the fit-method decomposition.
+
+    The two outputs isolate (1) the polynomial centroid at the carbon width and
+    (2) the carbon centroid at the polynomial width.  Centers and half-widths
+    are inferred directly from each period/bin nominal interval, so this stays
+    compatible with the existing channel-selection JSON schema.
+    """
+    carbon = read_json_tolerating_trailing_escaped_whitespace(carbon_path)
+    polynomial = read_json_tolerating_trailing_escaped_whitespace(polynomial_path)
+    cperiods = carbon.get("periods")
+    pperiods = polynomial.get("periods")
+    if not isinstance(cperiods, dict) or not isinstance(pperiods, dict):
+        raise RuntimeError("Fit-method cut JSONs must contain a 'periods' mapping.")
+    # endif
+
+    import copy
+    mu_poly_sigma_c = copy.deepcopy(carbon)
+    mu_c_sigma_poly = copy.deepcopy(carbon)
+    for period in PERIODS:
+        crows = cperiods.get(period)
+        prows = pperiods.get(period)
+        if not isinstance(crows, list) or not isinstance(prows, list):
+            raise RuntimeError(f"Missing period rows for {period} in fit-method JSONs.")
+        # endif
+        pmap = {int(row["bin_number"]): row for row in prows}
+        out_mu = mu_poly_sigma_c["periods"][period]
+        out_sigma = mu_c_sigma_poly["periods"][period]
+        for index, crow in enumerate(crows):
+            bin_number = int(crow["bin_number"])
+            prow = pmap.get(bin_number)
+            if prow is None:
+                raise RuntimeError(f"Polynomial cut JSON missing {period} bin {bin_number}.")
+            # endif
+            clo, chi = map(float, crow["nominal"])
+            plo, phi = map(float, prow["nominal"])
+            mu_c = 0.5 * (clo + chi)
+            mu_p = 0.5 * (plo + phi)
+            half_c = 0.5 * (chi - clo)
+            half_p = 0.5 * (phi - plo)
+            out_mu[index]["nominal"] = [mu_p - half_c, mu_p + half_c]
+            out_sigma[index]["nominal"] = [mu_c - half_p, mu_c + half_p]
+        # endfor
+    # endfor
+
+    ensure_directory(output_dir)
+    mu_path = output_dir / "hybrid_mu_polynomial_sigma_carbon_cuts.json"
+    sigma_path = output_dir / "hybrid_mu_carbon_sigma_polynomial_cuts.json"
+    write_json(mu_path, mu_poly_sigma_c)
+    write_json(sigma_path, mu_c_sigma_poly)
+    return mu_path, sigma_path
+
+def load_channel_cuts(
+    path: Path,
+    cut_label: str = "nominal",
+) -> dict[tuple[str, int], CutRecord]:
+    payload = read_json_tolerating_trailing_escaped_whitespace(path)
 
     period_payload = payload.get("periods")
     if not isinstance(period_payload, dict):
@@ -5686,71 +5741,94 @@ def write_momentum_correction_comparison_products(
 
 def write_fit_method_diagnostic_products(
     nominal: pd.DataFrame,
+    centroid_only: pd.DataFrame,
+    width_only: pd.DataFrame,
     polynomial: pd.DataFrame,
     output_dir: Path,
 ) -> dict[str, Any]:
-    """Write the statistical-only carbon-cut versus polynomial-cut diagnostic."""
+    """Write the four-way fit-method decomposition diagnostic."""
     tables_dir = output_dir / "tables"
     plots_dir = output_dir / "plots"
     for directory in (output_dir, tables_dir, plots_dir):
         ensure_directory(directory)
     # endfor
+
     keys = ["bin_number", "x_index", "t_index"]
     keep = keys + ["number_of_events"] + [
         item for parameter in PHYSICS_PARAMETERS
         for item in (parameter, f"{parameter}_stat")
     ]
-    merged = nominal[keep].merge(
-        polynomial[keep], on=keys,
-        suffixes=("_carbon", "_polynomial"), validate="one_to_one",
-    )
-    for parameter in PHYSICS_PARAMETERS:
-        shift = merged[f"{parameter}_polynomial"] - merged[f"{parameter}_carbon"]
-        merged[f"{parameter}_polynomial_minus_carbon"] = shift
-        merged[f"{parameter}_absolute_shift"] = shift.abs()
-        merged[f"{parameter}_shift_over_carbon_stat"] = np.divide(
-            shift.abs(), merged[f"{parameter}_stat_carbon"]
-        )
+    frames = {
+        "carbon": nominal[keep],
+        "mu_poly_sigma_carbon": centroid_only[keep],
+        "mu_carbon_sigma_poly": width_only[keep],
+        "polynomial": polynomial[keep],
+    }
+    merged = None
+    for label, frame in frames.items():
+        renamed = frame.rename(columns={
+            column: f"{column}_{label}" for column in frame.columns if column not in keys
+        })
+        merged = renamed if merged is None else merged.merge(renamed, on=keys, validate="one_to_one")
     # endfor
-    csv_path = tables_dir / "carbon_vs_polynomial_structure_function_ratios.csv"
+
+    for parameter in PHYSICS_PARAMETERS:
+        base = merged[f"{parameter}_carbon"]
+        stat = merged[f"{parameter}_stat_carbon"]
+        for label in ("mu_poly_sigma_carbon", "mu_carbon_sigma_poly", "polynomial"):
+            shift = merged[f"{parameter}_{label}"] - base
+            merged[f"{parameter}_{label}_minus_carbon"] = shift
+            merged[f"{parameter}_{label}_absolute_shift"] = shift.abs()
+            merged[f"{parameter}_{label}_shift_over_carbon_stat"] = np.divide(shift.abs(), stat)
+        # endfor
+    # endfor
+
+    csv_path = tables_dir / "fit_method_mu_sigma_decomposition.csv"
     merged.to_csv(csv_path, index=False)
-    json_path = tables_dir / "carbon_vs_polynomial_structure_function_ratios.json"
+    json_path = tables_dir / "fit_method_mu_sigma_decomposition.json"
     write_json(json_path, {
-        "schema_version": 1,
+        "schema_version": 2,
         "diagnostic_only": True,
         "systematic_assignment": "none",
-        "nominal_selection": "A(mu_C, sigma_C): carbon-assisted nominal +/-2 sigma cuts",
-        "alternative_selection": "A(mu_poly, sigma_poly): polynomial-only nominal +/-2 sigma cuts",
-        "dilution_factors": "identical nominal dilution factors in both extractions",
+        "selections": {
+            "carbon": "A(mu_C,sigma_C)",
+            "mu_poly_sigma_carbon": "A(mu_poly,sigma_C): centroid-only variation",
+            "mu_carbon_sigma_poly": "A(mu_C,sigma_poly): width-only variation",
+            "polynomial": "A(mu_poly,sigma_poly): full polynomial-only variation",
+        },
+        "dilution_factors": "identical nominal dilution factors in all four extractions",
         "rows": merged.to_dict(orient="records"),
     })
 
     bins = merged["bin_number"].to_numpy(dtype=float)
     plot_paths: list[str] = []
+    labels = {
+        "carbon": r"$A(\mu_C,\sigma_C)$",
+        "mu_poly_sigma_carbon": r"$A(\mu_{\rm poly},\sigma_C)$",
+        "mu_carbon_sigma_poly": r"$A(\mu_C,\sigma_{\rm poly})$",
+        "polynomial": r"$A(\mu_{\rm poly},\sigma_{\rm poly})$",
+    }
+    markers = {"carbon": "o", "mu_poly_sigma_carbon": "^", "mu_carbon_sigma_poly": "v", "polynomial": "s"}
+    offsets = {"carbon": -0.24, "mu_poly_sigma_carbon": -0.08, "mu_carbon_sigma_poly": 0.08, "polynomial": 0.24}
     for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
         fig, ax = plt.subplots(figsize=(14, 5.5))
-        ax.errorbar(
-            bins, merged[f"{parameter}_carbon"],
-            yerr=merged[f"{parameter}_stat_carbon"], marker="o",
-            linestyle="none", capsize=2,
-            label=r"Carbon-assisted $A(\mu_C,\sigma_C)$",
-        )
-        ax.errorbar(
-            bins, merged[f"{parameter}_polynomial"],
-            yerr=merged[f"{parameter}_stat_polynomial"], marker="s",
-            linestyle="none", capsize=2,
-            label=r"Polynomial-only $A(\mu_{\rm poly},\sigma_{\rm poly})$",
-        )
+        for label in ("carbon", "mu_poly_sigma_carbon", "mu_carbon_sigma_poly", "polynomial"):
+            ax.errorbar(
+                bins + offsets[label], merged[f"{parameter}_{label}"],
+                yerr=merged[f"{parameter}_stat_{label}"], marker=markers[label],
+                linestyle="none", capsize=2, label=labels[label],
+            )
+        # endfor
         ax.axhline(0.0, linewidth=0.8)
         ax.set_xlabel("Combined kinematic-bin number")
         ax.set_ylabel(PARAMETER_LABELS[parameter])
         ax.set_xticks(bins)
         apply_parameter_y_limits(ax, parameter)
         ax.grid(alpha=0.25)
-        ax.legend()
-        ax.set_title("Fit-method diagnostic (statistical uncertainties only)")
+        ax.legend(ncol=2)
+        ax.set_title("Fit-method decomposition (statistical uncertainties only)")
         fig.tight_layout()
-        path = plots_dir / f"carbon_vs_polynomial_{parameter}.png"
+        path = plots_dir / f"fit_method_decomposition_{parameter}.png"
         fig.savefig(path, dpi=180)
         plt.close(fig)
         plot_paths.append(str(path))
@@ -9438,8 +9516,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--fit-method-diagnostic", action="store_true",
         help=(
             "Run only the statistical comparison of the nominal carbon-assisted "
-            "A(mu_C,sigma_C) extraction with the polynomial-only "
-            "A(mu_poly,sigma_poly) extraction. Writes five 24-bin polarized "
+            "A(mu_C,sigma_C) extraction with centroid-only A(mu_poly,sigma_C), "
+            "width-only A(mu_C,sigma_poly), and full polynomial "
+            "A(mu_poly,sigma_poly) extractions. Writes five 24-bin polarized "
             "comparison canvases plus CSV/JSON tables and assigns no systematic."
         ),
     )
@@ -9832,27 +9911,44 @@ def main() -> int:
             )
         # endif
         diagnostic_dir = root / "fit_method_diagnostic"
-        polynomial_dir = diagnostic_dir / "polynomial_extraction"
-        polynomial_result = run_analysis_variant(
-            sample_variant="fit_method_polynomial",
-            input_paths=nominal_inputs,
-            run_info_path=args.run_info_csv.expanduser().resolve(),
-            cut_json_path=polynomial_cut_json,
-            dilution_json_path=nominal_dilution,
-            output_dir=polynomial_dir,
-            cache_path=polynomial_dir / "cache/selected_events.npz",
-            tree_name=args.tree,
-            chunk_size=args.chunk_size,
-            workers=workers,
-            reuse_cache=args.reuse_cache,
-            skip_plots=True,
-            include_target_axis_study=False,
-            include_period_diagnostics=False,
-            cut_label="nominal",
+        generated_cuts_dir = diagnostic_dir / "generated_cuts"
+        centroid_cut_json, width_cut_json = write_hybrid_fit_method_cut_jsons(
+            carbon_path=args.cut_json.expanduser().resolve(),
+            polynomial_path=polynomial_cut_json,
+            output_dir=generated_cuts_dir,
         )
+
+        variants = {
+            "centroid_only_extraction": ("fit_method_centroid_only", centroid_cut_json),
+            "width_only_extraction": ("fit_method_width_only", width_cut_json),
+            "polynomial_extraction": ("fit_method_polynomial", polynomial_cut_json),
+        }
+        diagnostic_results: dict[str, Any] = {}
+        for dirname, (sample_variant, cut_path) in variants.items():
+            variant_dir = diagnostic_dir / dirname
+            diagnostic_results[dirname] = run_analysis_variant(
+                sample_variant=sample_variant,
+                input_paths=nominal_inputs,
+                run_info_path=args.run_info_csv.expanduser().resolve(),
+                cut_json_path=cut_path,
+                dilution_json_path=nominal_dilution,
+                output_dir=variant_dir,
+                cache_path=variant_dir / "cache/selected_events.npz",
+                tree_name=args.tree,
+                chunk_size=args.chunk_size,
+                workers=workers,
+                reuse_cache=args.reuse_cache,
+                skip_plots=True,
+                include_target_axis_study=False,
+                include_period_diagnostics=False,
+                cut_label="nominal",
+            )
+        # endfor
         products = write_fit_method_diagnostic_products(
             nominal=nominal_result["frame"],
-            polynomial=polynomial_result["frame"],
+            centroid_only=diagnostic_results["centroid_only_extraction"]["frame"],
+            width_only=diagnostic_results["width_only_extraction"]["frame"],
+            polynomial=diagnostic_results["polynomial_extraction"]["frame"],
             output_dir=diagnostic_dir,
         )
         print("[fit-method-diagnostic] complete", flush=True)
