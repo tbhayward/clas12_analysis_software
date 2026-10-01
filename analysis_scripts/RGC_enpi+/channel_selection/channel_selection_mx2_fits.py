@@ -5528,15 +5528,17 @@ def plot_final_cut_canvases(
             # endfor
         # endfor
 
+        # Match the custom legend handles to the actual Matplotlib color
+        # cycle used by the plotted components above.
         handles = [
-            Line2D([0], [0], marker="o", linestyle="none", label="NH$_3$"),
-            Line2D([0], [0], linestyle="-", label="Constrained carbon"),
-            Line2D([0], [0], linestyle="-", label="Gaussian signal"),
-            Line2D([0], [0], linestyle="--", label="Residual polynomial"),
-            Line2D([0], [0], linestyle="-", linewidth=1.5, label="Total model (display-smoothed)"),
-            Patch(alpha=0.12, label="Nominal (2$\\sigma$)"),
-            Line2D([0], [0], linestyle=":", label="Tight (1$\\sigma$)"),
-            Line2D([0], [0], linestyle="-.", label="Loose (3$\\sigma$)"),
+            Line2D([0], [0], marker="o", linestyle="none", color="C0", label="NH$_3$"),
+            Line2D([0], [0], linestyle="-", color="C1", label="Constrained carbon"),
+            Line2D([0], [0], linestyle="-", color="C2", label="Gaussian signal"),
+            Line2D([0], [0], linestyle="--", color="C3", label="Residual polynomial"),
+            Line2D([0], [0], linestyle="-", color="C4", linewidth=1.5, label="Total model (display-smoothed)"),
+            Patch(facecolor="C0", alpha=0.12, label="Nominal (2$\\sigma$)"),
+            Line2D([0], [0], linestyle=":", color="C0", label="Tight (1$\\sigma$)"),
+            Line2D([0], [0], linestyle="-.", color="C0", label="Loose (3$\\sigma$)"),
         ]
         labels = [handle.get_label() for handle in handles]
 
