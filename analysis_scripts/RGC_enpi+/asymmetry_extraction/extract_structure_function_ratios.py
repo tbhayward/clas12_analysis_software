@@ -561,7 +561,7 @@ DEFAULT_CUT_JSON = Path(
 )
 DEFAULT_POLYNOMIAL_CUT_JSON = Path(
     "../channel_selection/output/channel_selection_mx2_fit_stability/"
-    "final_polynomial_only_cuts/tables/"
+    "nominal/final_polynomial_only_cuts/tables/"
     "final_polynomial_only_mx2_cuts.json"
 )
 
