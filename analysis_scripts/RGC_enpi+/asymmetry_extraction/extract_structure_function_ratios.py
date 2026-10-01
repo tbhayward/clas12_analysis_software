@@ -8862,11 +8862,13 @@ def run_double_spin_target_split_diagnostic(
     *, cache_path: Path, run_info_path: Path, dilution_json_path: Path,
     output_dir: Path, skip_plots: bool = False,
 ) -> int:
-    """Fit the nominal likelihood independently for the two target signs.
+    """Extract LL independently for the two target-polarization signs.
 
-    Each fit retains the complete seven-term nominal cross-section model.  The
-    comparison of interest is ll0 and ll1: the same physical double-spin
-    amplitudes should be recovered from the P_t>0 and P_t<0 samples.
+    A single target orientation cannot determine UU and UL separately.  For
+    this diagnostic the nominal simultaneous-fit UU/UL amplitudes (u1, u2,
+    ul1, ul2) are therefore fixed, while lu1, ll0 and ll1 are refitted using
+    only one target-polarization sign at a time.  The comparison of interest
+    is ll0 and ll1 between the P_t>0 and P_t<0 samples.
     """
     print("[double-spin target split] START", flush=True)
     out = output_dir / "diagnostics" / "double_spin_target_split"
@@ -8882,27 +8884,62 @@ def run_double_spin_target_split_diagnostic(
         )
     # endif
 
+    nominal_table_path = output_dir / "nominal" / "tables" / "structure_function_ratios.csv"
+    if not nominal_table_path.is_file():
+        raise FileNotFoundError(
+            "The target-split diagnostic fixes the UU/UL denominator terms to "
+            "the completed nominal simultaneous fit, but that table was not found: "
+            f"{nominal_table_path}. Run the normal extraction once first."
+        )
+    # endif
+    nominal_frame = pd.read_csv(nominal_table_path).set_index("bin_number")
+    required_columns = ("u1", "u2", "ul1", "ul2")
+    missing_columns = [name for name in required_columns if name not in nominal_frame.columns]
+    if missing_columns:
+        raise RuntimeError(
+            "Nominal table is missing columns required by the target-split diagnostic: "
+            + ", ".join(missing_columns)
+        )
+    # endif
+
     events = load_event_cache(cache_path)
     run_states = run_state_arrays(parse_run_info_csv(run_info_path))
     dilution_records = load_dilution_factors(dilution_json_path, cut_label="nominal")
 
     rows: list[dict[str, Any]] = []
     for bin_number in range(1, NUMBER_OF_BINS + 1):
+        nominal_row = nominal_frame.loc[bin_number]
+        fixed_denominator = {
+            name: float(nominal_row[name])
+            for name in required_columns
+        }
+        initial_values = {
+            name: float(nominal_row[name])
+            for name in PHYSICS_PARAMETERS
+            if name in nominal_frame.columns
+        }
+
         fits: dict[int, dict[str, Any]] = {}
         for target_sign in (1, -1):
             fit = fit_one_variant(
                 events, run_states, dilution_records, bin_number, "nominal",
+                initial_values=initial_values,
+                fixed_physics_parameters=fixed_denominator,
                 target_sign_filter=target_sign,
             )
             fits[target_sign] = fit
         # endfor
 
-        row: dict[str, Any] = {"bin_number": bin_number}
+        row: dict[str, Any] = {
+            "bin_number": bin_number,
+            **{f"fixed_{name}": value for name, value in fixed_denominator.items()},
+        }
         for target_sign, tag in ((1, "target_plus"), (-1, "target_minus")):
             fit = fits[target_sign]
             row[f"{tag}_valid"] = bool(fit["valid"])
             row[f"{tag}_events"] = int(fit["metadata"]["number_of_events"])
-            for parameter in PHYSICS_PARAMETERS:
+            # Only LU and LL are independently refitted in a single target state.
+            for parameter in ("lu1", "ll0", "ll1"):
                 row[f"{tag}_{parameter}"] = float(fit["values"][parameter])
                 row[f"{tag}_{parameter}_stat"] = float(fit["errors"][parameter])
             # endfor
@@ -8968,9 +9005,15 @@ def run_double_spin_target_split_diagnostic(
             )
         # endif
     # endfor
+    print(
+        "[double-spin target split] fixed nominal amplitudes: u1, u2, ul1, ul2; "
+        "refitted amplitudes: lu1, ll0, ll1",
+        flush=True,
+    )
     print(f"[double-spin target split] table: {csv_path}", flush=True)
     print(f"[double-spin target split] plots: {plots}", flush=True)
     return 0
+
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
