@@ -55,9 +55,20 @@ def reconstruct_factors(cc, phi_deg):
     native_eval = Hm @ native
     shared_eval = Hm @ shared
 
-    scale = max(float(np.max(np.abs(native_eval))), 1.0)
-    if np.any(np.abs(native_eval) <= 1e-12 * scale):
-        raise RuntimeError("Reconstructed native GK cross section vanishes.")
+    # Use a relative test based on the scale of this PARTONS curve itself.
+    # Do not compare to an absolute O(1) scale: PARTONS observable values can
+    # legitimately be much smaller than 1 in their reported units.
+    scale = float(np.max(np.abs(native_eval)))
+    if not np.isfinite(scale) or scale == 0.0:
+        raise RuntimeError("Reconstructed native GK cross section is identically zero.")
+    #endif
+
+    tiny = np.finfo(float).eps * 100.0 * scale
+    if np.any(np.abs(native_eval) <= tiny):
+        raise RuntimeError(
+            "Reconstructed native GK cross section is numerically zero "
+            "relative to its own scale."
+        )
     #endif
 
     factors = shared_eval / native_eval
