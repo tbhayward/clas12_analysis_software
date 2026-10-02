@@ -4907,6 +4907,242 @@ def write_period_stability_excursion_table(frame: pd.DataFrame, output_path: Pat
     return excursions
 
 
+
+def write_period_stability_global_diagnostics(
+    frame: pd.DataFrame,
+    output_dir: Path,
+    cuts: Mapping[tuple[str, int], CutRecord],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+) -> dict[str, str]:
+    """Quantify global and structured run-period consistency for zero-UU fits."""
+    ensure_directory(output_dir)
+    try:
+        from scipy.stats import chi2 as chi2_distribution, pearsonr, spearmanr
+    except Exception:
+        chi2_distribution = None
+        pearsonr = spearmanr = None
+    # endtry
+
+    # Exact all-five-amplitude likelihood-ratio test.  For each bin the null
+    # has five common polarized amplitudes; the alternative has five amplitudes
+    # independently in each of three periods, hence 10 additional parameters.
+    lrt_rows = []
+    total_stat = 0.0
+    total_df = 0
+    for _, row in frame.sort_values("bin_number").iterrows():
+        deltas = np.asarray(
+            [float(row.get(f"period_delta_nll_{period}", np.nan)) for period in PERIODS],
+            dtype=float,
+        )
+        valid = np.all(np.isfinite(deltas))
+        stat = 2.0 * float(np.sum(deltas)) if valid else math.nan
+        df = 2 * len(PHYSICS_PARAMETERS) if valid else 0
+        pvalue = (
+            float(chi2_distribution.sf(stat, df))
+            if valid and chi2_distribution is not None else math.nan
+        )
+        lrt_rows.append({
+            "scope": "bin", "bin_number": int(row["bin_number"]),
+            "minus2logLambda": stat, "df": df, "pvalue": pvalue,
+        })
+        if valid:
+            total_stat += stat
+            total_df += df
+        # endif
+    # endfor
+    global_p = (
+        float(chi2_distribution.sf(total_stat, total_df))
+        if total_df > 0 and chi2_distribution is not None else math.nan
+    )
+    lrt_rows.append({
+        "scope": "all_24_bins", "bin_number": np.nan,
+        "minus2logLambda": total_stat, "df": total_df, "pvalue": global_p,
+    })
+    lrt_path = output_dir / "period_stability_global_likelihood_ratio.csv"
+    pd.DataFrame(lrt_rows).to_csv(lrt_path, index=False)
+
+    # Observable-by-observable heterogeneity test.  This is a Wald/Cochran-Q
+    # test based on the three independent period estimators, not an LRT; it is
+    # intentionally labelled as such so the statistical interpretation is clear.
+    observable_rows = []
+    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+        q_total = 0.0
+        df_total = 0
+        for _, row in frame.sort_values("bin_number").iterrows():
+            vals, weights = [], []
+            for period in PERIODS:
+                value = float(row[f"{parameter}_{period}"])
+                sigma = float(row[f"{parameter}_stat_{period}"])
+                if np.isfinite(value) and np.isfinite(sigma) and sigma > 0.0:
+                    vals.append(value)
+                    weights.append(1.0 / sigma**2)
+                # endif
+            # endfor
+            if len(vals) < 2:
+                continue
+            # endif
+            v = np.asarray(vals); w = np.asarray(weights)
+            mean = float(np.sum(w * v) / np.sum(w))
+            q = float(np.sum(w * (v - mean)**2))
+            df_q = len(vals) - 1
+            observable_rows.append({
+                "scope": "bin", "parameter": parameter,
+                "bin_number": int(row["bin_number"]), "Q": q, "df": df_q,
+                "pvalue": float(chi2_distribution.sf(q, df_q)) if chi2_distribution is not None else math.nan,
+            })
+            q_total += q
+            df_total += df_q
+        # endfor
+        observable_rows.append({
+            "scope": "all_24_bins", "parameter": parameter,
+            "bin_number": np.nan, "Q": q_total, "df": df_total,
+            "pvalue": float(chi2_distribution.sf(q_total, df_total)) if df_total and chi2_distribution is not None else math.nan,
+        })
+    # endfor
+    observable_path = output_dir / "period_stability_observable_wald_tests.csv"
+    pd.DataFrame(observable_rows).to_csv(observable_path, index=False)
+
+    # Build one row per bin/observable/period with the simultaneous-reference
+    # pull and experimental context needed to trace coherent patterns.
+    context_rows = []
+    pt_by_period = {}
+    for period in PERIODS:
+        state = run_states[period]
+        qtot = np.asarray(state["q_plus"]) + np.asarray(state["q_minus"])
+        qsum = float(np.sum(qtot))
+        pt_by_period[period] = (
+            float(np.sum(np.abs(np.asarray(state["pt"])) * qtot) / qsum)
+            if qsum > 0.0 else math.nan
+        )
+    # endfor
+    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+        refs = _period_stability_references(frame, parameter)
+        for i, row in frame.iterrows():
+            combined = float(refs["combined"][i])
+            combined_err = float(refs["combined_error"][i])
+            bin_number = int(row["bin_number"])
+            for period in PERIODS:
+                value = float(row[f"{parameter}_{period}"])
+                sigma_stat = float(row[f"{parameter}_stat_{period}"])
+                denom2 = sigma_stat**2 - combined_err**2
+                pull = ((value - combined) / math.sqrt(denom2)) if denom2 > 0.0 else math.nan
+                cut = cuts[(period, bin_number)]
+                mu = 0.5 * (cut.low_gev2 + cut.high_gev2)
+                mx2_sigma = 0.25 * (cut.high_gev2 - cut.low_gev2)  # nominal is mu +/- 2 sigma
+                context_rows.append({
+                    "bin_number": bin_number, "parameter": parameter, "period": period,
+                    "period_value": value, "period_stat": sigma_stat,
+                    "simultaneous_value": combined, "simultaneous_stat": combined_err,
+                    "signed_difference": value - combined, "pull": pull,
+                    "events": int(row[f"events_{period}"]),
+                    "dilution": float(row[f"dilution_{period}"]),
+                    "dilution_stat": float(row[f"dilution_stat_{period}"]),
+                    "charge_weighted_mean_abs_target_polarization": pt_by_period[period],
+                    "mx2_mu_gev2": mu, "mx2_sigma_gev2": mx2_sigma,
+                    "mx2_low_gev2": cut.low_gev2, "mx2_high_gev2": cut.high_gev2,
+                })
+            # endfor
+        # endfor
+    # endfor
+    context = pd.DataFrame(context_rows)
+    context_path = output_dir / "period_stability_full_context.csv"
+    context.to_csv(context_path, index=False)
+
+    pull_rows = []
+    for (parameter, period), group in context.groupby(["parameter", "period"]):
+        x = group["pull"].to_numpy(dtype=float)
+        x = x[np.isfinite(x)]
+        pull_rows.append({
+            "parameter": parameter, "period": period, "n": len(x),
+            "mean_pull": float(np.mean(x)) if len(x) else math.nan,
+            "rms_pull": float(np.sqrt(np.mean(x**2))) if len(x) else math.nan,
+            "sample_std_pull": float(np.std(x, ddof=1)) if len(x) > 1 else math.nan,
+            "n_positive": int(np.count_nonzero(x > 0.0)),
+            "n_negative": int(np.count_nonzero(x < 0.0)),
+            "n_abs_gt_2p5": int(np.count_nonzero(np.abs(x) > 2.5)),
+        })
+    # endfor
+    pull_path = output_dir / "period_stability_signed_pull_summary.csv"
+    pd.DataFrame(pull_rows).to_csv(pull_path, index=False)
+
+    corr_rows = []
+    covariates = ("mx2_sigma_gev2", "dilution", "dilution_stat", "events")
+    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+        for period_key in (*PERIODS, "all_periods"):
+            subset = context.loc[context["parameter"] == parameter]
+            if period_key != "all_periods":
+                subset = subset.loc[subset["period"] == period_key]
+            # endif
+            for covariate in covariates:
+                x = subset[covariate].to_numpy(dtype=float)
+                y = subset["pull"].to_numpy(dtype=float)
+                good = np.isfinite(x) & np.isfinite(y)
+                if np.count_nonzero(good) >= 3 and np.std(x[good]) > 0.0 and np.std(y[good]) > 0.0:
+                    pr = pearsonr(x[good], y[good]) if pearsonr is not None else (math.nan, math.nan)
+                    sr = spearmanr(x[good], y[good]) if spearmanr is not None else (math.nan, math.nan)
+                    pearson_r, pearson_p = float(pr[0]), float(pr[1])
+                    spearman_r, spearman_p = float(sr[0]), float(sr[1])
+                else:
+                    pearson_r = pearson_p = spearman_r = spearman_p = math.nan
+                # endif
+                corr_rows.append({
+                    "parameter": parameter, "period": period_key, "covariate": covariate,
+                    "n": int(np.count_nonzero(good)), "pearson_r": pearson_r,
+                    "pearson_pvalue": pearson_p, "spearman_rho": spearman_r,
+                    "spearman_pvalue": spearman_p,
+                })
+            # endfor
+        # endfor
+    # endfor
+    corr_path = output_dir / "period_stability_pull_context_correlations.csv"
+    pd.DataFrame(corr_rows).to_csv(corr_path, index=False)
+
+    # Coherent multiplicative period-scale test.  Fit period = s * simultaneous
+    # through the origin using the correlated residual variance sigma_p^2-sigma_c^2.
+    scale_groups = {
+        "UL": ("ul1", "ul2"),
+        "LL": ("ll0", "ll1"),
+        "all_target_polarized": ("ul1", "ul2", "ll0", "ll1"),
+    }
+    scale_rows = []
+    for period in PERIODS:
+        for group_name, parameters in scale_groups.items():
+            xs, ys, ws = [], [], []
+            for parameter in parameters:
+                refs = _period_stability_references(frame, parameter)
+                for i, row in frame.iterrows():
+                    c = float(refs["combined"][i]); ce = float(refs["combined_error"][i])
+                    y = float(row[f"{parameter}_{period}"]); ye = float(row[f"{parameter}_stat_{period}"])
+                    variance = ye**2 - ce**2
+                    if np.isfinite(c) and np.isfinite(y) and variance > 0.0:
+                        xs.append(c); ys.append(y); ws.append(1.0 / variance)
+                    # endif
+                # endfor
+            # endfor
+            x = np.asarray(xs); y = np.asarray(ys); w = np.asarray(ws)
+            denom = float(np.sum(w * x**2)) if len(x) else 0.0
+            scale = float(np.sum(w * x * y) / denom) if denom > 0.0 else math.nan
+            scale_err = math.sqrt(1.0 / denom) if denom > 0.0 else math.nan
+            chi2 = float(np.sum(w * (y - scale * x)**2)) if denom > 0.0 else math.nan
+            df_scale = max(0, len(x) - 1)
+            scale_rows.append({
+                "period": period, "group": group_name, "n": len(x), "scale": scale,
+                "scale_stat": scale_err, "scale_minus_one_sigma": (scale - 1.0) / scale_err if scale_err > 0.0 else math.nan,
+                "chi2": chi2, "df": df_scale,
+                "chi2_pvalue": float(chi2_distribution.sf(chi2, df_scale)) if df_scale and chi2_distribution is not None else math.nan,
+            })
+        # endfor
+    # endfor
+    scale_path = output_dir / "period_stability_period_scale_tests.csv"
+    pd.DataFrame(scale_rows).to_csv(scale_path, index=False)
+
+    return {
+        "global_lrt": str(lrt_path), "observable_wald": str(observable_path),
+        "context": str(context_path), "pull_summary": str(pull_path),
+        "correlations": str(corr_path), "scale_tests": str(scale_path),
+    }
+
+
 def plot_period_stability(
     frame: pd.DataFrame,
     output_dir: Path,
@@ -7949,6 +8185,138 @@ def _charge_normalized_state_yields(
     return out
 
 
+
+def run_flagged_exclusivity_window_diagnostic(
+    args: argparse.Namespace,
+    root: Path,
+    bins: tuple[int, ...],
+    profile_map: Mapping[int, tuple[str, ...]],
+    workers: int,
+) -> Path:
+    """Refit flagged period-stability bins with 1, 2, and 3 sigma Mx2 windows."""
+    out_dir = root / "period_stability" / "diagnostics" / "period_excursions"
+    ensure_directory(out_dir)
+    run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
+    run_states = run_state_arrays(run_records)
+    run_state_payload = {
+        period: {key: value.tolist() for key, value in state.items()}
+        for period, state in run_states.items()
+    }
+
+    dilution_path = (
+        args.dilution_json.expanduser().resolve() if args.dilution_json
+        else find_default_dilution_json(args.dilution_dir.expanduser().resolve()).resolve()
+    )
+    loose_cache = root / "channel_selection" / "loose" / "cache" / "selected_events.npz"
+    if not loose_cache.is_file():
+        print("[period window diagnostic] loose 3-sigma cache missing; building it from ROOT...", flush=True)
+        inputs = {period: Path(value) for period, value in DEFAULT_INPUTS.items()}
+        for period, path in args.input:
+            inputs[period] = path
+        # endfor
+        loose_cuts = load_channel_cuts(args.cut_json.expanduser().resolve(), cut_label="loose")
+        build_event_cache(
+            input_paths=inputs, tree_name=args.tree, chunk_size=args.chunk_size,
+            run_records=run_records, cuts=loose_cuts, cache_path=loose_cache,
+        )
+    # endif
+
+    cache_by_window = {
+        "loose": loose_cache,
+        "nominal": root / "period_stability" / "cache" / "selected_events.npz",
+        "tight": out_dir / "cache" / "selected_events_tight.npz",
+    }
+    if not cache_by_window["tight"].is_file():
+        tight_cuts = load_channel_cuts(args.cut_json.expanduser().resolve(), cut_label="tight")
+        derive_event_cache(
+            source_cache_path=loose_cache, cuts=tight_cuts,
+            cache_path=cache_by_window["tight"],
+        )
+    # endif
+
+    all_rows = []
+    for window in ("tight", "nominal", "loose"):
+        dilution_records = load_dilution_factors(dilution_path, cut_label=window)
+        dilution_payload = {
+            period: {
+                str(bin_number): {
+                    "x_index": record.x_index, "t_index": record.t_index,
+                    "value": record.value, "stat_uncertainty": record.stat_uncertainty,
+                }
+                for (record_period, bin_number), record in dilution_records.items()
+                if record_period == period
+            }
+            for period in PERIODS
+        }
+        tasks = [
+            {"bin_number": bin_number, "period": period, "profile_parameter": None}
+            for bin_number in bins for period in (*PERIODS, COMBINED_PERIOD_KEY)
+        ]
+        results = []
+        mp_context = mp.get_context("spawn")
+        with ProcessPoolExecutor(
+            max_workers=min(workers, len(tasks)), mp_context=mp_context,
+            initializer=initialize_fit_worker,
+            initargs=(str(cache_by_window[window]), run_state_payload, dilution_payload),
+        ) as executor:
+            futures = [executor.submit(_diagnostic_period_fit_worker, task) for task in tasks]
+            for index, future in enumerate(as_completed(futures), start=1):
+                results.append(future.result())
+                print(f"[period window diagnostic:{window}] {index}/{len(tasks)}", flush=True)
+            # endfor
+        # endwith
+        by_key = {(item["bin_number"], item["period"]): item["fit"] for item in results}
+        for bin_number in bins:
+            combined_fit = by_key[(bin_number, COMBINED_PERIOD_KEY)]
+            for parameter in profile_map.get(bin_number, tuple()):
+                combined = float(combined_fit["values"][parameter])
+                combined_err = float(combined_fit["errors"][parameter])
+                for period in PERIODS:
+                    fit = by_key[(bin_number, period)]
+                    value = float(fit["values"][parameter])
+                    error = float(fit["errors"][parameter])
+                    denom2 = error**2 - combined_err**2
+                    pull = (value - combined) / math.sqrt(denom2) if denom2 > 0.0 else math.nan
+                    all_rows.append({
+                        "window": window, "bin_number": bin_number, "parameter": parameter,
+                        "period": period, "value": value, "stat": error,
+                        "simultaneous_value": combined, "simultaneous_stat": combined_err,
+                        "pull_wrt_simultaneous": pull,
+                        "events": int(fit["metadata"]["number_of_events"]),
+                        "fit_valid": fit["valid"], "accurate_covariance": fit["accurate_covariance"],
+                        "positive_definite_covariance": fit["positive_definite_covariance"],
+                        "parameters_at_limit": fit["parameters_at_limit"], "edm": fit["edm"],
+                    })
+                # endfor
+            # endfor
+        # endfor
+    # endfor
+
+    frame = pd.DataFrame(all_rows)
+    path = out_dir / "flagged_bins_exclusivity_window_period_refits.csv"
+    frame.to_csv(path, index=False)
+
+    plot_dir = out_dir / "plots" / "exclusivity_window"
+    ensure_directory(plot_dir)
+    window_offsets = {"tight": -0.18, "nominal": 0.0, "loose": 0.18}
+    for (bin_number, parameter), group in frame.groupby(["bin_number", "parameter"]):
+        fig, ax = plt.subplots(figsize=(8.0, 5.2))
+        xbase = {period: i for i, period in enumerate(PERIODS)}
+        for window in ("tight", "nominal", "loose"):
+            subset = group.loc[group["window"] == window]
+            xs = [xbase[p] + window_offsets[window] for p in subset["period"]]
+            ax.errorbar(xs, subset["value"], yerr=subset["stat"], marker="o", linestyle="none", capsize=3, label=window.capitalize())
+        # endfor
+        ax.set_xticks(range(len(PERIODS)), [PERIOD_LABELS[p] for p in PERIODS])
+        ax.set_ylabel(PARAMETER_LABELS[parameter])
+        ax.set_title(f"Bin {int(bin_number)}: exclusivity-window dependence of period fits")
+        ax.grid(alpha=0.25); ax.legend(frameon=False)
+        fig.tight_layout()
+        fig.savefig(plot_dir / f"bin_{int(bin_number):02d}_{parameter}_window_period_fits.png", dpi=180)
+        plt.close(fig)
+    # endfor
+    return path
+
 def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, workers: int) -> int:
     """Run focused diagnostics for the largest period-stability excursions."""
     nominal_dir = root / "period_stability"
@@ -8237,7 +8605,11 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
         "bins": list(bins), "profile_parameters": {str(k): list(v) for k, v in profile_map.items()},
         "fit_results": results, "raw_state_yields": raw_yields,
     })
+    window_path = run_flagged_exclusivity_window_diagnostic(
+        args, root, tuple(bins), profile_map, workers
+    )
     print("[period-stability-diagnostics] complete", flush=True)
+    print(f"  Window refits: {window_path}", flush=True)
     print(f"  Summary: {summary_path}", flush=True)
     print(f"  Plots:   {plot_dir}", flush=True)
     return 0
@@ -9974,6 +10346,20 @@ def main() -> int:
         if paths:
             print(f"  Wrote:   {len(paths)} polarized stability PNGs", flush=True)
         # endif
+
+        # Global/structured consistency diagnostics are always written, even if
+        # no single residual exceeds the 2.5-sigma inspection threshold.
+        stability_run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
+        stability_run_states = run_state_arrays(stability_run_records)
+        stability_cuts = load_channel_cuts(args.cut_json.expanduser().resolve(), cut_label="nominal")
+        global_products = write_period_stability_global_diagnostics(
+            nominal_result["frame"], nominal_dir / "diagnostics" / "global_consistency",
+            stability_cuts, stability_run_states,
+        )
+        print(f"  Global LRT: {global_products['global_lrt']}", flush=True)
+        print(f"  Observable tests: {global_products['observable_wald']}", flush=True)
+        print(f"  Period scale tests: {global_products['scale_tests']}", flush=True)
+
         if not excursions.empty and not args.skip_plots:
             flagged_bins = tuple(sorted(set(excursions["bin_number"].astype(int))))
             flagged_map = {int(b): tuple(sorted(set(g["parameter"].astype(str)))) for b, g in excursions.groupby("bin_number")}
