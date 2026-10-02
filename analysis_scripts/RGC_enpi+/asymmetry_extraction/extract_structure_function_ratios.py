@@ -3465,14 +3465,20 @@ def period_preflight_worker(task: dict[str, Any]) -> dict[str, Any]:
     # fit workers pass ``active_periods=(period,)`` explicitly; mirror that
     # here rather than referring to an undefined outer-scope variable.
     active_periods = (period,)
+    # make_bin_nll constructs the likelihood only; parameter fixing is a
+    # Minuit configuration handled by fit_one_variant.  The preflight does not
+    # run Minuit, so enforce the zero-UU diagnostic model by setting the probe
+    # values below rather than passing an unsupported keyword here.
     nll, metadata = make_bin_nll(
         _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
         bin_number, "nominal", active_periods=active_periods,
-        fixed_physics_parameters={"u1": 0.0, "u2": 0.0},
     )
     values = dict(PARAMETER_INITIAL_VALUES)
     values.update({name: float(nominal["values"][name])
                    for name in PHYSICS_PARAMETERS})
+    # Match the actual period-stability fit model exactly.
+    values["u1"] = 0.0
+    values["u2"] = 0.0
     values.update({
         f"f_{p}": float(_WORKER_DILUTION_RECORDS[(p, bin_number)].value)
         for p in PERIODS
