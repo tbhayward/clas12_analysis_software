@@ -533,9 +533,27 @@ def build_shared_decomposition_table(df: pd.DataFrame, cols: dict[str, str]) -> 
         reduced_A = 2.0 * math.pi * A / K
         virtual_photon_U_from_public = 2.0 * math.pi * A / Gamma_e
         virtual_photon_U_from_internal = K_had * reduced_A
-        virtual_photon_identity_residual = (
-            virtual_photon_U_from_public / virtual_photon_U_from_internal - 1.0
+
+        # The relative identity residual is undefined when the model response is
+        # identically zero (the known R0120 case).  Treat 0 == 0 as a valid
+        # zero-response closure point and record NaN for the relative residual;
+        # a one-sided zero remains a genuine inconsistency and should fail.
+        identity_scale = max(
+            abs(virtual_photon_U_from_public),
+            abs(virtual_photon_U_from_internal),
         )
+        if identity_scale == 0.0:
+            virtual_photon_identity_residual = float("nan")
+        elif virtual_photon_U_from_internal == 0.0:
+            raise RuntimeError(
+                f"{point_id}/{campaign}: P/Gamma_e is nonzero but "
+                "K_had*R is zero"
+            )
+        else:
+            virtual_photon_identity_residual = (
+                virtual_photon_U_from_public / virtual_photon_U_from_internal - 1.0
+            )
+        #endif
         sigma_LT = (
             2.0 * math.pi * B
             / (2.0 * K * math.sqrt(2.0 * eps * (1.0 + eps)))
