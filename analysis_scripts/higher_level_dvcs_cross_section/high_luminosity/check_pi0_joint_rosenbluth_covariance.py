@@ -72,16 +72,20 @@ def main():
     excluded = set(pd.read_csv(exclusions).point_id.astype(str))
 
     rows = []
-    for row in common.itertuples(index=False):
-        pid = str(row.point_id)
+    for n, row in enumerate(common.itertuples(index=False)):
+        # Production assigns R#### from the Stage-2 row order; point_id is not
+        # stored in 03_common_rosenbluth_model_points.csv.
+        pid = f"R{n:04d}"
         if pid in excluded or pid not in prod.index:
             continue
 
-        q2, xb, mt = float(row.Q2_GeV2), float(row.xB), float(row.minus_t_GeV2)
+        q2 = float(row.Q2_common_GeV2)
+        xb = float(row.xB_common)
+        mt = float(row.minus_t_common_GeV2)
         ir = (int(row.iq2_rga), int(row.ixb_rga), int(row.it_rga))
         ik = (int(row.iq2_rgk), int(row.ixb_rgk), int(row.it_rgk))
-        ga = m._select_internal_group(rga, row, "rga")
-        gk = m._select_internal_group(rgk, row, "rgk")
+        ga = rga[(rga.iq2 == ir[0]) & (rga.ixb == ir[1]) & (rga.it == ir[2])].copy()
+        gk = rgk[(rgk.iq2 == ik[0]) & (rgk.ixb == ik[1]) & (rgk.it == ik[2])].copy()
 
         # Apply exactly the production reduced-GK continuous-phi correction.
         for camp, g in (("rga", ga), ("rgk", gk)):
