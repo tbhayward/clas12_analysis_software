@@ -35,9 +35,9 @@ def pick(df, *names):
 def edges_width(df, base):
     """Resolve a nominal-bin width from several naming conventions."""
     lo = pick(df, f"{base}_low_rga", f"{base}_min_rga", f"{base}_lo_rga",
-              f"{base}_low", f"{base}_min", f"{base}_lo")
+              f"{base}_low_GeV2", f"{base}_low", f"{base}_min", f"{base}_lo")
     hi = pick(df, f"{base}_high_rga", f"{base}_max_rga", f"{base}_hi_rga",
-              f"{base}_high", f"{base}_max", f"{base}_hi")
+              f"{base}_high_GeV2", f"{base}_high", f"{base}_max", f"{base}_hi")
     if lo and hi:
         return df[hi].to_numpy(float)-df[lo].to_numpy(float), lo, hi
     return None, lo, hi
@@ -82,6 +82,13 @@ def attach_phase_space(points, common):
     if iq is None:
         raise RuntimeError("Could not identify nominal Q2-bin index.")
     d["Q2_bin"] = d[iq].astype(int)
+
+    qcol = pick(d, "Q2_GeV2", "Q2_common_GeV2", "Q2_shared_GeV2")
+    xbcol = pick(d, "xB", "xB_common", "xB_shared")
+    if qcol is None or xbcol is None:
+        raise RuntimeError("Could not identify shared Q2/xB coordinates.")
+    d["Q2_GeV2"] = d[qcol].to_numpy(float)
+    d["xB"] = d[xbcol].to_numpy(float)
 
     # Area-weighted mean Q2 used only as the display coordinate.
     return d
