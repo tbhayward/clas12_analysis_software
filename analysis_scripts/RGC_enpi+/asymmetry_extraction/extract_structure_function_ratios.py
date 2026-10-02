@@ -3626,7 +3626,7 @@ def fit_stage_worker(task: dict[str, Any]) -> dict[str, Any]:
             kind,
             initial_values=nominal["values"],
         )
-    elif kind == "period_only":
+    elif kind in {"period_only", "period_only_zero_uu"}:
         fit = fit_one_variant(
             events,
             run_states,
@@ -3635,6 +3635,10 @@ def fit_stage_worker(task: dict[str, Any]) -> dict[str, Any]:
             "nominal",
             active_periods=(period,),
             initial_values=nominal["values"],
+            fixed_physics_parameters=(
+                {"u1": 0.0, "u2": 0.0}
+                if kind == "period_only_zero_uu" else None
+            ),
         )
     elif kind == "period_constraint":
         if constraint == "fix_u1":
@@ -4915,6 +4919,8 @@ def plot_period_stability_published(
         pull_ax.axhline(-1.0, linewidth=0.6, linestyle="--")
         pull_ax.axhline(2.0, linewidth=0.6, linestyle=":")
         pull_ax.axhline(-2.0, linewidth=0.6, linestyle=":")
+        pull_ax.axhline(2.5, linewidth=0.8, linestyle="--")
+        pull_ax.axhline(-2.5, linewidth=0.8, linestyle="--")
         pull_ax.set_ylabel(r"Pull wrt. mean")
         pull_ax.set_xlabel("Combined kinematic-bin number")
         pull_ax.set_xticks(bin_numbers)
@@ -4933,6 +4939,86 @@ def plot_period_stability_published(
         paths.append(str(png_path))
     # endfor
     return paths
+
+
+def write_period_stability_excursion_table(
+    frame: pd.DataFrame,
+    output_path: Path,
+    threshold: float = 2.5,
+) -> pd.DataFrame:
+    """Write every published period-fit residual with |pull| above threshold."""
+    rows: list[dict[str, Any]] = []
+    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+        values_by_period = {
+            period: frame[f"{parameter}_{period}"].to_numpy(dtype=float)
+            for period in PERIODS
+        }
+        errors_by_period = {
+            period: frame[f"{parameter}_stat_{period}"].to_numpy(dtype=float)
+            for period in PERIODS
+        }
+        valid_by_period = {}
+        for period in PERIODS:
+            errors = errors_by_period[period]
+            values = values_by_period[period]
+            valid_by_period[period] = (
+                period_fit_quality_mask(frame, period)
+                & np.isfinite(values) & np.isfinite(errors) & (errors > 0.0)
+            )
+        # endfor
+
+        for row_index, source_row in frame.iterrows():
+            usable = [p for p in PERIODS if valid_by_period[p][row_index]]
+            if len(usable) < 2:
+                continue
+            # endif
+            weights = np.asarray([
+                1.0 / errors_by_period[p][row_index]**2 for p in usable
+            ], dtype=float)
+            values = np.asarray([
+                values_by_period[p][row_index] for p in usable
+            ], dtype=float)
+            weight_sum = float(np.sum(weights))
+            mean = float(np.sum(weights * values) / weight_sum)
+            mean_error = math.sqrt(1.0 / weight_sum)
+            for period in usable:
+                sigma = float(errors_by_period[period][row_index])
+                denominator2 = sigma**2 - mean_error**2
+                if denominator2 <= 0.0:
+                    continue
+                # endif
+                value = float(values_by_period[period][row_index])
+                pull = (value - mean) / math.sqrt(denominator2)
+                if abs(pull) <= threshold:
+                    continue
+                # endif
+                rows.append({
+                    "bin_number": int(source_row["bin_number"]),
+                    "parameter": parameter,
+                    "parameter_label": PARAMETER_LABELS[parameter],
+                    "period": period,
+                    "period_label": PERIOD_LABELS[period],
+                    "value": value,
+                    "stat_uncertainty": sigma,
+                    "weighted_mean": mean,
+                    "weighted_mean_uncertainty": mean_error,
+                    "pull": float(pull),
+                    "abs_pull": float(abs(pull)),
+                    "events_period": int(source_row[f"events_{period}"]),
+                })
+            # endfor
+        # endfor
+    # endfor
+    excursions = pd.DataFrame(rows)
+    if not excursions.empty:
+        excursions = excursions.sort_values(
+            ["abs_pull", "parameter", "bin_number", "period"],
+            ascending=[False, True, True, True],
+        ).reset_index(drop=True)
+    # endif
+    ensure_directory(output_path.parent)
+    excursions.to_csv(output_path, index=False)
+    return excursions
 
 
 def plot_period_stability(
@@ -5413,7 +5499,9 @@ def run_analysis_variant(
             nominal = nominal_by_bin[bin_number]
             for period in PERIODS:
                 period_tasks.append({
-                    "kind": "period_only",
+                    "kind": (
+                        "period_only_zero_uu" if zero_uu_baseline else "period_only"
+                    ),
                     "bin_number": bin_number,
                     "period": period,
                     "nominal": nominal,
@@ -5451,37 +5539,54 @@ def run_analysis_variant(
         write_stage_checkpoint(output_dir, "03_period_only", results)
 
         constraint_tasks: list[dict[str, Any]] = []
-        for bin_number in range(1, NUMBER_OF_BINS + 1):
-            result = results_by_bin[bin_number]
-            nominal = nominal_by_bin[bin_number]
-            for period in PERIODS:
-                period_fit = result["period_fits"][period]
-                for constraint in ("fix_u1", "fix_u2", "fix_u1_u2"):
-                    constraint_tasks.append({
-                        "kind": "period_constraint",
-                        "bin_number": bin_number,
-                        "period": period,
-                        "constraint": constraint,
-                        "nominal": nominal,
-                        "period_fit": period_fit,
-                    })
+        if zero_uu_baseline:
+            # In the dedicated zero-UU period-stability cross-check, u1 and u2
+            # are already fixed to zero in every period-only fit.  The older
+            # constraint variants would therefore be redundant minimizations.
+            # Populate their compatibility slots with the same fit so the
+            # generic table writer remains backward compatible.
+            for bin_number in range(1, NUMBER_OF_BINS + 1):
+                result = results_by_bin[bin_number]
+                for period in PERIODS:
+                    period_fit = result["period_fits"][period]
+                    for constraint in ("fix_u1", "fix_u2", "fix_u1_u2"):
+                        result["period_constraint_fits"][constraint][period] = period_fit
+                    # endfor
                 # endfor
             # endfor
-        # endfor
-        constraint_stage = run_fit_stage(
-            stage_name=f"{sample_variant}: period-constraints",
-            tasks=constraint_tasks,
-            workers=workers,
-            cache_path=cache_path,
-            run_state_payload=run_state_payload,
-            dilution_payload=dilution_payload,
-            output_dir=output_dir, checkpoint_tag="04_period_constraints_tasks",
-        )
-        for item in constraint_stage:
-            results_by_bin[int(item["bin_number"])][
-                "period_constraint_fits"
-            ][item["constraint"]][item["period"]] = item["fit"]
-        # endfor
+        else:
+            for bin_number in range(1, NUMBER_OF_BINS + 1):
+                result = results_by_bin[bin_number]
+                nominal = nominal_by_bin[bin_number]
+                for period in PERIODS:
+                    period_fit = result["period_fits"][period]
+                    for constraint in ("fix_u1", "fix_u2", "fix_u1_u2"):
+                        constraint_tasks.append({
+                            "kind": "period_constraint",
+                            "bin_number": bin_number,
+                            "period": period,
+                            "constraint": constraint,
+                            "nominal": nominal,
+                            "period_fit": period_fit,
+                        })
+                    # endfor
+                # endfor
+            # endfor
+            constraint_stage = run_fit_stage(
+                stage_name=f"{sample_variant}: period-constraints",
+                tasks=constraint_tasks,
+                workers=workers,
+                cache_path=cache_path,
+                run_state_payload=run_state_payload,
+                dilution_payload=dilution_payload,
+                output_dir=output_dir, checkpoint_tag="04_period_constraints_tasks",
+            )
+            for item in constraint_stage:
+                results_by_bin[int(item["bin_number"])][
+                    "period_constraint_fits"
+                ][item["constraint"]][item["period"]] = item["fit"]
+            # endfor
+        # endif
 
         print(
             f"[{sample_variant}] computing period-consistency NLL diagnostics...",
@@ -9626,9 +9731,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--period-stability-only", action="store_true",
         help=(
-            "Run only the nominal simultaneous MLE plus the three independent "
-            "period-only MLE extractions in each of the 24 bins, then make the "
-            "five polarized run-period comparison/pull plots. No systematic or "
+            "Run only the zero-UU (u1=u2=0) simultaneous MLE plus the three "
+            "independent zero-UU period-only MLE extractions in each of the 24 "
+            "bins, then make the five polarized run-period comparison/pull plots "
+            "and write a table of every |pull|>2.5 excursion. No systematic or "
             "target-axis studies are run."
         ),
     )
@@ -9944,7 +10050,7 @@ def main() -> int:
         ),
         cut_label="nominal",
         source_cache_path=(None if args.reuse_cache else nominal_source_cache),
-        zero_uu_baseline=args.baseline_zero_uu_only,
+        zero_uu_baseline=(args.baseline_zero_uu_only or args.period_stability_only),
     )
 
     if args.period_stability_only:
@@ -9955,9 +10061,14 @@ def main() -> int:
                 nominal_result["frame"], stability_dir
             )
         # endif
-        print("[period-stability-only] complete", flush=True)
-        print(f"  Results: {nominal_result['csv']}", flush=True)
-        print(f"  Plots:   {stability_dir}", flush=True)
+        excursion_path = nominal_dir / "tables/period_stability_excursions_gt_2p5sigma.csv"
+        excursions = write_period_stability_excursion_table(
+            nominal_result["frame"], excursion_path, threshold=2.5
+        )
+        print("[period-stability-only] complete (u1=u2=0)", flush=True)
+        print(f"  Results:    {nominal_result['csv']}", flush=True)
+        print(f"  Plots:      {stability_dir}", flush=True)
+        print(f"  Excursions: {excursion_path} ({len(excursions)} rows)", flush=True)
         if paths:
             print(f"  Wrote:   {len(paths)} polarized stability PNGs", flush=True)
         # endif
