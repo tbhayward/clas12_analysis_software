@@ -3468,6 +3468,7 @@ def period_preflight_worker(task: dict[str, Any]) -> dict[str, Any]:
     nll, metadata = make_bin_nll(
         _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
         bin_number, "nominal", active_periods=active_periods,
+        fixed_physics_parameters={"u1": 0.0, "u2": 0.0},
     )
     values = dict(PARAMETER_INITIAL_VALUES)
     values.update({name: float(nominal["values"][name])
@@ -4788,236 +4789,115 @@ def plot_target_axis_variants(
     return paths
 
 
-def plot_period_stability_published(
-    frame: pd.DataFrame,
-    output_dir: Path,
-) -> list[str]:
-    """Plot the three independent run-period MLE results for the five
-    publication-facing polarized structure-function ratios.
+def _period_stability_references(frame: pd.DataFrame, parameter: str) -> dict[str, np.ndarray]:
+    """Return simultaneous zero-UU and independent-period weighted references."""
+    n = len(frame)
+    combined = frame[parameter].to_numpy(dtype=float)
+    combined_error = frame[f"{parameter}_stat"].to_numpy(dtype=float)
+    weighted_mean = np.full(n, np.nan, dtype=float)
+    weighted_error = np.full(n, np.nan, dtype=float)
+    for i in range(n):
+        vals, weights = [], []
+        for period in PERIODS:
+            value = float(frame.iloc[i][f"{parameter}_{period}"])
+            sigma = float(frame.iloc[i][f"{parameter}_stat_{period}"])
+            if (period_fit_quality_mask(frame, period)[i]
+                    and np.isfinite(value) and np.isfinite(sigma) and sigma > 0.0):
+                vals.append(value); weights.append(1.0 / sigma**2)
+            # endif
+        # endfor
+        if len(vals) >= 2:
+            w = np.asarray(weights); v = np.asarray(vals)
+            weighted_mean[i] = float(np.sum(w * v) / np.sum(w))
+            weighted_error[i] = math.sqrt(1.0 / float(np.sum(w)))
+        # endif
+    # endfor
+    return {"combined": combined, "combined_error": combined_error,
+            "weighted_mean": weighted_mean, "weighted_error": weighted_error}
 
-    The top panel shows Su22, Fa22, and Sp23 in combined-bin order 1--24.
-    The reference value in each bin is the inverse-variance weighted mean of
-    the three statistically independent period-only fits.  The lower panel
-    shows the residual pull with respect to that mean,
 
-        (A_p - Abar) / sqrt(sigma_p^2 - sigma_Abar^2),
-
-    where the subtraction accounts for the fact that period p contributes to
-    Abar.  No systematic uncertainties enter this diagnostic.
-    """
+def plot_period_stability_published(frame: pd.DataFrame, output_dir: Path) -> list[str]:
+    """Plot zero-UU period fits against the simultaneous zero-UU reference."""
     ensure_directory(output_dir)
     paths: list[str] = []
     bin_numbers = frame["bin_number"].to_numpy(dtype=int)
     offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
     markers = {"su22": "o", "fa22": "s", "sp23": "^"}
-    period_colors = {
-        "su22": "tab:orange",
-        "fa22": "tab:blue",
-        "sp23": "tab:green",
-    }
-
+    period_colors = {"su22": "tab:orange", "fa22": "tab:blue", "sp23": "tab:green"}
     for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
-        values_by_period: dict[str, np.ndarray] = {}
-        errors_by_period: dict[str, np.ndarray] = {}
-        valid_by_period: dict[str, np.ndarray] = {}
+        refs = _period_stability_references(frame, parameter)
+        combined, combined_error = refs["combined"], refs["combined_error"]
+        fig = plt.figure(figsize=(15, 7.5))
+        grid = fig.add_gridspec(2, 1, height_ratios=(2.2, 1.0), hspace=0.06)
+        ax = fig.add_subplot(grid[0]); pull_ax = fig.add_subplot(grid[1], sharex=ax)
+        cv = np.isfinite(combined) & np.isfinite(combined_error) & (combined_error > 0)
+        ax.errorbar(bin_numbers[cv], combined[cv], yerr=combined_error[cv], color="black",
+                    marker="o", ms=4.5, lw=1.0, capsize=2, label="Simultaneous fit", zorder=4)
         for period in PERIODS:
             values = frame[f"{parameter}_{period}"].to_numpy(dtype=float)
             errors = frame[f"{parameter}_stat_{period}"].to_numpy(dtype=float)
-            quality = period_fit_quality_mask(frame, period)
-            valid = quality & np.isfinite(values) & np.isfinite(errors) & (errors > 0.0)
-            values_by_period[period] = values
-            errors_by_period[period] = errors
-            valid_by_period[period] = valid
-        # endfor
-
-        weighted_mean = np.full(len(frame), np.nan, dtype=float)
-        weighted_mean_error = np.full(len(frame), np.nan, dtype=float)
-        for row_index in range(len(frame)):
-            row_values = []
-            row_weights = []
-            for period in PERIODS:
-                if not valid_by_period[period][row_index]:
-                    continue
-                # endif
-                sigma = errors_by_period[period][row_index]
-                row_values.append(values_by_period[period][row_index])
-                row_weights.append(1.0 / sigma**2)
-            # endfor
-            if len(row_values) >= 2:
-                weights = np.asarray(row_weights, dtype=float)
-                vals = np.asarray(row_values, dtype=float)
-                weight_sum = float(np.sum(weights))
-                weighted_mean[row_index] = float(np.sum(weights * vals) / weight_sum)
-                weighted_mean_error[row_index] = math.sqrt(1.0 / weight_sum)
-            # endif
-        # endfor
-
-        fig = plt.figure(figsize=(15, 7.5))
-        grid = fig.add_gridspec(2, 1, height_ratios=(2.2, 1.0), hspace=0.06)
-        ax = fig.add_subplot(grid[0])
-        pull_ax = fig.add_subplot(grid[1], sharex=ax)
-
-        mean_valid = np.isfinite(weighted_mean)
-        ax.plot(
-            bin_numbers[mean_valid],
-            weighted_mean[mean_valid],
-            color="black",
-            linestyle="-",
-            linewidth=1.0,
-            marker="o",
-            markersize=4.5,
-            label="Weighted mean",
-            zorder=4,
-        )
-        for period in PERIODS:
-            valid = valid_by_period[period]
+            valid = period_fit_quality_mask(frame, period) & np.isfinite(values) & np.isfinite(errors) & (errors > 0)
             x = bin_numbers.astype(float) + offsets[period]
-            ax.errorbar(
-                x[valid],
-                values_by_period[period][valid],
-                yerr=errors_by_period[period][valid],
-                marker=markers[period],
-                linestyle="none",
-                capsize=2,
-                color=period_colors[period],
-                label=PERIOD_LABELS[period],
-            )
-
-            denominator2 = (
-                errors_by_period[period]**2 - weighted_mean_error**2
-            )
-            pull_valid = (
-                valid
-                & np.isfinite(weighted_mean)
-                & np.isfinite(weighted_mean_error)
-                & (denominator2 > 0.0)
-            )
-            pulls = np.full(len(frame), np.nan, dtype=float)
-            pulls[pull_valid] = (
-                values_by_period[period][pull_valid]
-                - weighted_mean[pull_valid]
-            ) / np.sqrt(denominator2[pull_valid])
-            pull_ax.plot(
-                x[pull_valid],
-                pulls[pull_valid],
-                color=period_colors[period],
-                marker=markers[period],
-                linestyle="none",
-                label=PERIOD_LABELS[period],
-            )
+            ax.errorbar(x[valid], values[valid], yerr=errors[valid], marker=markers[period], linestyle="none",
+                        capsize=2, color=period_colors[period], label=PERIOD_LABELS[period])
+            denom2 = errors**2 - combined_error**2
+            pv = valid & cv & (denom2 > 0)
+            pulls = np.full(len(frame), np.nan)
+            pulls[pv] = (values[pv] - combined[pv]) / np.sqrt(denom2[pv])
+            pull_ax.plot(x[pv], pulls[pv], color=period_colors[period], marker=markers[period], linestyle="none")
         # endfor
-
-        ax.axhline(0.0, linewidth=0.8)
-        ax.set_ylabel(PARAMETER_LABELS[parameter])
-        apply_parameter_y_limits(ax, parameter)
-        ax.grid(alpha=0.25)
-        ax.legend(ncol=4, loc="best")
-        ax.tick_params(labelbottom=False)
-
-        pull_ax.axhline(0.0, color="black", linewidth=1.0)
-        pull_ax.axhline(1.0, linewidth=0.6, linestyle="--")
-        pull_ax.axhline(-1.0, linewidth=0.6, linestyle="--")
-        pull_ax.axhline(2.0, linewidth=0.6, linestyle=":")
-        pull_ax.axhline(-2.0, linewidth=0.6, linestyle=":")
-        pull_ax.axhline(2.5, linewidth=0.8, linestyle="--")
-        pull_ax.axhline(-2.5, linewidth=0.8, linestyle="--")
-        pull_ax.set_ylabel(r"Pull wrt. mean")
-        pull_ax.set_xlabel("Combined kinematic-bin number")
-        pull_ax.set_xticks(bin_numbers)
-        pull_ax.set_xlim(0.4, NUMBER_OF_BINS + 0.6)
-        pull_ax.grid(alpha=0.25)
-
-        fig.suptitle(
-            f"Run-period stability: {PARAMETER_LABELS[parameter]}",
-            y=0.995,
-        )
-        fig.tight_layout(rect=(0.0, 0.0, 1.0, 0.975))
-        stem = f"period_stability_{parameter}_bins_01_24"
-        png_path = output_dir / f"{stem}.png"
-        fig.savefig(png_path, dpi=200)
-        plt.close(fig)
-        paths.append(str(png_path))
+        ax.axhline(0.0, lw=0.8); ax.set_ylabel(PARAMETER_LABELS[parameter]); apply_parameter_y_limits(ax, parameter)
+        ax.grid(alpha=0.25); ax.legend(ncol=4, loc="best"); ax.tick_params(labelbottom=False)
+        for y, ls, lw in ((0,"-",1.0),(1,"--",0.6),(-1,"--",0.6),(2,":",0.6),(-2,":",0.6),(2.5,"--",0.8),(-2.5,"--",0.8)):
+            pull_ax.axhline(y, color="black" if y == 0 else None, linestyle=ls, linewidth=lw)
+        # endfor
+        pull_ax.set_ylabel(r"Pull wrt. simultaneous"); pull_ax.set_xlabel("Combined kinematic-bin number")
+        pull_ax.set_xticks(bin_numbers); pull_ax.set_xlim(0.4, NUMBER_OF_BINS + 0.6); pull_ax.grid(alpha=0.25)
+        fig.suptitle(f"Run-period stability: {PARAMETER_LABELS[parameter]} ($u_1=u_2=0$)", y=0.995)
+        fig.tight_layout(rect=(0,0,1,0.975))
+        png_path = output_dir / f"period_stability_{parameter}_bins_01_24.png"
+        fig.savefig(png_path, dpi=200); plt.close(fig); paths.append(str(png_path))
     # endfor
     return paths
 
 
-def write_period_stability_excursion_table(
-    frame: pd.DataFrame,
-    output_path: Path,
-    threshold: float = 2.5,
-) -> pd.DataFrame:
-    """Write every published period-fit residual with |pull| above threshold."""
+def write_period_stability_excursion_table(frame: pd.DataFrame, output_path: Path, threshold: float = 2.5) -> pd.DataFrame:
+    """Write period residuals exceeding threshold relative to simultaneous zero-UU fit."""
     rows: list[dict[str, Any]] = []
+    estimator_rows: list[dict[str, Any]] = []
     for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
-        values_by_period = {
-            period: frame[f"{parameter}_{period}"].to_numpy(dtype=float)
-            for period in PERIODS
-        }
-        errors_by_period = {
-            period: frame[f"{parameter}_stat_{period}"].to_numpy(dtype=float)
-            for period in PERIODS
-        }
-        valid_by_period = {}
-        for period in PERIODS:
-            errors = errors_by_period[period]
-            values = values_by_period[period]
-            valid_by_period[period] = (
-                period_fit_quality_mask(frame, period)
-                & np.isfinite(values) & np.isfinite(errors) & (errors > 0.0)
-            )
-        # endfor
-
-        for row_index, source_row in frame.iterrows():
-            usable = [p for p in PERIODS if valid_by_period[p][row_index]]
-            if len(usable) < 2:
-                continue
-            # endif
-            weights = np.asarray([
-                1.0 / errors_by_period[p][row_index]**2 for p in usable
-            ], dtype=float)
-            values = np.asarray([
-                values_by_period[p][row_index] for p in usable
-            ], dtype=float)
-            weight_sum = float(np.sum(weights))
-            mean = float(np.sum(weights * values) / weight_sum)
-            mean_error = math.sqrt(1.0 / weight_sum)
-            for period in usable:
-                sigma = float(errors_by_period[period][row_index])
-                denominator2 = sigma**2 - mean_error**2
-                if denominator2 <= 0.0:
+        refs = _period_stability_references(frame, parameter)
+        for i, source_row in frame.iterrows():
+            combined = float(refs["combined"][i]); combined_err = float(refs["combined_error"][i])
+            wmean = float(refs["weighted_mean"][i]); werr = float(refs["weighted_error"][i])
+            estimator_rows.append({"bin_number": int(source_row["bin_number"]), "parameter": parameter,
+                "simultaneous": combined, "simultaneous_stat": combined_err, "period_weighted_mean": wmean,
+                "period_weighted_mean_stat": werr, "difference": wmean-combined})
+            for period in PERIODS:
+                value = float(source_row[f"{parameter}_{period}"]); sigma = float(source_row[f"{parameter}_stat_{period}"])
+                if not (period_fit_quality_mask(frame, period)[i] and np.isfinite(value) and np.isfinite(sigma)
+                        and sigma > 0 and np.isfinite(combined) and np.isfinite(combined_err)):
                     continue
                 # endif
-                value = float(values_by_period[period][row_index])
-                pull = (value - mean) / math.sqrt(denominator2)
-                if abs(pull) <= threshold:
-                    continue
-                # endif
-                rows.append({
-                    "bin_number": int(source_row["bin_number"]),
-                    "parameter": parameter,
-                    "parameter_label": PARAMETER_LABELS[parameter],
-                    "period": period,
-                    "period_label": PERIOD_LABELS[period],
-                    "value": value,
-                    "stat_uncertainty": sigma,
-                    "weighted_mean": mean,
-                    "weighted_mean_uncertainty": mean_error,
-                    "pull": float(pull),
-                    "abs_pull": float(abs(pull)),
-                    "events_period": int(source_row[f"events_{period}"]),
-                })
+                denom2 = sigma**2 - combined_err**2
+                if denom2 <= 0: continue
+                pull = (value-combined)/math.sqrt(denom2)
+                if abs(pull) <= threshold: continue
+                rows.append({"bin_number": int(source_row["bin_number"]), "parameter": parameter,
+                    "parameter_label": PARAMETER_LABELS[parameter], "period": period, "period_label": PERIOD_LABELS[period],
+                    "value": value, "stat_uncertainty": sigma, "simultaneous_value": combined,
+                    "simultaneous_stat_uncertainty": combined_err, "pull": pull, "abs_pull": abs(pull),
+                    "period_weighted_mean": wmean, "period_weighted_mean_stat": werr,
+                    "events_period": int(source_row[f"events_{period}"])})
             # endfor
         # endfor
     # endfor
     excursions = pd.DataFrame(rows)
     if not excursions.empty:
-        excursions = excursions.sort_values(
-            ["abs_pull", "parameter", "bin_number", "period"],
-            ascending=[False, True, True, True],
-        ).reset_index(drop=True)
+        excursions = excursions.sort_values(["abs_pull","parameter","bin_number","period"], ascending=[False,True,True,True]).reset_index(drop=True)
     # endif
-    ensure_directory(output_path.parent)
-    excursions.to_csv(output_path, index=False)
+    ensure_directory(output_path.parent); excursions.to_csv(output_path, index=False)
+    pd.DataFrame(estimator_rows).to_csv(output_path.parent / "period_stability_reference_estimator_comparison.csv", index=False)
     return excursions
 
 
@@ -7987,6 +7867,7 @@ def _diagnostic_period_fit_worker(task: dict[str, Any]) -> dict[str, Any]:
     fit = fit_one_variant(
         _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
         bin_number, "nominal", active_periods=active_periods,
+        fixed_physics_parameters={"u1": 0.0, "u2": 0.0},
     )
     result: dict[str, Any] = {
         "bin_number": bin_number, "period": period, "fit": fit,
@@ -8007,7 +7888,7 @@ def _diagnostic_period_fit_worker(task: dict[str, Any]) -> dict[str, Any]:
                 _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
                 bin_number, "nominal", active_periods=active_periods,
                 initial_values=start,
-                fixed_physics_parameters={parameter: float(value)},
+                fixed_physics_parameters={"u1": 0.0, "u2": 0.0, parameter: float(value)},
             )
             profile_nll.append(float(profiled["minimum_nll"]))
             if profiled["valid"]:
@@ -8084,6 +7965,9 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
     cuts = load_channel_cuts(args.cut_json.expanduser().resolve(), cut_label="nominal")
     events = load_event_cache(cache_path)
     bins = args.diagnostic_bins
+    flagged_map = getattr(args, "_period_stability_flagged_parameters", None)
+    profile_map = (flagged_map if flagged_map is not None else
+                   {b: ((PERIOD_STABILITY_PROFILE_PARAMETERS[b],) if b in PERIOD_STABILITY_PROFILE_PARAMETERS else tuple()) for b in bins})
     diagnostic_dir = nominal_dir / "diagnostics" / "period_excursions"
     plot_dir = diagnostic_dir / "plots"
     ensure_directory(diagnostic_dir)
@@ -8105,12 +7989,12 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
     }
     tasks = []
     for bin_number in bins:
-        for period in (*PERIODS, COMBINED_PERIOD_KEY):
-            tasks.append({
-                "bin_number": bin_number, "period": period,
-                "profile_parameter": PERIOD_STABILITY_PROFILE_PARAMETERS.get(bin_number),
-                "profile_points": args.diagnostic_profile_points,
-            })
+        parameters = profile_map.get(bin_number, tuple()) or (None,)
+        for profile_parameter in parameters:
+            for period in (*PERIODS, COMBINED_PERIOD_KEY):
+                tasks.append({"bin_number": bin_number, "period": period,
+                    "profile_parameter": profile_parameter, "profile_points": args.diagnostic_profile_points})
+            # endfor
         # endfor
     # endfor
     results = []
@@ -8127,7 +8011,11 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
         # endfor
     # endwith
 
-    by_key = {(item["bin_number"], item["period"]): item for item in results}
+    fit_by_key: dict[tuple[int, str], dict[str, Any]] = {}
+    profile_by_key = {(item["bin_number"], item["period"], item.get("profile_parameter")): item for item in results}
+    for item in results:
+        fit_by_key.setdefault((item["bin_number"], item["period"]), item)
+    # endfor
     rows = []
     phi_edges = np.linspace(0.0, 2.0 * math.pi, 13)
     phi_centers = 0.5 * (phi_edges[:-1] + phi_edges[1:])
@@ -8189,7 +8077,7 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
         axes = axes_grid.ravel()
         image = None
         for ax, period in zip(axes, (*PERIODS, COMBINED_PERIOD_KEY)):
-            fit = by_key[(bin_number, period)]["fit"]
+            fit = fit_by_key[(bin_number, period)]["fit"]
             covariance_ok = (
                 bool(fit.get("valid", False))
                 and bool(fit.get("accurate_covariance", False))
@@ -8235,24 +8123,33 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
         fig.savefig(plot_dir / f"bin_{bin_number:02d}_correlations.png", dpi=180)
         plt.close(fig)
 
-        for period in PERIODS:
-            fit = by_key[(bin_number, period)]["fit"]
-            state = run_states[period]
-            qtot = state["q_plus"] + state["q_minus"]
-            qsum = float(np.sum(qtot))
-            mean_abs_pt = float(np.sum(np.abs(state["pt"]) * qtot) / qsum) if qsum > 0 else math.nan
-            cut = cuts[(period, bin_number)]
+        for period in (*PERIODS, COMBINED_PERIOD_KEY):
+            fit = fit_by_key[(bin_number, period)]["fit"]
+            if period in PERIODS:
+                state = run_states[period]
+                qtot = state["q_plus"] + state["q_minus"]
+                qsum = float(np.sum(qtot))
+                mean_abs_pt = float(np.sum(np.abs(state["pt"]) * qtot) / qsum) if qsum > 0 else math.nan
+                cut = cuts[(period, bin_number)]
+                beam_pol = BEAM_POLARIZATION[period]
+                dilution = dilution_records[(period, bin_number)].value
+                dilution_stat = dilution_records[(period, bin_number)].stat_uncertainty
+                mx2_low, mx2_high = cut.low_gev2, cut.high_gev2
+            else:
+                mean_abs_pt = beam_pol = dilution = dilution_stat = mx2_low = mx2_high = math.nan
+            # endif
             row = {
                 "bin_number": bin_number, "period": period,
                 "events": fit["metadata"]["number_of_events"],
-                "beam_polarization": BEAM_POLARIZATION[period],
+                "beam_polarization": beam_pol,
                 "charge_weighted_mean_abs_target_polarization": mean_abs_pt,
-                "dilution": dilution_records[(period, bin_number)].value,
-                "dilution_stat": dilution_records[(period, bin_number)].stat_uncertainty,
-                "mx2_low_gev2": cut.low_gev2, "mx2_high_gev2": cut.high_gev2,
+                "dilution": dilution, "dilution_stat": dilution_stat,
+                "mx2_low_gev2": mx2_low, "mx2_high_gev2": mx2_high,
                 "fit_valid": fit["valid"], "accurate_covariance": fit["accurate_covariance"],
                 "positive_definite_covariance": fit["positive_definite_covariance"],
                 "parameters_at_limit": fit["parameters_at_limit"], "edm": fit["edm"],
+                "minimum_nll": fit.get("minimum_nll", math.nan),
+                "u1_fixed_zero": True, "u2_fixed_zero": True,
             }
             for parameter in PHYSICS_PARAMETERS:
                 row[parameter] = fit["values"][parameter]
@@ -8266,12 +8163,11 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
             rows.append(row)
         # endfor
 
-        profile_parameter = PERIOD_STABILITY_PROFILE_PARAMETERS.get(bin_number)
-        if profile_parameter is not None:
+        for profile_parameter in profile_map.get(bin_number, tuple()):
             fig, ax = plt.subplots(figsize=(7.2, 5.0))
             profiles = []
             for period in (*PERIODS, COMBINED_PERIOD_KEY):
-                profile = by_key[(bin_number, period)]["profile"]
+                profile = profile_by_key[(bin_number, period, profile_parameter)]["profile"]
                 if profile is None:
                     continue
                 # endif
@@ -8332,7 +8228,7 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
     summary_path = diagnostic_dir / "period_excursion_diagnostics.csv"
     summary.to_csv(summary_path, index=False)
     write_json(diagnostic_dir / "period_excursion_profiles.json", {
-        "bins": list(bins), "profile_parameters": PERIOD_STABILITY_PROFILE_PARAMETERS,
+        "bins": list(bins), "profile_parameters": {str(k): list(v) for k, v in profile_map.items()},
         "fit_results": results, "raw_state_yields": raw_yields,
     })
     print("[period-stability-diagnostics] complete", flush=True)
@@ -10071,6 +9967,14 @@ def main() -> int:
         print(f"  Excursions: {excursion_path} ({len(excursions)} rows)", flush=True)
         if paths:
             print(f"  Wrote:   {len(paths)} polarized stability PNGs", flush=True)
+        # endif
+        if not excursions.empty and not args.skip_plots:
+            flagged_bins = tuple(sorted(set(excursions["bin_number"].astype(int))))
+            flagged_map = {int(b): tuple(sorted(set(g["parameter"].astype(str)))) for b, g in excursions.groupby("bin_number")}
+            args.diagnostic_bins = flagged_bins
+            args._period_stability_flagged_parameters = flagged_map
+            print(f"[period-stability-only] automatically diagnosing flagged bins {flagged_bins}", flush=True)
+            run_period_stability_diagnostics(args, root, workers)
         # endif
         return 0
     # endif
