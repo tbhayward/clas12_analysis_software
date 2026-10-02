@@ -10,7 +10,7 @@ This stage is intentionally split into two modes:
 
   2) With --gk-results:
      require a CSV with GK partial cross sections
-       point_id,sigma_T,sigma_L,sigma_TT,sigma_LT  (legacy)\n     or the source-verified dsigma_*_dt_nb_per_GeV2 columns from Stage 3
+       point_id,sigma_T,sigma_L,sigma_TT,sigma_LT
      for the Stage-3 query points. Then construct blinded phi-dependent
      pseudo-data, covariance-aware harmonic fits, Rosenbluth L/T projections,
      and workshop-oriented diagnostic figures.
@@ -103,28 +103,10 @@ def write_model_template(q,path):
         t[c]=np.nan
     t.to_csv(path,index=False)
 
-def model_merge(q,gkfile, exclusion_path=None):
+def model_merge(q,gkfile):
     g=pd.read_csv(gkfile)
-
-    # Accept either the legacy Stage-3 bridge schema or the explicit physical
-    # response schema written by run_pi0_gk_partons_stage3.py.  Keep the
-    # downstream projection code on the compact legacy names internally.
-    physical_to_internal = {
-        "dsigma_T_dt_nb_per_GeV2": "sigma_T",
-        "dsigma_L_dt_nb_per_GeV2": "sigma_L",
-        "dsigma_TT_dt_nb_per_GeV2": "sigma_TT",
-        "dsigma_LT_dt_nb_per_GeV2": "sigma_LT",
-    }
-    for physical, internal in physical_to_internal.items():
-        if internal not in g.columns and physical in g.columns:
-            g[internal] = g[physical]
-
     miss=[c for c in REQ_GK if c not in g.columns]
-    if miss:
-        available=", ".join(g.columns)
-        raise RuntimeError(
-            f"GK results missing columns: {miss}. Available columns: {available}"
-        )
+    if miss: raise RuntimeError(f"GK results missing columns: {miss}")
     if g["point_id"].duplicated().any(): raise RuntimeError("Duplicate point_id in GK results")
 
     # The validated PARTONS grid is authoritative for Stage-3 usability.  A
@@ -139,45 +121,20 @@ def model_merge(q,gkfile, exclusion_path=None):
     if extra:
         raise RuntimeError(f"GK results contain {len(extra)} unknown point_id values, e.g. {extra[:5]}")
 
-    exclusion_rows=[]
-    missing_ids=q.loc[~q["point_id"].isin(supplied),"point_id"].astype(str).tolist()
-    exclusion_rows.extend({"point_id":pid,"reason":"absent_from_validated_gk_grid"} for pid in missing_ids)
-
+    excluded=q.loc[~q["point_id"].isin(supplied),"point_id"].tolist()
     q_use=q[q["point_id"].isin(supplied)].copy()
     m=q_use.merge(g[REQ_GK],on="point_id",how="left",validate="one_to_one")
 
-    # A successful PARTONS evaluation can still yield unusable model output.
-    # Reject non-finite responses here, at creation of the validated projection
-    # grid, rather than allowing them to fail or contaminate downstream fits.
-    response_cols=REQ_GK[1:]
-    vals=m[response_cols].to_numpy(dtype=float)
-    finite_mask=np.isfinite(vals).all(axis=1)
-    for pid in m.loc[~finite_mask,"point_id"].astype(str):
-        exclusion_rows.append({"point_id":pid,"reason":"nonfinite_model_response"})
+    if m[REQ_GK[1:]].isna().any().any():
+        bad=m.loc[m[REQ_GK[1:]].isna().any(axis=1),"point_id"].tolist()
+        raise RuntimeError(f"Non-finite/missing GK structure functions for {len(bad)} retained points, e.g. {bad[:5]}")
 
-    # sigma_T is the positive transverse cross section and is also the
-    # denominator of L/T.  A zero/negative value therefore cannot define a
-    # usable Rosenbluth model point.  Do not apply analogous cuts to L, LT or
-    # TT: zero values for those responses can be physically meaningful.
-    positive_t_mask=m["sigma_T"].to_numpy(dtype=float) > 0.0
-    for pid in m.loc[finite_mask & ~positive_t_mask,"point_id"].astype(str):
-        exclusion_rows.append({"point_id":pid,"reason":"nonpositive_sigma_T"})
-
-    valid_mask=finite_mask & positive_t_mask
-    m=m.loc[valid_mask].copy()
-
-    exclusions=pd.DataFrame(exclusion_rows,columns=["point_id","reason"])
-    if exclusion_path is not None:
-        exclusions.to_csv(exclusion_path,index=False)
-
-    excluded=exclusions["point_id"].tolist()
     print("[Stage-3 validated-model selection]")
     print(f"  Stage-2 candidate points : {len(q)}")
     print(f"  validated GK points      : {len(m)}")
     print(f"  excluded from projection : {len(excluded)}")
     if excluded:
-        details=", ".join(f"{r.point_id} ({r.reason})" for r in exclusions.itertuples(index=False))
-        print(f"  excluded points          : {details}")
+        print(f"  excluded point IDs       : {', '.join(excluded)}")
     return m
 
 def covariance_for_cell(g, corr, factor, model_y, sys_floor=0.0):
@@ -239,16 +196,21 @@ def lt_from_u(model,hfits,relative_norm_unc=0.0,min_delta_epsilon=0.05):
         if abs(de) < min_delta_epsilon:
             continue
         L=(a.sigma_U_fit-b.sigma_U_fit)/de
-        # independent campaigns; systematics not yet included
-        varL=(a.sigma_U_unc**2+b.sigma_U_unc**2)/(de**2)
-        # Campaign-relative normalization does not scale away with luminosity.
-        varL += (relative_norm_unc**2)*(a.sigma_U_fit**2+b.sigma_U_fit**2)/(de**2)
+
+        # Treat the campaign-relative normalization uncertainty as an
+        # independent campaign-level uncertainty on U_a and U_b.  It must
+        # propagate through the full (T,L) covariance, not only Var(L).
+        Va = a.sigma_U_unc**2 + (relative_norm_unc*a.sigma_U_fit)**2
+        Vb = b.sigma_U_unc**2 + (relative_norm_unc*b.sigma_U_fit)**2
+
+        varL=(Va+Vb)/(de**2)
         T=a.sigma_U_fit-a.epsilon*L
+
         # derivatives for T wrt U_a,U_b
         da=1-a.epsilon/de
         db=a.epsilon/de
-        varT=da*da*a.sigma_U_unc**2+db*db*b.sigma_U_unc**2
-        covTL=(da*a.sigma_U_unc**2/de + db*(-b.sigma_U_unc**2/de))
+        varT=da*da*Va+db*db*Vb
+        covTL=(da*Va/de + db*(-Vb/de))
         R=L/T if T!=0 else np.nan
         if T!=0:
             dRdL=1/T; dRdT=-L/T**2
@@ -259,6 +221,7 @@ def lt_from_u(model,hfits,relative_norm_unc=0.0,min_delta_epsilon=0.05):
             delta_epsilon=de,sigma_T_truth=r.sigma_T,sigma_L_truth=r.sigma_L,
             sigma_T_proj=T,sigma_T_unc=np.sqrt(max(varT,0)),
             sigma_L_proj=L,sigma_L_unc=np.sqrt(max(varL,0)),
+            cov_sigma_T_sigma_L=covTL,
             R_L_over_T_truth=r.sigma_L/r.sigma_T if r.sigma_T!=0 else np.nan,
             R_L_over_T_proj=R,
             R_L_over_T_unc=np.sqrt(max(varR,0)) if np.isfinite(varR) else np.nan,
@@ -468,7 +431,7 @@ Fill 02_gk_structure_function_results_template.csv with GK/PARTONS partial
 cross sections for neutral-pion production at each common point.
 
 Required columns:
-  point_id, sigma_T, sigma_L, sigma_TT, sigma_LT (legacy), or\n  Stage-3 source-verified dsigma_*_dt_nb_per_GeV2 response columns
+  point_id, sigma_T, sigma_L, sigma_TT, sigma_LT
 
 The validated PARTONS/GK bridge supplies all four quantities in nb/GeV^2.
 Stage-3 uses only point_ids present in that validated model product; candidate
@@ -501,7 +464,7 @@ Once an actual PARTONS result is available, pass the converted CSV with:
         print("\n".join(summary)); print(f"\nWrote Stage-3 model bridge to {out}")
         return
 
-    model=model_merge(q,a.gk_results.resolve(),tabs/"00_gk_model_exclusions.csv")
+    model=model_merge(q,a.gk_results.resolve())
     model.to_csv(tabs/"01_gk_common_structure_functions.csv",index=False)
     pseudo,hfits=make_pseudodata(model,s1,s2,a.rga_factor,a.rgk_factor,a.fractional_systematic_floor)
     pseudo.to_csv(tabs/"02_blinded_model_pseudodata.csv",index=False)

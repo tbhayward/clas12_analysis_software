@@ -187,7 +187,7 @@ def plot_fraction_q2(tab, thresholds, outfile, subtitle):
     #endfor
     axes[-1].set_xlabel(r"$Q^2$ (GeV$^2$)")
     axes[0].legend(ncol=3,fontsize=8)
-    fig.suptitle("Phase-space-weighted $L/T$ precision coverage\n"+subtitle,y=.995)
+    fig.suptitle(r"Phase-space coverage for projected $1\sigma$ absolute uncertainty on $\sigma_L/\sigma_T$"+ "\n"+subtitle,y=.995)
     fig.tight_layout()
     fig.savefig(outfile,dpi=220)
     plt.close(fig)
@@ -223,10 +223,13 @@ def plot_coverage_heatmaps(dense, outfile, subtitle):
         ax.set_xlabel(r"Target $\delta(\sigma_L/\sigma_T)$")
     #endfor
     axes[0].set_ylabel(r"$Q^2$ (GeV$^2$)")
-    cb=fig.colorbar(im,ax=axes.ravel().tolist(),pad=.02)
-    cb.set_label(r"$(x_B,-t)$ phase-space coverage (%)")
-    fig.suptitle(r"$L/T$ precision coverage"+ "\n"+subtitle,y=.99)
-    fig.subplots_adjust(left=.08,right=.90,bottom=.15,top=.80,wspace=.08)
+    # Reserve a dedicated colorbar axis well to the right of the panels.
+    # Do not rely on a small `pad`, which tends to crowd the third panel.
+    fig.subplots_adjust(left=.08,right=.86,bottom=.15,top=.80,wspace=.08)
+    cax=fig.add_axes([.895,.17,.018,.60])
+    cb=fig.colorbar(im,cax=cax)
+    cb.set_label(r"$(x_B,-t)$ phase-space coverage (%)",labelpad=12)
+    fig.suptitle(r"Projected $1\sigma$ absolute uncertainty on $\sigma_L/\sigma_T$"+ "\n"+subtitle,y=.99)
     fig.savefig(outfile,dpi=220)
     plt.close(fig)
 
@@ -375,6 +378,65 @@ def plot_synthetic_rosenbluth(d, outfile):
     fig.savefig(outfile,dpi=220,bbox_inches="tight")
     plt.close(fig)
 
+def plot_normalization_scan_10x(d, thresholds, outfile):
+    """At fixed remaining x10, show coverage versus relative normalization uncertainty."""
+    norms=sorted(d.relative_normalization_uncertainty.unique())
+    fig,axes=plt.subplots(len(thresholds),1,figsize=(7.6,2.35*len(thresholds)),
+                          sharex=True,sharey=True)
+    axes=np.atleast_1d(axes)
+    for ax,th in zip(axes,thresholds):
+        for n in norms:
+            g=d[d.relative_normalization_uncertainty==n]
+            vals=[]
+            qs=[]
+            for iq,h in g.groupby("Q2_bin",sort=True):
+                w=h.phase_area_xB_t.to_numpy(float)
+                qs.append(float(np.average(h.Q2_GeV2.to_numpy(float),weights=w)))
+                vals.append(100*weighted_fraction(
+                    h,h.delta_R_L_over_T.to_numpy(float)<th))
+            #endfor
+            ax.plot(qs,vals,marker="o",label=f"norm. {100*n:.0f}%")
+        #endfor
+        ax.set_ylabel("Coverage (%)")
+        ax.set_title(rf"$\delta_{{1\sigma}}(\sigma_L/\sigma_T)<{th:g}$")
+        ax.set_ylim(-3,103)
+        ax.grid(alpha=.25)
+    #endfor
+    axes[-1].set_xlabel(r"$Q^2$ (GeV$^2$)")
+    axes[0].legend(ncol=3,fontsize=8)
+    fig.suptitle(
+        r"Remaining $\times10$: sensitivity to RGA/RGK relative normalization"
+        "\nPer-campaign systematic floor held fixed",y=.995)
+    fig.tight_layout()
+    fig.savefig(outfile,dpi=220)
+    plt.close(fig)
+
+
+def plot_normalization_summary_10x(d, thresholds, outfile):
+    """Global phase-space coverage versus relative-normalization uncertainty."""
+    norms=sorted(d.relative_normalization_uncertainty.unique())
+    fig,ax=plt.subplots(figsize=(7.2,4.8))
+    for th in thresholds:
+        yy=[]
+        for n in norms:
+            g=d[d.relative_normalization_uncertainty==n]
+            w=g.phase_area_xB_t.to_numpy(float)
+            good=np.isfinite(w)&(w>0)
+            yy.append(100*np.sum(w[good & (g.delta_R_L_over_T.to_numpy(float)<th)])/np.sum(w[good]))
+        #endfor
+        ax.plot(100*np.asarray(norms),yy,marker="o",
+                label=rf"$\delta_{{1\sigma}}(L/T)<{th:g}$")
+    #endfor
+    ax.set_xlabel("RGA/RGK relative-normalization uncertainty (%)")
+    ax.set_ylabel(r"Accessible $(x_B,-t,Q^2)$ phase-space coverage (%)")
+    ax.set_ylim(-3,103)
+    ax.set_title(r"Remaining $\times10$: normalization-control requirement")
+    ax.grid(alpha=.25)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(outfile,dpi=220)
+    plt.close(fig)
+
 def main():
     here=Path(__file__).resolve().parent
     ap=argparse.ArgumentParser()
@@ -382,23 +444,28 @@ def main():
                     default=here/"output/pi0_gk_measurement_reach/tables/01_measurement_reach_by_point.csv")
     ap.add_argument("--common",type=Path,
                     default=here/"output/pi0_gk_stage2/tables/03_common_rosenbluth_model_points.csv")
+    ap.add_argument("--stat-reach",type=Path,
+                    default=here/"output/pi0_gk_measurement_reach/tables/07_measurement_reach_stat_only_by_point.csv")
+    ap.add_argument("--norm-scan",type=Path,
+                    default=here/"output/pi0_gk_measurement_reach/tables/08_measurement_reach_norm_scan_10x_by_point.csv")
     ap.add_argument("--output",type=Path,default=here/"output/pi0_workshop_reach")
     a=ap.parse_args()
 
     points=pd.read_csv(a.reach)
+    stat_points=pd.read_csv(a.stat_reach)
+    norm_points=pd.read_csv(a.norm_scan)
     common=pd.read_csv(a.common)
-    d=attach_phase_space(points,common)
-    selected_scenarios(d)
-    a.output.mkdir(parents=True,exist_ok=True)
 
-    # Separate the statistics-dependent component from the conservative
-    # floor/nuisance component using all available exposure scenarios.
-    d=decompose_variance(d,"delta_R_L_over_T","delta_R_stat")
-    d=decompose_variance(d,"delta_sigma_L","delta_sigma_L_stat")
+    d=attach_phase_space(points,common)
+    ds=attach_phase_space(stat_points,common)
+    dn=attach_phase_space(norm_points,common)
+    selected_scenarios(d)
+    selected_scenarios(ds)
+    a.output.mkdir(parents=True,exist_ok=True)
 
     thresholds=[.30,.20,.10]
     conservative=make_weighted_table(d,thresholds,"delta_R_L_over_T")
-    statistical=make_weighted_table(d,thresholds,"delta_R_stat")
+    statistical=make_weighted_table(ds,thresholds,"delta_R_L_over_T")
     conservative.to_csv(a.output/"phase_space_weighted_reach_conservative.csv",index=False)
     statistical.to_csv(a.output/"phase_space_weighted_reach_stat_only.csv",index=False)
 
@@ -412,7 +479,7 @@ def main():
         "including current conservative floor / relative-normalization treatment")
 
     precisions=np.linspace(.05,.50,46)
-    dense_stat=dense_coverage(d,"delta_R_stat",precisions)
+    dense_stat=dense_coverage(ds,"delta_R_L_over_T",precisions)
     dense_cons=dense_coverage(d,"delta_R_L_over_T",precisions)
     dense_stat.to_csv(a.output/"precision_coverage_heatmap_stat_only.csv",index=False)
     dense_cons.to_csv(a.output/"precision_coverage_heatmap_conservative.csv",index=False)
@@ -425,9 +492,9 @@ def main():
 
     # Make both versions of the nonzero-L sensitivity.  The significance is
     # sigmaL_assumed/delta_sigmaL; the assumed ratio is scanned explicitly.
-    d["delta_sigma_L_for_sensitivity"]=d["delta_sigma_L_stat"]
+    ds["delta_sigma_L_for_sensitivity"]=ds["delta_sigma_L"]
     plot_assumed_ratio_sensitivity(
-        d,a.output/"03a_assumed_L_over_T_sensitivity_stat_only.png",
+        ds,a.output/"03a_assumed_L_over_T_sensitivity_stat_only.png",
         "statistical component only")
     d["delta_sigma_L_for_sensitivity"]=d["delta_sigma_L"]
     plot_assumed_ratio_sensitivity(
@@ -437,17 +504,16 @@ def main():
     plot_gk_assumption(d,a.output/"04_GK_assumed_sigmaL_and_sensitivity.png")
     plot_synthetic_rosenbluth(d,a.output/"05_synthetic_rosenbluth_examples.png")
 
-    # Save the point-level decomposition so the workshop numbers are auditable.
-    keep=["point_id","future_luminosity_multiplier","Q2_GeV2","xB",
-          "phase_area_xB_t","delta_R_L_over_T","delta_R_stat",
-          "delta_R_stat_floor_equiv","delta_sigma_L","delta_sigma_L_stat",
-          "delta_sigma_L_stat_floor_equiv"]
-    d[[c for c in keep if c in d.columns]].to_csv(
-        a.output/"point_level_stat_vs_conservative_decomposition.csv",index=False)
+    # Normalization-control study at remaining x10.
+    plot_normalization_scan_10x(
+        dn,thresholds,a.output/"06a_normalization_scan_10x_vs_Q2.png")
+    plot_normalization_summary_10x(
+        dn,thresholds,a.output/"06b_normalization_scan_10x_global.png")
 
     print("\nWrote workshop-safe outputs (no measured CLAS12 central values).")
     print("Displayed scenarios: remaining ×1, ×5, ×10.")
-    print("Stat-only component inferred from delta^2(f)=A/(1+f)+B.")
+    print("Stat-only curves are generated directly with systematic floor=0 and relative normalization=0.")
+    print("Normalization scan holds the per-campaign systematic floor fixed and varies only RGA/RGK relative normalization.")
     for p in sorted(a.output.glob("*.png")):
         print(" ",p)
     #endfor

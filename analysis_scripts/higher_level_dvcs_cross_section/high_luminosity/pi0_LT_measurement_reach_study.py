@@ -174,6 +174,7 @@ def build_reach_table(model, hfits, lt):
             R_L_over_T_GK=float(r.sigma_L/r.sigma_T) if r.sigma_T != 0 else np.nan,
             R_L_over_T_proj=R,
             delta_R_L_over_T=dR,
+            cov_sigma_T_sigma_L=float(lr.cov_sigma_T_sigma_L),
             expected_95pct_abs_L_over_T_limit_if_L_zero=r95_zero,
         ))
 
@@ -1479,6 +1480,51 @@ def plot_internal_sigmaL_from_U_check(data, outfile):
     fig.savefig(outfile, dpi=200)
     plt.close(fig)
 
+def build_projection_points(st3, model, a, future_values, sys_floor, norm_unc):
+    """Build workshop-safe point-level reach for explicit uncertainty assumptions."""
+    rows = []
+    for f in future_values:
+        rga = a.rga_recorded + f*a.rga_remaining
+        rgk = a.rgk_recorded + f*a.rgk_remaining
+        pseudo, hfits = st3.make_pseudodata(
+            model, a.stage1.resolve(), a.stage2.resolve(), rga, rgk, sys_floor
+        )
+        lt = st3.lt_from_u(model, hfits, norm_unc, a.min_delta_epsilon)
+        reach = build_reach_table(model, hfits, lt)
+        reach.insert(0, "relative_normalization_uncertainty", norm_unc)
+        reach.insert(0, "fractional_systematic_floor", sys_floor)
+        reach.insert(0, "rgk_final_factor", rgk)
+        reach.insert(0, "rga_final_factor", rga)
+        reach.insert(0, "future_luminosity_multiplier", f)
+        rows.append(reach)
+    #endfor
+    return pd.concat(rows, ignore_index=True)
+
+
+def write_workshop_uncertainty_variants(st3, model, a, tabs):
+    """Write direct stat-only reach and a 10x normalization-uncertainty scan."""
+    display_f = [1.0, 5.0, 10.0]
+
+    stat = build_projection_points(
+        st3, model, a, display_f, sys_floor=0.0, norm_unc=0.0
+    )
+    stat.to_csv(tabs/"07_measurement_reach_stat_only_by_point.csv", index=False)
+
+    # Hold the conservative per-campaign systematic floor fixed at its requested
+    # value and scan only the RGA/RGK relative-normalization uncertainty.
+    norm_values = [0.0, 0.01, 0.02, 0.03, 0.05]
+    scan = []
+    for n in norm_values:
+        x = build_projection_points(
+            st3, model, a, [10.0],
+            sys_floor=a.fractional_systematic_floor, norm_unc=n
+        )
+        scan.append(x)
+    #endfor
+    pd.concat(scan, ignore_index=True).to_csv(
+        tabs/"08_measurement_reach_norm_scan_10x_by_point.csv", index=False
+    )
+
 def run_internal_data_mode(a):
     """Explicitly non-default path using measured, unapproved central values."""
     out = a.internal_output.resolve()
@@ -1578,6 +1624,10 @@ def main():
     common = pd.read_csv(a.stage2.resolve()/"tables"/"03_common_rosenbluth_model_points.csv")
     q = st3.build_query_points(common)
     model = st3.model_merge(q, a.gk_results.resolve())
+
+    # Workshop-facing uncertainty variants are generated directly from the
+    # validated projection machinery rather than inferred a posteriori.
+    write_workshop_uncertainty_variants(st3, model, a, tabs)
 
     all_rows = []
     summaries = []
