@@ -41,10 +41,10 @@ def reconstruct_factors(cc, phi_deg):
     H = np.column_stack([np.ones(3), np.cos(p), np.cos(2.0 * p)])
 
     native = np.linalg.solve(
-        H, cc["partons_value_native"].to_numpy(float)
+        H, cc["reduced_value_native"].to_numpy(float)
     )
     shared = np.linalg.solve(
-        H, cc["partons_value_shared"].to_numpy(float)
+        H, cc["reduced_value_shared"].to_numpy(float)
     )
 
     pm = np.deg2rad(np.asarray(phi_deg, float))
@@ -60,13 +60,13 @@ def reconstruct_factors(cc, phi_deg):
     # legitimately be much smaller than 1 in their reported units.
     scale = float(np.max(np.abs(native_eval)))
     if not np.isfinite(scale) or scale == 0.0:
-        raise RuntimeError("Reconstructed native GK cross section is identically zero.")
+        raise RuntimeError("Reconstructed native reduced GK cross section is identically zero.")
     #endif
 
     tiny = np.finfo(float).eps * 100.0 * scale
     if np.any(np.abs(native_eval) <= tiny):
         raise RuntimeError(
-            "Reconstructed native GK cross section is numerically zero "
+            "Reconstructed native reduced GK cross section is numerically zero "
             "relative to its own scale."
         )
     #endif

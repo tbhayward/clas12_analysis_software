@@ -14,6 +14,39 @@ def main():
     print(df.columns.tolist())
     print()
 
+    required = {
+        "reduced_value_native",
+        "reduced_value_shared",
+        "gk_shared_over_native",
+    }
+    missing = required - set(df.columns)
+    if missing:
+        raise RuntimeError(
+            f"Correction table is missing reduced-cross-section columns: {sorted(missing)}"
+        )
+    #endif
+
+    valid = (
+        np.isfinite(df["reduced_value_native"])
+        & np.isfinite(df["reduced_value_shared"])
+        & np.isfinite(df["gk_shared_over_native"])
+        & (df["reduced_value_native"] != 0.0)
+    )
+    direct = (
+        df.loc[valid, "reduced_value_shared"].to_numpy(float)
+        / df.loc[valid, "reduced_value_native"].to_numpy(float)
+    )
+    stored = df.loc[valid, "gk_shared_over_native"].to_numpy(float)
+    max_residual = np.max(np.abs(stored / direct - 1.0)) if len(direct) else np.nan
+    print(
+        "Reduced-correction identity check: "
+        f"max |stored/(reduced_shared/reduced_native)-1| = {max_residual:.3e}"
+    )
+    if not np.isfinite(max_residual) or max_residual > 1e-12:
+        raise RuntimeError("Stored correction does not match the reduced PARTONS ratio.")
+    #endif
+    print()
+
     for campaign in ["rga", "rgk"]:
         x = df.loc[
             df["campaign"].str.lower() == campaign,

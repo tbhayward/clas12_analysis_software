@@ -293,49 +293,51 @@ def build_phi_integrated_xml(
     xml_path: Path,
     metadata: dict,
 ) -> None:
-    """
-    Build a deliberately small PARTONS job.
-
-    The module chain is fixed to the same chain recorded by the successful
-    Stage-3 production metadata. If your local PARTONS XML syntax differs,
-    compare this generated file with one successful Stage-3 chunk XML; the
-    kinematic values and observable-module substitution are the only intended
-    differences.
-    """
-
-    # These defaults reproduce the successful Stage-3 model chain described
-    # by metadata. Keep the names explicit so the verification is auditable.
+    """Build a tiny job using the exact task/module syntax of Stage 3."""
     gpd = metadata.get("gpd_module", "GPDGK19")
     cff = metadata.get("cff_module", "DVMPCFFGK06")
     process = metadata.get("process_module", "DVMPProcessGK06")
-    observable = "DVMPCrossSectionUUUMinusPhiIntegrated"
 
-    lines = [
-        '<?xml version="1.0" encoding="UTF-8"?>',
-        "<partons>",
-        "  <scenario>",
-        f'    <module type="GPDModule" name="{gpd}"/>',
-        f'    <module type="DVMPCFFModule" name="{cff}"/>',
-        f'    <module type="DVMPProcessModule" name="{process}"/>',
-        f'    <module type="Observable" name="{observable}"/>',
-    ]
+    module = f'''<module type="DVMPObservableModule" name="DVMPCrossSectionUUUMinusPhiIntegrated">
+<module type="DVMPProcessModule" name="{process}">
+<module type="DVMPScalesModule" name="DVMPScalesQ2Multiplier">
+<param name="lambda" value="1." />
+</module>
+<module type="DVMPXiConverterModule" name="DVMPXiConverterXBToXi"></module>
+<module type="DVMPConvolCoeffFunctionModule" name="{cff}">
+<param name="qcd_order_type" value="LO" />
+<module type="RunningAlphaStrongModule" name="RunningAlphaStrongGK"></module>
+<module type="GPDModule" name="{gpd}"></module>
+</module>
+</module>
+</module>'''
 
-    for i, r in enumerate(rows):
-        lines.extend(
-            [
-                f'    <kinematics id="VERIFY_{i:02d}"',
-                f'      E="{r["E"]:.16g}"',
-                f'      Q2="{r["Q2"]:.16g}"',
-                f'      xB="{r["xB"]:.16g}"',
-                f'      t="{-r["minus_t"]:.16g}"',
-                '      mesonPdg="111"/>',
-            ]
+    tasks = []
+    for r in rows:
+        tasks.append(
+            f'''<task service="DVMPObservableService" method="computeSingleKinematic" storeInDB="0">
+<kinematics type="DVMPObservableKinematic">
+<param name="xB" value="{float(r["xB"]):.15g}" />
+<param name="t" value="{-abs(float(r["minus_t"])):.15g}" />
+<param name="Q2" value="{float(r["Q2"]):.15g}" />
+<param name="E" value="{float(r["E"]):.15g}" />
+<param name="phi" value="0" />
+<param name="meson" value="pi0" />
+</kinematics>
+<computation_configuration>
+{module}
+</computation_configuration>
+</task>
+<task service="DVMPObservableService" method="printResults"></task>'''
         )
     #endfor
 
-    lines.extend(["  </scenario>", "</partons>", ""])
-    xml_path.write_text("\n".join(lines))
-
+    xml_path.write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<scenario date="2026-10-02" description="pi0 DVMP convention verification">\n'
+        + "\n".join(tasks)
+        + '\n</scenario>\n'
+    )
 
 def find_successful_stage3_xml(stage3: Path) -> Path | None:
     candidates = sorted(stage3.rglob("*.xml"))
@@ -751,13 +753,9 @@ def main() -> int:
 
     xml_path = outdir / "02_phi_integrated_check.xml"
 
-    # Save an exact successful Stage-3 XML with the observable module swapped.
-    # This is useful even if the local scenario contains more evaluations than
-    # the three selected diagnostics.
-    used_template = clone_stage3_xml_if_possible(stage3, rows, xml_path)
-    if not used_template:
-        build_phi_integrated_xml(rows, xml_path, metadata)
-    #endif
+    # Build a minimal job containing exactly the selected diagnostic points.
+    # This avoids retaining unrelated kinematics from a cloned production chunk.
+    build_phi_integrated_xml(rows, xml_path, metadata)
 
     print("=" * 78)
     print("PARTONS DVMP CONVENTION VERIFICATION")
@@ -848,26 +846,24 @@ def main() -> int:
 
     print(f"Parsed finite results: {len(results)}")
 
-    # The cloned Stage-3 XML contains repeated phi tasks.  The phi-integrated
-    # observable is independent of phi, so identify each selected diagnostic
-    # by numerical agreement with its predicted 2*pi*A rather than assuming
-    # one-to-one positional ordering.
+    if len(results) != len(rows):
+        raise RuntimeError(
+            f"Expected exactly {len(rows)} phi-integrated PARTONS results; "
+            f"parsed {len(results)}. Inspect the generated XML and log."
+        )
+    #endif
+
     final = []
-    finite_values = np.asarray([v for v, _ in results], dtype=float)
-    units = [u for _, u in results]
-    for r in rows:
+    for r, (value, unit) in zip(rows, results):
         target = r["two_pi_A"]
-        j = int(np.argmin(np.abs(finite_values - target)))
-        value = float(finite_values[j])
-        unit = units[j]
         ratio = value / target if target != 0.0 else np.nan
         final.append({
             **r,
-            "sigma_phi_integrated_partons": value,
+            "sigma_phi_integrated_partons": float(value),
             "partons_unit": unit,
             "ratio_integrated_over_2piA": ratio,
             "fractional_difference": ratio - 1.0,
-            "absolute_difference": value - target,
+            "absolute_difference": float(value) - target,
         })
     #endfor
 
