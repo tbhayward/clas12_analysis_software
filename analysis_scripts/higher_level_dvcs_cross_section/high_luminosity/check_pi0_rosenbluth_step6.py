@@ -45,8 +45,6 @@ def main():
     a = p.parse_args()
 
     m = load_module(a.study_script.resolve(), "pi0_reach_study")
-    defaults = m.parse_args
-
     # Recreate the production default paths without altering the production script.
     common_file = here/"output"/"pi0_gk_stage2"/"tables"/"03_common_rosenbluth_model_points.csv"
     rga_file = here/"import"/"fa18_rosenbluth_inputs_20260924T165948Z"/\
