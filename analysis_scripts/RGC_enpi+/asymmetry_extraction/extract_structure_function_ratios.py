@@ -4936,7 +4936,7 @@ def write_period_stability_global_diagnostics(
         )
         valid = np.all(np.isfinite(deltas))
         stat = 2.0 * float(np.sum(deltas)) if valid else math.nan
-        df = 2 * len(PHYSICS_PARAMETERS) if valid else 0
+        df = 2 * len(PUBLISHED_SYSTEMATIC_PARAMETERS) if valid else 0
         pvalue = (
             float(chi2_distribution.sf(stat, df))
             if valid and chi2_distribution is not None else math.nan
@@ -5381,70 +5381,151 @@ def write_flagged_epoch_refits(
     dilution_records: Mapping[tuple[str, int], DilutionRecord],
     output_dir: Path, threshold: float = 2.5,
 ) -> str:
-    """Refit flagged bins in contiguous target-sign epochs within each period."""
+    """Fast target-polarization-epoch diagnostic for the constant A_LL term.
+
+    The previous implementation floated all five polarized amplitudes in every
+    flagged-bin/epoch fit.  Small target epochs can make those fits extremely
+    slow and poorly constrained.  Here the diagnostic is deliberately surgical:
+    every contiguous target-sign epoch is fit in every kinematic bin with ll0
+    free while u1, u2 and the other four polarized amplitudes are fixed to the
+    corresponding full-period solution.  Beam helicity still flips within an
+    epoch, so ll0 remains directly identifiable.  This answers whether the
+    period-wide ll0 displacement is present in both target signs or is localized
+    to a particular target epoch without asking low-statistics subsets to
+    redetermine unrelated harmonics.
+    """
     ensure_directory(output_dir)
-    flagged: set[int] = set()
-    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
-        refs = _period_stability_references(frame, parameter)
-        for i, row in frame.iterrows():
-            c = float(refs["combined"][i]); ce = float(refs["combined_error"][i])
-            for period in PERIODS:
-                y = float(row[f"{parameter}_{period}"]); ye = float(row[f"{parameter}_stat_{period}"])
-                d2 = ye*ye-ce*ce
-                if d2 > 0.0 and abs((y-c)/math.sqrt(d2)) > threshold:
-                    flagged.add(int(row["bin_number"]))
-                # endif
-            # endfor
-        # endfor
-    # endfor
-    rows: list[dict[str, Any]] = []
-    fixed = {"u1": 0.0, "u2": 0.0}
+    frame_by_bin = frame.set_index("bin_number")
+
+    # Build the same contiguous target-sign epochs used by the charge audit.
+    epoch_defs: dict[str, list[tuple[int, int, int, int]]] = {}
+    luminosity_rows: list[dict[str, Any]] = []
     for period in PERIODS:
         state = run_states[period]
-        runs = np.asarray(state["run"], int); pt = np.asarray(state["pt"], float)
-        sign_pt = np.sign(pt)
-        epochs: list[tuple[int,int,int]] = []
+        runs = np.asarray(state["run"], dtype=int)
+        pt = np.asarray(state["pt"], dtype=float)
+        qp = np.asarray(state["q_plus"], dtype=float)
+        qm = np.asarray(state["q_minus"], dtype=float)
+        sign_pt = np.sign(pt).astype(int)
+        epochs: list[tuple[int, int, int, int]] = []
         if len(runs):
             start = 0
-            for j in range(1, len(runs)+1):
-                if j < len(runs) and sign_pt[j] == sign_pt[j-1]:
+            epoch_index = 0
+            for j in range(1, len(runs) + 1):
+                boundary = j == len(runs) or sign_pt[j] != sign_pt[j - 1]
+                if not boundary:
                     continue
                 # endif
-                epochs.append((int(runs[start]), int(runs[j-1]), int(sign_pt[start])))
+
+                epoch_index += 1
+                sl = slice(start, j)
+                target_sign = int(sign_pt[start])
+                q_plus = float(np.sum(qp[sl]))
+                q_minus = float(np.sum(qm[sl]))
+                q_total = q_plus + q_minus
+                # For a fixed target sign, h*s=+ corresponds to h=s.
+                q_hs_plus = q_plus if target_sign > 0 else q_minus
+                q_hs_minus = q_minus if target_sign > 0 else q_plus
+                hs_asym = (
+                    (q_hs_plus - q_hs_minus) / q_total
+                    if q_total > 0.0 else math.nan
+                )
+                luminosity_rows.append({
+                    "period": period, "epoch": epoch_index,
+                    "run_low": int(runs[start]), "run_high": int(runs[j - 1]),
+                    "target_sign": target_sign, "number_of_runs": int(j - start),
+                    "charge_h_plus": q_plus, "charge_h_minus": q_minus,
+                    "charge_hs_plus": q_hs_plus, "charge_hs_minus": q_hs_minus,
+                    "charge_total": q_total,
+                    "helicity_charge_asymmetry": (
+                        (q_plus - q_minus) / q_total if q_total > 0.0 else math.nan
+                    ),
+                    "hs_charge_asymmetry": hs_asym,
+                    "charge_weighted_mean_target_polarization": (
+                        float(np.sum(pt[sl] * (qp[sl] + qm[sl])) / q_total)
+                        if q_total > 0.0 else math.nan
+                    ),
+                })
+                epochs.append((epoch_index, int(runs[start]), int(runs[j - 1]), target_sign))
                 start = j
             # endfor
         # endif
-        for epoch_index, (run_low, run_high, target_sign) in enumerate(epochs, 1):
-            for bin_number in sorted(flagged):
-                mask = ((events["bin_number"] == bin_number)
-                        & (events["period_index"] == PERIOD_INDEX[period])
-                        & (events["runnum"] >= run_low) & (events["runnum"] <= run_high))
+        epoch_defs[period] = epochs
+    # endfor
+
+    luminosity_path = output_dir / "target_epoch_four_state_luminosity.csv"
+    pd.DataFrame(luminosity_rows).to_csv(luminosity_path, index=False)
+
+    # Fit only ll0 in each epoch.  Everything else is anchored to the existing
+    # full-period solution for that same bin, making this both fast and directly
+    # targeted at the observed anomaly.
+    rows: list[dict[str, Any]] = []
+    for period in PERIODS:
+        for epoch_index, run_low, run_high, target_sign in epoch_defs[period]:
+            for bin_number in range(1, NUMBER_OF_BINS + 1):
+                nominal_row = frame_by_bin.loc[bin_number]
+                mask = (
+                    (events["bin_number"] == bin_number)
+                    & (events["period_index"] == PERIOD_INDEX[period])
+                    & (events["runnum"] >= run_low)
+                    & (events["runnum"] <= run_high)
+                )
                 n_events = int(np.count_nonzero(mask))
                 if n_events < 50:
                     continue
                 # endif
+
+                fixed = {"u1": 0.0, "u2": 0.0}
+                for parameter in ("lu1", "ul1", "ul2", "ll1"):
+                    fixed[parameter] = float(nominal_row[f"{parameter}_{period}"])
+                # endfor
+                initial = {
+                    name: float(nominal_row[f"{name}_{period}"])
+                    for name in PUBLISHED_SYSTEMATIC_PARAMETERS
+                }
                 try:
                     fit = fit_one_variant(
                         events, run_states, dilution_records, bin_number, "nominal",
-                        active_periods=(period,), fixed_physics_parameters=fixed,
+                        active_periods=(period,), initial_values=initial,
+                        fixed_physics_parameters=fixed,
                         run_ranges_filter=((run_low, run_high),),
                     )
+                    ll0 = float(fit["values"]["ll0"])
+                    ll0_stat = float(fit["errors"]["ll0"])
+                    valid = bool(fit["valid"])
+                    edm = float(fit["edm"])
+                    error = ""
                 except Exception as exc:
-                    rows.append({"period":period,"epoch":epoch_index,"run_low":run_low,"run_high":run_high,
-                        "target_sign":target_sign,"bin_number":bin_number,"events":n_events,"valid":False,"error":str(exc)})
-                    continue
+                    ll0 = ll0_stat = edm = math.nan
+                    valid = False
+                    error = str(exc)
                 # endtry
-                row = {"period":period,"epoch":epoch_index,"run_low":run_low,"run_high":run_high,
-                    "target_sign":target_sign,"bin_number":bin_number,"events":n_events,"valid":bool(fit["valid"]),
-                    "edm":float(fit["edm"]),"error":""}
-                for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
-                    row[parameter] = float(fit["values"][parameter]); row[f"{parameter}_stat"] = float(fit["errors"][parameter])
-                # endfor
-                rows.append(row)
+
+                period_ll0 = float(nominal_row[f"ll0_{period}"])
+                period_stat = float(nominal_row[f"ll0_stat_{period}"])
+                combined_ll0 = float(nominal_row["ll0"])
+                combined_stat = float(nominal_row["ll0_stat"])
+                rows.append({
+                    "period": period, "epoch": epoch_index,
+                    "run_low": run_low, "run_high": run_high,
+                    "target_sign": target_sign, "bin_number": bin_number,
+                    "events": n_events, "valid": valid, "edm": edm, "error": error,
+                    "ll0": ll0, "ll0_stat": ll0_stat,
+                    "period_ll0": period_ll0, "period_ll0_stat": period_stat,
+                    "combined_ll0": combined_ll0, "combined_ll0_stat": combined_stat,
+                    "epoch_minus_period": ll0 - period_ll0 if np.isfinite(ll0) else math.nan,
+                    "epoch_minus_combined": ll0 - combined_ll0 if np.isfinite(ll0) else math.nan,
+                })
             # endfor
+            print(
+                f"[epoch ll0] {period} epoch {epoch_index}: runs {run_low}-{run_high}, "
+                f"target sign {target_sign:+d} complete",
+                flush=True,
+            )
         # endfor
     # endfor
-    path = output_dir / "flagged_bins_target_sign_epoch_refits.csv"
+
+    path = output_dir / "target_epoch_ll0_refits.csv"
     pd.DataFrame(rows).to_csv(path, index=False)
     return str(path)
 
