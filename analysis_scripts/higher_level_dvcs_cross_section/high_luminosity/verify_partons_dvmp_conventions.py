@@ -793,21 +793,6 @@ def main() -> int:
         return 0
     #endif
 
-    if used_template:
-        print()
-        print(
-            "NOTE: 02_phi_integrated_check.xml was cloned from an existing "
-            "successful Stage-3 XML and its observable was changed to "
-            "DVMPCrossSectionUUUMinusPhiIntegrated."
-        )
-        print(
-            "Because the Stage-3 chunk may contain more evaluations than the "
-            "three diagnostic rows, the safest first run is to inspect/run "
-            "this tiny convention job and compare its phi-integrated outputs "
-            "with 2*pi*A above."
-        )
-    #endif
-
     project = args.project.expanduser().resolve()
     sif = find_sif(args.sif, Path(__file__).resolve().parent, project)
     preflight_partons(sif, project, args.executable)
