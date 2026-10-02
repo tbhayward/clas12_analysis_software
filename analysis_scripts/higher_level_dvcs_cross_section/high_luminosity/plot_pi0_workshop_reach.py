@@ -350,6 +350,10 @@ def plot_synthetic_rosenbluth(d, outfile):
         ax.scatter([ek,er],[Ttrue+ek*Ltrue,Ttrue+er*Ltrue],marker="o",zorder=6)
 
         # Show only 1x, 5x, 10x and use the full covariance for each band.
+        # Deliberately use strongly separated hues for the nested confidence
+        # bands; pale default-cycle fills are too difficult to distinguish.
+        band_colors={1.0:"tab:orange", 5.0:"tab:green", 10.0:"tab:purple"}
+        band_alpha={1.0:.20, 5.0:.24, 10.0:.28}
         for f in fs:
             rr=d[(d.point_id==r.point_id)&
                  (d.future_luminosity_multiplier==f)].iloc[0]
@@ -360,8 +364,11 @@ def plot_synthetic_rosenbluth(d, outfile):
             vtl=float(rr[covcol])*scale**2
             vu=vtt+2*xx*vtl+(xx**2)*vll
             du=np.sqrt(np.maximum(vu,0.0))
-            ax.fill_between(xx,truth-du,truth+du,alpha=.13,
-                            label=f"remaining ×{f:g}")
+            ax.fill_between(
+                xx,truth-du,truth+du,
+                color=band_colors[f],alpha=band_alpha[f],
+                label=f"remaining ×{f:g}"
+            )
         #endfor
 
         ax.set_xlabel(r"$\epsilon$")
