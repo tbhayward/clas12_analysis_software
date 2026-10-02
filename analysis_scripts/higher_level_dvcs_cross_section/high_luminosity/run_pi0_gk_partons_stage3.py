@@ -579,12 +579,31 @@ def native_to_shared_diagnostics(raw,harm):
     keys=["point_id","campaign","phi_deg"]
     n=raw[raw.evaluation=="native"].copy()
     c=raw[raw.evaluation=="shared"].copy()
-    keep=keys+["partons_value","partons_unit","Q2","xB","minus_t","y","epsilon"]
+    keep=keys+["partons_value","partons_unit","E","Q2","xB","minus_t","y","epsilon"]
     n=n[keep].rename(columns={x:f"{x}_native" for x in keep if x not in keys})
     c=c[keep].rename(columns={x:f"{x}_shared" for x in keep if x not in keys})
     phi=n.merge(c,on=keys,how="inner",validate="one_to_one")
-    phi["gk_shared_over_native"]=phi.partons_value_shared/phi.partons_value_native
-    phi["gk_fractional_shift"]=phi.gk_shared_over_native-1.0
+
+    # The public PARTONS observable is electron-level.  The experimental
+    # tables being bin-centered are reduced virtual-photon cross sections, so
+    # remove only the electron-level flux/Jacobian prefactor at each endpoint.
+    # The hadronic phase-space factor remains part of the reduced cross section.
+    phi["electron_factor_native_GeVm2"] = [
+        partons_electron_factor(E,Q2,xB,eps)
+        for E,Q2,xB,eps in zip(phi.E_native,phi.Q2_native,phi.xB_native,phi.epsilon_native)
+    ]
+    phi["electron_factor_shared_GeVm2"] = [
+        partons_electron_factor(E,Q2,xB,eps)
+        for E,Q2,xB,eps in zip(phi.E_shared,phi.Q2_shared,phi.xB_shared,phi.epsilon_shared)
+    ]
+    phi["reduced_value_native"] = phi.partons_value_native / phi.electron_factor_native_GeVm2
+    phi["reduced_value_shared"] = phi.partons_value_shared / phi.electron_factor_shared_GeVm2
+    phi["public_shared_over_native"] = phi.partons_value_shared / phi.partons_value_native
+    phi["electron_factor_native_over_shared"] = (
+        phi.electron_factor_native_GeVm2 / phi.electron_factor_shared_GeVm2
+    )
+    phi["gk_shared_over_native"] = phi.reduced_value_shared / phi.reduced_value_native
+    phi["gk_fractional_shift"] = phi.gk_shared_over_native - 1.0
 
     hk=["point_id","campaign"]
     hn=harm[harm.evaluation=="native"].copy()
@@ -593,9 +612,14 @@ def native_to_shared_diagnostics(raw,harm):
     hn=hn[hk+coeff].rename(columns={x:f"{x}_native" for x in coeff})
     hc=hc[hk+coeff].rename(columns={x:f"{x}_shared" for x in coeff})
     hd=hn.merge(hc,on=hk,how="inner",validate="one_to_one")
+    gf=(phi.groupby(hk,as_index=False)
+        [["electron_factor_native_GeVm2","electron_factor_shared_GeVm2"]].first())
+    hd=hd.merge(gf,on=hk,how="left",validate="one_to_one")
     for x in coeff:
-        hd[f"{x}_shared_over_native"]=hd[f"{x}_shared"]/hd[f"{x}_native"]
-        hd[f"{x}_fractional_shift"]=hd[f"{x}_shared_over_native"]-1.0
+        hd[f"{x}_reduced_native"] = hd[f"{x}_native"] / hd.electron_factor_native_GeVm2
+        hd[f"{x}_reduced_shared"] = hd[f"{x}_shared"] / hd.electron_factor_shared_GeVm2
+        hd[f"{x}_shared_over_native"] = hd[f"{x}_reduced_shared"] / hd[f"{x}_reduced_native"]
+        hd[f"{x}_fractional_shift"] = hd[f"{x}_shared_over_native"] - 1.0
     return phi,hd
 
 def partons_electron_factor(E, Q2, xB, epsilon):

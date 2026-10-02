@@ -62,8 +62,20 @@ def main():
             shared=(float(r.dsigma_T_dt_nb_per_GeV2)+eps*float(r.dsigma_L_dt_nb_per_GeV2)
                     +eps*np.cos(2*np.deg2rad(ph))*float(r.dsigma_TT_dt_nb_per_GeV2)
                     +np.sqrt(2*eps*(1+eps))*np.cos(np.deg2rad(ph))*float(r.dsigma_LT_dt_nb_per_GeV2))
-            native=shared/cc.gk_shared_over_native.to_numpy(float)
-            corrected=native*cc.gk_shared_over_native.to_numpy(float)
+            required={'reduced_value_native','reduced_value_shared','gk_shared_over_native'}
+            missing=required-set(cc.columns)
+            if missing:
+                raise RuntimeError(
+                    f'{r.point_id}/{camp}: correction table lacks reduced PARTONS columns {sorted(missing)}'
+                )
+            reduced_native=cc.reduced_value_native.to_numpy(float)
+            reduced_shared=cc.reduced_value_shared.to_numpy(float)
+            ratio=cc.gk_shared_over_native.to_numpy(float)
+            direct_ratio=reduced_shared/reduced_native
+            if not np.allclose(ratio,direct_ratio,rtol=1e-12,atol=0.0,equal_nan=False):
+                raise RuntimeError(f'{r.point_id}/{camp}: saved reduced correction ratio is inconsistent')
+            native=shared/ratio
+            corrected=native*ratio
             b=np.linalg.lstsq(design(ph,eps),corrected,rcond=None)[0]
             U[camp]=float(b[0])
         de=float(r.epsilon_rga-r.epsilon_rgk)

@@ -420,6 +420,34 @@ def lambda_function(a: float, b: float, c: float) -> float:
     return a * a + b * b + c * c - 2.0 * (a * b + a * c + b * c)
 
 
+def partons_reduced_electron_factor(E: float, Q2: float, xB: float, epsilon: float) -> float:
+    """Electron-level flux/Jacobian factor removed for reduced gamma*p cross sections."""
+    alpha = 1.0 / 137.035999084
+    proton_mass = 0.9382720813
+    W2 = Q2 / xB + proton_mass * proton_mass - Q2
+    if E <= 0.0 or Q2 <= 0.0 or not (0.0 < xB < 1.0):
+        return np.nan
+    #endif
+    if not (0.0 <= epsilon < 1.0):
+        return np.nan
+    #endif
+    G = alpha * (W2 - proton_mass * proton_mass)
+    G /= 16.0 * math.pi**2 * E**2 * proton_mass**2 * Q2 * (1.0 - epsilon)
+    G *= Q2 / xB**2
+    return G
+
+
+def partons_hadronic_phase_factor(Q2: float, xB: float) -> float:
+    """Hadronic phase-space factor retained in the reduced virtual-photon cross section."""
+    proton_mass = 0.9382720813
+    W2 = Q2 / xB + proton_mass * proton_mass - Q2
+    lam = lambda_function(W2, -Q2, proton_mass * proton_mass)
+    if Q2 <= 0.0 or not (0.0 < xB < 1.0) or lam <= 0.0:
+        return np.nan
+    #endif
+    return 1.0 / (32.0 * math.pi * (W2 - proton_mass * proton_mass) * math.sqrt(lam))
+
+
 def partons_electron_prefactor(E: float, Q2: float, xB: float, epsilon: float) -> float:
     """Exact common prefactor K in DVMPProcessGK06::CrossSection().
 
@@ -498,8 +526,16 @@ def build_shared_decomposition_table(df: pd.DataFrame, cols: dict[str, str]) -> 
         Q2 = float(r0[cols["Q2"]])
         xB = float(r0[cols["xB"]])
         K = partons_electron_prefactor(E, Q2, xB, eps)
+        Gamma_e = partons_reduced_electron_factor(E, Q2, xB, eps)
+        K_had = partons_hadronic_phase_factor(Q2, xB)
+        factorization_residual = K / (Gamma_e * K_had) - 1.0
 
         reduced_A = 2.0 * math.pi * A / K
+        virtual_photon_U_from_public = 2.0 * math.pi * A / Gamma_e
+        virtual_photon_U_from_internal = K_had * reduced_A
+        virtual_photon_identity_residual = (
+            virtual_photon_U_from_public / virtual_photon_U_from_internal - 1.0
+        )
         sigma_LT = (
             2.0 * math.pi * B
             / (2.0 * K * math.sqrt(2.0 * eps * (1.0 + eps)))
@@ -515,6 +551,12 @@ def build_shared_decomposition_table(df: pd.DataFrame, cols: dict[str, str]) -> 
             "xB": xB,
             "minus_t": float(r0[cols["minus_t"]]),
             "K_partons": K,
+            "electron_factor_GeVm2": Gamma_e,
+            "hadronic_phase_factor_GeVm4": K_had,
+            "factorization_residual": factorization_residual,
+            "virtual_photon_U_from_public": virtual_photon_U_from_public,
+            "virtual_photon_U_from_internal": virtual_photon_U_from_internal,
+            "virtual_photon_identity_residual": virtual_photon_identity_residual,
             "A": A, "B": B, "C": C,
             "sigma_T_plus_epsilon_sigma_L": reduced_A,
             "sigma_LT": sigma_LT,
@@ -833,6 +875,13 @@ def main() -> int:
     print()
     print("Interpretation:")
     print("  * The phi-integrated test verifies the overall 2*pi normalization.")
+    if decomposition_csv.exists():
+        dcheck=pd.read_csv(decomposition_csv)
+        if "factorization_residual" in dcheck.columns:
+            print(f"  * max |K/(Gamma_e*K_had)-1| = {np.nanmax(np.abs(dcheck.factorization_residual.to_numpy(float))):.3e}")
+        if "virtual_photon_identity_residual" in dcheck.columns:
+            print(f"  * max |(P/Gamma_e)/(K_had*R)-1| = {np.nanmax(np.abs(dcheck.virtual_photon_identity_residual.to_numpy(float))):.3e}")
+    #endif
     print("  * The T/L/TT/LT mapping now follows DVMPProcessGK06.cpp exactly.")
     print("  * RGA/RGK LT and TT closure tests whether the common PARTONS K prefactor")
     print("    and epsilon-dependent interference factors have been removed correctly.")

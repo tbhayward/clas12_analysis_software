@@ -783,18 +783,28 @@ def build_internal_data_extraction(common, rga_file, rgk_file, corrections_file,
             H=np.column_stack([np.ones(3),np.cos(p),np.cos(2*p)])
             if np.linalg.matrix_rank(H)!=3:
                 raise RuntimeError(f"{pid}/{camp}: singular GK harmonic reconstruction")
-            native_coeff=np.linalg.solve(H,cc.partons_value_native.to_numpy(float))
-            shared_coeff=np.linalg.solve(H,cc.partons_value_shared.to_numpy(float))
+            required_reduced={"reduced_value_native","reduced_value_shared"}
+            missing_reduced=required_reduced-set(cc.columns)
+            if missing_reduced:
+                raise RuntimeError(
+                    f"{pid}/{camp}: correction table lacks reduced PARTONS columns "
+                    f"{sorted(missing_reduced)}; rerun run_pi0_gk_partons_stage3.py"
+                )
+            native_coeff=np.linalg.solve(H,cc.reduced_value_native.to_numpy(float))
+            shared_coeff=np.linalg.solve(H,cc.reduced_value_shared.to_numpy(float))
 
             ph_meas=np.deg2rad(g.phi_deg.to_numpy(float))
             Hm=np.column_stack([np.ones(len(g)),np.cos(ph_meas),np.cos(2*ph_meas)])
             native_eval=Hm@native_coeff
             shared_eval=Hm@shared_coeff
-            scale=max(float(np.max(np.abs(native_eval))),1.0)
             if np.any(~np.isfinite(native_eval)) or np.any(~np.isfinite(shared_eval)):
-                raise RuntimeError(f"{pid}/{camp}: non-finite reconstructed GK phi dependence")
-            if np.any(np.abs(native_eval)<=1e-12*scale):
-                raise RuntimeError(f"{pid}/{camp}: reconstructed native GK cross section is zero at a measured phi")
+                raise RuntimeError(f"{pid}/{camp}: non-finite reconstructed reduced GK phi dependence")
+            scale=float(np.max(np.abs(native_eval)))
+            if not np.isfinite(scale) or scale==0.0:
+                raise RuntimeError(f"{pid}/{camp}: reconstructed native reduced GK cross section is identically zero")
+            tiny=100.0*np.finfo(float).eps*scale
+            if np.any(np.abs(native_eval)<=tiny):
+                raise RuntimeError(f"{pid}/{camp}: reconstructed native reduced GK cross section is numerically zero at a measured phi")
             fac=shared_eval/native_eval
             if np.any(~np.isfinite(fac)) or np.any(fac<=0):
                 raise RuntimeError(f"{pid}/{camp}: invalid native->shared correction factor")
