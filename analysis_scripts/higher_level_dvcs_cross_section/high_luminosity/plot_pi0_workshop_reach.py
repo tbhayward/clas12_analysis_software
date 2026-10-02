@@ -101,7 +101,56 @@ def weighted_fraction(g, mask):
     return float(np.sum(w[good & m])/np.sum(w[good])) if np.any(good) else np.nan
 
 
-def make_weighted_table(d, thresholds):
+def selected_scenarios(d):
+    wanted = [1.0, 5.0, 10.0]
+    have = set(d.future_luminosity_multiplier.astype(float))
+    missing = [f for f in wanted if f not in have]
+    if missing:
+        raise RuntimeError(f"Reach table is missing requested future multipliers: {missing}")
+    return wanted
+
+
+def decompose_variance(d, value_col, out_stat_col):
+    """
+    Infer the pure-statistical variance component point-by-point from the
+    scenario dependence
+
+        delta^2(f) = A/(1+f) + B,
+
+    where A is the recorded-data statistical variance and B is the
+    statistics-independent conservative floor/nuisance contribution.
+
+    This avoids silently treating the floor-inclusive uncertainty as
+    statistical reach. Negative fitted intercepts/slopes from numerical noise
+    are clipped to zero.
+    """
+    rows = []
+    for pid, g in d.groupby("point_id", sort=False):
+        gg = g[np.isfinite(g[value_col])].copy()
+        x = 1.0/(1.0 + gg.future_luminosity_multiplier.to_numpy(float))
+        y = gg[value_col].to_numpy(float)**2
+        if len(gg) < 3:
+            continue
+        A = np.column_stack([x, np.ones(len(x))])
+        a, b = np.linalg.lstsq(A, y, rcond=None)[0]
+        a = max(float(a), 0.0)
+        b = max(float(b), 0.0)
+        for idx, f in zip(gg.index, gg.future_luminosity_multiplier.to_numpy(float)):
+            rows.append((idx, math.sqrt(a/(1.0+f)), math.sqrt(b)))
+        #endfor
+    #endfor
+    stat = pd.Series(np.nan, index=d.index, dtype=float)
+    floor = pd.Series(np.nan, index=d.index, dtype=float)
+    for idx, sv, fv in rows:
+        stat.loc[idx] = sv
+        floor.loc[idx] = fv
+    #endfor
+    d[out_stat_col] = stat
+    d[out_stat_col + "_floor_equiv"] = floor
+    return d
+
+
+def make_weighted_table(d, thresholds, uncertainty_col):
     rows=[]
     for (f, iq), g in d.groupby(["future_luminosity_multiplier","Q2_bin"], sort=True):
         w=g.phase_area_xB_t.to_numpy(float)
@@ -110,197 +159,298 @@ def make_weighted_table(d, thresholds):
         row=dict(future_multiplier=float(f), Q2_bin=int(iq),
                  Q2_weighted_mean_GeV2=qmean,
                  phase_area=float(np.sum(w)))
+        u=g[uncertainty_col].to_numpy(float)
         for th in thresholds:
-            row[f"fraction_deltaR_lt_{th:g}"]=weighted_fraction(
-                g, g.delta_R_L_over_T.to_numpy(float)<th)
+            row[f"fraction_deltaR_lt_{th:g}"]=weighted_fraction(g, u<th)
+        #endfor
         rows.append(row)
+    #endfor
     return pd.DataFrame(rows)
 
 
-def plot_fraction_q2(tab, thresholds, outfile):
-    fs=sorted(tab.future_multiplier.unique())
-    fig, axes=plt.subplots(len(thresholds),1,figsize=(7.6,2.25*len(thresholds)),
-                           sharex=True, sharey=True)
+def plot_fraction_q2(tab, thresholds, outfile, subtitle):
+    fs=[f for f in [1.0,5.0,10.0] if f in set(tab.future_multiplier)]
+    fig, axes=plt.subplots(len(thresholds),1,figsize=(7.6,2.35*len(thresholds)),
+                           sharex=True,sharey=True)
     axes=np.atleast_1d(axes)
     for ax,th in zip(axes,thresholds):
         for f in fs:
             g=tab[tab.future_multiplier==f].sort_values("Q2_weighted_mean_GeV2")
             ax.plot(g.Q2_weighted_mean_GeV2,
                     100*g[f"fraction_deltaR_lt_{th:g}"],
-                    marker="o", label=f"remaining ×{f:g}")
+                    marker="o",label=f"remaining ×{f:g}")
+        #endfor
         ax.set_ylabel("Coverage (%)")
         ax.set_title(rf"$\delta(\sigma_L/\sigma_T)<{th:g}$")
         ax.set_ylim(-3,103)
         ax.grid(alpha=.25)
+    #endfor
     axes[-1].set_xlabel(r"$Q^2$ (GeV$^2$)")
     axes[0].legend(ncol=3,fontsize=8)
-    fig.suptitle(r"Phase-space-weighted $L/T$ precision coverage",y=.995)
+    fig.suptitle("Phase-space-weighted $L/T$ precision coverage\n"+subtitle,y=.995)
     fig.tight_layout()
     fig.savefig(outfile,dpi=220)
     plt.close(fig)
 
 
-def plot_reachable_q2(tab, outfile):
-    # Instead of "at least one bin", require an explicit fraction of the xB,t
-    # phase-space area at that Q2. Show several coverage definitions.
-    precisions=np.linspace(.05,.50,19)
-    coverages=[.25,.50,.75]
-    fs=sorted(tab.future_multiplier.unique())
-    fig, axes=plt.subplots(1,len(coverages),figsize=(13.2,4.2),sharey=True)
-    for ax,cov in zip(axes,coverages):
-        for f in fs:
-            g=tab[tab.future_multiplier==f]
-            qs=[]
-            for p in precisions:
-                # interpolate each Q2-bin's empirical CDF from the stored point
-                # table is done elsewhere; here use nearest threshold columns
-                # only when available. This plot is therefore rebuilt directly
-                # from a dense threshold table in main().
-                col=f"fraction_deltaR_lt_{p:.3f}"
-                ok=g[g[col]>=cov]
-                qs.append(ok.Q2_weighted_mean_GeV2.max() if len(ok) else np.nan)
-            ax.plot(precisions,qs,marker="o",ms=3,label=f"remaining ×{f:g}")
-        ax.set_title(f"≥{int(100*cov)}% of $(x_B,-t)$ area")
-        ax.set_xlabel(r"Target $\delta(\sigma_L/\sigma_T)$")
-        ax.grid(alpha=.25)
-    axes[0].set_ylabel(r"Highest reachable $Q^2$ (GeV$^2$)")
-    axes[0].legend(fontsize=8)
-    fig.suptitle(r"$Q^2$ reach versus desired $L/T$ precision",y=.99)
-    fig.tight_layout()
-    fig.savefig(outfile,dpi=220)
-    plt.close(fig)
-
-
-def dense_weighted_table(d, precisions):
+def dense_coverage(d, uncertainty_col, precisions):
     rows=[]
     for (f,iq),g in d.groupby(["future_luminosity_multiplier","Q2_bin"],sort=True):
         w=g.phase_area_xB_t.to_numpy(float)
         qmean=float(np.average(g.Q2_GeV2.to_numpy(float),weights=w))
-        row={"future_multiplier":float(f),"Q2_bin":int(iq),
-             "Q2_weighted_mean_GeV2":qmean,"phase_area":float(w.sum())}
+        u=g[uncertainty_col].to_numpy(float)
         for p in precisions:
-            row[f"fraction_deltaR_lt_{p:.3f}"]=weighted_fraction(
-                g,g.delta_R_L_over_T.to_numpy(float)<p)
-        rows.append(row)
+            rows.append(dict(future_multiplier=float(f),Q2_bin=int(iq),
+                             Q2_weighted_mean_GeV2=qmean,target_precision=float(p),
+                             coverage=weighted_fraction(g,u<p)))
+        #endfor
+    #endfor
     return pd.DataFrame(rows)
 
 
-def plot_assumed_ratio_sensitivity(d, outfile):
-    # Significance = R_true / deltaR. Weight by actual xB,-t phase-space area.
-    ratios=np.linspace(.02,.60,60)
-    fs=sorted(d.future_luminosity_multiplier.unique())
+def plot_coverage_heatmaps(dense, outfile, subtitle):
+    fs=[1.0,5.0,10.0]
+    fig,axes=plt.subplots(1,3,figsize=(13.5,4.2),sharex=True,sharey=True)
+    im=None
+    for ax,f in zip(axes,fs):
+        g=dense[dense.future_multiplier==f]
+        piv=g.pivot(index="Q2_weighted_mean_GeV2",columns="target_precision",values="coverage")
+        x=piv.columns.to_numpy(float)
+        y=piv.index.to_numpy(float)
+        z=100*piv.to_numpy(float)
+        im=ax.pcolormesh(x,y,z,shading="nearest",vmin=0,vmax=100)
+        ax.set_title(f"remaining ×{f:g}")
+        ax.set_xlabel(r"Target $\delta(\sigma_L/\sigma_T)$")
+    #endfor
+    axes[0].set_ylabel(r"$Q^2$ (GeV$^2$)")
+    cb=fig.colorbar(im,ax=axes.ravel().tolist(),pad=.02)
+    cb.set_label(r"$(x_B,-t)$ phase-space coverage (%)")
+    fig.suptitle(r"$L/T$ precision coverage"+ "\n"+subtitle,y=.99)
+    fig.subplots_adjust(left=.08,right=.90,bottom=.15,top=.80,wspace=.08)
+    fig.savefig(outfile,dpi=220)
+    plt.close(fig)
+
+
+def plot_assumed_ratio_sensitivity(d, outfile, subtitle):
+    """
+    Nonzero-L significance is sigmaL_assumed/delta_sigmaL, not
+    R/delta(R).  To make the premise explicit, use the stored GK sigmaT only
+    as a cross-section scale:
+        sigmaL_assumed = R_true * sigmaT_GK.
+    The horizontal axis remains the assumed ratio, so the model dependence is
+    visible and replaceable.
+    """
+    if "sigma_T_GK" not in d.columns:
+        raise RuntimeError("Reach table lacks sigma_T_GK needed to set the explicit cross-section scale.")
+    ratios=np.linspace(.05,.60,56)
+    fs=selected_scenarios(d)
     fig,axes=plt.subplots(1,3,figsize=(13.2,4.2),sharey=True)
     for ax,nsig in zip(axes,[1,2,3]):
         for f in fs:
             g=d[d.future_luminosity_multiplier==f]
             w=g.phase_area_xB_t.to_numpy(float)
-            dr=g.delta_R_L_over_T.to_numpy(float)
+            st=g.sigma_T_GK.to_numpy(float)
+            dl=g["delta_sigma_L_for_sensitivity"].to_numpy(float)
             frac=[]
             for r in ratios:
-                good=np.isfinite(w)&(w>0)&np.isfinite(dr)
-                frac.append(np.sum(w[good & (r/dr>=nsig)])/np.sum(w[good]))
+                sig=np.abs(r*st)/dl
+                good=np.isfinite(w)&(w>0)&np.isfinite(sig)
+                frac.append(np.sum(w[good & (sig>=nsig)])/np.sum(w[good]))
+            #endfor
             ax.plot(ratios,100*np.asarray(frac),label=f"remaining ×{f:g}")
+        #endfor
         ax.set_title(rf"$\sigma_L>0$ sensitivity ≥ {nsig}$\sigma$")
         ax.set_xlabel(r"Assumed true $\sigma_L/\sigma_T$")
         ax.grid(alpha=.25)
+    #endfor
     axes[0].set_ylabel("Accessible phase-space coverage (%)")
     axes[0].legend(fontsize=8)
-    fig.suptitle("Nonzero-longitudinal sensitivity versus explicit assumed strength",y=.99)
-    fig.tight_layout()
-    fig.savefig(outfile,dpi=220)
-    plt.close(fig)
-
-
-def plot_gk_assumption(d, outfile):
-    # Explicitly show the assumed sigmaL, then its significance. The model name
-    # is provenance, not the logical premise of the sensitivity statement.
-    fs=sorted(d.future_luminosity_multiplier.unique())
-    fshow=max(fs)
-    g=d[d.future_luminosity_multiplier==fshow].copy()
-    fig,ax=plt.subplots(figsize=(7.5,5.0))
-    sc=ax.scatter(g.Q2_GeV2,g.sigma_L_GK,
-                  c=np.abs(g.sigma_L_GK/g.delta_sigma_L),s=28)
-    cb=fig.colorbar(sc,ax=ax)
-    cb.set_label(r"$|\sigma_L|/\delta\sigma_L$")
-    ax.set_xlabel(r"$Q^2$ (GeV$^2$)")
-    ax.set_ylabel(r"Assumed $\sigma_L$ (nb/GeV$^2$)")
-    ax.set_title(fr"Illustrative longitudinal strength and sensitivity, remaining ×{fshow:g}")
-    ax.text(.02,.98,"Central values: PARTONS/GK implementation\nshown explicitly; used only as an illustrative assumption",
-            transform=ax.transAxes,va="top",fontsize=9)
-    ax.grid(alpha=.2)
-    fig.tight_layout()
-    fig.savefig(outfile,dpi=220)
-    plt.close(fig)
-
-
-def plot_synthetic_rosenbluth(d, outfile):
-    # Pick low/mid/high Q2 representative cells with good epsilon leverage.
-    base=d[d.future_luminosity_multiplier==0].copy()
-    qs=np.quantile(base.Q2_GeV2,[.15,.50,.85])
-    picks=[]
-    for q in qs:
-        h=base.iloc[(base.Q2_GeV2-q).abs().argsort()[:12]].copy()
-        picks.append(h.iloc[h.delta_epsilon.abs().argmax()])
-    fs=[0,1,5,10]
-    fs=[f for f in fs if f in set(d.future_luminosity_multiplier)]
-    Rtrue=.20
-    Ttrue=100.0
-
-    fig,axes=plt.subplots(1,3,figsize=(13.2,4.2),sharey=True)
-    for ax,r in zip(axes,picks):
-        er,ek=float(r.epsilon_rga),float(r.epsilon_rgk)
-        Ltrue=Rtrue*Ttrue
-        xx=np.linspace(min(er,ek)-.03,max(er,ek)+.03,100)
-        ax.plot(xx,Ttrue+xx*Ltrue)
-        for f in fs:
-            rr=d[(d.point_id==r.point_id)&(d.future_luminosity_multiplier==f)].iloc[0]
-            # For a clean visual Rosenbluth example use the separated-L uncertainty
-            # to show the slope band rather than fake measured U central values.
-            dl=float(rr.delta_sigma_L)
-            ax.fill_between(xx,Ttrue+xx*(Ltrue-dl),Ttrue+xx*(Ltrue+dl),
-                            alpha=.10,label=f"remaining ×{f:g}")
-        ax.scatter([ek,er],[Ttrue+ek*Ltrue,Ttrue+er*Ltrue],marker="o",zorder=5)
-        ax.set_xlabel(r"$\epsilon$")
-        ax.set_title(fr"$Q^2\approx{r.Q2_GeV2:.2f}$ GeV$^2$, $x_B\approx{r.xB:.2f}$")
-        ax.grid(alpha=.2)
-    axes[0].set_ylabel(r"Synthetic $\sigma_U=\sigma_T+\epsilon\sigma_L$ (nb/GeV$^2$)")
-    axes[0].legend(fontsize=8)
-    fig.suptitle(r"Illustrative Rosenbluth slope: assumed $\sigma_T=100$, $\sigma_L/\sigma_T=0.20$"
-                 "\nCentral values are synthetic; CLAS12 measurements are not shown",y=1.02)
+    fig.suptitle("Nonzero-longitudinal sensitivity versus explicit assumed strength\n"
+                 +subtitle+
+                 "\nCross-section scale from PARTONS/GK $\\sigma_T$; ratio is scanned explicitly",y=1.04)
     fig.tight_layout()
     fig.savefig(outfile,dpi=220,bbox_inches="tight")
     plt.close(fig)
 
 
+def plot_gk_assumption(d, outfile):
+    fs=selected_scenarios(d)
+    fig,axes=plt.subplots(2,1,figsize=(7.6,7.2),sharex=True)
+    # Explicit model premise.
+    g=d[d.future_luminosity_multiplier==fs[-1]].copy()
+    axes[0].scatter(g.Q2_GeV2,g.sigma_L_GK,s=22)
+    axes[0].set_ylabel(r"Assumed $\sigma_L$ (nb/GeV$^2$)")
+    axes[0].set_title("Illustrative PARTONS/GK longitudinal strength")
+    axes[0].grid(alpha=.2)
+
+    for f in fs:
+        g=d[d.future_luminosity_multiplier==f].copy()
+        sig=np.abs(g.sigma_L_GK.to_numpy(float)/g.delta_sigma_L.to_numpy(float))
+        axes[1].scatter(g.Q2_GeV2,sig,s=18,label=f"remaining ×{f:g}")
+    #endfor
+    axes[1].axhline(1,ls="--",lw=1)
+    axes[1].axhline(2,ls="--",lw=1)
+    axes[1].axhline(3,ls="--",lw=1)
+    axes[1].set_xlabel(r"$Q^2$ (GeV$^2$)")
+    axes[1].set_ylabel(r"$|\sigma_L|/\delta\sigma_L$")
+    axes[1].set_title("Sensitivity if the longitudinal response has the magnitude shown above")
+    axes[1].legend(fontsize=8)
+    axes[1].grid(alpha=.2)
+    fig.tight_layout()
+    fig.savefig(outfile,dpi=220)
+    plt.close(fig)
+
+
+def find_cov_tl_col(d):
+    return pick(d,"cov_T_L","cov_sigma_T_sigma_L","cov_sigmaT_sigmaL",
+                "cov_TL","cov_T_L_GK")
+
+
+def plot_synthetic_rosenbluth(d, outfile):
+    """
+    Synthetic central values only.  The confidence band uses the complete
+    T/L covariance:
+      Var[U(eps)] = V_TT + 2 eps V_TL + eps^2 V_LL.
+    The covariance is rescaled to the explicit synthetic sigmaT=100 scale
+    using sigma_T_GK as the reference scale.
+    """
+    fs=selected_scenarios(d)
+    base=d[d.future_luminosity_multiplier==fs[0]].copy()
+    qs=np.quantile(base.Q2_GeV2,[.15,.50,.85])
+    picks=[]
+    for q in qs:
+        h=base.iloc[(base.Q2_GeV2-q).abs().argsort()[:12]].copy()
+        picks.append(h.iloc[h.delta_epsilon.abs().argmax()])
+    #endfor
+
+    covcol=find_cov_tl_col(d)
+    if covcol is None:
+        print("WARNING: no T-L covariance column found; skipping synthetic Rosenbluth figure.")
+        return
+
+    dtcol=pick(d,"delta_sigma_T","delta_T")
+    dlcol=pick(d,"delta_sigma_L","delta_L")
+    if dtcol is None or dlcol is None:
+        print("WARNING: missing delta_sigma_T/L columns; skipping synthetic Rosenbluth figure.")
+        return
+
+    Rtrue=.20
+    Ttrue=100.0
+    Ltrue=Rtrue*Ttrue
+    fig,axes=plt.subplots(1,3,figsize=(13.2,4.2),sharey=True)
+
+    for ax,r in zip(axes,picks):
+        er,ek=float(r.epsilon_rga),float(r.epsilon_rgk)
+        xx=np.linspace(min(er,ek)-.04,max(er,ek)+.04,160)
+        truth=Ttrue+xx*Ltrue
+        ax.plot(xx,truth,lw=1.8,label="synthetic truth")
+        ax.scatter([ek,er],[Ttrue+ek*Ltrue,Ttrue+er*Ltrue],marker="o",zorder=6)
+
+        # Show only 1x, 5x, 10x and use the full covariance for each band.
+        for f in fs:
+            rr=d[(d.point_id==r.point_id)&
+                 (d.future_luminosity_multiplier==f)].iloc[0]
+            refT=abs(float(rr.sigma_T_GK))
+            scale=Ttrue/refT if refT>0 else np.nan
+            vtt=(float(rr[dtcol])*scale)**2
+            vll=(float(rr[dlcol])*scale)**2
+            vtl=float(rr[covcol])*scale**2
+            vu=vtt+2*xx*vtl+(xx**2)*vll
+            du=np.sqrt(np.maximum(vu,0.0))
+            ax.fill_between(xx,truth-du,truth+du,alpha=.13,
+                            label=f"remaining ×{f:g}")
+        #endfor
+
+        ax.set_xlabel(r"$\epsilon$")
+        ax.set_title(fr"$Q^2\approx{r.Q2_GeV2:.2f}$ GeV$^2$, $x_B\approx{r.xB:.2f}$")
+        ax.grid(alpha=.2)
+    #endfor
+    axes[0].set_ylabel(r"Synthetic $\sigma_U=\sigma_T+\epsilon\sigma_L$ (nb/GeV$^2$)")
+    axes[0].legend(fontsize=8)
+    fig.suptitle(r"Illustrative Rosenbluth separation: $\sigma_T=100$ nb/GeV$^2$, "
+                 r"$\sigma_L/\sigma_T=0.20$"
+                 "\nSynthetic central values only; bands use projected full $T$-$L$ covariance",
+                 y=1.02)
+    fig.tight_layout()
+    fig.savefig(outfile,dpi=220,bbox_inches="tight")
+    plt.close(fig)
+
 def main():
     here=Path(__file__).resolve().parent
     ap=argparse.ArgumentParser()
-    ap.add_argument("--reach",type=Path,default=here/"output/pi0_gk_measurement_reach/tables/01_measurement_reach_by_point.csv")
-    ap.add_argument("--common",type=Path,default=here/"output/pi0_gk_stage2/tables/03_common_rosenbluth_model_points.csv")
+    ap.add_argument("--reach",type=Path,
+                    default=here/"output/pi0_gk_measurement_reach/tables/01_measurement_reach_by_point.csv")
+    ap.add_argument("--common",type=Path,
+                    default=here/"output/pi0_gk_stage2/tables/03_common_rosenbluth_model_points.csv")
     ap.add_argument("--output",type=Path,default=here/"output/pi0_workshop_reach")
     a=ap.parse_args()
 
     points=pd.read_csv(a.reach)
     common=pd.read_csv(a.common)
     d=attach_phase_space(points,common)
+    selected_scenarios(d)
     a.output.mkdir(parents=True,exist_ok=True)
 
-    thresholds=[.50,.30,.20,.10]
-    tab=make_weighted_table(d,thresholds)
-    tab.to_csv(a.output/"phase_space_weighted_reach.csv",index=False)
-    plot_fraction_q2(tab,thresholds,a.output/"01_phase_space_fraction_vs_Q2.png")
+    # Separate the statistics-dependent component from the conservative
+    # floor/nuisance component using all available exposure scenarios.
+    d=decompose_variance(d,"delta_R_L_over_T","delta_R_stat")
+    d=decompose_variance(d,"delta_sigma_L","delta_sigma_L_stat")
 
-    precisions=np.linspace(.05,.50,19)
-    dense=dense_weighted_table(d,precisions)
-    plot_reachable_q2(dense,a.output/"02_reachable_Q2_vs_precision.png")
-    plot_assumed_ratio_sensitivity(d,a.output/"03_assumed_L_over_T_sensitivity.png")
+    thresholds=[.30,.20,.10]
+    conservative=make_weighted_table(d,thresholds,"delta_R_L_over_T")
+    statistical=make_weighted_table(d,thresholds,"delta_R_stat")
+    conservative.to_csv(a.output/"phase_space_weighted_reach_conservative.csv",index=False)
+    statistical.to_csv(a.output/"phase_space_weighted_reach_stat_only.csv",index=False)
+
+    plot_fraction_q2(
+        statistical,thresholds,
+        a.output/"01a_phase_space_fraction_vs_Q2_stat_only.png",
+        "statistical component only")
+    plot_fraction_q2(
+        conservative,thresholds,
+        a.output/"01b_phase_space_fraction_vs_Q2_conservative.png",
+        "including current conservative floor / relative-normalization treatment")
+
+    precisions=np.linspace(.05,.50,46)
+    dense_stat=dense_coverage(d,"delta_R_stat",precisions)
+    dense_cons=dense_coverage(d,"delta_R_L_over_T",precisions)
+    dense_stat.to_csv(a.output/"precision_coverage_heatmap_stat_only.csv",index=False)
+    dense_cons.to_csv(a.output/"precision_coverage_heatmap_conservative.csv",index=False)
+    plot_coverage_heatmaps(
+        dense_stat,a.output/"02a_precision_coverage_heatmap_stat_only.png",
+        "statistical component only")
+    plot_coverage_heatmaps(
+        dense_cons,a.output/"02b_precision_coverage_heatmap_conservative.png",
+        "including current conservative floor / relative-normalization treatment")
+
+    # Make both versions of the nonzero-L sensitivity.  The significance is
+    # sigmaL_assumed/delta_sigmaL; the assumed ratio is scanned explicitly.
+    d["delta_sigma_L_for_sensitivity"]=d["delta_sigma_L_stat"]
+    plot_assumed_ratio_sensitivity(
+        d,a.output/"03a_assumed_L_over_T_sensitivity_stat_only.png",
+        "statistical component only")
+    d["delta_sigma_L_for_sensitivity"]=d["delta_sigma_L"]
+    plot_assumed_ratio_sensitivity(
+        d,a.output/"03b_assumed_L_over_T_sensitivity_conservative.png",
+        "including current conservative floor / relative-normalization treatment")
+
     plot_gk_assumption(d,a.output/"04_GK_assumed_sigmaL_and_sensitivity.png")
     plot_synthetic_rosenbluth(d,a.output/"05_synthetic_rosenbluth_examples.png")
 
-    print("\nWrote workshop-safe plots (no measured CLAS12 central values):")
+    # Save the point-level decomposition so the workshop numbers are auditable.
+    keep=["point_id","future_luminosity_multiplier","Q2_GeV2","xB",
+          "phase_area_xB_t","delta_R_L_over_T","delta_R_stat",
+          "delta_R_stat_floor_equiv","delta_sigma_L","delta_sigma_L_stat",
+          "delta_sigma_L_stat_floor_equiv"]
+    d[[c for c in keep if c in d.columns]].to_csv(
+        a.output/"point_level_stat_vs_conservative_decomposition.csv",index=False)
+
+    print("\nWrote workshop-safe outputs (no measured CLAS12 central values).")
+    print("Displayed scenarios: remaining ×1, ×5, ×10.")
+    print("Stat-only component inferred from delta^2(f)=A/(1+f)+B.")
     for p in sorted(a.output.glob("*.png")):
         print(" ",p)
-    print(" ",a.output/"phase_space_weighted_reach.csv")
+    #endfor
 
 
 if __name__=="__main__":
