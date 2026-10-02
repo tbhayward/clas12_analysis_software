@@ -5143,6 +5143,295 @@ def write_period_stability_global_diagnostics(
     }
 
 
+
+def _copy_run_states_with_double_spin_charge_distortion(
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    distorted_period: str,
+    epsilon: float,
+) -> dict[str, dict[str, np.ndarray]]:
+    """Return run states with Q_h -> Q_h (1 + epsilon*h*sign(Pt)).
+
+    This is a controlled diagnostic distortion of the *charge supplied to the
+    likelihood*, not of the selected events.  Positive epsilon increases the
+    assigned charge for h*sign(Pt)=+1 states and decreases it for the opposite
+    double-spin state.  A common charge scale is deliberately unchanged in its
+    physics content because it cancels from the conditional likelihood.
+    """
+    result: dict[str, dict[str, np.ndarray]] = {}
+    for period in PERIODS:
+        result[period] = {
+            name: np.array(values, copy=True)
+            for name, values in run_states[period].items()
+        }
+        if period != distorted_period:
+            continue
+        # endif
+        sign_pt = np.sign(result[period]["pt"])
+        result[period]["q_plus"] *= 1.0 + epsilon * sign_pt
+        result[period]["q_minus"] *= 1.0 - epsilon * sign_pt
+        if np.any(result[period]["q_plus"] <= 0.0) or np.any(result[period]["q_minus"] <= 0.0):
+            raise RuntimeError("Charge-distortion diagnostic produced nonpositive charge.")
+        # endif
+    # endfor
+    return result
+
+
+def write_charge_normalization_diagnostics(
+    *,
+    frame: pd.DataFrame,
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    output_dir: Path,
+) -> dict[str, str]:
+    """Audit helicity/target-state charge bookkeeping and stress-test A_LL.
+
+    Two complementary products are made.  First, the run CSV is reduced to
+    run-level, target-sign-epoch, and period-level charge asymmetries.  Second,
+    the likelihood charges are deliberately distorted by +/-0.5% in the
+    h*sign(Pt) channel and each period/bin is refit with u1=u2=0.  The symmetric
+    finite difference measures the response of every published amplitude to a
+    double-spin-correlated charge error and estimates the epsilon that would be
+    required to reproduce the observed period-minus-simultaneous A_LL shift.
+    """
+    ensure_directory(output_dir)
+
+    # ---- run-level and period-level charge audit -------------------------
+    run_rows: list[dict[str, Any]] = []
+    period_rows: list[dict[str, Any]] = []
+    epoch_rows: list[dict[str, Any]] = []
+    for period in PERIODS:
+        state = run_states[period]
+        runs = np.asarray(state["run"], dtype=int)
+        pt = np.asarray(state["pt"], dtype=float)
+        qp = np.asarray(state["q_plus"], dtype=float)
+        qm = np.asarray(state["q_minus"], dtype=float)
+        qsum = qp + qm
+        qdiff = qp - qm
+        sign_pt = np.sign(pt)
+        for r, ptt, qpp, qmm in zip(runs, pt, qp, qm):
+            total = qpp + qmm
+            run_rows.append({
+                "period": period, "run": int(r), "target_polarization": float(ptt),
+                "target_sign": int(np.sign(ptt)), "charge_plus": float(qpp),
+                "charge_minus": float(qmm), "charge_total": float(total),
+                "helicity_charge_asymmetry": float((qpp-qmm)/total) if total > 0 else math.nan,
+            })
+        # endfor
+        total_q = float(np.sum(qsum))
+        hel_q = float(np.sum(qdiff))
+        ds_q = float(np.sum(sign_pt * qdiff))
+        target_q = float(np.sum(sign_pt * qsum))
+        period_rows.append({
+            "period": period, "number_of_runs": len(runs), "charge_total": total_q,
+            "helicity_charge_asymmetry": hel_q/total_q if total_q > 0 else math.nan,
+            "target_sign_charge_asymmetry": target_q/total_q if total_q > 0 else math.nan,
+            "double_spin_charge_asymmetry": ds_q/total_q if total_q > 0 else math.nan,
+            "charge_weighted_mean_target_polarization": float(np.sum(pt*qsum)/total_q) if total_q > 0 else math.nan,
+            "charge_weighted_mean_abs_target_polarization": float(np.sum(np.abs(pt)*qsum)/total_q) if total_q > 0 else math.nan,
+        })
+
+        # Contiguous target-sign blocks are a definition-free polarization epoch.
+        if len(runs):
+            start = 0
+            for j in range(1, len(runs)+1):
+                boundary = j == len(runs) or sign_pt[j] != sign_pt[j-1]
+                if not boundary:
+                    continue
+                # endif
+                sl = slice(start, j); tq = float(np.sum(qsum[sl]))
+                epoch_rows.append({
+                    "period": period, "epoch": len([x for x in epoch_rows if x["period"] == period]) + 1,
+                    "run_low": int(runs[start]), "run_high": int(runs[j-1]),
+                    "target_sign": int(sign_pt[start]), "number_of_runs": int(j-start),
+                    "charge_total": tq,
+                    "helicity_charge_asymmetry": float(np.sum(qdiff[sl])/tq) if tq > 0 else math.nan,
+                    "double_spin_charge_asymmetry": float(np.sum(sign_pt[sl]*qdiff[sl])/tq) if tq > 0 else math.nan,
+                    "charge_weighted_mean_target_polarization": float(np.sum(pt[sl]*qsum[sl])/tq) if tq > 0 else math.nan,
+                })
+                start = j
+            # endfor
+        # endif
+    # endfor
+    run_path = output_dir / "charge_audit_by_run.csv"
+    period_path = output_dir / "charge_audit_by_period.csv"
+    epoch_path = output_dir / "charge_audit_target_sign_epochs.csv"
+    pd.DataFrame(run_rows).to_csv(run_path, index=False)
+    pd.DataFrame(period_rows).to_csv(period_path, index=False)
+    pd.DataFrame(epoch_rows).to_csv(epoch_path, index=False)
+
+    # ---- controlled h*s charge distortion -------------------------------
+    eps_scan = (0.0025, 0.0050, 0.0100)
+    eps0 = 0.0050
+    response_rows: list[dict[str, Any]] = []
+    scan_rows: list[dict[str, Any]] = []
+    fixed = {"u1": 0.0, "u2": 0.0}
+    frame_by_bin = frame.set_index("bin_number")
+    for period in PERIODS:
+        distorted_states = {
+            eps: _copy_run_states_with_double_spin_charge_distortion(run_states, period, eps)
+            for mag in eps_scan for eps in (-mag, +mag)
+        }
+        for bin_number in range(1, NUMBER_OF_BINS + 1):
+            nominal_row = frame_by_bin.loc[bin_number]
+            initial = {
+                name: float(nominal_row[f"{name}_{period}"])
+                for name in PHYSICS_PARAMETERS
+                if f"{name}_{period}" in nominal_row.index
+            }
+            fits: dict[float, dict[str, Any]] = {}
+            for eps in sorted(distorted_states):
+                fit = fit_one_variant(
+                    events, distorted_states[eps], dilution_records, bin_number, "nominal",
+                    active_periods=(period,), initial_values=initial,
+                    fixed_physics_parameters=fixed,
+                )
+                fits[eps] = fit
+                for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+                    scan_rows.append({
+                        "period": period, "bin_number": bin_number, "parameter": parameter,
+                        "epsilon": eps, "percent_charge_distortion": 100.0*eps,
+                        "value": float(fit["values"][parameter]),
+                        "stat": float(fit["errors"][parameter]), "fit_valid": bool(fit["valid"]),
+                    })
+                # endfor
+            # endfor
+            for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+                vm = float(fits[-eps0]["values"][parameter])
+                vp = float(fits[+eps0]["values"][parameter])
+                derivative = (vp-vm)/(2.0*eps0)
+                # Curvature/linearity diagnostic from the 0.25%, 0.5%, and 1%
+                # symmetric slopes.  A stable slope means first-order inversion
+                # to a required charge error is justified.
+                slopes = []
+                for mag in eps_scan:
+                    slopes.append((float(fits[+mag]["values"][parameter]) - float(fits[-mag]["values"][parameter]))/(2.0*mag))
+                # endfor
+                period_value = float(nominal_row[f"{parameter}_{period}"])
+                combined = float(nominal_row[parameter])
+                observed_shift = period_value-combined
+                required = observed_shift/derivative if abs(derivative) > 1.0e-12 else math.nan
+                response_rows.append({
+                    "period": period, "bin_number": bin_number, "parameter": parameter,
+                    "epsilon_minus": -eps0, "value_minus": vm,
+                    "epsilon_plus": eps0, "value_plus": vp,
+                    "dA_depsilon": derivative,
+                    "slope_at_0p25pct": slopes[0], "slope_at_0p5pct": slopes[1], "slope_at_1pct": slopes[2],
+                    "max_fractional_slope_change": (max(abs(x-derivative) for x in slopes)/abs(derivative)) if abs(derivative)>1e-12 else math.nan,
+                    "nominal_period_value": period_value, "simultaneous_value": combined,
+                    "observed_period_minus_simultaneous": observed_shift,
+                    "epsilon_required_to_match_observed_shift": required,
+                    "percent_charge_distortion_required": 100.0*required if np.isfinite(required) else math.nan,
+                    "fit_minus_valid": bool(fits[-eps0]["valid"]),
+                    "fit_plus_valid": bool(fits[+eps0]["valid"]),
+                })
+            # endfor
+        # endfor
+    # endfor
+    response = pd.DataFrame(response_rows)
+    response_path = output_dir / "double_spin_charge_distortion_response.csv"
+    response.to_csv(response_path, index=False)
+    scan_path = output_dir / "double_spin_charge_distortion_scan.csv"
+    pd.DataFrame(scan_rows).to_csv(scan_path, index=False)
+
+    # Period summaries focus on A_LL but retain robust median information for
+    # every observable to verify the expected constant-term selectivity.
+    summary_rows: list[dict[str, Any]] = []
+    for (period, parameter), group in response.groupby(["period", "parameter"]):
+        req = group["epsilon_required_to_match_observed_shift"].to_numpy(float)
+        der = group["dA_depsilon"].to_numpy(float)
+        req = req[np.isfinite(req)]
+        der = der[np.isfinite(der)]
+        summary_rows.append({
+            "period": period, "parameter": parameter, "n": len(group),
+            "median_dA_depsilon": float(np.median(der)) if len(der) else math.nan,
+            "mean_dA_depsilon": float(np.mean(der)) if len(der) else math.nan,
+            "median_required_epsilon": float(np.median(req)) if len(req) else math.nan,
+            "median_required_percent": float(100.0*np.median(req)) if len(req) else math.nan,
+        })
+    # endfor
+    summary_path = output_dir / "double_spin_charge_distortion_summary.csv"
+    pd.DataFrame(summary_rows).to_csv(summary_path, index=False)
+    return {
+        "run_audit": str(run_path), "period_audit": str(period_path),
+        "epoch_audit": str(epoch_path), "response": str(response_path),
+        "summary": str(summary_path), "scan": str(scan_path),
+    }
+
+
+def write_flagged_epoch_refits(
+    *, frame: pd.DataFrame, events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    output_dir: Path, threshold: float = 2.5,
+) -> str:
+    """Refit flagged bins in contiguous target-sign epochs within each period."""
+    ensure_directory(output_dir)
+    flagged: set[int] = set()
+    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+        refs = _period_stability_references(frame, parameter)
+        for i, row in frame.iterrows():
+            c = float(refs["combined"][i]); ce = float(refs["combined_error"][i])
+            for period in PERIODS:
+                y = float(row[f"{parameter}_{period}"]); ye = float(row[f"{parameter}_stat_{period}"])
+                d2 = ye*ye-ce*ce
+                if d2 > 0.0 and abs((y-c)/math.sqrt(d2)) > threshold:
+                    flagged.add(int(row["bin_number"]))
+                # endif
+            # endfor
+        # endfor
+    # endfor
+    rows: list[dict[str, Any]] = []
+    fixed = {"u1": 0.0, "u2": 0.0}
+    for period in PERIODS:
+        state = run_states[period]
+        runs = np.asarray(state["run"], int); pt = np.asarray(state["pt"], float)
+        sign_pt = np.sign(pt)
+        epochs: list[tuple[int,int,int]] = []
+        if len(runs):
+            start = 0
+            for j in range(1, len(runs)+1):
+                if j < len(runs) and sign_pt[j] == sign_pt[j-1]:
+                    continue
+                # endif
+                epochs.append((int(runs[start]), int(runs[j-1]), int(sign_pt[start])))
+                start = j
+            # endfor
+        # endif
+        for epoch_index, (run_low, run_high, target_sign) in enumerate(epochs, 1):
+            for bin_number in sorted(flagged):
+                mask = ((events["bin_number"] == bin_number)
+                        & (events["period_index"] == PERIOD_INDEX[period])
+                        & (events["runnum"] >= run_low) & (events["runnum"] <= run_high))
+                n_events = int(np.count_nonzero(mask))
+                if n_events < 50:
+                    continue
+                # endif
+                try:
+                    fit = fit_one_variant(
+                        events, run_states, dilution_records, bin_number, "nominal",
+                        active_periods=(period,), fixed_physics_parameters=fixed,
+                        run_ranges_filter=((run_low, run_high),),
+                    )
+                except Exception as exc:
+                    rows.append({"period":period,"epoch":epoch_index,"run_low":run_low,"run_high":run_high,
+                        "target_sign":target_sign,"bin_number":bin_number,"events":n_events,"valid":False,"error":str(exc)})
+                    continue
+                # endtry
+                row = {"period":period,"epoch":epoch_index,"run_low":run_low,"run_high":run_high,
+                    "target_sign":target_sign,"bin_number":bin_number,"events":n_events,"valid":bool(fit["valid"]),
+                    "edm":float(fit["edm"]),"error":""}
+                for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+                    row[parameter] = float(fit["values"][parameter]); row[f"{parameter}_stat"] = float(fit["errors"][parameter])
+                # endfor
+                rows.append(row)
+            # endfor
+        # endfor
+    # endfor
+    path = output_dir / "flagged_bins_target_sign_epoch_refits.csv"
+    pd.DataFrame(rows).to_csv(path, index=False)
+    return str(path)
+
 def plot_period_stability(
     frame: pd.DataFrame,
     output_dir: Path,
@@ -10359,6 +10648,27 @@ def main() -> int:
         print(f"  Global LRT: {global_products['global_lrt']}", flush=True)
         print(f"  Observable tests: {global_products['observable_wald']}", flush=True)
         print(f"  Period scale tests: {global_products['scale_tests']}", flush=True)
+
+        # Audit the actual run/helicity charge bookkeeping and measure the
+        # response to a controlled h*sign(Pt)-correlated charge distortion.
+        # This directly tests whether a small relative Faraday-cup/exposure
+        # error could preferentially generate the constant A_LL period pattern.
+        stability_events = load_event_cache(nominal_cache)
+        stability_dilutions = load_dilution_factors(nominal_dilution, cut_label="nominal")
+        charge_products = write_charge_normalization_diagnostics(
+            frame=nominal_result["frame"], events=stability_events,
+            run_states=stability_run_states, dilution_records=stability_dilutions,
+            output_dir=nominal_dir / "diagnostics" / "charge_normalization",
+        )
+        print(f"  Charge audit: {charge_products['period_audit']}", flush=True)
+        print(f"  Charge response: {charge_products['response']}", flush=True)
+        print(f"  Charge summary: {charge_products['summary']}", flush=True)
+        epoch_refits = write_flagged_epoch_refits(
+            frame=nominal_result["frame"], events=stability_events,
+            run_states=stability_run_states, dilution_records=stability_dilutions,
+            output_dir=nominal_dir / "diagnostics" / "run_epochs", threshold=2.5,
+        )
+        print(f"  Flagged-bin epoch refits: {epoch_refits}", flush=True)
 
         if not excursions.empty and not args.skip_plots:
             flagged_bins = tuple(sorted(set(excursions["bin_number"].astype(int))))
