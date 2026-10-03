@@ -11123,55 +11123,68 @@ def run_solenoid_split_diagnostic(
 # Appendix MLE fit-quality diagnostics
 # =============================================================================
 
-def _appendix_profile_worker(task: dict[str, Any]) -> dict[str, Any]:
-    """Profile one parameter in one bin with the full seven-parameter nominal MLE."""
+def _appendix_profile_worker(task: dict[str, Any]) -> list[dict[str, Any]]:
+    """Profile all seven parameters for one bin using one shared nominal MLE.
+
+    One process owns one physics bin.  This avoids repeating the expensive nominal
+    seven-parameter fit once per profile parameter while retaining warm starts
+    along each one-dimensional profile scan.
+    """
     if (_WORKER_EVENTS is None or _WORKER_RUN_STATES is None
             or _WORKER_DILUTION_RECORDS is None):
         raise RuntimeError("Appendix diagnostic worker was not initialized.")
     # endif
     bin_number = int(task["bin_number"])
-    parameter = str(task["parameter"])
     points = int(task["profile_points"])
     fit = fit_one_variant(
         _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
         bin_number, "nominal", active_periods=PERIODS,
     )
+    results: list[dict[str, Any]] = []
     if not fit["valid"]:
-        return {"bin_number": bin_number, "parameter": parameter,
-                "fit": fit, "profile": None}
+        for parameter in PHYSICS_PARAMETERS:
+            results.append({"bin_number": bin_number, "parameter": parameter,
+                            "fit": fit, "profile": None})
+        # endfor
+        return results
     # endif
-    center = float(fit["values"][parameter])
-    sigma = max(float(fit["errors"][parameter]), 1.0e-3)
-    low_limit, high_limit = PARAMETER_LIMITS[parameter]
-    half_width = max(5.0 * sigma, 0.25)
-    low = max(low_limit, center - half_width)
-    high = min(high_limit, center + half_width)
-    grid = np.linspace(low, high, points)
-    nll_values: list[float] = []
-    valid_values: list[bool] = []
-    start = dict(fit["values"])
-    for value in grid:
-        profiled = fit_one_variant(
-            _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
-            bin_number, "nominal", active_periods=PERIODS,
-            initial_values=start,
-            fixed_physics_parameters={parameter: float(value)},
-        )
-        nll_values.append(float(profiled["minimum_nll"]))
-        valid_values.append(bool(profiled["valid"]))
-        if profiled["valid"]:
-            start = dict(profiled["values"])
-        # endif
+
+    for parameter in PHYSICS_PARAMETERS:
+        center = float(fit["values"][parameter])
+        sigma = max(float(fit["errors"][parameter]), 1.0e-3)
+        low_limit, high_limit = PARAMETER_LIMITS[parameter]
+        half_width = max(5.0 * sigma, 0.25)
+        low = max(low_limit, center - half_width)
+        high = min(high_limit, center + half_width)
+        grid = np.linspace(low, high, points)
+        nll_values: list[float] = []
+        valid_values: list[bool] = []
+        start_values = dict(fit["values"])
+        for value in grid:
+            profiled = fit_one_variant(
+                _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
+                bin_number, "nominal", active_periods=PERIODS,
+                initial_values=start_values,
+                fixed_physics_parameters={parameter: float(value)},
+            )
+            nll_values.append(float(profiled["minimum_nll"]))
+            valid_values.append(bool(profiled["valid"]))
+            if profiled["valid"]:
+                start_values = dict(profiled["values"])
+            # endif
+        # endfor
+        finite = np.isfinite(nll_values) & (np.asarray(nll_values) < INVALID_NLL / 10.0)
+        minimum = min([float(fit["minimum_nll"])]
+                      + [nll_values[i] for i in range(points) if finite[i]])
+        two_delta = [2.0 * (value - minimum) if finite[i] else math.nan
+                     for i, value in enumerate(nll_values)]
+        results.append({
+            "bin_number": bin_number, "parameter": parameter, "fit": fit,
+            "profile": {"grid": grid.tolist(), "two_delta_nll": two_delta,
+                        "valid": valid_values},
+        })
     # endfor
-    finite = np.isfinite(nll_values) & (np.asarray(nll_values) < INVALID_NLL / 10.0)
-    minimum = min([float(fit["minimum_nll"])] + [nll_values[i] for i in range(points) if finite[i]])
-    two_delta = [2.0 * (value - minimum) if finite[i] else math.nan
-                 for i, value in enumerate(nll_values)]
-    return {
-        "bin_number": bin_number, "parameter": parameter, "fit": fit,
-        "profile": {"grid": grid.tolist(), "two_delta_nll": two_delta,
-                    "valid": valid_values},
-    }
+    return results
 
 
 def _profile_crossing(grid: np.ndarray, delta: np.ndarray, center: float,
@@ -11337,20 +11350,36 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
             for (rp, b), r in dilution_records.items() if rp == p}
         for p in PERIODS
     }
-    tasks = [{"bin_number": b, "parameter": par,
-              "profile_points": args.appendix_profile_points}
-             for b in range(1, NUMBER_OF_BINS + 1) for par in PHYSICS_PARAMETERS]
+    # Parallelize by physics bin, not by (bin, parameter).  Each worker performs
+    # the nominal joint fit once and reuses it for all seven profile scans.
+    # With 24 bins this still provides ample coarse-grained work for eight
+    # processes while eliminating 6 redundant nominal fits per bin.
+    tasks = [{"bin_number": b, "profile_points": args.appendix_profile_points}
+             for b in range(1, NUMBER_OF_BINS + 1)]
     results: list[dict[str, Any]] = []
     mp_context = mp.get_context("spawn")
+    n_appendix_workers = max(1, min(int(workers), 8, len(tasks)))
+    print(
+        f"[appendix MLE] profiling 24 bins x {len(PHYSICS_PARAMETERS)} parameters "
+        f"with {n_appendix_workers} workers",
+        flush=True,
+    )
     with ProcessPoolExecutor(
-        max_workers=min(workers, len(tasks)), mp_context=mp_context,
+        max_workers=n_appendix_workers, mp_context=mp_context,
         initializer=initialize_fit_worker,
         initargs=(str(cache_path), run_state_payload, dilution_payload),
     ) as executor:
         futures = [executor.submit(_appendix_profile_worker, task) for task in tasks]
+        completed_profiles = 0
         for index, future in enumerate(as_completed(futures), start=1):
-            results.append(future.result())
-            print(f"[appendix MLE] profiles {index}/{len(tasks)}", flush=True)
+            bin_results = future.result()
+            results.extend(bin_results)
+            completed_profiles += len(bin_results)
+            print(
+                f"[appendix MLE] bins {index}/{len(tasks)}; "
+                f"profiles {completed_profiles}/{len(tasks) * len(PHYSICS_PARAMETERS)}",
+                flush=True,
+            )
         # endfor
     # endwith
     by_key = {(r["bin_number"], r["parameter"]): r for r in results}
