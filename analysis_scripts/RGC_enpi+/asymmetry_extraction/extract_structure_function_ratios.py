@@ -2360,7 +2360,9 @@ def make_bin_nll(
     transverse_scales: Mapping[str, float] | None = None,
     target_sign_filter: int | None = None,
     run_ranges_filter: tuple[tuple[int, int], ...] | None = None,
+    beam_polarization_scales: Mapping[str, float] | None = None,
 ):
+    beam_polarization_scales = dict(beam_polarization_scales or {})
     mask = events["bin_number"] == bin_number
     if len(active_periods) != len(PERIODS):
         allowed_indices = np.asarray(
@@ -2574,7 +2576,7 @@ def make_bin_nll(
                 sin_theta_gamma=event_sin,
                 cos_theta_gamma=event_cos,
                 helicity=event_h,
-                beam_polarization=BEAM_POLARIZATION[period],
+                beam_polarization=(BEAM_POLARIZATION[period] * beam_polarization_scales.get(period, 1.0)),
                 target_polarization=data["observed_pt"],
                 dilution=dilution,
                 transverse_scales=transverse_scales,
@@ -2599,7 +2601,7 @@ def make_bin_nll(
                 + event_r_b * u2 * data["cos_2phi"]
             )
             beam_coefficient = (
-                BEAM_POLARIZATION[period]
+                (BEAM_POLARIZATION[period] * beam_polarization_scales.get(period, 1.0))
                 * event_r_w
                 * lu1
                 * data["sin_phi"]
@@ -2629,7 +2631,7 @@ def make_bin_nll(
                 )
             )
             double_longitudinal_coefficient = (
-                BEAM_POLARIZATION[period]
+                (BEAM_POLARIZATION[period] * beam_polarization_scales.get(period, 1.0))
                 * dilution
                 * longitudinal_geometry
                 * (
@@ -2674,7 +2676,7 @@ def make_bin_nll(
                 )
                 double_transverse_coefficient = (
                     double_transverse_coefficient
-                    + BEAM_POLARIZATION[period]
+                    + (BEAM_POLARIZATION[period] * beam_polarization_scales.get(period, 1.0))
                     * dilution
                     * transverse_geometry
                     * lt_fixed
@@ -2863,6 +2865,7 @@ def fit_one_variant(
     fixed_physics_parameters: Mapping[str, float] | None = None,
     target_sign_filter: int | None = None,
     run_ranges_filter: tuple[tuple[int, int], ...] | None = None,
+    beam_polarization_scales: Mapping[str, float] | None = None,
 ) -> dict[str, Any]:
     nll, metadata = make_bin_nll(
         events,
@@ -2874,6 +2877,7 @@ def fit_one_variant(
         transverse_scales=transverse_scales,
         target_sign_filter=target_sign_filter,
         run_ranges_filter=run_ranges_filter,
+        beam_polarization_scales=beam_polarization_scales,
     )
 
     initial = dict(PARAMETER_INITIAL_VALUES)
@@ -5198,8 +5202,9 @@ def write_charge_normalization_diagnostics(
     run_states: Mapping[str, Mapping[str, np.ndarray]],
     dilution_records: Mapping[tuple[str, int], DilutionRecord],
     output_dir: Path,
+    run_full_scan: bool = False,
 ) -> dict[str, str]:
-    """Audit charge bookkeeping and stress-test two normalization modes.
+    """Audit charge bookkeeping and optionally stress-test two normalization modes.
 
     The audit records the actual Q+ and Q- values supplied to the likelihood by
     run, period, and contiguous target-sign epoch.  The stress test then scans
@@ -5274,6 +5279,14 @@ def write_charge_normalization_diagnostics(
     pd.DataFrame(run_rows).to_csv(run_path, index=False)
     pd.DataFrame(period_rows).to_csv(period_path, index=False)
     pd.DataFrame(epoch_rows).to_csv(epoch_path, index=False)
+
+    if not run_full_scan:
+        return {
+            "run_audit": str(run_path), "period_audit": str(period_path),
+            "epoch_audit": str(epoch_path), "response": "",
+            "summary": "", "scan": "",
+        }
+    # endif
 
     # ---- controlled target-epoch and h*s charge distortions -------------
     eps_scan = (0.0025, 0.0050, 0.0100, 0.0200, 0.0500)
@@ -5373,6 +5386,267 @@ def write_charge_normalization_diagnostics(
         "epoch_audit": str(epoch_path), "response": str(response_path),
         "summary": str(summary_path), "scan": str(scan_path),
     }
+
+
+
+def _copy_run_states_with_target_sign_total_scale(
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    period: str,
+    target_sign: int,
+    scale: float,
+) -> dict[str, dict[str, np.ndarray]]:
+    """Scale one of the six period x target-sign integrated charge totals.
+
+    Both helicity charges for runs with the selected target sign are multiplied
+    by the same factor.  This is the literal test of a Faraday-cup normalization
+    error in one period/target-polarization sample.
+    """
+    if scale <= 0.0:
+        raise ValueError("Target-sign charge scale must remain positive.")
+    # endif
+    result = {
+        p: {name: np.array(values, copy=True) for name, values in state.items()}
+        for p, state in run_states.items()
+    }
+    state = result[period]
+    mask = np.sign(state["pt"]).astype(int) == int(np.sign(target_sign))
+    state["q_plus"][mask] *= scale
+    state["q_minus"][mask] *= scale
+    return result
+
+
+def write_six_charge_total_corrections(
+    *, frame: pd.DataFrame, events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    output_dir: Path, epsilon: float = 0.01,
+) -> dict[str, str]:
+    """Infer the correction to each of the six period x target-sign charges.
+
+    One charge total is perturbed at a time by +/-epsilon.  For every perturbation
+    both the affected period fit and the three-period simultaneous fit are rerun,
+    so the motion of the reference mean is included rather than held fixed.
+    Only ll0 is floated; all other physics amplitudes are fixed to the relevant
+    nominal solution.  The reported correction is the local linear correction
+    to the *currently used* charge total that would remove the weighted period-
+    minus-simultaneous A_LL displacement if that one charge total were the sole
+    source of the discrepancy.
+    """
+    ensure_directory(output_dir)
+    frame_by_bin = frame.set_index("bin_number")
+    rows: list[dict[str, Any]] = []
+    summaries: list[dict[str, Any]] = []
+
+    for period in PERIODS:
+        state = run_states[period]
+        for target_sign in (1, -1):
+            sign_mask = np.sign(state["pt"]).astype(int) == target_sign
+            nominal_charge = float(np.sum((state["q_plus"] + state["q_minus"])[sign_mask]))
+            distorted = {
+                e: _copy_run_states_with_target_sign_total_scale(
+                    run_states, period, target_sign, 1.0 + e
+                )
+                for e in (-epsilon, +epsilon)
+            }
+            group_rows: list[dict[str, Any]] = []
+            for bin_number in range(1, NUMBER_OF_BINS + 1):
+                nominal = frame_by_bin.loc[bin_number]
+                period_initial = {
+                    name: float(nominal[f"{name}_{period}"])
+                    for name in PHYSICS_PARAMETERS
+                }
+                combined_initial = {
+                    name: float(nominal[name]) for name in PHYSICS_PARAMETERS
+                }
+                period_fixed = {
+                    name: value for name, value in period_initial.items() if name != "ll0"
+                }
+                combined_fixed = {
+                    name: value for name, value in combined_initial.items() if name != "ll0"
+                }
+                dvals: dict[float, float] = {}
+                pvals: dict[float, float] = {}
+                cvals: dict[float, float] = {}
+                for e in (-epsilon, +epsilon):
+                    pf = fit_one_variant(
+                        events, distorted[e], dilution_records, bin_number, "nominal",
+                        active_periods=(period,), initial_values=period_initial,
+                        fixed_physics_parameters=period_fixed,
+                    )
+                    cf = fit_one_variant(
+                        events, distorted[e], dilution_records, bin_number, "nominal",
+                        initial_values=combined_initial,
+                        fixed_physics_parameters=combined_fixed,
+                    )
+                    pvals[e] = float(pf["values"]["ll0"])
+                    cvals[e] = float(cf["values"]["ll0"])
+                    dvals[e] = pvals[e] - cvals[e]
+                # endfor
+                slope = (dvals[+epsilon] - dvals[-epsilon]) / (2.0 * epsilon)
+                d0 = float(nominal[f"ll0_{period}"] - nominal["ll0"])
+                required = -d0 / slope if abs(slope) > 1.0e-12 else math.nan
+                pstat = float(nominal[f"ll0_stat_{period}"])
+                cstat = float(nominal["ll0_stat"])
+                nested_var = max(pstat * pstat - cstat * cstat, 0.0)
+                row = {
+                    "period": period, "target_sign": target_sign,
+                    "bin_number": bin_number, "nominal_charge_total": nominal_charge,
+                    "epsilon_probe": epsilon,
+                    "period_ll0_minus": pvals[-epsilon], "combined_ll0_minus": cvals[-epsilon],
+                    "period_ll0_plus": pvals[+epsilon], "combined_ll0_plus": cvals[+epsilon],
+                    "nominal_period_minus_combined": d0,
+                    "d_period_minus_combined_depsilon": slope,
+                    "required_fractional_charge_correction": required,
+                    "required_percent_charge_correction": 100.0 * required if np.isfinite(required) else math.nan,
+                    "nested_variance": nested_var,
+                }
+                rows.append(row)
+                group_rows.append(row)
+            # endfor
+
+            finite = [r for r in group_rows if np.isfinite(r["d_period_minus_combined_depsilon"])]
+            num = den = 0.0
+            for r in finite:
+                var = r["nested_variance"]
+                if var <= 0.0:
+                    continue
+                # endif
+                w = 1.0 / var
+                slope = r["d_period_minus_combined_depsilon"]
+                d0 = r["nominal_period_minus_combined"]
+                num += w * slope * d0
+                den += w * slope * slope
+            # endfor
+            required_global = -num / den if den > 0.0 else math.nan
+            summaries.append({
+                "period": period, "target_sign": target_sign,
+                "nominal_charge_total": nominal_charge,
+                "required_fractional_charge_correction": required_global,
+                "required_percent_charge_correction": 100.0 * required_global if np.isfinite(required_global) else math.nan,
+                "corrected_charge_total": nominal_charge * (1.0 + required_global) if np.isfinite(required_global) else math.nan,
+                "weighted_bins": sum(1 for r in finite if r["nested_variance"] > 0.0),
+                "interpretation": "correction to currently used charge if this one target-sign total alone explains the A_LL period displacement",
+            })
+            print(
+                f"[six-charge solve] {period} Pt sign {target_sign:+d}: "
+                f"required correction={100.0*required_global:+.3f}%",
+                flush=True,
+            )
+        # endfor
+    # endfor
+
+    bins_path = output_dir / "six_charge_total_corrections_by_bin.csv"
+    summary_path = output_dir / "six_charge_total_corrections_summary.csv"
+    pd.DataFrame(rows).to_csv(bins_path, index=False)
+    pd.DataFrame(summaries).to_csv(summary_path, index=False)
+    return {"bins": str(bins_path), "summary": str(summary_path)}
+
+
+def write_beam_polarization_response_diagnostic(
+    *, frame: pd.DataFrame, events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    output_dir: Path, epsilon: float = 0.01,
+) -> dict[str, str]:
+    """Test whether a period beam-polarization scale can explain A_LL.
+
+    The affected period beam polarization is shifted by +/-1%.  The affected
+    period and simultaneous fits are both rerun, so the simultaneous reference
+    is allowed to move.  LU, LL and LLcosphi are floated together because all
+    three contain P_b; UU and UL amplitudes are fixed.  The summary compares the
+    beam-polarization correction inferred from A_LL with that inferred from LU.
+    """
+    ensure_directory(output_dir)
+    frame_by_bin = frame.set_index("bin_number")
+    parameters = ("lu1", "ll0", "ll1")
+    rows: list[dict[str, Any]] = []
+
+    for period in PERIODS:
+        for bin_number in range(1, NUMBER_OF_BINS + 1):
+            nominal = frame_by_bin.loc[bin_number]
+            period_initial = {name: float(nominal[f"{name}_{period}"]) for name in PHYSICS_PARAMETERS}
+            combined_initial = {name: float(nominal[name]) for name in PHYSICS_PARAMETERS}
+            period_fixed = {
+                name: value for name, value in period_initial.items() if name not in parameters
+            }
+            combined_fixed = {
+                name: value for name, value in combined_initial.items() if name not in parameters
+            }
+            fits: dict[float, tuple[dict[str, Any], dict[str, Any]]] = {}
+            for e in (-epsilon, +epsilon):
+                scales = {period: 1.0 + e}
+                pf = fit_one_variant(
+                    events, run_states, dilution_records, bin_number, "nominal",
+                    active_periods=(period,), initial_values=period_initial,
+                    fixed_physics_parameters=period_fixed,
+                    beam_polarization_scales=scales,
+                )
+                cf = fit_one_variant(
+                    events, run_states, dilution_records, bin_number, "nominal",
+                    initial_values=combined_initial,
+                    fixed_physics_parameters=combined_fixed,
+                    beam_polarization_scales=scales,
+                )
+                fits[e] = (pf, cf)
+            # endfor
+            for parameter in parameters:
+                dm = float(fits[-epsilon][0]["values"][parameter] - fits[-epsilon][1]["values"][parameter])
+                dp = float(fits[+epsilon][0]["values"][parameter] - fits[+epsilon][1]["values"][parameter])
+                slope = (dp - dm) / (2.0 * epsilon)
+                d0 = float(nominal[f"{parameter}_{period}"] - nominal[parameter])
+                required = -d0 / slope if abs(slope) > 1.0e-12 else math.nan
+                pstat = float(nominal[f"{parameter}_stat_{period}"])
+                cstat = float(nominal[f"{parameter}_stat"])
+                rows.append({
+                    "period": period, "bin_number": bin_number, "parameter": parameter,
+                    "nominal_beam_polarization": BEAM_POLARIZATION[period],
+                    "epsilon_probe": epsilon, "nominal_period_minus_combined": d0,
+                    "d_period_minus_combined_depsilon": slope,
+                    "required_fractional_beam_polarization_correction": required,
+                    "required_percent_beam_polarization_correction": 100.0 * required if np.isfinite(required) else math.nan,
+                    "nested_variance": max(pstat*pstat - cstat*cstat, 0.0),
+                })
+            # endfor
+        # endfor
+        print(f"[beam-polarization response] {period} complete", flush=True)
+    # endfor
+
+    result = pd.DataFrame(rows)
+    summary_rows: list[dict[str, Any]] = []
+    for (period, parameter), group in result.groupby(["period", "parameter"]):
+        num = den = 0.0
+        for _, r in group.iterrows():
+            var = float(r["nested_variance"])
+            slope = float(r["d_period_minus_combined_depsilon"])
+            d0 = float(r["nominal_period_minus_combined"])
+            if var <= 0.0 or not np.isfinite(slope):
+                continue
+            # endif
+            w = 1.0 / var
+            num += w * slope * d0
+            den += w * slope * slope
+        # endfor
+        req = -num / den if den > 0.0 else math.nan
+        summary_rows.append({
+            "period": period, "parameter": parameter,
+            "required_fractional_beam_polarization_correction": req,
+            "required_percent_beam_polarization_correction": 100.0 * req if np.isfinite(req) else math.nan,
+            "corrected_beam_polarization": BEAM_POLARIZATION[period] * (1.0 + req) if np.isfinite(req) else math.nan,
+        })
+    # endfor
+    summary = pd.DataFrame(summary_rows)
+    # Put the LU and LL answers next to one another for the key consistency test.
+    pivot = summary.pivot(index="period", columns="parameter", values="required_percent_beam_polarization_correction").reset_index()
+    pivot = pivot.rename(columns={
+        "lu1": "required_percent_from_LU_sinphi",
+        "ll0": "required_percent_from_ALL",
+        "ll1": "required_percent_from_ALL_cosphi",
+    })
+    summary_path = output_dir / "beam_polarization_required_corrections.csv"
+    bins_path = output_dir / "beam_polarization_response_by_bin.csv"
+    result.to_csv(bins_path, index=False)
+    pivot.to_csv(summary_path, index=False)
+    return {"bins": str(bins_path), "summary": str(summary_path)}
 
 
 def write_flagged_epoch_refits(
@@ -10399,6 +10673,27 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--period-full-charge-scan", action="store_true",
+        help=(
+            "With --period-stability-only, additionally run the expensive full "
+            "target-epoch and h*s charge-distortion scan. Off by default."
+        ),
+    )
+    parser.add_argument(
+        "--period-epoch-refits", action="store_true",
+        help=(
+            "With --period-stability-only, additionally run all target-polarization "
+            "epoch A_LL refits. Off by default after the dedicated validation study."
+        ),
+    )
+    parser.add_argument(
+        "--period-flagged-diagnostics", action="store_true",
+        help=(
+            "With --period-stability-only, additionally rerun the expensive flagged-bin "
+            "profiles/exclusivity-window diagnostics. Off by default once validated."
+        ),
+    )
+    parser.add_argument(
         "--period-stability-plot-only", action="store_true",
         help=(
             "Regenerate the five published run-period stability PNGs directly "
@@ -10756,18 +11051,38 @@ def main() -> int:
             frame=nominal_result["frame"], events=stability_events,
             run_states=stability_run_states, dilution_records=stability_dilutions,
             output_dir=nominal_dir / "diagnostics" / "charge_normalization",
+            run_full_scan=args.period_full_charge_scan,
         )
         print(f"  Charge audit: {charge_products['period_audit']}", flush=True)
-        print(f"  Charge response: {charge_products['response']}", flush=True)
-        print(f"  Charge summary: {charge_products['summary']}", flush=True)
-        epoch_refits = write_flagged_epoch_refits(
+        if args.period_full_charge_scan:
+            print(f"  Full charge response: {charge_products['response']}", flush=True)
+            print(f"  Full charge summary: {charge_products['summary']}", flush=True)
+        # endif
+
+        six_charge = write_six_charge_total_corrections(
             frame=nominal_result["frame"], events=stability_events,
             run_states=stability_run_states, dilution_records=stability_dilutions,
-            output_dir=nominal_dir / "diagnostics" / "run_epochs", threshold=2.5,
+            output_dir=nominal_dir / "diagnostics" / "charge_normalization",
         )
-        print(f"  Flagged-bin epoch refits: {epoch_refits}", flush=True)
+        print(f"  Six-charge solve: {six_charge['summary']}", flush=True)
 
-        if not excursions.empty and not args.skip_plots:
+        beam_products = write_beam_polarization_response_diagnostic(
+            frame=nominal_result["frame"], events=stability_events,
+            run_states=stability_run_states, dilution_records=stability_dilutions,
+            output_dir=nominal_dir / "diagnostics" / "beam_polarization",
+        )
+        print(f"  Beam-polarization response: {beam_products['summary']}", flush=True)
+
+        if args.period_epoch_refits:
+            epoch_refits = write_flagged_epoch_refits(
+                frame=nominal_result["frame"], events=stability_events,
+                run_states=stability_run_states, dilution_records=stability_dilutions,
+                output_dir=nominal_dir / "diagnostics" / "run_epochs", threshold=2.5,
+            )
+            print(f"  Target-epoch refits: {epoch_refits}", flush=True)
+        # endif
+
+        if args.period_flagged_diagnostics and not excursions.empty and not args.skip_plots:
             flagged_bins = tuple(sorted(set(excursions["bin_number"].astype(int))))
             flagged_map = {int(b): tuple(sorted(set(g["parameter"].astype(str)))) for b, g in excursions.groupby("bin_number")}
             args.diagnostic_bins = flagged_bins
