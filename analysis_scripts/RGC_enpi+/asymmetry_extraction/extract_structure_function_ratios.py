@@ -11228,36 +11228,48 @@ def _appendix_profile_worker(task: dict[str, Any]) -> list[dict[str, Any]]:
         center = float(fit["values"][parameter])
         sigma = max(float(fit["errors"][parameter]), 1.0e-3)
         low_limit, high_limit = PARAMETER_LIMITS[parameter]
-        half_width = max(5.0 * sigma, 0.25)
+        half_width = max(8.0 * sigma, 0.35)
         low = max(low_limit, center - half_width)
         high = min(high_limit, center + half_width)
         grid = np.linspace(low, high, points)
-        nll_values: list[float] = []
-        valid_values: list[bool] = []
-        start_values = dict(fit["values"])
-        for value in grid:
-            profiled = fit_one_variant(
-                _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
-                bin_number, "nominal", active_periods=PERIODS,
-                initial_values=start_values,
-                fixed_physics_parameters={parameter: float(value)},
-                fast_profile=True,
-            )
-            nll_values.append(float(profiled["minimum_nll"]))
-            valid_values.append(bool(profiled["valid"]))
-            if profiled["valid"]:
-                start_values = dict(profiled["values"])
-            # endif
+        nll_values = np.full(points, math.nan, dtype=float)
+        valid_values = np.zeros(points, dtype=bool)
+
+        # Walk outward from the nominal MLE independently on the two sides.
+        # This gives every constrained fit a nearby warm start instead of
+        # dragging a solution all the way from one edge of the profile to the other.
+        center_index = int(np.argmin(np.abs(grid - center)))
+        walk_orders = [
+            list(range(center_index, -1, -1)),
+            list(range(center_index + 1, points)),
+        ]
+        for walk_order in walk_orders:
+            start_values = dict(fit["values"])
+            for grid_index in walk_order:
+                value = float(grid[grid_index])
+                profiled = fit_one_variant(
+                    _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
+                    bin_number, "nominal", active_periods=PERIODS,
+                    initial_values=start_values,
+                    fixed_physics_parameters={parameter: value},
+                    fast_profile=True,
+                )
+                nll_values[grid_index] = float(profiled["minimum_nll"])
+                valid_values[grid_index] = bool(profiled["valid"])
+                if profiled["valid"]:
+                    start_values = dict(profiled["values"])
+                # endif
+            # endfor
         # endfor
         finite = np.isfinite(nll_values) & (np.asarray(nll_values) < INVALID_NLL / 10.0)
         minimum = min([float(fit["minimum_nll"])]
-                      + [nll_values[i] for i in range(points) if finite[i]])
-        two_delta = [2.0 * (value - minimum) if finite[i] else math.nan
+                      + [float(nll_values[i]) for i in range(points) if finite[i]])
+        two_delta = [2.0 * (float(value) - minimum) if finite[i] else math.nan
                      for i, value in enumerate(nll_values)]
         results.append({
             "bin_number": bin_number, "parameter": parameter, "fit": fit,
             "profile": {"grid": grid.tolist(), "two_delta_nll": two_delta,
-                        "valid": valid_values},
+                        "valid": valid_values.tolist()},
         })
     # endfor
     return results
@@ -11522,6 +11534,11 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
                 ax.axvline(center, lw=1.0)
                 ax.axvline(center - error, ls="--", lw=0.8)
                 ax.axvline(center + error, ls="--", lw=0.8)
+                if par in ("ll0", "ll1", "u1", "u2"):
+                    ax.set_xlim(-1.0, 1.0)
+                else:
+                    ax.set_xlim(-0.5, 0.5)
+                # endif
                 ax.set_ylim(bottom=0.0, top=max(5.0, min(12.0, np.nanmax(delta) * 1.05)))
                 ax.set_title(f"Bin {b}: $-t^\\prime$ bin {t_index + 1}")
                 ax.grid(alpha=0.20)
@@ -11562,7 +11579,7 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
             ax.step(x, exp, where="mid", lw=1.5, label="Conditional MLE")
             ax.set_title(state_titles[cat]); ax.set_ylabel("Events"); ax.grid(alpha=0.20); ax.legend(frameon=False, fontsize=8)
             rax.axhline(0.0, lw=0.8); rax.plot(x, sub.residual.to_numpy(), "o", ms=3.5)
-            rax.set_ylim(-4.5, 4.5); rax.set_ylabel("Pull"); rax.set_xlabel(r"$\phi$ (rad)"); rax.grid(alpha=0.20)
+            rax.set_ylim(-3.0, 3.0); rax.set_ylabel("Pull"); rax.set_xlabel(r"$\phi$ (rad)"); rax.grid(alpha=0.20)
             plt.setp(ax.get_xticklabels(), visible=False)
         # endfor
         fig.suptitle(f"Bin {b}: conditional-likelihood data/model diagnostic")
@@ -12202,9 +12219,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help=("Run only appendix-ready fit-quality diagnostics for the production "
               "seven-parameter joint MLE: 24 conditional phi data/model plots and "
               "profile-likelihood canvases for all seven amplitudes."))
-    parser.add_argument("--appendix-profile-points", type=int, default=17,
+    parser.add_argument("--appendix-profile-points", type=int, default=51,
         help="Fixed-parameter points per appendix profile likelihood (default: 17).")
-    parser.add_argument("--appendix-phi-bins", type=int, default=12,
+    parser.add_argument("--appendix-phi-bins", type=int, default=18,
         help="Diagnostic phi bins for conditional data/model plots (default: 12).")
     parser.add_argument(
         "--period-stability-only", action="store_true",
