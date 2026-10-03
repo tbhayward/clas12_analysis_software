@@ -11499,15 +11499,35 @@ def _profile_crossing(grid: np.ndarray, delta: np.ndarray, center: float,
 def _appendix_conditional_prediction(
     events: Mapping[str, np.ndarray], run_states: Mapping[str, Mapping[str, np.ndarray]],
     dilution_records: Mapping[tuple[str, int], DilutionRecord], bin_number: int,
-    fit: Mapping[str, Any], phi_edges: np.ndarray,
-) -> tuple[list[dict[str, Any]], dict[str, Any]]:
-    """Observed and conditional-MLE expected populations in four spin categories."""
+    fit: Mapping[str, Any], phi_edges: np.ndarray, smooth_phi_points: int = 181,
+    smooth_max_events: int = 5000,
+) -> tuple[list[dict[str, Any]], dict[str, Any], list[dict[str, Any]]]:
+    """Conditional state fractions plus an empirical-average continuous MLE curve.
+
+    The binned expectations and pulls use every accepted event exactly.  The smooth
+    curve is visualization-only: at each displayed phi value the fitted conditional
+    state probability is averaged over a deterministic representative subsample of
+    the accepted events' remaining kinematics.
+    """
     values = fit["values"]
     categories = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
     nbins = len(phi_edges) - 1
     observed = {cat: np.zeros(nbins, dtype=float) for cat in categories}
     expected = {cat: np.zeros(nbins, dtype=float) for cat in categories}
     variance = {cat: np.zeros(nbins, dtype=float) for cat in categories}
+    totals = np.zeros(nbins, dtype=float)
+
+    # Store a bounded deterministic sample of non-phi event kinematics for the
+    # visualization-only continuous empirical-average conditional probability.
+    smooth_records: list[dict[str, Any]] = []
+    bin_mask_all = events["bin_number"] == bin_number
+    all_indices = np.flatnonzero(bin_mask_all)
+    if all_indices.size > smooth_max_events:
+        choose = np.linspace(0, all_indices.size - 1, smooth_max_events, dtype=int)
+        smooth_indices = all_indices[choose]
+    else:
+        smooth_indices = all_indices
+    # endif
 
     for period in PERIODS:
         mask = ((events["bin_number"] == bin_number)
@@ -11533,6 +11553,7 @@ def _appendix_conditional_prediction(
         beam_pol = BEAM_POLARIZATION[period]
         bin_index = np.searchsorted(phi_edges, phi, side="right") - 1
         in_range = (bin_index >= 0) & (bin_index < nbins)
+        totals += np.bincount(bin_index[in_range], minlength=nbins)[:nbins]
 
         weights_by_cat: dict[tuple[int, int], np.ndarray] = {}
         denominator = np.zeros(phi.shape, dtype=float)
@@ -11575,6 +11596,19 @@ def _appendix_conditional_prediction(
                 variance[cat][k] += float(np.sum(p * (1.0 - p)))
             # endfor
         # endfor
+
+        period_sample = smooth_indices[events["period_index"][smooth_indices] == PERIOD_INDEX[period]]
+        if period_sample.size:
+            smooth_records.append({
+                "period": period,
+                "r_b": events["rB"][period_sample].astype(float, copy=False),
+                "r_c": events["rC"][period_sample].astype(float, copy=False),
+                "r_v": events["rV"][period_sample].astype(float, copy=False),
+                "r_w": events["rW"][period_sample].astype(float, copy=False),
+                "sin_theta": events["sin_theta_gamma"][period_sample].astype(float, copy=False),
+                "cos_theta": events["cos_theta_gamma"][period_sample].astype(float, copy=False),
+            })
+        # endif
     # endfor
 
     rows: list[dict[str, Any]] = []
@@ -11582,21 +11616,94 @@ def _appendix_conditional_prediction(
     for cat in categories:
         target_sign, h = cat
         for k in range(nbins):
-            sigma = math.sqrt(max(variance[cat][k], 0.0))
-            residual = ((observed[cat][k] - expected[cat][k]) / sigma
-                        if sigma > 0.0 else math.nan)
+            n_total = float(totals[k])
+            sigma_count = math.sqrt(max(variance[cat][k], 0.0))
+            residual = ((observed[cat][k] - expected[cat][k]) / sigma_count
+                        if sigma_count > 0.0 else math.nan)
             if math.isfinite(residual):
                 residual_values.append(residual)
             # endif
+            obs_fraction = observed[cat][k] / n_total if n_total > 0.0 else math.nan
+            exp_fraction = expected[cat][k] / n_total if n_total > 0.0 else math.nan
+            # Binomial-looking error bar is used only to display the observed
+            # conditional fraction.  The pull below uses the exact event-wise
+            # conditional variance sum p_i(1-p_i).
+            obs_fraction_error = (math.sqrt(max(obs_fraction * (1.0 - obs_fraction), 0.0) / n_total)
+                                  if n_total > 0.0 and math.isfinite(obs_fraction) else math.nan)
             rows.append({
                 "bin_number": bin_number, "target_sign": target_sign, "helicity": h,
                 "phi_bin": k, "phi_low": float(phi_edges[k]), "phi_high": float(phi_edges[k + 1]),
                 "phi_center": float(0.5 * (phi_edges[k] + phi_edges[k + 1])),
+                "total_events_in_phi_bin": n_total,
                 "observed": float(observed[cat][k]), "expected": float(expected[cat][k]),
+                "observed_fraction": obs_fraction, "expected_fraction": exp_fraction,
+                "observed_fraction_error": obs_fraction_error,
                 "conditional_variance": float(variance[cat][k]), "residual": residual,
             })
         # endfor
     # endfor
+
+    # Smooth empirical-average conditional probability.  This is a continuous
+    # visualization of the fitted model, not the quantity used for residuals.
+    smooth_rows: list[dict[str, Any]] = []
+    phi_grid = np.linspace(float(phi_edges[0]), float(phi_edges[-1]), int(smooth_phi_points))
+    total_smooth_events = sum(len(record["r_b"]) for record in smooth_records)
+    for phi_value in phi_grid:
+        sums = {cat: 0.0 for cat in categories}
+        count = 0
+        for record in smooth_records:
+            period = str(record["period"])
+            n = len(record["r_b"])
+            if n == 0:
+                continue
+            # endif
+            state = run_states[period]
+            dilution = float(values[f"f_{period}"])
+            beam_pol = BEAM_POLARIZATION[period]
+            phi_array = np.full(n, phi_value, dtype=float)
+            denominator = np.zeros(n, dtype=float)
+            cat_weights: dict[tuple[int, int], np.ndarray] = {}
+            for cat in categories:
+                target_sign, h = cat
+                state_mask = np.sign(state["pt"]) == target_sign
+                charges = state["q_plus"] if h > 0 else state["q_minus"]
+                weight = np.zeros(n, dtype=float)
+                for j in np.flatnonzero(state_mask):
+                    charge = float(charges[j])
+                    if charge <= 0.0:
+                        continue
+                    # endif
+                    factor = evaluate_cross_section_factor(
+                        variant="nominal", phi=phi_array,
+                        r_b=record["r_b"], r_c=record["r_c"], r_v=record["r_v"], r_w=record["r_w"],
+                        sin_theta_gamma=record["sin_theta"], cos_theta_gamma=record["cos_theta"],
+                        helicity=np.full(n, h, dtype=float), beam_polarization=beam_pol,
+                        target_polarization=np.full(n, float(state["pt"][j])), dilution=dilution,
+                        transverse_scales=None,
+                        **{name: float(values[name]) for name in PHYSICS_PARAMETERS},
+                    )
+                    weight += charge * factor
+                # endfor
+                cat_weights[cat] = weight
+                denominator += weight
+            # endfor
+            valid = denominator > CROSS_SECTION_FLOOR
+            for cat in categories:
+                sums[cat] += float(np.sum(cat_weights[cat][valid] / denominator[valid]))
+            # endfor
+            count += int(np.sum(valid))
+        # endfor
+        if count > 0:
+            for cat in categories:
+                smooth_rows.append({
+                    "bin_number": bin_number, "target_sign": cat[0], "helicity": cat[1],
+                    "phi": float(phi_value), "conditional_probability": sums[cat] / count,
+                    "sample_events": int(total_smooth_events),
+                })
+            # endfor
+        # endif
+    # endfor
+
     residual_array = np.asarray(residual_values, dtype=float)
     summary = {
         "bin_number": bin_number,
@@ -11608,8 +11715,10 @@ def _appendix_conditional_prediction(
         "number_abs_pull_gt_2": int(np.sum(np.abs(residual_array) > 2.0)),
         "number_abs_pull_gt_3": int(np.sum(np.abs(residual_array) > 3.0)),
         "sum_pull_squared": float(np.sum(np.square(residual_array))) if residual_array.size else math.nan,
+        "smooth_curve_sample_events": int(total_smooth_events),
+        "smooth_curve_phi_points": int(len(phi_grid)),
     }
-    return rows, summary
+    return rows, summary, smooth_rows
 
 
 def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: int,
@@ -11820,25 +11929,36 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
 
     phi_edges = np.linspace(0.0, 2.0 * math.pi, args.appendix_phi_bins + 1)
     conditional_rows: list[dict[str, Any]] = []
+    smooth_conditional_rows: list[dict[str, Any]] = []
     residual_summaries: list[dict[str, Any]] = []
     state_titles = {(-1, -1): r"$P_t<0,\ h=-1$", (-1, 1): r"$P_t<0,\ h=+1$",
                     (1, -1): r"$P_t>0,\ h=-1$", (1, 1): r"$P_t>0,\ h=+1$"}
     for b in range(1, NUMBER_OF_BINS + 1):
         fit = by_key[(b, PHYSICS_PARAMETERS[0])]["fit"]
-        rows, summary = _appendix_conditional_prediction(
+        rows, summary, smooth_rows = _appendix_conditional_prediction(
             events, run_states, dilution_records, b, fit, phi_edges)
         conditional_rows.extend(rows); residual_summaries.append(summary)
+        smooth_conditional_rows.extend(smooth_rows)
         frame = pd.DataFrame(rows)
+        smooth_frame = pd.DataFrame(smooth_rows)
         fig = plt.figure(figsize=(12.0, 8.8))
         outer = fig.add_gridspec(2, 2, wspace=0.25, hspace=0.30)
         for index, cat in enumerate([(-1, -1), (-1, 1), (1, -1), (1, 1)]):
             inner = outer[index // 2, index % 2].subgridspec(2, 1, height_ratios=(3.2, 1.0), hspace=0.04)
             ax = fig.add_subplot(inner[0]); rax = fig.add_subplot(inner[1], sharex=ax)
             sub = frame[(frame.target_sign == cat[0]) & (frame.helicity == cat[1])]
-            x = sub.phi_center.to_numpy(); obs = sub.observed.to_numpy(); exp = sub.expected.to_numpy()
-            ax.errorbar(x, obs, yerr=np.sqrt(np.maximum(obs, 1.0)), fmt="o", ms=4, capsize=2, label="Observed")
-            ax.step(x, exp, where="mid", lw=1.5, label="Conditional MLE")
-            ax.set_title(state_titles[cat]); ax.set_ylabel("Events"); ax.grid(alpha=0.20); ax.legend(frameon=False, fontsize=8)
+            x = sub.phi_center.to_numpy()
+            obs_fraction = sub.observed_fraction.to_numpy(dtype=float)
+            obs_error = sub.observed_fraction_error.to_numpy(dtype=float)
+            exp_fraction = sub.expected_fraction.to_numpy(dtype=float)
+            smooth_sub = smooth_frame[(smooth_frame.target_sign == cat[0]) & (smooth_frame.helicity == cat[1])]
+            ax.errorbar(x, obs_fraction, yerr=obs_error, fmt="o", ms=4, capsize=2, label="Observed fraction")
+            ax.plot(smooth_sub.phi.to_numpy(dtype=float), smooth_sub.conditional_probability.to_numpy(dtype=float),
+                    lw=1.6, label="Continuous conditional MLE")
+            # Retain the exact full-sample binned expectation as small markers;
+            # these are the expectations actually used in the pull calculation.
+            ax.plot(x, exp_fraction, "s", ms=2.8, label="Binned MLE expectation")
+            ax.set_title(state_titles[cat]); ax.set_ylabel("Conditional fraction"); ax.grid(alpha=0.20); ax.legend(frameon=False, fontsize=8)
             rax.axhline(0.0, lw=0.8); rax.plot(x, sub.residual.to_numpy(), "o", ms=3.5)
             rax.set_ylim(-3.0, 3.0); rax.set_ylabel("Pull"); rax.set_xlabel(r"$\phi$ (rad)"); rax.grid(alpha=0.20)
             plt.setp(ax.get_xticklabels(), visible=False)
@@ -11851,6 +11971,7 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
     conditional_frame = pd.DataFrame(conditional_rows)
     residual_frame = pd.DataFrame(residual_summaries)
     conditional_frame.to_csv(table_dir / "conditional_phi_data_model.csv", index=False)
+    pd.DataFrame(smooth_conditional_rows).to_csv(table_dir / "conditional_phi_smooth_curve.csv", index=False)
     residual_frame.to_csv(table_dir / "conditional_residual_summary.csv", index=False)
 
     all_pulls = conditional_frame.residual.to_numpy(dtype=float)
@@ -11889,7 +12010,7 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
         "profile_levels_two_delta_nll": {"68.3_percent": 1.0, "95_percent": 3.84},
         "profile_points_maximum": int(args.appendix_profile_points), "profile_stop_level": float(args.appendix_profile_stop_level), "profile_timeout_seconds": float(args.appendix_profile_timeout), "phi_bins": int(args.appendix_phi_bins),
         "cache": str(cache_path), "dilution_json": str(dilution_json_path),
-        "conditional_plot_note": "Phi binning is diagnostic only. Expected populations are sums of event-by-event conditional spin-state probabilities at the observed event kinematics.",
+        "conditional_plot_note": "Data points are observed polarization-state fractions in diagnostic phi bins. Binned MLE expectations and pulls use the full event sample exactly. The continuous line is a visualization-only empirical-average fitted conditional probability evaluated on a dense phi grid using a deterministic representative subsample of at most 5000 accepted events per physics bin; it is not used in the residual calculation.",
     })
     print("[appendix MLE] complete", flush=True)
     print(f"  Output: {out_dir}", flush=True)
