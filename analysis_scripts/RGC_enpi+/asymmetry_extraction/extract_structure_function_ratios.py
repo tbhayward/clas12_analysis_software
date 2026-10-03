@@ -4572,7 +4572,7 @@ def plot_aggregated_by_x(
             apply_parameter_y_limits(ax, parameter)
             ax.grid(alpha=0.25)
             if parameter in PHYSICS_PANEL_ROWS[-1][1]:
-                ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
+                ax.set_xlabel(r"$-t^\\prime$ (GeV$^2$)")
             # endif
         # endfor
 
@@ -4669,7 +4669,7 @@ def plot_aggregated_by_period(
             apply_parameter_y_limits(ax, parameter)
             ax.grid(alpha=0.25)
             if parameter in PHYSICS_PANEL_ROWS[-1][1]:
-                ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
+                ax.set_xlabel(r"$-t^\\prime$ (GeV$^2$)")
             # endif
         # endfor
 
@@ -4775,7 +4775,7 @@ def plot_target_axis_variants(
             apply_parameter_y_limits(ax, parameter)
             ax.grid(alpha=0.25)
             if parameter in PHYSICS_PANEL_ROWS[-1][1]:
-                ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
+                ax.set_xlabel(r"$-t^\\prime$ (GeV$^2$)")
             # endif
         # endfor
 
@@ -6382,7 +6382,7 @@ def plot_period_stability(
                 apply_parameter_y_limits(ax, parameter)
                 ax.grid(alpha=0.25)
                 if parameter in PHYSICS_PANEL_ROWS[-1][1]:
-                    ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
+                    ax.set_xlabel(r"$-t^\\prime$ (GeV$^2$)")
                 # endif
             # endfor
 
@@ -11118,6 +11118,370 @@ def run_solenoid_split_diagnostic(
     print(f"[solenoid split] plots: {plots}", flush=True)
     return 0
 
+
+# =============================================================================
+# Appendix MLE fit-quality diagnostics
+# =============================================================================
+
+def _appendix_profile_worker(task: dict[str, Any]) -> dict[str, Any]:
+    """Profile one parameter in one bin with the full seven-parameter nominal MLE."""
+    if (_WORKER_EVENTS is None or _WORKER_RUN_STATES is None
+            or _WORKER_DILUTION_RECORDS is None):
+        raise RuntimeError("Appendix diagnostic worker was not initialized.")
+    # endif
+    bin_number = int(task["bin_number"])
+    parameter = str(task["parameter"])
+    points = int(task["profile_points"])
+    fit = fit_one_variant(
+        _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
+        bin_number, "nominal", active_periods=PERIODS,
+    )
+    if not fit["valid"]:
+        return {"bin_number": bin_number, "parameter": parameter,
+                "fit": fit, "profile": None}
+    # endif
+    center = float(fit["values"][parameter])
+    sigma = max(float(fit["errors"][parameter]), 1.0e-3)
+    low_limit, high_limit = PARAMETER_LIMITS[parameter]
+    half_width = max(5.0 * sigma, 0.25)
+    low = max(low_limit, center - half_width)
+    high = min(high_limit, center + half_width)
+    grid = np.linspace(low, high, points)
+    nll_values: list[float] = []
+    valid_values: list[bool] = []
+    start = dict(fit["values"])
+    for value in grid:
+        profiled = fit_one_variant(
+            _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
+            bin_number, "nominal", active_periods=PERIODS,
+            initial_values=start,
+            fixed_physics_parameters={parameter: float(value)},
+        )
+        nll_values.append(float(profiled["minimum_nll"]))
+        valid_values.append(bool(profiled["valid"]))
+        if profiled["valid"]:
+            start = dict(profiled["values"])
+        # endif
+    # endfor
+    finite = np.isfinite(nll_values) & (np.asarray(nll_values) < INVALID_NLL / 10.0)
+    minimum = min([float(fit["minimum_nll"])] + [nll_values[i] for i in range(points) if finite[i]])
+    two_delta = [2.0 * (value - minimum) if finite[i] else math.nan
+                 for i, value in enumerate(nll_values)]
+    return {
+        "bin_number": bin_number, "parameter": parameter, "fit": fit,
+        "profile": {"grid": grid.tolist(), "two_delta_nll": two_delta,
+                    "valid": valid_values},
+    }
+
+
+def _profile_crossing(grid: np.ndarray, delta: np.ndarray, center: float,
+                      level: float, side: str) -> float | None:
+    finite = np.isfinite(grid) & np.isfinite(delta)
+    x = grid[finite]; y = delta[finite]
+    if side == "low":
+        mask = x <= center
+        x = x[mask][::-1]; y = y[mask][::-1]
+    else:
+        mask = x >= center
+        x = x[mask]; y = y[mask]
+    # endif
+    if x.size < 2:
+        return None
+    # endif
+    for i in range(x.size - 1):
+        y0, y1 = y[i], y[i + 1]
+        if (y0 - level) * (y1 - level) <= 0.0 and y1 != y0:
+            fraction = (level - y0) / (y1 - y0)
+            return float(x[i] + fraction * (x[i + 1] - x[i]))
+        # endif
+    # endfor
+    return None
+
+
+def _appendix_conditional_prediction(
+    events: Mapping[str, np.ndarray], run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord], bin_number: int,
+    fit: Mapping[str, Any], phi_edges: np.ndarray,
+) -> tuple[list[dict[str, Any]], dict[str, Any]]:
+    """Observed and conditional-MLE expected populations in four spin categories."""
+    values = fit["values"]
+    categories = [(-1, -1), (-1, 1), (1, -1), (1, 1)]
+    nbins = len(phi_edges) - 1
+    observed = {cat: np.zeros(nbins, dtype=float) for cat in categories}
+    expected = {cat: np.zeros(nbins, dtype=float) for cat in categories}
+    variance = {cat: np.zeros(nbins, dtype=float) for cat in categories}
+
+    for period in PERIODS:
+        mask = ((events["bin_number"] == bin_number)
+                & (events["period_index"] == PERIOD_INDEX[period]))
+        if not np.any(mask):
+            continue
+        # endif
+        phi = events["phi"][mask].astype(float, copy=False)
+        r_b = events["rB"][mask].astype(float, copy=False)
+        r_c = events["rC"][mask].astype(float, copy=False)
+        r_v = events["rV"][mask].astype(float, copy=False)
+        r_w = events["rW"][mask].astype(float, copy=False)
+        sin_theta = events["sin_theta_gamma"][mask].astype(float, copy=False)
+        cos_theta = events["cos_theta_gamma"][mask].astype(float, copy=False)
+        runnum = events["runnum"][mask].astype(np.int32, copy=False)
+        helicity = events["helicity"][mask].astype(np.int8, copy=False)
+        state = run_states[period]
+        lookup = {int(run): i for i, run in enumerate(state["run"])}
+        observed_state = np.fromiter((lookup[int(run)] for run in runnum),
+                                     count=runnum.size, dtype=np.int32)
+        observed_sign = np.sign(state["pt"][observed_state]).astype(np.int8)
+        dilution = float(values[f"f_{period}"])
+        beam_pol = BEAM_POLARIZATION[period]
+        bin_index = np.searchsorted(phi_edges, phi, side="right") - 1
+        in_range = (bin_index >= 0) & (bin_index < nbins)
+
+        weights_by_cat: dict[tuple[int, int], np.ndarray] = {}
+        denominator = np.zeros(phi.shape, dtype=float)
+        for target_sign, h in categories:
+            state_mask = np.sign(state["pt"]) == target_sign
+            charges = state["q_plus"] if h > 0 else state["q_minus"]
+            cat_weight = np.zeros(phi.shape, dtype=float)
+            for j in np.flatnonzero(state_mask):
+                charge = float(charges[j])
+                if charge <= 0.0:
+                    continue
+                # endif
+                factor = evaluate_cross_section_factor(
+                    variant="nominal", phi=phi, r_b=r_b, r_c=r_c, r_v=r_v, r_w=r_w,
+                    sin_theta_gamma=sin_theta, cos_theta_gamma=cos_theta,
+                    helicity=np.full(phi.shape, h, dtype=float),
+                    beam_polarization=beam_pol,
+                    target_polarization=np.full(phi.shape, float(state["pt"][j])),
+                    dilution=dilution, transverse_scales=None,
+                    **{name: float(values[name]) for name in PHYSICS_PARAMETERS},
+                )
+                cat_weight += charge * factor
+            # endfor
+            weights_by_cat[(target_sign, h)] = cat_weight
+            denominator += cat_weight
+        # endfor
+        if np.any(denominator <= CROSS_SECTION_FLOOR):
+            raise RuntimeError(f"Non-positive appendix diagnostic denominator in bin {bin_number}, {period}.")
+        # endif
+
+        for cat in categories:
+            target_sign, h = cat
+            obs_mask = in_range & (observed_sign == target_sign) & (helicity == h)
+            observed[cat] += np.bincount(bin_index[obs_mask], minlength=nbins)[:nbins]
+            probability = weights_by_cat[cat] / denominator
+            for k in range(nbins):
+                k_mask = in_range & (bin_index == k)
+                p = probability[k_mask]
+                expected[cat][k] += float(np.sum(p))
+                variance[cat][k] += float(np.sum(p * (1.0 - p)))
+            # endfor
+        # endfor
+    # endfor
+
+    rows: list[dict[str, Any]] = []
+    residual_values: list[float] = []
+    for cat in categories:
+        target_sign, h = cat
+        for k in range(nbins):
+            sigma = math.sqrt(max(variance[cat][k], 0.0))
+            residual = ((observed[cat][k] - expected[cat][k]) / sigma
+                        if sigma > 0.0 else math.nan)
+            if math.isfinite(residual):
+                residual_values.append(residual)
+            # endif
+            rows.append({
+                "bin_number": bin_number, "target_sign": target_sign, "helicity": h,
+                "phi_bin": k, "phi_low": float(phi_edges[k]), "phi_high": float(phi_edges[k + 1]),
+                "phi_center": float(0.5 * (phi_edges[k] + phi_edges[k + 1])),
+                "observed": float(observed[cat][k]), "expected": float(expected[cat][k]),
+                "conditional_variance": float(variance[cat][k]), "residual": residual,
+            })
+        # endfor
+    # endfor
+    summary = {
+        "bin_number": bin_number,
+        "number_of_events": int(fit["metadata"]["number_of_events"]),
+        "residual_mean": float(np.mean(residual_values)) if residual_values else math.nan,
+        "residual_rms": float(np.sqrt(np.mean(np.square(residual_values)))) if residual_values else math.nan,
+        "maximum_absolute_residual": float(np.max(np.abs(residual_values))) if residual_values else math.nan,
+    }
+    return rows, summary
+
+
+def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: int,
+                                 dilution_json_path: Path) -> int:
+    """Produce appendix-ready diagnostics for the production seven-parameter joint MLE."""
+    out_dir = root / "appendix_mle_diagnostics"
+    conditional_dir = out_dir / "conditional_fit_quality"
+    profile_dir = out_dir / "profile_likelihoods"
+    table_dir = out_dir / "tables"
+    for directory in (out_dir, conditional_dir, profile_dir, table_dir):
+        ensure_directory(directory)
+    # endfor
+    cache_path = (args.cache.expanduser().resolve() if args.cache
+                  else root / "nominal/cache/selected_events.npz")
+    if not cache_path.is_file():
+        raise FileNotFoundError(
+            f"Nominal selected-event cache not found: {cache_path}. Run the nominal extraction first or pass --cache."
+        )
+    # endif
+    events = load_event_cache(cache_path)
+    run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
+    run_states = run_state_arrays(run_records)
+    dilution_records = load_dilution_factors(dilution_json_path, cut_label="nominal")
+    run_state_payload = {p: {k: v.tolist() for k, v in s.items()} for p, s in run_states.items()}
+    dilution_payload = {
+        p: {str(b): {"x_index": r.x_index, "t_index": r.t_index, "value": r.value,
+                     "stat_uncertainty": r.stat_uncertainty}
+            for (rp, b), r in dilution_records.items() if rp == p}
+        for p in PERIODS
+    }
+    tasks = [{"bin_number": b, "parameter": par,
+              "profile_points": args.appendix_profile_points}
+             for b in range(1, NUMBER_OF_BINS + 1) for par in PHYSICS_PARAMETERS]
+    results: list[dict[str, Any]] = []
+    mp_context = mp.get_context("spawn")
+    with ProcessPoolExecutor(
+        max_workers=min(workers, len(tasks)), mp_context=mp_context,
+        initializer=initialize_fit_worker,
+        initargs=(str(cache_path), run_state_payload, dilution_payload),
+    ) as executor:
+        futures = [executor.submit(_appendix_profile_worker, task) for task in tasks]
+        for index, future in enumerate(as_completed(futures), start=1):
+            results.append(future.result())
+            print(f"[appendix MLE] profiles {index}/{len(tasks)}", flush=True)
+        # endfor
+    # endwith
+    by_key = {(r["bin_number"], r["parameter"]): r for r in results}
+
+    profile_rows: list[dict[str, Any]] = []
+    crossing_rows: list[dict[str, Any]] = []
+    fit_rows: list[dict[str, Any]] = []
+    for b in range(1, NUMBER_OF_BINS + 1):
+        fit = by_key[(b, PHYSICS_PARAMETERS[0])]["fit"]
+        fit_rows.append({
+            "bin_number": b, "number_of_events": fit["metadata"]["number_of_events"],
+            "valid": fit["valid"], "accurate_covariance": fit["accurate_covariance"],
+            "positive_definite_covariance": fit["positive_definite_covariance"],
+            "parameters_at_limit": fit["parameters_at_limit"], "edm": fit["edm"],
+            "minimum_nll": fit["minimum_nll"],
+            **{name: fit["values"][name] for name in PHYSICS_PARAMETERS},
+            **{f"{name}_stat": fit["errors"][name] for name in PHYSICS_PARAMETERS},
+        })
+        for par in PHYSICS_PARAMETERS:
+            item = by_key[(b, par)]; profile = item["profile"]
+            if profile is None:
+                continue
+            # endif
+            grid = np.asarray(profile["grid"], dtype=float)
+            delta = np.asarray(profile["two_delta_nll"], dtype=float)
+            center = float(item["fit"]["values"][par])
+            for x, y, valid in zip(grid, delta, profile["valid"]):
+                profile_rows.append({"bin_number": b, "parameter": par,
+                                     "parameter_value": x, "two_delta_nll": y,
+                                     "profile_fit_valid": valid})
+            # endfor
+            crossing_rows.append({
+                "bin_number": b, "parameter": par, "mle": center,
+                "hesse_stat": float(item["fit"]["errors"][par]),
+                "low_68": _profile_crossing(grid, delta, center, 1.0, "low"),
+                "high_68": _profile_crossing(grid, delta, center, 1.0, "high"),
+                "low_95": _profile_crossing(grid, delta, center, 3.84, "low"),
+                "high_95": _profile_crossing(grid, delta, center, 3.84, "high"),
+            })
+        # endfor
+    # endfor
+    pd.DataFrame(fit_rows).to_csv(table_dir / "joint_fit_status.csv", index=False)
+    pd.DataFrame(profile_rows).to_csv(table_dir / "profile_likelihood_points.csv", index=False)
+    pd.DataFrame(crossing_rows).to_csv(table_dir / "profile_likelihood_crossings.csv", index=False)
+
+    for par in PHYSICS_PARAMETERS:
+        for x_index in range(len(XB_BINS)):
+            fig, axes = plt.subplots(2, 3, figsize=(12.5, 7.8), sharey=True)
+            for t_index, ax in enumerate(axes.flat):
+                b = combined_bin_number(x_index, t_index)
+                item = by_key[(b, par)]
+                profile = item["profile"]
+                if profile is None:
+                    ax.text(0.5, 0.5, "invalid fit", ha="center", va="center", transform=ax.transAxes)
+                    continue
+                # endif
+                grid = np.asarray(profile["grid"], dtype=float)
+                delta = np.asarray(profile["two_delta_nll"], dtype=float)
+                center = float(item["fit"]["values"][par])
+                error = float(item["fit"]["errors"][par])
+                ax.plot(grid, delta, marker="o", ms=2.8, lw=1.2)
+                ax.axhline(1.0, ls="--", lw=0.9)
+                ax.axhline(3.84, ls=":", lw=0.9)
+                ax.axvline(center, lw=1.0)
+                ax.axvline(center - error, ls="--", lw=0.8)
+                ax.axvline(center + error, ls="--", lw=0.8)
+                ax.set_ylim(bottom=0.0, top=max(5.0, min(12.0, np.nanmax(delta) * 1.05)))
+                ax.set_title(f"Bin {b}: $-t^\\prime$ bin {t_index + 1}")
+                ax.grid(alpha=0.20)
+                if t_index >= 3:
+                    ax.set_xlabel(PARAMETER_LABELS[par])
+                # endif
+                if t_index % 3 == 0:
+                    ax.set_ylabel(r"$-2\Delta\ln\mathcal{L}$")
+                # endif
+            # endfor
+            xlow, xhigh = XB_BINS[x_index]
+            fig.suptitle(f"Joint-fit profile likelihood: {PARAMETER_LABELS[par]},  {xlow:.3f} < $x_B$ < {xhigh:.3f}")
+            fig.tight_layout(rect=(0, 0, 1, 0.96))
+            fig.savefig(profile_dir / f"profile_{par}_xbin_{x_index + 1}.png", dpi=200)
+            plt.close(fig)
+        # endfor
+    # endfor
+
+    phi_edges = np.linspace(0.0, 2.0 * math.pi, args.appendix_phi_bins + 1)
+    conditional_rows: list[dict[str, Any]] = []
+    residual_summaries: list[dict[str, Any]] = []
+    state_titles = {(-1, -1): r"$P_t<0,\ h=-1$", (-1, 1): r"$P_t<0,\ h=+1$",
+                    (1, -1): r"$P_t>0,\ h=-1$", (1, 1): r"$P_t>0,\ h=+1$"}
+    for b in range(1, NUMBER_OF_BINS + 1):
+        fit = by_key[(b, PHYSICS_PARAMETERS[0])]["fit"]
+        rows, summary = _appendix_conditional_prediction(
+            events, run_states, dilution_records, b, fit, phi_edges)
+        conditional_rows.extend(rows); residual_summaries.append(summary)
+        frame = pd.DataFrame(rows)
+        fig = plt.figure(figsize=(12.0, 8.8))
+        outer = fig.add_gridspec(2, 2, wspace=0.25, hspace=0.30)
+        for index, cat in enumerate([(-1, -1), (-1, 1), (1, -1), (1, 1)]):
+            inner = outer[index // 2, index % 2].subgridspec(2, 1, height_ratios=(3.2, 1.0), hspace=0.04)
+            ax = fig.add_subplot(inner[0]); rax = fig.add_subplot(inner[1], sharex=ax)
+            sub = frame[(frame.target_sign == cat[0]) & (frame.helicity == cat[1])]
+            x = sub.phi_center.to_numpy(); obs = sub.observed.to_numpy(); exp = sub.expected.to_numpy()
+            ax.errorbar(x, obs, yerr=np.sqrt(np.maximum(obs, 1.0)), fmt="o", ms=4, capsize=2, label="Observed")
+            ax.step(x, exp, where="mid", lw=1.5, label="Conditional MLE")
+            ax.set_title(state_titles[cat]); ax.set_ylabel("Events"); ax.grid(alpha=0.20); ax.legend(frameon=False, fontsize=8)
+            rax.axhline(0.0, lw=0.8); rax.plot(x, sub.residual.to_numpy(), "o", ms=3.5)
+            rax.set_ylim(-4.5, 4.5); rax.set_ylabel("Pull"); rax.set_xlabel(r"$\phi$ (rad)"); rax.grid(alpha=0.20)
+            plt.setp(ax.get_xticklabels(), visible=False)
+        # endfor
+        fig.suptitle(f"Bin {b}: conditional-likelihood data/model diagnostic")
+        fig.tight_layout(rect=(0, 0, 1, 0.965))
+        fig.savefig(conditional_dir / f"conditional_fit_bin_{b:02d}.png", dpi=200)
+        plt.close(fig)
+    # endfor
+    pd.DataFrame(conditional_rows).to_csv(table_dir / "conditional_phi_data_model.csv", index=False)
+    pd.DataFrame(residual_summaries).to_csv(table_dir / "conditional_residual_summary.csv", index=False)
+    write_json(out_dir / "appendix_mle_diagnostics_manifest.json", {
+        "mode": "appendix_mle_diagnostics", "fit_model": "production nominal seven-parameter joint MLE",
+        "parameters": list(PHYSICS_PARAMETERS), "periods": list(PERIODS),
+        "profile_levels_two_delta_nll": {"68.3_percent": 1.0, "95_percent": 3.84},
+        "profile_points": int(args.appendix_profile_points), "phi_bins": int(args.appendix_phi_bins),
+        "cache": str(cache_path), "dilution_json": str(dilution_json_path),
+        "conditional_plot_note": "Phi binning is diagnostic only. Expected populations are sums of event-by-event conditional spin-state probabilities at the observed event kinematics.",
+    })
+    print("[appendix MLE] complete", flush=True)
+    print(f"  Output: {out_dir}", flush=True)
+    print(f"  Conditional plots: {NUMBER_OF_BINS}", flush=True)
+    print(f"  Profile canvases: {len(PHYSICS_PARAMETERS) * len(XB_BINS)}", flush=True)
+    return 0
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -11180,6 +11544,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument("--chunk-size", default=DEFAULT_CHUNK_SIZE)
     parser.add_argument("--workers", type=int, default=MAXIMUM_WORKERS)
     parser.add_argument("--skip-plots", action="store_true")
+    parser.add_argument("--appendix-mle-diagnostics", action="store_true",
+        help=("Run only appendix-ready fit-quality diagnostics for the production "
+              "seven-parameter joint MLE: 24 conditional phi data/model plots and "
+              "profile-likelihood canvases for all seven amplitudes."))
+    parser.add_argument("--appendix-profile-points", type=int, default=31,
+        help="Fixed-parameter points per appendix profile likelihood (default: 31).")
+    parser.add_argument("--appendix-phi-bins", type=int, default=12,
+        help="Diagnostic phi bins for conditional data/model plots (default: 12).")
     parser.add_argument(
         "--period-stability-only", action="store_true",
         help=(
@@ -11362,6 +11734,9 @@ def main() -> int:
             args.dilution_dir.expanduser().resolve()
         ).resolve()
     )
+    if args.appendix_mle_diagnostics:
+        return run_appendix_mle_diagnostics(args, root, workers, nominal_dilution)
+    # endif
     if args.double_spin_target_split:
         return run_double_spin_target_split_diagnostic(
             cache_path=(
