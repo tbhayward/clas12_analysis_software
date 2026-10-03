@@ -207,6 +207,7 @@ from __future__ import annotations
 import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import multiprocessing as mp
+import queue
 import time
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -11198,82 +11199,278 @@ def run_solenoid_split_diagnostic(
 # Appendix MLE fit-quality diagnostics
 # =============================================================================
 
-def _appendix_profile_worker(task: dict[str, Any]) -> list[dict[str, Any]]:
-    """Profile all seven parameters for one bin using one shared nominal MLE.
+def _appendix_nominal_worker(task: dict[str, Any]) -> dict[str, Any]:
+    """Run the ordinary production joint MLE once for one physics bin."""
+    if (_WORKER_EVENTS is None or _WORKER_RUN_STATES is None
+            or _WORKER_DILUTION_RECORDS is None):
+        raise RuntimeError("Appendix diagnostic worker was not initialized.")
+    # endif
+    bin_number = int(task["bin_number"])
+    return fit_one_variant(
+        _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
+        bin_number, "nominal", active_periods=PERIODS,
+    )
 
-    One process owns one physics bin.  This avoids repeating the expensive nominal
-    seven-parameter fit once per profile parameter while retaining warm starts
-    along each one-dimensional profile scan.
+
+def _appendix_single_profile(task: dict[str, Any]) -> dict[str, Any]:
+    """Profile one amplitude in one bin using an adaptive outward scan.
+
+    The nominal MLE is supplied by the parent.  Constrained fits walk away from
+    that minimum independently on the low and high sides.  Once the actual
+    profile has passed the requested stopping level on a side, more distant
+    points are not evaluated: they add essentially no confidence-interval
+    information and were the dominant source of wasted minimizations.
     """
     if (_WORKER_EVENTS is None or _WORKER_RUN_STATES is None
             or _WORKER_DILUTION_RECORDS is None):
         raise RuntimeError("Appendix diagnostic worker was not initialized.")
     # endif
     bin_number = int(task["bin_number"])
-    points = int(task["profile_points"])
-    fit = fit_one_variant(
-        _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
-        bin_number, "nominal", active_periods=PERIODS,
-    )
-    results: list[dict[str, Any]] = []
+    parameter = str(task["parameter"])
+    fit = task["fit"]
+    maximum_points = max(9, int(task["profile_points"]))
+    stop_level = float(task.get("stop_level", 5.0))
+
     if not fit["valid"]:
-        for parameter in PHYSICS_PARAMETERS:
-            results.append({"bin_number": bin_number, "parameter": parameter,
-                            "fit": fit, "profile": None})
-        # endfor
-        return results
+        return {"bin_number": bin_number, "parameter": parameter,
+                "profile": None, "status": "invalid_nominal"}
     # endif
 
-    for parameter in PHYSICS_PARAMETERS:
-        center = float(fit["values"][parameter])
-        sigma = max(float(fit["errors"][parameter]), 1.0e-3)
-        low_limit, high_limit = PARAMETER_LIMITS[parameter]
-        half_width = max(8.0 * sigma, 0.35)
-        low = max(low_limit, center - half_width)
-        high = min(high_limit, center + half_width)
-        grid = np.linspace(low, high, points)
-        nll_values = np.full(points, math.nan, dtype=float)
-        valid_values = np.zeros(points, dtype=bool)
+    center = float(fit["values"][parameter])
+    sigma = max(float(fit["errors"][parameter]), 1.0e-3)
+    low_limit, high_limit = PARAMETER_LIMITS[parameter]
+    half_width = max(8.0 * sigma, 0.35)
+    low = max(low_limit, center - half_width)
+    high = min(high_limit, center + half_width)
 
-        # Walk outward from the nominal MLE independently on the two sides.
-        # This gives every constrained fit a nearby warm start instead of
-        # dragging a solution all the way from one edge of the profile to the other.
-        center_index = int(np.argmin(np.abs(grid - center)))
-        walk_orders = [
-            list(range(center_index, -1, -1)),
-            list(range(center_index + 1, points)),
-        ]
-        for walk_order in walk_orders:
-            start_values = dict(fit["values"])
-            for grid_index in walk_order:
-                value = float(grid[grid_index])
-                profiled = fit_one_variant(
-                    _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
-                    bin_number, "nominal", active_periods=PERIODS,
-                    initial_values=start_values,
-                    fixed_physics_parameters={parameter: value},
-                    fast_profile=True,
-                )
-                nll_values[grid_index] = float(profiled["minimum_nll"])
-                valid_values[grid_index] = bool(profiled["valid"])
-                if profiled["valid"]:
-                    start_values = dict(profiled["values"])
+    # Allocate approximately half of the requested maximum points to each side.
+    # A mildly convex spacing gives dense sampling around the confidence-region
+    # crossings while still reaching the tails quickly when a profile is broad.
+    per_side = max(4, (maximum_points - 1) // 2)
+    fractions = np.linspace(0.0, 1.0, per_side + 1)[1:] ** 1.15
+    side_grids = {
+        "low": center - fractions * (center - low),
+        "high": center + fractions * (high - center),
+    }
+
+    evaluated: list[tuple[float, float, bool]] = [(center, float(fit["minimum_nll"]), True)]
+    for side in ("low", "high"):
+        start_values = dict(fit["values"])
+        consecutive_invalid = 0
+        for value in side_grids[side]:
+            profiled = fit_one_variant(
+                _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
+                bin_number, "nominal", active_periods=PERIODS,
+                initial_values=start_values,
+                fixed_physics_parameters={parameter: float(value)},
+                fast_profile=True,
+            )
+            nll_value = float(profiled["minimum_nll"])
+            valid = bool(profiled["valid"] and math.isfinite(nll_value)
+                         and nll_value < INVALID_NLL / 10.0)
+            evaluated.append((float(value), nll_value if valid else math.nan, valid))
+            if valid:
+                start_values = dict(profiled["values"])
+                consecutive_invalid = 0
+                two_delta_nominal = 2.0 * (nll_value - float(fit["minimum_nll"]))
+                # Once safely beyond 95% CL there is no statistical reason to
+                # spend CPU filling the rest of this tail merely for plotting.
+                if two_delta_nominal >= stop_level:
+                    break
+                # endif
+            else:
+                consecutive_invalid += 1
+                # Two adjacent failed constrained fits indicate a numerical tail;
+                # leave that tail unprofiled rather than risking an endless walk.
+                if consecutive_invalid >= 2:
+                    break
+                # endif
+            # endif
+        # endfor
+    # endfor
+
+    evaluated.sort(key=lambda row: row[0])
+    grid = np.asarray([row[0] for row in evaluated], dtype=float)
+    nll_values = np.asarray([row[1] for row in evaluated], dtype=float)
+    valid_values = np.asarray([row[2] for row in evaluated], dtype=bool)
+    finite = valid_values & np.isfinite(nll_values) & (nll_values < INVALID_NLL / 10.0)
+    minimum = min([float(fit["minimum_nll"])]
+                  + [float(v) for v in nll_values[finite]])
+    two_delta = np.full(grid.shape, math.nan, dtype=float)
+    two_delta[finite] = 2.0 * (nll_values[finite] - minimum)
+    return {
+        "bin_number": bin_number, "parameter": parameter, "status": "ok",
+        "profile": {"grid": grid.tolist(), "two_delta_nll": two_delta.tolist(),
+                    "valid": valid_values.tolist(), "evaluated_points": int(grid.size)},
+    }
+
+
+def _appendix_profile_process_loop(
+    task_queue: Any, result_queue: Any, cache_path: str,
+    run_state_payload: Mapping[str, Any], dilution_payload: Mapping[str, Any],
+) -> None:
+    """Persistent killable profile worker used by the appendix scheduler."""
+    initialize_fit_worker(cache_path, run_state_payload, dilution_payload)
+    while True:
+        task = task_queue.get()
+        if task is None:
+            return
+        # endif
+        task_id = str(task["task_id"])
+        result_queue.put({"kind": "started", "task_id": task_id,
+                          "pid": os.getpid(), "time": time.monotonic()})
+        try:
+            result = _appendix_single_profile(task)
+            result_queue.put({"kind": "result", "task_id": task_id,
+                              "pid": os.getpid(), "result": result})
+        except BaseException as exc:
+            result_queue.put({"kind": "error", "task_id": task_id,
+                              "pid": os.getpid(), "error": repr(exc)})
+        # endtry
+    # endwhile
+
+
+def _run_timeout_protected_appendix_profiles(
+    tasks: list[dict[str, Any]], cache_path: Path,
+    run_state_payload: Mapping[str, Any], dilution_payload: Mapping[str, Any],
+    workers: int, timeout_seconds: float, checkpoint_dir: Path,
+) -> list[dict[str, Any]]:
+    """Run independent profiles with real wall-clock timeouts and checkpoints.
+
+    Workers are persistent so the event cache is loaded only once per process.
+    If a Minuit call wedges, the parent terminates that worker, records the
+    timed-out profile, and immediately starts a replacement for remaining work.
+    """
+    ensure_directory(checkpoint_dir)
+    completed: dict[str, dict[str, Any]] = {}
+    pending: list[dict[str, Any]] = []
+    for task in tasks:
+        task_id = str(task["task_id"])
+        checkpoint = checkpoint_dir / f"{task_id}.json"
+        if checkpoint.is_file():
+            try:
+                payload = json.loads(checkpoint.read_text(encoding="utf-8"))
+                if payload.get("status") == "ok" and payload.get("profile") is not None:
+                    completed[task_id] = payload
+                    continue
+                # endif
+            except Exception:
+                pass
+            # endtry
+        # endif
+        pending.append(task)
+    # endfor
+
+    total = len(tasks)
+    if completed:
+        print(f"[appendix MLE] resumed {len(completed)}/{total} profiles from checkpoints", flush=True)
+    # endif
+    if not pending:
+        return [completed[str(task["task_id"])] for task in tasks]
+    # endif
+
+    ctx = mp.get_context("spawn")
+    task_queue = ctx.Queue()
+    result_queue = ctx.Queue()
+    for task in pending:
+        task_queue.put(task)
+    # endfor
+
+    nworkers = max(1, min(int(workers), 8, len(pending)))
+    processes: dict[int, Any] = {}
+    active: dict[int, dict[str, Any]] = {}
+
+    def spawn_worker() -> None:
+        proc = ctx.Process(
+            target=_appendix_profile_process_loop,
+            args=(task_queue, result_queue, str(cache_path),
+                  run_state_payload, dilution_payload),
+        )
+        proc.start()
+        processes[proc.pid] = proc
+    # enddef
+
+    for _ in range(nworkers):
+        spawn_worker()
+    # endfor
+
+    remaining = {str(task["task_id"]): task for task in pending}
+    try:
+        while remaining:
+            try:
+                message = result_queue.get(timeout=1.0)
+            except queue.Empty:
+                message = None
+            # endtry
+            if message is not None:
+                pid = int(message["pid"])
+                task_id = str(message["task_id"])
+                kind = message["kind"]
+                if kind == "started":
+                    active[pid] = {"task_id": task_id, "started": time.monotonic()}
+                elif kind in ("result", "error"):
+                    active.pop(pid, None)
+                    if task_id in remaining:
+                        if kind == "result":
+                            result = message["result"]
+                        else:
+                            task = remaining[task_id]
+                            result = {"bin_number": int(task["bin_number"]),
+                                      "parameter": str(task["parameter"]),
+                                      "profile": None, "status": "error",
+                                      "error": str(message.get("error", "unknown"))}
+                        # endif
+                        completed[task_id] = result
+                        write_json(checkpoint_dir / f"{task_id}.json", result)
+                        remaining.pop(task_id, None)
+                        print(f"[appendix MLE] profiles {len(completed)}/{total}: {task_id} ({result.get('status')})", flush=True)
+                    # endif
+                # endif
+            # endif
+
+            now = time.monotonic()
+            for pid, state in list(active.items()):
+                if now - float(state["started"]) <= timeout_seconds:
+                    continue
+                # endif
+                task_id = str(state["task_id"])
+                proc = processes.pop(pid, None)
+                if proc is not None:
+                    proc.terminate(); proc.join(timeout=5.0)
+                    if proc.is_alive():
+                        proc.kill(); proc.join(timeout=2.0)
+                    # endif
+                # endif
+                active.pop(pid, None)
+                if task_id in remaining:
+                    task = remaining.pop(task_id)
+                    result = {"bin_number": int(task["bin_number"]),
+                              "parameter": str(task["parameter"]),
+                              "profile": None, "status": "timeout",
+                              "timeout_seconds": float(timeout_seconds)}
+                    completed[task_id] = result
+                    write_json(checkpoint_dir / f"{task_id}.json", result)
+                    print(f"[appendix MLE] profiles {len(completed)}/{total}: {task_id} TIMEOUT after {timeout_seconds:.0f} s", flush=True)
+                # endif
+                if remaining:
+                    spawn_worker()
                 # endif
             # endfor
+        # endwhile
+    finally:
+        for _pid, proc in list(processes.items()):
+            if proc.is_alive():
+                task_queue.put(None)
+            # endif
         # endfor
-        finite = np.isfinite(nll_values) & (np.asarray(nll_values) < INVALID_NLL / 10.0)
-        minimum = min([float(fit["minimum_nll"])]
-                      + [float(nll_values[i]) for i in range(points) if finite[i]])
-        two_delta = [2.0 * (float(value) - minimum) if finite[i] else math.nan
-                     for i, value in enumerate(nll_values)]
-        results.append({
-            "bin_number": bin_number, "parameter": parameter, "fit": fit,
-            "profile": {"grid": grid.tolist(), "two_delta_nll": two_delta,
-                        "valid": valid_values.tolist()},
-        })
-    # endfor
-    return results
-
+        for _pid, proc in list(processes.items()):
+            proc.join(timeout=10.0)
+            if proc.is_alive():
+                proc.terminate(); proc.join(timeout=2.0)
+            # endif
+        # endfor
+    # endtry
+    return [completed[str(task["task_id"])] for task in tasks]
 
 def _profile_crossing(grid: np.ndarray, delta: np.ndarray, center: float,
                       level: float, side: str) -> float | None:
@@ -11438,38 +11635,59 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
             for (rp, b), r in dilution_records.items() if rp == p}
         for p in PERIODS
     }
-    # Parallelize by physics bin, not by (bin, parameter).  Each worker performs
-    # the nominal joint fit once and reuses it for all seven profile scans.
-    # With 24 bins this still provides ample coarse-grained work for eight
-    # processes while eliminating 6 redundant nominal fits per bin.
-    tasks = [{"bin_number": b, "profile_points": args.appendix_profile_points}
-             for b in range(1, NUMBER_OF_BINS + 1)]
-    results: list[dict[str, Any]] = []
+    # Establish the 24 nominal minima first.  These are ordinary production fits
+    # and are cheap relative to the profile scans.  Their values/errors seed every
+    # independent (bin, amplitude) profile task below.
+    nominal_tasks = [{"bin_number": b} for b in range(1, NUMBER_OF_BINS + 1)]
+    nominal_fits: dict[int, dict[str, Any]] = {}
     mp_context = mp.get_context("spawn")
-    n_appendix_workers = max(1, min(int(workers), 8, len(tasks)))
-    print(
-        f"[appendix MLE] profiling 24 bins x {len(PHYSICS_PARAMETERS)} parameters "
-        f"with {n_appendix_workers} workers",
-        flush=True,
-    )
+    n_appendix_workers = max(1, min(int(workers), 8, len(nominal_tasks)))
+    print(f"[appendix MLE] nominal fits with {n_appendix_workers} workers", flush=True)
     with ProcessPoolExecutor(
         max_workers=n_appendix_workers, mp_context=mp_context,
         initializer=initialize_fit_worker,
         initargs=(str(cache_path), run_state_payload, dilution_payload),
     ) as executor:
-        futures = [executor.submit(_appendix_profile_worker, task) for task in tasks]
-        completed_profiles = 0
-        for index, future in enumerate(as_completed(futures), start=1):
-            bin_results = future.result()
-            results.extend(bin_results)
-            completed_profiles += len(bin_results)
-            print(
-                f"[appendix MLE] bins {index}/{len(tasks)}; "
-                f"profiles {completed_profiles}/{len(tasks) * len(PHYSICS_PARAMETERS)}",
-                flush=True,
-            )
+        future_to_bin = {
+            executor.submit(_appendix_nominal_worker, task): int(task["bin_number"])
+            for task in nominal_tasks
+        }
+        for index, future in enumerate(as_completed(future_to_bin), start=1):
+            b = future_to_bin[future]
+            nominal_fits[b] = future.result()
+            print(f"[appendix MLE] nominal bins {index}/{NUMBER_OF_BINS}", flush=True)
         # endfor
     # endwith
+
+    profile_tasks: list[dict[str, Any]] = []
+    for b in range(1, NUMBER_OF_BINS + 1):
+        for parameter in PHYSICS_PARAMETERS:
+            profile_tasks.append({
+                "task_id": f"bin_{b:02d}_{parameter}",
+                "bin_number": b,
+                "parameter": parameter,
+                "fit": nominal_fits[b],
+                "profile_points": int(args.appendix_profile_points),
+                "stop_level": float(args.appendix_profile_stop_level),
+            })
+        # endfor
+    # endfor
+    print(
+        f"[appendix MLE] profiling {len(profile_tasks)} independent (bin, parameter) jobs "
+        f"with up to {n_appendix_workers} workers; timeout={args.appendix_profile_timeout:.0f} s/profile",
+        flush=True,
+    )
+    checkpoint_dir = out_dir / "profile_checkpoints"
+    raw_results = _run_timeout_protected_appendix_profiles(
+        profile_tasks, cache_path, run_state_payload, dilution_payload,
+        n_appendix_workers, float(args.appendix_profile_timeout), checkpoint_dir,
+    )
+    results: list[dict[str, Any]] = []
+    for result in raw_results:
+        b = int(result["bin_number"])
+        result["fit"] = nominal_fits[b]
+        results.append(result)
+    # endfor
     by_key = {(r["bin_number"], r["parameter"]): r for r in results}
 
     profile_rows: list[dict[str, Any]] = []
@@ -11497,11 +11715,12 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
             for x, y, valid in zip(grid, delta, profile["valid"]):
                 profile_rows.append({"bin_number": b, "parameter": par,
                                      "parameter_value": x, "two_delta_nll": y,
-                                     "profile_fit_valid": valid})
+                                     "profile_fit_valid": valid, "profile_status": item.get("status", "unknown")})
             # endfor
             crossing_rows.append({
                 "bin_number": b, "parameter": par, "mle": center,
                 "hesse_stat": float(item["fit"]["errors"][par]),
+                "profile_status": item.get("status", "unknown"),
                 "low_68": _profile_crossing(grid, delta, center, 1.0, "low"),
                 "high_68": _profile_crossing(grid, delta, center, 1.0, "high"),
                 "low_95": _profile_crossing(grid, delta, center, 3.84, "low"),
@@ -11521,7 +11740,7 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
                 item = by_key[(b, par)]
                 profile = item["profile"]
                 if profile is None:
-                    ax.text(0.5, 0.5, "invalid fit", ha="center", va="center", transform=ax.transAxes)
+                    ax.text(0.5, 0.5, item.get("status", "invalid fit"), ha="center", va="center", transform=ax.transAxes)
                     continue
                 # endif
                 grid = np.asarray(profile["grid"], dtype=float)
@@ -11593,7 +11812,7 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
         "mode": "appendix_mle_diagnostics", "fit_model": "production nominal seven-parameter joint MLE",
         "parameters": list(PHYSICS_PARAMETERS), "periods": list(PERIODS),
         "profile_levels_two_delta_nll": {"68.3_percent": 1.0, "95_percent": 3.84},
-        "profile_points": int(args.appendix_profile_points), "phi_bins": int(args.appendix_phi_bins),
+        "profile_points_maximum": int(args.appendix_profile_points), "profile_stop_level": float(args.appendix_profile_stop_level), "profile_timeout_seconds": float(args.appendix_profile_timeout), "phi_bins": int(args.appendix_phi_bins),
         "cache": str(cache_path), "dilution_json": str(dilution_json_path),
         "conditional_plot_note": "Phi binning is diagnostic only. Expected populations are sums of event-by-event conditional spin-state probabilities at the observed event kinematics.",
     })
@@ -12220,9 +12439,13 @@ def build_argument_parser() -> argparse.ArgumentParser:
               "seven-parameter joint MLE: 24 conditional phi data/model plots and "
               "profile-likelihood canvases for all seven amplitudes."))
     parser.add_argument("--appendix-profile-points", type=int, default=51,
-        help="Fixed-parameter points per appendix profile likelihood (default: 17).")
+        help="Maximum evaluated points per adaptive appendix profile likelihood (default: 51).")
     parser.add_argument("--appendix-phi-bins", type=int, default=18,
-        help="Diagnostic phi bins for conditional data/model plots (default: 12).")
+        help="Diagnostic phi bins for conditional data/model plots (default: 18).")
+    parser.add_argument("--appendix-profile-timeout", type=float, default=300.0,
+        help="Wall-clock timeout in seconds for one (bin, amplitude) appendix profile (default: 300).")
+    parser.add_argument("--appendix-profile-stop-level", type=float, default=5.0,
+        help="Stop each adaptive profile tail after -2 Delta ln L reaches this value (default: 5).")
     parser.add_argument(
         "--period-stability-only", action="store_true",
         help=(
