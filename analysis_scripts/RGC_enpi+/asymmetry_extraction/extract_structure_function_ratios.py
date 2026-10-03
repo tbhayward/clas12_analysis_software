@@ -754,6 +754,13 @@ BRANCH_ALIASES: dict[str, tuple[str, ...]] = {
     "DepW": ("DepW", "depW"),
 }
 
+PERIOD_DIAGNOSTIC_BRANCH_ALIASES: dict[str, tuple[str, ...]] = {
+    "e_phi": ("e_phi", "phi_e", "electron_phi"),
+    "p_phi": ("p_phi", "pip_phi", "pi_phi", "hadron_phi"),
+    "p_p": ("p_p", "pip_p", "pi_p", "hadron_p"),
+    "p_theta": ("p_theta", "pip_theta", "pi_theta", "hadron_theta"),
+}
+
 
 # =============================================================================
 # Data containers
@@ -2361,8 +2368,10 @@ def make_bin_nll(
     target_sign_filter: int | None = None,
     run_ranges_filter: tuple[tuple[int, int], ...] | None = None,
     beam_polarization_scales: Mapping[str, float] | None = None,
+    double_spin_products_by_run: Mapping[int, float] | None = None,
 ):
     beam_polarization_scales = dict(beam_polarization_scales or {})
+    double_spin_products_by_run = dict(double_spin_products_by_run or {})
     mask = events["bin_number"] == bin_number
     if len(active_periods) != len(PERIODS):
         allowed_indices = np.asarray(
@@ -2501,6 +2510,23 @@ def make_bin_nll(
             "cos_theta": cos_theta[indices],
             "h": event_h,
             "observed_pt": state_pt[observed_state_index],
+            "observed_pbpt": np.asarray([
+                double_spin_products_by_run.get(
+                    int(run),
+                    BEAM_POLARIZATION[period] * state_pt[state_index],
+                )
+                for run, state_index in zip(
+                    runnum[indices], observed_state_index
+                )
+            ], dtype=np.float64),
+            "double_charge_sum": float(np.sum([
+                (state_q_plus[j] - state_q_minus[j])
+                * double_spin_products_by_run.get(
+                    int(state["run"][j]),
+                    BEAM_POLARIZATION[period] * state_pt[j],
+                )
+                for j in np.flatnonzero(state_use)
+            ])),
             "observed_charge": np.where(
                 event_h > 0.0,
                 state_q_plus[observed_state_index],
@@ -2588,6 +2614,28 @@ def make_bin_nll(
                 ll0=ll0,
                 ll1=ll1,
             )
+            if double_spin_products_by_run:
+                # Replace only the longitudinal double-spin Pb*Pt factor.
+                # LU continues to use the nominal beam polarization and UL
+                # continues to use the nominal target polarization.
+                nominal_pbpt = (
+                    BEAM_POLARIZATION[period]
+                    * beam_polarization_scales.get(period, 1.0)
+                    * data["observed_pt"]
+                )
+                if variant == "photon_axis_projection" or variant == "external_data_informed":
+                    replacement_longitudinal_geometry = event_cos
+                else:
+                    replacement_longitudinal_geometry = np.ones_like(event_phi)
+                # endif
+                replacement = (
+                    event_h * dilution * replacement_longitudinal_geometry
+                    * (data["observed_pbpt"] - nominal_pbpt)
+                    * (event_r_c * ll0 + event_r_w * ll1 * data["cos_phi"])
+                )
+                numerator_factor = numerator_factor + replacement
+            # endif
+
             if (
                 np.any(~np.isfinite(numerator_factor))
                 or np.any(numerator_factor <= CROSS_SECTION_FLOOR)
@@ -2696,7 +2744,14 @@ def make_bin_nll(
                 data["charge_sum"] * unpolarized
                 + data["helicity_charge_sum"] * beam_coefficient
                 + data["target_charge_sum"] * target_coefficient
-                + data["helicity_target_charge_sum"] * double_coefficient
+                + (
+                    data["double_charge_sum"]
+                    * dilution
+                    * longitudinal_geometry
+                    * (event_r_c * ll0 + event_r_w * ll1 * data["cos_phi"])
+                    if double_spin_products_by_run
+                    else data["helicity_target_charge_sum"] * double_coefficient
+                )
             )
             if (
                 np.any(~np.isfinite(denominator))
@@ -2866,6 +2921,8 @@ def fit_one_variant(
     target_sign_filter: int | None = None,
     run_ranges_filter: tuple[tuple[int, int], ...] | None = None,
     beam_polarization_scales: Mapping[str, float] | None = None,
+    double_spin_products_by_run: Mapping[int, float] | None = None,
+    fast_profile: bool = False,
 ) -> dict[str, Any]:
     nll, metadata = make_bin_nll(
         events,
@@ -2878,6 +2935,7 @@ def fit_one_variant(
         target_sign_filter=target_sign_filter,
         run_ranges_filter=run_ranges_filter,
         beam_polarization_scales=beam_polarization_scales,
+        double_spin_products_by_run=double_spin_products_by_run,
     )
 
     initial = dict(PARAMETER_INITIAL_VALUES)
@@ -2912,7 +2970,7 @@ def fit_one_variant(
         candidate = Minuit(nll, **dict(start_values))
         candidate.errordef = Minuit.LIKELIHOOD
         candidate.print_level = 0
-        candidate.strategy = 1
+        candidate.strategy = 0 if fast_profile else 1
 
         for parameter_name in PHYSICS_PARAMETERS:
             candidate.limits[parameter_name] = PARAMETER_LIMITS[
@@ -2994,16 +3052,33 @@ def fit_one_variant(
     # endfor
     start_candidates.append(bounded_offset)
 
+    # Profile scans start from the preceding constrained minimum.  Repeating the
+    # full five-start production recovery and HESSE at every scan point is both
+    # unnecessary and extremely expensive; only the profiled NLL is required.
+    if fast_profile:
+        start_candidates = start_candidates[:1]
+    # endif
+
     attempted: list[Minuit] = []
     for start_values in start_candidates:
         candidate = configured_minuit(start_values)
-        candidate.migrad(ncall=50000)
+        candidate.migrad(ncall=12000 if fast_profile else 50000)
         if not candidate.fmin.is_valid:
-            candidate.simplex(ncall=50000)
-            candidate.strategy = 2
-            candidate.migrad(ncall=120000)
+            if fast_profile:
+                # One bounded recovery attempt.  Do not allow a pathological
+                # profile point to consume hundreds of thousands of calls.
+                candidate.strategy = 1
+                candidate.simplex(ncall=8000)
+                candidate.migrad(ncall=20000)
+            else:
+                candidate.simplex(ncall=50000)
+                candidate.strategy = 2
+                candidate.migrad(ncall=120000)
+            # endif
         # endif
-        candidate.hesse()
+        if not fast_profile:
+            candidate.hesse()
+        # endif
         attempted.append(candidate)
     # endfor
 
@@ -11166,6 +11241,7 @@ def _appendix_profile_worker(task: dict[str, Any]) -> list[dict[str, Any]]:
                 bin_number, "nominal", active_periods=PERIODS,
                 initial_values=start_values,
                 fixed_physics_parameters={parameter: float(value)},
+                fast_profile=True,
             )
             nll_values.append(float(profiled["minimum_nll"]))
             valid_values.append(bool(profiled["valid"]))
@@ -11511,6 +11587,555 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
     return 0
 
 
+# =============================================================================
+# Extended run-period A_LL diagnostics
+# =============================================================================
+
+def load_dis_pbpt_spreadsheets(base_dir: Path) -> dict[int, tuple[float, float]]:
+    """Load independent DIS run-by-run PbPt products supplied by the RGC group."""
+    files = {
+        "su22": base_dir / "PbPt_NH3_summer22_F1F221_2025-06-24.xlsx",
+        "fa22": base_dir / "PbPt_NH3_fall22_F1F221_2025-06-24.xlsx",
+        "sp23": base_dir / "PbPt_NH3_spring23_F1F221_2025-06-24.xlsx",
+    }
+    result: dict[int, tuple[float, float]] = {}
+    for period, path in files.items():
+        if not path.is_file():
+            raise FileNotFoundError(
+                f"Missing DIS PbPt spreadsheet for {period}: {path}"
+            )
+        # endif
+        frame = pd.read_excel(path)
+        required = {"run", "PbPt", "dPbPt"}
+        if not required.issubset(frame.columns):
+            raise RuntimeError(
+                f"DIS PbPt spreadsheet {path} lacks columns {sorted(required)}."
+            )
+        # endif
+        for row in frame.itertuples(index=False):
+            run = int(getattr(row, "run"))
+            pbpt = float(getattr(row, "PbPt"))
+            dpbpt = float(getattr(row, "dPbPt"))
+            if math.isfinite(pbpt):
+                result[run] = (pbpt, dpbpt)
+            # endif
+        # endfor
+    # endfor
+    return result
+
+
+def build_period_stability_diagnostic_cache(
+    input_paths: Mapping[str, Path],
+    tree_name: str,
+    chunk_size: str,
+    run_records: Mapping[int, RunRecord],
+    cache_path: Path,
+) -> dict[str, np.ndarray]:
+    """Build a production-phase-space cache without any Mx2 requirement."""
+    if cache_path.is_file():
+        cached = load_event_cache(cache_path)
+        needed = {"e_phi", "p_phi", "p_p", "p_theta", "y", "Mx2"}
+        if needed.issubset(cached):
+            print(f"[extended diagnostics] reusing {cache_path}", flush=True)
+            return cached
+        # endif
+    # endif
+
+    collected: dict[str, list[np.ndarray]] = {
+        key: [] for key in (
+            "period_index", "runnum", "helicity", "bin_number", "xB",
+            "minus_tprime", "minus_t", "W", "Mx2", "phi", "Q2", "y",
+            "epsilon", "DepA", "DepB", "DepC", "DepV", "DepW",
+            "sin_theta_gamma", "cos_theta_gamma", "rB", "rC", "rV", "rW",
+            "e_phi", "p_phi", "p_p", "p_theta",
+        )
+    }
+    for period in PERIODS:
+        path = input_paths[period].expanduser().resolve()
+        print(f"[extended diagnostics] reading {period}: {path}", flush=True)
+        with uproot.open(path) as root_file:
+            tree = resolve_tree(root_file, tree_name, path)
+            aliases = dict(BRANCH_ALIASES)
+            aliases.update(PERIOD_DIAGNOSTIC_BRANCH_ALIASES)
+            branches = {
+                logical: resolve_branch(tree, choices)
+                for logical, choices in aliases.items()
+            }
+            expressions = list(dict.fromkeys(branches.values()))
+            for arrays in tree.iterate(
+                expressions=expressions, step_size=chunk_size, library="np"
+            ):
+                runnum = np.asarray(arrays[branches["runnum"]], dtype=np.int64)
+                helicity = np.asarray(arrays[branches["helicity"]], dtype=np.int8)
+                x_b = np.asarray(arrays[branches["xB"]], dtype=float)
+                mtp = -np.asarray(arrays[branches["tprime"]], dtype=float)
+                mt = -np.asarray(arrays[branches["t"]], dtype=float)
+                w = np.asarray(arrays[branches["W"]], dtype=float)
+                mx2 = np.asarray(arrays[branches["Mx2"]], dtype=float)
+                phi = np.mod(
+                    angle_to_radians(
+                        np.asarray(arrays[branches["phi"]], dtype=float),
+                        branches["phi"],
+                    ),
+                    2.0 * math.pi,
+                )
+                q2 = np.asarray(arrays[branches["Q2"]], dtype=float)
+                y = np.asarray(arrays[branches["y"]], dtype=float)
+                e_p = np.asarray(arrays[branches["e_p"]], dtype=float)
+                e_theta = angle_to_radians(
+                    np.asarray(arrays[branches["e_theta"]], dtype=float),
+                    branches["e_theta"],
+                )
+                dep_a = np.asarray(arrays[branches["DepA"]], dtype=float)
+                dep_b = np.asarray(arrays[branches["DepB"]], dtype=float)
+                dep_c = np.asarray(arrays[branches["DepC"]], dtype=float)
+                dep_v = np.asarray(arrays[branches["DepV"]], dtype=float)
+                dep_w = np.asarray(arrays[branches["DepW"]], dtype=float)
+                gamma2 = 4.0 * PROTON_MASS_GEV**2 * x_b**2 / q2
+                epsilon = (1.0 - y - 0.25 * gamma2 * y**2) / (
+                    1.0 - y + 0.5 * y**2 + 0.25 * gamma2 * y**2
+                )
+                sin_tg, cos_tg = compute_theta_gamma(
+                    e_p, e_theta, BEAM_ENERGY_GEV[period]
+                )
+                _, _, bins = bin_indices(x_b, mtp)
+                known_active = np.fromiter(
+                    (
+                        int(run) in run_records
+                        and run_records[int(run)].period == period
+                        and run_records[int(run)].charge_plus > 0.0
+                        and run_records[int(run)].charge_minus > 0.0
+                        for run in runnum
+                    ),
+                    count=runnum.size,
+                    dtype=bool,
+                )
+                finite = (
+                    np.isfinite(x_b) & np.isfinite(mtp) & np.isfinite(mt)
+                    & np.isfinite(w) & np.isfinite(mx2) & np.isfinite(phi)
+                    & np.isfinite(q2) & np.isfinite(y) & np.isfinite(epsilon)
+                    & np.isfinite(dep_a) & np.isfinite(dep_b) & np.isfinite(dep_c)
+                    & np.isfinite(dep_v) & np.isfinite(dep_w)
+                )
+                selected = (
+                    finite & known_active & np.isin(helicity, (-1, 1))
+                    & (bins >= 1) & (w > DIS_W_MIN_GEV) & (dep_a > 0.0)
+                )
+                if not np.any(selected):
+                    continue
+                # endif
+                def put(name: str, values: np.ndarray) -> None:
+                    collected[name].append(np.asarray(values)[selected])
+                # enddef
+                put("period_index", np.full(runnum.shape, PERIOD_INDEX[period], dtype=np.int8))
+                put("runnum", runnum.astype(np.int32))
+                put("helicity", helicity)
+                put("bin_number", bins.astype(np.int16))
+                put("xB", x_b); put("minus_tprime", mtp); put("minus_t", mt)
+                put("W", w); put("Mx2", mx2); put("phi", phi); put("Q2", q2); put("y", y)
+                put("epsilon", epsilon); put("DepA", dep_a); put("DepB", dep_b)
+                put("DepC", dep_c); put("DepV", dep_v); put("DepW", dep_w)
+                put("sin_theta_gamma", sin_tg); put("cos_theta_gamma", cos_tg)
+                put("rB", dep_b / dep_a); put("rC", dep_c / dep_a)
+                put("rV", dep_v / dep_a); put("rW", dep_w / dep_a)
+                for name in ("e_phi", "p_phi", "p_theta"):
+                    raw = np.asarray(arrays[branches[name]], dtype=float)
+                    put(name, angle_to_radians(raw, branches[name]))
+                # endfor
+                put("p_p", np.asarray(arrays[branches["p_p"]], dtype=float))
+            # endfor
+        # endwith
+    # endfor
+    cache = {key: np.concatenate(value) for key, value in collected.items()}
+    ensure_directory(cache_path.parent)
+    np.savez_compressed(cache_path, **cache)
+    print(
+        f"[extended diagnostics] cache contains {cache['runnum'].size:,} events",
+        flush=True,
+    )
+    return cache
+
+
+def select_nominal_mx2_from_diagnostic_cache(
+    events: Mapping[str, np.ndarray],
+    cuts: Mapping[tuple[str, int], CutRecord],
+) -> dict[str, np.ndarray]:
+    mask = np.zeros(events["runnum"].shape, dtype=bool)
+    for period in PERIODS:
+        pmask = events["period_index"] == PERIOD_INDEX[period]
+        for bin_number in range(1, NUMBER_OF_BINS + 1):
+            cut = cuts[(period, bin_number)]
+            mask |= (
+                pmask & (events["bin_number"] == bin_number)
+                & (events["Mx2"] >= cut.low_gev2)
+                & (events["Mx2"] < cut.high_gev2)
+            )
+        # endfor
+    # endfor
+    return {name: np.asarray(values)[mask] for name, values in events.items()}
+
+
+def _fixed_other_physics(frame: pd.DataFrame, bin_number: int) -> dict[str, float]:
+    row = frame.loc[frame["bin_number"].astype(int) == int(bin_number)].iloc[0]
+    return {
+        parameter: float(row[parameter])
+        for parameter in PHYSICS_PARAMETERS
+        if parameter != "ll0"
+    }
+
+
+def _unit_dilutions() -> dict[tuple[str, int], DilutionRecord]:
+    result = {}
+    for period in PERIODS:
+        for b in range(1, NUMBER_OF_BINS + 1):
+            xi = (b - 1) // len(MINUS_TPRIME_BINS_GEV2)
+            ti = (b - 1) % len(MINUS_TPRIME_BINS_GEV2)
+            result[(period, b)] = DilutionRecord(period, b, xi, ti, 1.0, 0.0)
+        # endfor
+    # endfor
+    return result
+
+
+def write_dis_pbpt_all_diagnostic(
+    frame: pd.DataFrame,
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    pbpt: Mapping[int, tuple[float, float]],
+    output_dir: Path,
+) -> Path:
+    ensure_directory(output_dir)
+    products = {run: value[0] for run, value in pbpt.items()}
+    rows = []
+    for b in range(1, NUMBER_OF_BINS + 1):
+        fixed = _fixed_other_physics(frame, b)
+        initial = {"ll0": float(frame.loc[frame["bin_number"] == b, "ll0"].iloc[0])}
+        for period in PERIODS:
+            period_runs = set(np.asarray(run_states[period]["run"], dtype=int))
+            missing = sorted(run for run in period_runs if run not in products)
+            if missing:
+                print(
+                    f"[DIS PbPt] {period}: {len(missing)} run-info runs lack DIS PbPt; "
+                    "only events in matched runs are retained",
+                    flush=True,
+                )
+            # endif
+            matched_ranges = tuple((run, run) for run in sorted(period_runs & products.keys()))
+            try:
+                fit = fit_one_variant(
+                    events, run_states, dilution_records, b, "nominal",
+                    active_periods=(period,), initial_values=initial,
+                    fixed_physics_parameters=fixed,
+                    run_ranges_filter=matched_ranges,
+                    double_spin_products_by_run=products,
+                )
+                rows.append({
+                    "bin_number": b, "period": period,
+                    "ll0_dis_pbpt": fit["values"]["ll0"],
+                    "ll0_dis_pbpt_stat": fit["errors"]["ll0"],
+                    "valid": fit["valid"], "edm": fit["edm"],
+                    "number_of_events": fit["metadata"]["number_of_events"],
+                })
+            except Exception as exc:
+                rows.append({"bin_number": b, "period": period, "error": str(exc)})
+            # endtry
+        # endfor
+    # endfor
+    out = output_dir / "all_period_stability_dis_pbpt.csv"
+    result = pd.DataFrame(rows)
+    result.to_csv(out, index=False)
+    if not result.empty:
+        fig, ax = plt.subplots(figsize=(11.0, 5.2))
+        for i, period in enumerate(PERIODS):
+            sub = result[result["period"] == period]
+            ax.errorbar(sub["bin_number"] + 0.12 * (i - 1), sub["ll0_dis_pbpt"], yerr=sub["ll0_dis_pbpt_stat"], fmt="o", label=period)
+        # endfor
+        ax.axhline(0.0, linewidth=1.0, linestyle="--")
+        ax.set_xlabel("Kinematic bin")
+        ax.set_ylabel(r"$A_{LL}$ using DIS run-by-run $P_bP_t$")
+        ax.legend(frameon=False)
+        fig.tight_layout()
+        fig.savefig(output_dir / "all_period_stability_dis_pbpt.png", dpi=180)
+        plt.close(fig)
+    # endif
+    return out
+
+
+def write_inclusive_epi_control_diagnostic(
+    frame: pd.DataFrame,
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    output_dir: Path,
+) -> Path:
+    """Fit inclusive e pi+ X A_raw/(Pb Pt) with no dilution-factor correction."""
+    ensure_directory(output_dir)
+    unit_f = _unit_dilutions()
+    rows = []
+    zero_fixed = {p: 0.0 for p in PHYSICS_PARAMETERS if p != "ll0"}
+    for b in range(1, NUMBER_OF_BINS + 1):
+        for period in PERIODS:
+            try:
+                fit = fit_one_variant(
+                    events, run_states, unit_f, b, "nominal",
+                    active_periods=(period,), fixed_physics_parameters=zero_fixed,
+                )
+                rows.append({
+                    "bin_number": b, "period": period,
+                    "all_over_pbpt": fit["values"]["ll0"],
+                    "all_over_pbpt_stat": fit["errors"]["ll0"],
+                    "valid": fit["valid"], "edm": fit["edm"],
+                    "number_of_events": fit["metadata"]["number_of_events"],
+                })
+            except Exception as exc:
+                rows.append({"bin_number": b, "period": period, "error": str(exc)})
+            # endtry
+        # endfor
+    # endfor
+    out = output_dir / "inclusive_epiX_all_over_pbpt.csv"
+    result = pd.DataFrame(rows)
+    result.to_csv(out, index=False)
+    if not result.empty:
+        fig, ax = plt.subplots(figsize=(11.0, 5.2))
+        for i, period in enumerate(PERIODS):
+            sub = result[result["period"] == period]
+            ax.errorbar(sub["bin_number"] + 0.12 * (i - 1), sub["all_over_pbpt"], yerr=sub["all_over_pbpt_stat"], fmt="o", label=period)
+        # endfor
+        ax.axhline(0.0, linewidth=1.0, linestyle="--")
+        ax.set_xlabel("Kinematic bin")
+        ax.set_ylabel(r"Inclusive $e\pi^+X$: $A_{LL}^{\rm raw}/(P_bP_t)$ (no dilution correction)")
+        ax.legend(frameon=False)
+        fig.tight_layout()
+        fig.savefig(output_dir / "inclusive_epiX_all_over_pbpt.png", dpi=180)
+        plt.close(fig)
+    # endif
+    return out
+
+
+def fd_sector_from_phi_rad_array(phi: np.ndarray) -> np.ndarray:
+    deg = np.mod(np.degrees(np.asarray(phi, dtype=float)), 360.0)
+    sector = np.full(deg.shape, -1, dtype=np.int8)
+    sector[(deg >= 330.0) | (deg < 30.0)] = 1
+    sector[(deg >= 30.0) & (deg < 90.0)] = 2
+    sector[(deg >= 90.0) & (deg < 150.0)] = 3
+    sector[(deg >= 150.0) & (deg < 210.0)] = 4
+    sector[(deg >= 210.0) & (deg < 270.0)] = 5
+    sector[(deg >= 270.0) & (deg < 330.0)] = 6
+    return sector
+
+
+def _inverse_variance_combine(values: list[tuple[float, float]]) -> tuple[float, float, int]:
+    good = [(v, e) for v, e in values if math.isfinite(v) and math.isfinite(e) and e > 0.0]
+    if not good:
+        return math.nan, math.nan, 0
+    # endif
+    w = np.asarray([1.0 / e**2 for _, e in good], dtype=float)
+    v = np.asarray([x for x, _ in good], dtype=float)
+    return float(np.sum(w * v) / np.sum(w)), float(math.sqrt(1.0 / np.sum(w))), len(good)
+
+
+def write_sector_all_diagnostics(
+    frame: pd.DataFrame,
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    output_dir: Path,
+) -> Path:
+    ensure_directory(output_dir)
+    rows = []
+    for branch, label in (("e_phi", "electron"), ("p_phi", "pion")):
+        sectors = fd_sector_from_phi_rad_array(events[branch])
+        for sector in range(1, 7):
+            subset_mask = sectors == sector
+            subset = {name: np.asarray(values)[subset_mask] for name, values in events.items()}
+            for period in PERIODS:
+                for ti in range(len(MINUS_TPRIME_BINS_GEV2)):
+                    estimates = []
+                    n_events = 0
+                    for xi in range(len(XB_BINS)):
+                        b = xi * len(MINUS_TPRIME_BINS_GEV2) + ti + 1
+                        fixed = _fixed_other_physics(frame, b)
+                        try:
+                            fit = fit_one_variant(
+                                subset, run_states, dilution_records, b, "nominal",
+                                active_periods=(period,), fixed_physics_parameters=fixed,
+                            )
+                            if fit["valid"]:
+                                estimates.append((fit["values"]["ll0"], fit["errors"]["ll0"]))
+                                n_events += int(fit["metadata"]["number_of_events"])
+                            # endif
+                        except Exception:
+                            pass
+                        # endtry
+                    # endfor
+                    value, error, n_xb = _inverse_variance_combine(estimates)
+                    rows.append({
+                        "particle": label, "sector": sector, "period": period,
+                        "t_index": ti, "minus_tprime_low_gev2": MINUS_TPRIME_BINS_GEV2[ti][0],
+                        "minus_tprime_high_gev2": MINUS_TPRIME_BINS_GEV2[ti][1],
+                        "ll0": value, "ll0_stat": error, "xB_bins_combined": n_xb,
+                        "number_of_events": n_events,
+                    })
+                # endfor
+            # endfor
+        # endfor
+    # endfor
+    out = output_dir / "all_sector_dependence_xB_integrated.csv"
+    result = pd.DataFrame(rows)
+    result.to_csv(out, index=False)
+    for particle in ("electron", "pion"):
+        for ti in range(len(MINUS_TPRIME_BINS_GEV2)):
+            fig, ax = plt.subplots(figsize=(8.0, 5.0))
+            for period in PERIODS:
+                sub = result[(result["particle"] == particle) & (result["period"] == period) & (result["t_index"] == ti)]
+                ax.errorbar(sub["sector"], sub["ll0"], yerr=sub["ll0_stat"], fmt="o-", label=period)
+            # endfor
+            ax.axhline(0.0, linewidth=1.0, linestyle="--")
+            ax.set_xlabel(f"{particle.capitalize()} FD sector")
+            ax.set_ylabel(r"$x_B$-integrated $A_{LL}$")
+            ax.set_xticks(range(1, 7))
+            ax.legend(frameon=False)
+            fig.tight_layout()
+            fig.savefig(output_dir / f"all_{particle}_sector_tbin_{ti + 1}.png", dpi=180)
+            plt.close(fig)
+        # endfor
+    # endfor
+    return out
+
+
+def write_run_number_all_diagnostic(
+    frame: pd.DataFrame,
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    output_dir: Path,
+    runs_per_block: int = 8,
+) -> Path:
+    ensure_directory(output_dir)
+    rows = []
+    for period in PERIODS:
+        runs = np.asarray(run_states[period]["run"], dtype=int)
+        pts = np.asarray(run_states[period]["pt"], dtype=float)
+        # Never allow a block to cross a target-polarization sign reversal.
+        start = 0
+        blocks = []
+        while start < runs.size:
+            sign = int(np.sign(pts[start]))
+            stop = start
+            while stop < runs.size and int(np.sign(pts[stop])) == sign and stop - start < runs_per_block:
+                stop += 1
+            # endwhile
+            blocks.append((runs[start:stop], sign))
+            start = stop
+        # endwhile
+        for ib, (block_runs, sign) in enumerate(blocks, start=1):
+            estimates = []
+            n_events = 0
+            ranges = tuple((int(run), int(run)) for run in block_runs)
+            for b in range(1, NUMBER_OF_BINS + 1):
+                fixed = _fixed_other_physics(frame, b)
+                try:
+                    fit = fit_one_variant(
+                        events, run_states, dilution_records, b, "nominal",
+                        active_periods=(period,), fixed_physics_parameters=fixed,
+                        run_ranges_filter=ranges,
+                    )
+                    if fit["valid"]:
+                        estimates.append((fit["values"]["ll0"], fit["errors"]["ll0"]))
+                        n_events += int(fit["metadata"]["number_of_events"])
+                    # endif
+                except Exception:
+                    pass
+                # endtry
+            # endfor
+            value, error, n_bins = _inverse_variance_combine(estimates)
+            rows.append({
+                "period": period, "block": ib, "run_min": int(block_runs.min()),
+                "run_max": int(block_runs.max()), "mean_run": float(np.mean(block_runs)),
+                "target_sign": sign, "ll0": value, "ll0_stat": error,
+                "bins_combined": n_bins, "number_of_events": n_events,
+            })
+        # endfor
+    # endfor
+    out = output_dir / "all_vs_run_number_blocks.csv"
+    result = pd.DataFrame(rows)
+    result.to_csv(out, index=False)
+    if not result.empty:
+        fig, ax = plt.subplots(figsize=(11.0, 5.5))
+        for period in PERIODS:
+            sub = result[result["period"] == period]
+            ax.errorbar(sub["mean_run"], sub["ll0"], yerr=sub["ll0_stat"], fmt="o", label=period)
+        # endfor
+        ax.axhline(0.0, linewidth=1.0, linestyle="--")
+        ax.set_xlabel("Run number")
+        ax.set_ylabel(r"Integrated $A_{LL}$")
+        ax.legend(frameon=False)
+        fig.tight_layout()
+        fig.savefig(output_dir / "all_vs_run_number_blocks.png", dpi=180)
+        plt.close(fig)
+    # endif
+    return out
+
+
+def write_charge_normalized_kinematic_distributions(
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    output_dir: Path,
+) -> Path:
+    ensure_directory(output_dir)
+    variables = {
+        "Q2": ("Q2", 30), "W": ("W", 30), "y": ("y", 30),
+        "phi": ("phi", 30), "p_pi": ("p_p", 30), "theta_pi": ("p_theta", 30),
+        "xB": ("xB", 30), "minus_tprime": ("minus_tprime", 30),
+    }
+    rows = []
+    for b in range(1, NUMBER_OF_BINS + 1):
+        bmask = events["bin_number"] == b
+        if not np.any(bmask):
+            continue
+        # endif
+        for label, (branch, nbins) in variables.items():
+            all_values = np.asarray(events[branch][bmask], dtype=float)
+            finite = all_values[np.isfinite(all_values)]
+            if finite.size < 2:
+                continue
+            # endif
+            low, high = np.quantile(finite, [0.005, 0.995])
+            if label == "phi":
+                low, high = 0.0, 2.0 * math.pi
+            # endif
+            edges = np.linspace(low, high, nbins + 1)
+            fig, ax = plt.subplots(figsize=(7.5, 5.0))
+            for period in PERIODS:
+                state = run_states[period]
+                for helicity in (-1, 1):
+                    mask = bmask & (events["period_index"] == PERIOD_INDEX[period]) & (events["helicity"] == helicity)
+                    vals = np.asarray(events[branch][mask], dtype=float)
+                    charge = float(np.sum(state["q_plus"] if helicity > 0 else state["q_minus"]))
+                    hist, _ = np.histogram(vals[np.isfinite(vals)], bins=edges)
+                    rate = hist / charge if charge > 0.0 else np.full(hist.shape, np.nan)
+                    centers = 0.5 * (edges[:-1] + edges[1:])
+                    ax.step(centers, rate, where="mid", label=f"{period} h={helicity:+d}")
+                    rows.append({
+                        "bin_number": b, "variable": label, "period": period,
+                        "helicity": helicity, "charge": charge,
+                        "mean": float(np.mean(vals)) if vals.size else math.nan,
+                        "std": float(np.std(vals, ddof=1)) if vals.size > 1 else math.nan,
+                        "events": int(vals.size),
+                    })
+                # endfor
+            # endfor
+            ax.set_xlabel(label)
+            ax.set_ylabel("Counts / accumulated charge")
+            ax.legend(frameon=False, fontsize=8, ncol=2)
+            fig.tight_layout()
+            fig.savefig(output_dir / f"bin_{b:02d}_{label}_charge_normalized.png", dpi=160)
+            plt.close(fig)
+        # endfor
+    # endfor
+    out = output_dir / "kinematic_distribution_summary.csv"
+    pd.DataFrame(rows).to_csv(out, index=False)
+    return out
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -11577,8 +12202,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help=("Run only appendix-ready fit-quality diagnostics for the production "
               "seven-parameter joint MLE: 24 conditional phi data/model plots and "
               "profile-likelihood canvases for all seven amplitudes."))
-    parser.add_argument("--appendix-profile-points", type=int, default=31,
-        help="Fixed-parameter points per appendix profile likelihood (default: 31).")
+    parser.add_argument("--appendix-profile-points", type=int, default=17,
+        help="Fixed-parameter points per appendix profile likelihood (default: 17).")
     parser.add_argument("--appendix-phi-bins", type=int, default=12,
         help="Diagnostic phi bins for conditional data/model plots (default: 12).")
     parser.add_argument(
@@ -12007,6 +12632,49 @@ def main() -> int:
             output_dir=nominal_dir / "diagnostics" / "beam_polarization",
         )
         print(f"  Beam-polarization response: {beam_products['summary']}", flush=True)
+
+        # Extended final run-period diagnostics: inclusive e pi+ X control,
+        # independent DIS PbPt, detector-sector dependence, chronological
+        # stability, and charge-normalized kinematic population comparisons.
+        extended_dir = nominal_dir / "diagnostics" / "extended_period_checks"
+        diagnostic_cache_path = nominal_dir / "cache" / "period_stability_no_mx2_events.npz"
+        diagnostic_events = build_period_stability_diagnostic_cache(
+            nominal_inputs, args.tree, args.chunk_size, stability_run_records,
+            diagnostic_cache_path,
+        )
+        inclusive_path = write_inclusive_epi_control_diagnostic(
+            nominal_result["frame"], diagnostic_events, stability_run_states,
+            extended_dir / "inclusive_epiX",
+        )
+        print(f"  Inclusive e pi+ X A_raw/(PbPt), no dilution correction: {inclusive_path}", flush=True)
+
+        dis_pbpt = load_dis_pbpt_spreadsheets(Path(__file__).resolve().parent)
+        dis_pbpt_path = write_dis_pbpt_all_diagnostic(
+            nominal_result["frame"], stability_events, stability_run_states,
+            stability_dilutions, dis_pbpt, extended_dir / "dis_pbpt",
+        )
+        print(f"  DIS PbPt A_LL stability: {dis_pbpt_path}", flush=True)
+
+        nominal_diagnostic_events = select_nominal_mx2_from_diagnostic_cache(
+            diagnostic_events, stability_cuts
+        )
+        sector_path = write_sector_all_diagnostics(
+            nominal_result["frame"], nominal_diagnostic_events, stability_run_states,
+            stability_dilutions, extended_dir / "sectors",
+        )
+        print(f"  Sector A_LL dependence: {sector_path}", flush=True)
+
+        run_path = write_run_number_all_diagnostic(
+            nominal_result["frame"], stability_events, stability_run_states,
+            stability_dilutions, extended_dir / "run_number",
+        )
+        print(f"  Run-number A_LL dependence: {run_path}", flush=True)
+
+        distribution_path = write_charge_normalized_kinematic_distributions(
+            nominal_diagnostic_events, stability_run_states,
+            extended_dir / "kinematic_distributions",
+        )
+        print(f"  Charge-normalized kinematics: {distribution_path}", flush=True)
 
         if args.period_epoch_refits:
             epoch_refits = write_flagged_epoch_refits(
