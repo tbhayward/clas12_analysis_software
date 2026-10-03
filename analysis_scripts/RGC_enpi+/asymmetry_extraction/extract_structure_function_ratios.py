@@ -11597,12 +11597,17 @@ def _appendix_conditional_prediction(
             })
         # endfor
     # endfor
+    residual_array = np.asarray(residual_values, dtype=float)
     summary = {
         "bin_number": bin_number,
         "number_of_events": int(fit["metadata"]["number_of_events"]),
-        "residual_mean": float(np.mean(residual_values)) if residual_values else math.nan,
-        "residual_rms": float(np.sqrt(np.mean(np.square(residual_values)))) if residual_values else math.nan,
-        "maximum_absolute_residual": float(np.max(np.abs(residual_values))) if residual_values else math.nan,
+        "number_of_residual_cells": int(residual_array.size),
+        "residual_mean": float(np.mean(residual_array)) if residual_array.size else math.nan,
+        "residual_rms": float(np.sqrt(np.mean(np.square(residual_array)))) if residual_array.size else math.nan,
+        "maximum_absolute_residual": float(np.max(np.abs(residual_array))) if residual_array.size else math.nan,
+        "number_abs_pull_gt_2": int(np.sum(np.abs(residual_array) > 2.0)),
+        "number_abs_pull_gt_3": int(np.sum(np.abs(residual_array) > 3.0)),
+        "sum_pull_squared": float(np.sum(np.square(residual_array))) if residual_array.size else math.nan,
     }
     return rows, summary
 
@@ -11728,9 +11733,42 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
             })
         # endfor
     # endfor
-    pd.DataFrame(fit_rows).to_csv(table_dir / "joint_fit_status.csv", index=False)
-    pd.DataFrame(profile_rows).to_csv(table_dir / "profile_likelihood_points.csv", index=False)
-    pd.DataFrame(crossing_rows).to_csv(table_dir / "profile_likelihood_crossings.csv", index=False)
+    fit_frame = pd.DataFrame(fit_rows)
+    profile_frame = pd.DataFrame(profile_rows)
+    crossing_frame = pd.DataFrame(crossing_rows)
+    fit_frame.to_csv(table_dir / "joint_fit_status.csv", index=False)
+    profile_frame.to_csv(table_dir / "profile_likelihood_points.csv", index=False)
+    crossing_frame.to_csv(table_dir / "profile_likelihood_crossings.csv", index=False)
+
+    # Compact, appendix-ready profile diagnostics.  These are derived only from
+    # actual profile evaluations/crossings; no Gaussian approximation is used
+    # except in the explicitly labelled profile/Hesse comparison columns.
+    profile_summary_rows: list[dict[str, Any]] = []
+    for row in crossing_rows:
+        b = int(row["bin_number"]); par = str(row["parameter"])
+        points = profile_frame[(profile_frame.bin_number == b) & (profile_frame.parameter == par)]
+        mle = float(row["mle"]); hesse = float(row["hesse_stat"])
+        low68, high68 = row["low_68"], row["high_68"]
+        low95, high95 = row["low_95"], row["high_95"]
+        sig_lo = mle - float(low68) if low68 is not None and math.isfinite(float(low68)) else math.nan
+        sig_hi = float(high68) - mle if high68 is not None and math.isfinite(float(high68)) else math.nan
+        profile_summary_rows.append({
+            **row,
+            "profile_sigma_low_68": sig_lo,
+            "profile_sigma_high_68": sig_hi,
+            "profile_sigma_average_68": (0.5 * (sig_lo + sig_hi) if math.isfinite(sig_lo) and math.isfinite(sig_hi) else math.nan),
+            "profile_asymmetry_68": ((sig_hi - sig_lo) / (sig_hi + sig_lo) if math.isfinite(sig_lo) and math.isfinite(sig_hi) and (sig_hi + sig_lo) > 0.0 else math.nan),
+            "profile_over_hesse_low": (sig_lo / hesse if math.isfinite(sig_lo) and hesse > 0.0 else math.nan),
+            "profile_over_hesse_high": (sig_hi / hesse if math.isfinite(sig_hi) and hesse > 0.0 else math.nan),
+            "has_both_68_crossings": bool(low68 is not None and high68 is not None and math.isfinite(float(low68)) and math.isfinite(float(high68))),
+            "has_both_95_crossings": bool(low95 is not None and high95 is not None and math.isfinite(float(low95)) and math.isfinite(float(high95))),
+            "number_profile_points": int(len(points)),
+            "number_valid_profile_points": int(points.profile_fit_valid.fillna(False).astype(bool).sum()) if len(points) else 0,
+            "number_invalid_profile_points": int((~points.profile_fit_valid.fillna(False).astype(bool)).sum()) if len(points) else 0,
+            "maximum_two_delta_nll": float(np.nanmax(points.two_delta_nll.to_numpy(dtype=float))) if len(points) else math.nan,
+        })
+    # endfor
+    pd.DataFrame(profile_summary_rows).to_csv(table_dir / "profile_likelihood_summary.csv", index=False)
 
     for par in PHYSICS_PARAMETERS:
         for x_index in range(len(XB_BINS)):
@@ -11753,10 +11791,14 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
                 ax.axvline(center, lw=1.0)
                 ax.axvline(center - error, ls="--", lw=0.8)
                 ax.axvline(center + error, ls="--", lw=0.8)
-                if par in ("ll0", "ll1", "u1", "u2"):
-                    ax.set_xlim(-1.0, 1.0)
+                if par == "ll0":
+                    ax.set_xlim(0.0, 1.0)
+                elif par == "ll1":
+                    ax.set_xlim(-0.6, 0.6)
+                elif par in ("lu1", "ul1", "ul2"):
+                    ax.set_xlim(-0.4, 0.4)
                 else:
-                    ax.set_xlim(-0.5, 0.5)
+                    ax.set_xlim(-1.0, 1.0)
                 # endif
                 ax.set_ylim(bottom=0.0, top=max(5.0, min(12.0, np.nanmax(delta) * 1.05)))
                 ax.set_title(f"Bin {b}: $-t^\\prime$ bin {t_index + 1}")
@@ -11806,8 +11848,41 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
         fig.savefig(conditional_dir / f"conditional_fit_bin_{b:02d}.png", dpi=200)
         plt.close(fig)
     # endfor
-    pd.DataFrame(conditional_rows).to_csv(table_dir / "conditional_phi_data_model.csv", index=False)
-    pd.DataFrame(residual_summaries).to_csv(table_dir / "conditional_residual_summary.csv", index=False)
+    conditional_frame = pd.DataFrame(conditional_rows)
+    residual_frame = pd.DataFrame(residual_summaries)
+    conditional_frame.to_csv(table_dir / "conditional_phi_data_model.csv", index=False)
+    residual_frame.to_csv(table_dir / "conditional_residual_summary.csv", index=False)
+
+    all_pulls = conditional_frame.residual.to_numpy(dtype=float)
+    all_pulls = all_pulls[np.isfinite(all_pulls)]
+    appendix_summary = {
+        "nominal_fits": {
+            "number": int(len(fit_frame)),
+            "number_valid": int(fit_frame.valid.astype(bool).sum()),
+            "number_accurate_covariance": int(fit_frame.accurate_covariance.astype(bool).sum()),
+            "number_positive_definite_covariance": int(fit_frame.positive_definite_covariance.astype(bool).sum()),
+            "number_with_parameters_at_limit": int(fit_frame.parameters_at_limit.astype(bool).sum()),
+            "maximum_edm": float(fit_frame.edm.max()),
+        },
+        "profile_likelihoods": {
+            "number": int(len(profile_summary_rows)),
+            "number_status_ok": int(sum(str(row.get("profile_status", "")) == "ok" for row in profile_summary_rows)),
+            "number_with_both_68_crossings": int(sum(bool(row["has_both_68_crossings"]) for row in profile_summary_rows)),
+            "number_with_both_95_crossings": int(sum(bool(row["has_both_95_crossings"]) for row in profile_summary_rows)),
+            "total_evaluated_points": int(len(profile_frame)),
+            "total_invalid_points": int((~profile_frame.profile_fit_valid.fillna(False).astype(bool)).sum()),
+        },
+        "conditional_residuals": {
+            "number_of_pull_cells": int(all_pulls.size),
+            "mean_pull": float(np.mean(all_pulls)) if all_pulls.size else math.nan,
+            "rms_pull": float(np.sqrt(np.mean(np.square(all_pulls)))) if all_pulls.size else math.nan,
+            "maximum_absolute_pull": float(np.max(np.abs(all_pulls))) if all_pulls.size else math.nan,
+            "number_abs_pull_gt_2": int(np.sum(np.abs(all_pulls) > 2.0)),
+            "number_abs_pull_gt_3": int(np.sum(np.abs(all_pulls) > 3.0)),
+            "median_bin_pull_rms": float(residual_frame.residual_rms.median()),
+        },
+    }
+    write_json(table_dir / "appendix_statistical_summary.json", appendix_summary)
     write_json(out_dir / "appendix_mle_diagnostics_manifest.json", {
         "mode": "appendix_mle_diagnostics", "fit_model": "production nominal seven-parameter joint MLE",
         "parameters": list(PHYSICS_PARAMETERS), "periods": list(PERIODS),
