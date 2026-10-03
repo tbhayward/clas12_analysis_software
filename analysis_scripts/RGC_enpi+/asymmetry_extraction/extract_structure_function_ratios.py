@@ -5542,6 +5542,201 @@ def write_six_charge_total_corrections(
     return {"bins": str(bins_path), "summary": str(summary_path)}
 
 
+
+def write_simultaneous_six_charge_total_fit(
+    *, frame: pd.DataFrame, events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    output_dir: Path, epsilon: float = 0.01,
+) -> dict[str, str]:
+    """Fit all six period x target-sign charge corrections simultaneously.
+
+    A +/-epsilon finite-difference probe is made for each of the six charge
+    totals.  For each probe the affected period and the simultaneous fit are
+    rerun, so the response of *all three* period-minus-simultaneous A_LL
+    residuals is retained.  The resulting 72 x 6 response matrix is solved
+    with weighted least squares.  Because absolute/common charge directions
+    can be weakly constrained, the solution uses an SVD pseudoinverse and
+    reports its singular values, rank and covariance.  Gaussian-prior profile
+    solutions (1, 2, 3 and 5 percent per charge total) are also written; these
+    answer how much of the A_LL heterogeneity can be absorbed by plausibly
+    small relative charge corrections without forcing an unconstrained fit.
+    """
+    ensure_directory(output_dir)
+    frame_by_bin = frame.set_index("bin_number")
+    charge_keys = [(p, s) for p in PERIODS for s in (1, -1)]
+    labels = [f"{p}_Pt{'plus' if s > 0 else 'minus'}" for p, s in charge_keys]
+
+    # Nominal residual vector and approximate nested variances.
+    obs = []
+    for bin_number in range(1, NUMBER_OF_BINS + 1):
+        nominal = frame_by_bin.loc[bin_number]
+        for period in PERIODS:
+            d0 = float(nominal[f"ll0_{period}"] - nominal["ll0"])
+            pstat = float(nominal[f"ll0_stat_{period}"])
+            cstat = float(nominal["ll0_stat"])
+            var = max(pstat * pstat - cstat * cstat, 1.0e-12)
+            obs.append((bin_number, period, d0, var))
+        # endfor
+    # endfor
+
+    y = np.asarray([x[2] for x in obs], dtype=float)
+    var = np.asarray([x[3] for x in obs], dtype=float)
+    response = np.zeros((len(obs), len(charge_keys)), dtype=float)
+    probe_rows: list[dict[str, Any]] = []
+
+    for j, (changed_period, target_sign) in enumerate(charge_keys):
+        distorted = {
+            e: _copy_run_states_with_target_sign_total_scale(
+                run_states, changed_period, target_sign, 1.0 + e
+            )
+            for e in (-epsilon, +epsilon)
+        }
+        combined_by_eps: dict[float, dict[int, float]] = {-epsilon: {}, +epsilon: {}}
+        affected_by_eps: dict[float, dict[int, float]] = {-epsilon: {}, +epsilon: {}}
+
+        for bin_number in range(1, NUMBER_OF_BINS + 1):
+            nominal = frame_by_bin.loc[bin_number]
+            combined_initial = {name: float(nominal[name]) for name in PHYSICS_PARAMETERS}
+            combined_fixed = {name: value for name, value in combined_initial.items() if name != "ll0"}
+            period_initial = {name: float(nominal[f"{name}_{changed_period}"]) for name in PHYSICS_PARAMETERS}
+            period_fixed = {name: value for name, value in period_initial.items() if name != "ll0"}
+
+            for e in (-epsilon, +epsilon):
+                cf = fit_one_variant(
+                    events, distorted[e], dilution_records, bin_number, "nominal",
+                    initial_values=combined_initial, fixed_physics_parameters=combined_fixed,
+                )
+                pf = fit_one_variant(
+                    events, distorted[e], dilution_records, bin_number, "nominal",
+                    active_periods=(changed_period,), initial_values=period_initial,
+                    fixed_physics_parameters=period_fixed,
+                )
+                combined_by_eps[e][bin_number] = float(cf["values"]["ll0"])
+                affected_by_eps[e][bin_number] = float(pf["values"]["ll0"])
+            # endfor
+        # endfor
+
+        for i, (bin_number, period, d0, nested_var) in enumerate(obs):
+            if period == changed_period:
+                dm = affected_by_eps[-epsilon][bin_number] - combined_by_eps[-epsilon][bin_number]
+                dp = affected_by_eps[+epsilon][bin_number] - combined_by_eps[+epsilon][bin_number]
+            else:
+                nominal_period = float(frame_by_bin.loc[bin_number, f"ll0_{period}"])
+                dm = nominal_period - combined_by_eps[-epsilon][bin_number]
+                dp = nominal_period - combined_by_eps[+epsilon][bin_number]
+            # endif
+            slope = (dp - dm) / (2.0 * epsilon)
+            response[i, j] = slope
+            probe_rows.append({
+                "charge_parameter": labels[j], "changed_period": changed_period,
+                "target_sign": target_sign, "bin_number": bin_number,
+                "residual_period": period, "nominal_period_minus_combined": d0,
+                "residual_minus": dm, "residual_plus": dp,
+                "dresidual_depsilon": slope, "nested_variance": nested_var,
+            })
+        # endfor
+        print(f"[simultaneous six-charge] response {j+1}/6: {labels[j]}", flush=True)
+    # endfor
+
+    sqrt_w = 1.0 / np.sqrt(var)
+    Aw = response * sqrt_w[:, None]
+    yw = y * sqrt_w
+    u, singular_values, vt = np.linalg.svd(Aw, full_matrices=False)
+    tol = np.finfo(float).eps * max(Aw.shape) * (singular_values[0] if singular_values.size else 0.0)
+    rank = int(np.sum(singular_values > tol))
+    inv_s = np.asarray([1.0 / x if x > tol else 0.0 for x in singular_values])
+    delta = -(vt.T * inv_s) @ (u.T @ yw)
+    covariance = (vt.T * (inv_s ** 2)) @ vt
+
+    chi2_before = float(np.sum(yw * yw))
+    resid_after = y + response @ delta
+    chi2_after = float(np.sum((resid_after * sqrt_w) ** 2))
+
+    solution_rows = []
+    for j, (period, target_sign) in enumerate(charge_keys):
+        state = run_states[period]
+        mask = np.sign(state["pt"]).astype(int) == target_sign
+        q0 = float(np.sum((state["q_plus"] + state["q_minus"])[mask]))
+        sigma = math.sqrt(max(float(covariance[j, j]), 0.0))
+        solution_rows.append({
+            "charge_parameter": labels[j], "period": period, "target_sign": target_sign,
+            "nominal_charge_total": q0, "best_fit_fractional_correction": float(delta[j]),
+            "best_fit_percent_correction": 100.0 * float(delta[j]),
+            "linearized_stat_uncertainty": sigma,
+            "linearized_percent_uncertainty": 100.0 * sigma,
+            "corrected_charge_total": q0 * (1.0 + float(delta[j])),
+        })
+    # endfor
+
+    # Ridge/Gaussian-prior solutions.  The prior is centered on zero and has
+    # the same fractional width for each of the six charge corrections.
+    prior_rows = []
+    ata = Aw.T @ Aw
+    aty = Aw.T @ yw
+    for prior_sigma in (0.01, 0.02, 0.03, 0.05):
+        hessian = ata + np.eye(len(charge_keys)) / (prior_sigma * prior_sigma)
+        delta_prior = -np.linalg.solve(hessian, aty)
+        data_resid = y + response @ delta_prior
+        data_chi2 = float(np.sum((data_resid * sqrt_w) ** 2))
+        prior_chi2 = float(np.sum((delta_prior / prior_sigma) ** 2))
+        for j, label in enumerate(labels):
+            prior_rows.append({
+                "prior_percent": 100.0 * prior_sigma, "charge_parameter": label,
+                "best_fit_fractional_correction": float(delta_prior[j]),
+                "best_fit_percent_correction": 100.0 * float(delta_prior[j]),
+                "data_chi2": data_chi2, "prior_chi2": prior_chi2,
+                "penalized_chi2": data_chi2 + prior_chi2,
+                "nominal_data_chi2": chi2_before,
+            })
+        # endfor
+    # endfor
+
+    matrix_rows = []
+    for i, row_label in enumerate(labels):
+        for j, col_label in enumerate(labels):
+            denom = math.sqrt(max(covariance[i, i], 0.0) * max(covariance[j, j], 0.0))
+            corr = covariance[i, j] / denom if denom > 0.0 else math.nan
+            matrix_rows.append({
+                "row_parameter": row_label, "column_parameter": col_label,
+                "covariance": float(covariance[i, j]), "correlation": float(corr),
+            })
+        # endfor
+    # endfor
+
+    summary = pd.DataFrame([{
+        "n_residuals": len(y), "n_charge_parameters": len(charge_keys),
+        "response_rank": rank, "chi2_before": chi2_before, "chi2_after": chi2_after,
+        "delta_chi2": chi2_before - chi2_after,
+        "singular_values": ";".join(f"{x:.12g}" for x in singular_values),
+        "note": "linearized simultaneous six-charge WLS; period and combined A_LL both respond to each charge perturbation",
+    }])
+
+    paths = {
+        "solution": output_dir / "simultaneous_six_charge_solution.csv",
+        "summary": output_dir / "simultaneous_six_charge_summary.csv",
+        "probes": output_dir / "simultaneous_six_charge_response_matrix.csv",
+        "covariance": output_dir / "simultaneous_six_charge_covariance.csv",
+        "priors": output_dir / "simultaneous_six_charge_prior_profiles.csv",
+    }
+    pd.DataFrame(solution_rows).to_csv(paths["solution"], index=False)
+    summary.to_csv(paths["summary"], index=False)
+    pd.DataFrame(probe_rows).to_csv(paths["probes"], index=False)
+    pd.DataFrame(matrix_rows).to_csv(paths["covariance"], index=False)
+    pd.DataFrame(prior_rows).to_csv(paths["priors"], index=False)
+
+    print(
+        f"[simultaneous six-charge] rank={rank}/6, "
+        f"chi2 {chi2_before:.3f} -> {chi2_after:.3f}", flush=True,
+    )
+    for row in solution_rows:
+        print(
+            f"[simultaneous six-charge] {row['charge_parameter']}: "
+            f"{row['best_fit_percent_correction']:+.3f}%", flush=True,
+        )
+    # endfor
+    return {key: str(value) for key, value in paths.items()}
+
 def write_beam_polarization_response_diagnostic(
     *, frame: pd.DataFrame, events: Mapping[str, np.ndarray],
     run_states: Mapping[str, Mapping[str, np.ndarray]],
@@ -11065,6 +11260,14 @@ def main() -> int:
             output_dir=nominal_dir / "diagnostics" / "charge_normalization",
         )
         print(f"  Six-charge solve: {six_charge['summary']}", flush=True)
+
+        simultaneous_six_charge = write_simultaneous_six_charge_total_fit(
+            frame=nominal_result["frame"], events=stability_events,
+            run_states=stability_run_states, dilution_records=stability_dilutions,
+            output_dir=nominal_dir / "diagnostics" / "charge_normalization",
+        )
+        print(f"  Simultaneous six-charge fit: {simultaneous_six_charge['solution']}", flush=True)
+        print(f"  Simultaneous six-charge priors: {simultaneous_six_charge['priors']}", flush=True)
 
         beam_products = write_beam_polarization_response_diagnostic(
             frame=nominal_result["frame"], events=stability_events,
