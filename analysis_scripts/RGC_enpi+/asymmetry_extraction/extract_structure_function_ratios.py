@@ -4912,6 +4912,249 @@ def write_period_stability_excursion_table(frame: pd.DataFrame, output_path: Pat
 
 
 
+
+def write_period_stability_observable_likelihood_ratio_tests(
+    results: list[dict[str, Any]],
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    output_dir: Path,
+) -> Path:
+    """Exact profiled LRT for period dependence of each published amplitude.
+
+    For a tested amplitude, H0 constrains that amplitude to be common to all
+    three periods while the other four published polarized amplitudes are
+    independently profiled in each period.  H1 is the fully period-separated
+    model already fitted by the period-stability extraction.  Thus H1 has two
+    additional parameters per bin and the asymptotic reference distribution is
+    chi-square with 2 dof per bin (48 dof for 24 valid bins).
+
+    The zero-UU period-stability model is used throughout: u1=u2=0.  Dilution
+    factors are profiled with exactly the same Gaussian constraints as in the
+    nominal period fits.
+    """
+    ensure_directory(output_dir)
+    try:
+        from scipy.stats import chi2 as chi2_distribution
+    except Exception:
+        chi2_distribution = None
+    # endtry
+
+    results_by_bin = {int(item["bin_number"]): item for item in results}
+    rows: list[dict[str, Any]] = []
+
+    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+        total_stat = 0.0
+        total_df = 0
+        for bin_number in range(1, NUMBER_OF_BINS + 1):
+            result = results_by_bin[bin_number]
+            period_fits = result["period_fits"]
+
+            period_nlls = {}
+            for period in PERIODS:
+                period_nlls[period], _ = make_bin_nll(
+                    events, run_states, dilution_records, bin_number,
+                    "nominal", active_periods=(period,),
+                )
+            # endfor
+
+            # One common tested amplitude; all other published amplitudes are
+            # period-specific.  The three active dilution factors are also
+            # profiled.  u1 and u2 are fixed to zero by construction below.
+            names = [parameter]
+            for period in PERIODS:
+                for other in PUBLISHED_SYSTEMATIC_PARAMETERS:
+                    if other != parameter:
+                        names.append(f"{other}_{period}")
+                    # endif
+                # endfor
+            # endfor
+            names.extend(f"f_{period}" for period in PERIODS)
+
+            starts = {}
+            common_weights = []
+            common_values = []
+            for period in PERIODS:
+                fit = period_fits[period]
+                value = float(fit["values"][parameter])
+                error = float(fit["errors"][parameter])
+                if np.isfinite(error) and error > 0.0:
+                    common_values.append(value)
+                    common_weights.append(1.0 / error**2)
+                # endif
+                for other in PUBLISHED_SYSTEMATIC_PARAMETERS:
+                    if other != parameter:
+                        starts[f"{other}_{period}"] = float(fit["values"][other])
+                    # endif
+                # endfor
+                starts[f"f_{period}"] = float(
+                    dilution_records[(period, bin_number)].value
+                )
+            # endfor
+            if common_weights:
+                starts[parameter] = float(
+                    np.average(common_values, weights=common_weights)
+                )
+            else:
+                starts[parameter] = float(
+                    result["variants"]["nominal"]["values"][parameter]
+                )
+            # endif
+
+            central_dilutions = {
+                period: float(dilution_records[(period, bin_number)].value)
+                for period in PERIODS
+            }
+
+            def joint_nll(*args: float) -> float:
+                pars = dict(zip(names, args))
+                total = 0.0
+                for period in PERIODS:
+                    physics = {"u1": 0.0, "u2": 0.0}
+                    for published in PUBLISHED_SYSTEMATIC_PARAMETERS:
+                        physics[published] = (
+                            float(pars[parameter])
+                            if published == parameter
+                            else float(pars[f"{published}_{period}"])
+                        )
+                    # endfor
+                    dilution_values = {
+                        f"f_{p}": (
+                            float(pars[f"f_{p}"])
+                            if p == period else central_dilutions[p]
+                        )
+                        for p in PERIODS
+                    }
+                    total += float(period_nlls[period](
+                        **physics, **dilution_values
+                    ))
+                # endfor
+                return total
+
+            start_vector = [float(starts[name]) for name in names]
+
+            def configured_candidate(scale: float = 1.0) -> Minuit:
+                candidate_start = list(start_vector)
+                if scale != 1.0:
+                    for i, name in enumerate(names):
+                        if name.startswith("f_"):
+                            continue
+                        # endif
+                        candidate_start[i] *= scale
+                    # endfor
+                # endif
+                candidate = Minuit(joint_nll, *candidate_start, name=names)
+                candidate.errordef = Minuit.LIKELIHOOD
+                candidate.print_level = 0
+                candidate.strategy = 1
+                for name in names:
+                    base = name.split("_", 1)[0]
+                    if name in PUBLISHED_SYSTEMATIC_PARAMETERS:
+                        candidate.limits[name] = PARAMETER_LIMITS[name]
+                    elif base in PUBLISHED_SYSTEMATIC_PARAMETERS:
+                        candidate.limits[name] = PARAMETER_LIMITS[base]
+                    elif name.startswith("f_"):
+                        period = name[2:]
+                        record = dilution_records[(period, bin_number)]
+                        central = float(record.value)
+                        sigma = float(record.stat_uncertainty)
+                        width = max(8.0 * sigma, 0.20 * central, 0.02)
+                        candidate.limits[name] = (
+                            max(1.0e-6, central - width), central + width
+                        )
+                        if sigma == 0.0:
+                            candidate.fixed[name] = True
+                        # endif
+                    # endif
+                # endfor
+                candidate.migrad(ncall=120000)
+                if not candidate.fmin.is_valid:
+                    candidate.simplex(ncall=50000)
+                    candidate.strategy = 2
+                    candidate.migrad(ncall=180000)
+                # endif
+                candidate.hesse()
+                return candidate
+
+            candidates = [configured_candidate(1.0), configured_candidate(0.5)]
+            valid_candidates = [
+                candidate for candidate in candidates
+                if candidate.fmin.is_valid and math.isfinite(float(candidate.fval))
+            ]
+            null_fit = min(
+                valid_candidates if valid_candidates else candidates,
+                key=lambda candidate: float(candidate.fval)
+                if math.isfinite(float(candidate.fval)) else math.inf,
+            )
+
+            null_nll = float(null_fit.fval)
+            alt_nll = float(sum(
+                float(period_fits[period]["minimum_nll"])
+                for period in PERIODS
+            ))
+            valid = (
+                null_fit.fmin.is_valid
+                and math.isfinite(null_nll)
+                and math.isfinite(alt_nll)
+            )
+            stat = max(0.0, 2.0 * (null_nll - alt_nll)) if valid else math.nan
+            df = 2 if valid else 0
+            pvalue = (
+                float(chi2_distribution.sf(stat, df))
+                if valid and chi2_distribution is not None else math.nan
+            )
+            rows.append({
+                "scope": "bin", "parameter": parameter,
+                "bin_number": bin_number, "minus2logLambda": stat,
+                "df": df, "pvalue": pvalue,
+                "null_minimum_nll": null_nll,
+                "alternative_minimum_nll": alt_nll,
+                "null_fit_valid": bool(null_fit.fmin.is_valid),
+                "null_fit_accurate_covariance": bool(null_fit.fmin.has_accurate_covar),
+                "null_fit_positive_definite_covariance": bool(null_fit.fmin.has_posdef_covar),
+                "null_fit_parameters_at_limit": bool(null_fit.fmin.has_parameters_at_limit),
+                "null_fit_edm": float(null_fit.fmin.edm),
+                "null_fit_nfcn": int(null_fit.fmin.nfcn),
+            })
+            if valid:
+                total_stat += stat
+                total_df += df
+            # endif
+            print(
+                f"[observable LRT] {parameter} bin {bin_number:02d}: "
+                f"-2dlnL={stat:.3f}, df={df}, p={pvalue:.4g}, "
+                f"valid={bool(null_fit.fmin.is_valid)}",
+                flush=True,
+            )
+        # endfor
+
+        total_pvalue = (
+            float(chi2_distribution.sf(total_stat, total_df))
+            if total_df > 0 and chi2_distribution is not None else math.nan
+        )
+        rows.append({
+            "scope": "all_24_bins", "parameter": parameter,
+            "bin_number": np.nan, "minus2logLambda": total_stat,
+            "df": total_df, "pvalue": total_pvalue,
+            "null_minimum_nll": np.nan, "alternative_minimum_nll": np.nan,
+            "null_fit_valid": True,
+            "null_fit_accurate_covariance": np.nan,
+            "null_fit_positive_definite_covariance": np.nan,
+            "null_fit_parameters_at_limit": np.nan,
+            "null_fit_edm": np.nan, "null_fit_nfcn": np.nan,
+        })
+        print(
+            f"[observable LRT] {parameter} TOTAL: "
+            f"-2dlnL={total_stat:.3f}, df={total_df}, p={total_pvalue:.6g}",
+            flush=True,
+        )
+    # endfor
+
+    path = output_dir / "period_stability_observable_likelihood_ratio_tests.csv"
+    pd.DataFrame(rows).to_csv(path, index=False)
+    return path
+
+
 def write_period_stability_global_diagnostics(
     frame: pd.DataFrame,
     output_dir: Path,
@@ -11313,7 +11556,19 @@ def main() -> int:
             stability_cuts, stability_run_states,
         )
         print(f"  Global LRT: {global_products['global_lrt']}", flush=True)
-        print(f"  Observable tests: {global_products['observable_wald']}", flush=True)
+        print(f"  Observable Wald tests: {global_products['observable_wald']}", flush=True)
+
+        # Exact observable-by-observable profiled likelihood-ratio tests.
+        # For each observable, only that amplitude is constrained to be common
+        # across periods under H0; the other four polarized amplitudes remain
+        # period-specific and are profiled in both hypotheses.
+        observable_lrt_path = write_period_stability_observable_likelihood_ratio_tests(
+            nominal_result["results"], load_event_cache(nominal_cache),
+            stability_run_states,
+            load_dilution_factors(nominal_dilution, cut_label="nominal"),
+            nominal_dir / "diagnostics" / "global_consistency",
+        )
+        print(f"  Observable exact LRTs: {observable_lrt_path}", flush=True)
         print(f"  Period scale tests: {global_products['scale_tests']}", flush=True)
 
         # Audit the actual run/helicity charge bookkeeping and measure the
