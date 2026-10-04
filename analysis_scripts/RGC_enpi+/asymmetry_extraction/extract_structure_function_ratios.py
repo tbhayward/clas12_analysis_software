@@ -205,7 +205,7 @@ eight worker processes.
 from __future__ import annotations
 
 import argparse
-from concurrent.futures import ProcessPoolExecutor, as_completed
+from concurrent.futures import ProcessPoolExecutor, as_completed, as_completed
 import multiprocessing as mp
 import queue
 import time
@@ -12886,6 +12886,7 @@ def write_charge_normalized_kinematic_distributions(
 # =============================================================================
 
 NULL_TEST_MODES: tuple[str, ...] = ("beam", "target", "both")
+POLARIZED_PARAMETERS: tuple[str, ...] = ("lu1", "ul1", "ul2", "ll0", "ll1")
 NULL_TEST_SEED = 20261004
 
 
@@ -12976,10 +12977,21 @@ def null_test_fit_worker(bin_number: int) -> dict[str, Any]:
             or _WORKER_DILUTION_RECORDS is None):
         raise RuntimeError("Null-test worker was not initialized.")
     # endif
-    return fit_one_variant(
+    bin_number = int(bin_number)
+    t0 = time.perf_counter()
+    print(f"[null-hypothesis fit START] bin {bin_number:02d}", flush=True)
+    fit = fit_one_variant(
         _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
-        int(bin_number), "nominal",
+        bin_number, "nominal",
+        fixed_physics_parameters={"u1": 0.0, "u2": 0.0},
     )
+    elapsed = time.perf_counter() - t0
+    print(
+        f"[null-hypothesis fit DONE]  bin {bin_number:02d} | "
+        f"{elapsed:.1f} s | valid={fit['valid']} | EDM={fit['edm']:.3e}",
+        flush=True,
+    )
+    return fit
 
 
 def _plot_null_test_parameter(
@@ -13061,7 +13073,7 @@ def _write_null_test_combined_plots(output_root: Path) -> list[Path]:
     combined_dir = output_root / "combined_plots"
     return [
         _plot_null_test_combined_parameter(frames, parameter, combined_dir)
-        for parameter in PHYSICS_PARAMETERS
+        for parameter in POLARIZED_PARAMETERS
     ]
 
 
@@ -13076,7 +13088,7 @@ def _load_complete_null_test_csv(csv_path: Path) -> pd.DataFrame | None:
         return None
     # endtry
     required = {"bin_number", "fit_valid"}
-    for parameter in PHYSICS_PARAMETERS:
+    for parameter in POLARIZED_PARAMETERS:
         required.add(parameter)
         required.add(f"{parameter}_stat")
     # endfor
@@ -13152,19 +13164,46 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
             mode_dir = output_root / mode
             ensure_directory(mode_dir / "plots")
             print(f"[null-hypothesis] {mode}: saved table missing/incomplete; fitting 24 bins (seed={mode_seed})", flush=True)
+            mode_t0 = time.perf_counter()
+            print(
+                f"[null-hypothesis] {mode}: using {workers} workers; "
+                "u1=u2=0 fixed; submitting 24 bins",
+                flush=True,
+            )
             with ProcessPoolExecutor(
                 max_workers=workers, initializer=initialize_null_test_worker,
                 initargs=(str(cache_path), run_state_payload, dilution_payload, mode, mode_seed),
             ) as executor:
-                results = list(executor.map(null_test_fit_worker, range(1, NUMBER_OF_BINS + 1)))
+                future_to_bin = {
+                    executor.submit(null_test_fit_worker, b): b
+                    for b in range(1, NUMBER_OF_BINS + 1)
+                }
+                results_by_bin = {}
+                completed = 0
+                for future in as_completed(future_to_bin):
+                    b = future_to_bin[future]
+                    results_by_bin[b] = future.result()
+                    completed += 1
+                    elapsed = time.perf_counter() - mode_t0
+                    print(
+                        f"[null-hypothesis] {mode}: completed bin {b:02d} "
+                        f"({completed}/{NUMBER_OF_BINS}; elapsed {elapsed/60.0:.1f} min)",
+                        flush=True,
+                    )
+                # endfor
+                results = [results_by_bin[b] for b in range(1, NUMBER_OF_BINS + 1)]
             # endwith
+            print(
+                f"[null-hypothesis] {mode}: all 24 fits finished in "
+                f"{(time.perf_counter()-mode_t0)/60.0:.1f} min", flush=True
+            )
             rows = []
             for result in results:
                 fit_ok = bool(result["valid"] and result["accurate_covariance"]
                               and result["positive_definite_covariance"]
                               and not result["parameters_at_limit"])
                 row = {"bin_number": int(result["bin_number"]), "fit_valid": fit_ok}
-                for parameter in PHYSICS_PARAMETERS:
+                for parameter in POLARIZED_PARAMETERS:
                     row[parameter] = float(result["values"][parameter])
                     row[f"{parameter}_stat"] = float(result["errors"][parameter])
                 # endfor
@@ -13194,11 +13233,11 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
         if not args.skip_plots:
             mode_dir = output_root / mode
             ensure_directory(mode_dir / "plots")
-            for parameter in PHYSICS_PARAMETERS:
+            for parameter in POLARIZED_PARAMETERS:
                 _plot_null_test_parameter(frame, parameter, mode, mode_dir / "plots")
             # endfor
         # endif
-        for parameter in PHYSICS_PARAMETERS:
+        for parameter in POLARIZED_PARAMETERS:
             good = (np.isfinite(frame[parameter]) & np.isfinite(frame[f"{parameter}_stat"])
                     & (frame[f"{parameter}_stat"] > 0.0))
             pulls = frame.loc[good, parameter] / frame.loc[good, f"{parameter}_stat"]
@@ -13222,6 +13261,7 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
     pd.DataFrame(summary_rows).to_csv(summary_path, index=False)
     write_json(output_root / "null_hypothesis_metadata.json", {
         "seed": int(args.null_test_seed), "tests": list(NULL_TEST_MODES),
+        "fit_model": "five polarized ratios fitted with u1=u2=0 fixed",
         "beam_permutation": "event helicities independently redrawn within each run according to Q+/(Q+ + Q-)",
         "target_permutation": "target-polarization signs permuted among runs within each period; |Pt| retained",
         "expected_zero": {key: list(value) for key, value in expected_by_mode.items()},
