@@ -12991,99 +12991,199 @@ def _plot_null_test_parameter(
     return path
 
 
-def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int) -> int:
-    """Run the three statistical-only spin-label permutation null tests."""
-    cache_path = (
-        args.cache.expanduser().resolve()
-        if args.cache else root / "nominal/cache/selected_events.npz"
-    )
-    if not cache_path.is_file():
-        raise FileNotFoundError(
-            f"Nominal selected-event cache not found: {cache_path}. "
-            "Run the nominal extraction first or pass --cache."
-        )
+def _plot_null_test_combined_parameter(
+    frames: Mapping[str, pd.DataFrame], parameter: str, output_dir: Path
+) -> Path:
+    """Overlay all three saved null-test extractions for one parameter."""
+    ensure_directory(output_dir)
+    fig, ax = plt.subplots(figsize=(9.5, 5.2))
+    display = {
+        "beam": ("o", "Beam helicity randomized"),
+        "target": ("s", "Target helicity randomized"),
+        "both": ("^", "Beam + target helicities randomized"),
+    }
+    offsets = {"beam": -0.18, "target": 0.0, "both": 0.18}
+    for mode in NULL_TEST_MODES:
+        frame = frames[mode].sort_values("bin_number")
+        x = frame["bin_number"].to_numpy(dtype=float) + offsets[mode]
+        y = frame[parameter].to_numpy(dtype=float)
+        e = frame[f"{parameter}_stat"].to_numpy(dtype=float)
+        marker, label = display[mode]
+        ax.errorbar(x, y, yerr=e, fmt=marker, ms=4.5, capsize=2,
+                    linestyle="none", label=label)
+    # endfor
+    ax.axhline(0.0, lw=1.0, ls="--")
+    ax.set_xlim(0.3, NUMBER_OF_BINS + 0.7)
+    ax.set_xticks(np.arange(1, NUMBER_OF_BINS + 1))
+    ax.set_xlabel("Bin number")
+    ax.set_ylabel(PARAMETER_LABELS[parameter])
+    apply_parameter_y_limits(ax, parameter)
+    ax.grid(alpha=0.25)
+    ax.legend(frameon=False, fontsize=9)
+    ax.set_title("Null-hypothesis tests")
+    fig.tight_layout()
+    path = output_dir / f"null_combined_{parameter}_bins_01_24.png"
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+    return path
+
+
+def _write_null_test_combined_plots(output_root: Path) -> list[Path]:
+    """Build the seven summary canvases from the saved per-test CSV files."""
+    frames: dict[str, pd.DataFrame] = {}
+    for mode in NULL_TEST_MODES:
+        csv_path = output_root / mode / "structure_function_ratios.csv"
+        if not csv_path.is_file():
+            raise FileNotFoundError(f"Missing null-test fit output: {csv_path}")
+        # endif
+        frames[mode] = pd.read_csv(csv_path)
+    # endfor
+    combined_dir = output_root / "combined_plots"
+    return [
+        _plot_null_test_combined_parameter(frames, parameter, combined_dir)
+        for parameter in PHYSICS_PARAMETERS
+    ]
+
+
+def _load_complete_null_test_csv(csv_path: Path) -> pd.DataFrame | None:
+    """Return a saved null-test table only when all 24 bins and fit columns are present."""
+    if not csv_path.is_file():
+        return None
     # endif
+    try:
+        frame = pd.read_csv(csv_path)
+    except Exception:
+        return None
+    # endtry
+    required = {"bin_number", "fit_valid"}
+    for parameter in PHYSICS_PARAMETERS:
+        required.add(parameter)
+        required.add(f"{parameter}_stat")
+    # endfor
+    if not required.issubset(frame.columns):
+        return None
+    # endif
+    bins = pd.to_numeric(frame["bin_number"], errors="coerce")
+    expected = set(range(1, NUMBER_OF_BINS + 1))
+    if len(frame) != NUMBER_OF_BINS or set(bins.dropna().astype(int)) != expected:
+        return None
+    # endif
+    return frame.sort_values("bin_number").reset_index(drop=True)
 
-    run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
-    run_states = run_state_arrays(run_records)
-    dilution_path = (
-        args.dilution_json.expanduser().resolve() if args.dilution_json
-        else find_default_dilution_json(args.dilution_dir.expanduser().resolve()).resolve()
-    )
-    dilution_records = load_dilution_factors(dilution_path, cut_label="nominal")
-    run_state_payload = {
-        period: {key: np.asarray(values).tolist() for key, values in state.items()}
-        for period, state in run_states.items()
-    }
-    dilution_payload = {
-        period: {
-            str(bin_number): {
-                "x_index": record.x_index,
-                "t_index": record.t_index,
-                "value": record.value,
-                "stat_uncertainty": record.stat_uncertainty,
-            }
-            for (record_period, bin_number), record in dilution_records.items()
-            if record_period == period
-        }
-        for period in PERIODS
-    }
 
+def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int) -> int:
+    """Run missing null tests, reuse complete saved CSVs, and rebuild summaries."""
     output_root = root / "diagnostics/null_hypothesis"
     ensure_directory(output_root)
+
+    # Check saved fit tables first. A normal rerun is therefore cheap when all
+    # three null tests have already completed.
+    frames: dict[str, pd.DataFrame] = {}
+    missing_modes: list[str] = []
+    for mode in NULL_TEST_MODES:
+        csv_path = output_root / mode / "structure_function_ratios.csv"
+        saved = _load_complete_null_test_csv(csv_path)
+        if saved is None:
+            missing_modes.append(mode)
+        else:
+            frames[mode] = saved
+            print(f"[null-hypothesis] {mode}: reusing complete saved fit table {csv_path}", flush=True)
+        # endif
+    # endfor
+
+    if missing_modes:
+        cache_path = (
+            args.cache.expanduser().resolve()
+            if args.cache else root / "nominal/cache/selected_events.npz"
+        )
+        if not cache_path.is_file():
+            raise FileNotFoundError(
+                f"Nominal selected-event cache not found: {cache_path}. "
+                "Run the nominal extraction first or pass --cache."
+            )
+        # endif
+        run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
+        run_states = run_state_arrays(run_records)
+        dilution_path = (
+            args.dilution_json.expanduser().resolve() if args.dilution_json
+            else find_default_dilution_json(args.dilution_dir.expanduser().resolve()).resolve()
+        )
+        dilution_records = load_dilution_factors(dilution_path, cut_label="nominal")
+        run_state_payload = {
+            period: {key: np.asarray(values).tolist() for key, values in state.items()}
+            for period, state in run_states.items()
+        }
+        dilution_payload = {
+            period: {
+                str(bin_number): {
+                    "x_index": record.x_index, "t_index": record.t_index,
+                    "value": record.value, "stat_uncertainty": record.stat_uncertainty,
+                }
+                for (record_period, bin_number), record in dilution_records.items()
+                if record_period == period
+            }
+            for period in PERIODS
+        }
+
+        for mode in missing_modes:
+            mode_index = list(NULL_TEST_MODES).index(mode)
+            mode_seed = int(args.null_test_seed) + 100000 * mode_index
+            mode_dir = output_root / mode
+            ensure_directory(mode_dir / "plots")
+            print(f"[null-hypothesis] {mode}: saved table missing/incomplete; fitting 24 bins (seed={mode_seed})", flush=True)
+            with ProcessPoolExecutor(
+                max_workers=workers, initializer=initialize_null_test_worker,
+                initargs=(str(cache_path), run_state_payload, dilution_payload, mode, mode_seed),
+            ) as executor:
+                results = list(executor.map(null_test_fit_worker, range(1, NUMBER_OF_BINS + 1)))
+            # endwith
+            rows = []
+            for result in results:
+                fit_ok = bool(result["valid"] and result["accurate_covariance"]
+                              and result["positive_definite_covariance"]
+                              and not result["parameters_at_limit"])
+                row = {"bin_number": int(result["bin_number"]), "fit_valid": fit_ok}
+                for parameter in PHYSICS_PARAMETERS:
+                    row[parameter] = float(result["values"][parameter])
+                    row[f"{parameter}_stat"] = float(result["errors"][parameter])
+                # endfor
+                rows.append(row)
+            # endfor
+            frame = pd.DataFrame(rows).sort_values("bin_number")
+            csv_path = mode_dir / "structure_function_ratios.csv"
+            frame.to_csv(csv_path, index=False)
+            frames[mode] = frame
+            print(f"[null-hypothesis] {mode}: wrote {csv_path}", flush=True)
+        # endfor
+    # endif
+
     summary_rows: list[dict[str, Any]] = []
     any_invalid = False
-    for mode_index, mode in enumerate(NULL_TEST_MODES):
-        mode_seed = int(args.null_test_seed) + 100000 * mode_index
-        mode_dir = output_root / mode
-        ensure_directory(mode_dir / "plots")
-        print(f"[null-hypothesis] {mode}: fitting 24 bins (seed={mode_seed})", flush=True)
-        with ProcessPoolExecutor(
-            max_workers=workers,
-            initializer=initialize_null_test_worker,
-            initargs=(str(cache_path), run_state_payload, dilution_payload, mode, mode_seed),
-        ) as executor:
-            results = list(executor.map(null_test_fit_worker, range(1, NUMBER_OF_BINS + 1)))
-        # endwith
-
-        rows = []
-        for result in results:
-            fit_ok = bool(result["valid"] and result["accurate_covariance"]
-                          and result["positive_definite_covariance"]
-                          and not result["parameters_at_limit"])
-            any_invalid |= not fit_ok
-            row = {"bin_number": int(result["bin_number"]), "fit_valid": fit_ok}
-            for parameter in PHYSICS_PARAMETERS:
-                row[parameter] = float(result["values"][parameter])
-                row[f"{parameter}_stat"] = float(result["errors"][parameter])
-            # endfor
-            rows.append(row)
-        # endfor
-        frame = pd.DataFrame(rows).sort_values("bin_number")
-        csv_path = mode_dir / "structure_function_ratios.csv"
-        frame.to_csv(csv_path, index=False)
-        plot_paths = []
+    expected_by_mode = {
+        "beam": ("lu1", "ll0", "ll1"),
+        "target": ("ul1", "ul2", "ll0", "ll1"),
+        "both": ("lu1", "ul1", "ul2", "ll0", "ll1"),
+    }
+    for mode in NULL_TEST_MODES:
+        frame = frames[mode]
+        if "fit_valid" in frame:
+            valid = frame["fit_valid"].astype(str).str.lower().isin(("true", "1"))
+            any_invalid |= bool((~valid).any())
+        # endif
         if not args.skip_plots:
+            mode_dir = output_root / mode
+            ensure_directory(mode_dir / "plots")
             for parameter in PHYSICS_PARAMETERS:
-                plot_paths.append(str(_plot_null_test_parameter(
-                    frame, parameter, mode, mode_dir / "plots"
-                )))
+                _plot_null_test_parameter(frame, parameter, mode, mode_dir / "plots")
             # endfor
         # endif
-
-        expected_zero = {
-            "beam": ("lu1", "ll0", "ll1"),
-            "target": ("ul1", "ul2", "ll0", "ll1"),
-            "both": ("lu1", "ul1", "ul2", "ll0", "ll1"),
-        }[mode]
         for parameter in PHYSICS_PARAMETERS:
             good = (np.isfinite(frame[parameter]) & np.isfinite(frame[f"{parameter}_stat"])
                     & (frame[f"{parameter}_stat"] > 0.0))
             pulls = frame.loc[good, parameter] / frame.loc[good, f"{parameter}_stat"]
             summary_rows.append({
-                "test": mode,
-                "parameter": parameter,
-                "expected_to_vanish": parameter in expected_zero,
+                "test": mode, "parameter": parameter,
+                "expected_to_vanish": parameter in expected_by_mode[mode],
                 "number_of_bins": int(good.sum()),
                 "mean_pull_from_zero": float(pulls.mean()) if len(pulls) else math.nan,
                 "rms_pull_from_zero": float(np.sqrt(np.mean(np.square(pulls)))) if len(pulls) else math.nan,
@@ -13091,21 +13191,19 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
                 "ndf_zero": int(len(pulls)),
             })
         # endfor
-        print(f"[null-hypothesis] {mode}: wrote {csv_path} and {len(plot_paths)} plots", flush=True)
     # endfor
 
+    if not args.skip_plots:
+        combined_plot_paths = _write_null_test_combined_plots(output_root)
+        print(f"[null-hypothesis] wrote {len(combined_plot_paths)} combined summary plots to {output_root / 'combined_plots'}", flush=True)
+    # endif
     summary_path = output_root / "null_hypothesis_summary.csv"
     pd.DataFrame(summary_rows).to_csv(summary_path, index=False)
     write_json(output_root / "null_hypothesis_metadata.json", {
-        "seed": int(args.null_test_seed),
-        "tests": list(NULL_TEST_MODES),
+        "seed": int(args.null_test_seed), "tests": list(NULL_TEST_MODES),
         "beam_permutation": "event helicity labels permuted within each run",
         "target_permutation": "target-polarization signs permuted among runs within each period; |Pt| retained",
-        "expected_zero": {
-            "beam": ["lu1", "ll0", "ll1"],
-            "target": ["ul1", "ul2", "ll0", "ll1"],
-            "both": ["lu1", "ul1", "ul2", "ll0", "ll1"],
-        },
+        "expected_zero": {key: list(value) for key, value in expected_by_mode.items()},
     })
     print("[null-hypothesis] complete", flush=True)
     print(f"  Output:  {output_root}", flush=True)
