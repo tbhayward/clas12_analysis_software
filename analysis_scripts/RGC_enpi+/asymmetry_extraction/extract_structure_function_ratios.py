@@ -12897,12 +12897,14 @@ def _shuffle_spin_labels_for_null_test(
 ) -> tuple[dict[str, np.ndarray], dict[str, dict[str, np.ndarray]]]:
     """Return deterministic spin-label permutations for a null test.
 
-    Beam helicities are permuted independently within each run, preserving the
-    observed +/- event counts of that run.  Target-polarization signs are
-    permuted among runs within each run period, preserving each run's |Pt| and
-    the period's numbers of positive/negative target runs.  The latter is the
-    appropriate permutation unit because target polarization is a run-level
-    state in the production likelihood.
+    Beam helicities are redrawn independently for every event using that run's
+    measured Q+/(Q+ + Q-) charge fraction.  This destroys any physical
+    helicity--kinematics correlation while keeping the randomized sample
+    consistent with the run-by-run beam exposures used by the likelihood.
+    Target-polarization signs are permuted among runs within each run period,
+    preserving each run's |Pt| and the period's numbers of positive/negative
+    target runs.  The latter is the appropriate permutation unit because target
+    polarization is a run-level state in the production likelihood.
     """
     if mode not in NULL_TEST_MODES:
         raise ValueError(f"Unknown null-test mode {mode!r}.")
@@ -12916,10 +12918,28 @@ def _shuffle_spin_labels_for_null_test(
 
     if mode in ("beam", "both"):
         runnum = shuffled_events["runnum"]
+        period_index = shuffled_events["period_index"]
         helicity = shuffled_events["helicity"]
-        for run in np.unique(runnum):
-            indices = np.flatnonzero(runnum == run)
-            helicity[indices] = rng.permutation(helicity[indices])
+        for period in PERIODS:
+            state = shuffled_states[period]
+            state_runs = np.asarray(state["run"], dtype=np.int64)
+            q_plus = np.asarray(state["q_plus"], dtype=np.float64)
+            q_minus = np.asarray(state["q_minus"], dtype=np.float64)
+            charge_sum = q_plus + q_minus
+            p_plus = np.divide(
+                q_plus, charge_sum, out=np.full_like(q_plus, 0.5),
+                where=charge_sum > 0.0,
+            )
+            run_to_p_plus = {int(run): float(prob) for run, prob in zip(state_runs, p_plus)}
+            period_mask = period_index == PERIOD_INDEX[period]
+            for run in np.unique(runnum[period_mask]):
+                indices = np.flatnonzero(period_mask & (runnum == run))
+                if int(run) not in run_to_p_plus:
+                    raise KeyError(f"Run {int(run)} is missing from {period} run-state bookkeeping.")
+                # endif
+                draws = rng.random(indices.size) < run_to_p_plus[int(run)]
+                helicity[indices] = np.where(draws, 1, -1)
+            # endfor
         # endfor
         shuffled_events["helicity"] = helicity
     # endif
@@ -13077,12 +13097,13 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
     ensure_directory(output_root)
 
     # Check saved fit tables first. A normal rerun is therefore cheap when all
-    # three null tests have already completed.
+    # three null tests have already completed. --force-null-test-refit bypasses
+    # these tables so corrected/changed randomizations cannot reuse stale CSVs.
     frames: dict[str, pd.DataFrame] = {}
     missing_modes: list[str] = []
     for mode in NULL_TEST_MODES:
         csv_path = output_root / mode / "structure_function_ratios.csv"
-        saved = _load_complete_null_test_csv(csv_path)
+        saved = None if args.force_null_test_refit else _load_complete_null_test_csv(csv_path)
         if saved is None:
             missing_modes.append(mode)
         else:
@@ -13201,7 +13222,7 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
     pd.DataFrame(summary_rows).to_csv(summary_path, index=False)
     write_json(output_root / "null_hypothesis_metadata.json", {
         "seed": int(args.null_test_seed), "tests": list(NULL_TEST_MODES),
-        "beam_permutation": "event helicity labels permuted within each run",
+        "beam_permutation": "event helicities independently redrawn within each run according to Q+/(Q+ + Q-)",
         "target_permutation": "target-polarization signs permuted among runs within each period; |Pt| retained",
         "expected_zero": {key: list(value) for key, value in expected_by_mode.items()},
     })
@@ -13408,6 +13429,13 @@ def build_argument_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--null-test-seed", type=int, default=NULL_TEST_SEED,
         help=f"Base random seed for --null-hypothesis-tests (default: {NULL_TEST_SEED}).",
+    )
+    parser.add_argument(
+        "--force-null-test-refit", action="store_true",
+        help=(
+            "Force --null-hypothesis-tests to recompute all three null-test fits "
+            "and overwrite their saved CSVs instead of reusing complete tables."
+        ),
     )
     parser.add_argument(
         "--rga-cross-check", action="store_true",
