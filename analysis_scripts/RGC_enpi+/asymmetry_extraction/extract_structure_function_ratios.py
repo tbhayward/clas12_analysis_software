@@ -2372,9 +2372,19 @@ def make_bin_nll(
     run_ranges_filter: tuple[tuple[int, int], ...] | None = None,
     beam_polarization_scales: Mapping[str, float] | None = None,
     double_spin_products_by_run: Mapping[int, float] | None = None,
+    event_weights: np.ndarray | None = None,
 ):
     beam_polarization_scales = dict(beam_polarization_scales or {})
     double_spin_products_by_run = dict(double_spin_products_by_run or {})
+    if event_weights is not None:
+        event_weights = np.asarray(event_weights, dtype=np.float64)
+        if event_weights.shape != np.asarray(events["bin_number"]).shape:
+            raise ValueError("event_weights must have one entry per event.")
+        # endif
+        if np.any(~np.isfinite(event_weights)) or np.any(event_weights < 0.0):
+            raise ValueError("event_weights must be finite and non-negative.")
+        # endif
+    # endif
     mask = events["bin_number"] == bin_number
     if len(active_periods) != len(PERIODS):
         allowed_indices = np.asarray(
@@ -2440,6 +2450,10 @@ def make_bin_nll(
     r_c = events["rC"][mask].astype(np.float64, copy=False)
     r_v = events["rV"][mask].astype(np.float64, copy=False)
     r_w = events["rW"][mask].astype(np.float64, copy=False)
+    selected_event_weights = (
+        event_weights[mask].astype(np.float64, copy=False)
+        if event_weights is not None else np.ones(np.count_nonzero(mask), dtype=np.float64)
+    )
 
     period_event_indices = {
         period: np.flatnonzero(period_index == PERIOD_INDEX[period])
@@ -2512,6 +2526,7 @@ def make_bin_nll(
             "sin_theta": sin_theta[indices],
             "cos_theta": cos_theta[indices],
             "h": event_h,
+            "weight": selected_event_weights[indices],
             "observed_pt": state_pt[observed_state_index],
             "observed_pbpt": np.asarray([
                 double_spin_products_by_run.get(
@@ -2773,7 +2788,7 @@ def make_bin_nll(
                 return INVALID_NLL
             # endif
             total -= float(
-                np.sum(np.log(np.maximum(probability, PROBABILITY_FLOOR)))
+                np.sum(data["weight"] * np.log(np.maximum(probability, PROBABILITY_FLOOR)))
             )
         # endfor
 
@@ -2925,6 +2940,7 @@ def fit_one_variant(
     run_ranges_filter: tuple[tuple[int, int], ...] | None = None,
     beam_polarization_scales: Mapping[str, float] | None = None,
     double_spin_products_by_run: Mapping[int, float] | None = None,
+    event_weights: np.ndarray | None = None,
     fast_profile: bool = False,
 ) -> dict[str, Any]:
     nll, metadata = make_bin_nll(
@@ -2939,6 +2955,7 @@ def fit_one_variant(
         run_ranges_filter=run_ranges_filter,
         beam_polarization_scales=beam_polarization_scales,
         double_spin_products_by_run=double_spin_products_by_run,
+        event_weights=event_weights,
     )
 
     initial = dict(PARAMETER_INITIAL_VALUES)
@@ -12456,6 +12473,187 @@ def write_inclusive_epi_control_diagnostic(
     return out
 
 
+def write_phi_matched_all_diagnostic(
+    frame: pd.DataFrame,
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    dilution_records: Mapping[tuple[str, int], DilutionRecord],
+    output_dir: Path,
+    n_phi_bins: int = 12,
+) -> Path:
+    """Refit A_LL after matching all periods to their common phi acceptance.
+
+    The matching is performed independently in every (xB,-t') bin using\n    phi wrapped to [0, 2*pi), matching the convention stored in the ROOT trees. Each
+    period's phi histogram is normalized to unit area and the target shape is
+    the bin-by-bin minimum of the three normalized histograms.  The same
+    period/bin/phi weight is applied to every helicity and target-spin state,
+    so the procedure cannot manufacture an h*s asymmetry.  Weights are
+    normalized to mean one within each period/bin before entering the
+    conditional likelihood.
+    """
+    ensure_directory(output_dir)
+    phi_edges = np.linspace(0.0, 2.0 * math.pi, n_phi_bins + 1)
+    all_weights = np.ones(np.asarray(events["phi"]).shape, dtype=np.float64)
+    weight_rows = []
+
+    for b in range(1, NUMBER_OF_BINS + 1):
+        normalized = {}
+        period_masks = {}
+        for period in PERIODS:
+            pmask = (
+                (np.asarray(events["bin_number"]) == b)
+                & (np.asarray(events["period_index"]) == PERIOD_INDEX[period])
+            )
+            period_masks[period] = pmask
+            phi_values = np.mod(np.asarray(events["phi"])[pmask], 2.0 * math.pi)
+            counts, _ = np.histogram(phi_values, bins=phi_edges)
+            counts = counts.astype(np.float64)
+            normalized[period] = counts / np.sum(counts) if np.sum(counts) > 0.0 else counts
+        # endfor
+
+        target = np.minimum.reduce([normalized[p] for p in PERIODS])
+        if np.sum(target) <= 0.0:
+            raise RuntimeError(f"No common phi support in kinematic bin {b}.")
+        # endif
+        target /= np.sum(target)
+
+        for period in PERIODS:
+            pmask = period_masks[period]
+            phi_values = np.mod(np.asarray(events["phi"])[pmask], 2.0 * math.pi)
+            ibin = np.clip(np.digitize(phi_values, phi_edges) - 1, 0, n_phi_bins - 1)
+            source = normalized[period]
+            bin_weights = np.divide(
+                target, source, out=np.zeros_like(target), where=source > 0.0
+            )
+            weights = bin_weights[ibin]
+            positive = weights > 0.0
+            if not np.any(positive):
+                raise RuntimeError(f"All phi-matching weights vanish for bin {b}, {period}.")
+            # endif
+            # Preserve the effective overall likelihood scale for this
+            # period/bin; matching changes only the phi composition.
+            weights *= weights.size / np.sum(weights)
+            all_weights[pmask] = weights
+            sumw = float(np.sum(weights))
+            sumw2 = float(np.sum(weights * weights))
+            neff = sumw * sumw / sumw2 if sumw2 > 0.0 else 0.0
+            weight_rows.append({
+                "bin_number": b,
+                "period": period,
+                "number_of_events": int(weights.size),
+                "effective_events": neff,
+                "effective_fraction": neff / weights.size if weights.size else math.nan,
+                "min_weight": float(np.min(weights)),
+                "max_weight": float(np.max(weights)),
+                "mean_weight": float(np.mean(weights)),
+            })
+        # endfor
+    # endfor
+
+    pd.DataFrame(weight_rows).to_csv(output_dir / "phi_matching_weight_diagnostics.csv", index=False)
+
+    rows = []
+    for b in range(1, NUMBER_OF_BINS + 1):
+        fixed = _fixed_other_physics(frame, b)
+        initial = {"ll0": float(frame.loc[frame["bin_number"] == b, "ll0"].iloc[0])}
+        for period in PERIODS:
+            baseline = fit_one_variant(
+                events, run_states, dilution_records, b, "nominal",
+                active_periods=(period,), initial_values=initial,
+                fixed_physics_parameters=fixed,
+            )
+            matched = fit_one_variant(
+                events, run_states, dilution_records, b, "nominal",
+                active_periods=(period,), initial_values={"ll0": baseline["values"]["ll0"]},
+                fixed_physics_parameters=fixed, event_weights=all_weights,
+            )
+            rows.append({
+                "bin_number": b,
+                "period": period,
+                "ll0_baseline": baseline["values"]["ll0"],
+                "ll0_baseline_stat": baseline["errors"]["ll0"],
+                "ll0_phi_matched": matched["values"]["ll0"],
+                "ll0_phi_matched_stat": matched["errors"]["ll0"],
+                "delta_ll0": matched["values"]["ll0"] - baseline["values"]["ll0"],
+                "baseline_valid": baseline["valid"],
+                "matched_valid": matched["valid"],
+            })
+        # endfor
+    # endfor
+
+    result = pd.DataFrame(rows)
+    out = output_dir / "all_period_stability_phi_matched.csv"
+    result.to_csv(out, index=False)
+
+    summary_rows = []
+    for label, value_col, error_col in (
+        ("baseline_fixed_other_amplitudes", "ll0_baseline", "ll0_baseline_stat"),
+        ("phi_matched", "ll0_phi_matched", "ll0_phi_matched_stat"),
+    ):
+        q_total = 0.0
+        bins_used = 0
+        for b in range(1, NUMBER_OF_BINS + 1):
+            sub = result[result["bin_number"] == b]
+            vals = sub[value_col].to_numpy(dtype=float)
+            errs = sub[error_col].to_numpy(dtype=float)
+            good = np.isfinite(vals) & np.isfinite(errs) & (errs > 0.0)
+            if np.count_nonzero(good) != len(PERIODS):
+                continue
+            # endif
+            invvar = 1.0 / errs[good]**2
+            mean = float(np.sum(invvar * vals[good]) / np.sum(invvar))
+            q_total += float(np.sum((vals[good] - mean)**2 / errs[good]**2))
+            bins_used += 1
+        # endfor
+        ndf = 2 * bins_used
+        pvalue = float(chi2.sf(q_total, ndf)) if ndf > 0 else math.nan
+        summary_rows.append({
+            "sample": label, "Q": q_total, "ndf": ndf,
+            "p_value": pvalue, "bins_used": bins_used,
+        })
+        print(
+            f"[phi matching] {label}: Q={q_total:.3f}/{ndf}, p={pvalue:.6g}",
+            flush=True,
+        )
+    # endfor
+    pd.DataFrame(summary_rows).to_csv(output_dir / "phi_matching_period_consistency_summary.csv", index=False)
+
+    fig, ax = plt.subplots(figsize=(11.5, 5.5))
+    offsets = {"su22": -0.16, "fa22": 0.0, "sp23": 0.16}
+    for period in PERIODS:
+        sub = result[result["period"] == period]
+        x = sub["bin_number"].to_numpy(dtype=float) + offsets[period]
+        ax.errorbar(
+            x, sub["ll0_phi_matched"], yerr=sub["ll0_phi_matched_stat"],
+            fmt="o", label=f"{period} phi-matched",
+        )
+    # endfor
+    ax.axhline(0.0, linewidth=1.0, linestyle="--")
+    ax.set_xlabel("Kinematic bin")
+    ax.set_ylabel(r"$A_{LL}$ after common-$\phi$ matching")
+    ax.legend(frameon=False, ncol=3)
+    fig.tight_layout()
+    fig.savefig(output_dir / "all_period_stability_phi_matched.png", dpi=180)
+    plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(11.5, 5.2))
+    for period in PERIODS:
+        sub = result[result["period"] == period]
+        ax.errorbar(
+            sub["bin_number"] + offsets[period], sub["delta_ll0"],
+            yerr=sub["ll0_phi_matched_stat"], fmt="o", label=period,
+        )
+    # endfor
+    ax.axhline(0.0, linewidth=1.0, linestyle="--")
+    ax.set_xlabel("Kinematic bin")
+    ax.set_ylabel(r"$A_{LL}^{\phi\mathrm{-matched}}-A_{LL}^{\mathrm{baseline}}$")
+    ax.legend(frameon=False)
+    fig.tight_layout()
+    fig.savefig(output_dir / "all_phi_matching_shifts.png", dpi=180)
+    plt.close(fig)
+    return out
+
+
 def fd_sector_from_phi_rad_array(phi: np.ndarray) -> np.ndarray:
     deg = np.mod(np.degrees(np.asarray(phi, dtype=float)), 360.0)
     sector = np.full(deg.shape, -1, dtype=np.int8)
@@ -13224,6 +13422,12 @@ def main() -> int:
             extended_dir / "kinematic_distributions",
         )
         print(f"  Charge-normalized kinematics: {distribution_path}", flush=True)
+
+        phi_matched_path = write_phi_matched_all_diagnostic(
+            nominal_result["frame"], stability_events, stability_run_states,
+            stability_dilutions, extended_dir / "phi_matching",
+        )
+        print(f"  Common-phi matched A_LL stability: {phi_matched_path}", flush=True)
 
         if args.period_epoch_refits:
             epoch_refits = write_flagged_epoch_refits(
