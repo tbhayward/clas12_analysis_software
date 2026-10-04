@@ -218,6 +218,8 @@ import os
 import re
 from pathlib import Path
 import sys
+import zipfile
+import xml.etree.ElementTree as ET
 from typing import Any, Iterable, Mapping
 
 import matplotlib
@@ -12023,6 +12025,117 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
 # Extended run-period A_LL diagnostics
 # =============================================================================
 
+def read_xlsx_first_sheet_standard_library(path: Path) -> pd.DataFrame:
+    """Read the first worksheet of a simple .xlsx workbook without openpyxl.
+
+    The DIS PbPt workbooks are ordinary tabular Excel files.  An xlsx file is
+    a ZIP archive containing XML, so this small reader is sufficient for the
+    run, PbPt, and dPbPt columns while keeping the ifarm runtime dependency-free.
+    Formula cells use the cached numeric value stored by Excel.
+    """
+    ns_main = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+    ns_rel = "http://schemas.openxmlformats.org/officeDocument/2006/relationships"
+    ns_pkg = "http://schemas.openxmlformats.org/package/2006/relationships"
+
+    def column_index(cell_reference: str) -> int:
+        match = re.match(r"([A-Za-z]+)", str(cell_reference))
+        if match is None:
+            raise RuntimeError(f"Invalid Excel cell reference {cell_reference!r} in {path}")
+        # endif
+        index = 0
+        for character in match.group(1).upper():
+            index = 26 * index + (ord(character) - ord("A") + 1)
+        # endfor
+        return index - 1
+
+    with zipfile.ZipFile(path, "r") as archive:
+        shared_strings: list[str] = []
+        if "xl/sharedStrings.xml" in archive.namelist():
+            root = ET.fromstring(archive.read("xl/sharedStrings.xml"))
+            for item in root.findall(f"{{{ns_main}}}si"):
+                pieces = [node.text or "" for node in item.iter(f"{{{ns_main}}}t")]
+                shared_strings.append("".join(pieces))
+            # endfor
+        # endif
+
+        workbook = ET.fromstring(archive.read("xl/workbook.xml"))
+        sheets = workbook.find(f"{{{ns_main}}}sheets")
+        if sheets is None or len(sheets) == 0:
+            raise RuntimeError(f"No worksheets found in {path}")
+        # endif
+        first_sheet = sheets[0]
+        relation_id = first_sheet.attrib.get(f"{{{ns_rel}}}id")
+        if not relation_id:
+            raise RuntimeError(f"Could not resolve first worksheet in {path}")
+        # endif
+
+        relationships = ET.fromstring(archive.read("xl/_rels/workbook.xml.rels"))
+        sheet_target = None
+        for relation in relationships.findall(f"{{{ns_pkg}}}Relationship"):
+            if relation.attrib.get("Id") == relation_id:
+                sheet_target = relation.attrib.get("Target")
+                break
+            # endif
+        # endfor
+        if not sheet_target:
+            raise RuntimeError(f"Could not locate first worksheet XML in {path}")
+        # endif
+        sheet_target = str(sheet_target).lstrip("/")
+        if not sheet_target.startswith("xl/"):
+            sheet_target = "xl/" + sheet_target
+        # endif
+        sheet_root = ET.fromstring(archive.read(sheet_target))
+
+        rows: list[dict[int, Any]] = []
+        maximum_column = -1
+        for row_node in sheet_root.iter(f"{{{ns_main}}}row"):
+            row_values: dict[int, Any] = {}
+            for cell in row_node.findall(f"{{{ns_main}}}c"):
+                reference = cell.attrib.get("r", "")
+                column = column_index(reference)
+                cell_type = cell.attrib.get("t", "")
+                value_node = cell.find(f"{{{ns_main}}}v")
+                inline_node = cell.find(f"{{{ns_main}}}is")
+
+                value: Any = None
+                if cell_type == "s" and value_node is not None and value_node.text is not None:
+                    value = shared_strings[int(value_node.text)]
+                elif cell_type == "inlineStr" and inline_node is not None:
+                    value = "".join(node.text or "" for node in inline_node.iter(f"{{{ns_main}}}t"))
+                elif value_node is not None and value_node.text is not None:
+                    raw_value = value_node.text
+                    if cell_type in {"str", "e"}:
+                        value = raw_value
+                    elif cell_type == "b":
+                        value = bool(int(raw_value))
+                    else:
+                        try:
+                            value = float(raw_value)
+                        except ValueError:
+                            value = raw_value
+                        # endtry
+                    # endif
+                # endif
+                row_values[column] = value
+                maximum_column = max(maximum_column, column)
+            # endfor
+            if row_values:
+                rows.append(row_values)
+            # endif
+        # endfor
+
+    if not rows or maximum_column < 0:
+        raise RuntimeError(f"No tabular data found in {path}")
+    # endif
+    rectangular = [
+        [row.get(column, None) for column in range(maximum_column + 1)]
+        for row in rows
+    ]
+    header = [str(value).strip() if value is not None else "" for value in rectangular[0]]
+    frame = pd.DataFrame(rectangular[1:], columns=header)
+    return frame
+
+
 def load_dis_pbpt_spreadsheets(base_dir: Path) -> dict[int, tuple[float, float]]:
     """Load independent DIS run-by-run PbPt products supplied by the RGC group."""
     files = {
@@ -12037,7 +12150,7 @@ def load_dis_pbpt_spreadsheets(base_dir: Path) -> dict[int, tuple[float, float]]
                 f"Missing DIS PbPt spreadsheet for {period}: {path}"
             )
         # endif
-        frame = pd.read_excel(path)
+        frame = read_xlsx_first_sheet_standard_library(path)
         required = {"run", "PbPt", "dPbPt"}
         if not required.issubset(frame.columns):
             raise RuntimeError(
