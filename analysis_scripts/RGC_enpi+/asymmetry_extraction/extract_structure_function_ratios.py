@@ -4648,7 +4648,7 @@ def plot_aggregated_by_x(
             apply_parameter_y_limits(ax, parameter)
             ax.grid(alpha=0.25)
             if parameter in PHYSICS_PANEL_ROWS[-1][1]:
-                ax.set_xlabel(r"$-t^\\prime$ (GeV$^2$)")
+                ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
             # endif
         # endfor
 
@@ -4745,7 +4745,7 @@ def plot_aggregated_by_period(
             apply_parameter_y_limits(ax, parameter)
             ax.grid(alpha=0.25)
             if parameter in PHYSICS_PANEL_ROWS[-1][1]:
-                ax.set_xlabel(r"$-t^\\prime$ (GeV$^2$)")
+                ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
             # endif
         # endfor
 
@@ -4851,7 +4851,7 @@ def plot_target_axis_variants(
             apply_parameter_y_limits(ax, parameter)
             ax.grid(alpha=0.25)
             if parameter in PHYSICS_PANEL_ROWS[-1][1]:
-                ax.set_xlabel(r"$-t^\\prime$ (GeV$^2$)")
+                ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
             # endif
         # endfor
 
@@ -6458,7 +6458,7 @@ def plot_period_stability(
                 apply_parameter_y_limits(ax, parameter)
                 ax.grid(alpha=0.25)
                 if parameter in PHYSICS_PANEL_ROWS[-1][1]:
-                    ax.set_xlabel(r"$-t^\\prime$ (GeV$^2$)")
+                    ax.set_xlabel(r"$-t^\prime$ (GeV$^2$)")
                 # endif
             # endfor
 
