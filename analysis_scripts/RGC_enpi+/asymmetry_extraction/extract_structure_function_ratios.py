@@ -12880,6 +12880,239 @@ def write_charge_normalized_kinematic_distributions(
     pd.DataFrame(rows).to_csv(out, index=False)
     return out
 
+
+# =============================================================================
+# Spin-label null-hypothesis permutation tests
+# =============================================================================
+
+NULL_TEST_MODES: tuple[str, ...] = ("beam", "target", "both")
+NULL_TEST_SEED = 20261004
+
+
+def _shuffle_spin_labels_for_null_test(
+    events: Mapping[str, np.ndarray],
+    run_states: Mapping[str, Mapping[str, np.ndarray]],
+    mode: str,
+    seed: int,
+) -> tuple[dict[str, np.ndarray], dict[str, dict[str, np.ndarray]]]:
+    """Return deterministic spin-label permutations for a null test.
+
+    Beam helicities are permuted independently within each run, preserving the
+    observed +/- event counts of that run.  Target-polarization signs are
+    permuted among runs within each run period, preserving each run's |Pt| and
+    the period's numbers of positive/negative target runs.  The latter is the
+    appropriate permutation unit because target polarization is a run-level
+    state in the production likelihood.
+    """
+    if mode not in NULL_TEST_MODES:
+        raise ValueError(f"Unknown null-test mode {mode!r}.")
+    # endif
+    rng = np.random.default_rng(int(seed))
+    shuffled_events = {key: np.asarray(value).copy() for key, value in events.items()}
+    shuffled_states = {
+        period: {key: np.asarray(value).copy() for key, value in state.items()}
+        for period, state in run_states.items()
+    }
+
+    if mode in ("beam", "both"):
+        runnum = shuffled_events["runnum"]
+        helicity = shuffled_events["helicity"]
+        for run in np.unique(runnum):
+            indices = np.flatnonzero(runnum == run)
+            helicity[indices] = rng.permutation(helicity[indices])
+        # endfor
+        shuffled_events["helicity"] = helicity
+    # endif
+
+    if mode in ("target", "both"):
+        for period in PERIODS:
+            pt = np.asarray(shuffled_states[period]["pt"], dtype=np.float64)
+            signs = np.sign(pt).astype(np.int8)
+            nonzero = np.flatnonzero(signs != 0)
+            shuffled_signs = signs.copy()
+            shuffled_signs[nonzero] = rng.permutation(signs[nonzero])
+            shuffled_states[period]["pt"] = np.abs(pt) * shuffled_signs
+        # endfor
+    # endif
+    return shuffled_events, shuffled_states
+
+
+def initialize_null_test_worker(
+    cache_path_text: str,
+    run_state_payload: dict[str, dict[str, list[float] | list[int]]],
+    dilution_payload: dict[str, dict[str, dict[str, float | int]]],
+    mode: str,
+    seed: int,
+) -> None:
+    initialize_fit_worker(cache_path_text, run_state_payload, dilution_payload)
+    global _WORKER_EVENTS, _WORKER_RUN_STATES
+    _WORKER_EVENTS, _WORKER_RUN_STATES = _shuffle_spin_labels_for_null_test(
+        _WORKER_EVENTS, _WORKER_RUN_STATES, mode, seed
+    )
+
+
+def null_test_fit_worker(bin_number: int) -> dict[str, Any]:
+    if (_WORKER_EVENTS is None or _WORKER_RUN_STATES is None
+            or _WORKER_DILUTION_RECORDS is None):
+        raise RuntimeError("Null-test worker was not initialized.")
+    # endif
+    return fit_one_variant(
+        _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
+        int(bin_number), "nominal",
+    )
+
+
+def _plot_null_test_parameter(
+    frame: pd.DataFrame, parameter: str, mode: str, output_dir: Path
+) -> Path:
+    ensure_directory(output_dir)
+    x = frame["bin_number"].to_numpy(dtype=int)
+    y = frame[parameter].to_numpy(dtype=float)
+    e = frame[f"{parameter}_stat"].to_numpy(dtype=float)
+    fig, ax = plt.subplots(figsize=(9.0, 5.0))
+    ax.errorbar(x, y, yerr=e, fmt="o", ms=4, capsize=2, linestyle="none")
+    ax.axhline(0.0, lw=1.0, ls="--")
+    ax.set_xlim(0.3, NUMBER_OF_BINS + 0.7)
+    ax.set_xticks(np.arange(1, NUMBER_OF_BINS + 1))
+    ax.set_xlabel("Bin number")
+    ax.set_ylabel(PARAMETER_LABELS[parameter])
+    apply_parameter_y_limits(ax, parameter)
+    ax.grid(alpha=0.25)
+    title = {
+        "beam": "Null test: randomized beam helicity",
+        "target": "Null test: randomized target helicity",
+        "both": "Null test: randomized beam and target helicities",
+    }[mode]
+    ax.set_title(title)
+    fig.tight_layout()
+    path = output_dir / f"null_{mode}_{parameter}_bins_01_24.png"
+    fig.savefig(path, dpi=180)
+    plt.close(fig)
+    return path
+
+
+def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int) -> int:
+    """Run the three statistical-only spin-label permutation null tests."""
+    cache_path = (
+        args.cache.expanduser().resolve()
+        if args.cache else root / "nominal/cache/selected_events.npz"
+    )
+    if not cache_path.is_file():
+        raise FileNotFoundError(
+            f"Nominal selected-event cache not found: {cache_path}. "
+            "Run the nominal extraction first or pass --cache."
+        )
+    # endif
+
+    run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
+    run_states = run_state_arrays(run_records)
+    dilution_path = (
+        args.dilution_json.expanduser().resolve() if args.dilution_json
+        else find_default_dilution_json(args.dilution_dir.expanduser().resolve()).resolve()
+    )
+    dilution_records = load_dilution_factors(dilution_path, cut_label="nominal")
+    run_state_payload = {
+        period: {key: np.asarray(values).tolist() for key, values in state.items()}
+        for period, state in run_states.items()
+    }
+    dilution_payload = {
+        period: {
+            str(bin_number): {
+                "x_index": record.x_index,
+                "t_index": record.t_index,
+                "value": record.value,
+                "stat_uncertainty": record.stat_uncertainty,
+            }
+            for (record_period, bin_number), record in dilution_records.items()
+            if record_period == period
+        }
+        for period in PERIODS
+    }
+
+    output_root = root / "diagnostics/null_hypothesis"
+    ensure_directory(output_root)
+    summary_rows: list[dict[str, Any]] = []
+    any_invalid = False
+    for mode_index, mode in enumerate(NULL_TEST_MODES):
+        mode_seed = int(args.null_test_seed) + 100000 * mode_index
+        mode_dir = output_root / mode
+        ensure_directory(mode_dir / "plots")
+        print(f"[null-hypothesis] {mode}: fitting 24 bins (seed={mode_seed})", flush=True)
+        with ProcessPoolExecutor(
+            max_workers=workers,
+            initializer=initialize_null_test_worker,
+            initargs=(str(cache_path), run_state_payload, dilution_payload, mode, mode_seed),
+        ) as executor:
+            results = list(executor.map(null_test_fit_worker, range(1, NUMBER_OF_BINS + 1)))
+        # endwith
+
+        rows = []
+        for result in results:
+            fit_ok = bool(result["valid"] and result["accurate_covariance"]
+                          and result["positive_definite_covariance"]
+                          and not result["parameters_at_limit"])
+            any_invalid |= not fit_ok
+            row = {"bin_number": int(result["bin_number"]), "fit_valid": fit_ok}
+            for parameter in PHYSICS_PARAMETERS:
+                row[parameter] = float(result["values"][parameter])
+                row[f"{parameter}_stat"] = float(result["errors"][parameter])
+            # endfor
+            rows.append(row)
+        # endfor
+        frame = pd.DataFrame(rows).sort_values("bin_number")
+        csv_path = mode_dir / "structure_function_ratios.csv"
+        frame.to_csv(csv_path, index=False)
+        plot_paths = []
+        if not args.skip_plots:
+            for parameter in PHYSICS_PARAMETERS:
+                plot_paths.append(str(_plot_null_test_parameter(
+                    frame, parameter, mode, mode_dir / "plots"
+                )))
+            # endfor
+        # endif
+
+        expected_zero = {
+            "beam": ("lu1", "ll0", "ll1"),
+            "target": ("ul1", "ul2", "ll0", "ll1"),
+            "both": ("lu1", "ul1", "ul2", "ll0", "ll1"),
+        }[mode]
+        for parameter in PHYSICS_PARAMETERS:
+            good = (np.isfinite(frame[parameter]) & np.isfinite(frame[f"{parameter}_stat"])
+                    & (frame[f"{parameter}_stat"] > 0.0))
+            pulls = frame.loc[good, parameter] / frame.loc[good, f"{parameter}_stat"]
+            summary_rows.append({
+                "test": mode,
+                "parameter": parameter,
+                "expected_to_vanish": parameter in expected_zero,
+                "number_of_bins": int(good.sum()),
+                "mean_pull_from_zero": float(pulls.mean()) if len(pulls) else math.nan,
+                "rms_pull_from_zero": float(np.sqrt(np.mean(np.square(pulls)))) if len(pulls) else math.nan,
+                "chi2_zero": float(np.sum(np.square(pulls))) if len(pulls) else math.nan,
+                "ndf_zero": int(len(pulls)),
+            })
+        # endfor
+        print(f"[null-hypothesis] {mode}: wrote {csv_path} and {len(plot_paths)} plots", flush=True)
+    # endfor
+
+    summary_path = output_root / "null_hypothesis_summary.csv"
+    pd.DataFrame(summary_rows).to_csv(summary_path, index=False)
+    write_json(output_root / "null_hypothesis_metadata.json", {
+        "seed": int(args.null_test_seed),
+        "tests": list(NULL_TEST_MODES),
+        "beam_permutation": "event helicity labels permuted within each run",
+        "target_permutation": "target-polarization signs permuted among runs within each period; |Pt| retained",
+        "expected_zero": {
+            "beam": ["lu1", "ll0", "ll1"],
+            "target": ["ul1", "ul2", "ll0", "ll1"],
+            "both": ["lu1", "ul1", "ul2", "ll0", "ll1"],
+        },
+    })
+    print("[null-hypothesis] complete", flush=True)
+    print(f"  Output:  {output_root}", flush=True)
+    print(f"  Summary: {summary_path}", flush=True)
+    return 2 if any_invalid else 0
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -13066,6 +13299,19 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--null-hypothesis-tests", action="store_true",
+        help=(
+            "Run only three statistical null tests using the existing nominal "
+            "selected-event cache: randomize beam helicity, target helicity, "
+            "and both. Fits the nominal seven-parameter likelihood in all 24 "
+            "bins and writes seven bin-number plots per test; no systematics."
+        ),
+    )
+    parser.add_argument(
+        "--null-test-seed", type=int, default=NULL_TEST_SEED,
+        help=f"Base random seed for --null-hypothesis-tests (default: {NULL_TEST_SEED}).",
+    )
+    parser.add_argument(
         "--rga-cross-check", action="store_true",
         help=(
             "Run only the Diehl et al. RGA exclusive-pi+ cross-check. "
@@ -13091,6 +13337,9 @@ def main() -> int:
         return run_rga_cross_check(args)
     # endif
     root = args.output_dir.expanduser().resolve()
+    if args.null_hypothesis_tests:
+        return run_null_hypothesis_tests(args, root, workers)
+    # endif
     if args.period_stability_diagnostics:
         return run_period_stability_diagnostics(args, root, workers)
     # endif
