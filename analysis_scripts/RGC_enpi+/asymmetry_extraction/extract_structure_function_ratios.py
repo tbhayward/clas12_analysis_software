@@ -41,10 +41,10 @@ The fitted structure-function ratios are
     u1   = F_UU^{cos(phi)}     / F_UU
     u2   = F_UU^{cos(2phi)}    / F_UU
     lu1  = F_LU^{sin(phi)}     / F_UU
-    ul1  = F_UL^{sin(phi)}     / F_UU
-    ul2  = F_UL^{sin(2phi)}    / F_UU
-    ll0  = F_LL                / F_UU
-    ll1  = F_LL^{cos(phi)}     / F_UU
+    ul1  = F_UL,lab^{sin(phi)}     / F_UU
+    ul2  = F_UL,lab^{sin(2phi)}    / F_UU
+    ll0  = F_LL,lab                / F_UU
+    ll1  = F_LL,lab^{cos(phi)}     / F_UU
 
 The unpolarized cosine modulations u1 and u2 float in the nominal fit.
 
@@ -645,10 +645,10 @@ PARAMETER_LABELS: dict[str, str] = {
     "u1": r"$F_{UU}^{\cos\phi}/F_{UU}$",
     "u2": r"$F_{UU}^{\cos2\phi}/F_{UU}$",
     "lu1": r"$F_{LU}^{\sin\phi}/F_{UU}$",
-    "ul1": r"$A_{UL,\mathrm{lab}}^{\sin\phi}$",
-    "ul2": r"$A_{UL,\mathrm{lab}}^{\sin2\phi}$",
-    "ll0": r"$A_{LL,\mathrm{lab}}$",
-    "ll1": r"$A_{LL,\mathrm{lab}}^{\cos\phi}$",
+    "ul1": r"$F_{UL,\mathrm{lab}}^{\sin\phi}/F_{UU}$",
+    "ul2": r"$F_{UL,\mathrm{lab}}^{\sin2\phi}/F_{UU}$",
+    "ll0": r"$F_{LL,\mathrm{lab}}/F_{UU}$",
+    "ll1": r"$F_{LL,\mathrm{lab}}^{\cos\phi}/F_{UU}$",
 }
 
 PARAMETER_Y_LIMITS: dict[str, tuple[float, float] | None] = {
@@ -5767,7 +5767,7 @@ def write_six_charge_total_corrections(
     Only ll0 is floated; all other physics amplitudes are fixed to the relevant
     nominal solution.  The reported correction is the local linear correction
     to the *currently used* charge total that would remove the weighted period-
-    minus-simultaneous A_LL displacement if that one charge total were the sole
+    minus-simultaneous F_LL,lab/F_UU displacement if that one charge total were the sole
     source of the discrepancy.
     """
     ensure_directory(output_dir)
@@ -5863,7 +5863,7 @@ def write_six_charge_total_corrections(
                 "required_percent_charge_correction": 100.0 * required_global if np.isfinite(required_global) else math.nan,
                 "corrected_charge_total": nominal_charge * (1.0 + required_global) if np.isfinite(required_global) else math.nan,
                 "weighted_bins": sum(1 for r in finite if r["nested_variance"] > 0.0),
-                "interpretation": "correction to currently used charge if this one target-sign total alone explains the A_LL period displacement",
+                "interpretation": "correction to currently used charge if this one target-sign total alone explains the F_LL,lab/F_UU period displacement",
             })
             print(
                 f"[six-charge solve] {period} Pt sign {target_sign:+d}: "
@@ -5928,7 +5928,7 @@ def write_simultaneous_target_charge_ratio_fit(
         R_p' / R_p = (1 + delta_p) / (1 - delta_p),
 
     where R_p = Q(Pt>0)/Q(Pt<0).  All three deltas float simultaneously and
-    every response includes the movement of the three-period simultaneous A_LL
+    every response includes the movement of the three-period simultaneous F_LL,lab/F_UU
     reference.  A +/-1% finite-difference response gives the simultaneous WLS
     solution.  The resulting point is then evaluated with full likelihood
     refits (not extrapolated) so the CSV reports whether the linear solution is
@@ -6161,13 +6161,13 @@ def write_beam_polarization_response_diagnostic(
     dilution_records: Mapping[tuple[str, int], DilutionRecord],
     output_dir: Path, epsilon: float = 0.01,
 ) -> dict[str, str]:
-    """Test whether a period beam-polarization scale can explain A_LL.
+    """Test whether a period beam-polarization scale can explain F_LL,lab/F_UU.
 
     The affected period beam polarization is shifted by +/-1%.  The affected
     period and simultaneous fits are both rerun, so the simultaneous reference
     is allowed to move.  LU, LL and LLcosphi are floated together because all
     three contain P_b; UU and UL amplitudes are fixed.  The summary compares the
-    beam-polarization correction inferred from A_LL with that inferred from LU.
+    beam-polarization correction inferred from F_LL,lab/F_UU with that inferred from F_LU^sin(phi)/F_UU.
     """
     ensure_directory(output_dir)
     frame_by_bin = frame.set_index("bin_number")
@@ -6268,7 +6268,7 @@ def write_flagged_epoch_refits(
     dilution_records: Mapping[tuple[str, int], DilutionRecord],
     output_dir: Path, threshold: float = 2.5,
 ) -> str:
-    """Fast target-polarization-epoch diagnostic for the constant A_LL term.
+    """Fast target-polarization-epoch diagnostic for the constant F_LL,lab/F_UU term.
 
     The previous implementation floated all five polarized amplitudes in every
     flagged-bin/epoch fit.  Small target epochs can make those fits extremely
@@ -6565,10 +6565,10 @@ def write_latex_table(
         r"\hline",
         (
             r"Bin & $F_{LU}^{\sin\phi}/F_{UU}$ & "
-            r"$F_{UL}^{\sin\phi}/F_{UU}$ & "
-            r"$F_{UL}^{\sin2\phi}/F_{UU}$ & "
-            r"$F_{LL}/F_{UU}$ & "
-            r"$F_{LL}^{\cos\phi}/F_{UU}$ \\"
+            r"$F_{UL,\mathrm{lab}}^{\sin\phi}/F_{UU}$ & "
+            r"$F_{UL,\mathrm{lab}}^{\sin2\phi}/F_{UU}$ & "
+            r"$F_{LL,\mathrm{lab}}/F_{UU}$ & "
+            r"$F_{LL,\mathrm{lab}}^{\cos\phi}/F_{UU}$ \\"
         ),
         r"\hline",
     ]
@@ -10415,10 +10415,10 @@ def run_clas6_cross_check(args, workers):
 
     if not args.skip_plots and not frame.empty:
         labels = {
-            "ul1": r"$A_{UL,\mathrm{lab}}^{\sin\phi}$",
-            "ul2": r"$A_{UL,\mathrm{lab}}^{\sin2\phi}$",
-            "ll0": r"$A_{LL,\mathrm{lab}}$",
-            "ll1": r"$A_{LL,\mathrm{lab}}^{\cos\phi}$",
+            "ul1": r"$F_{UL,\mathrm{lab}}^{\sin\phi}/F_{UU}$",
+            "ul2": r"$F_{UL,\mathrm{lab}}^{\sin2\phi}/F_{UU}$",
+            "ll0": r"$F_{LL,\mathrm{lab}}/F_{UU}$",
+            "ll1": r"$F_{LL,\mathrm{lab}}^{\cos\phi}/F_{UU}$",
         }
         for parameter, ylabel in labels.items():
             valid = frame[np.isfinite(pd.to_numeric(frame.get(f"broad_{parameter}_pull"), errors="coerce"))].copy()
