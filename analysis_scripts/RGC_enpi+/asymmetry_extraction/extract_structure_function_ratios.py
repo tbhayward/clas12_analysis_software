@@ -12606,7 +12606,8 @@ def write_phi_matched_all_diagnostic(
             bins_used += 1
         # endfor
         ndf = 2 * bins_used
-        pvalue = float(chi2.sf(q_total, ndf)) if ndf > 0 else math.nan
+        from scipy.stats import chi2 as chi2_distribution
+        pvalue = float(chi2_distribution.sf(q_total, ndf)) if ndf > 0 else math.nan
         summary_rows.append({
             "sample": label, "Q": q_total, "ndf": ndf,
             "p_value": pvalue, "bins_used": bins_used,
@@ -12985,6 +12986,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
         ),
     )
     parser.add_argument(
+        "--period-phi-matching-only", action="store_true",
+        help=(
+            "Run only the final common-phi matched A_LL period-stability diagnostic. "
+            "Uses the existing period-stability selected-event cache and tables; skips "
+            "all nominal fits and all other period diagnostics."
+        ),
+    )
+    parser.add_argument(
         "--period-stability-plot-only", action="store_true",
         help=(
             "Regenerate the five published run-period stability PNGs directly "
@@ -13084,6 +13093,41 @@ def main() -> int:
     root = args.output_dir.expanduser().resolve()
     if args.period_stability_diagnostics:
         return run_period_stability_diagnostics(args, root, workers)
+    # endif
+    if args.period_phi_matching_only:
+        nominal_dir = root / "period_stability"
+        cache_path = (
+            args.cache.expanduser().resolve() if args.cache
+            else nominal_dir / "cache/selected_events.npz"
+        )
+        table_path = nominal_dir / "tables/structure_function_ratios.csv"
+        if not cache_path.is_file():
+            raise FileNotFoundError(
+                f"Period-stability cache not found: {cache_path}. Run --period-stability-only first."
+            )
+        # endif
+        if not table_path.is_file():
+            raise FileNotFoundError(
+                f"Period-stability table not found: {table_path}. Run --period-stability-only first."
+            )
+        # endif
+        print("[period-phi-matching-only] loading existing period-stability products", flush=True)
+        events = load_event_cache(cache_path)
+        frame = pd.read_csv(table_path)
+        run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
+        run_states = run_state_arrays(run_records)
+        dilution_path = (
+            args.dilution_json.expanduser().resolve() if args.dilution_json
+            else find_default_dilution_json(args.dilution_dir.expanduser().resolve()).resolve()
+        )
+        dilution_records = load_dilution_factors(dilution_path, cut_label="nominal")
+        output_dir = nominal_dir / "diagnostics/extended_period_checks/phi_matching"
+        path = write_phi_matched_all_diagnostic(
+            frame, events, run_states, dilution_records, output_dir,
+        )
+        print("[period-phi-matching-only] complete", flush=True)
+        print(f"  Common-phi matched A_LL stability: {path}", flush=True)
+        return 0
     # endif
     if args.period_stability_plot_only:
         csv_path = (
