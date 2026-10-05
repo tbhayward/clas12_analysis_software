@@ -12888,6 +12888,7 @@ def write_charge_normalized_kinematic_distributions(
 NULL_TEST_MODES: tuple[str, ...] = ("beam", "target", "both")
 POLARIZED_PARAMETERS: tuple[str, ...] = ("lu1", "ul1", "ul2", "ll0", "ll1")
 NULL_TEST_SEED = 20261004
+NULL_TEST_ENSEMBLE_SIZE = 20
 
 
 def _balanced_target_sign_assignment(
@@ -13444,11 +13445,244 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
         ),
         "expected_zero": {key: list(value) for key, value in expected_by_mode.items()},
     })
+    _run_null_test_ensemble(args, root, workers, output_root)
+
     print("[null-hypothesis] complete", flush=True)
     print(f"  Output:  {output_root}", flush=True)
     print(f"  Summary: {summary_path}", flush=True)
     return 2 if any_invalid else 0
 
+
+
+def _run_null_test_ensemble(
+    args: argparse.Namespace,
+    root: Path,
+    workers: int,
+    output_root: Path,
+) -> None:
+    """Run independent null-test realizations and summarize their ensemble behavior.
+
+    The ordinary base-seed null-test products remain untouched and serve as the
+    example realization.  Ensemble fits are stored separately and do not make
+    per-seed plots.  For each bin/parameter we compare the seed-to-seed spread
+    with the typical fit-reported statistical uncertainty.
+    """
+    n_seeds = int(args.null_test_ensemble)
+    if n_seeds <= 0:
+        return
+    # endif
+
+    ensemble_root = output_root / "ensemble"
+    ensure_directory(ensemble_root)
+    cache_path = (
+        args.cache.expanduser().resolve()
+        if args.cache else root / "nominal/cache/selected_events.npz"
+    )
+    if not cache_path.is_file():
+        raise FileNotFoundError(f"Nominal selected-event cache not found: {cache_path}")
+    # endif
+    run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
+    run_states = run_state_arrays(run_records)
+    dilution_path = (
+        args.dilution_json.expanduser().resolve() if args.dilution_json
+        else find_default_dilution_json(args.dilution_dir.expanduser().resolve()).resolve()
+    )
+    dilution_records = load_dilution_factors(dilution_path, cut_label="nominal")
+    run_state_payload = {
+        period: {key: np.asarray(values).tolist() for key, values in state.items()}
+        for period, state in run_states.items()
+    }
+    dilution_payload = {
+        period: {
+            str(bin_number): {
+                "x_index": record.x_index, "t_index": record.t_index,
+                "value": record.value, "stat_uncertainty": record.stat_uncertainty,
+            }
+            for (record_period, bin_number), record in dilution_records.items()
+            if record_period == period
+        }
+        for period in PERIODS
+    }
+
+    all_frames: dict[str, list[pd.DataFrame]] = {mode: [] for mode in NULL_TEST_MODES}
+    # Seed 0 is deliberately the already-produced example realization.  Reuse
+    # it rather than fitting it again, then generate n_seeds-1 new realizations.
+    for mode in NULL_TEST_MODES:
+        example = _load_complete_null_test_csv(output_root / mode / "structure_function_ratios.csv")
+        if example is None:
+            raise RuntimeError(f"Example null-test table for {mode} is missing or incomplete.")
+        # endif
+        example = example.copy()
+        example["ensemble_index"] = 0
+        example["seed"] = int(args.null_test_seed)
+        all_frames[mode].append(example)
+    # endfor
+
+    print(
+        f"[null-ensemble] starting {n_seeds} realizations total "
+        f"(example seed + {max(0, n_seeds-1)} new seeds); {workers} workers",
+        flush=True,
+    )
+    for ensemble_index in range(1, n_seeds):
+        seed = int(args.null_test_seed) + 1000003 * ensemble_index
+        print(
+            f"[null-ensemble] realization {ensemble_index+1}/{n_seeds}; seed={seed}",
+            flush=True,
+        )
+        for mode in NULL_TEST_MODES:
+            csv_path = ensemble_root / mode / f"seed_{seed}.csv"
+            ensure_directory(csv_path.parent)
+            saved = None if args.force_null_test_refit else _load_complete_null_test_csv(csv_path)
+            if saved is not None:
+                frame = saved
+                print(f"[null-ensemble] {mode} seed={seed}: reusing {csv_path}", flush=True)
+            else:
+                t0 = time.perf_counter()
+                print(
+                    f"[null-ensemble] {mode} seed={seed}: fitting 24 bins "
+                    f"with u1=u2=0",
+                    flush=True,
+                )
+                with ProcessPoolExecutor(
+                    max_workers=workers, initializer=initialize_null_test_worker,
+                    initargs=(str(cache_path), run_state_payload, dilution_payload, mode, seed),
+                ) as executor:
+                    future_to_bin = {
+                        executor.submit(null_test_fit_worker, b): b
+                        for b in range(1, NUMBER_OF_BINS + 1)
+                    }
+                    results_by_bin = {}
+                    completed = 0
+                    for future in as_completed(future_to_bin):
+                        b = future_to_bin[future]
+                        results_by_bin[b] = future.result()
+                        completed += 1
+                        print(
+                            f"[null-ensemble] {mode} seed={seed}: bin {b:02d} "
+                            f"({completed}/{NUMBER_OF_BINS}; "
+                            f"elapsed {(time.perf_counter()-t0)/60.0:.1f} min)",
+                            flush=True,
+                        )
+                    # endfor
+                # endwith
+                rows = []
+                for b in range(1, NUMBER_OF_BINS + 1):
+                    result = results_by_bin[b]
+                    fit_ok = bool(result["valid"] and result["accurate_covariance"]
+                                  and result["positive_definite_covariance"]
+                                  and not result["parameters_at_limit"])
+                    row = {"bin_number": b, "fit_valid": fit_ok}
+                    for parameter in POLARIZED_PARAMETERS:
+                        row[parameter] = float(result["values"][parameter])
+                        row[f"{parameter}_stat"] = float(result["errors"][parameter])
+                    # endfor
+                    rows.append(row)
+                # endfor
+                frame = pd.DataFrame(rows).sort_values("bin_number")
+                frame.to_csv(csv_path, index=False)
+                print(
+                    f"[null-ensemble] {mode} seed={seed}: wrote {csv_path} "
+                    f"({(time.perf_counter()-t0)/60.0:.1f} min)", flush=True,
+                )
+            # endif
+            frame = frame.copy()
+            frame["ensemble_index"] = ensemble_index
+            frame["seed"] = seed
+            all_frames[mode].append(frame)
+        # endfor
+    # endfor
+
+    expected_by_mode = {
+        "beam": ("lu1", "ll0", "ll1"),
+        "target": ("ul1", "ul2", "ll0", "ll1"),
+        "both": ("lu1", "ul1", "ul2", "ll0", "ll1"),
+    }
+    aggregate_rows: list[dict[str, Any]] = []
+    seed_rows: list[dict[str, Any]] = []
+    plot_dir = ensemble_root / "plots"
+    ensure_directory(plot_dir)
+    for mode in NULL_TEST_MODES:
+        long = pd.concat(all_frames[mode], ignore_index=True)
+        long.to_csv(ensemble_root / f"{mode}_all_realizations.csv", index=False)
+        for parameter in POLARIZED_PARAMETERS:
+            # Per-seed global diagnostics.  These make it obvious whether one
+            # realization is unusual without treating its 24 correlated bins
+            # as 24 independent randomizations.
+            for (ensemble_index, seed), group in long.groupby(["ensemble_index", "seed"]):
+                good = (np.isfinite(group[parameter]) & np.isfinite(group[f"{parameter}_stat"])
+                        & (group[f"{parameter}_stat"] > 0.0))
+                pulls = group.loc[good, parameter] / group.loc[good, f"{parameter}_stat"]
+                seed_rows.append({
+                    "test": mode, "parameter": parameter,
+                    "ensemble_index": int(ensemble_index), "seed": int(seed),
+                    "expected_to_vanish": parameter in expected_by_mode[mode],
+                    "mean_pull_from_zero": float(pulls.mean()) if len(pulls) else math.nan,
+                    "rms_pull_from_zero": float(np.sqrt(np.mean(np.square(pulls)))) if len(pulls) else math.nan,
+                })
+            # endfor
+
+            means, spreads, mean_stats, ratios, bins = [], [], [], [], []
+            for bin_number, group in long.groupby("bin_number"):
+                values = group[parameter].to_numpy(dtype=float)
+                stats = group[f"{parameter}_stat"].to_numpy(dtype=float)
+                good = np.isfinite(values) & np.isfinite(stats) & (stats > 0.0)
+                values, stats = values[good], stats[good]
+                if values.size == 0:
+                    continue
+                # endif
+                mean = float(np.mean(values))
+                spread = float(np.std(values, ddof=1)) if values.size > 1 else math.nan
+                typical_stat = float(np.sqrt(np.mean(np.square(stats))))
+                ratio = spread / typical_stat if typical_stat > 0.0 else math.nan
+                bins.append(int(bin_number)); means.append(mean); spreads.append(spread)
+                mean_stats.append(typical_stat); ratios.append(ratio)
+                aggregate_rows.append({
+                    "test": mode, "parameter": parameter, "bin_number": int(bin_number),
+                    "expected_to_vanish": parameter in expected_by_mode[mode],
+                    "number_of_realizations": int(values.size),
+                    "ensemble_mean": mean, "ensemble_spread": spread,
+                    "typical_fit_stat": typical_stat,
+                    "spread_over_typical_stat": ratio,
+                    "mean_over_standard_error": (
+                        mean / (spread / math.sqrt(values.size))
+                        if values.size > 1 and spread > 0.0 else math.nan
+                    ),
+                })
+            # endfor
+            if not args.skip_plots:
+                fig, ax = plt.subplots(figsize=(9.0, 5.0))
+                ax.errorbar(bins, means, yerr=spreads, fmt="o", ms=4, capsize=2,
+                            linestyle="none", label="Ensemble mean ± seed-to-seed RMS")
+                ax.axhline(0.0, lw=1.0, ls="--")
+                ax.set_xlim(0.3, NUMBER_OF_BINS + 0.7)
+                ax.set_xticks(np.arange(1, NUMBER_OF_BINS + 1))
+                ax.set_xlabel("Bin number")
+                ax.set_ylabel(PARAMETER_LABELS[parameter])
+                apply_parameter_y_limits(ax, parameter)
+                ax.grid(alpha=0.25)
+                ax.set_title(f"Null-test ensemble: {mode} randomization ({n_seeds} realizations)")
+                ax.legend(loc="best", fontsize=9)
+                fig.tight_layout()
+                fig.savefig(plot_dir / f"null_ensemble_{mode}_{parameter}_bins_01_24.png", dpi=180)
+                plt.close(fig)
+            # endif
+        # endfor
+    # endfor
+    pd.DataFrame(aggregate_rows).to_csv(ensemble_root / "ensemble_bin_summary.csv", index=False)
+    pd.DataFrame(seed_rows).to_csv(ensemble_root / "ensemble_seed_summary.csv", index=False)
+    write_json(ensemble_root / "ensemble_metadata.json", {
+        "number_of_realizations": n_seeds,
+        "base_seed": int(args.null_test_seed),
+        "seed_step": 1000003,
+        "example_realization": "The ordinary beam/target/both outputs use ensemble_index=0 and are retained as the example plots.",
+        "interpretation": (
+            "ensemble_spread is the seed-to-seed RMS of the randomized pseudo-extractions; "
+            "typical_fit_stat is the RMS of their reported statistical errors. A spread of "
+            "order typical_fit_stat is expected from finite-statistics pseudo-data and is not "
+            "by itself an additional systematic uncertainty."
+        ),
+    })
+    print(f"[null-ensemble] complete: {ensemble_root}", flush=True)
 
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
@@ -13653,6 +13887,14 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help=(
             "Force --null-hypothesis-tests to recompute all three null-test fits "
             "and overwrite their saved CSVs instead of reusing complete tables."
+        ),
+    )
+    parser.add_argument(
+        "--null-test-ensemble", type=int, default=NULL_TEST_ENSEMBLE_SIZE,
+        help=(
+            "Total number of independent null-test realizations, including the ordinary "
+            "base-seed example realization (default: 20). Set to 0 to disable the ensemble. "
+            "Per-seed fits are saved and reused unless --force-null-test-refit is given."
         ),
     )
     parser.add_argument(
