@@ -12981,12 +12981,14 @@ def _target_balance_diagnostics(
         randomized_pt = np.abs(pt) * signs
         balanced_ul = float(np.sum(randomized_pt * charge) / scale) if scale > 0.0 else math.nan
         balanced_ll = float(np.sum(randomized_pt * delta_charge) / scale) if scale > 0.0 else math.nan
+        sign_bytes = np.asarray(signs, dtype=np.int8).tobytes()
         diagnostics[period] = {
             "original_ul_residual": original_ul,
             "original_ll_residual": original_ll,
             "balanced_ul_residual": balanced_ul,
             "balanced_ll_residual": balanced_ll,
             "balance_cost": float(best["cost"]),
+            "assignment_sha256": hashlib.sha256(sign_bytes).hexdigest()[:16],
         }
     # endfor
     return diagnostics
@@ -13258,8 +13260,12 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
         }
 
         for mode in missing_modes:
-            mode_index = list(NULL_TEST_MODES).index(mode)
-            mode_seed = int(args.null_test_seed) + 100000 * mode_index
+            # Use the SAME component seed in all three modes.  This is intentional:
+            # target and both must share exactly the same target-sign assignment,
+            # while beam and both must share exactly the same beam-helicity draws.
+            # Otherwise differences between the single- and double-randomization
+            # tests can simply reflect different pseudo-data realizations.
+            mode_seed = int(args.null_test_seed)
             mode_dir = output_root / mode
             ensure_directory(mode_dir / "plots")
             print(f"[null-hypothesis] {mode}: saved table missing/incomplete; fitting 24 bins (seed={mode_seed})", flush=True)
@@ -13282,7 +13288,8 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
                         f"  {period}: original UL={values['original_ul_residual']:+.3e}, "
                         f"LL={values['original_ll_residual']:+.3e} -> "
                         f"randomized UL={values['balanced_ul_residual']:+.3e}, "
-                        f"LL={values['balanced_ll_residual']:+.3e}",
+                        f"LL={values['balanced_ll_residual']:+.3e}, "
+                        f"target-hash={values['assignment_sha256']}",
                         flush=True,
                     )
                 # endfor
@@ -13370,6 +13377,51 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
         # endfor
     # endfor
 
+    # Direct composition check: target and both are now built from exactly the
+    # same target-sign pseudo-dataset.  Adding beam randomization should not
+    # systematically regenerate either UL modulation.  Save bin-by-bin
+    # differences and print a compact diagnostic.
+    composition_rows: list[dict[str, Any]] = []
+    target_frame = frames["target"].set_index("bin_number")
+    both_frame = frames["both"].set_index("bin_number")
+    print("[null-hypothesis] target -> both composition check (same target assignment):", flush=True)
+    for parameter in ("ul1", "ul2"):
+        differences = []
+        z_values = []
+        for bin_number in range(1, NUMBER_OF_BINS + 1):
+            a = float(target_frame.loc[bin_number, parameter])
+            ea = float(target_frame.loc[bin_number, f"{parameter}_stat"])
+            b = float(both_frame.loc[bin_number, parameter])
+            eb = float(both_frame.loc[bin_number, f"{parameter}_stat"])
+            delta = b - a
+            # This denominator is deliberately conservative: the two fits are
+            # correlated because they share events and target assignments.
+            sigma_independent = math.sqrt(ea * ea + eb * eb)
+            z = delta / sigma_independent if sigma_independent > 0.0 else math.nan
+            differences.append(delta)
+            if math.isfinite(z):
+                z_values.append(z)
+            # endif
+            composition_rows.append({
+                "bin_number": bin_number, "parameter": parameter,
+                "target_value": a, "target_stat": ea,
+                "both_value": b, "both_stat": eb,
+                "both_minus_target": delta,
+                "difference_over_independent_sigma": z,
+            })
+        # endfor
+        z_array = np.asarray(z_values, dtype=float)
+        print(
+            f"  {parameter}: mean(both-target)={np.mean(differences):+.4e}; "
+            f"mean conservative z={np.mean(z_array):+.3f}; "
+            f"RMS conservative z={np.sqrt(np.mean(z_array*z_array)):.3f}",
+            flush=True,
+        )
+    # endfor
+    pd.DataFrame(composition_rows).to_csv(
+        output_root / "target_vs_both_composition_check.csv", index=False
+    )
+
     if not args.skip_plots:
         combined_plot_paths = _write_null_test_combined_plots(output_root)
         print(f"[null-hypothesis] wrote {len(combined_plot_paths)} combined summary plots to {output_root / 'combined_plots'}", flush=True)
@@ -13378,6 +13430,10 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
     pd.DataFrame(summary_rows).to_csv(summary_path, index=False)
     write_json(output_root / "null_hypothesis_metadata.json", {
         "seed": int(args.null_test_seed), "tests": list(NULL_TEST_MODES),
+        "shared_component_realizations": (
+            "beam and both use identical per-run beam-helicity random draws; "
+            "target and both use identical balanced run-level target-sign assignments"
+        ),
         "fit_model": "five polarized ratios fitted with u1=u2=0 fixed",
         "beam_permutation": "event helicities independently redrawn within each run according to Q+/(Q+ + Q-)",
         "target_permutation": (
@@ -13584,8 +13640,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help=(
             "Run only three statistical null tests using the existing nominal "
             "selected-event cache: randomize beam helicity, target helicity, "
-            "and both. Fits the nominal seven-parameter likelihood in all 24 "
-            "bins and writes seven bin-number plots per test; no systematics."
+            "and both. Fits the five polarized ratios with u1=u2 fixed to zero "
+            "in all 24 bins and writes five bin-number plots per test; no systematics."
         ),
     )
     parser.add_argument(
