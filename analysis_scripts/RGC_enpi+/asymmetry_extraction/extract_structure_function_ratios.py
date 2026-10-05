@@ -12890,22 +12890,121 @@ POLARIZED_PARAMETERS: tuple[str, ...] = ("lu1", "ul1", "ul2", "ll0", "ll1")
 NULL_TEST_SEED = 20261004
 
 
+def _balanced_target_sign_assignment(
+    state: Mapping[str, np.ndarray],
+    seed: int,
+    number_of_trials: int = 100000,
+) -> tuple[np.ndarray, dict[str, float]]:
+    """Choose random run-level target signs with balanced UL/LL exposure moments.
+
+    The two moments controlled here are sum(Pt * Q) and sum(Pt * DeltaQ),
+    where Q=Q+ + Q- and DeltaQ=Q+ - Q-.  Both residuals are normalized
+    by sum(|Pt| * Q), and the random sign assignment with the smallest
+    quadratic cost is retained.  Zero-Pt runs remain zero.
+    """
+    pt = np.asarray(state["pt"], dtype=np.float64)
+    q_plus = np.asarray(state["q_plus"], dtype=np.float64)
+    q_minus = np.asarray(state["q_minus"], dtype=np.float64)
+    nonzero = np.flatnonzero(np.isfinite(pt) & (np.abs(pt) > 0.0))
+    signs = np.zeros(pt.size, dtype=np.int8)
+    if nonzero.size == 0:
+        return signs, {
+            "ul_residual": 0.0, "ll_residual": 0.0, "cost": 0.0,
+            "number_of_trials": int(number_of_trials),
+        }
+    # endif
+
+    abs_pt = np.abs(pt[nonzero])
+    charge = q_plus[nonzero] + q_minus[nonzero]
+    delta_charge = q_plus[nonzero] - q_minus[nonzero]
+    ul_weight = abs_pt * charge
+    ll_weight = abs_pt * delta_charge
+    scale = float(np.sum(ul_weight))
+    if not math.isfinite(scale) or scale <= 0.0:
+        raise ValueError("Cannot balance target signs: non-positive |Pt|-weighted charge.")
+    # endif
+
+    rng = np.random.default_rng(int(seed))
+    best_cost = math.inf
+    best_signs: np.ndarray | None = None
+    best_ul = math.nan
+    best_ll = math.nan
+    remaining = int(number_of_trials)
+    chunk_size = 5000
+    while remaining > 0:
+        ntrial = min(chunk_size, remaining)
+        trial_signs = np.where(
+            rng.random((ntrial, nonzero.size)) < 0.5, 1.0, -1.0
+        )
+        ul_residual = (trial_signs @ ul_weight) / scale
+        ll_residual = (trial_signs @ ll_weight) / scale
+        costs = np.square(ul_residual) + np.square(ll_residual)
+        index = int(np.argmin(costs))
+        if float(costs[index]) < best_cost:
+            best_cost = float(costs[index])
+            best_signs = trial_signs[index].astype(np.int8, copy=True)
+            best_ul = float(ul_residual[index])
+            best_ll = float(ll_residual[index])
+        # endif
+        remaining -= ntrial
+    # endwhile
+    if best_signs is None:
+        raise RuntimeError("Failed to construct a balanced target-sign assignment.")
+    # endif
+    signs[nonzero] = best_signs
+    return signs, {
+        "ul_residual": best_ul,
+        "ll_residual": best_ll,
+        "cost": best_cost,
+        "number_of_trials": int(number_of_trials),
+    }
+
+
+def _target_balance_diagnostics(
+    run_states: Mapping[str, Mapping[str, np.ndarray]], seed: int
+) -> dict[str, dict[str, float]]:
+    """Return original and balanced target-exposure moments for each period."""
+    diagnostics: dict[str, dict[str, float]] = {}
+    for period_index, period in enumerate(PERIODS):
+        state = run_states[period]
+        pt = np.asarray(state["pt"], dtype=np.float64)
+        q_plus = np.asarray(state["q_plus"], dtype=np.float64)
+        q_minus = np.asarray(state["q_minus"], dtype=np.float64)
+        charge = q_plus + q_minus
+        delta_charge = q_plus - q_minus
+        scale = float(np.sum(np.abs(pt) * charge))
+        original_ul = float(np.sum(pt * charge) / scale) if scale > 0.0 else math.nan
+        original_ll = float(np.sum(pt * delta_charge) / scale) if scale > 0.0 else math.nan
+        signs, best = _balanced_target_sign_assignment(
+            state, int(seed) + 1009 * period_index
+        )
+        randomized_pt = np.abs(pt) * signs
+        balanced_ul = float(np.sum(randomized_pt * charge) / scale) if scale > 0.0 else math.nan
+        balanced_ll = float(np.sum(randomized_pt * delta_charge) / scale) if scale > 0.0 else math.nan
+        diagnostics[period] = {
+            "original_ul_residual": original_ul,
+            "original_ll_residual": original_ll,
+            "balanced_ul_residual": balanced_ul,
+            "balanced_ll_residual": balanced_ll,
+            "balance_cost": float(best["cost"]),
+        }
+    # endfor
+    return diagnostics
+
+
 def _shuffle_spin_labels_for_null_test(
     events: Mapping[str, np.ndarray],
     run_states: Mapping[str, Mapping[str, np.ndarray]],
     mode: str,
     seed: int,
 ) -> tuple[dict[str, np.ndarray], dict[str, dict[str, np.ndarray]]]:
-    """Return deterministic spin-label permutations for a null test.
+    """Return deterministic randomized spin labels for a null test.
 
-    Beam helicities are redrawn independently for every event using that run's
-    measured Q+/(Q+ + Q-) charge fraction.  This destroys any physical
-    helicity--kinematics correlation while keeping the randomized sample
-    consistent with the run-by-run beam exposures used by the likelihood.
-    Target-polarization signs are permuted among runs within each run period,
-    preserving each run's |Pt| and the period's numbers of positive/negative
-    target runs.  The latter is the appropriate permutation unit because target
-    polarization is a run-level state in the production likelihood.
+    Beam helicities are redrawn event-by-event using each run's measured
+    Q+/(Q+ + Q-) exposure.  Target polarization remains a run-level state,
+    but its sign is randomized with a search for an assignment that makes both
+    charge-weighted target moments, sum(Pt*Q) and sum(Pt*DeltaQ), as close to
+    zero as possible.  Each run retains its measured |Pt| and beam charges.
     """
     if mode not in NULL_TEST_MODES:
         raise ValueError(f"Unknown null-test mode {mode!r}.")
@@ -12946,13 +13045,13 @@ def _shuffle_spin_labels_for_null_test(
     # endif
 
     if mode in ("target", "both"):
-        for period in PERIODS:
-            pt = np.asarray(shuffled_states[period]["pt"], dtype=np.float64)
-            signs = np.sign(pt).astype(np.int8)
-            nonzero = np.flatnonzero(signs != 0)
-            shuffled_signs = signs.copy()
-            shuffled_signs[nonzero] = rng.permutation(signs[nonzero])
-            shuffled_states[period]["pt"] = np.abs(pt) * shuffled_signs
+        for period_index, period in enumerate(PERIODS):
+            state = shuffled_states[period]
+            pt = np.asarray(state["pt"], dtype=np.float64)
+            balanced_signs, _ = _balanced_target_sign_assignment(
+                state, int(seed) + 1009 * period_index
+            )
+            shuffled_states[period]["pt"] = np.abs(pt) * balanced_signs
         # endfor
     # endif
     return shuffled_events, shuffled_states
@@ -13170,6 +13269,24 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
                 "u1=u2=0 fixed; submitting 24 bins",
                 flush=True,
             )
+            if mode in ("target", "both"):
+                balance = _target_balance_diagnostics(run_states, mode_seed)
+                print(
+                    "[null-hypothesis] target balance diagnostics "
+                    "(dimensionless moments normalized by sum(|Pt| Q)):",
+                    flush=True,
+                )
+                for period in PERIODS:
+                    values = balance[period]
+                    print(
+                        f"  {period}: original UL={values['original_ul_residual']:+.3e}, "
+                        f"LL={values['original_ll_residual']:+.3e} -> "
+                        f"randomized UL={values['balanced_ul_residual']:+.3e}, "
+                        f"LL={values['balanced_ll_residual']:+.3e}",
+                        flush=True,
+                    )
+                # endfor
+            # endif
             with ProcessPoolExecutor(
                 max_workers=workers, initializer=initialize_null_test_worker,
                 initargs=(str(cache_path), run_state_payload, dilution_payload, mode, mode_seed),
@@ -13263,7 +13380,12 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
         "seed": int(args.null_test_seed), "tests": list(NULL_TEST_MODES),
         "fit_model": "five polarized ratios fitted with u1=u2=0 fixed",
         "beam_permutation": "event helicities independently redrawn within each run according to Q+/(Q+ + Q-)",
-        "target_permutation": "target-polarization signs permuted among runs within each period; |Pt| retained",
+        "target_permutation": (
+            "run-level target-polarization signs randomized within each period using "
+            "100000 candidate assignments; the assignment minimizing the normalized "
+            "sum(Pt*Q) and sum(Pt*(Q+ - Q-)) exposure moments is retained; |Pt| and "
+            "run charges are unchanged"
+        ),
         "expected_zero": {key: list(value) for key, value in expected_by_mode.items()},
     })
     print("[null-hypothesis] complete", flush=True)
