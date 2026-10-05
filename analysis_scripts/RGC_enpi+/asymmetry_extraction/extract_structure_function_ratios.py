@@ -14024,7 +14024,7 @@ def write_period_all_scale_normalization_study(
     ax.axhline(-1.0, linewidth=0.8, linestyle="--")
     ax.set_xticks(x, [period.upper() for period in PERIODS])
     ax.set_ylabel(r"Fitted normalization shift / prior $\sigma$")
-    ax.set_title(r"Period-wide $A_{LL,\mathrm{lab}}$ normalization fit")
+    ax.set_title(r"Period-wide $F_{LL,\mathrm{lab}}$ normalization fit")
     ax.legend()
     ax.grid(alpha=0.25, axis="y")
     fig.tight_layout()
