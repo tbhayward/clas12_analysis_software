@@ -771,41 +771,47 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
 
     # The filled band visualizes the precision available statistically at 10x
     # that is lost if the present point-to-point systematic floor is retained.
+    # Keep the band out of the legend so the legend follows the explanation order.
     ax.fill_between(
         d_stat10.t_abs, rel_stat10, rel_base10,
         color="firebrick", alpha=0.12,
-        label="Precision lost to current point-to-point systematics",
         zorder=1,
     )
 
-    # Current exposure: same color, with line style distinguishing total from
-    # statistics-only uncertainty.
-    ax.plot(
-        d_current.t_abs, rel_current,
-        color="0.40", lw=3.0, ls="-",
-        label="Current exposure: stat. + point-to-point syst.", zorder=3,
-    )
+    # 1) Current exposure, statistics only.
+    # 2) Current exposure, statistics + current point-to-point systematics.
+    # Matching gray color emphasizes that these are the same exposure.
     ax.plot(
         d_stat1.t_abs, rel_stat1,
         color="0.40", lw=2.6, ls="--",
         label="Current exposure: statistics only", zorder=3,
     )
+    ax.plot(
+        d_current.t_abs, rel_current,
+        color="0.40", lw=3.0, ls="-",
+        label="Current exposure: stat. + point-to-point syst.", zorder=3,
+    )
 
-    # High-luminosity projections.
+    # 3) 10x statistical limit.
+    # 4) 10x statistical limit with current point-to-point systematics.
+    # Matching red color emphasizes that these are the same 10x exposure.
+    ax.plot(
+        d_stat10.t_abs, rel_stat10,
+        color="firebrick", lw=2.6, ls="--",
+        label="10x statistical limit", zorder=5,
+    )
     ax.plot(
         d_base10.t_abs, rel_base10,
-        color="firebrick", lw=3.0,
-        label="10x + current point-to-point systematics", zorder=4,
+        color="firebrick", lw=3.0, ls="-",
+        label="10x statistical limit + current point-to-point syst.", zorder=4,
     )
+
+    # 5) 10x statistical limit with point-to-point systematics reduced by half.
     ax.plot(
         d_half10.t_abs, rel_half10,
         color="darkorange", lw=2.6, ls="-.",
-        label="10x + point-to-point systematics / 2", zorder=4,
-    )
-    ax.plot(
-        d_stat10.t_abs, rel_stat10,
-        color="black", lw=2.6, ls="--",
-        label="10x statistical limit", zorder=5,
+        label=r"10x statistical limit + $\frac{1}{2}$ current point-to-point syst.",
+        zorder=4,
     )
 
     ax.set_xlim(0.0, 0.95)
