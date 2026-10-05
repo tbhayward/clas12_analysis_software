@@ -13821,6 +13821,275 @@ def _run_null_test_ensemble(
     })
     print(f"[null-ensemble] complete: {ensemble_root}", flush=True)
 
+
+
+# Period-normalization diagnostic inputs.  These are the period- and target-sign
+# elastic PbPt central values and revised PbPt uncertainties quoted in the
+# analysis note, together with the accumulated NH3 charge used to combine the
+# two target orientations.  The resulting period scale widths are calculated
+# here rather than hard-coded so the diagnostic documents exactly what enters.
+PERIOD_PBPT_SCALE_INPUTS = {
+    "su22": {"positive": (0.71, 0.0300, 0.723 + 1.055), "negative": (0.66, 0.0337, 0.721 + 1.050)},
+    "fa22": {"positive": (0.71, 0.0201, 1.301 + 1.227), "negative": (0.70, 0.0201, 1.310 + 1.224)},
+    "sp23": {"positive": (0.67, 0.0383, 0.323 + 0.176), "negative": (0.62, 0.0300, 0.323 + 0.176)},
+}
+PERIOD_DILUTION_SCALE_UNCERTAINTY = 0.04
+
+
+def _period_pbpt_relative_scale_uncertainties() -> dict[str, float]:
+    """Charge-weight the squared relative PbPt uncertainties within each period."""
+    output: dict[str, float] = {}
+    for period in PERIODS:
+        entries = PERIOD_PBPT_SCALE_INPUTS[period]
+        numerator = 0.0
+        denominator = 0.0
+        for central, uncertainty, charge in entries.values():
+            numerator += float(charge) * (float(uncertainty) / abs(float(central))) ** 2
+            denominator += float(charge)
+        # endfor
+        output[period] = math.sqrt(numerator / denominator)
+    # endfor
+    return output
+
+
+def _fit_period_all_normalizations(
+    frame: pd.DataFrame,
+    relative_scale_uncertainties: Mapping[str, float],
+) -> dict[str, Any]:
+    """Profile 24 common A_LL values while fitting three period normalizations.
+
+    The model is A_LL(period,bin) = lambda_period * A_LL(common,bin).  Each
+    lambda has a Gaussian prior centered at one.  For any trial lambdas the 24
+    common values are solved analytically, leaving only a three-parameter
+    numerical minimization.  This makes the diagnostic essentially immediate.
+    """
+    from scipy.optimize import minimize
+    from scipy.stats import chi2 as scipy_chi2
+
+    bins = frame["bin_number"].to_numpy(dtype=int)
+    if bins.size != NUMBER_OF_BINS:
+        raise RuntimeError(
+            f"Period normalization study expected {NUMBER_OF_BINS} bins; found {bins.size}."
+        )
+    # endif
+
+    values = np.column_stack([
+        frame[f"ll0_{period}"].to_numpy(dtype=float) for period in PERIODS
+    ])
+    errors = np.column_stack([
+        frame[f"ll0_stat_{period}"].to_numpy(dtype=float) for period in PERIODS
+    ])
+    if np.any(~np.isfinite(values)) or np.any(~np.isfinite(errors)) or np.any(errors <= 0.0):
+        raise RuntimeError("Period normalization study requires finite A_LL values and positive errors.")
+    # endif
+
+    prior_sigma = np.asarray(
+        [float(relative_scale_uncertainties[period]) for period in PERIODS],
+        dtype=float,
+    )
+
+    def profile_common(lambdas: np.ndarray) -> np.ndarray:
+        inv_var = 1.0 / np.square(errors)
+        numerator = np.sum(lambdas[None, :] * values * inv_var, axis=1)
+        denominator = np.sum(np.square(lambdas)[None, :] * inv_var, axis=1)
+        return numerator / denominator
+
+    def components(lambdas: np.ndarray) -> tuple[float, float, np.ndarray]:
+        common = profile_common(lambdas)
+        residual = (values - common[:, None] * lambdas[None, :]) / errors
+        data_chi2 = float(np.sum(np.square(residual)))
+        prior_chi2 = float(np.sum(np.square((lambdas - 1.0) / prior_sigma)))
+        return data_chi2, prior_chi2, common
+
+    def objective(lambdas: np.ndarray) -> float:
+        data_chi2, prior_chi2, _ = components(lambdas)
+        return data_chi2 + prior_chi2
+
+    baseline = np.ones(len(PERIODS), dtype=float)
+    baseline_data_chi2, _, baseline_common = components(baseline)
+    result = minimize(
+        objective, baseline, method="L-BFGS-B",
+        bounds=[(0.5, 1.5)] * len(PERIODS),
+        options={"ftol": 1.0e-13, "gtol": 1.0e-10, "maxiter": 10000},
+    )
+    if not result.success:
+        raise RuntimeError(f"Period normalization minimization failed: {result.message}")
+    # endif
+    lambdas = np.asarray(result.x, dtype=float)
+    data_chi2, prior_chi2, common = components(lambdas)
+    pulls = (lambdas - 1.0) / prior_sigma
+    corrections = 1.0 / lambdas
+
+    # With 72 A_LL measurements and 24 profiled common values, the ordinary
+    # no-scale comparison has 48 dof.  In the constrained fit the three
+    # Gaussian priors provide three additional constraints while the three
+    # lambdas add three parameters, so the penalized total also has 48 dof.
+    ndf = len(PERIODS) * NUMBER_OF_BINS - NUMBER_OF_BINS
+    return {
+        "bins": bins,
+        "values": values,
+        "errors": errors,
+        "baseline_common": baseline_common,
+        "baseline_data_chi2": baseline_data_chi2,
+        "baseline_p_value": float(scipy_chi2.sf(baseline_data_chi2, ndf)),
+        "lambdas": lambdas,
+        "corrections": corrections,
+        "prior_sigma": prior_sigma,
+        "pulls": pulls,
+        "common": common,
+        "data_chi2": data_chi2,
+        "prior_chi2": prior_chi2,
+        "total_chi2": data_chi2 + prior_chi2,
+        "ndf": ndf,
+        "total_p_value": float(scipy_chi2.sf(data_chi2 + prior_chi2, ndf)),
+        "success": bool(result.success),
+        "message": str(result.message),
+    }
+
+
+def write_period_all_scale_normalization_study(
+    frame: pd.DataFrame,
+    output_dir: Path,
+) -> dict[str, Path]:
+    """Fit period-wide A_LL normalization shifts with PbPt and PbPt+Df priors."""
+    output_dir.mkdir(parents=True, exist_ok=True)
+    pbpt_sigma = _period_pbpt_relative_scale_uncertainties()
+    scenarios = {
+        "pbpt_only": pbpt_sigma,
+        "pbpt_plus_dilution": {
+            period: math.hypot(pbpt_sigma[period], PERIOD_DILUTION_SCALE_UNCERTAINTY)
+            for period in PERIODS
+        },
+    }
+
+    summary_rows: list[dict[str, Any]] = []
+    bin_rows: list[dict[str, Any]] = []
+    fits: dict[str, dict[str, Any]] = {}
+    for scenario, sigmas in scenarios.items():
+        fit = _fit_period_all_normalizations(frame, sigmas)
+        fits[scenario] = fit
+        for index, period in enumerate(PERIODS):
+            summary_rows.append({
+                "scenario": scenario,
+                "period": period,
+                "relative_scale_prior": fit["prior_sigma"][index],
+                "fitted_measurement_normalization_lambda": fit["lambdas"][index],
+                "multiplicative_correction_to_ALL": fit["corrections"][index],
+                "normalization_shift_percent": 100.0 * (fit["lambdas"][index] - 1.0),
+                "prior_pull_sigma": fit["pulls"][index],
+                "baseline_data_chi2": fit["baseline_data_chi2"],
+                "baseline_ndf": fit["ndf"],
+                "baseline_p_value": fit["baseline_p_value"],
+                "profiled_data_chi2": fit["data_chi2"],
+                "prior_chi2": fit["prior_chi2"],
+                "penalized_total_chi2": fit["total_chi2"],
+                "penalized_ndf": fit["ndf"],
+                "penalized_p_value": fit["total_p_value"],
+            })
+        # endfor
+        for ibin, bin_number in enumerate(fit["bins"]):
+            row: dict[str, Any] = {
+                "scenario": scenario,
+                "bin_number": int(bin_number),
+                "profiled_common_ALL": fit["common"][ibin],
+            }
+            for iperiod, period in enumerate(PERIODS):
+                row[f"ALL_{period}"] = fit["values"][ibin, iperiod]
+                row[f"ALL_stat_{period}"] = fit["errors"][ibin, iperiod]
+                row[f"ALL_corrected_{period}"] = fit["values"][ibin, iperiod] / fit["lambdas"][iperiod]
+                row[f"ALL_corrected_stat_{period}"] = fit["errors"][ibin, iperiod] / fit["lambdas"][iperiod]
+            # endfor
+            bin_rows.append(row)
+        # endfor
+    # endfor
+
+    summary_path = output_dir / "period_all_scale_normalization_summary.csv"
+    bins_path = output_dir / "period_all_scale_normalization_by_bin.csv"
+    pd.DataFrame(summary_rows).to_csv(summary_path, index=False)
+    pd.DataFrame(bin_rows).to_csv(bins_path, index=False)
+
+    # Compact visualization of the fitted nuisance shifts in units of their
+    # own Gaussian prior widths.
+    fig, ax = plt.subplots(figsize=(8.0, 5.0))
+    x = np.arange(len(PERIODS), dtype=float)
+    width = 0.34
+    for offset, (scenario, label) in zip(
+        (-0.5 * width, 0.5 * width),
+        (("pbpt_only", r"$P_bP_t$ prior"), ("pbpt_plus_dilution", r"$P_bP_t \oplus D_f$ prior")),
+    ):
+        ax.bar(x + offset, fits[scenario]["pulls"], width=width, label=label)
+    # endfor
+    ax.axhline(0.0, linewidth=1.0)
+    ax.axhline(+1.0, linewidth=0.8, linestyle="--")
+    ax.axhline(-1.0, linewidth=0.8, linestyle="--")
+    ax.set_xticks(x, [period.upper() for period in PERIODS])
+    ax.set_ylabel(r"Fitted normalization shift / prior $\sigma$")
+    ax.set_title(r"Period-wide $A_{LL,\mathrm{lab}}$ normalization fit")
+    ax.legend()
+    ax.grid(alpha=0.25, axis="y")
+    fig.tight_layout()
+    pull_plot = output_dir / "period_all_scale_prior_pulls.png"
+    fig.savefig(pull_plot, dpi=180)
+    plt.close(fig)
+
+    # Show the corrected period values for each prior scenario.  These are
+    # diagnostic normalization corrections, not alternative reported results.
+    comparison_plot = output_dir / "period_all_scale_corrected_comparison.png"
+    fig, axes = plt.subplots(2, 1, figsize=(12.0, 8.5), sharex=True)
+    offsets = {PERIODS[0]: -0.18, PERIODS[1]: 0.0, PERIODS[2]: +0.18}
+    for ax, (scenario, title) in zip(
+        axes,
+        (("pbpt_only", r"$P_bP_t$ scale priors"),
+         ("pbpt_plus_dilution", r"$P_bP_t$ plus 4% dilution-factor scale priors")),
+    ):
+        fit = fits[scenario]
+        for iperiod, period in enumerate(PERIODS):
+            ax.errorbar(
+                fit["bins"] + offsets[period],
+                fit["values"][:, iperiod] / fit["lambdas"][iperiod],
+                yerr=fit["errors"][:, iperiod] / fit["lambdas"][iperiod],
+                fmt="o", markersize=3.5, capsize=1.5,
+                color=PERIOD_COLORS[period], label=period,
+            )
+        # endfor
+        ax.plot(fit["bins"], fit["common"], "k-", linewidth=1.0, label="profiled common")
+        ax.set_ylabel(r"$A_{LL,\mathrm{lab}}$")
+        ax.set_title(title)
+        ax.grid(alpha=0.20)
+        ax.legend(ncol=4, fontsize=8)
+    # endfor
+    axes[-1].set_xlabel("Kinematic bin")
+    fig.tight_layout()
+    fig.savefig(comparison_plot, dpi=180)
+    plt.close(fig)
+
+    print("[period scale normalization]", flush=True)
+    for scenario in ("pbpt_only", "pbpt_plus_dilution"):
+        fit = fits[scenario]
+        print(
+            f"  {scenario}: baseline Q={fit['baseline_data_chi2']:.3f}/{fit['ndf']} "
+            f"(p={fit['baseline_p_value']:.6g}); penalized Q={fit['total_chi2']:.3f}/{fit['ndf']} "
+            f"(p={fit['total_p_value']:.6g})",
+            flush=True,
+        )
+        for index, period in enumerate(PERIODS):
+            print(
+                f"    {period}: prior={100.0*fit['prior_sigma'][index]:.3f}%  "
+                f"lambda={fit['lambdas'][index]:.6f}  correction={fit['corrections'][index]:.6f}  "
+                f"pull={fit['pulls'][index]:+.3f} sigma",
+                flush=True,
+            )
+        # endfor
+    # endfor
+
+    return {
+        "summary": summary_path,
+        "by_bin": bins_path,
+        "pull_plot": pull_plot,
+        "comparison_plot": comparison_plot,
+    }
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
@@ -13932,6 +14201,15 @@ def build_argument_parser() -> argparse.ArgumentParser:
             "Run only the final common-phi matched A_LL period-stability diagnostic. "
             "Uses the existing period-stability selected-event cache and tables; skips "
             "all nominal fits and all other period diagnostics."
+        ),
+    )
+    parser.add_argument(
+        "--period-scale-normalization-only", action="store_true",
+        help=(
+            "Run only the period-wide A_LL normalization-nuisance study from the "
+            "existing period-stability table. Fits Su22/Fa22/Sp23 scale factors "
+            "with period-specific PbPt Gaussian priors, then repeats after adding "
+            "the correlated 4% dilution-factor scale uncertainty in quadrature."
         ),
     )
     parser.add_argument(
@@ -14049,9 +14327,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_argument_parser().parse_args()
+    worker_cap = 10 if args.period_stability_only else 8
     workers = max(
         1,
-        min(int(args.workers), MAXIMUM_WORKERS, 8, os.cpu_count() or 1, NUMBER_OF_BINS),
+        min(int(args.workers), max(MAXIMUM_WORKERS, worker_cap), worker_cap, os.cpu_count() or 1, NUMBER_OF_BINS),
     )
     if args.clas6_cross_check:
         return run_clas6_cross_check(args, workers)
@@ -14065,6 +14344,25 @@ def main() -> int:
     # endif
     if args.period_stability_diagnostics:
         return run_period_stability_diagnostics(args, root, workers)
+    # endif
+    if args.period_scale_normalization_only:
+        nominal_dir = root / "period_stability"
+        table_path = nominal_dir / "tables/structure_function_ratios.csv"
+        if not table_path.is_file():
+            raise FileNotFoundError(
+                f"Period-stability table not found: {table_path}. Run --period-stability-only first."
+            )
+        # endif
+        print("[period-scale-normalization-only] loading existing period-stability table", flush=True)
+        frame = pd.read_csv(table_path)
+        products = write_period_all_scale_normalization_study(
+            frame, nominal_dir / "diagnostics/global_consistency/period_scale_normalization",
+        )
+        print("[period-scale-normalization-only] complete", flush=True)
+        for label, path in products.items():
+            print(f"  {label}: {path}", flush=True)
+        # endfor
+        return 0
     # endif
     if args.period_phi_matching_only:
         nominal_dir = root / "period_stability"
@@ -14362,6 +14660,12 @@ def main() -> int:
         )
         print(f"  Observable exact LRTs: {observable_lrt_path}", flush=True)
         print(f"  Period scale tests: {global_products['scale_tests']}", flush=True)
+
+        scale_normalization_products = write_period_all_scale_normalization_study(
+            nominal_result["frame"],
+            nominal_dir / "diagnostics/global_consistency/period_scale_normalization",
+        )
+        print(f"  A_LL scale-normalization study: {scale_normalization_products['summary']}", flush=True)
 
         # Audit the actual run/helicity charge bookkeeping and measure the
         # response to a controlled h*sign(Pt)-correlated charge distortion.
