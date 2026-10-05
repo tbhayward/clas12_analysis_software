@@ -771,7 +771,8 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
 
     # The filled band visualizes the precision available statistically at 10x
     # that is lost if the present point-to-point systematic floor is retained.
-    # Keep the band out of the legend so the legend follows the explanation order.
+    # Draw the band now, but add its legend entry explicitly after the five
+    # line entries so it appears last in the explanation order.
     ax.fill_between(
         d_stat10.t_abs, rel_stat10, rel_base10,
         color="firebrick", alpha=0.12,
@@ -820,7 +821,18 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
     ax.set_ylabel(r"Relative uncertainty on $d_1^Q(t)$ (%)")
     ax.set_title("What limits the D-term precision?")
     ax.grid(alpha=.2)
-    ax.legend(loc="upper center", fontsize=8.5, frameon=True, ncol=1)
+
+    # Keep the five line entries in the speaking order above, then append the
+    # shaded systematic-loss region as the final legend item.
+    from matplotlib.patches import Patch
+    handles, labels = ax.get_legend_handles_labels()
+    handles.append(Patch(
+        facecolor="firebrick", edgecolor="firebrick", alpha=0.12,
+        label="Precision lost to current point-to-point systematics",
+    ))
+    labels.append("Precision lost to current point-to-point systematics")
+    ax.legend(handles, labels, loc="upper center", fontsize=8.5,
+              frameon=True, ncol=1)
     savefig(fig, figures/"06_d1_combined_luminosity_systematics.png")
 
 def main():
