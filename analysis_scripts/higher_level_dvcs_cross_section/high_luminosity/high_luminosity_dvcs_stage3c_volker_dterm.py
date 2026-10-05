@@ -831,8 +831,17 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
         label="Precision lost to current point-to-point systematics",
     ))
     labels.append("Precision lost to current point-to-point systematics")
-    ax.legend(handles, labels, loc="upper center", fontsize=8.5,
-              frameon=True, ncol=1)
+    ax.legend(
+        handles, labels,
+        loc="upper center",
+        fontsize=10.5,
+        frameon=True,
+        ncol=1,
+        borderpad=0.8,
+        labelspacing=0.55,
+        handlelength=3.0,
+        handletextpad=0.8,
+    )
     savefig(fig, figures/"06_d1_combined_luminosity_systematics.png")
 
 def main():
