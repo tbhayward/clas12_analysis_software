@@ -752,9 +752,9 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
     ax.grid(alpha=.2); ax.legend(title="Pass-2 exposure")
     savefig(fig, figures/"05_d1_baseline_luminosity.png")
 
-    # 06: workshop summary plot combining the luminosity opportunity and the
-    # point-to-point systematic limitation in one common visual language.
-    # Color encodes the physics scenario rather than luminosity progression.
+    # 06: workshop summary plot combining the current uncertainty budget and
+    # the high-luminosity projections in one common visual language.
+    # Matching colors group statistical-only and stat+PTP cases at a given exposure.
     fig, ax = plt.subplots(figsize=(9.4, 6.2))
 
     def relative_curve(scenario, lumi):
@@ -764,23 +764,34 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
         return d, rel
 
     d_current, rel_current = relative_curve("baseline", 1)
+    d_stat1, rel_stat1 = relative_curve("statistics_only", 1)
     d_base10, rel_base10 = relative_curve("baseline", 10)
     d_half10, rel_half10 = relative_curve("ptp_half", 10)
     d_stat10, rel_stat10 = relative_curve("statistics_only", 10)
 
-    # The filled band explicitly visualizes the precision that the 10x sample
-    # could provide statistically but which is lost with current PTP systematics.
+    # The filled band visualizes the precision available statistically at 10x
+    # that is lost if the present point-to-point systematic floor is retained.
     ax.fill_between(
         d_stat10.t_abs, rel_stat10, rel_base10,
         color="firebrick", alpha=0.12,
         label="Precision lost to current point-to-point systematics",
         zorder=1,
     )
+
+    # Current exposure: same color, with line style distinguishing total from
+    # statistics-only uncertainty.
     ax.plot(
         d_current.t_abs, rel_current,
-        color="0.45", lw=2.5,
-        label="Current exposure (1x)", zorder=3,
+        color="0.40", lw=3.0, ls="-",
+        label="Current exposure: stat. + point-to-point syst.", zorder=3,
     )
+    ax.plot(
+        d_stat1.t_abs, rel_stat1,
+        color="0.40", lw=2.6, ls="--",
+        label="Current exposure: statistics only", zorder=3,
+    )
+
+    # High-luminosity projections.
     ax.plot(
         d_base10.t_abs, rel_base10,
         color="firebrick", lw=3.0,
@@ -803,71 +814,8 @@ def make_plots(curves, pars, figures, clas12_tmin, clas12_tmax):
     ax.set_ylabel(r"Relative uncertainty on $d_1^Q(t)$ (%)")
     ax.set_title("What limits the D-term precision?")
     ax.grid(alpha=.2)
-    ax.legend(loc="upper center", fontsize=9, frameon=True)
+    ax.legend(loc="upper center", fontsize=8.5, frameon=True, ncol=1)
     savefig(fig, figures/"06_d1_combined_luminosity_systematics.png")
-
-    # 06b: presentation-focused variant.  It emphasizes the gap between the
-    # statistical potential of 10x luminosity and the result obtained if the
-    # present point-to-point systematic floor is retained.
-    fig, ax = plt.subplots(figsize=(9.4, 6.2))
-    ax.fill_between(
-        d_stat10.t_abs, rel_stat10, rel_base10,
-        color="firebrick", alpha=0.16, zorder=1,
-    )
-    ax.plot(
-        d_current.t_abs, rel_current,
-        color="0.45", lw=2.4,
-        label="Current exposure (1x)", zorder=3,
-    )
-    ax.plot(
-        d_base10.t_abs, rel_base10,
-        color="firebrick", lw=3.2,
-        label="10x + current point-to-point systematics", zorder=4,
-    )
-    ax.plot(
-        d_half10.t_abs, rel_half10,
-        color="darkorange", lw=2.6, ls="-.",
-        label="10x + point-to-point systematics / 2", zorder=4,
-    )
-    ax.plot(
-        d_stat10.t_abs, rel_stat10,
-        color="black", lw=2.8, ls="--",
-        label="10x statistical limit", zorder=5,
-    )
-
-    # Use a representative point near the center of the controlled |t| range
-    # to make the statistical opportunity and systematic penalty quantitative.
-    t_ref = 0.40
-    iref = int(np.argmin(np.abs(d_stat10.t_abs.to_numpy() - t_ref)))
-    xref = float(d_stat10.t_abs.iloc[iref])
-    y_stat = float(rel_stat10.iloc[iref])
-    y_half = float(rel_half10.iloc[iref])
-    y_base = float(rel_base10.iloc[iref])
-    y_current = float(rel_current.iloc[iref])
-
-    ax.axvline(xref, color="0.65", lw=1.2, ls=":", zorder=0)
-    ax.scatter(
-        [xref]*4, [y_current, y_base, y_half, y_stat],
-        s=34, color=["0.45", "firebrick", "darkorange", "black"],
-        zorder=6,
-    )
-    ax.annotate(
-        "Precision lost to\npoint-to-point systematics",
-        xy=(xref, 0.5*(y_stat+y_base)),
-        xytext=(xref+0.11, 0.5*(y_stat+y_base)+7.0),
-        arrowprops=dict(arrowstyle="->", lw=1.4, color="firebrick"),
-        color="firebrick", fontsize=11, fontweight="bold",
-        ha="left", va="center",
-    )
-
-    ax.set_xlim(0.0, 0.95)
-    ax.set_ylim(*D1_REL_YLIM)
-    ax.set_xlabel(r"$|t|$ (GeV$^2$)")
-    ax.set_ylabel(r"Relative uncertainty on $d_1^Q(t)$ (%)")
-    ax.set_title("Luminosity potential versus the systematic floor")
-    ax.grid(alpha=.2)
-    ax.legend(loc="upper center", fontsize=9, frameon=True)
-    savefig(fig, figures/"06b_d1_luminosity_systematic_floor.png")
 
 def main():
     here = Path(__file__).resolve().parent
