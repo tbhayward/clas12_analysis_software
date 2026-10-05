@@ -17,10 +17,11 @@ OUTPUT_FILE = "output/reach_plot.png"
 
 
 # ------------------------------------------------------------
-# Read tree
+# Read ROOT tree
 # ------------------------------------------------------------
 
 with uproot.open(INPUT_FILE) as f:
+
     # Find the first TTree in the file.
     tree_name = None
 
@@ -43,18 +44,23 @@ with uproot.open(INPUT_FILE) as f:
         ["Q2", "t1"],
         library="np",
     )
+
 #endwith
 
+
+# ------------------------------------------------------------
+# Extract variables
+# ------------------------------------------------------------
 
 Q2 = arrays["Q2"]
 t1 = arrays["t1"]
 
-# t1 is the Mandelstam t variable, so plot |t| = -t.
+# Mandelstam t is negative, so plot |t| = -t.
 t_abs = -t1
 
 
 # ------------------------------------------------------------
-# Basic cleanup
+# Remove invalid entries
 # ------------------------------------------------------------
 
 mask = (
@@ -71,10 +77,18 @@ print(f"Events plotted: {len(Q2):,}")
 
 
 # ------------------------------------------------------------
-# Plot
+# Create output directory
 # ------------------------------------------------------------
 
-os.makedirs(os.path.dirname(OUTPUT_FILE), exist_ok=True)
+os.makedirs(
+    os.path.dirname(OUTPUT_FILE),
+    exist_ok=True,
+)
+
+
+# ------------------------------------------------------------
+# Make 2D histogram
+# ------------------------------------------------------------
 
 fig, ax = plt.subplots(figsize=(10, 7))
 
@@ -82,18 +96,52 @@ h = ax.hist2d(
     t_abs,
     Q2,
     bins=[100, 100],
-    range=[[0.0, 1.2], [0.0, 7.0]],
+    range=[
+        [0.0, 1.2],
+        [1.0, 8.0],
+    ],
     norm=LogNorm(),
     cmap="viridis",
 )
 
-cbar = fig.colorbar(h[3], ax=ax)
-cbar.set_label("Counts", fontsize=16)
-cbar.ax.tick_params(labelsize=13)
+
+# ------------------------------------------------------------
+# Color bar
+# ------------------------------------------------------------
+
+cbar = fig.colorbar(
+    h[3],
+    ax=ax,
+)
+
+cbar.set_label(
+    "Counts",
+    fontsize=16,
+)
+
+cbar.ax.tick_params(
+    labelsize=13,
+)
 
 
-# |t| / Q^2 = 0.2  ->  Q^2 = 5 |t|
-t_line = np.linspace(0.0, 1.2, 500)
+# ------------------------------------------------------------
+# GPD factorization boundary
+#
+#       |t| / Q^2 = 0.2
+#
+# corresponds to
+#
+#       Q^2 = 5 |t|
+#
+# Events above this line satisfy |t|/Q^2 < 0.2.
+# ------------------------------------------------------------
+
+t_line = np.linspace(
+    0.0,
+    1.2,
+    500,
+)
+
 Q2_line = 5.0 * t_line
 
 ax.plot(
@@ -108,13 +156,30 @@ ax.plot(
 # Formatting
 # ------------------------------------------------------------
 
-ax.set_xlim(0.0, 1.2)
-ax.set_ylim(0.0, 7.0)
+ax.set_xlim(
+    0.0,
+    1.2,
+)
 
-ax.set_xlabel(r"$|t|$ (GeV$^2$)", fontsize=18)
-ax.set_ylabel(r"$Q^2$ (GeV$^2$)", fontsize=18)
+ax.set_ylim(
+    1.0,
+    8.0,
+)
 
-ax.tick_params(axis="both", labelsize=14)
+ax.set_xlabel(
+    r"$|t|$ (GeV$^2$)",
+    fontsize=18,
+)
+
+ax.set_ylabel(
+    r"$Q^2$ (GeV$^2$)",
+    fontsize=18,
+)
+
+ax.tick_params(
+    axis="both",
+    labelsize=14,
+)
 
 ax.legend(
     loc="upper left",
@@ -126,6 +191,11 @@ ax.set_title(
     "CLAS12 RGA DVCS Kinematic Reach",
     fontsize=18,
 )
+
+
+# ------------------------------------------------------------
+# Save
+# ------------------------------------------------------------
 
 fig.tight_layout()
 
