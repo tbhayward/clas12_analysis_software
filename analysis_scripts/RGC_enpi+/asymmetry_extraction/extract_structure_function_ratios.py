@@ -2964,6 +2964,8 @@ def fit_one_variant(
     beam_polarization_scales: Mapping[str, float] | None = None,
     double_spin_products_by_run: Mapping[int, float] | None = None,
     event_weights: np.ndarray | None = None,
+    null_event_target_polarization: np.ndarray | None = None,
+    zero_target_normalization: bool = False,
     fast_profile: bool = False,
 ) -> dict[str, Any]:
     nll, metadata = make_bin_nll(
@@ -2979,6 +2981,8 @@ def fit_one_variant(
         beam_polarization_scales=beam_polarization_scales,
         double_spin_products_by_run=double_spin_products_by_run,
         event_weights=event_weights,
+        null_event_target_polarization=null_event_target_polarization,
+        zero_target_normalization=zero_target_normalization,
     )
 
     initial = dict(PARAMETER_INITIAL_VALUES)
