@@ -147,6 +147,7 @@ Q2_line = 5.0 * t_line
 ax.plot(
     t_line,
     Q2_line,
+    color="red",
     linewidth=2.5,
     label=r"$|t|/Q^2 = 0.2$",
 )
