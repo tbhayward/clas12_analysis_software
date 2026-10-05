@@ -2373,6 +2373,8 @@ def make_bin_nll(
     beam_polarization_scales: Mapping[str, float] | None = None,
     double_spin_products_by_run: Mapping[int, float] | None = None,
     event_weights: np.ndarray | None = None,
+    null_event_target_polarization: np.ndarray | None = None,
+    zero_target_normalization: bool = False,
 ):
     beam_polarization_scales = dict(beam_polarization_scales or {})
     double_spin_products_by_run = dict(double_spin_products_by_run or {})
@@ -2383,6 +2385,15 @@ def make_bin_nll(
         # endif
         if np.any(~np.isfinite(event_weights)) or np.any(event_weights < 0.0):
             raise ValueError("event_weights must be finite and non-negative.")
+        # endif
+    # endif
+    if null_event_target_polarization is not None:
+        null_event_target_polarization = np.asarray(null_event_target_polarization, dtype=np.float64)
+        if null_event_target_polarization.shape != np.asarray(events["bin_number"]).shape:
+            raise ValueError("null_event_target_polarization must have one entry per event.")
+        # endif
+        if np.any(~np.isfinite(null_event_target_polarization)):
+            raise ValueError("null_event_target_polarization must be finite.")
         # endif
     # endif
     mask = events["bin_number"] == bin_number
@@ -2453,6 +2464,10 @@ def make_bin_nll(
     selected_event_weights = (
         event_weights[mask].astype(np.float64, copy=False)
         if event_weights is not None else np.ones(np.count_nonzero(mask), dtype=np.float64)
+    )
+    selected_null_target_polarization = (
+        null_event_target_polarization[mask].astype(np.float64, copy=False)
+        if null_event_target_polarization is not None else None
     )
 
     period_event_indices = {
@@ -2527,7 +2542,11 @@ def make_bin_nll(
             "cos_theta": cos_theta[indices],
             "h": event_h,
             "weight": selected_event_weights[indices],
-            "observed_pt": state_pt[observed_state_index],
+            "observed_pt": (
+                selected_null_target_polarization[indices]
+                if selected_null_target_polarization is not None
+                else state_pt[observed_state_index]
+            ),
             "observed_pbpt": np.asarray([
                 double_spin_products_by_run.get(
                     int(run),
@@ -2554,11 +2573,15 @@ def make_bin_nll(
             "helicity_charge_sum": float(
                 np.sum((state_q_plus - state_q_minus)[state_use])
             ),
-            "target_charge_sum": float(
-                np.sum((state_pt * (state_q_plus + state_q_minus))[state_use])
+            "target_charge_sum": (
+                0.0 if zero_target_normalization else float(
+                    np.sum((state_pt * (state_q_plus + state_q_minus))[state_use])
+                )
             ),
-            "helicity_target_charge_sum": float(
-                np.sum((state_pt * (state_q_plus - state_q_minus))[state_use])
+            "helicity_target_charge_sum": (
+                0.0 if zero_target_normalization else float(
+                    np.sum((state_pt * (state_q_plus - state_q_minus))[state_use])
+                )
             ),
         }
     # endfor
@@ -13004,10 +13027,9 @@ def _shuffle_spin_labels_for_null_test(
     """Return deterministic randomized spin labels for a null test.
 
     Beam helicities are redrawn event-by-event using each run's measured
-    Q+/(Q+ + Q-) exposure.  Target polarization remains a run-level state,
-    but its sign is randomized with a search for an assignment that makes both
-    charge-weighted target moments, sum(Pt*Q) and sum(Pt*DeltaQ), as close to
-    zero as possible.  Each run retains its measured |Pt| and beam charges.
+    Q+/(Q+ + Q-) exposure. Target-polarization signs are independently
+    randomized event-by-event with 50/50 probability while preserving the
+    measured |Pt| associated with each event's run.
     """
     if mode not in NULL_TEST_MODES:
         raise ValueError(f"Unknown null-test mode {mode!r}.")
@@ -13048,14 +13070,28 @@ def _shuffle_spin_labels_for_null_test(
     # endif
 
     if mode in ("target", "both"):
-        for period_index, period in enumerate(PERIODS):
+        # Event-level target null: preserve the measured |Pt| associated with
+        # each event's run, but independently randomize its target orientation.
+        # The null likelihood uses these event-level Pt values in the numerator
+        # and exact zero target-spin normalization moments in the denominator.
+        runnum = shuffled_events["runnum"]
+        period_index = shuffled_events["period_index"]
+        null_pt = np.zeros(runnum.shape, dtype=np.float64)
+        for period in PERIODS:
             state = shuffled_states[period]
-            pt = np.asarray(state["pt"], dtype=np.float64)
-            balanced_signs, _ = _balanced_target_sign_assignment(
-                state, int(seed) + 1009 * period_index
+            run_to_abs_pt = {
+                int(run): abs(float(pt))
+                for run, pt in zip(state["run"], state["pt"])
+            }
+            indices = np.flatnonzero(period_index == PERIOD_INDEX[period])
+            abs_pt = np.fromiter(
+                (run_to_abs_pt[int(run)] for run in runnum[indices]),
+                count=indices.size, dtype=np.float64,
             )
-            shuffled_states[period]["pt"] = np.abs(pt) * balanced_signs
+            signs = np.where(rng.random(indices.size) < 0.5, 1.0, -1.0)
+            null_pt[indices] = abs_pt * signs
         # endfor
+        shuffled_events["null_target_polarization"] = null_pt
     # endif
     return shuffled_events, shuffled_states
 
@@ -13086,6 +13122,8 @@ def null_test_fit_worker(bin_number: int) -> dict[str, Any]:
         _WORKER_EVENTS, _WORKER_RUN_STATES, _WORKER_DILUTION_RECORDS,
         bin_number, "nominal",
         fixed_physics_parameters={"u1": 0.0, "u2": 0.0},
+        null_event_target_polarization=_WORKER_EVENTS.get("null_target_polarization"),
+        zero_target_normalization=("null_target_polarization" in _WORKER_EVENTS),
     )
     elapsed = time.perf_counter() - t0
     print(
@@ -13205,10 +13243,103 @@ def _load_complete_null_test_csv(csv_path: Path) -> pd.DataFrame | None:
     return frame.sort_values("bin_number").reset_index(drop=True)
 
 
+NULL_TARGET_SCHEME = "event_level_50_50_zero_norm_v1"
+
+
+def _null_table_matches_current_scheme(frame: pd.DataFrame, mode: str) -> bool:
+    if mode == "beam":
+        return True
+    # endif
+    if "null_target_scheme" not in frame.columns:
+        return False
+    # endif
+    values = set(frame["null_target_scheme"].dropna().astype(str))
+    return values == {NULL_TARGET_SCHEME}
+
+
+def _write_existing_ensemble_covariance_diagnostics(output_root: Path) -> None:
+    """Summarize any pre-existing ensemble before new event-level fits overwrite it."""
+    ensemble_root = output_root / "ensemble"
+    if not ensemble_root.is_dir():
+        return
+    # endif
+    diagnostic_root = ensemble_root / "preexisting_covariance_diagnostics"
+    ensure_directory(diagnostic_root)
+    summary_rows = []
+    for mode in ("target", "both"):
+        csvs = sorted((ensemble_root / mode).glob("seed_*.csv")) if (ensemble_root / mode).is_dir() else []
+        if not csvs:
+            continue
+        # endif
+        frames = []
+        for csv_path in csvs:
+            try:
+                frame = pd.read_csv(csv_path).sort_values("bin_number")
+            except Exception:
+                continue
+            # endtry
+            if len(frame) == NUMBER_OF_BINS:
+                frames.append(frame)
+            # endif
+        # endfor
+        if len(frames) < 3:
+            continue
+        # endif
+        for parameter in POLARIZED_PARAMETERS:
+            matrix = np.vstack([f[parameter].to_numpy(dtype=float) for f in frames])
+            good_rows = np.all(np.isfinite(matrix), axis=1)
+            matrix = matrix[good_rows]
+            if matrix.shape[0] < 3:
+                continue
+            # endif
+            covariance = np.cov(matrix, rowvar=False, ddof=1)
+            correlation = np.corrcoef(matrix, rowvar=False)
+            labels = [f"bin_{b:02d}" for b in range(1, NUMBER_OF_BINS + 1)]
+            pd.DataFrame(covariance, index=labels, columns=labels).to_csv(
+                diagnostic_root / f"{mode}_{parameter}_covariance.csv"
+            )
+            pd.DataFrame(correlation, index=labels, columns=labels).to_csv(
+                diagnostic_root / f"{mode}_{parameter}_correlation.csv"
+            )
+            offdiag = correlation[np.triu_indices(NUMBER_OF_BINS, k=1)]
+            eigenvalues = np.linalg.eigvalsh(covariance)[::-1]
+            total = float(np.sum(eigenvalues))
+            summary_rows.append({
+                "test": mode, "parameter": parameter,
+                "number_of_realizations": int(matrix.shape[0]),
+                "mean_offdiagonal_correlation": float(np.nanmean(offdiag)),
+                "mean_absolute_offdiagonal_correlation": float(np.nanmean(np.abs(offdiag))),
+                "largest_covariance_eigenvalue_fraction": (
+                    float(eigenvalues[0] / total) if total > 0.0 else math.nan
+                ),
+            })
+            if plt is not None:
+                fig, ax = plt.subplots(figsize=(7.0, 6.2))
+                image_obj = ax.imshow(correlation, vmin=-1.0, vmax=1.0, cmap="coolwarm", origin="lower")
+                ax.set_xlabel("Bin number")
+                ax.set_ylabel("Bin number")
+                ax.set_title(f"Pre-existing null ensemble correlation: {mode}, {parameter}")
+                ticks = np.arange(0, NUMBER_OF_BINS, 2)
+                ax.set_xticks(ticks, ticks + 1)
+                ax.set_yticks(ticks, ticks + 1)
+                fig.colorbar(image_obj, ax=ax, label="Seed-to-seed correlation")
+                fig.tight_layout()
+                fig.savefig(diagnostic_root / f"{mode}_{parameter}_correlation.png", dpi=180)
+                plt.close(fig)
+            # endif
+        # endfor
+    # endfor
+    if summary_rows:
+        pd.DataFrame(summary_rows).to_csv(diagnostic_root / "covariance_summary.csv", index=False)
+        print(f"[null-hypothesis] preserved pre-existing ensemble covariance diagnostics in {diagnostic_root}", flush=True)
+    # endif
+
+
 def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int) -> int:
     """Run missing null tests, reuse complete saved CSVs, and rebuild summaries."""
     output_root = root / "diagnostics/null_hypothesis"
     ensure_directory(output_root)
+    _write_existing_ensemble_covariance_diagnostics(output_root)
 
     # Check saved fit tables first. A normal rerun is therefore cheap when all
     # three null tests have already completed. --force-null-test-refit bypasses
@@ -13218,6 +13349,10 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
     for mode in NULL_TEST_MODES:
         csv_path = output_root / mode / "structure_function_ratios.csv"
         saved = None if args.force_null_test_refit else _load_complete_null_test_csv(csv_path)
+        if saved is not None and not _null_table_matches_current_scheme(saved, mode):
+            print(f"[null-hypothesis] {mode}: rejecting stale pre-event-level null table {csv_path}", flush=True)
+            saved = None
+        # endif
         if saved is None:
             missing_modes.append(mode)
         else:
@@ -13277,23 +13412,11 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
                 flush=True,
             )
             if mode in ("target", "both"):
-                balance = _target_balance_diagnostics(run_states, mode_seed)
                 print(
-                    "[null-hypothesis] target balance diagnostics "
-                    "(dimensionless moments normalized by sum(|Pt| Q)):",
+                    "[null-hypothesis] target null: event-by-event 50/50 target-sign "
+                    "randomization; target-dependent normalization moments fixed to zero",
                     flush=True,
                 )
-                for period in PERIODS:
-                    values = balance[period]
-                    print(
-                        f"  {period}: original UL={values['original_ul_residual']:+.3e}, "
-                        f"LL={values['original_ll_residual']:+.3e} -> "
-                        f"randomized UL={values['balanced_ul_residual']:+.3e}, "
-                        f"LL={values['balanced_ll_residual']:+.3e}, "
-                        f"target-hash={values['assignment_sha256']}",
-                        flush=True,
-                    )
-                # endfor
             # endif
             with ProcessPoolExecutor(
                 max_workers=workers, initializer=initialize_null_test_worker,
@@ -13328,6 +13451,9 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
                               and result["positive_definite_covariance"]
                               and not result["parameters_at_limit"])
                 row = {"bin_number": int(result["bin_number"]), "fit_valid": fit_ok}
+                if mode in ("target", "both"):
+                    row["null_target_scheme"] = NULL_TARGET_SCHEME
+                # endif
                 for parameter in POLARIZED_PARAMETERS:
                     row[parameter] = float(result["values"][parameter])
                     row[f"{parameter}_stat"] = float(result["errors"][parameter])
@@ -13433,15 +13559,15 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
         "seed": int(args.null_test_seed), "tests": list(NULL_TEST_MODES),
         "shared_component_realizations": (
             "beam and both use identical per-run beam-helicity random draws; "
-            "target and both use identical balanced run-level target-sign assignments"
+            "target and both use identical event-level target-sign random draws"
         ),
         "fit_model": "five polarized ratios fitted with u1=u2=0 fixed",
         "beam_permutation": "event helicities independently redrawn within each run according to Q+/(Q+ + Q-)",
         "target_permutation": (
-            "run-level target-polarization signs randomized within each period using "
-            "100000 candidate assignments; the assignment minimizing the normalized "
-            "sum(Pt*Q) and sum(Pt*(Q+ - Q-)) exposure moments is retained; |Pt| and "
-            "run charges are unchanged"
+            "target-polarization signs independently randomized event-by-event with "
+            "50/50 probability; each event retains the measured |Pt| of its run; "
+            "target-dependent likelihood normalization moments are fixed to their "
+            "exact null expectation of zero"
         ),
         "expected_zero": {key: list(value) for key, value in expected_by_mode.items()},
     })
@@ -13533,6 +13659,10 @@ def _run_null_test_ensemble(
             csv_path = ensemble_root / mode / f"seed_{seed}.csv"
             ensure_directory(csv_path.parent)
             saved = None if args.force_null_test_refit else _load_complete_null_test_csv(csv_path)
+            if saved is not None and not _null_table_matches_current_scheme(saved, mode):
+                print(f"[null-ensemble] {mode} seed={seed}: rejecting stale run-level target table", flush=True)
+                saved = None
+            # endif
             if saved is not None:
                 frame = saved
                 print(f"[null-ensemble] {mode} seed={seed}: reusing {csv_path}", flush=True)
@@ -13572,6 +13702,9 @@ def _run_null_test_ensemble(
                                   and result["positive_definite_covariance"]
                                   and not result["parameters_at_limit"])
                     row = {"bin_number": b, "fit_valid": fit_ok}
+                    if mode in ("target", "both"):
+                        row["null_target_scheme"] = NULL_TARGET_SCHEME
+                    # endif
                     for parameter in POLARIZED_PARAMETERS:
                         row[parameter] = float(result["values"][parameter])
                         row[f"{parameter}_stat"] = float(result["errors"][parameter])
