@@ -67,6 +67,14 @@ KROLL_LABELS = {
 
 SINGLE_SPIN = frozenset(("lu1", "ul1", "ul2"))
 
+Y_LIMITS = {
+    "lu1": (-0.4, 0.4),
+    "ul1": (-0.4, 0.4),
+    "ul2": (-0.4, 0.4),
+    "ll0": (-0.6, 1.0),
+    "ll1": (-0.6, 1.0),
+}
+
 # The table supplied by Peter Kroll: xB, -t', Q2, W, epsilon,
 # F_LU^sin(phi)/F_UU, F_UL^sin(phi)/F_UU, F_UL^sin(2phi)/F_UU,
 # F_LL/F_UU, F_LL^cos(phi)/F_UU.
@@ -383,8 +391,7 @@ def plot_one_xb_canvas(
         draw_kroll_curve(ax, pred, observable, color="black")
         draw_measurements(ax, subset, observable, color=color, marker=XB_MARKERS[x_index])
         format_axis(ax, observable, show_xlabel=(i >= 3))
-        lo, hi = robust_y_limits([subset], [pred], observable)
-        ax.set_ylim(lo, hi)
+        ax.set_ylim(*Y_LIMITS[observable])
         ax.text(0.04, 0.94, f"({chr(97 + i)})", transform=ax.transAxes,
                 va="top", ha="left", fontweight="bold")
     # endfor
@@ -430,8 +437,7 @@ def plot_all_xb_canvas(
         # endfor
 
         format_axis(ax, observable, show_xlabel=(i >= 3))
-        lo, hi = robust_y_limits(measurement_subsets, prediction_subsets, observable)
-        ax.set_ylim(lo, hi)
+        ax.set_ylim(*Y_LIMITS[observable])
         ax.text(0.04, 0.94, f"({chr(97 + i)})", transform=ax.transAxes,
                 va="top", ha="left", fontweight="bold")
     # endfor
