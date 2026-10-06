@@ -376,6 +376,7 @@ def plot_one_xb_canvas(
     predictions: pd.DataFrame,
     x_index: int,
     output_dir: Path,
+    preliminary: bool = True,
 ) -> Path:
     subset = measurements.loc[measurements["x_index_plot"] == x_index].copy()
     kroll_xb = (0.2, 0.3, 0.4, 0.5)[x_index]
@@ -398,13 +399,19 @@ def plot_one_xb_canvas(
     info_panel(axes_flat[5], x_index=x_index)
     xlo, xhi = XB_BINS[x_index]
     fig.suptitle(
-        rf"$ep \rightarrow e(n)\pi^+$ structure-function ratios: "
+        rf"CLAS12 $ep \rightarrow e(n)\pi^+$ structure-function ratios: "
         rf"${xlo:.2f} < x_B < {xhi:.2f}$",
         y=0.985,
         fontsize=15,
     )
     fig.subplots_adjust(left=0.085, right=0.985, bottom=0.09, top=0.91,
                         wspace=0.24, hspace=0.20)
+
+    if preliminary:
+        fig.text(0.50, 0.50, "PRELIMINARY", ha="center", va="center",
+                 rotation=30, fontsize=54, fontweight="bold", color="red",
+                 alpha=0.22, transform=fig.transFigure, zorder=1000)
+    # endif
 
     path = output_dir / f"kroll_comparison_xB_bin_{x_index + 1}.png"
     fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor="white")
@@ -416,6 +423,7 @@ def plot_all_xb_canvas(
     measurements: pd.DataFrame,
     predictions: pd.DataFrame,
     output_dir: Path,
+    preliminary: bool = True,
 ) -> Path:
     fig, axes = plt.subplots(2, 3, figsize=(12.8, 7.6), constrained_layout=False)
     axes_flat = axes.ravel()
@@ -468,10 +476,16 @@ def plot_all_xb_canvas(
         transform=legend_ax.transAxes, va="top", fontsize=10.3, linespacing=1.4,
     )
 
-    fig.suptitle(r"$ep \rightarrow e(n)\pi^+$ structure-function ratios and Kroll predictions",
+    fig.suptitle(r"CLAS12 $ep \rightarrow e(n)\pi^+$ structure-function ratios and Kroll predictions",
                  y=0.985, fontsize=15)
     fig.subplots_adjust(left=0.085, right=0.985, bottom=0.09, top=0.91,
                         wspace=0.24, hspace=0.20)
+
+    if preliminary:
+        fig.text(0.50, 0.50, "PRELIMINARY", ha="center", va="center",
+                 rotation=30, fontsize=54, fontweight="bold", color="red",
+                 alpha=0.22, transform=fig.transFigure, zorder=1000)
+    # endif
 
     path = output_dir / "kroll_comparison_all_xB.png"
     fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor="white")
@@ -481,6 +495,11 @@ def plot_all_xb_canvas(
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--final",
+        action="store_true",
+        help="Suppress the PRELIMINARY watermark for final plots.",
+    )
     parser.add_argument(
         "--output-dir",
         type=Path,
@@ -503,9 +522,9 @@ def main() -> None:
 
     outputs: list[Path] = []
     for x_index in range(4):
-        outputs.append(plot_one_xb_canvas(measurements, predictions, x_index, output_dir))
+        outputs.append(plot_one_xb_canvas(measurements, predictions, x_index, output_dir, preliminary=not args.final))
     # endfor
-    outputs.append(plot_all_xb_canvas(measurements, predictions, output_dir))
+    outputs.append(plot_all_xb_canvas(measurements, predictions, output_dir, preliminary=not args.final))
 
     print("Kroll comparison plots complete.")
     print("  RGC input: hard-coded final release table from analysis note")
