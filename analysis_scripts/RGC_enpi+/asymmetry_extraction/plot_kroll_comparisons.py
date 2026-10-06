@@ -304,7 +304,7 @@ def draw_kroll_curve(
 
 def format_axis(ax: plt.Axes, observable: str, show_xlabel: bool = True) -> None:
     ax.axhline(0.0, color="0.55", lw=0.8, linestyle="--", zorder=0)
-    ax.set_xlim(-0.035, 1.285)
+    ax.set_xlim(0.0, 1.2)
     ax.set_xticks(np.arange(0.0, 1.21, 0.2))
     ax.minorticks_on()
     ax.set_ylabel(OBSERVABLE_LABELS[observable])
@@ -362,7 +362,6 @@ def info_panel(ax: plt.Axes, x_index: int | None = None) -> None:
     text = (
         "Kroll curves: virtual-photon frame\n"
         "RGC UL/LL points: lab-frame definition\n"
-        "No frame transformation applied"
     )
     if x_index is not None:
         xlo, xhi = XB_BINS[x_index]
@@ -405,7 +404,7 @@ def plot_one_xb_canvas(
         fontsize=15,
     )
     fig.subplots_adjust(left=0.085, right=0.985, bottom=0.09, top=0.91,
-                        wspace=0.34, hspace=0.28)
+                        wspace=0.24, hspace=0.20)
 
     path = output_dir / f"kroll_comparison_xB_bin_{x_index + 1}.png"
     fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor="white")
@@ -465,14 +464,14 @@ def plot_all_xb_canvas(
     legend_ax.legend(handles=style_handles, loc="lower left", frameon=False)
     legend_ax.text(
         0.02, 0.46,
-        "Kroll: virtual-photon frame\nRGC UL/LL: lab-frame definition\nNo frame transformation applied",
+        "Kroll: virtual-photon frame\nRGC UL/LL: lab-frame definition",
         transform=legend_ax.transAxes, va="top", fontsize=10.3, linespacing=1.4,
     )
 
     fig.suptitle(r"RGC $e n\pi^+$ structure-function ratios and Kroll predictions",
                  y=0.985, fontsize=15)
     fig.subplots_adjust(left=0.085, right=0.985, bottom=0.09, top=0.91,
-                        wspace=0.34, hspace=0.28)
+                        wspace=0.24, hspace=0.20)
 
     path = output_dir / "kroll_comparison_all_xB.png"
     fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor="white")
