@@ -409,8 +409,8 @@ def plot_one_xb_canvas(
 
     if preliminary:
         fig.text(0.50, 0.50, "PRELIMINARY", ha="center", va="center",
-                 rotation=30, fontsize=54, fontweight="bold", color="red",
-                 alpha=0.22, transform=fig.transFigure, zorder=1000)
+                 rotation=22, fontsize=82, fontweight="bold", color="red",
+                 alpha=0.15, transform=fig.transFigure, zorder=1000)
     # endif
 
     path = output_dir / f"kroll_comparison_xB_bin_{x_index + 1}.png"
@@ -483,8 +483,8 @@ def plot_all_xb_canvas(
 
     if preliminary:
         fig.text(0.50, 0.50, "PRELIMINARY", ha="center", va="center",
-                 rotation=30, fontsize=54, fontweight="bold", color="red",
-                 alpha=0.22, transform=fig.transFigure, zorder=1000)
+                 rotation=22, fontsize=82, fontweight="bold", color="red",
+                 alpha=0.15, transform=fig.transFigure, zorder=1000)
     # endif
 
     path = output_dir / "kroll_comparison_all_xB.png"
