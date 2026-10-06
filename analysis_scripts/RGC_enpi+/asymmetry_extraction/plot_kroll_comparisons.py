@@ -27,7 +27,6 @@ import numpy as np
 import pandas as pd
 
 
-DEFAULT_INPUT = Path("output/asymmetry_extraction/nominal/tables/structure_function_ratios.csv")
 DEFAULT_OUTPUT_DIR = Path("output/kroll_comparisons")
 DPI = 300
 
@@ -99,6 +98,39 @@ KROLL_ROWS = (
 )
 
 
+# Final released RGC results, hard-coded from sections/results.tex in the
+# 2026-10-06 analysis-note source. Each observable is stored as
+# (central value, statistical uncertainty, point-to-point systematic).
+# The point-to-point systematic in the release table already includes
+# radiation, channel-selection, and bin-migration contributions in quadrature.
+RELEASED_RGC_ROWS = [
+    (1, 0.20, 0.129, 0.130, 0.011, 0.011, -0.031, 0.012, 0.033, -0.043, 0.023, 0.037, 0.333, 0.029, 0.031, 0.419, 0.041, 0.031),
+    (2, 0.20, 0.340, 0.119, 0.016, 0.017, -0.194, 0.021, 0.041, -0.222, 0.035, 0.040, 0.395, 0.042, 0.024, 0.401, 0.055, 0.024),
+    (3, 0.20, 0.544, 0.069, 0.020, 0.024, -0.184, 0.027, 0.023, -0.281, 0.043, 0.055, 0.463, 0.067, 0.020, 0.400, 0.098, 0.062),
+    (4, 0.20, 0.745, 0.064, 0.018, 0.026, -0.078, 0.023, 0.013, -0.270, 0.050, 0.034, 0.345, 0.061, 0.073, -0.020, 0.123, 0.209),
+    (5, 0.20, 0.945, 0.067, 0.028, 0.063, 0.026, 0.038, 0.011, -0.276, 0.066, 0.088, 0.393, 0.064, 0.094, -0.029, 0.176, 0.132),
+    (6, 0.20, 1.145, 0.008, 0.027, 0.077, 0.113, 0.046, 0.076, -0.120, 0.120, 0.156, 0.369, 0.092, 0.049, 0.162, 0.160, 0.343),
+    (7, 0.30, 0.134, 0.151, 0.010, 0.006, 0.039, 0.008, 0.016, -0.097, 0.016, 0.013, 0.548, 0.022, 0.026, 0.247, 0.062, 0.018),
+    (8, 0.30, 0.341, 0.138, 0.017, 0.013, -0.021, 0.012, 0.036, -0.162, 0.022, 0.035, 0.652, 0.031, 0.045, 0.485, 0.065, 0.171),
+    (9, 0.30, 0.543, 0.107, 0.017, 0.017, 0.003, 0.016, 0.024, -0.240, 0.030, 0.071, 0.691, 0.041, 0.032, 0.227, 0.116, 0.150),
+    (10, 0.30, 0.744, 0.120, 0.020, 0.016, 0.006, 0.018, 0.026, -0.255, 0.038, 0.041, 0.576, 0.051, 0.079, 0.152, 0.107, 0.081),
+    (11, 0.30, 0.946, 0.095, 0.025, 0.018, 0.100, 0.025, 0.035, -0.222, 0.047, 0.127, 0.610, 0.057, 0.056, -0.039, 0.191, 0.320),
+    (12, 0.30, 1.145, 0.143, 0.025, 0.053, 0.151, 0.028, 0.039, -0.213, 0.049, 0.034, 0.595, 0.061, 0.089, -0.074, 0.156, 0.103),
+    (13, 0.40, 0.141, 0.147, 0.011, 0.028, 0.078, 0.008, 0.006, -0.072, 0.017, 0.009, 0.692, 0.022, 0.030, 0.114, 0.088, 0.051),
+    (14, 0.40, 0.343, 0.167, 0.014, 0.009, 0.058, 0.011, 0.012, -0.133, 0.022, 0.028, 0.747, 0.030, 0.050, 0.201, 0.097, 0.072),
+    (15, 0.40, 0.544, 0.134, 0.016, 0.022, 0.043, 0.013, 0.012, -0.180, 0.025, 0.024, 0.719, 0.035, 0.030, 0.146, 0.108, 0.027),
+    (16, 0.40, 0.745, 0.158, 0.020, 0.024, 0.090, 0.015, 0.015, -0.185, 0.028, 0.029, 0.696, 0.041, 0.036, -0.130, 0.118, 0.142),
+    (17, 0.40, 0.944, 0.154, 0.023, 0.011, 0.112, 0.019, 0.018, -0.262, 0.042, 0.029, 0.738, 0.050, 0.053, 0.029, 0.140, 0.090),
+    (18, 0.40, 1.145, 0.111, 0.026, 0.043, 0.111, 0.023, 0.031, -0.315, 0.048, 0.051, 0.728, 0.065, 0.053, -0.061, 0.174, 0.129),
+    (19, 0.50, 0.149, 0.119, 0.015, 0.015, 0.061, 0.011, 0.015, -0.070, 0.025, 0.022, 0.838, 0.030, 0.029, 0.175, 0.169, 0.077),
+    (20, 0.50, 0.345, 0.172, 0.017, 0.025, 0.102, 0.013, 0.029, -0.104, 0.028, 0.023, 0.876, 0.035, 0.058, -0.102, 0.164, 0.400),
+    (21, 0.50, 0.546, 0.132, 0.019, 0.016, 0.071, 0.016, 0.021, -0.137, 0.030, 0.031, 0.879, 0.040, 0.027, -0.039, 0.233, 0.481),
+    (22, 0.50, 0.746, 0.092, 0.022, 0.030, 0.077, 0.019, 0.025, -0.175, 0.033, 0.021, 0.885, 0.049, 0.050, -0.253, 0.238, 0.113),
+    (23, 0.50, 0.946, 0.161, 0.025, 0.033, 0.119, 0.023, 0.024, -0.210, 0.041, 0.065, 0.806, 0.051, 0.061, -0.311, 0.248, 0.427),
+    (24, 0.50, 1.147, 0.120, 0.026, 0.025, 0.085, 0.022, 0.027, -0.149, 0.053, 0.051, 0.820, 0.061, 0.066, 0.291, 0.193, 0.303),
+]
+
+
 def configure_style() -> None:
     """Use a clean, journal-friendly Matplotlib style without requiring LaTeX."""
     mpl.rcParams.update({
@@ -132,6 +164,19 @@ def configure_style() -> None:
 def kroll_frame() -> pd.DataFrame:
     columns = ("xB", "minus_tprime", "Q2", "W", "epsilon", *OBSERVABLES)
     return pd.DataFrame(KROLL_ROWS, columns=columns)
+
+
+def released_measurements_frame() -> pd.DataFrame:
+    """Return the exact final values tabulated in the release analysis note."""
+    columns = ["bin_number", "mean_xB", "mean_minus_tprime_gev2"]
+    for observable in OBSERVABLES:
+        columns.extend([
+            observable,
+            f"{observable}_stat",
+            f"{observable}_point_to_point_systematic",
+        ])
+    # endfor
+    return pd.DataFrame(RELEASED_RGC_ROWS, columns=columns)
 
 
 def validate_measurements(frame: pd.DataFrame) -> pd.DataFrame:
@@ -346,10 +391,9 @@ def plot_one_xb_canvas(
 
     info_panel(axes_flat[5], x_index=x_index)
     xlo, xhi = XB_BINS[x_index]
-    mean_xb = subset["mean_xB"].mean()
     fig.suptitle(
         rf"RGC $e n\pi^+$ structure-function ratios: "
-        rf"${xlo:.2f} < x_B < {xhi:.2f}$ ($\langle x_B\rangle={mean_xb:.3f}$)",
+        rf"${xlo:.2f} < x_B < {xhi:.2f}$",
         y=0.985,
         fontsize=15,
     )
@@ -433,12 +477,6 @@ def plot_all_xb_canvas(
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
-        "--input-csv",
-        type=Path,
-        default=DEFAULT_INPUT,
-        help=f"Final extraction CSV (default: {DEFAULT_INPUT})",
-    )
-    parser.add_argument(
         "--output-dir",
         type=Path,
         default=DEFAULT_OUTPUT_DIR,
@@ -451,17 +489,11 @@ def main() -> None:
     args = parse_args()
     configure_style()
 
-    input_csv = args.input_csv.expanduser().resolve()
     output_dir = args.output_dir.expanduser().resolve()
-    if not input_csv.is_file():
-        raise FileNotFoundError(
-            f"Final extraction CSV not found: {input_csv}\n"
-            "Run extract_structure_function_ratios.py first, or pass --input-csv."
-        )
-    # endif
     output_dir.mkdir(parents=True, exist_ok=True)
 
-    measurements = validate_measurements(pd.read_csv(input_csv))
+    # Publication source of truth: use the exact values released in the analysis note.
+    measurements = validate_measurements(released_measurements_frame())
     predictions = kroll_frame()
 
     outputs: list[Path] = []
@@ -471,7 +503,7 @@ def main() -> None:
     outputs.append(plot_all_xb_canvas(measurements, predictions, output_dir))
 
     print("Kroll comparison plots complete.")
-    print(f"  Input:  {input_csv}")
+    print("  RGC input: hard-coded final release table from analysis note")
     print(f"  Output: {output_dir}")
     for path in outputs:
         print(f"    {path.name}")
