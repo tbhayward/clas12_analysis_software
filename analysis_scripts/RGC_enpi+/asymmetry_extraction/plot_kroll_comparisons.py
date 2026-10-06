@@ -398,7 +398,7 @@ def plot_one_xb_canvas(
     info_panel(axes_flat[5], x_index=x_index)
     xlo, xhi = XB_BINS[x_index]
     fig.suptitle(
-        rf"RGC $e n\pi^+$ structure-function ratios: "
+        rf"$ep \rightarrow e(n)\pi^+$ structure-function ratios: "
         rf"${xlo:.2f} < x_B < {xhi:.2f}$",
         y=0.985,
         fontsize=15,
@@ -468,7 +468,7 @@ def plot_all_xb_canvas(
         transform=legend_ax.transAxes, va="top", fontsize=10.3, linespacing=1.4,
     )
 
-    fig.suptitle(r"RGC $e n\pi^+$ structure-function ratios and Kroll predictions",
+    fig.suptitle(r"$ep \rightarrow e(n)\pi^+$ structure-function ratios and Kroll predictions",
                  y=0.985, fontsize=15)
     fig.subplots_adjust(left=0.085, right=0.985, bottom=0.09, top=0.91,
                         wspace=0.24, hspace=0.20)
