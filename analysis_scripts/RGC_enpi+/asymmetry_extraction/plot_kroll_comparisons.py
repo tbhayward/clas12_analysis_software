@@ -3,7 +3,7 @@
 
 Run this *after* extract_structure_function_ratios.py.  By default the script reads
 
-    output/nominal/tables/structure_function_ratios.csv
+    output/asymmetry_extraction/nominal/tables/structure_function_ratios.csv
 
 and writes PNG files to
 
@@ -27,7 +27,7 @@ import numpy as np
 import pandas as pd
 
 
-DEFAULT_INPUT = Path("output/nominal/tables/structure_function_ratios.csv")
+DEFAULT_INPUT = Path("output/asymmetry_extraction/nominal/tables/structure_function_ratios.csv")
 DEFAULT_OUTPUT_DIR = Path("output/kroll_comparisons")
 DPI = 300
 
