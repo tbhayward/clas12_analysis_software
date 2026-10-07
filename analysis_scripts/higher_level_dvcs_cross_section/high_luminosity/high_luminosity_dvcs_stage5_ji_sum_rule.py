@@ -1710,6 +1710,7 @@ def make_ji_projection(contour_data, a20_mean, a20_cov, figdir, tabdir, tag="bas
 
     labels={
         "p1x_plus_n1x": r"$p+n$ 1x: 68% contour",
+        "p3x_plus_n3x": r"$p+n$ 3x: 68% contour",
         "p5x_plus_n5x": r"$p+n$ 5x: 68% contour",
         "p10x_plus_n10x": r"$p+n$ 10x: 68% contour",
     }
@@ -1776,9 +1777,9 @@ def make_ji_world_comparison(ji_summary, figdir, tabdir):
     ax.plot(xu, yd_c, linewidth=1.4, alpha=0.65)
 
     # Current Stage-5 projected valence contours.
-    labels = {1:r"CLAS12 $p+n$ 1x (valence)", 5:r"CLAS12 $p+n$ 5x (valence)",
-              10:r"CLAS12 $p+n$ 10x (valence)"}
-    for L in (1,5,10):
+    labels = {1:r"CLAS12 $p+n$ 1x (valence)", 3:r"CLAS12 $p+n$ 3x (valence)",
+              5:r"CLAS12 $p+n$ 5x (valence)", 10:r"CLAS12 $p+n$ 10x (valence)"}
+    for L in (1,3,5,10):
         r = ji_summary[ji_summary["scenario"]==f"p{L}x_plus_n{L}x"].iloc[0]
         mean=np.array([r.J_uv,r.J_dv],float)
         su,sd=float(r.sigma_J_uv),float(r.sigma_J_dv); rho=float(r.corr_J)
@@ -1843,7 +1844,7 @@ def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, ta
     ]
     rows.extend(direct)
 
-    for L in (1,5,10):
+    for L in (1,3,5,10):
         r=ji_summary[ji_summary["scenario"]==f"p{L}x_plus_n{L}x"].iloc[0]
         rows.append(dict(label=f"CLAS12 p+n {L}x", status="projected valence baseline",
                          sigma_Juv=float(r.sigma_J_uv), sigma_Jdv=float(r.sigma_J_dv),
@@ -1894,7 +1895,7 @@ def make_ji_world_uncertainty_comparison(ji_summary, ji_summary_stat, figdir, ta
     ax0.grid(axis="x",alpha=.22)
 
     # --- flavor-separated valence marginal uncertainties ---
-    labels1=["CLAS12 p+n 1x","CLAS12 p+n 5x","CLAS12 p+n 10x",
+    labels1=["CLAS12 p+n 1x","CLAS12 p+n 3x","CLAS12 p+n 5x","CLAS12 p+n 10x",
              "CLAS12 p+n 10x stat-only",
              "Diehl-Kroll 2013 [EPJC 73, 2397]\n$\it{average\ of\ asymmetric\ uncertainties}$",
              "Cichy et al. 2024 [PRD 110, 114025]"]
@@ -1986,7 +1987,7 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
     }).to_csv(tabdir/"rgb_assigned_rga_ptp_systematics.csv",index=False)
     print(f"[Stage5 H+E] RGB XS assigned RGA-like PTP: median={100*np.median(rgb_rel_ptp):.2f}% (includes 1.25x scale)")
 
-    for factor in (1, 5, 10):
+    for factor in (1, 3, 5, 10):
         pf = _load_stage2_proton_inputs(stage2_dir, factor)
         obs_by_factor[factor] = _set_observable_uncertainties(
             obs_template, factor, pf, rgb_xs, rgb_bsa, rgb_rel_ptp, include_ptp=True
@@ -1999,6 +2000,7 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
     # plot separates "more proton statistics" from "new neutron flavor info".
     configs = [
         ("p1x_plus_n1x",       1,  True,  ("xs","bsa")),
+        ("p3x_plus_n3x",       3,  True,  ("xs","bsa")),
         ("p5x_plus_n5x",       5,  True,  ("xs","bsa")),
         ("p10x_plus_n10x",    10,  True,  ("xs","bsa")),
     ]
@@ -2049,7 +2051,7 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
 
     # Neutron ablation: diagnostic only, not extra conference contours.
     ablations = []
-    for factor in (1, 5, 10):
+    for factor in (1, 3, 5, 10):
         for label, kinds in [
             ("proton_only", None),
             ("plus_neutron_XS_only", ("xs",)),
@@ -2075,6 +2077,7 @@ def run_stage5_he_projection(stage2_dir, rgb_xs, rgb_bsa, figdir, tabdir, a20_me
     fig, ax = plt.subplots(figsize=(7.4,6.2))
     labels = {
         "p1x_plus_n1x": r"$p+n$ 1x: 68% contour",
+        "p3x_plus_n3x": r"$p+n$ 3x: 68% contour",
         "p5x_plus_n5x": r"$p+n$ 5x: 68% contour",
         "p10x_plus_n10x": r"$p+n$ 10x: 68% contour",
     }

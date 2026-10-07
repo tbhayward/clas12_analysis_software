@@ -7,7 +7,7 @@ values as pseudo-truth.  It uses:
   * pass-2 kinematics and measured uncertainties/coverage;
   * KM15 as the smooth pseudo-truth;
   * the preferred |t|/Q^2 < 0.20 theory-control cut;
-  * luminosity factors 1, 2, 5, 10 relative to the existing pass-2 exposure.
+  * luminosity factors 1, 2, 3, 5, 10 relative to the existing pass-2 exposure.
 
 Input:
   ../import/dvcs_pass2_analysis.csv
@@ -43,7 +43,7 @@ import numpy as np
 import pandas as pd
 
 
-LUMI_FACTORS = (1, 2, 5, 10)
+LUMI_FACTORS = (1, 2, 3, 5, 10)
 DEFAULT_CLEAN_RATIO = 0.20
 DEFAULT_EBEAM = 10.604
 DEFAULT_BSA_SCALE_FRAC = 0.04
