@@ -679,6 +679,8 @@ static void add_bsa_scale_systematic_columns(std::vector<std::string>& H) {
         const std::string base = "BSA, counts, " + group;
         H.push_back(base + ", combination sys");
         H.push_back(base + ", beam polarization sys");
+        H.push_back(base + ", bin migration and radiative sys");
+        H.push_back(base + ", point-to-point sys");
         H.push_back(base + ", total scale sys");
     }
 }

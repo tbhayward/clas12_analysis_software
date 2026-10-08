@@ -892,6 +892,21 @@ int main(int argc, char* argv[]) {
                       << e.what() << "). Continuing.\n";
         }
 
+        // Remove validation-only products from an earlier run so stale FD/FT
+        // or scrambling results cannot be mistaken for products of this run.
+        // The helicity-charge balance CSV is regenerated below after the nominal
+        // BSA extraction.
+        {
+            const std::filesystem::path bsa_studies_dir =
+                std::filesystem::path(output_root) / "bsa_studies";
+            std::error_code ec;
+            std::filesystem::remove_all(bsa_studies_dir, ec);
+            if (ec) {
+                std::cerr << "[main] WARNING: could not clean stale BSA validation outputs ("
+                          << ec.message() << "). Continuing.\n";
+            } //endif
+        }
+
         BSAOptions bsa_opts;
         bsa_opts.csv_path = csv_main;
         bsa_opts.combined_cuts_json = cuts_json;
@@ -903,9 +918,14 @@ int main(int argc, char* argv[]) {
         bsa_opts.beam_pol_sp19_inb = 0.8453;
         bsa_opts.enable_pi0_subtraction = true;
         bsa_opts.pi0_leakage_relative_uncertainty = 0.10;
+        // Keep the nominal BSA canvases: these are physics-facing products used
+        // for the analysis note and world-data/model comparisons.  The FD-vs-FT
+        // photon split and helicity-scrambling replicas are validation studies,
+        // not inputs to the nominal extraction, so do not regenerate them during
+        // every production run.
         bsa_opts.make_plots = true;
-        bsa_opts.make_photon_topology_study = true;
-        bsa_opts.make_helicity_scrambling_study = true;
+        bsa_opts.make_photon_topology_study = false;
+        bsa_opts.make_helicity_scrambling_study = false;
         bsa_opts.helicity_scramble_replicas = 100;
         bsa_opts.helicity_scramble_seed = 20260915ULL;
         bsa_opts.max_workers = 7;
@@ -1108,7 +1128,6 @@ int main(int argc, char* argv[]) {
     // --------- Cross sections (CSV update + theory JSON + plots) ----------
     {
         const std::string csv_main         = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string theory_json_root = "output/jsons/cross_sections";
         const std::string xs_out_root      = "output/cross_sections";
 
         // // --------- Theory grids (xs_phi_all.json generation) ----------
@@ -1134,60 +1153,57 @@ int main(int argc, char* argv[]) {
             std::cerr << "[main] WARNING: cross-section analysis-note output generation failed.\n";
         }
 
-        const std::vector<std::string> labels_to_plot = {
-            "Fa18 Inb", "Fa18 Out", "Fa18 Inb Supp",
-            "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-            "Fa18", "Sp18", "10.6 GeV"
-        };
-
-        for (const auto &label : labels_to_plot) {
-            if (!plot_cross_sections_for_label(csv_main, label,
-                theory_json_root, xs_out_root)) {
-                std::cerr << "[main] WARNING: plot_cross_sections_for_label failed for "
-                          << label << "\n";
+        // The detailed per-period/per-combination cross-section canvases are
+        // development diagnostics, not production inputs.  The curated figures
+        // needed for the analysis note are written above by
+        // write_cross_section_analysis_note_outputs().  Remove stale generic
+        // plot directories from older runs so the production output reflects
+        // exactly what was generated this time.
+        {
+            namespace fs = std::filesystem;
+            const fs::path xs_root(xs_out_root);
+            std::error_code ec;
+            if (fs::exists(xs_root, ec)) {
+                for (const auto &entry : fs::directory_iterator(xs_root, ec)) {
+                    if (ec) break;
+                    if (!entry.is_directory()) continue;
+                    if (entry.path().filename() == "analysis_note") continue;
+                    fs::remove_all(entry.path(), ec);
+                    if (ec) {
+                        std::cerr << "[main] WARNING: could not remove stale cross-section "
+                                  << "plot directory " << entry.path() << ": "
+                                  << ec.message() << "\n";
+                        ec.clear();
+                    }
+                }
             }
         }
     }
 
     // --------- Overall BH-edge normalization study ----------
+    //
+    // This is a validation study rather than a production correction:
+    // OverallNormalizationOptions::override_to_unity is used for the nominal
+    // extraction, so its fitted scale is not consumed downstream.  Do not rerun
+    // the eight-label BH-edge study during routine production.  Remove any stale
+    // output from older runs so it cannot be mistaken for current production
+    // output.  The overall_normalization implementation remains available for
+    // dedicated validation studies.
     {
-        const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
-
-        OverallNormalizationOptions norm_opts;
-        norm_opts.override_to_unity = true;
-        norm_opts.use_all_points_within_edge_window = true;
-        norm_opts.require_positive_dedge = true;
-        norm_opts.max_dedge_for_normalization_deg = 10.0;
-        norm_opts.norm_x_axis = OverallNormXAxis::XB;
-        norm_opts.output_dir = "output/normalization_study";
-
-        const std::vector<std::string> norm_labels = {
-            "Fa18 Inb",
-            "Fa18 Out",
-            "Sp19 Inb",
-            "Sp18 Inb",
-            "Sp18 Out",
-            "Fa18",
-            "Sp18",
-            "10.6 GeV"
-        };
-
-        for (const std::string& label : norm_labels) {
-            if (!update_overall_normalization_study_csv(csv_main,
-                                                        label,
-                                                        "unpol",
-                                                        norm_opts)) {
-                std::cerr << "[main] ERROR: update_overall_normalization_study_csv failed for "
-                          << label << ".\n";
-                std::exit(EXIT_FAILURE);
-            }
+        namespace fs = std::filesystem;
+        std::error_code ec;
+        const fs::path norm_study_dir("output/normalization_study");
+        fs::remove_all(norm_study_dir, ec);
+        if (ec) {
+            std::cerr << "[main] WARNING: could not remove stale overall-normalization "
+                      << "study directory " << norm_study_dir << ": "
+                      << ec.message() << "\n";
         }
     }
 
     // --------- DVCS normalized cross sections (CSV + plots) ----------
     {
         const std::string csv_main           = "output/csvs/dvcs_pass2_analysis.csv";
-        const std::string theory_json_root   = "output/jsons/cross_sections";
         const std::string out_norm_xsec_root = "output/normed_cross_sections_plots";
 
         if (!update_normed_cross_sections_csv(csv_main)) {
@@ -1195,19 +1211,18 @@ int main(int argc, char* argv[]) {
             return 1;
         }
 
-        const std::vector<std::string> labels = {
-            "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out", "Sp19 Inb",
-            "Fa18", "Sp18", "10.6 GeV"
-        };
-
-        for (const auto &lab : labels) {
-            if (!plot_normed_cross_sections_for_label(csv_main,
-                                                      lab,
-                                                      theory_json_root,
-                                                      out_norm_xsec_root)) {
-                std::cerr << "[main] FATAL: plot_normed_cross_sections_for_label failed for "
-                          << lab << "\n";
-                return 1;
+        // The normalized cross-section columns are retained because they are
+        // consumed by downstream consistency/systematics studies.  Their generic
+        // per-label canvases are presentation-only and are not part of the
+        // production output package.  Clear any stale canvases from older runs.
+        {
+            namespace fs = std::filesystem;
+            std::error_code ec;
+            fs::remove_all(fs::path(out_norm_xsec_root), ec);
+            if (ec) {
+                std::cerr << "[main] WARNING: could not remove stale normalized "
+                          << "cross-section plot directory " << out_norm_xsec_root
+                          << ": " << ec.message() << "\n";
             }
         }
     }
@@ -1251,7 +1266,23 @@ int main(int argc, char* argv[]) {
         AutomaticCutVariationOptions cut_variation_opts;
         cut_variation_opts.enabled = true;
         cut_variation_opts.make_exclusivity_extraction_plots = false;
-        cut_variation_opts.make_final_diagnostic_plots = true;
+        cut_variation_opts.make_final_diagnostic_plots = false;
+        // Detailed bin-by-bin cut-systematic canvases are development diagnostics.
+        // The independently controlled analysis-note plots remain enabled by the
+        // cut-variation systematics module. Remove stale generic plots so an old
+        // run cannot be mistaken for output from this production extraction.
+        {
+            std::error_code cut_plot_cleanup_ec;
+            std::filesystem::remove_all(
+                "output/cut_variation_systematics/plots",
+                cut_plot_cleanup_ec);
+            if (cut_plot_cleanup_ec) {
+                std::cerr
+                    << "[main] WARNING: could not remove stale cut-systematic "
+                    << "diagnostic plots: " << cut_plot_cleanup_ec.message()
+                    << "\n";
+            }
+        }
         cut_variation_opts.use_pass1_tight_instability_rule = true;
         cut_variation_opts.tight_relative_difference_threshold = 0.50;
         cut_variation_opts.max_workers = 7;

@@ -103,6 +103,7 @@ except ImportError:
 TREE_NAME = "PhysicsEvents"
 DEFAULT_OUTPUT_DIR = "output/exclusivity_data_dvcs_pi0_mc"
 DEFAULT_STEP_SIZE = "250 MB"
+WRITE_DETAILED_PLOTS = False
 
 T1_ABS_MAX = 1.0
 OPEN_ANGLE_MIN_DEG = 5.0
@@ -648,6 +649,15 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=180,
         help="PNG resolution in dots per inch (default: 180).",
+    )
+    parser.add_argument(
+        "--detailed-plots",
+        action="store_true",
+        help=(
+            "Write the full per-period/per-topology exclusivity diagnostic "
+            "canvas suite. Disabled by default for production runs; compact "
+            "combined optimization summaries are still written."
+        ),
     )
     parser.add_argument(
         "--no-clean-output",
@@ -3166,9 +3176,11 @@ def process_pi0_period(
 
     for topology in topologies:
         selected = {"data": data_counts[topology.key], "mc": mc_counts[topology.key]}
-        shape_path = output_dir / "pi0_channel" / "shape_comparisons" / f"eppi0_shapes_{period.key}_{topology.key.lower()}.png"
-        draw_pi0_shape_canvas(shape_path, period, topology, data_hists[topology.key], mc_hists[topology.key], selected, log_y, dpi)
-        log(f"Wrote {shape_path}")
+        if WRITE_DETAILED_PLOTS:
+            shape_path = output_dir / "pi0_channel" / "shape_comparisons" / f"eppi0_shapes_{period.key}_{topology.key.lower()}.png"
+            draw_pi0_shape_canvas(shape_path, period, topology, data_hists[topology.key], mc_hists[topology.key], selected, log_y, dpi)
+            log(f"Wrote {shape_path}")
+        # endif
 
         fit_results: Dict[str, FitResult] = {}
         for variable in PI0_VARIABLES:
@@ -3223,9 +3235,11 @@ def process_pi0_period(
             if result.success and math.isfinite(result.shift)
         }
 
-        fit_path = output_dir / "pi0_channel" / "template_fits" / f"eppi0_template_fit_{period.key}_{topology.key.lower()}.png"
-        draw_pi0_fit_canvas(fit_path, period, topology, data_hists[topology.key], mc_hists[topology.key], selected, fit_results, log_y, dpi)
-        log(f"Wrote {fit_path}")
+        if WRITE_DETAILED_PLOTS:
+            fit_path = output_dir / "pi0_channel" / "template_fits" / f"eppi0_template_fit_{period.key}_{topology.key.lower()}.png"
+            draw_pi0_fit_canvas(fit_path, period, topology, data_hists[topology.key], mc_hists[topology.key], selected, fit_results, log_y, dpi)
+            log(f"Wrote {fit_path}")
+        # endif
     # endfor
 
     return rows, calibrations
@@ -3298,16 +3312,18 @@ def process_period(
             "dvcs_mc": dvcs_counts[topology.key],
             "pi0_mc": pi0_counts[topology.key],
         }
-        shape_path = (
-            output_dir / "dvcs_channel" / "shape_comparisons" /
-            f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
-        )
-        draw_shape_canvas(
-            shape_path, period, topology, data_hists[topology.key],
-            dvcs_hists[topology.key], pi0_hists[topology.key],
-            selected, log_y, dpi, "minimal preselection",
-        )
-        log(f"Wrote {shape_path}")
+        if WRITE_DETAILED_PLOTS:
+            shape_path = (
+                output_dir / "dvcs_channel" / "shape_comparisons" /
+                f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
+            )
+            draw_shape_canvas(
+                shape_path, period, topology, data_hists[topology.key],
+                dvcs_hists[topology.key], pi0_hists[topology.key],
+                selected, log_y, dpi, "minimal preselection",
+            )
+            log(f"Wrote {shape_path}")
+        # endif
 
         fraction_data_hists = data_hists[topology.key]
         fraction_dvcs_hists = dvcs_hists[topology.key]
@@ -3566,16 +3582,18 @@ def process_period(
             )
         # endfor
 
-        fit_path = (
-            output_dir / "dvcs_channel" / "template_fits" /
-            f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
-        )
-        draw_fit_canvas(
-            fit_path, period, topology, data_hists[topology.key],
-            dvcs_hists[topology.key], pi0_hists[topology.key],
-            selected, fit_results, shared_summary, log_y, dpi,
-        )
-        log(f"Wrote {fit_path}")
+        if WRITE_DETAILED_PLOTS:
+            fit_path = (
+                output_dir / "dvcs_channel" / "template_fits" /
+                f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
+            )
+            draw_fit_canvas(
+                fit_path, period, topology, data_hists[topology.key],
+                dvcs_hists[topology.key], pi0_hists[topology.key],
+                selected, fit_results, shared_summary, log_y, dpi,
+            )
+            log(f"Wrote {fit_path}")
+        # endif
     # endfor
 
     return rows
@@ -6131,21 +6149,25 @@ def develop_iterative_cuts_for_period(
             output_dir / "optimization_summary"
             / f"plateau_recommendation_{period.key}_{topology.key.lower()}.txt"
         )
-        draw_optimization_history(
-            history_path,
-            period,
-            topology,
-            cut_flow_rows,
-            recommendation,
-            dpi,
-        )
-        draw_marginal_gain_history(
-            marginal_path,
-            period,
-            topology,
-            cut_flow_rows,
-            dpi,
-        )
+        if WRITE_DETAILED_PLOTS:
+            draw_optimization_history(
+                history_path,
+                period,
+                topology,
+                cut_flow_rows,
+                recommendation,
+                dpi,
+            )
+            draw_marginal_gain_history(
+                marginal_path,
+                period,
+                topology,
+                cut_flow_rows,
+                dpi,
+            )
+            log(f"Wrote {history_path}")
+            log(f"Wrote {marginal_path}")
+        # endif
         write_plateau_report(
             plateau_path,
             period,
@@ -6153,8 +6175,6 @@ def develop_iterative_cuts_for_period(
             recommendation,
         )
         rows.extend(cut_flow_rows)
-        log(f"Wrote {history_path}")
-        log(f"Wrote {marginal_path}")
         log(f"Wrote {plateau_path}")
 
         pi0_topology_arrays = {
@@ -6206,27 +6226,29 @@ def develop_iterative_cuts_for_period(
                 if channel == "dvcs"
                 else pi0_final_histograms
             )
-            draw_iterative_cut_canvas(
-                development_path,
-                period,
-                topology,
-                channel,
-                steps,
-                False,
-                dpi,
-            )
-            draw_iterative_cut_canvas(
-                summary_path,
-                period,
-                topology,
-                channel,
-                steps,
-                True,
-                dpi,
-                final_histograms=final_histograms,
-            )
-            log(f"Wrote {development_path}")
-            log(f"Wrote {summary_path}")
+            if WRITE_DETAILED_PLOTS:
+                draw_iterative_cut_canvas(
+                    development_path,
+                    period,
+                    topology,
+                    channel,
+                    steps,
+                    False,
+                    dpi,
+                )
+                draw_iterative_cut_canvas(
+                    summary_path,
+                    period,
+                    topology,
+                    channel,
+                    steps,
+                    True,
+                    dpi,
+                    final_histograms=final_histograms,
+                )
+                log(f"Wrote {development_path}")
+                log(f"Wrote {summary_path}")
+            # endif
             for step in steps:
                 if channel == "dvcs":
                     continue
@@ -6304,6 +6326,7 @@ def process_period_worker(
     emiss2_mean_order_penalty_weight: float,
     run_iterative_cuts: bool,
     global_cuts_json: str,
+    detailed_plots: bool,
 ) -> Tuple[
     str,
     List[Dict[str, object]],
@@ -6313,8 +6336,9 @@ def process_period_worker(
 ]:
     """Process one complete run period inside a worker process."""
 
-    global ACTIVE_GLOBAL_CUTS
+    global ACTIVE_GLOBAL_CUTS, WRITE_DETAILED_PLOTS
     ACTIVE_GLOBAL_CUTS = load_global_cuts_config(global_cuts_json)
+    WRITE_DETAILED_PLOTS = detailed_plots
     output_dir = Path(output_dir_string)
     log(f"[worker {os.getpid()}] Starting {period.label}")
 
@@ -6520,6 +6544,10 @@ def main() -> int:
             output_dir / "pi0_channel" / "iterative_cut_summary",
             output_dir / "optimization_summary",
             output_dir / "iterative_cuts",
+            output_dir / "dvcs_channel" / "shape_comparisons",
+            output_dir / "dvcs_channel" / "template_fits",
+            output_dir / "pi0_channel" / "shape_comparisons",
+            output_dir / "pi0_channel" / "template_fits",
         )
         for stale_path in stale_paths:
             if stale_path.exists():
@@ -6530,7 +6558,11 @@ def main() -> int:
     # endif
 
     log(f"ROOT I/O backend: {io_backend()}")
-    log(f"Producing DVCS shape and core-fit canvases plus direct-pi0 shape and core-fit canvases")
+    if args.detailed_plots:
+        log("Detailed exclusivity diagnostic canvases enabled")
+    else:
+        log("Production output mode: suppressing per-period/per-topology diagnostic canvases")
+    # endif
     log(
         f"Selection: active C++ global cuts '{ACTIVE_GLOBAL_CUTS.analysis_tag}' "
         f"from {args.global_cuts_json}; no hard exclusivity cuts are applied."
@@ -6592,6 +6624,7 @@ def main() -> int:
                 args.emiss2_mean_order_penalty,
                 not args.skip_iterative_cuts,
                 args.global_cuts_json,
+                args.detailed_plots,
             )
             period_results[period_key] = (dvcs_rows, pi0_rows, cut_blocks, cut_rows)
         # endfor
@@ -6629,6 +6662,7 @@ def main() -> int:
                     args.emiss2_mean_order_penalty,
                     not args.skip_iterative_cuts,
                     args.global_cuts_json,
+                    args.detailed_plots,
                 ): period
                 for period in periods
             }
@@ -6732,7 +6766,7 @@ def main() -> int:
         log(f"Wrote {tight_path}")
         log(f"Wrote {compatibility_path}")
     # endif
-    log("All requested shape plots and fits completed")
+    log("Exclusivity fits, cut products and requested output package completed")
     return 0
 
 

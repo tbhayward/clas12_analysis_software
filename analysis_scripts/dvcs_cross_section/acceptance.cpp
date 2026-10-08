@@ -1352,17 +1352,10 @@ bool update_acceptance_csv(const std::string& csv_path,
         std::cout << "[acceptance] Updated acceptance columns in: "
                   << csv_path << std::endl;
 
-        for (const std::string& period : periods()) {
-            plot_acceptance_for_period(csv,
-                                       rows,
-                                       period,
-                                       acc_by_period.at(period),
-                                       out_root_dir);
-        }
-
-        std::cout << "[acceptance] Acceptance plots written under: "
-                  << out_root_dir << "/acceptance" << std::endl;
-
+        // Detailed per-period acceptance canvases are intentionally not produced in
+        // the nominal extraction.  The acceptance values themselves are already
+        // written to the CSV above, and the compact set of plots needed for the
+        // analysis note is produced below.
         write_acceptance_analysis_note_outputs(csv, rows, acc_by_period, out_root_dir);
         std::cout << "[acceptance] Analysis-note summary outputs written under: "
                   << out_root_dir << "/acceptance/analysis_note" << std::endl;

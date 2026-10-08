@@ -276,6 +276,8 @@ static std::vector<std::string> combination_systematic_columns() {
         const std::string base = "BSA, counts, " + label;
         out.push_back(base + ", combination sys");
         out.push_back(base + ", beam polarization sys");
+        out.push_back(base + ", bin migration and radiative sys");
+        out.push_back(base + ", point-to-point sys");
         out.push_back(base + ", total scale sys");
     }
     return out;
@@ -363,6 +365,115 @@ static bool ensure_systematics_output_columns(const std::string& csv_path) {
     }
 
     return n_added > 0;
+}
+
+static double scalar_value(const std::string& raw);
+static double tuple_first_value(const std::string& raw);
+static std::string format_scalar(double v);
+
+// Materialize the publication-facing BSA systematic summary.  The dedicated
+// pass-2 migration study requires generated<->reconstructed event association,
+// which is not available in the current reduced trees.  Until that study is
+// completed, assign a conservative absolute 0.02 uncertainty to every populated
+// BSA point.  This is the upper end of the approximate 0.1--2% absolute
+// bin-migration systematic quoted by the published pass-1 CLAS12 BSA analysis;
+// its treatment also covered unmodelled internal-radiative migration effects.
+//
+// Keep point-to-point and correlated uncertainties separate.  The point-to-point
+// total combines the pass-2 pi0 subtraction and cut-variation studies with the
+// conservative migration/radiative placeholder.  The existing "total scale sys"
+// column remains the correlated run-period-combination + beam-polarization term.
+static bool materialize_bsa_systematics_summary(const std::string& csv_path) {
+    constexpr double kMigrationRadiativePlaceholder = 0.02;
+    const std::vector<std::string> groups = {
+        "10.6 GeV", "Fa18", "Sp18", "Sp19 Inb"
+    };
+
+    CsvTable table = read_csv_or_throw(csv_path);
+
+    for (const auto& group : groups) {
+        const std::string base = "BSA, counts, " + group;
+        const std::vector<std::string> required = {
+            base,
+            base + ", pi0 subtraction sys",
+            base + ", exclusivity sys",
+            base + ", fiducial sys",
+            base + ", combination sys",
+            base + ", beam polarization sys",
+            base + ", total scale sys"
+        };
+        require_columns(table, required, "BSA systematic summary for " + group);
+        ensure_column(table, base + ", bin migration and radiative sys");
+        ensure_column(table, base + ", point-to-point sys");
+    } //endfor
+
+    fs::create_directories("output/systematics");
+    const std::string summary_path = "output/systematics/bsa_systematics_summary.csv";
+    std::ofstream summary(summary_path);
+    if (!summary.is_open()) {
+        throw std::runtime_error("Could not open BSA systematic summary CSV: " + summary_path);
+    }
+    summary << "group,row,pi0_subtraction_sys,exclusivity_sys,fiducial_sys,"
+               "bin_migration_and_radiative_sys,point_to_point_sys,combination_sys,"
+               "beam_polarization_sys,total_scale_sys\n";
+
+    for (const auto& group : groups) {
+        const std::string base = "BSA, counts, " + group;
+        const int c_bsa = table.index.at(base);
+        const int c_pi0 = table.index.at(base + ", pi0 subtraction sys");
+        const int c_excl = table.index.at(base + ", exclusivity sys");
+        const int c_fid = table.index.at(base + ", fiducial sys");
+        const int c_mig = table.index.at(base + ", bin migration and radiative sys");
+        const int c_ptp = table.index.at(base + ", point-to-point sys");
+        const int c_comb = table.index.at(base + ", combination sys");
+        const int c_pol = table.index.at(base + ", beam polarization sys");
+        const int c_scale = table.index.at(base + ", total scale sys");
+
+        for (size_t r = 0; r < table.rows.size(); ++r) {
+            auto& row = table.rows[r];
+            const double a = tuple_first_value(row[c_bsa]);
+            if (!std::isfinite(a)) {
+                row[c_mig].clear();
+                row[c_ptp].clear();
+                continue;
+            }
+
+            const double s_pi0 = scalar_value(row[c_pi0]);
+            const double s_excl = scalar_value(row[c_excl]);
+            const double s_fid = scalar_value(row[c_fid]);
+            if (!std::isfinite(s_pi0) || !std::isfinite(s_excl) || !std::isfinite(s_fid)) {
+                std::ostringstream msg;
+                msg << "Missing BSA point-to-point component for " << group
+                    << " at CSV row " << r
+                    << ". Run the nominal BSA and automatic cut-variation studies before systematics finalization.";
+                throw std::runtime_error(msg.str());
+            }
+
+            const double s_ptp = std::sqrt(
+                s_pi0*s_pi0 + s_excl*s_excl + s_fid*s_fid +
+                kMigrationRadiativePlaceholder*kMigrationRadiativePlaceholder);
+            row[c_mig] = format_scalar(kMigrationRadiativePlaceholder);
+            row[c_ptp] = format_scalar(s_ptp);
+
+            summary << group << ',' << r << ','
+                    << format_scalar(s_pi0) << ','
+                    << format_scalar(s_excl) << ','
+                    << format_scalar(s_fid) << ','
+                    << format_scalar(kMigrationRadiativePlaceholder) << ','
+                    << format_scalar(s_ptp) << ','
+                    << row[c_comb] << ',' << row[c_pol] << ',' << row[c_scale] << '\n';
+        } //endfor
+    } //endfor
+
+    summary.close();
+    write_csv_or_throw(csv_path, table);
+    std::cout << "[systematics] BSA summary: assigned conservative absolute 0.02 "
+              << "bin-migration/radiative uncertainty and materialized point-to-point totals.\n";
+    std::cout << "[systematics] BSA point-to-point total = sqrt(pi0^2 + exclusivity^2 + "
+              << "fiducial^2 + 0.02^2).\n";
+    std::cout << "[systematics] BSA correlated scale remains in the existing total scale sys column.\n";
+    std::cout << "[systematics] Wrote " << summary_path << "\n";
+    return true;
 }
 
 static std::string trim_copy(const std::string& s) {
@@ -1019,6 +1130,11 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
 
+            if (!materialize_bsa_systematics_summary(csv_main)) {
+                std::cerr << "[systematics] FATAL: BSA systematic summary failed in --finalize-only mode.\n";
+                return 1;
+            }
+
             if (!make_systematic_projection_plots(
                     csv_main,
                     "output/systematics/point_to_point_projections")) {
@@ -1074,6 +1190,11 @@ int main(int argc, char* argv[]) {
         if (!correlated_scale_systematics(csv_main, correlated_opts)) {
             std::cerr
                 << "[systematics] FATAL: correlated_scale_systematics failed.\n";
+            return 1;
+        }
+
+        if (!materialize_bsa_systematics_summary(csv_main)) {
+            std::cerr << "[systematics] FATAL: BSA systematic summary failed.\n";
             return 1;
         }
 

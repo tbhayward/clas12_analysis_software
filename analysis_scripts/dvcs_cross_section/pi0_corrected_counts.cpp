@@ -1268,13 +1268,12 @@ bool update_pi0_corrected_counts_csv(const std::string& csv_path,
     std::cout << "[pi0_corrected] Updated CSV: " << csv_abs
               << " (size " << size_before << " -> " << size_after << ")\n";
 
+    // Keep only the curated analysis-note subtraction outputs in normal production.
+    // The detailed period-by-period signal-yield canvases are diagnostic-only and
+    // are intentionally not rendered here.
     write_analysis_note_subtraction_outputs(csv, signal_cache, out_root_dir);
 
-    for (const auto& per : kPeriods) {
-        draw_signal_yield_canvases(per, csv, signal_cache, out_root_dir);
-    }
-
-    std::cout << "[pi0_corrected] Signal-yield plotting finished.\n";
+    std::cout << "[pi0_corrected] Analysis-note subtraction outputs finished.\n";
 
     return true;
 }
