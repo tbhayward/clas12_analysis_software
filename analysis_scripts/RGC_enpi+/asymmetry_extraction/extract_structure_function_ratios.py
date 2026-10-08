@@ -209,6 +209,7 @@ from concurrent.futures import ProcessPoolExecutor, as_completed, as_completed
 import multiprocessing as mp
 import queue
 import time
+import tempfile
 from dataclasses import dataclass
 from datetime import datetime, timezone
 import hashlib
@@ -1629,8 +1630,17 @@ def load_dilution_factors(
 
 
 # =============================================================================
-# Input ROOT handling and event cache
+# Input ROOT handling and transient selected-event staging
 # =============================================================================
+
+_TRANSIENT_EVENT_DIR = Path(tempfile.gettempdir()) / f"rgc_enpi_{os.environ.get('USER', 'user')}"
+
+def _event_cache_path(requested_path: Path) -> Path:
+    """Map legacy cache paths to transient system storage, never the analysis tree."""
+    requested = Path(requested_path).expanduser().resolve()
+    digest = hashlib.sha1(str(requested).encode("utf-8")).hexdigest()[:16]
+    return _TRANSIENT_EVENT_DIR / f"selected_events_{digest}.npz"
+
 
 def parse_input_override(text: str) -> tuple[str, Path]:
     try:
@@ -1775,6 +1785,7 @@ def build_event_cache(
     cuts: Mapping[tuple[str, int], CutRecord],
     cache_path: Path,
 ) -> dict[str, Any]:
+    cache_path = _event_cache_path(cache_path)
     ensure_directory(cache_path.parent)
     cache_build_start = time.perf_counter()
     print(
@@ -2140,7 +2151,9 @@ def derive_event_cache(
     cuts: Mapping[tuple[str, int], CutRecord],
     cache_path: Path,
 ) -> dict[str, Any]:
-    """Filter a previously selected superset cache without rereading ROOT."""
+    """Filter a transient selected-event superset without rereading ROOT."""
+    source_cache_path = _event_cache_path(source_cache_path)
+    cache_path = _event_cache_path(cache_path)
     derive_start = time.perf_counter()
     print(
         f"[cache] DERIVE START: {source_cache_path.resolve()} -> "
@@ -2193,6 +2206,10 @@ def derive_event_cache(
 
 
 def load_event_cache(path: Path) -> dict[str, np.ndarray]:
+    path = Path(path)
+    if path.parent != _TRANSIENT_EVENT_DIR:
+        path = _event_cache_path(path)
+    # endif
     if not path.is_file():
         raise FileNotFoundError(f"Missing event cache: {path}")
     # endif
@@ -6783,7 +6800,7 @@ def run_analysis_variant(
     print(f"Channel cuts:         {cut_json_path}")
     print(f"Dilution factors:     {dilution_json_path}")
     print(f"Output directory:     {output_dir}")
-    print(f"Selected-event cache: {cache_path}")
+    print(f"Selected-event staging: {cache_path}")
     print(f"Target-axis study:    {include_target_axis_study}")
     print(f"Period diagnostics:   {include_period_diagnostics}")
     print(f"Exclusivity window:   {cut_label}")
@@ -9624,7 +9641,7 @@ def run_period_stability_diagnostics(args: argparse.Namespace, root: Path, worke
         args.cache.expanduser().resolve() if args.cache
         else nominal_dir / "cache/selected_events.npz"
     )
-    if not cache_path.is_file():
+    if not _event_cache_path(cache_path).is_file():
         raise FileNotFoundError(
             f"Period-stability cache not found: {cache_path}. Run --period-stability-only first."
         )
@@ -10280,7 +10297,7 @@ def run_clas6_cross_check(args, workers):
     # endfor
 
     cache_path = _rga_variant_cache_paths(args)["nominal"]
-    if not cache_path.is_file():
+    if not _event_cache_path(cache_path).is_file():
         raise FileNotFoundError(f"Missing nominal selected-event cache: {cache_path}")
     # endif
     events = load_event_cache(cache_path)
@@ -10837,7 +10854,7 @@ def run_double_spin_target_split_diagnostic(
     ensure_directory(plots)
     ensure_directory(tables)
 
-    if not cache_path.is_file():
+    if not _event_cache_path(cache_path).is_file():
         raise FileNotFoundError(
             "The target-split diagnostic uses the nominal selected-event cache, "
             f"but it was not found: {cache_path}. Run the normal extraction once first."
@@ -11137,7 +11154,7 @@ def run_solenoid_split_diagnostic(
     tables = out / "tables"
     ensure_directory(plots)
     ensure_directory(tables)
-    if not cache_path.is_file():
+    if not _event_cache_path(cache_path).is_file():
         raise FileNotFoundError(
             f"Solenoid-split diagnostic requires the nominal cache: {cache_path}"
         )
@@ -11779,9 +11796,9 @@ def run_appendix_mle_diagnostics(args: argparse.Namespace, root: Path, workers: 
     # endfor
     cache_path = (args.cache.expanduser().resolve() if args.cache
                   else root / "nominal/cache/selected_events.npz")
-    if not cache_path.is_file():
+    if not _event_cache_path(cache_path).is_file():
         raise FileNotFoundError(
-            f"Nominal selected-event cache not found: {cache_path}. Run the nominal extraction first or pass --cache."
+            f"Transient selected-event staging not found: {cache_path}. Run the nominal extraction first in this temporary-storage environment."
         )
     # endif
     events = load_event_cache(cache_path)
@@ -12220,7 +12237,8 @@ def build_period_stability_diagnostic_cache(
     run_records: Mapping[int, RunRecord],
     cache_path: Path,
 ) -> dict[str, np.ndarray]:
-    """Build a production-phase-space cache without any Mx2 requirement."""
+    """Build transient production-phase-space staging without any Mx2 requirement."""
+    cache_path = _event_cache_path(cache_path)
     if cache_path.is_file():
         cached = load_event_cache(cache_path)
         needed = {"e_phi", "p_phi", "p_p", "p_theta", "y", "Mx2"}
@@ -13370,10 +13388,10 @@ def run_null_hypothesis_tests(args: argparse.Namespace, root: Path, workers: int
             args.cache.expanduser().resolve()
             if args.cache else root / "nominal/cache/selected_events.npz"
         )
-        if not cache_path.is_file():
+        if not _event_cache_path(cache_path).is_file():
             raise FileNotFoundError(
                 f"Nominal selected-event cache not found: {cache_path}. "
-                "Run the nominal extraction first or pass --cache."
+                "Run the nominal extraction first in this temporary-storage environment."
             )
         # endif
         run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
@@ -13608,7 +13626,7 @@ def _run_null_test_ensemble(
         args.cache.expanduser().resolve()
         if args.cache else root / "nominal/cache/selected_events.npz"
     )
-    if not cache_path.is_file():
+    if not _event_cache_path(cache_path).is_file():
         raise FileNotFoundError(f"Nominal selected-event cache not found: {cache_path}")
     # endif
     run_records = parse_run_info_csv(args.run_info_csv.expanduser().resolve())
@@ -14138,8 +14156,9 @@ def build_argument_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--dilution-dir", type=Path, default=DEFAULT_DILUTION_DIR)
     parser.add_argument("--output-dir", type=Path, default=DEFAULT_OUTPUT_DIR)
-    parser.add_argument("--cache", type=Path, default=None, help="Legacy nominal-cache override.")
-    parser.add_argument("--reuse-cache", action="store_true")
+    # Persistent selected-event caches were removed. Internal staging, when needed
+    # by spawned workers, lives under the system temporary directory.
+    parser.set_defaults(cache=None, reuse_cache=False)
     parser.add_argument("--disable-isr", action="store_true")
     parser.add_argument(
         "--disable-momentum-corrections", action="store_true",
@@ -14199,7 +14218,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
         "--period-phi-matching-only", action="store_true",
         help=(
             "Run only the final common-phi matched A_LL period-stability diagnostic. "
-            "Uses the existing period-stability selected-event cache and tables; skips "
+            "Uses the period-stability selected events rebuilt from the ROOT inputs and tables; skips "
             "all nominal fits and all other period diagnostics."
         ),
     )
@@ -14271,7 +14290,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
             "Run only the nominal fixed-target-orientation double-spin stability "
             "test. Fits P_t>0 and P_t<0 samples independently in all 24 bins "
             "with the full seven-term nominal likelihood and compares A_LL and "
-            "A_LL^cos(phi). Uses the existing nominal selected-event cache; no "
+            "A_LL^cos(phi). Uses the selected events rebuilt from the ROOT inputs; no "
             "systematic or alternative-method studies are run."
         ),
     )
@@ -14280,7 +14299,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
         help=(
             "Run only the solenoid-polarity stability diagnostic. Integrates "
             "over xB, fits all seven amplitudes independently for solenoid -1 "
-            "and +1 in the six -tprime bins, and uses the existing nominal cache. "
+            "and +1 in the six -tprime bins, and uses the selected events rebuilt from the ROOT inputs. "
             "No systematic or alternative-method studies are run."
         ),
     )
@@ -14371,7 +14390,7 @@ def main() -> int:
             else nominal_dir / "cache/selected_events.npz"
         )
         table_path = nominal_dir / "tables/structure_function_ratios.csv"
-        if not cache_path.is_file():
+        if not _event_cache_path(cache_path).is_file():
             raise FileNotFoundError(
                 f"Period-stability cache not found: {cache_path}. Run --period-stability-only first."
             )
@@ -14504,7 +14523,7 @@ def main() -> int:
     print("=" * 78, flush=True)
     print(f"Output root:          {root}", flush=True)
     print(f"Workers:              {workers} (maximum {MAXIMUM_WORKERS})", flush=True)
-    print(f"Reuse cache:          {args.reuse_cache}", flush=True)
+    print(f"Persistent cache:     disabled", flush=True)
     print(f"Skip plots:           {args.skip_plots}", flush=True)
     print(f"ISR study enabled:    {not args.disable_isr and not args.fit_method_diagnostic}", flush=True)
     print(
