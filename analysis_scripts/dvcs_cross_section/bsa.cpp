@@ -1569,7 +1569,16 @@ static AsymResult compute_group_bsa(const PeriodCounts& gamma_counts,
     } //endfor
 
     r.stat = std::sqrt(std::max(0.0, variance));
-    r.valid = std::isfinite(r.value) && std::isfinite(r.stat);
+
+    // A finite algebraic ratio is not by itself a usable BSA measurement.
+    // After pi0 subtraction both helicity samples must retain positive signal,
+    // and the propagated statistical uncertainty must be finite and nonzero.
+    // This rejects depleted/saturated cases such as A=+-1/P with sigma=0 and
+    // fits with a collapsed background-subtracted helicity denominator.  The
+    // same definition is therefore inherited automatically by nominal and all
+    // cut-variation BSA extractions.
+    r.valid = std::isfinite(r.value) && std::isfinite(r.stat) &&
+              r.stat > 0.0 && r.s_plus > 0.0 && r.s_minus > 0.0;
     return r;
 }
 
