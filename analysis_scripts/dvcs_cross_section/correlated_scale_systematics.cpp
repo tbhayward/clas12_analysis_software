@@ -646,8 +646,8 @@ static void draw_residual_all_variables(
     info.SetTextSize(0.050);
     info.DrawLatex(0.08,0.82,"Diagnostic only");
     info.SetTextSize(0.037);
-    info.DrawLatex(0.08,0.67,"s_{resid} = #sqrt{max(0,");
-    info.DrawLatex(0.11,0.59,"s_{obs}^{2}-s_{stat}^{2}-s_{current}^{2})}");
+    info.DrawLatex(0.08,0.67,"s_{resid} = #sqrt{max(0, s_{obs}^{2}");
+    info.DrawLatex(0.11,0.59,"- s_{stat}^{2} - s_{current}^{2})}");
     info.SetTextSize(0.033);
     info.DrawLatex(0.08,0.42,"Production assignment:");
     info.DrawLatex(0.08,0.34,"4^{#circ} #theta_{p} intervals");

@@ -27,6 +27,7 @@
 #include <stdexcept>
 #include <string>
 #include <unordered_map>
+#include <utility>
 #include <vector>
 
 namespace fs = std::filesystem;
@@ -233,15 +234,31 @@ void update_bsa_cut_systematics(const AutomaticCutVariationOptions& options) {
             const TripleCell et = parse_triple(excl_tight.rows[r][iet]);
             const TripleCell fl = parse_triple(fid_loose.rows[r][ifl]);
             const TripleCell ft = parse_triple(fid_tight.rows[r][ift]);
-            if (!n.ok || !el.ok || !et.ok || !fl.ok || !ft.ok) {
+            if (!n.ok) {
                 nominal.rows[r][cex].clear(); nominal.rows[r][cfi].clear(); nominal.rows[r][ctot].clear();
                 continue;
             } //endif
+
             // BSA crosses zero, so use absolute A_LU changes; no relative-difference
-            // instability criterion is applied. The symmetric loose/tight average
-            // mirrors the pass-1 cut prescription without dividing by A_LU.
-            const double sex = 0.5 * (std::abs(el.value - n.value) + std::abs(et.value - n.value));
-            const double sfi = 0.5 * (std::abs(fl.value - n.value) + std::abs(ft.value - n.value));
+            // instability criterion is applied. For each cut family, average the
+            // loose/tight displacements when both are measurable. If only one side
+            // is statistically defined, retain that one-sided displacement rather
+            // than discarding an otherwise valid nominal BSA bin. If neither side
+            // is defined, leave the component blank so finalization still fails
+            // loudly instead of silently assigning zero uncertainty.
+            auto cut_family_sys = [&](const TripleCell& loose, const TripleCell& tight) {
+                double sum = 0.0;
+                int nvalid = 0;
+                if (loose.ok) { sum += std::abs(loose.value - n.value); ++nvalid; }
+                if (tight.ok) { sum += std::abs(tight.value - n.value); ++nvalid; }
+                return std::pair<double,int>{nvalid > 0 ? sum / nvalid : 0.0, nvalid};
+            };
+            const auto [sex, nex] = cut_family_sys(el, et);
+            const auto [sfi, nfi] = cut_family_sys(fl, ft);
+            if (nex == 0 || nfi == 0) {
+                nominal.rows[r][cex].clear(); nominal.rows[r][cfi].clear(); nominal.rows[r][ctot].clear();
+                continue;
+            } //endif
             const double stot = std::hypot(sex, sfi);
             nominal.rows[r][cex] = std::to_string(sex);
             nominal.rows[r][cfi] = std::to_string(sfi);
