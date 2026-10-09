@@ -225,6 +225,35 @@ void update_bsa_cut_systematics(const AutomaticCutVariationOptions& options) {
     const std::vector<std::string> groups = {
         "Fa18 Inb", "Fa18 Out", "Sp19 Inb", "Sp18 Inb", "Sp18 Out", "Fa18", "Sp18", "10.6 GeV"
     };
+    auto usable = [](const TripleCell& x) {
+        return x.ok && std::isfinite(x.value) && std::isfinite(x.stat) && x.stat > 0.0;
+    };
+    auto percentile95 = [](std::vector<double> values) {
+        values.erase(std::remove_if(values.begin(), values.end(),
+                                    [](double x) { return !std::isfinite(x) || x < 0.0; }),
+                     values.end());
+        if (values.empty()) return std::numeric_limits<double>::quiet_NaN();
+        std::sort(values.begin(), values.end());
+        const double pos = 0.95 * static_cast<double>(values.size() - 1);
+        const std::size_t lo = static_cast<std::size_t>(std::floor(pos));
+        const std::size_t hi = static_cast<std::size_t>(std::ceil(pos));
+        if (lo == hi) return values[lo];
+        const double f = pos - static_cast<double>(lo);
+        return values[lo] * (1.0 - f) + values[hi] * f;
+    };
+
+    struct FamilyResult { double sys = 0.0; int nvalid = 0; std::string source; };
+    auto family_result = [&](const TripleCell& n, const TripleCell& loose, const TripleCell& tight) {
+        const bool lok = usable(loose);
+        const bool tok = usable(tight);
+        if (lok && tok) return FamilyResult{
+            0.5 * (std::abs(loose.value - n.value) + std::abs(tight.value - n.value)),
+            2, "loose+tight"};
+        if (lok) return FamilyResult{std::abs(loose.value - n.value), 1, "loose-only"};
+        if (tok) return FamilyResult{std::abs(tight.value - n.value), 1, "tight-only"};
+        return FamilyResult{0.0, 0, "none"};
+    };
+
     for (const std::string& group : groups) {
         const std::string base = "BSA, counts, " + group;
         auto get_idx = [&](const CsvTable& t) -> std::size_t {
@@ -237,12 +266,33 @@ void update_bsa_cut_systematics(const AutomaticCutVariationOptions& options) {
         const std::size_t iet = get_idx(excl_tight);
         const std::size_t ifl = get_idx(fid_loose);
         const std::size_t ift = get_idx(fid_tight);
-        // Keep the two physical cut families separate in production bookkeeping.
-        // Any quadrature combination belongs in downstream totals/diagnostics, not
-        // in a redundant generic "cut sys" column.
         erase_column_if_present(nominal, base + ", cut sys");
         const std::size_t cex = ensure_column(nominal, base + ", exclusivity sys");
         const std::size_t cfi = ensure_column(nominal, base + ", fiducial sys");
+
+        // Determine conservative family-specific fallbacks from rows where at least
+        // one varied sample remains measurable.  These are used only when BOTH
+        // sides of that same cut family are statistically unusable.  Keeping the
+        // distributions separate prevents fiducial failures from contaminating
+        // exclusivity bookkeeping (and vice versa).
+        std::vector<double> excl_supported, fid_supported;
+        for (std::size_t r = 0; r < nominal.rows.size(); ++r) {
+            const TripleCell n = parse_triple(nominal.rows[r][in]);
+            if (!usable(n)) continue;
+            const FamilyResult ex = family_result(n,
+                parse_triple(excl_loose.rows[r][iel]), parse_triple(excl_tight.rows[r][iet]));
+            const FamilyResult fi = family_result(n,
+                parse_triple(fid_loose.rows[r][ifl]), parse_triple(fid_tight.rows[r][ift]));
+            if (ex.nvalid > 0) excl_supported.push_back(ex.sys);
+            if (fi.nvalid > 0) fid_supported.push_back(fi.sys);
+        } //endfor
+        const double excl_p95 = percentile95(excl_supported);
+        const double fid_p95 = percentile95(fid_supported);
+        if (!std::isfinite(excl_p95) || !std::isfinite(fid_p95)) {
+            throw std::runtime_error("Could not determine BSA cut-systematic p95 fallback for " + group);
+        } //endif
+        std::size_t excl_fallback_count = 0;
+        std::size_t fid_fallback_count = 0;
 
         for (std::size_t r = 0; r < nominal.rows.size(); ++r) {
             const TripleCell n = parse_triple(nominal.rows[r][in]);
@@ -250,43 +300,23 @@ void update_bsa_cut_systematics(const AutomaticCutVariationOptions& options) {
             const TripleCell et = parse_triple(excl_tight.rows[r][iet]);
             const TripleCell fl = parse_triple(fid_loose.rows[r][ifl]);
             const TripleCell ft = parse_triple(fid_tight.rows[r][ift]);
-            if (!n.ok) {
-                nominal.rows[r][cex].clear(); nominal.rows[r][cfi].clear();
+            if (!usable(n)) {
+                nominal.rows[r][cex].clear();
+                nominal.rows[r][cfi].clear();
                 continue;
             } //endif
 
-            // A varied BSA is usable only when it carries a genuine statistical
-            // measurement.  The BSA extractor now also enforces positive
-            // background-subtracted yields in both helicity states before writing
-            // the tuple; the stat>0 test here makes this robust to older CSVs and
-            // explicitly rejects saturated A=+-1/P, sigma=0 results.
-            auto usable = [](const TripleCell& x) {
-                return x.ok && std::isfinite(x.value) && std::isfinite(x.stat) && x.stat > 0.0;
-            };
-
-            // Preserve exclusivity and fiducial as separate PTP components.  When
-            // both sides are measurable use the established mean absolute shift.
-            // If a statistically depleted tight (or loose) variation is unusable,
-            // fall back to the usable side exactly rather than interpreting the
-            // failed fit as a huge cut sensitivity.  If neither side is usable,
-            // leave the component blank so final systematics materialization fails.
-            struct FamilyResult { double sys = 0.0; int nvalid = 0; std::string source; };
-            auto cut_family_sys = [&](const TripleCell& loose, const TripleCell& tight) {
-                const bool lok = usable(loose);
-                const bool tok = usable(tight);
-                if (lok && tok) return FamilyResult{
-                    0.5 * (std::abs(loose.value - n.value) + std::abs(tight.value - n.value)),
-                    2, "loose+tight"};
-                if (lok) return FamilyResult{std::abs(loose.value - n.value), 1, "loose-only"};
-                if (tok) return FamilyResult{std::abs(tight.value - n.value), 1, "tight-only"};
-                return FamilyResult{0.0, 0, "none"};
-            };
-            const FamilyResult ex = cut_family_sys(el, et);
-            const FamilyResult fi = cut_family_sys(fl, ft);
-            if (ex.nvalid == 0 || fi.nvalid == 0) {
-                nominal.rows[r][cex].clear(); nominal.rows[r][cfi].clear();
-                continue;
+            FamilyResult ex = family_result(n, el, et);
+            FamilyResult fi = family_result(n, fl, ft);
+            if (ex.nvalid == 0) {
+                ex = FamilyResult{excl_p95, 0, "p95-fallback"};
+                ++excl_fallback_count;
             } //endif
+            if (fi.nvalid == 0) {
+                fi = FamilyResult{fid_p95, 0, "p95-fallback"};
+                ++fid_fallback_count;
+            } //endif
+
             nominal.rows[r][cex] = std::to_string(ex.sys);
             nominal.rows[r][cfi] = std::to_string(fi.sys);
             const double del = el.value - n.value;
@@ -294,10 +324,6 @@ void update_bsa_cut_systematics(const AutomaticCutVariationOptions& options) {
             const double dfl = fl.value - n.value;
             const double dft = ft.value - n.value;
             auto z_independent = [](double delta, double s0, double s1) {
-                // This deliberately treats the samples as independent, so it is
-                // only a reference scale.  Nominal/varied samples overlap and
-                // therefore have positive statistical covariance; the production
-                // systematic remains the raw pass-1-style BSA displacement above.
                 const double den = std::hypot(s0, s1);
                 return den > 0.0 ? delta / den : 0.0;
             };
@@ -311,9 +337,13 @@ void update_bsa_cut_systematics(const AutomaticCutVariationOptions& options) {
                  << (usable(fl) ? 1 : 0) << ',' << (usable(ft) ? 1 : 0) << ','
                  << ex.source << ',' << fi.source << ',' << ex.sys << ',' << fi.sys << '\n';
         } //endfor
+        std::cout << "[cut-variation-runner] BSA " << group
+                  << " fallback p95: exclusivity=" << excl_p95
+                  << " (" << excl_fallback_count << " bins), fiducial=" << fid_p95
+                  << " (" << fid_fallback_count << " bins).\n";
     } //endfor
     write_csv(options.nominal_csv, nominal);
-    std::cout << "[cut-variation-runner] Added absolute BSA exclusivity/fiducial cut systematics to "
+    std::cout << "[cut-variation-runner] Added separate absolute BSA exclusivity/fiducial cut systematics to "
               << options.nominal_csv << "\n";
 }
 
