@@ -759,13 +759,45 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
        + q_fa18_out_mC * peff_sys_fa18) / q_10p6_mC;
 
     size_t n10 = 0, nsp = 0;
+    size_t n_fallback10 = 0, n_fallbacksp = 0;
     std::vector<double> frac10_values, fracsp_values, peff10_values;
+
+    // A small number of otherwise-valid production bins can have zero
+    // reconstructed MC in the finer acceptance-reweighting stress sample.
+    // That makes the local reweighting response undefined, but it does not
+    // invalidate the production acceptance/cross section.  For only those
+    // unsupported rows, use the 95th percentile of the measured conservative
+    // reweighting distribution.  This is deliberately conservative and avoids
+    // either dropping valid physics bins or inventing a nearest-neighbour
+    // response.
+    std::vector<double> supported10, supportedsp;
+    for (const auto& row : t.rows) {
+        const double f10 = scalar_value(row[(size_t)i_frac10]);
+        const double fsp = scalar_value(row[(size_t)i_fracsp]);
+        if (std::isfinite(f10) && f10 >= 0.0) supported10.push_back(f10);
+        if (std::isfinite(fsp) && fsp >= 0.0) supportedsp.push_back(fsp);
+    }
+    const double fallback10 = quantile_copy(supported10, 0.95);
+    const double fallbacksp = quantile_copy(supportedsp, 0.95);
 
     for (auto& row : t.rows) {
         const double xs10 = tuple_first_value(row[(size_t)i_xs10]);
         const double xssp = tuple_first_value(row[(size_t)i_xssp]);
-        const double f10 = scalar_value(row[(size_t)i_frac10]);
-        const double fsp = scalar_value(row[(size_t)i_fracsp]);
+        double f10 = scalar_value(row[(size_t)i_frac10]);
+        double fsp = scalar_value(row[(size_t)i_fracsp]);
+
+        if (std::isfinite(xs10) && (!std::isfinite(f10) || f10 < 0.0) &&
+            std::isfinite(fallback10)) {
+            f10 = fallback10;
+            row[(size_t)i_frac10] = format_scalar(f10);
+            ++n_fallback10;
+        }
+        if (std::isfinite(xssp) && (!std::isfinite(fsp) || fsp < 0.0) &&
+            std::isfinite(fallbacksp)) {
+            fsp = fallbacksp;
+            row[(size_t)i_fracsp] = format_scalar(fsp);
+            ++n_fallbacksp;
+        }
 
         if (std::isfinite(xs10) && std::isfinite(f10) && f10 >= 0.0) {
             row[(size_t)i_acc10] = format_scalar(std::fabs(xs10) * f10);
@@ -879,6 +911,13 @@ static bool install_acceptance_reweighting_systematic(const std::string& csv_pat
               << " Sp19 bins. Median fractions: "
               << 100.0*median_fraction(frac10_values) << "% (10.6), "
               << 100.0*median_fraction(fracsp_values) << "% (Sp19).\n";
+    if (n_fallback10 > 0 || n_fallbacksp > 0) {
+        std::cout << "[acceptance-systematics] Conservative p95 fallback for bins "
+                  << "without local reweighting support: 10.6 GeV = "
+                  << 100.0*fallback10 << "% for " << n_fallback10
+                  << " bin(s); Sp19 = " << 100.0*fallbacksp << "% for "
+                  << n_fallbacksp << " bin(s).\n";
+    }
     std::cout << "[proton-efficiency-normalization] Neupane transfer: "
               << "charge-weighted 10.6-GeV normalization = "
               << 100.0*peff_sys_10p6
