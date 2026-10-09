@@ -1206,6 +1206,26 @@ int main(int argc, char* argv[]) {
         const std::string csv_main           = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string out_norm_xsec_root = "output/normed_cross_sections_plots";
 
+        // The BH-edge normalization fit is a validation study and is intentionally
+        // not rerun in production.  The normalized-cross-section machinery still
+        // requires the explicit production normalization factors, however.  Restore
+        // the former production behavior cheaply by materializing norm=1.00 for all
+        // labels without performing any BH calculations or making plots.
+        const std::vector<std::string> production_norm_labels = {
+            "Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out",
+            "Sp19 Inb", "Fa18", "Sp18", "10.6 GeV"
+        };
+        OverallNormalizationOptions unity_norm_opts;
+        unity_norm_opts.override_to_unity = true;
+        for (const auto& label : production_norm_labels) {
+            if (!update_overall_normalization_study_csv(
+                    csv_main, label, "unpol", unity_norm_opts)) {
+                std::cerr << "[main] FATAL: failed to materialize unity normalization for "
+                          << label << ".\n";
+                return 1;
+            }
+        }
+
         if (!update_normed_cross_sections_csv(csv_main)) {
             std::cerr << "[main] FATAL: update_normed_cross_sections_csv failed.\n";
             return 1;
