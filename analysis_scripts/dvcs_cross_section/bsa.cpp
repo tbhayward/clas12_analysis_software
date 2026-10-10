@@ -75,6 +75,51 @@
 
 namespace {
 
+static double dvcs_tprime(double xB, double Q2, double t_abs) {
+    static constexpr double MP = 0.9382720813;
+    if (!(xB > 0.0 && xB < 1.0 && Q2 > 0.0)) return -1.0;
+    const double eps2 = 4.0 * MP * MP * xB * xB / Q2;
+    const double minus_tmin = Q2 *
+        (2.0 * (1.0 - xB) * (1.0 - std::sqrt(1.0 + eps2)) + eps2) /
+        (4.0 * xB * (1.0 - xB) + eps2);
+    return t_abs - minus_tmin;
+}
+
+static int pass1_bsa_row_index(double xB, double Q2, double tprime, double phi_deg) {
+    if (!(xB >= 0.0 && xB < 1.0 && Q2 >= 0.0 && tprime >= 0.0)) return -1;
+
+    int qgroup = -1;
+    if (Q2 < 1.4) qgroup = 0;
+    else if (Q2 < 1.8) qgroup = 1;
+    else if (Q2 < 2.4) qgroup = 2;
+    else if (Q2 < 3.25) qgroup = 3;
+    else if (Q2 < 5.0) qgroup = 4;
+    else qgroup = 5;
+
+    static const int group_offsets[6] = {0, 12, 24, 36, 48, 56};
+    int xslot = -1;
+    if (qgroup <= 1) xslot = (xB < 0.13) ? 0 : ((xB < 0.21) ? 1 : 2);
+    else if (qgroup == 2) xslot = (xB < 0.16) ? 0 : ((xB < 0.26) ? 1 : 2);
+    else if (qgroup == 3) xslot = (xB < 0.21) ? 0 : ((xB < 0.33) ? 1 : 2);
+    else if (qgroup == 4) xslot = (xB < 0.33) ? 0 : 1;
+    else xslot = (xB < 0.55) ? 0 : 1;
+
+    const int tslot = (tprime < 0.2) ? 0
+                    : (tprime < 0.4) ? 1
+                    : (tprime < 0.8) ? 2 : 3;
+    const int nx = (qgroup <= 3) ? 3 : 2;
+    const int bin3d_zero_based = group_offsets[qgroup] + nx * tslot + xslot;
+
+    double p = phi_deg;
+    while (p < 0.0) p += 360.0;
+    while (p >= 360.0) p -= 360.0;
+    int phislot = static_cast<int>(p / 15.0);
+    if (phislot < 0) phislot = 0;
+    if (phislot > 23) phislot = 23;
+    return 24 * bin3d_zero_based + phislot;
+}
+
+
 static constexpr double PI = 3.14159265358979323846;
 static constexpr double RAD2DEG = 180.0 / PI;
 
@@ -1056,6 +1101,7 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
                                       const FastBinning& fast_bins,
                                       const TopoCutMap& sigma_cuts,
                                       int max_workers,
+                                      bool use_tprime_binning,
                                       PhotonTopologyFilter topology_filter = PhotonTopologyFilter::All,
                                       std::vector<PeriodCounts>* scramble_outputs = nullptr,
                                       int scramble_replicas = 0,
@@ -1151,17 +1197,30 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
             if (!passes_compiled_sigma_cuts(task.compiled_cuts[topo_i], b)) continue;
             ++local.sigma;
 
-            const int ix = find_axis_bin_index(fast_bins.xbins, b.x);
-            if (ix < 0) continue;
-            const int iq = find_axis_bin_index(fast_bins.qbins, b.Q2);
-            if (iq < 0) continue;
-            const int it = find_axis_bin_index(fast_bins.tbins, b.t_abs());
-            if (it < 0) continue;
-
+            const double tbin_value = use_tprime_binning
+                ? dvcs_tprime(b.x, b.Q2, b.t_abs())
+                : b.t_abs();
             const double phi_deg = b.phi_deg();
-            const std::vector<int>& candidate_rows = fast_bins.rows_by_xqt[ix][iq][it];
+
+            std::vector<int> pass1_candidate_rows;
+            const std::vector<int>* candidate_rows_ptr = nullptr;
+            if (use_tprime_binning) {
+                const int r = pass1_bsa_row_index(b.x, b.Q2, tbin_value, phi_deg);
+                if (r < 0 || r >= static_cast<int>(rows.size())) continue;
+                pass1_candidate_rows.push_back(r);
+                candidate_rows_ptr = &pass1_candidate_rows;
+            } else {
+                const int ix = find_axis_bin_index(fast_bins.xbins, b.x);
+                if (ix < 0) continue;
+                const int iq = find_axis_bin_index(fast_bins.qbins, b.Q2);
+                if (iq < 0) continue;
+                const int it = find_axis_bin_index(fast_bins.tbins, tbin_value);
+                if (it < 0) continue;
+                candidate_rows_ptr = &fast_bins.rows_by_xqt[ix][iq][it];
+            } //endif
+
             bool matched = false;
-            for (int row_index : candidate_rows) {
+            for (int row_index : *candidate_rows_ptr) {
                 const RowBin& rb = rows[row_index];
                 if (!row_accepts_phi(phi_deg, rb.pmin, rb.pmax)) continue;
                 add_event(local.counts[row_index], b.helicity);
@@ -1862,7 +1921,8 @@ static int choose_bsa_ncols(int n_pads) {
 
 static void make_bsa_plots(const std::string& output_root,
                            const std::vector<RowBin>& rows,
-                           const std::map<std::string, std::vector<AsymResult>>& results) {
+                           const std::map<std::string, std::vector<AsymResult>>& results,
+                           bool use_tprime_binning) {
     const std::filesystem::path base = std::filesystem::path(output_root) / "bsa_plots";
     std::filesystem::create_directories(base);
 
@@ -2045,8 +2105,11 @@ static void make_bsa_plots(const std::string& output_root,
                 lab.SetTextSize(panel_label_size);
                 lab.DrawLatex(
                     0.14, 0.93,
-                    Form("Q^{2} in (%.2f, %.2f), |t| in (%.2f, %.2f)",
-                         panel.q2.lo, panel.q2.hi, panel.tabs.lo, panel.tabs.hi)
+                    use_tprime_binning
+                        ? Form("Q^{2} in (%.2f, %.2f), t' in (%.2f, %.2f)",
+                               panel.q2.lo, panel.q2.hi, panel.tabs.lo, panel.tabs.hi)
+                        : Form("Q^{2} in (%.2f, %.2f), |t| in (%.2f, %.2f)",
+                               panel.q2.lo, panel.q2.hi, panel.tabs.lo, panel.tabs.hi)
                 );
 
                 owned_lines.push_back(std::move(zero));
@@ -2092,12 +2155,12 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
             ? std::max(0, options.helicity_scramble_replicas) : 0;
         const PeriodCounts gamma_counts =
             accumulate_counts(dvcsDataTrees, "DVCS", "DVCS", rows, fast_bins, sigma_cuts,
-                              options.max_workers, PhotonTopologyFilter::All,
+                              options.max_workers, options.use_tprime_binning, PhotonTopologyFilter::All,
                               n_scrambles > 0 ? &gamma_scrambles : nullptr, n_scrambles,
                               options.helicity_scramble_seed);
         const PeriodCounts pi0_counts =
             accumulate_counts(eppi0DataTrees, "eppi0", "eppi0", rows, fast_bins, sigma_cuts,
-                              options.max_workers, PhotonTopologyFilter::All,
+                              options.max_workers, options.use_tprime_binning, PhotonTopologyFilter::All,
                               n_scrambles > 0 ? &pi0_scrambles : nullptr, n_scrambles,
                               options.helicity_scramble_seed);
 
@@ -2106,16 +2169,16 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
             std::cout << "[bsa] Building independent FD-photon and FT-photon BSA samples.\n";
             gamma_fd_counts = accumulate_counts(
                 dvcsDataTrees, "DVCS FD-photon", "DVCS", rows, fast_bins, sigma_cuts,
-                options.max_workers, PhotonTopologyFilter::FDPhoton);
+                options.max_workers, options.use_tprime_binning, PhotonTopologyFilter::FDPhoton);
             gamma_ft_counts = accumulate_counts(
                 dvcsDataTrees, "DVCS FT-photon", "DVCS", rows, fast_bins, sigma_cuts,
-                options.max_workers, PhotonTopologyFilter::FTPhoton);
+                options.max_workers, options.use_tprime_binning, PhotonTopologyFilter::FTPhoton);
             pi0_fd_counts = accumulate_counts(
                 eppi0DataTrees, "eppi0 FD-photon", "eppi0", rows, fast_bins, sigma_cuts,
-                options.max_workers, PhotonTopologyFilter::FDPhoton);
+                options.max_workers, options.use_tprime_binning, PhotonTopologyFilter::FDPhoton);
             pi0_ft_counts = accumulate_counts(
                 eppi0DataTrees, "eppi0 FT-photon", "eppi0", rows, fast_bins, sigma_cuts,
-                options.max_workers, PhotonTopologyFilter::FTPhoton);
+                options.max_workers, options.use_tprime_binning, PhotonTopologyFilter::FTPhoton);
         } //endif
 
         std::map<std::string, std::vector<AsymResult>> results;
@@ -2190,8 +2253,8 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
             std::cout << "[bsa] Wrote FD-vs-FT photon topology study to "
                       << topo_csv.string() << "\n";
             if (options.make_plots) {
-                make_bsa_plots((std::filesystem::path(options.output_root) / "bsa_studies/FD_photon").string(), rows, fd_results);
-                make_bsa_plots((std::filesystem::path(options.output_root) / "bsa_studies/FT_photon").string(), rows, ft_results);
+                make_bsa_plots((std::filesystem::path(options.output_root) / "bsa_studies/FD_photon").string(), rows, fd_results, options.use_tprime_binning);
+                make_bsa_plots((std::filesystem::path(options.output_root) / "bsa_studies/FT_photon").string(), rows, ft_results, options.use_tprime_binning);
             } //endif
         } //endif
 
@@ -2221,7 +2284,7 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
         std::cout << "[bsa] Wrote JSON summary to " << json_path.string() << "\n";
 
         if (options.make_plots) {
-            make_bsa_plots(options.output_root, rows, results);
+            make_bsa_plots(options.output_root, rows, results, options.use_tprime_binning);
         } //endif
 
         return true;

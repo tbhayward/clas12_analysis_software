@@ -37,6 +37,10 @@ struct BSAOptions {
     // with rows in Q2 and columns in |t|. Each subplot shows A_LU(phi).
     bool make_plots = true;
 
+    // Interpret the CSV t-axis as t' = |t|-|t_min(xB,Q2)| rather than |t|.
+    // This is used for the pass-1 BSA binning cross-check only.
+    bool use_tprime_binning = false;
+
     // Pass-2 pi0 leakage uncertainty established by the contamination study.
     // The BSA systematic is evaluated by repeating the helicity-yield subtraction
     // with f_pi0 scaled by (1 +/- pi0_leakage_relative_uncertainty).

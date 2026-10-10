@@ -28,6 +28,10 @@ struct TotalCountsOptions {
     // Automatic cut-variation jobs should disable these together with make_plots.
     bool make_note_outputs = true;
 
+    // Interpret t_abs_min/t_abs_max in the input CSV as t' = |t|-|t_min(xB,Q2)|.
+    // Used only by the pass-1 BSA binning cross-check; nominal production remains |t|.
+    bool use_tprime_binning = false;
+
     // Apply current-dependent reconstruction corrections event-by-event while
     // preserving the original unit-weight raw totals. The response model is
     // produced by current_dependence.cpp before this stage.  Regional DATA

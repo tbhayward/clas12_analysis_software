@@ -91,6 +91,51 @@
 
 namespace {
 
+static double dvcs_tprime(double xB, double Q2, double t_abs) {
+    static constexpr double MP = 0.9382720813;
+    if (!(xB > 0.0 && xB < 1.0 && Q2 > 0.0)) return -1.0;
+    const double eps2 = 4.0 * MP * MP * xB * xB / Q2;
+    const double minus_tmin = Q2 *
+        (2.0 * (1.0 - xB) * (1.0 - std::sqrt(1.0 + eps2)) + eps2) /
+        (4.0 * xB * (1.0 - xB) + eps2);
+    return t_abs - minus_tmin;
+}
+
+static int pass1_bsa_row_index(double xB, double Q2, double tprime, double phi_deg) {
+    if (!(xB >= 0.0 && xB < 1.0 && Q2 >= 0.0 && tprime >= 0.0)) return -1;
+
+    int qgroup = -1;
+    if (Q2 < 1.4) qgroup = 0;
+    else if (Q2 < 1.8) qgroup = 1;
+    else if (Q2 < 2.4) qgroup = 2;
+    else if (Q2 < 3.25) qgroup = 3;
+    else if (Q2 < 5.0) qgroup = 4;
+    else qgroup = 5;
+
+    static const int group_offsets[6] = {0, 12, 24, 36, 48, 56};
+    int xslot = -1;
+    if (qgroup <= 1) xslot = (xB < 0.13) ? 0 : ((xB < 0.21) ? 1 : 2);
+    else if (qgroup == 2) xslot = (xB < 0.16) ? 0 : ((xB < 0.26) ? 1 : 2);
+    else if (qgroup == 3) xslot = (xB < 0.21) ? 0 : ((xB < 0.33) ? 1 : 2);
+    else if (qgroup == 4) xslot = (xB < 0.33) ? 0 : 1;
+    else xslot = (xB < 0.55) ? 0 : 1;
+
+    const int tslot = (tprime < 0.2) ? 0
+                    : (tprime < 0.4) ? 1
+                    : (tprime < 0.8) ? 2 : 3;
+    const int nx = (qgroup <= 3) ? 3 : 2;
+    const int bin3d_zero_based = group_offsets[qgroup] + nx * tslot + xslot;
+
+    double p = phi_deg;
+    while (p < 0.0) p += 360.0;
+    while (p >= 360.0) p -= 360.0;
+    int phislot = static_cast<int>(p / 15.0);
+    if (phislot < 0) phislot = 0;
+    if (phislot > 23) phislot = 23;
+    return 24 * bin3d_zero_based + phislot;
+}
+
+
 static constexpr double PI      = 3.14159265358979323846;
 static constexpr double RAD2DEG = 180.0 / PI;
 
@@ -2114,7 +2159,8 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                                              const CurrentResponseModel* current_model,
                                              bool use_epg_mc_current_factor_for_eppi0_bkg,
                                              bool apply_neupane_proton_efficiency_correction,
-                                             const Eppi0EffMap* eppi0_eff_map) {
+                                             const Eppi0EffMap* eppi0_eff_map,
+                                             bool use_tprime_binning) {
     WorkCounts out;
 
     if (!tree) {
@@ -2250,28 +2296,30 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
         }
 
         const double phi_deg = b.phi_deg();
-        const double tabs = b.t_abs();
+        const double tabs = use_tprime_binning
+            ? dvcs_tprime(b.x, b.Q2, b.t_abs())
+            : b.t_abs();
 
-        const int ix = find_axis_bin_index(fast_bins.xbins, b.x);
-        if (ix < 0) {
-            continue;
-        }
-
-        const int iq = find_axis_bin_index(fast_bins.qbins, b.Q2);
-        if (iq < 0) {
-            continue;
-        }
-
-        const int it = find_axis_bin_index(fast_bins.tbins, tabs);
-        if (it < 0) {
-            continue;
-        }
-
-        const std::vector<int>& candidate_rows = fast_bins.rows_by_xqt[ix][iq][it];
+        std::vector<int> pass1_candidate_rows;
+        const std::vector<int>* candidate_rows_ptr = nullptr;
+        if (use_tprime_binning) {
+            const int r = pass1_bsa_row_index(b.x, b.Q2, tabs, phi_deg);
+            if (r < 0 || r >= static_cast<int>(rows.size())) continue;
+            pass1_candidate_rows.push_back(r);
+            candidate_rows_ptr = &pass1_candidate_rows;
+        } else {
+            const int ix = find_axis_bin_index(fast_bins.xbins, b.x);
+            if (ix < 0) continue;
+            const int iq = find_axis_bin_index(fast_bins.qbins, b.Q2);
+            if (iq < 0) continue;
+            const int it = find_axis_bin_index(fast_bins.tbins, tabs);
+            if (it < 0) continue;
+            candidate_rows_ptr = &fast_bins.rows_by_xqt[ix][iq][it];
+        } //endif
 
         bool matched_any = false;
 
-        for (int r : candidate_rows) {
+        for (int r : *candidate_rows_ptr) {
             const RowBin& w = rows[r];
 
             if (!row_accepts_phi(phi_deg, w.pmin, w.pmax)) {
@@ -4531,7 +4579,8 @@ bool update_total_counts_csv(const std::string& csv_path,
                                            current_model_ptr,
                                            options.use_epg_mc_current_factor_for_eppi0_bkg,
                                            options.apply_neupane_proton_efficiency_correction,
-                                           eppi0_eff_map_ptr);
+                                           eppi0_eff_map_ptr,
+                                           options.use_tprime_binning);
 
             std::lock_guard<std::mutex> lock(merge_mutex);
 

@@ -940,6 +940,87 @@ int main(int argc, char* argv[]) {
         // to be unavailable because helicity-resolved Faraday-cup charge was
         // not recoverable for that period.
         (void)write_bsa_helicity_charge_balance();
+
+        // --------- Pass-1 BSA binning cross-check ----------
+        //
+        // Repeat only the count-level ingredients needed for the BSA comparison
+        // using the exact pass-1 Q2/xB/t' cells from Table 1.2 of the final
+        // pass-1 BSA analysis note. The pass-1 phi edges were adaptive and are
+        // not tabulated, so this cross-check uses uniform 15-degree phi bins.
+        // The nominal pass-2 CSV and its production binning are untouched.
+        {
+            const std::string pass1_import = "imports/pass1_bsa_binning.csv";
+            const std::string pass1_csv =
+                "output/csvs/dvcs_pass2_pass1_bsa_binning.csv";
+            const std::string pass1_root = "output/pass1_bsa_cross_check";
+
+            std::error_code ec;
+            std::filesystem::remove_all(pass1_root, ec);
+            if (ec) {
+                std::cerr << "[main] WARNING: could not clean stale pass-1 BSA "
+                          << "cross-check output (" << ec.message() << "). Continuing.\n";
+            } //endif
+
+            if (!initialize_pass2_csv(pass1_import, pass1_csv)) {
+                std::cerr << "[main] ERROR: failed to initialize pass-1 BSA-binning CSV.\n";
+                std::exit(EXIT_FAILURE);
+            }
+
+            TotalCountsOptions pass1_counts_opts;
+            pass1_counts_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
+            pass1_counts_opts.make_plots = false;
+            pass1_counts_opts.make_note_outputs = false;
+            pass1_counts_opts.use_tprime_binning = true;
+            pass1_counts_opts.apply_event_level_current_correction = true;
+            pass1_counts_opts.apply_neupane_proton_efficiency_correction =
+                !use_eppi0_production_normalization;
+            pass1_counts_opts.apply_eppi0_efficiency_to_dvcs_rec_mc =
+                use_eppi0_production_normalization;
+            pass1_counts_opts.eppi0_efficiency_summary_csv =
+                "output/data_mc_normalization/eppi0_normalization_summary.csv";
+            pass1_counts_opts.current_response_model_json =
+                "output/dvcs_current_dependence/calibration/current_response_model.json";
+            pass1_counts_opts.require_sp18_out_epg_e_theta_current_model = true;
+            pass1_counts_opts.use_epg_mc_current_factor_for_eppi0_bkg =
+                use_epg_mc_current_factor_for_eppi0_bkg;
+            pass1_counts_opts.write_current_nuisance_responses = false;
+
+            if (!update_total_counts_csv(
+                    pass1_csv, dataTrees, eppi0DataTrees,
+                    genMcTrees, recMcTrees,
+                    eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
+                    cuts_json, pass1_root, 7, pass1_counts_opts,
+                    currentStudyGenMcTrees, currentStudyRecMcTrees)) {
+                std::cerr << "[main] ERROR: pass-1-binning total-count extraction failed.\n";
+                std::exit(EXIT_FAILURE);
+            }
+
+            Pi0ContaminationOptions pass1_pi0_opts;
+            pass1_pi0_opts.use_epg_mc_current_factor_for_eppi0_bkg =
+                use_epg_mc_current_factor_for_eppi0_bkg;
+            if (!compute_pi0_contamination_overall(
+                    dataTrees, eppi0DataTrees, eppi0RecMcTrees, eppi0BkgTrees,
+                    cuts_json, pass1_csv, pass1_root, 7, pass1_pi0_opts)) {
+                std::cerr << "[main] ERROR: pass-1-binning pi0 contamination failed.\n";
+                std::exit(EXIT_FAILURE);
+            }
+
+            BSAOptions pass1_bsa_opts = bsa_opts;
+            pass1_bsa_opts.csv_path = pass1_csv;
+            pass1_bsa_opts.output_root = pass1_root;
+            pass1_bsa_opts.use_tprime_binning = true;
+            pass1_bsa_opts.make_plots = true;
+            pass1_bsa_opts.make_photon_topology_study = false;
+            pass1_bsa_opts.make_helicity_scrambling_study = false;
+
+            if (!update_bsa_counts_csv(dataTrees, eppi0DataTrees, pass1_bsa_opts)) {
+                std::cerr << "[main] ERROR: pass-1-binning BSA extraction failed.\n";
+                std::exit(EXIT_FAILURE);
+            }
+
+            std::cout << "[main] Pass-1 BSA-binning cross-check written to "
+                      << pass1_csv << " and " << pass1_root << "/.\n";
+        }
     }
 
     // // --------- Pi0-subtracted DVCS kinematic DATA/MC shape comparisons ----------
