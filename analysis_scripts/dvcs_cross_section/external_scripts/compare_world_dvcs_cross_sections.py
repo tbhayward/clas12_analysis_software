@@ -7541,6 +7541,213 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
     return fits
 #enddef
 
+
+RGK_BSA_SPECS = {
+    "6.535 GeV": {"subdir": "bsa_plots6535_txt", "ebeam": 6.535, "tag": "6p535"},
+    "7.546 GeV": {"subdir": "bsa_plots7546_txt", "ebeam": 7.546, "tag": "7p546"},
+}
+
+
+def _rgk_filename_kinematics(path: Path):
+    """Read mean xB, Q2, and |t| encoded in an RGK BSA filename."""
+    import re
+    m = re.fullmatch(r"bsa_xB([0-9.]+)_Q2([0-9.]+)_t([0-9.]+)\.txt", path.name)
+    if m is None:
+        raise ValueError(f"Unrecognized RGK BSA filename: {path.name}")
+    #endif
+    xb, q2, tabs = map(float, m.groups())
+    return xb, q2, tabs
+#enddef
+
+
+def _load_rgk_bsa_file(path: Path):
+    """Load one RGK per-phi BSA file with its supplied point-to-point systematics."""
+    cols = [
+        "phi_deg", "A", "stat", "fid_sys", "pid_sys", "corr_sys",
+        "dvcs_sel_sys", "dvpi0_sel_sys", "total_sys",
+    ]
+    df = pd.read_csv(path, sep=r"\s+", comment="#", names=cols)
+    for c in cols:
+        df[c] = pd.to_numeric(df[c], errors="coerce")
+    #endfor
+    df = df.dropna(subset=["phi_deg", "A", "stat", "total_sys"]).copy()
+    df["total_err"] = np.hypot(df["stat"].to_numpy(float), df["total_sys"].to_numpy(float))
+    if len(df) < 4:
+        raise RuntimeError(f"Too few valid RGK BSA points in {path}")
+    #endif
+    return df
+#enddef
+
+
+def _kmeans_q2_xb_groups(points: pd.DataFrame, n_groups: int = 6):
+    """Deterministically group RGK mean kinematics into the six visible Q2-xB trajectories."""
+    x = points[["Q2_GeV2", "xB"]].to_numpy(float)
+    scale = np.nanstd(x, axis=0)
+    scale[~np.isfinite(scale) | (scale <= 0.0)] = 1.0
+    z = (x - np.nanmean(x, axis=0)) / scale
+
+    # Deterministic farthest-point initialization followed by Lloyd iterations.
+    centers = [int(np.argmin(z[:, 0] + z[:, 1]))]
+    while len(centers) < n_groups:
+        d2 = np.min(
+            np.stack([np.sum((z - z[j])**2, axis=1) for j in centers], axis=1), axis=1
+        )
+        d2[centers] = -1.0
+        centers.append(int(np.argmax(d2)))
+    #endwhile
+    cent = z[centers].copy()
+    labels = np.zeros(len(z), dtype=int)
+    for _ in range(100):
+        new_labels = np.argmin(np.sum((z[:, None, :] - cent[None, :, :])**2, axis=2), axis=1)
+        if np.array_equal(new_labels, labels) and _ > 0:
+            break
+        #endif
+        labels = new_labels
+        for j in range(n_groups):
+            if np.any(labels == j):
+                cent[j] = np.mean(z[labels == j], axis=0)
+            #endif
+        #endfor
+    #endfor
+
+    # Renumber groups in increasing mean Q2, then xB, for stable presentation.
+    order = sorted(range(n_groups), key=lambda j: (
+        float(points.loc[labels == j, "Q2_GeV2"].mean()),
+        float(points.loc[labels == j, "xB"].mean()),
+    ))
+    remap = {old: new for new, old in enumerate(order)}
+    return np.asarray([remap[int(v)] for v in labels], dtype=int)
+#enddef
+
+
+def run_rgk_bsa_comparison(rgk_root: Path, outdir: Path):
+    """Fit and summarize the independent RGK 6.535- and 7.546-GeV BSA datasets."""
+    outdir.mkdir(parents=True, exist_ok=True)
+    phi_dir = outdir / "phi_fits"
+    summary_dir = outdir / "a1_vs_t"
+    table_dir = outdir / "tables"
+    phi_dir.mkdir(parents=True, exist_ok=True)
+    summary_dir.mkdir(parents=True, exist_ok=True)
+    table_dir.mkdir(parents=True, exist_ok=True)
+
+    rows = []
+    phi_curve = np.linspace(0.0, 2.0*np.pi, 361)
+    for dataset, spec in RGK_BSA_SPECS.items():
+        src = rgk_root / spec["subdir"]
+        files = sorted(src.glob("bsa_xB*_Q2*_t*.txt"))
+        if not files:
+            raise FileNotFoundError(f"No RGK BSA text files found under {src}")
+        #endif
+        dataset_phi_dir = phi_dir / spec["tag"]
+        dataset_phi_dir.mkdir(parents=True, exist_ok=True)
+        for path in files:
+            xb, q2, tabs = _rgk_filename_kinematics(path)
+            d = _load_rgk_bsa_file(path)
+            phi = np.deg2rad(d.phi_deg.to_numpy(float))
+            A = d.A.to_numpy(float)
+            estat = d.stat.to_numpy(float)
+            etot = d.total_err.to_numpy(float)
+
+            # Central parameters use stat+point-to-point systematic errors, matching
+            # the uncertainty convention used in the RGA comparison.  Stat-only
+            # chi2 values are retained separately as a shape diagnostic.
+            sinamp, dsinamp, chi2_sin, ndf_sin = _weighted_sinphi_fit(phi, A, etot)
+            a1, da1, a2, da2, corr, chi2_shape, ndf_shape = _weighted_a1a2_fit(phi, A, etot)
+            _, _, chi2_sin_stat, ndf_sin_stat = _weighted_sinphi_fit(phi, A, estat)
+            _, _, _, _, _, chi2_shape_stat, ndf_shape_stat = _weighted_a1a2_fit(phi, A, estat)
+            rows.append({
+                "dataset": dataset, "ebeam_GeV": spec["ebeam"], "source_file": path.name,
+                "xB": xb, "Q2_GeV2": q2, "t_abs_GeV2": tabs, "nphi": len(d),
+                "A_sinphi": sinamp, "A_sinphi_err": dsinamp,
+                "sinphi_chi2": chi2_sin, "sinphi_ndf": ndf_sin,
+                "sinphi_chi2_stat_only": chi2_sin_stat, "sinphi_ndf_stat_only": ndf_sin_stat,
+                "a1": a1, "a1_err": da1, "a2": a2, "a2_err": da2, "a1_a2_corr": corr,
+                "a1a2_chi2": chi2_shape, "a1a2_ndf": ndf_shape,
+                "a1a2_chi2_stat_only": chi2_shape_stat, "a1a2_ndf_stat_only": ndf_shape_stat,
+            })
+
+            fig, ax = plt.subplots(figsize=(7.2, 5.0))
+            ax.errorbar(d.phi_deg, A, yerr=estat, fmt="o", ms=4.0, capsize=1.8,
+                        label="RGK statistical")
+            ax.errorbar(d.phi_deg, A, yerr=etot, fmt="none", capsize=2.2, alpha=0.55,
+                        label=r"stat $\oplus$ point-to-point sys")
+            if np.isfinite(sinamp):
+                ax.plot(np.rad2deg(phi_curve), sinamp*np.sin(phi_curve), ls=":", lw=1.2,
+                        label=rf"$A_{{\sin\phi}}={sinamp:+.3f}\pm{dsinamp:.3f}$")
+            #endif
+            if np.isfinite(a1) and np.isfinite(a2):
+                y = a1*np.sin(phi_curve)/(1.0 + a2*np.cos(phi_curve))
+                ax.plot(np.rad2deg(phi_curve), y, lw=1.6,
+                        label=rf"$a_1={a1:+.3f}\pm{da1:.3f}$, $a_2={a2:+.2f}\pm{da2:.2f}$")
+            #endif
+            ax.axhline(0.0, lw=0.8, alpha=0.55)
+            ax.set_xlim(0.0, 360.0); ax.set_ylim(-0.5, 0.5)
+            ax.set_xticks([0, 90, 180, 270, 360])
+            ax.set_xlabel(r"$\phi$ [deg]"); ax.set_ylabel(r"$A_{LU}$")
+            ax.set_title(
+                rf"RGK {dataset}: $\langle Q^2\rangle={q2:.2f}$ GeV$^2$, "
+                rf"$\langle x_B\rangle={xb:.2f}$, $\langle -t\rangle={tabs:.2f}$ GeV$^2$"
+            )
+            ax.grid(alpha=0.18); ax.legend(fontsize=8, frameon=False)
+            fig.tight_layout()
+            fig.savefig(dataset_phi_dir / (path.stem + ".png"), dpi=220)
+            plt.close(fig)
+        #endfor
+    #endfor
+
+    fits = pd.DataFrame(rows)
+    fits["qx_group"] = -1
+    for dataset in RGK_BSA_SPECS:
+        mask = fits.dataset == dataset
+        fits.loc[mask, "qx_group"] = _kmeans_q2_xb_groups(fits.loc[mask].copy(), 6)
+    #endfor
+    fits["qx_group"] = fits["qx_group"].astype(int)
+    fits.to_csv(table_dir / "rgk_bsa_fits.csv", index=False)
+
+    # Six-panel a1(-t) summary per beam energy.  The filenames provide mean
+    # kinematics rather than bin edges, so panels are explicitly labelled by
+    # their mean Q2 and xB rather than implying common bin boundaries.
+    for dataset, spec in RGK_BSA_SPECS.items():
+        ff = fits[fits.dataset == dataset].copy()
+        fig, axes = plt.subplots(2, 3, figsize=(13.2, 7.8), squeeze=False, sharey=True)
+        for group, ax in enumerate(axes.ravel()):
+            gg = ff[ff.qx_group == group].sort_values("t_abs_GeV2")
+            if gg.empty:
+                ax.set_visible(False); continue
+            #endif
+            ax.errorbar(gg.t_abs_GeV2, gg.a1, yerr=gg.a1_err, fmt="o", capsize=2.0,
+                        label=rf"RGK {dataset}")
+            ax.axhline(0.0, lw=0.8, alpha=0.55)
+            ax.set_xlim(left=0.0); ax.set_ylim(-0.05, 0.5)
+            ax.grid(alpha=0.18)
+            ax.set_title(
+                rf"$\langle Q^2\rangle={gg.Q2_GeV2.mean():.2f}$ GeV$^2$, "
+                rf"$\langle x_B\rangle={gg.xB.mean():.2f}$"
+            )
+            ax.set_xlabel(r"$-t$ [GeV$^2$]")
+            ax.set_ylabel(r"$a_1$")
+        #endfor
+        fig.suptitle(rf"RGK {dataset}: $a_1$ from $a_1\sin\phi/(1+a_2\cos\phi)$", fontsize=14)
+        fig.tight_layout(rect=(0, 0, 1, 0.96))
+        fig.savefig(summary_dir / f"rgk_a1_vs_t_{spec['tag']}.png", dpi=220)
+        plt.close(fig)
+    #endfor
+
+    print(f"[RGK BSA] fitted distributions: {len(fits):,}")
+    for dataset in RGK_BSA_SPECS:
+        ff = fits[fits.dataset == dataset]
+        simple = ff.sinphi_chi2 / ff.sinphi_ndf.replace(0, np.nan)
+        shape = ff.a1a2_chi2 / ff.a1a2_ndf.replace(0, np.nan)
+        print(
+            f"[RGK BSA] {dataset}: N={len(ff)}, "
+            f"median chi2/ndf sin(phi)={np.nanmedian(simple):.3f}, "
+            f"a1/a2={np.nanmedian(shape):.3f}"
+        )
+    #endfor
+    print(f"[RGK BSA OUTPUT] {outdir}")
+    return fits
+#enddef
+
 # =============================================================================
 # CLI
 # =============================================================================
@@ -7612,6 +7819,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Pass-2 BSA extraction rerun in the exact pass-1 BSA binning.",
     )
     p.add_argument(
+        "--bsa-output-dir",
+        default=str(here.parent / "output" / "bsa"),
+        help="Parent directory for all BSA cross-check products (default: output/bsa).",
+    )
+    p.add_argument(
+        "--rgk-bsa-dir",
+        default=str(here / "import" / "bsa_rgk"),
+        help="Parent directory containing bsa_plots6535_txt and bsa_plots7546_txt.",
+    )
+    p.add_argument(
         "--panel-y-scale",
         choices=["panel", "row", "page"],
         default="row",
@@ -7661,10 +7878,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     outdir.mkdir(parents=True, exist_ok=True)
 
     if args.bsa_only:
+        bsa_root = Path(args.bsa_output_dir).expanduser().resolve()
+        bsa_root.mkdir(parents=True, exist_ok=True)
         run_pass1_bsa_comparison(
             Path(args.pass1_bsa_file).expanduser().resolve(),
             Path(args.pass2_bsa_file).expanduser().resolve(),
-            outdir / "bsa_pass1_comparison",
+            bsa_root / "pass1_pass2",
+        )
+        run_rgk_bsa_comparison(
+            Path(args.rgk_bsa_dir).expanduser().resolve(),
+            bsa_root / "rgk",
         )
         return 0
     #endif
@@ -7801,10 +8024,16 @@ def main(argv: Optional[List[str]] = None) -> int:
         norm_metrics=norm_metrics,
     )
     if args.include_bsa:
+        bsa_root = Path(args.bsa_output_dir).expanduser().resolve()
+        bsa_root.mkdir(parents=True, exist_ok=True)
         run_pass1_bsa_comparison(
             Path(args.pass1_bsa_file).expanduser().resolve(),
             Path(args.pass2_bsa_file).expanduser().resolve(),
-            outdir / "bsa_pass1_comparison",
+            bsa_root / "pass1_pass2",
+        )
+        run_rgk_bsa_comparison(
+            Path(args.rgk_bsa_dir).expanduser().resolve(),
+            bsa_root / "rgk",
         )
     #endif
 
