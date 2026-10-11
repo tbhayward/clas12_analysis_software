@@ -15,6 +15,13 @@ struct AutomaticCutVariationOptions {
     bool make_exclusivity_extraction_plots = false;
 
     bool make_final_diagnostic_plots = true;
+
+    // Alternate BSA-only mode used by the pass-1 binning cross-check.
+    // In this mode the four varied selections are rerun only through the BSA
+    // stage, using t' rather than |t| for row lookup, and the expensive
+    // acceptance/cross-section stages are skipped.
+    bool bsa_only = false;
+    bool use_tprime_binning = false;
     bool use_pass1_tight_instability_rule = true;
     double tight_relative_difference_threshold = 0.50;
     int max_workers = 7;

@@ -1018,6 +1018,52 @@ int main(int argc, char* argv[]) {
                 std::exit(EXIT_FAILURE);
             }
 
+            // The alternate CSV must carry its own point-to-point systematics.
+            // The nominal cut-variation products cannot be copied because these
+            // rows use different Q2/xB/t' cells. Re-run the four varied event
+            // selections through the BSA stage only in the pass-1 binning.
+            if (systematic_selection.cuts) {
+                AutomaticCutVariationOptions pass1_cut_opts;
+                pass1_cut_opts.enabled = true;
+                pass1_cut_opts.bsa_only = true;
+                pass1_cut_opts.use_tprime_binning = true;
+                pass1_cut_opts.make_exclusivity_extraction_plots = false;
+                pass1_cut_opts.make_final_diagnostic_plots = false;
+                pass1_cut_opts.max_workers = 7;
+                pass1_cut_opts.nominal_csv = pass1_csv;
+                pass1_cut_opts.output_dir =
+                    pass1_root + "/cut_variation_systematics";
+                pass1_cut_opts.use_eppi0_production_normalization =
+                    use_eppi0_production_normalization;
+                pass1_cut_opts.eppi0_charge_csv_path =
+                    "imports/integrated_luminosity/global.csv";
+                pass1_cut_opts.eppi0_normalization_json_path =
+                    "imports/eppi0_aao_normalization_inputs.json";
+                pass1_cut_opts.current_response_model_json =
+                    "output/dvcs_current_dependence/calibration/current_response_model.json";
+
+                if (!run_automatic_cut_variation_systematics(
+                        pass1_cut_opts,
+                        global_cfg,
+                        dataTrees, genMcTrees, recMcTrees,
+                        eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
+                        currentStudyGenMcTrees, currentStudyRecMcTrees,
+                        use_nobkg_dvcs_mc_for_acceptance,
+                        use_epg_mc_current_factor_for_eppi0_bkg)) {
+                    std::cerr << "[main] ERROR: pass-1-binning BSA cut systematics failed.\n";
+                    std::exit(EXIT_FAILURE);
+                }
+
+                if (!materialize_bsa_point_to_point_systematics(pass1_csv, 0.02)) {
+                    std::cerr << "[main] ERROR: pass-1-binning BSA point-to-point "
+                              << "systematic finalization failed.\n";
+                    std::exit(EXIT_FAILURE);
+                }
+            } else {
+                std::cout << "[main] Pass-1 BSA-binning point-to-point systematics "
+                          << "not materialized because cut systematics were disabled.\n";
+            } //endif
+
             std::cout << "[main] Pass-1 BSA-binning cross-check written to "
                       << pass1_csv << " and " << pass1_root << "/.\n";
         }

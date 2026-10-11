@@ -613,6 +613,7 @@ bool produce_variation(
     count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
     count_opts.make_plots = false;
     count_opts.make_note_outputs = false;
+    count_opts.use_tprime_binning = options.use_tprime_binning;
     count_opts.apply_neupane_proton_efficiency_correction =
         !options.use_eppi0_production_normalization;
     count_opts.apply_eppi0_efficiency_to_dvcs_rec_mc =
@@ -654,10 +655,17 @@ bool produce_variation(
     bsa_opts.make_plots = false;
     bsa_opts.make_photon_topology_study = false;
     bsa_opts.make_helicity_scrambling_study = false;
+    bsa_opts.use_tprime_binning = options.use_tprime_binning;
     bsa_opts.max_workers = options.max_workers;
     const auto bsa_t0 = stage_start("BSA");
     if (!update_bsa_counts_csv(dataTrees, eppi0DataTrees, bsa_opts)) return false;
     stage_done("BSA", bsa_t0);
+
+    if (options.bsa_only) {
+        std::cout << "[cut-variation-runner] BSA-only variation complete: "
+                  << spec.name << std::endl;
+        return true;
+    } //endif
 
     const auto acc_t0 = stage_start("acceptance");
     if (!update_acceptance_csv(csv_path.string(), genMcTrees, recMcTrees, cuts_json,
@@ -764,6 +772,11 @@ bool run_automatic_cut_variation_systematics(
         // the asymmetry crosses zero. They are intentionally kept separate from
         // the cross-section Barlow/relative-systematic machinery below.
         update_bsa_cut_systematics(options);
+
+        if (options.bsa_only) {
+            std::cout << "[cut-variation-runner] BSA-only cut-systematic run complete.\n";
+            return true;
+        } //endif
 
         CutVariationSystematicsOptions syst;
         syst.enabled = true;

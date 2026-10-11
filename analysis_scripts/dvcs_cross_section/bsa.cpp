@@ -2294,6 +2294,73 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
     } //endtry
 }
 
+bool materialize_bsa_point_to_point_systematics(
+    const std::string& csv_path,
+    double bin_migration_and_radiative_sys) {
+    try {
+        if (!std::isfinite(bin_migration_and_radiative_sys) ||
+            bin_migration_and_radiative_sys < 0.0) {
+            throw std::runtime_error("invalid BSA bin-migration/radiative systematic");
+        } //endif
+
+        CSV csv;
+        load_csv(csv_path, csv);
+        for (const std::string& group : output_group_order()) {
+            const std::string base = "BSA, counts, " + group;
+            const int c_bsa = col_strict(csv, base);
+            const int c_pi0 = col_strict(csv, base + ", pi0 subtraction sys");
+            const int c_excl = col_strict(csv, base + ", exclusivity sys");
+            const int c_fid = col_strict(csv, base + ", fiducial sys");
+            const int c_mig = ensure_col(csv, base + ", bin migration and radiative sys");
+            const int c_ptp = ensure_col(csv, base + ", point-to-point sys");
+
+            for (int r = 0; r < static_cast<int>(csv.rows.size()); ++r) {
+                double a = std::numeric_limits<double>::quiet_NaN();
+                if (!parse_tuple_first(csv.rows[r][c_bsa], a) || !std::isfinite(a)) {
+                    csv.rows[r][c_mig].clear();
+                    csv.rows[r][c_ptp].clear();
+                    continue;
+                } //endif
+
+                auto parse_scalar = [&](int c, const char* label) {
+                    const std::string& raw = csv.rows[r][c];
+                    if (raw.empty()) {
+                        throw std::runtime_error(
+                            std::string("missing ") + label + " for " + group +
+                            " at CSV row " + std::to_string(r));
+                    } //endif
+                    const double v = std::stod(raw);
+                    if (!std::isfinite(v) || v < 0.0) {
+                        throw std::runtime_error(
+                            std::string("invalid ") + label + " for " + group +
+                            " at CSV row " + std::to_string(r));
+                    } //endif
+                    return v;
+                };
+
+                const double s_pi0 = parse_scalar(c_pi0, "pi0 subtraction systematic");
+                const double s_excl = parse_scalar(c_excl, "exclusivity systematic");
+                const double s_fid = parse_scalar(c_fid, "fiducial systematic");
+                const double s_ptp = std::sqrt(
+                    s_pi0*s_pi0 + s_excl*s_excl + s_fid*s_fid +
+                    bin_migration_and_radiative_sys*bin_migration_and_radiative_sys);
+
+                csv.rows[r][c_mig] = std::to_string(bin_migration_and_radiative_sys);
+                csv.rows[r][c_ptp] = std::to_string(s_ptp);
+            } //endfor
+        } //endfor
+
+        write_csv_atomic(csv_path, csv);
+        std::cout << "[bsa] Materialized BSA point-to-point systematics in "
+                  << csv_path << "\n";
+        return true;
+    } catch (const std::exception& e) {
+        std::cerr << "[bsa] ERROR materializing point-to-point systematics: "
+                  << e.what() << "\n";
+        return false;
+    } //endtry
+}
+
 bool write_bsa_helicity_charge_balance(const std::string& output_csv,
                                        const std::string& charge_csv) {
     try {

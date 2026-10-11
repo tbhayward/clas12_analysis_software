@@ -108,4 +108,11 @@ bool write_bsa_helicity_charge_balance(
     const std::string& output_csv = "output/bsa_studies/helicity_charge_balance.csv",
     const std::string& charge_csv = "imports/integrated_luminosity/global.csv");
 
+// Combine the absolute BSA point-to-point components already stored in a CSV.
+// This is used by the pass-1-binning cross-check after its dedicated cut
+// variations have been rerun.
+bool materialize_bsa_point_to_point_systematics(
+    const std::string& csv_path,
+    double bin_migration_and_radiative_sys = 0.02);
+
 #endif // BSA_H
