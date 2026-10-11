@@ -7827,17 +7827,17 @@ def run_rgk_bsa_comparison(rgk_root: Path, outdir: Path):
             bad = gg.a1a2_quality == "unconstrained"
             if np.any(good):
                 ax.errorbar(gg.loc[good, "t_abs_GeV2"], gg.loc[good, "a1"],
-                            yerr=gg.loc[good, "a1_err"], fmt="o", capsize=2.0,
+                            yerr=gg.loc[good, "a1_err"], fmt="o", color="tab:blue", capsize=2.0,
                             label="robust $a_1,a_2$ fit")
             #endif
             if np.any(caution):
                 ax.errorbar(gg.loc[caution, "t_abs_GeV2"], gg.loc[caution, "a1"],
-                            yerr=gg.loc[caution, "a1_err"], fmt="s", mfc="none", capsize=2.0,
+                            yerr=gg.loc[caution, "a1_err"], fmt="s", color="tab:orange", mfc="none", capsize=2.0,
                             label="fit caution")
             #endif
             if np.any(bad):
                 ax.errorbar(gg.loc[bad, "t_abs_GeV2"], gg.loc[bad, "a1"],
-                            yerr=gg.loc[bad, "a1_err"], fmt="x", capsize=2.0,
+                            yerr=gg.loc[bad, "a1_err"], fmt="x", color="tab:red", capsize=2.0,
                             label="unconstrained $a_2$")
             #endif
             ax.axhline(0.0, lw=0.8, alpha=0.55)
@@ -7849,9 +7849,9 @@ def run_rgk_bsa_comparison(rgk_root: Path, outdir: Path):
             )
             from matplotlib.lines import Line2D
             legend_handles = [
-                Line2D([0], [0], marker="o", linestyle="none", label="robust $a_1,a_2$ fit"),
-                Line2D([0], [0], marker="s", markerfacecolor="none", linestyle="none", label="fit caution"),
-                Line2D([0], [0], marker="x", linestyle="none", label="unconstrained $a_2$"),
+                Line2D([0], [0], marker="o", color="tab:blue", linestyle="none", label="robust $a_1,a_2$ fit"),
+                Line2D([0], [0], marker="s", color="tab:orange", markerfacecolor="none", linestyle="none", label="fit caution"),
+                Line2D([0], [0], marker="x", color="tab:red", linestyle="none", label="unconstrained $a_2$"),
             ]
             ax.legend(handles=legend_handles, fontsize=7, frameon=False)
             ax.set_xlabel(r"$-t$ (GeV$^2$)")
@@ -8004,7 +8004,7 @@ def run_bsa_cross_dataset_comparisons(rga_fits: pd.DataFrame, rgk_fits: pd.DataF
             gg = ff[ff.qx_group == group].sort_values("t_abs_GeV2")
             if gg.empty: ax.set_visible(False); continue
             ax.errorbar(gg.t_abs_GeV2, gg.A_sinphi, yerr=gg.A_sinphi_err,
-                        fmt="o", capsize=2, label=f"RGK {dataset}")
+                        fmt="o", color="tab:purple", capsize=2, label=f"RGK {dataset}")
             # Only show reasonably nearby RGA matches; keep actual RGA t coordinate.
             mm = matches.loc[
                 matches["rgk_dataset"].eq(dataset) & matches["distance"].lt(3.0)
@@ -8026,11 +8026,11 @@ def run_bsa_cross_dataset_comparisons(rga_fits: pd.DataFrame, rgk_fits: pd.DataF
                 ))
                 mm = mm.loc[[key in keys for key in mm_keys]].copy()
             #endif
-            for comp, mk, lab in [("10.6 GeV", "s", "RGA pass-2 10.6 GeV"), ("10.2 GeV", "^", "RGA pass-2 10.2 GeV")]:
+            for comp, mk, color, lab in [("10.6 GeV", "s", "tab:orange", "RGA pass-2 10.6 GeV"), ("10.2 GeV", "^", "tab:green", "RGA pass-2 10.2 GeV")]:
                 qq = mm.loc[mm["rga_comparison"].eq(comp)].drop_duplicates(subset=["rga_Q2_GeV2","rga_xB","rga_t_GeV2"])
                 if not qq.empty:
                     ax.errorbar(qq.rga_t_GeV2, qq.rga_A_sinphi, yerr=qq.rga_A_sinphi_err,
-                                fmt=mk, mfc="none", capsize=2, label=lab)
+                                fmt=mk, color=color, mfc="none", capsize=2, label=lab)
                 #endif
             #endfor
             ax.axhline(0, lw=0.8, alpha=0.5); ax.grid(alpha=0.18)
@@ -8039,9 +8039,9 @@ def run_bsa_cross_dataset_comparisons(rga_fits: pd.DataFrame, rgk_fits: pd.DataF
             ax.set_title(rf"Trajectory {group+1}: $\langle Q^2\rangle={gg.Q2_GeV2.mean():.2f}$ GeV$^2$, $\langle x_B\rangle={gg.xB.mean():.2f}$")
             from matplotlib.lines import Line2D
             handles = [
-                Line2D([0],[0],marker="o",linestyle="none",label=f"RGK {dataset}"),
-                Line2D([0],[0],marker="s",markerfacecolor="none",linestyle="none",label="RGA pass-2 10.6 GeV"),
-                Line2D([0],[0],marker="^",markerfacecolor="none",linestyle="none",label="RGA pass-2 10.2 GeV"),
+                Line2D([0],[0],marker="o",color="tab:purple",linestyle="none",label=f"RGK {dataset}"),
+                Line2D([0],[0],marker="s",color="tab:orange",markerfacecolor="none",linestyle="none",label="RGA pass-2 10.6 GeV"),
+                Line2D([0],[0],marker="^",color="tab:green",markerfacecolor="none",linestyle="none",label="RGA pass-2 10.2 GeV"),
             ]
             ax.legend(handles=handles, fontsize=7, frameon=False)
         #endfor
@@ -8054,6 +8054,123 @@ def run_bsa_cross_dataset_comparisons(rga_fits: pd.DataFrame, rgk_fits: pd.DataF
 
     print(f"[BSA CROSS-DATASET OUTPUT] {outdir}")
     return epairs, matches
+#enddef
+
+
+
+def _rga_published_bin_number(q2min, q2max, xbmin, xbmax, tmin, tmax):
+    """Map the published RGA Q2/xB/t-bin boundaries to Sebastian's Table-10 bin number."""
+    q2_groups = [
+        (0.0, 1.4, [0.0, 0.13, 0.21, np.inf], 1),
+        (1.4, 1.8, [0.0, 0.13, 0.21, np.inf], 13),
+        (1.8, 2.4, [0.0, 0.16, 0.26, np.inf], 25),
+        (2.4, 3.25, [0.0, 0.21, 0.33, np.inf], 37),
+        (3.25, 5.0, [0.0, 0.33, np.inf], 49),
+        (5.0, np.inf, [0.0, 0.33, np.inf], 57),
+    ]
+    t_edges = [0.0, 0.2, 0.4, 0.8, np.inf]
+    for qlo, qhi, xedges, base in q2_groups:
+        qmatch = abs(float(q2min)-qlo) < 0.03 or (qlo == 0.0 and float(q2min) <= 0.05)
+        qmatch &= (np.isinf(qhi) and float(q2max) > 10.0) or abs(float(q2max)-qhi) < 0.03
+        if not qmatch:
+            continue
+        #endif
+        xi = None
+        for i in range(len(xedges)-1):
+            lo, hi = xedges[i], xedges[i+1]
+            lom = abs(float(xbmin)-lo) < 0.02 or (lo == 0.0 and float(xbmin) <= 0.02)
+            him = (np.isinf(hi) and float(xbmax) > 1.0) or abs(float(xbmax)-hi) < 0.02
+            if lom and him:
+                xi = i; break
+            #endif
+        #endfor
+        ti = None
+        for i in range(4):
+            lo, hi = t_edges[i], t_edges[i+1]
+            lom = abs(float(tmin)-lo) < 0.03
+            him = (np.isinf(hi) and float(tmax) > 5.0) or abs(float(tmax)-hi) < 0.03
+            if lom and him:
+                ti = i; break
+            #endif
+        #endfor
+        if xi is not None and ti is not None:
+            return int(base + ti*(len(xedges)-1) + xi)
+        #endif
+    #endfor
+    return -1
+#enddef
+
+
+def run_sebastian_bsa_comparison(sebastian_csv: Path, pass2_path: Path, outdir: Path):
+    """Compare vector-extracted Sebastian e-gamma-p Pass-2 BSA with our Pass-2 and published RGA."""
+    if not sebastian_csv.exists():
+        print(f"[SEBASTIAN BSA] extracted CSV not found; skipping: {sebastian_csv}")
+        return pd.DataFrame()
+    #endif
+    outdir.mkdir(parents=True, exist_ok=True)
+    plot_dir = outdir / "phi_comparisons"
+    plot_dir.mkdir(parents=True, exist_ok=True)
+    seb = pd.read_csv(sebastian_csv)
+    p2 = pd.read_csv(pass2_path, low_memory=False)
+    boundary_cols = ["xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max"]
+    cells = p2[boundary_cols].drop_duplicates().copy()
+    cells["rga_bin"] = [
+        _rga_published_bin_number(r.Q2min, r.Q2max, r.xBmin, r.xBmax, r.t_abs_min, r.t_abs_max)
+        for _, r in cells.iterrows()
+    ]
+    #endfor
+    key_to_bin = {tuple(float(r[c]) for c in boundary_cols): int(r.rga_bin) for _, r in cells.iterrows()}
+    p2["rga_bin"] = [key_to_bin.get(tuple(float(r[c]) for c in boundary_cols), -1) for _, r in p2.iterrows()]
+
+    summary=[]
+    for torus, seb_t in seb.groupby("torus"):
+        preferred = "Fa18 Inb" if torus == "inbending" else "Fa18 Out"
+        our_label = preferred if f"BSA, counts, {preferred}" in p2.columns else "10.6 GeV"
+        for bin_id in sorted(seb_t.rga_bin.unique()):
+            ss = seb_t[(seb_t.rga_bin == bin_id) & (seb_t.series == "sebastian_pass2")].copy()
+            pub = seb_t[(seb_t.rga_bin == bin_id) & (seb_t.series == "rga_published")].copy()
+            ours = p2[p2.rga_bin == bin_id].copy()
+            ph_o, A_o, e_o, _ = _pass2_bsa_arrays(ours, our_label)
+            if ss.empty or pub.empty:
+                continue
+            #endif
+            fits={}
+            for name, ph, aa, ee in [
+                ("sebastian_pass2", ss.phi_deg.to_numpy(float), ss.bsa.to_numpy(float), ss.bsa_error_graphical.to_numpy(float)),
+                ("rga_published", pub.phi_deg.to_numpy(float), pub.bsa.to_numpy(float), pub.bsa_error_graphical.to_numpy(float)),
+                ("our_pass2", ph_o, A_o, e_o),
+            ]:
+                amp, damp, chi2, ndf = _weighted_sinphi_fit(np.deg2rad(ph), aa, ee)
+                fits[name]=(amp,damp,chi2,ndf)
+            #endfor
+            summary.append({
+                "torus":torus,"rga_bin":int(bin_id),"our_series":our_label,
+                "sebastian_A_sinphi":fits["sebastian_pass2"][0],"sebastian_A_sinphi_err":fits["sebastian_pass2"][1],
+                "published_A_sinphi":fits["rga_published"][0],"published_A_sinphi_err":fits["rga_published"][1],
+                "our_A_sinphi":fits["our_pass2"][0],"our_A_sinphi_err":fits["our_pass2"][1],
+                "sebastian_nphi":len(ss),"published_nphi":len(pub),"our_nphi":len(ph_o),
+            })
+
+            fig,ax=plt.subplots(figsize=(7.4,5.2))
+            h1=ax.errorbar(pub.phi_deg,pub.bsa,yerr=pub.bsa_error_graphical,fmt="o",color="black",ms=3.8,capsize=1.8,label="RGA published Pass-1")
+            h2=ax.errorbar(ss.phi_deg,ss.bsa,yerr=ss.bsa_error_graphical,fmt="s",color="tab:blue",mfc="none",ms=4.0,capsize=1.8,label=f"Sebastian Pass-2 {torus}")
+            handles=[h1,h2]
+            if len(ph_o):
+                h3=ax.errorbar(ph_o,A_o,yerr=e_o,fmt="^",color="tab:orange",mfc="none",ms=4.0,capsize=1.8,label=f"Our Pass-2 ({our_label})")
+                handles.append(h3)
+            #endif
+            ax.axhline(0.0,color="0.5",lw=0.8)
+            ax.set_xlim(0,360); ax.set_ylim(-1,1); ax.set_xticks([0,90,180,270,360])
+            ax.set_xlabel(r"$\phi$ (deg)"); ax.set_ylabel(r"$A_{LU}$")
+            ax.set_title(f"RGA published bin {int(bin_id)}: Sebastian / published / our Pass-2")
+            ax.grid(alpha=0.18); ax.legend(handles=handles,fontsize=8,frameon=False)
+            fig.tight_layout(); fig.savefig(plot_dir/f"{torus}_bin_{int(bin_id):02d}.png",dpi=220); plt.close(fig)
+        #endfor
+    #endfor
+    summary=pd.DataFrame(summary)
+    summary.to_csv(outdir/"sebastian_pass2_amplitude_comparison.csv",index=False)
+    print(f"[SEBASTIAN BSA] compared {len(summary)} torus/bin combinations; output: {outdir}")
+    return summary
 #enddef
 
 # =============================================================================
@@ -8132,6 +8249,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Parent directory for all BSA cross-check products (default: output/bsa).",
     )
     p.add_argument(
+        "--sebastian-bsa-file",
+        default=str(here / "import" / "sebastian_pass2_bsa_from_note.csv"),
+        help="Vector-extracted Appendix-H BSA points from Sebastian Alvarado's analysis note.",
+    )
+    p.add_argument(
         "--rgk-bsa-dir",
         default=str(here / "import" / "bsa_rgk"),
         help="Parent directory containing bsa_plots6535_txt and bsa_plots7546_txt.",
@@ -8198,6 +8320,11 @@ def main(argv: Optional[List[str]] = None) -> int:
             bsa_root / "rgk",
         )
         run_bsa_cross_dataset_comparisons(rga_bsa_fits, rgk_bsa_fits, bsa_root)
+        run_sebastian_bsa_comparison(
+            Path(args.sebastian_bsa_file).expanduser().resolve(),
+            Path(args.pass2_bsa_file).expanduser().resolve(),
+            bsa_root / "sebastian",
+        )
         return 0
     #endif
 
