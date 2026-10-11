@@ -7460,7 +7460,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p.add_argument(
         "--pass1-bsa-file",
-        default=str(here / "imports" / "rga_pass1_bsa.txt"),
+        default=str(here / "import" / "rga_pass1_bsa.txt"),
         help="Published pass-1 BSA text file: phi q2 xb t Eb A sigA.",
     )
     p.add_argument(
