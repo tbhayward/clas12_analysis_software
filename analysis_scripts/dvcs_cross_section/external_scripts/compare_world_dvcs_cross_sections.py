@@ -7078,12 +7078,19 @@ def print_summary(dataset_summary: pd.DataFrame, model_scores: pd.DataFrame, pai
 # Pass-1 / pass-2 BSA cross-check
 # =============================================================================
 
-BSA_PERIOD_SPECS = {
-    "Fa18 Inb": 10.6,
-    "Fa18 Out": 10.6,
-    "Sp18 Inb": 10.6,
-    "Sp18 Out": 10.6,
-    "Sp19 Inb": 10.2,
+BSA_COMPARISON_SPECS = {
+    "10.6 GeV": {
+        "pass2_label": "10.6 GeV",
+        "pass1_ebeam": 10.6,
+        "title": "10.6 GeV: pass-1 vs pass-2 combined",
+        "tag": "10p6",
+    },
+    "10.2 GeV": {
+        "pass2_label": "Sp19 Inb",
+        "pass1_ebeam": 10.2,
+        "title": "10.2 GeV: pass-1 vs pass-2 Sp19 Inb",
+        "tag": "10p2_sp19",
+    },
 }
 
 
@@ -7111,16 +7118,7 @@ def _weighted_sinphi_fit(phi_rad, asym, sigma):
 
 
 def _pass2_bsa_point_error(row, period):
-    """
-    Return (stat, ptp, total) for a pass-2 BSA point.
-
-    The preferred point-to-point uncertainty is the finalized aggregate
-    ``..., point-to-point sys`` column.  The pass-1-binning cross-check CSV can
-    also be produced before that aggregate is filled; in that case we use the
-    quadrature sum of the finite point-to-point component columns that are
-    actually present.  This is reported loudly by the caller so an incomplete
-    systematic set cannot pass unnoticed.
-    """
+    """Return (stat, ptp, total, source) for one pass-2 BSA point."""
     bsa_col = f"BSA, counts, {period}"
     _, stat, tuple_sys = _parse_tuple3_loose(row.get(bsa_col, np.nan))
 
@@ -7129,20 +7127,15 @@ def _pass2_bsa_point_error(row, period):
     source = "point-to-point sys"
     if not np.isfinite(ptp):
         component_suffixes = [
-            "pi0 subtraction sys",
-            "exclusivity sys",
-            "fiducial sys",
-            "cut sys",
+            "pi0 subtraction sys", "exclusivity sys", "fiducial sys", "cut sys",
             "bin migration and radiative sys",
         ]
-        vals = []
-        used = []
+        vals, used = [], []
         for suffix in component_suffixes:
             col = f"BSA, counts, {period}, {suffix}"
             val = pd.to_numeric(pd.Series([row.get(col, np.nan)]), errors="coerce").iloc[0]
             if np.isfinite(val):
-                vals.append(float(val))
-                used.append(suffix)
+                vals.append(float(val)); used.append(suffix)
             #endif
         #endfor
         if vals:
@@ -7162,13 +7155,11 @@ def _pass2_bsa_point_error(row, period):
 
 
 def _assign_pass1_bsa_cells(pass1, cells):
-    """Assign each published pass-1 point to the exact pass-1 bin boundaries."""
+    """Assign each published pass-1 point to the exact pass-1 Q2/xB/t' cell."""
     out = pass1.copy()
     out["cell_id"] = -1
     tabs = np.abs(out["t"].to_numpy(float))
     for cid, cc in cells.iterrows():
-        # Use half-open boundaries.  The published means lie strictly inside
-        # the bins, so this is also robust against shared edges.
         mask = (
             (out["xb"] >= float(cc.xBmin)) & (out["xb"] < float(cc.xBmax)) &
             (out["q2"] >= float(cc.Q2min)) & (out["q2"] < float(cc.Q2max)) &
@@ -7180,14 +7171,48 @@ def _assign_pass1_bsa_cells(pass1, cells):
 #enddef
 
 
+def _format_bin(lo, hi, var):
+    """Compact bin label, including open-ended pass-1 edge conventions."""
+    lo, hi = float(lo), float(hi)
+    if lo <= 0.0:
+        return rf"${var}<{hi:g}$"
+    #endif
+    if hi >= 1.0e3:
+        return rf"${var}>{lo:g}$"
+    #endif
+    return rf"${lo:g}<{var}<{hi:g}$"
+#enddef
+
+
+def _pass2_bsa_arrays(rows, label):
+    phi_deg, asym, err = [], [], []
+    sources = set()
+    for _, rr in rows.iterrows():
+        aval, _, _ = _parse_tuple3_loose(rr.get(f"BSA, counts, {label}", np.nan))
+        _, _, terr, source = _pass2_bsa_point_error(rr, label)
+        sources.add(source)
+        ph = pd.to_numeric(pd.Series([rr.get(f"phiavg, {label}", np.nan)]), errors="coerce").iloc[0]
+        if not np.isfinite(ph):
+            lo = pd.to_numeric(pd.Series([rr.get("phimin", np.nan)]), errors="coerce").iloc[0]
+            hi = pd.to_numeric(pd.Series([rr.get("phimax", np.nan)]), errors="coerce").iloc[0]
+            ph = 0.5 * (lo + hi) if np.isfinite(lo) and np.isfinite(hi) else np.nan
+        #endif
+        if np.isfinite(aval) and np.isfinite(ph) and np.isfinite(terr) and terr > 0.0:
+            phi_deg.append(float(ph)); asym.append(float(aval)); err.append(float(terr))
+        #endif
+    #endfor
+    return np.asarray(phi_deg), np.asarray(asym), np.asarray(err), sources
+#enddef
+
+
 def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
     """
-    Compare pass-1 and pass-2 BSA in the exact pass-1 (Q2,xB,|t|) cells.
+    Compare published pass-1 BSA with pass-2 in the exact pass-1 cells.
 
-    Pass-1 points use their published errors.  Pass-2 fits use statistical
-    uncertainty in quadrature with the point-to-point systematic.  Correlated
-    beam-polarization/scale uncertainties are intentionally excluded from the
-    pointwise fit weights.
+    Only two comparisons are made: combined 10.6-GeV pass-2 versus published
+    10.6-GeV pass-1, and Sp19 Inb pass-2 versus published 10.2-GeV pass-1.
+    For each energy, one canvas is produced per Q2 bin.  Columns are that Q2
+    bin's xB bins and rows are the four t' bins.
     """
     outdir.mkdir(parents=True, exist_ok=True)
     plot_dir = outdir / "phi_canvases"
@@ -7202,7 +7227,9 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
 
     p2 = pd.read_csv(pass2_path, low_memory=False)
     boundary_cols = ["xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max"]
-    cells = p2[boundary_cols].drop_duplicates().sort_values(boundary_cols).reset_index(drop=True)
+    cells = p2[boundary_cols].drop_duplicates().sort_values(
+        ["Q2min", "Q2max", "xBmin", "xBmax", "t_abs_min", "t_abs_max"]
+    ).reset_index(drop=True)
     cells.index.name = "cell_id"
     p1 = _assign_pass1_bsa_cells(p1, cells)
     unassigned = int((p1["cell_id"] < 0).sum())
@@ -7210,11 +7237,7 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
         warnings.warn(f"{unassigned} pass-1 BSA points did not map to a pass-1 bin and will be skipped")
     #endif
 
-    # Map every pass-2 row to the same cell identity from its boundaries.
-    key_to_cell = {
-        tuple(float(r[c]) for c in boundary_cols): int(i)
-        for i, r in cells.iterrows()
-    }
+    key_to_cell = {tuple(float(r[c]) for c in boundary_cols): int(i) for i, r in cells.iterrows()}
     p2["cell_id"] = [
         key_to_cell.get(tuple(float(r[c]) for c in boundary_cols), -1)
         for _, r in p2.iterrows()
@@ -7224,52 +7247,41 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
     sys_sources = set()
     phi_curve = np.linspace(0.0, 2.0 * np.pi, 361)
 
-    for period, ebeam in BSA_PERIOD_SPECS.items():
-        bsa_col = f"BSA, counts, {period}"
+    for comparison, spec in BSA_COMPARISON_SPECS.items():
+        label = spec["pass2_label"]
+        bsa_col = f"BSA, counts, {label}"
         if bsa_col not in p2.columns:
-            warnings.warn(f"Missing pass-2 BSA column: {bsa_col}; skipping {period}")
-            continue
+            raise KeyError(
+                f"Required pass-2 BSA column '{bsa_col}' is absent. "
+                f"The BSA cross-check requires the combined 10.6-GeV and Sp19 Inb columns."
+            )
         #endif
         for cid, cc in cells.iterrows():
-            q1 = p1[(p1.cell_id == cid) & np.isclose(p1.ebeam, ebeam, atol=0.05)].copy()
+            q1 = p1[(p1.cell_id == cid) & np.isclose(p1.ebeam, spec["pass1_ebeam"], atol=0.05)].copy()
             q2 = p2[p2.cell_id == cid].copy()
             if q1.empty or q2.empty:
                 continue
             #endif
-
-            p2_phi, p2_A, p2_err = [], [], []
-            for _, rr in q2.iterrows():
-                aval, _, _ = _parse_tuple3_loose(rr.get(bsa_col, np.nan))
-                stat, ptp, total, source = _pass2_bsa_point_error(rr, period)
-                sys_sources.add((period, source))
-                phi_deg = pd.to_numeric(pd.Series([rr.get(f"phiavg, {period}", np.nan)]), errors="coerce").iloc[0]
-                if not np.isfinite(phi_deg):
-                    lo = pd.to_numeric(pd.Series([rr.get("phimin", np.nan)]), errors="coerce").iloc[0]
-                    hi = pd.to_numeric(pd.Series([rr.get("phimax", np.nan)]), errors="coerce").iloc[0]
-                    phi_deg = 0.5 * (lo + hi) if np.isfinite(lo) and np.isfinite(hi) else np.nan
-                #endif
-                if np.isfinite(aval) and np.isfinite(phi_deg) and np.isfinite(total) and total > 0.0:
-                    p2_phi.append(np.deg2rad(float(phi_deg)))
-                    p2_A.append(float(aval))
-                    p2_err.append(float(total))
-                #endif
+            p2_phi_deg, p2_A, p2_err, sources = _pass2_bsa_arrays(q2, label)
+            for source in sources:
+                sys_sources.add((comparison, source))
             #endfor
-
             a1, da1, chi1, ndf1 = _weighted_sinphi_fit(q1.phi, q1.A, q1.sigA)
-            a2, da2, chi2, ndf2 = _weighted_sinphi_fit(p2_phi, p2_A, p2_err)
+            a2, da2, chi2, ndf2 = _weighted_sinphi_fit(np.deg2rad(p2_phi_deg), p2_A, p2_err)
             if not (np.isfinite(a1) and np.isfinite(da1) and np.isfinite(a2) and np.isfinite(da2)):
                 continue
             #endif
             denom = float(np.hypot(da1, da2))
-            delta_sigma = (a2 - a1) / denom if denom > 0.0 else np.nan
             fit_rows.append({
-                "period": period, "ebeam": ebeam, "cell_id": cid,
+                "comparison": comparison, "pass2_label": label,
+                "pass1_ebeam": spec["pass1_ebeam"], "cell_id": cid,
                 **{c: float(cc[c]) for c in boundary_cols},
                 "pass1_nphi": len(q1), "pass1_A_sinphi": a1, "pass1_A_sinphi_err": da1,
                 "pass1_chi2": chi1, "pass1_ndf": ndf1,
                 "pass2_nphi": len(p2_A), "pass2_A_sinphi": a2, "pass2_A_sinphi_err": da2,
                 "pass2_chi2": chi2, "pass2_ndf": ndf2,
-                "delta_A": a2 - a1, "difference_sigma": delta_sigma,
+                "delta_A": a2 - a1,
+                "difference_sigma": (a2 - a1) / denom if denom > 0.0 else np.nan,
             })
         #endfor
     #endfor
@@ -7280,119 +7292,136 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
         raise RuntimeError("No matched pass-1/pass-2 BSA cells were fit")
     #endif
 
-    # One canvas for each xB range.  Every subplot is a distinct Q2/|t| cell;
-    # all run periods for which that cell exists are overlaid in the subplot.
-    xgroups = cells[["xBmin", "xBmax"]].drop_duplicates().sort_values(["xBmin", "xBmax"])
-    for _, xg in xgroups.iterrows():
-        xlo, xhi = float(xg.xBmin), float(xg.xBmax)
-        cids = cells[(cells.xBmin == xlo) & (cells.xBmax == xhi)].index.tolist()
-        relevant = [cid for cid in cids if cid in set(fits.cell_id.astype(int))]
-        if not relevant:
-            continue
-        #endif
-        n = len(relevant)
-        ncols = min(4, n)
-        nrows = int(math.ceil(n / ncols))
-        fig, axes = plt.subplots(nrows, ncols, figsize=(4.5*ncols, 3.7*nrows), squeeze=False, sharex=True)
-        axes_flat = axes.ravel()
-        for iax, cid in enumerate(relevant):
-            ax = axes_flat[iax]
-            cc = cells.loc[cid]
-            for ip, (period, ebeam) in enumerate(BSA_PERIOD_SPECS.items()):
-                fr = fits[(fits.cell_id == cid) & (fits.period == period)]
-                if fr.empty:
-                    continue
-                #endif
-                fr = fr.iloc[0]
-                q1 = p1[(p1.cell_id == cid) & np.isclose(p1.ebeam, ebeam, atol=0.05)]
-                q2 = p2[p2.cell_id == cid]
-                # Keep colors period-specific while marker fill distinguishes pass-1/pass-2.
-                color = plt.get_cmap("tab10")(ip)
-                ax.errorbar(np.rad2deg(q1.phi), q1.A, yerr=q1.sigA, fmt="o", ms=3.4,
-                            color=color, alpha=0.55, capsize=1.5,
-                            label=f"pass-1 {period}" if iax == 0 else None)
-                p2_phi_deg, p2_A, p2_err = [], [], []
-                for _, rr in q2.iterrows():
-                    aval, _, _ = _parse_tuple3_loose(rr.get(f"BSA, counts, {period}", np.nan))
-                    _, _, terr, _ = _pass2_bsa_point_error(rr, period)
-                    ph = pd.to_numeric(pd.Series([rr.get(f"phiavg, {period}", np.nan)]), errors="coerce").iloc[0]
-                    if not np.isfinite(ph):
-                        ph = 0.5 * (float(rr.phimin) + float(rr.phimax))
+    q2_groups = cells[["Q2min", "Q2max"]].drop_duplicates().sort_values(["Q2min", "Q2max"])
+    for comparison, spec in BSA_COMPARISON_SPECS.items():
+        label = spec["pass2_label"]
+        for _, qg in q2_groups.iterrows():
+            qlo, qhi = float(qg.Q2min), float(qg.Q2max)
+            qcells = cells[(cells.Q2min == qlo) & (cells.Q2max == qhi)].copy()
+            xgroups = qcells[["xBmin", "xBmax"]].drop_duplicates().sort_values(["xBmin", "xBmax"])
+            tgroups = qcells[["t_abs_min", "t_abs_max"]].drop_duplicates().sort_values(["t_abs_min", "t_abs_max"])
+            ncols, nrows = len(xgroups), len(tgroups)
+            if ncols == 0 or nrows == 0:
+                continue
+            #endif
+            fig, axes = plt.subplots(
+                nrows, ncols, figsize=(4.25*ncols, 3.15*nrows), squeeze=False,
+                sharex=True, sharey=True,
+            )
+            plotted = False
+            for ix, xg in enumerate(xgroups.itertuples(index=False)):
+                for it, tg in enumerate(tgroups.itertuples(index=False)):
+                    ax = axes[it, ix]
+                    match = qcells[
+                        (qcells.xBmin == xg.xBmin) & (qcells.xBmax == xg.xBmax) &
+                        (qcells.t_abs_min == tg.t_abs_min) & (qcells.t_abs_max == tg.t_abs_max)
+                    ]
+                    if match.empty:
+                        ax.set_visible(False)
+                        continue
                     #endif
-                    if np.isfinite(aval) and np.isfinite(terr) and terr > 0.0:
-                        p2_phi_deg.append(float(ph)); p2_A.append(float(aval)); p2_err.append(float(terr))
+                    cid = int(match.index[0])
+                    fr = fits[(fits.comparison == comparison) & (fits.cell_id == cid)]
+                    if fr.empty:
+                        ax.text(0.5, 0.5, "no matched fit", transform=ax.transAxes,
+                                ha="center", va="center", fontsize=8)
+                    else:
+                        fr = fr.iloc[0]
+                        q1 = p1[(p1.cell_id == cid) & np.isclose(p1.ebeam, spec["pass1_ebeam"], atol=0.05)]
+                        q2 = p2[p2.cell_id == cid]
+                        p2_phi_deg, p2_A, p2_err, _ = _pass2_bsa_arrays(q2, label)
+                        ax.errorbar(np.rad2deg(q1.phi), q1.A, yerr=q1.sigA, fmt="o", ms=3.6,
+                                    capsize=1.5, alpha=0.72, label="Pass-1")
+                        ax.errorbar(p2_phi_deg, p2_A, yerr=p2_err, fmt="s", ms=3.8,
+                                    mfc="none", capsize=1.5, label="Pass-2")
+                        ax.plot(np.rad2deg(phi_curve), fr.pass1_A_sinphi*np.sin(phi_curve),
+                                ls="--", lw=1.2)
+                        ax.plot(np.rad2deg(phi_curve), fr.pass2_A_sinphi*np.sin(phi_curve),
+                                ls="-", lw=1.5)
+                        ax.text(0.04, 0.94,
+                                rf"$a_1={fr.pass1_A_sinphi:+.3f}\pm{fr.pass1_A_sinphi_err:.3f}$" "\n"
+                                rf"$a_2={fr.pass2_A_sinphi:+.3f}\pm{fr.pass2_A_sinphi_err:.3f}$",
+                                transform=ax.transAxes, ha="left", va="top", fontsize=7.5)
+                        plotted = True
+                    #endif
+                    ax.axhline(0.0, lw=0.7, alpha=0.55)
+                    ax.set_xlim(0.0, 360.0)
+                    ax.set_xticks([0, 90, 180, 270, 360])
+                    ax.grid(alpha=0.16)
+                    if it == 0:
+                        ax.set_title(_format_bin(xg.xBmin, xg.xBmax, "x_B"), fontsize=10)
+                    #endif
+                    if ix == 0:
+                        ax.set_ylabel(_format_bin(tg.t_abs_min, tg.t_abs_max, "t'") + "\n" + r"$A_{LU}$")
+                    #endif
+                    if it == nrows - 1:
+                        ax.set_xlabel(r"$\phi$ [deg]")
                     #endif
                 #endfor
-                ax.errorbar(p2_phi_deg, p2_A, yerr=p2_err, fmt="s", ms=3.6, mfc="none",
-                            color=color, capsize=1.5,
-                            label=f"pass-2 {period}" if iax == 0 else None)
-                ax.plot(np.rad2deg(phi_curve), fr.pass1_A_sinphi*np.sin(phi_curve), color=color,
-                        ls="--", lw=1.0, alpha=0.7)
-                ax.plot(np.rad2deg(phi_curve), fr.pass2_A_sinphi*np.sin(phi_curve), color=color,
-                        ls="-", lw=1.5)
             #endfor
-            ax.axhline(0.0, color="0.55", lw=0.7)
-            ax.set_xlim(0.0, 360.0)
-            ax.set_xticks([0, 90, 180, 270, 360])
-            ax.grid(alpha=0.16)
-            ax.set_title(
-                rf"$Q^2\in[{cc.Q2min:g},{cc.Q2max:g})$, "
-                rf"$|t|\in[{cc.t_abs_min:g},{cc.t_abs_max:g})$ GeV$^2$",
-                fontsize=9,
-            )
-            if iax % ncols == 0:
-                ax.set_ylabel(r"$A_{LU}$")
+            if not plotted:
+                plt.close(fig)
+                continue
             #endif
-            if iax // ncols == nrows - 1:
-                ax.set_xlabel(r"$\phi$ [deg]")
+            q2_label = _format_bin(qlo, qhi, "Q^2")
+            fig.suptitle(spec["title"] + "   " + q2_label + r" GeV$^2$", fontsize=14)
+            handles, labels = [], []
+            for ax in axes.ravel():
+                h, l = ax.get_legend_handles_labels()
+                if h:
+                    handles, labels = h, l
+                    break
+                #endif
+            #endfor
+            if handles:
+                fig.legend(handles, labels, loc="lower center", ncol=2, fontsize=9,
+                           bbox_to_anchor=(0.5, 0.005), frameon=False)
             #endif
+            fig.tight_layout(rect=(0, 0.04, 1, 0.96))
+            qtag = f"Q2_{qlo:g}_{qhi:g}".replace(".", "p")
+            fig.savefig(plot_dir / f"pass1_pass2_bsa_{spec['tag']}_{qtag}.png", dpi=220)
+            plt.close(fig)
         #endfor
-        for j in range(n, len(axes_flat)):
-            axes_flat[j].set_visible(False)
-        #endfor
-        fig.suptitle(rf"Pass-1 vs pass-2 BSA: $x_B\in[{xlo:g},{xhi:g})$", fontsize=14)
-        handles, labels = axes_flat[0].get_legend_handles_labels()
-        if handles:
-            fig.legend(handles, labels, loc="lower center", ncol=min(5, len(handles)), fontsize=8,
-                       bbox_to_anchor=(0.5, 0.005))
+    #endfor
+
+    # Separate standardized-difference summaries for the two beam energies.
+    for comparison, spec in BSA_COMPARISON_SPECS.items():
+        vals = fits.loc[fits.comparison == comparison, "difference_sigma"].to_numpy(float)
+        vals = vals[np.isfinite(vals)]
+        fig, ax = plt.subplots(figsize=(8.2, 5.5))
+        edges = np.arange(-5.25, 5.26, 0.5)
+        ax.hist(vals, bins=edges, histtype="stepfilled", alpha=0.35, edgecolor="black")
+        ax.axvline(0.0, color="black", lw=1.0)
+        if len(vals):
+            ax.text(0.98, 0.95,
+                    f"N = {len(vals)}\nmean = {np.mean(vals):+.3f}\nRMS = {np.sqrt(np.mean(vals**2)):.3f}",
+                    transform=ax.transAxes, ha="right", va="top")
         #endif
-        fig.tight_layout(rect=(0, 0.06, 1, 0.96))
-        tag = f"xB_{xlo:.2f}_{xhi:.2f}".replace(".", "p")
-        fig.savefig(plot_dir / f"pass1_pass2_bsa_{tag}.png", dpi=220)
+        ax.set_xlabel(r"Uncorrelated-error standardized difference: "
+                      r"$(a_{P2}-a_{P1})/\sqrt{\delta_{P2}^2+\delta_{P1}^2}$")
+        ax.set_ylabel("Pass-1 kinematic cells")
+        ax.set_title(spec["title"] + ": BSA amplitude differences")
+        ax.grid(axis="y", alpha=0.18)
+        fig.tight_layout()
+        fig.savefig(outdir / f"pass1_pass2_bsa_standardized_difference_{spec['tag']}.png", dpi=220)
         plt.close(fig)
     #endfor
 
-    # Difference-in-sigma summary.  Because pass-1 and pass-2 are not
-    # statistically independent data sets, call this a standardized difference
-    # rather than a formal pull.
-    vals = fits["difference_sigma"].to_numpy(float)
-    vals = vals[np.isfinite(vals)]
-    fig, ax = plt.subplots(figsize=(8.2, 5.5))
-    edges = np.arange(-5.25, 5.26, 0.5)
-    ax.hist(vals, bins=edges, histtype="stepfilled", alpha=0.35, edgecolor="black")
-    ax.axvline(0.0, color="black", lw=1.0)
-    if len(vals):
-        ax.text(0.98, 0.95,
-                f"N = {len(vals)}\nmean = {np.mean(vals):+.3f}\nRMS = {np.sqrt(np.mean(vals**2)):.3f}",
-                transform=ax.transAxes, ha="right", va="top")
-    #endif
-    ax.set_xlabel(r"$(A_{LU}^{\sin\phi,\,P2}-A_{LU}^{\sin\phi,\,P1})/"
-                  r"\sqrt{\delta_{P2}^2+\delta_{P1}^2}$")
-    ax.set_ylabel("Matched pass-1 kinematic cells")
-    ax.set_title("Pass-2 minus pass-1 BSA amplitude: standardized difference")
-    ax.grid(axis="y", alpha=0.18)
-    fig.tight_layout()
-    fig.savefig(outdir / "pass1_pass2_bsa_standardized_difference.png", dpi=220)
-    plt.close(fig)
-
     print(f"[BSA] pass-1 points: {len(p1):,}; pass-1-binning pass-2 rows: {len(p2):,}")
-    print(f"[BSA] fitted matched period/cells: {len(fits):,}")
-    if len(vals):
-        print(f"[BSA] standardized difference: mean={np.mean(vals):+.4f}, RMS={np.sqrt(np.mean(vals**2)):.4f}")
-    #endif
+    for comparison in BSA_COMPARISON_SPECS:
+        ff = fits[fits.comparison == comparison]
+        vals = ff.difference_sigma.to_numpy(float)
+        vals = vals[np.isfinite(vals)]
+        print(f"[BSA] {comparison}: fitted cells={len(ff):,}", end="")
+        if len(vals):
+            print(f", standardized difference mean={np.mean(vals):+.4f}, RMS={np.sqrt(np.mean(vals**2)):.4f}")
+        else:
+            print()
+        #endif
+    #endfor
     print("[BSA] pass-2 uncertainty sources encountered:")
-    for period, source in sorted(sys_sources):
-        print(f"      {period}: {source}")
+    for comparison, source in sorted(sys_sources):
+        print(f"      {comparison}: {source}")
     #endfor
     print(f"[BSA OUTPUT] {outdir}")
     return fits
