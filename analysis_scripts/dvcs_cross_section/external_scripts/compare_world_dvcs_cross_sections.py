@@ -7447,7 +7447,7 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
                         ax.set_ylabel(_format_bin(tg.t_abs_min, tg.t_abs_max, "t'") + "\n" + r"$A_{LU}$")
                     #endif
                     if it == nrows - 1:
-                        ax.set_xlabel(r"$\phi$ [deg]")
+                        ax.set_xlabel(r"$\phi$ (deg)")
                     #endif
                 #endfor
             #endfor
@@ -7579,46 +7579,59 @@ def _load_rgk_bsa_file(path: Path):
 #enddef
 
 
-def _kmeans_q2_xb_groups(points: pd.DataFrame, n_groups: int = 6):
-    """Deterministically group RGK mean kinematics into the six visible Q2-xB trajectories."""
-    x = points[["Q2_GeV2", "xB"]].to_numpy(float)
-    scale = np.nanstd(x, axis=0)
-    scale[~np.isfinite(scale) | (scale <= 0.0)] = 1.0
-    z = (x - np.nanmean(x, axis=0)) / scale
+def _rgk_trajectory_groups(points: pd.DataFrame, dataset: str):
+    """Assign the supplied RGK mean kinematics to their six physical trajectories.
 
-    # Deterministic farthest-point initialization followed by Lloyd iterations.
-    centers = [int(np.argmin(z[:, 0] + z[:, 1]))]
-    while len(centers) < n_groups:
-        d2 = np.min(
-            np.stack([np.sum((z - z[j])**2, axis=1) for j in centers], axis=1), axis=1
-        )
-        d2[centers] = -1.0
-        centers.append(int(np.argmax(d2)))
-    #endwhile
-    cent = z[centers].copy()
-    labels = np.zeros(len(z), dtype=int)
-    for _ in range(100):
-        new_labels = np.argmin(np.sum((z[:, None, :] - cent[None, :, :])**2, axis=2), axis=1)
-        if np.array_equal(new_labels, labels) and _ > 0:
-            break
-        #endif
-        labels = new_labels
-        for j in range(n_groups):
-            if np.any(labels == j):
-                cent[j] = np.mean(z[labels == j], axis=0)
-            #endif
-        #endfor
-    #endfor
-
-    # Renumber groups in increasing mean Q2, then xB, for stable presentation.
-    order = sorted(range(n_groups), key=lambda j: (
-        float(points.loc[labels == j, "Q2_GeV2"].mean()),
-        float(points.loc[labels == j, "xB"].mean()),
-    ))
-    remap = {old: new for new, old in enumerate(order)}
-    return np.asarray([remap[int(v)] for v in labels], dtype=int)
+    The RGK filenames contain rounded mean kinematics rather than bin boundaries or
+    trajectory IDs.  Generic clustering can incorrectly merge nearby but distinct
+    Q2-xB sequences (the source of the paired/clumped points in the first version of
+    the summary plots).  These anchors encode the six clearly separated sequences in
+    each supplied RGK dataset; assignment uses both Q2 and xB and is deterministic.
+    """
+    anchors = {
+        "6.535 GeV": np.asarray([
+            [1.12, 0.15],
+            [1.10, 0.21],
+            [1.30, 0.22],
+            [1.64, 0.235],
+            [1.66, 0.31],
+            [2.55, 0.37],
+        ], dtype=float),
+        "7.546 GeV": np.asarray([
+            [1.10, 0.12],
+            [1.10, 0.17],
+            [1.34, 0.17],
+            [1.72, 0.19],
+            [1.44, 0.26],
+            [2.48, 0.33],
+        ], dtype=float),
+    }
+    if dataset not in anchors:
+        raise KeyError(f"No RGK trajectory definition for {dataset}")
+    #endif
+    qx = points[["Q2_GeV2", "xB"]].to_numpy(float)
+    ref = anchors[dataset]
+    # Scales reflect the rounding/spread along one physical trajectory.  Q2 must
+    # carry enough weight to keep, e.g., the 1.10 and 1.30 GeV^2 sequences apart.
+    dq2 = (qx[:, None, 0] - ref[None, :, 0]) / 0.12
+    dxb = (qx[:, None, 1] - ref[None, :, 1]) / 0.03
+    return np.argmin(dq2*dq2 + dxb*dxb, axis=1).astype(int)
 #enddef
 
+
+def _rgk_a1a2_quality(a2, da2, corr):
+    """Classify how safely the two-parameter RGK fit can be interpreted."""
+    boundary = bool(np.isfinite(a2) and abs(a2) >= 0.94)
+    weak_a2 = bool((not np.isfinite(da2)) or da2 > 0.50)
+    high_corr = bool(np.isfinite(corr) and abs(corr) > 0.95)
+    if boundary or weak_a2:
+        return "unconstrained", boundary, weak_a2, high_corr
+    #endif
+    if high_corr or da2 > 0.30:
+        return "caution", boundary, weak_a2, high_corr
+    #endif
+    return "robust", boundary, weak_a2, high_corr
+#enddef
 
 def run_rgk_bsa_comparison(rgk_root: Path, outdir: Path):
     """Fit and summarize the independent RGK 6.535- and 7.546-GeV BSA datasets."""
@@ -7683,7 +7696,7 @@ def run_rgk_bsa_comparison(rgk_root: Path, outdir: Path):
             ax.axhline(0.0, lw=0.8, alpha=0.55)
             ax.set_xlim(0.0, 360.0); ax.set_ylim(-0.5, 0.5)
             ax.set_xticks([0, 90, 180, 270, 360])
-            ax.set_xlabel(r"$\phi$ [deg]"); ax.set_ylabel(r"$A_{LU}$")
+            ax.set_xlabel(r"$\phi$ (deg)"); ax.set_ylabel(r"$A_{LU}$")
             ax.set_title(
                 rf"RGK {dataset}: $\langle Q^2\rangle={q2:.2f}$ GeV$^2$, "
                 rf"$\langle x_B\rangle={xb:.2f}$, $\langle -t\rangle={tabs:.2f}$ GeV$^2$"
@@ -7696,13 +7709,44 @@ def run_rgk_bsa_comparison(rgk_root: Path, outdir: Path):
     #endfor
 
     fits = pd.DataFrame(rows)
+
+    quality = fits.apply(
+        lambda r: _rgk_a1a2_quality(r.a2, r.a2_err, r.a1_a2_corr), axis=1
+    )
+    fits["a1a2_quality"] = [q[0] for q in quality]
+    fits["a2_at_fit_boundary"] = [q[1] for q in quality]
+    fits["a2_weakly_constrained"] = [q[2] for q in quality]
+    fits["a1a2_high_correlation"] = [q[3] for q in quality]
+
     fits["qx_group"] = -1
     for dataset in RGK_BSA_SPECS:
         mask = fits.dataset == dataset
-        fits.loc[mask, "qx_group"] = _kmeans_q2_xb_groups(fits.loc[mask].copy(), 6)
+        fits.loc[mask, "qx_group"] = _rgk_trajectory_groups(
+            fits.loc[mask].copy(), dataset
+        )
     #endfor
     fits["qx_group"] = fits["qx_group"].astype(int)
     fits.to_csv(table_dir / "rgk_bsa_fits.csv", index=False)
+
+    trajectory_rows = []
+    for (dataset, group), gg in fits.groupby(["dataset", "qx_group"], sort=True):
+        trajectory_rows.append({
+            "dataset": dataset,
+            "trajectory": int(group) + 1,
+            "n_points": len(gg),
+            "mean_Q2_GeV2": float(gg.Q2_GeV2.mean()),
+            "Q2_min_GeV2": float(gg.Q2_GeV2.min()),
+            "Q2_max_GeV2": float(gg.Q2_GeV2.max()),
+            "mean_xB": float(gg.xB.mean()),
+            "xB_min": float(gg.xB.min()),
+            "xB_max": float(gg.xB.max()),
+            "t_abs_min_GeV2": float(gg.t_abs_GeV2.min()),
+            "t_abs_max_GeV2": float(gg.t_abs_GeV2.max()),
+        })
+    #endfor
+    pd.DataFrame(trajectory_rows).to_csv(
+        table_dir / "rgk_trajectory_summary.csv", index=False
+    )
 
     # Six-panel a1(-t) summary per beam energy.  The filenames provide mean
     # kinematics rather than bin edges, so panels are explicitly labelled by
@@ -7715,16 +7759,33 @@ def run_rgk_bsa_comparison(rgk_root: Path, outdir: Path):
             if gg.empty:
                 ax.set_visible(False); continue
             #endif
-            ax.errorbar(gg.t_abs_GeV2, gg.a1, yerr=gg.a1_err, fmt="o", capsize=2.0,
-                        label=rf"RGK {dataset}")
+            good = gg.a1a2_quality == "robust"
+            caution = gg.a1a2_quality == "caution"
+            bad = gg.a1a2_quality == "unconstrained"
+            if np.any(good):
+                ax.errorbar(gg.loc[good, "t_abs_GeV2"], gg.loc[good, "a1"],
+                            yerr=gg.loc[good, "a1_err"], fmt="o", capsize=2.0,
+                            label="robust $a_1,a_2$ fit")
+            #endif
+            if np.any(caution):
+                ax.errorbar(gg.loc[caution, "t_abs_GeV2"], gg.loc[caution, "a1"],
+                            yerr=gg.loc[caution, "a1_err"], fmt="s", mfc="none", capsize=2.0,
+                            label="fit caution")
+            #endif
+            if np.any(bad):
+                ax.errorbar(gg.loc[bad, "t_abs_GeV2"], gg.loc[bad, "a1"],
+                            yerr=gg.loc[bad, "a1_err"], fmt="x", capsize=2.0,
+                            label="unconstrained $a_2$")
+            #endif
             ax.axhline(0.0, lw=0.8, alpha=0.55)
             ax.set_xlim(left=0.0); ax.set_ylim(-0.05, 0.5)
             ax.grid(alpha=0.18)
             ax.set_title(
-                rf"$\langle Q^2\rangle={gg.Q2_GeV2.mean():.2f}$ GeV$^2$, "
+                rf"Trajectory {group + 1}: $\langle Q^2\rangle={gg.Q2_GeV2.mean():.2f}$ GeV$^2$, "
                 rf"$\langle x_B\rangle={gg.xB.mean():.2f}$"
             )
-            ax.set_xlabel(r"$-t$ [GeV$^2$]")
+            ax.legend(fontsize=7, frameon=False)
+            ax.set_xlabel(r"$-t$ (GeV$^2$)")
             ax.set_ylabel(r"$a_1$")
         #endfor
         fig.suptitle(rf"RGK {dataset}: $a_1$ from $a_1\sin\phi/(1+a_2\cos\phi)$", fontsize=14)
@@ -7741,7 +7802,11 @@ def run_rgk_bsa_comparison(rgk_root: Path, outdir: Path):
         print(
             f"[RGK BSA] {dataset}: N={len(ff)}, "
             f"median chi2/ndf sin(phi)={np.nanmedian(simple):.3f}, "
-            f"a1/a2={np.nanmedian(shape):.3f}"
+            f"a1/a2={np.nanmedian(shape):.3f}; "
+            f"quality robust/caution/unconstrained="
+            f"{int((ff.a1a2_quality == 'robust').sum())}/"
+            f"{int((ff.a1a2_quality == 'caution').sum())}/"
+            f"{int((ff.a1a2_quality == 'unconstrained').sum())}"
         )
     #endfor
     print(f"[RGK BSA OUTPUT] {outdir}")
