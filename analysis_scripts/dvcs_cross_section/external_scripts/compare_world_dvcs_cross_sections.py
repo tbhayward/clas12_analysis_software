@@ -102,6 +102,7 @@ from typing import Dict, Iterable, List, Optional, Sequence, Tuple
 
 import numpy as np
 import pandas as pd
+from scipy.optimize import least_squares
 import matplotlib.pyplot as plt
 from matplotlib.lines import Line2D
 
@@ -7117,6 +7118,56 @@ def _weighted_sinphi_fit(phi_rad, asym, sigma):
 #enddef
 
 
+def _weighted_a1a2_fit(phi_rad, asym, sigma):
+    """Fit A(phi)=a1*sin(phi)/(1+a2*cos(phi)) with point uncertainties."""
+    phi_rad = np.asarray(phi_rad, dtype=float)
+    asym = np.asarray(asym, dtype=float)
+    sigma = np.asarray(sigma, dtype=float)
+    good = np.isfinite(phi_rad) & np.isfinite(asym) & np.isfinite(sigma) & (sigma > 0.0)
+    phi_rad, asym, sigma = phi_rad[good], asym[good], sigma[good]
+    if len(asym) < 4:
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 0
+    #endif
+
+    a1_seed, _, _, _ = _weighted_sinphi_fit(phi_rad, asym, sigma)
+    if not np.isfinite(a1_seed):
+        a1_seed = 0.0
+    #endif
+
+    def residuals(par):
+        a1, a2 = par
+        den = 1.0 + a2 * np.cos(phi_rad)
+        if np.any(np.abs(den) < 0.05):
+            return np.full_like(asym, 1.0e6)
+        #endif
+        return (asym - a1 * np.sin(phi_rad) / den) / sigma
+    #enddef
+
+    # The broad a2 bounds prevent an actual pole while still allowing the large
+    # negative a2 behavior discussed in the inclusive-DVCS analysis note.
+    result = least_squares(
+        residuals, np.array([a1_seed, 0.0]), bounds=([-2.0, -0.95], [2.0, 0.95]),
+        method="trf", x_scale="jac", max_nfev=10000,
+    )
+    if not result.success or not np.all(np.isfinite(result.x)):
+        return np.nan, np.nan, np.nan, np.nan, np.nan, np.nan, 0
+    #endif
+
+    a1, a2 = map(float, result.x)
+    chi2 = float(np.sum(np.square(result.fun)))
+    ndf = int(len(asym) - 2)
+    try:
+        cov = np.linalg.inv(result.jac.T @ result.jac)
+        da1 = float(np.sqrt(max(cov[0, 0], 0.0)))
+        da2 = float(np.sqrt(max(cov[1, 1], 0.0)))
+        corr = float(cov[0, 1] / (da1 * da2)) if da1 > 0.0 and da2 > 0.0 else np.nan
+    except np.linalg.LinAlgError:
+        da1, da2, corr = np.nan, np.nan, np.nan
+    #endtry
+    return a1, da1, a2, da2, corr, chi2, ndf
+#enddef
+
+
 def _pass2_bsa_point_error(row, period):
     """Return (stat, ptp, total, source) for one pass-2 BSA point."""
     bsa_col = f"BSA, counts, {period}"
@@ -7266,28 +7317,51 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
             for source in sources:
                 sys_sources.add((comparison, source))
             #endfor
-            a1, da1, chi1, ndf1 = _weighted_sinphi_fit(q1.phi, q1.A, q1.sigA)
-            a2, da2, chi2, ndf2 = _weighted_sinphi_fit(np.deg2rad(p2_phi_deg), p2_A, p2_err)
-            if not (np.isfinite(a1) and np.isfinite(da1) and np.isfinite(a2) and np.isfinite(da2)):
+            p1_sin, dp1_sin, p1_sin_chi2, p1_sin_ndf = _weighted_sinphi_fit(q1.phi, q1.A, q1.sigA)
+            p2_sin, dp2_sin, p2_sin_chi2, p2_sin_ndf = _weighted_sinphi_fit(
+                np.deg2rad(p2_phi_deg), p2_A, p2_err
+            )
+            p1_a1, dp1_a1, p1_a2, dp1_a2, p1_corr, p1_shape_chi2, p1_shape_ndf = _weighted_a1a2_fit(
+                q1.phi, q1.A, q1.sigA
+            )
+            p2_a1, dp2_a1, p2_a2, dp2_a2, p2_corr, p2_shape_chi2, p2_shape_ndf = _weighted_a1a2_fit(
+                np.deg2rad(p2_phi_deg), p2_A, p2_err
+            )
+            if not (
+                np.isfinite(p1_sin) and np.isfinite(dp1_sin) and
+                np.isfinite(p2_sin) and np.isfinite(dp2_sin)
+            ):
                 continue
             #endif
-            denom = float(np.hypot(da1, da2))
+            sin_denom = float(np.hypot(dp1_sin, dp2_sin))
+            shape_denom = float(np.hypot(dp1_a1, dp2_a1)) if np.isfinite(dp1_a1) and np.isfinite(dp2_a1) else np.nan
             fit_rows.append({
                 "comparison": comparison, "pass2_label": label,
                 "pass1_ebeam": spec["pass1_ebeam"], "cell_id": cid,
                 **{c: float(cc[c]) for c in boundary_cols},
-                "pass1_nphi": len(q1), "pass1_A_sinphi": a1, "pass1_A_sinphi_err": da1,
-                "pass1_chi2": chi1, "pass1_ndf": ndf1,
-                "pass2_nphi": len(p2_A), "pass2_A_sinphi": a2, "pass2_A_sinphi_err": da2,
-                "pass2_chi2": chi2, "pass2_ndf": ndf2,
-                "delta_A": a2 - a1,
-                "difference_sigma": (a2 - a1) / denom if denom > 0.0 else np.nan,
+                "pass1_nphi": len(q1),
+                "pass1_A_sinphi": p1_sin, "pass1_A_sinphi_err": dp1_sin,
+                "pass1_sinphi_chi2": p1_sin_chi2, "pass1_sinphi_ndf": p1_sin_ndf,
+                "pass2_nphi": len(p2_A),
+                "pass2_A_sinphi": p2_sin, "pass2_A_sinphi_err": dp2_sin,
+                "pass2_sinphi_chi2": p2_sin_chi2, "pass2_sinphi_ndf": p2_sin_ndf,
+                "delta_A_sinphi": p2_sin - p1_sin,
+                "difference_sigma": (p2_sin - p1_sin) / sin_denom if sin_denom > 0.0 else np.nan,
+                "pass1_a1": p1_a1, "pass1_a1_err": dp1_a1,
+                "pass1_a2": p1_a2, "pass1_a2_err": dp1_a2, "pass1_a1_a2_corr": p1_corr,
+                "pass1_a1a2_chi2": p1_shape_chi2, "pass1_a1a2_ndf": p1_shape_ndf,
+                "pass2_a1": p2_a1, "pass2_a1_err": dp2_a1,
+                "pass2_a2": p2_a2, "pass2_a2_err": dp2_a2, "pass2_a1_a2_corr": p2_corr,
+                "pass2_a1a2_chi2": p2_shape_chi2, "pass2_a1a2_ndf": p2_shape_ndf,
+                "delta_a1": p2_a1 - p1_a1 if np.isfinite(p1_a1) and np.isfinite(p2_a1) else np.nan,
+                "a1_difference_sigma": (p2_a1 - p1_a1) / shape_denom
+                    if np.isfinite(shape_denom) and shape_denom > 0.0 else np.nan,
             })
         #endfor
     #endfor
 
     fits = pd.DataFrame(fit_rows)
-    fits.to_csv(outdir / "pass1_pass2_bsa_sinphi_fits.csv", index=False)
+    fits.to_csv(outdir / "pass1_pass2_bsa_fits.csv", index=False)
     if fits.empty:
         raise RuntimeError("No matched pass-1/pass-2 BSA cells were fit")
     #endif
@@ -7334,17 +7408,31 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
                                     capsize=1.5, alpha=0.72, color="tab:blue", label="_nolegend_")
                         ax.errorbar(p2_phi_deg, p2_A, yerr=p2_err, fmt="s", ms=3.8,
                                     mfc="none", capsize=1.5, color="tab:orange", label="_nolegend_")
+                        # Dotted curves show the one-parameter sin(phi) diagnostic.
                         ax.plot(
                             np.rad2deg(phi_curve), fr.pass1_A_sinphi*np.sin(phi_curve),
-                            ls="--", lw=1.4, color="tab:blue",
-                            label=rf"Pass-1: $a={fr.pass1_A_sinphi:+.3f}\pm{fr.pass1_A_sinphi_err:.3f}$",
+                            ls=":", lw=1.0, alpha=0.75, color="tab:blue", label="_nolegend_",
                         )
                         ax.plot(
                             np.rad2deg(phi_curve), fr.pass2_A_sinphi*np.sin(phi_curve),
-                            ls="--", lw=1.4, color="tab:orange",
-                            label=rf"Pass-2: $a={fr.pass2_A_sinphi:+.3f}\pm{fr.pass2_A_sinphi_err:.3f}$",
+                            ls=":", lw=1.0, alpha=0.75, color="tab:orange", label="_nolegend_",
                         )
-                        ax.legend(loc="upper right", fontsize=6.8, frameon=False, handlelength=2.4)
+                        # Solid curves use Sebastian's a1*sin(phi)/(1+a2*cos(phi)) form.
+                        if np.isfinite(fr.pass1_a1) and np.isfinite(fr.pass1_a2):
+                            y1 = fr.pass1_a1*np.sin(phi_curve)/(1.0 + fr.pass1_a2*np.cos(phi_curve))
+                            ax.plot(
+                                np.rad2deg(phi_curve), y1, lw=1.5, color="tab:blue",
+                                label=rf"Pass-1: $a_1={fr.pass1_a1:+.3f}\pm{fr.pass1_a1_err:.3f}$, $a_2={fr.pass1_a2:+.2f}\pm{fr.pass1_a2_err:.2f}$",
+                            )
+                        #endif
+                        if np.isfinite(fr.pass2_a1) and np.isfinite(fr.pass2_a2):
+                            y2 = fr.pass2_a1*np.sin(phi_curve)/(1.0 + fr.pass2_a2*np.cos(phi_curve))
+                            ax.plot(
+                                np.rad2deg(phi_curve), y2, lw=1.5, color="tab:orange",
+                                label=rf"Pass-2: $a_1={fr.pass2_a1:+.3f}\pm{fr.pass2_a1_err:.3f}$, $a_2={fr.pass2_a2:+.2f}\pm{fr.pass2_a2_err:.2f}$",
+                            )
+                        #endif
+                        ax.legend(loc="upper right", fontsize=5.8, frameon=False, handlelength=2.4)
                         plotted = True
                     #endif
                     ax.axhline(0.0, lw=0.7, alpha=0.55)
@@ -7408,6 +7496,28 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
         ax.grid(axis="y", alpha=0.18)
         fig.tight_layout()
         fig.savefig(outdir / f"pass1_pass2_bsa_standardized_difference_{spec['tag']}.png", dpi=220)
+        plt.close(fig)
+
+        # Same diagnostic for the two-parameter a1 amplitude. This is still not
+        # a calibrated pull because pass-1/pass-2 statistical and systematic
+        # covariance is unavailable.
+        vals_a1 = fits.loc[fits.comparison == comparison, "a1_difference_sigma"].to_numpy(float)
+        vals_a1 = vals_a1[np.isfinite(vals_a1)]
+        fig, ax = plt.subplots(figsize=(8.2, 5.5))
+        ax.hist(vals_a1, bins=edges, histtype="stepfilled", alpha=0.35, edgecolor="black")
+        ax.axvline(0.0, color="black", lw=1.0)
+        if len(vals_a1):
+            ax.text(0.98, 0.95,
+                    f"N = {len(vals_a1)}\nmean = {np.mean(vals_a1):+.3f}\nRMS = {np.sqrt(np.mean(vals_a1**2)):.3f}",
+                    transform=ax.transAxes, ha="right", va="top")
+        #endif
+        ax.set_xlabel(r"Uncorrelated-error standardized $a_1$ difference: "
+                      r"$(a_{1,P2}-a_{1,P1})/\sqrt{\delta_{P2}^2+\delta_{P1}^2}$")
+        ax.set_ylabel("Pass-1 kinematic cells")
+        ax.set_title(spec["title"] + r": $a_1$ differences from $a_1\sin\phi/(1+a_2\cos\phi)$")
+        ax.grid(axis="y", alpha=0.18)
+        fig.tight_layout()
+        fig.savefig(outdir / f"pass1_pass2_bsa_a1_standardized_difference_{spec['tag']}.png", dpi=220)
         plt.close(fig)
     #endfor
 
