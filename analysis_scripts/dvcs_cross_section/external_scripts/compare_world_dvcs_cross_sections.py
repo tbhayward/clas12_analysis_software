@@ -7331,21 +7331,25 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
                         q2 = p2[p2.cell_id == cid]
                         p2_phi_deg, p2_A, p2_err, _ = _pass2_bsa_arrays(q2, label)
                         ax.errorbar(np.rad2deg(q1.phi), q1.A, yerr=q1.sigA, fmt="o", ms=3.6,
-                                    capsize=1.5, alpha=0.72, label="Pass-1")
+                                    capsize=1.5, alpha=0.72, color="tab:blue", label="_nolegend_")
                         ax.errorbar(p2_phi_deg, p2_A, yerr=p2_err, fmt="s", ms=3.8,
-                                    mfc="none", capsize=1.5, label="Pass-2")
-                        ax.plot(np.rad2deg(phi_curve), fr.pass1_A_sinphi*np.sin(phi_curve),
-                                ls="--", lw=1.2)
-                        ax.plot(np.rad2deg(phi_curve), fr.pass2_A_sinphi*np.sin(phi_curve),
-                                ls="-", lw=1.5)
-                        ax.text(0.04, 0.94,
-                                rf"$a_1={fr.pass1_A_sinphi:+.3f}\pm{fr.pass1_A_sinphi_err:.3f}$" "\n"
-                                rf"$a_2={fr.pass2_A_sinphi:+.3f}\pm{fr.pass2_A_sinphi_err:.3f}$",
-                                transform=ax.transAxes, ha="left", va="top", fontsize=7.5)
+                                    mfc="none", capsize=1.5, color="tab:orange", label="_nolegend_")
+                        ax.plot(
+                            np.rad2deg(phi_curve), fr.pass1_A_sinphi*np.sin(phi_curve),
+                            ls="--", lw=1.4, color="tab:blue",
+                            label=rf"Pass-1: $a={fr.pass1_A_sinphi:+.3f}\pm{fr.pass1_A_sinphi_err:.3f}$",
+                        )
+                        ax.plot(
+                            np.rad2deg(phi_curve), fr.pass2_A_sinphi*np.sin(phi_curve),
+                            ls="--", lw=1.4, color="tab:orange",
+                            label=rf"Pass-2: $a={fr.pass2_A_sinphi:+.3f}\pm{fr.pass2_A_sinphi_err:.3f}$",
+                        )
+                        ax.legend(loc="upper right", fontsize=6.8, frameon=False, handlelength=2.4)
                         plotted = True
                     #endif
                     ax.axhline(0.0, lw=0.7, alpha=0.55)
                     ax.set_xlim(0.0, 360.0)
+                    ax.set_ylim(-0.5, 0.5)
                     ax.set_xticks([0, 90, 180, 270, 360])
                     ax.grid(alpha=0.16)
                     if it == 0:
