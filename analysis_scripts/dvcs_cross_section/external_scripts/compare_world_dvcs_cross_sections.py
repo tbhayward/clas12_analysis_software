@@ -7914,6 +7914,11 @@ def run_bsa_cross_dataset_comparisons(rga_fits: pd.DataFrame, rgk_fits: pd.DataF
         #endfor
     #endfor
     matches = pd.DataFrame(mrows).sort_values(["rgk_dataset", "rga_comparison", "distance"])
+    required_match_columns = {"rgk_dataset", "rga_comparison", "distance", "rga_Q2_GeV2", "rga_xB", "rga_t_GeV2"}
+    missing_match_columns = required_match_columns.difference(matches.columns)
+    if missing_match_columns:
+        raise RuntimeError(f"RGK--RGA matching table is missing required columns: {sorted(missing_match_columns)}")
+    #endif
     matches.to_csv(match_dir / "rgk_to_rga_nearest_kinematics.csv", index=False)
 
     # Data-only amplitude canvases.  These are intentionally overlays, not pull/ratio tests:
@@ -7932,7 +7937,7 @@ def run_bsa_cross_dataset_comparisons(rga_fits: pd.DataFrame, rgk_fits: pd.DataF
             keys = {(round(r.Q2_GeV2,3), round(r.xB,3), round(r.t_abs_GeV2,3)) for _, r in gg.iterrows()}
             mm = mm[mm.apply(lambda r: (round(r.rgk_Q2_GeV2,3), round(r.rgk_xB,3), round(r.rgk_t_GeV2,3)) in keys, axis=1)]
             for comp, mk, lab in [("10.6 GeV", "s", "RGA pass-2 10.6 GeV"), ("10.2 GeV", "^", "RGA pass-2 10.2 GeV")]:
-                qq = mm[mm.rga_comparison == comp].drop_duplicates(subset=["rga_Q2_GeV2","rga_xB","rga_t_GeV2"])
+                qq = mm.loc[mm["rga_comparison"].eq(comp)].drop_duplicates(subset=["rga_Q2_GeV2","rga_xB","rga_t_GeV2"])
                 if not qq.empty:
                     ax.errorbar(qq.rga_t_GeV2, qq.rga_A_sinphi, yerr=qq.rga_A_sinphi_err,
                                 fmt=mk, mfc="none", capsize=2, label=lab)
