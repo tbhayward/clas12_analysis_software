@@ -7196,8 +7196,12 @@ def _pass2_bsa_point_error(row, period):
             ptp = float(tuple_sys)
             source = "BSA tuple third component"
         else:
-            ptp = 0.0
-            source = "stat-only fallback"
+            # The production pass-1-binning CSV is supposed to have a
+            # materialized point-to-point systematic for every finite BSA.
+            # Never silently turn a missing production systematic into a
+            # statistical-only error: exclude/audit that point instead.
+            ptp = np.nan
+            source = "MISSING point-to-point sys (excluded)"
         #endif
     #endif
     total = float(np.hypot(stat, ptp)) if np.isfinite(stat) else np.nan
@@ -7247,6 +7251,34 @@ def _format_bin(lo, hi, var):
 #enddef
 
 
+def _audit_pass2_bsa_uncertainties(p2, labels, output_csv):
+    """Write every finite pass-2 BSA point lacking a usable ptp systematic."""
+    bad = []
+    for label in labels:
+        bsa_col = f"BSA, counts, {label}"
+        if bsa_col not in p2.columns:
+            continue
+        for idx, rr in p2.iterrows():
+            aval, stat, _ = _parse_tuple3_loose(rr.get(bsa_col, np.nan))
+            if not (np.isfinite(aval) and np.isfinite(stat)):
+                continue
+            _, ptp, total, source = _pass2_bsa_point_error(rr, label)
+            if np.isfinite(ptp) and np.isfinite(total):
+                continue
+            row = {"csv_row_index": int(idx), "label": label, "BSA": aval, "stat": stat, "source": source}
+            for col in ["Q2min","Q2max","xBmin","xBmax","t_abs_min","t_abs_max","phimin","phimax"]:
+                row[col] = rr.get(col, np.nan)
+            row["raw_point_to_point_sys"] = rr.get(f"BSA, counts, {label}, point-to-point sys", np.nan)
+            for suffix in ["pi0 subtraction sys","exclusivity sys","fiducial sys","bin migration and radiative sys"]:
+                row[suffix] = rr.get(f"BSA, counts, {label}, {suffix}", np.nan)
+            bad.append(row)
+    out = pd.DataFrame(bad)
+    output_csv.parent.mkdir(parents=True, exist_ok=True)
+    out.to_csv(output_csv, index=False)
+    return out
+#enddef
+
+
 def _pass2_bsa_arrays(rows, label):
     phi_deg, asym, err = [], [], []
     sources = set()
@@ -7289,6 +7321,12 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
     p1 = p1.dropna(subset=names).copy()
 
     p2 = pd.read_csv(pass2_path, low_memory=False)
+    uncertainty_audit = _audit_pass2_bsa_uncertainties(
+        p2, [spec["pass2_label"] for spec in BSA_COMPARISON_SPECS.values()],
+        outdir / "pass2_missing_point_to_point_systematics.csv")
+    if not uncertainty_audit.empty:
+        print(f"[BSA WARNING] Excluding {len(uncertainty_audit)} finite pass-2 BSA points with missing point-to-point systematics.")
+        print(f"[BSA WARNING] Audit: {outdir / 'pass2_missing_point_to_point_systematics.csv'}")
     boundary_cols = ["xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max"]
     cells = p2[boundary_cols].drop_duplicates().sort_values(
         ["Q2min", "Q2max", "xBmin", "xBmax", "t_abs_min", "t_abs_max"]
@@ -7354,9 +7392,16 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
                 "pass1_mean_Q2_GeV2": float(q1.q2.mean()),
                 "pass1_mean_xB": float(q1.xb.mean()),
                 "pass1_mean_t_abs_GeV2": float(np.abs(q1.t).mean()),
-                "pass2_mean_Q2_GeV2": float(pd.to_numeric(q2.get(f"Q2avg, {label}", pd.Series(dtype=float)), errors="coerce").mean()) if f"Q2avg, {label}" in q2 else 0.5*(float(cc.Q2min)+float(cc.Q2max)),
-                "pass2_mean_xB": float(pd.to_numeric(q2.get(f"xBavg, {label}", pd.Series(dtype=float)), errors="coerce").mean()) if f"xBavg, {label}" in q2 else 0.5*(float(cc.xBmin)+float(cc.xBmax)),
-                "pass2_mean_t_abs_GeV2": float(pd.to_numeric(q2.get(f"t_abs_avg, {label}", pd.Series(dtype=float)), errors="coerce").mean()) if f"t_abs_avg, {label}" in q2 else np.nan,
+                # The alternate pass-1-binning CSV currently does not run the
+                # nominal bin-means stage, so its grouped mean columns may be
+                # present but blank.  Until event-level means are explicitly
+                # produced for this alternate binning, use the published
+                # pass-1 mean kinematics of the same exact (Q2,xB,t') cell as
+                # the transparent coordinate proxy for cross-dataset matching.
+                "pass2_mean_Q2_GeV2": float(q1.q2.mean()),
+                "pass2_mean_xB": float(q1.xb.mean()),
+                "pass2_mean_t_abs_GeV2": float(np.abs(q1.t).mean()),
+                "pass2_mean_kinematics_source": "published pass-1 means for identical cell",
                 "pass1_nphi": len(q1),
                 "pass1_A_sinphi": p1_sin, "pass1_A_sinphi_err": dp1_sin,
                 "pass1_sinphi_chi2": p1_sin_chi2, "pass1_sinphi_ndf": p1_sin_ndf,
@@ -7882,6 +7927,34 @@ def run_bsa_cross_dataset_comparisons(rga_fits: pd.DataFrame, rgk_fits: pd.DataF
     epairs = pd.DataFrame(erows).sort_values("distance")
     epairs.to_csv(rgk_energy_dir / "rgk_6p535_to_7p546_nearest_kinematics.csv", index=False)
 
+    # Data-only RGK energy comparison.  These are proximity overlays, not
+    # compatibility pulls: the paired kinematics are close, not identical.
+    for quantity, errcol, ylabel, stem in [
+        ("A_sinphi", "A_sinphi_err", r"$A_{\sin\phi}$", "A_sinphi"),
+        ("a1", "a1_err", r"$a_1$", "a1"),
+    ]:
+        fig, ax = plt.subplots(figsize=(7.2, 6.0))
+        x = epairs[f"{quantity}_1"].to_numpy(float)
+        y = epairs[f"{quantity}_2"].to_numpy(float)
+        xe = epairs[f"{errcol}_1"].to_numpy(float)
+        ye = epairs[f"{errcol}_2"].to_numpy(float)
+        finite = np.isfinite(x) & np.isfinite(y) & np.isfinite(xe) & np.isfinite(ye)
+        if quantity == "a1":
+            finite &= epairs["a1_quality_1"].eq("robust").to_numpy() & epairs["a1_quality_2"].eq("robust").to_numpy()
+        ax.errorbar(x[finite], y[finite], xerr=xe[finite], yerr=ye[finite], fmt="o", capsize=2)
+        vals = np.r_[x[finite], y[finite]]
+        if vals.size:
+            lo = min(-0.05, float(np.nanmin(vals))-0.03); hi = max(0.45, float(np.nanmax(vals))+0.03)
+            ax.plot([lo,hi],[lo,hi], "--", lw=1.0, label="equal amplitude")
+            ax.set_xlim(lo,hi); ax.set_ylim(lo,hi)
+        #endif
+        ax.set_xlabel(rf"RGK 6.535 GeV {ylabel}")
+        ax.set_ylabel(rf"RGK 7.546 GeV {ylabel}")
+        ax.set_title("RGK nearest-kinematics energy comparison")
+        ax.grid(alpha=0.2); ax.legend(frameon=False)
+        fig.tight_layout(); fig.savefig(rgk_energy_dir / f"rgk_6p535_vs_7p546_{stem}.png", dpi=220); plt.close(fig)
+    #endfor
+
     # RGK -> RGA pass-2: nearest point at both available RGA beam energies.
     mrows = []
     for _, a in rgk_fits.iterrows():
@@ -7904,6 +7977,7 @@ def run_bsa_cross_dataset_comparisons(rga_fits: pd.DataFrame, rgk_fits: pd.DataF
                 "rga_comparison": comparison, "rga_E_GeV": b.pass1_ebeam,
                 "rga_Q2_GeV2": b.pass2_mean_Q2_GeV2, "rga_xB": b.pass2_mean_xB,
                 "rga_t_GeV2": b.pass2_mean_t_abs_GeV2,
+                "rga_kinematics_source": b.get("pass2_mean_kinematics_source", "pass-2 grouped means"),
                 "rga_A_sinphi": b.pass2_A_sinphi, "rga_A_sinphi_err": b.pass2_A_sinphi_err,
                 "rga_a1": b.pass2_a1, "rga_a1_err": b.pass2_a1_err,
                 "distance": d,
