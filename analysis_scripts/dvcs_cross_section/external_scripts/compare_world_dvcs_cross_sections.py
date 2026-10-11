@@ -7205,16 +7205,28 @@ def _pass2_bsa_point_error(row, period):
 #enddef
 
 
+def _dvcs_tmin(Q2, xB, proton_mass=0.9382720813):
+    """Exact kinematic t_min for gamma* p -> gamma p (negative convention)."""
+    Q2 = np.asarray(Q2, dtype=float)
+    xB = np.asarray(xB, dtype=float)
+    eps2 = 4.0 * proton_mass**2 * xB**2 / Q2
+    return -Q2 * (
+        2.0*(1.0-xB)*(1.0-np.sqrt(1.0+eps2)) + eps2
+    ) / (4.0*xB*(1.0-xB) + eps2)
+#enddef
+
+
 def _assign_pass1_bsa_cells(pass1, cells):
-    """Assign each published pass-1 point to the exact pass-1 Q2/xB/t' cell."""
+    """Assign published pass-1 points to Q2/xB/t' cells using t'=t_min-t."""
     out = pass1.copy()
     out["cell_id"] = -1
-    tabs = np.abs(out["t"].to_numpy(float))
+    out["tprime_GeV2"] = _dvcs_tmin(out["q2"].to_numpy(float), out["xb"].to_numpy(float)) - out["t"].to_numpy(float)
+    tp = out["tprime_GeV2"].to_numpy(float)
     for cid, cc in cells.iterrows():
         mask = (
             (out["xb"] >= float(cc.xBmin)) & (out["xb"] < float(cc.xBmax)) &
             (out["q2"] >= float(cc.Q2min)) & (out["q2"] < float(cc.Q2max)) &
-            (tabs >= float(cc.t_abs_min)) & (tabs < float(cc.t_abs_max))
+            (tp >= float(cc.t_abs_min)) & (tp < float(cc.t_abs_max))
         )
         out.loc[mask, "cell_id"] = int(cid)
     #endfor
@@ -7339,6 +7351,12 @@ def run_pass1_bsa_comparison(pass1_path: Path, pass2_path: Path, outdir: Path):
                 "comparison": comparison, "pass2_label": label,
                 "pass1_ebeam": spec["pass1_ebeam"], "cell_id": cid,
                 **{c: float(cc[c]) for c in boundary_cols},
+                "pass1_mean_Q2_GeV2": float(q1.q2.mean()),
+                "pass1_mean_xB": float(q1.xb.mean()),
+                "pass1_mean_t_abs_GeV2": float(np.abs(q1.t).mean()),
+                "pass2_mean_Q2_GeV2": float(pd.to_numeric(q2.get(f"Q2avg, {label}", pd.Series(dtype=float)), errors="coerce").mean()) if f"Q2avg, {label}" in q2 else 0.5*(float(cc.Q2min)+float(cc.Q2max)),
+                "pass2_mean_xB": float(pd.to_numeric(q2.get(f"xBavg, {label}", pd.Series(dtype=float)), errors="coerce").mean()) if f"xBavg, {label}" in q2 else 0.5*(float(cc.xBmin)+float(cc.xBmax)),
+                "pass2_mean_t_abs_GeV2": float(pd.to_numeric(q2.get(f"t_abs_avg, {label}", pd.Series(dtype=float)), errors="coerce").mean()) if f"t_abs_avg, {label}" in q2 else np.nan,
                 "pass1_nphi": len(q1),
                 "pass1_A_sinphi": p1_sin, "pass1_A_sinphi_err": dp1_sin,
                 "pass1_sinphi_chi2": p1_sin_chi2, "pass1_sinphi_ndf": p1_sin_ndf,
@@ -7784,7 +7802,13 @@ def run_rgk_bsa_comparison(rgk_root: Path, outdir: Path):
                 rf"Trajectory {group + 1}: $\langle Q^2\rangle={gg.Q2_GeV2.mean():.2f}$ GeV$^2$, "
                 rf"$\langle x_B\rangle={gg.xB.mean():.2f}$"
             )
-            ax.legend(fontsize=7, frameon=False)
+            from matplotlib.lines import Line2D
+            legend_handles = [
+                Line2D([0], [0], marker="o", linestyle="none", label="robust $a_1,a_2$ fit"),
+                Line2D([0], [0], marker="s", markerfacecolor="none", linestyle="none", label="fit caution"),
+                Line2D([0], [0], marker="x", linestyle="none", label="unconstrained $a_2$"),
+            ]
+            ax.legend(handles=legend_handles, fontsize=7, frameon=False)
             ax.set_xlabel(r"$-t$ (GeV$^2$)")
             ax.set_ylabel(r"$a_1$")
         #endfor
@@ -7811,6 +7835,130 @@ def run_rgk_bsa_comparison(rgk_root: Path, outdir: Path):
     #endfor
     print(f"[RGK BSA OUTPUT] {outdir}")
     return fits
+#enddef
+
+
+def _normalized_kinematic_distance(q2a, xba, ta, q2b, xbb, tb):
+    """Dimensionless proximity metric for auditing, not claiming identical bins."""
+    terms = [((q2a-q2b)/0.35)**2, ((xba-xbb)/0.045)**2]
+    if np.isfinite(ta) and np.isfinite(tb):
+        terms.append(((ta-tb)/0.15)**2)
+    #endif
+    return float(np.sqrt(np.sum(terms)))
+#enddef
+
+
+def run_bsa_cross_dataset_comparisons(rga_fits: pd.DataFrame, rgk_fits: pd.DataFrame, outdir: Path):
+    """Build data-only RGK energy and RGK--RGA proximity audits/comparison canvases."""
+    outdir.mkdir(parents=True, exist_ok=True)
+    rgk_energy_dir = outdir / "rgk_energy_comparison"
+    rga_rgk_dir = outdir / "rga_rgk"
+    amp_dir = rga_rgk_dir / "amplitude_comparison"
+    match_dir = rga_rgk_dir / "kinematic_matching"
+    for d in (rgk_energy_dir, amp_dir, match_dir): d.mkdir(parents=True, exist_ok=True)
+
+    # 6.535 -> 7.546 GeV: nearest measured point in full (Q2,xB,-t) space.
+    lo = rgk_fits[rgk_fits.dataset == "6.535 GeV"].copy()
+    hi = rgk_fits[rgk_fits.dataset == "7.546 GeV"].copy()
+    erows = []
+    for _, a in lo.iterrows():
+        candidates = []
+        for j, b in hi.iterrows():
+            d = _normalized_kinematic_distance(a.Q2_GeV2, a.xB, a.t_abs_GeV2,
+                                               b.Q2_GeV2, b.xB, b.t_abs_GeV2)
+            candidates.append((d, j))
+        #endfor
+        d, j = min(candidates)
+        b = hi.loc[j]
+        erows.append({
+            "distance": d,
+            "E1_GeV": a.ebeam_GeV, "Q2_1_GeV2": a.Q2_GeV2, "xB_1": a.xB, "t_1_GeV2": a.t_abs_GeV2,
+            "A_sinphi_1": a.A_sinphi, "A_sinphi_err_1": a.A_sinphi_err, "a1_1": a.a1, "a1_err_1": a.a1_err,
+            "E2_GeV": b.ebeam_GeV, "Q2_2_GeV2": b.Q2_GeV2, "xB_2": b.xB, "t_2_GeV2": b.t_abs_GeV2,
+            "A_sinphi_2": b.A_sinphi, "A_sinphi_err_2": b.A_sinphi_err, "a1_2": b.a1, "a1_err_2": b.a1_err,
+            "a1_quality_1": a.a1a2_quality, "a1_quality_2": b.a1a2_quality,
+        })
+    #endfor
+    epairs = pd.DataFrame(erows).sort_values("distance")
+    epairs.to_csv(rgk_energy_dir / "rgk_6p535_to_7p546_nearest_kinematics.csv", index=False)
+
+    # RGK -> RGA pass-2: nearest point at both available RGA beam energies.
+    mrows = []
+    for _, a in rgk_fits.iterrows():
+        for comparison, rr in rga_fits.groupby("comparison"):
+            candidates = []
+            for j, b in rr.iterrows():
+                d = _normalized_kinematic_distance(
+                    a.Q2_GeV2, a.xB, a.t_abs_GeV2,
+                    b.pass2_mean_Q2_GeV2, b.pass2_mean_xB, b.pass2_mean_t_abs_GeV2)
+                candidates.append((d, j))
+            #endfor
+            if not candidates: continue
+            d, j = min(candidates)
+            b = rr.loc[j]
+            mrows.append({
+                "rgk_dataset": a.dataset, "rgk_E_GeV": a.ebeam_GeV,
+                "rgk_Q2_GeV2": a.Q2_GeV2, "rgk_xB": a.xB, "rgk_t_GeV2": a.t_abs_GeV2,
+                "rgk_A_sinphi": a.A_sinphi, "rgk_A_sinphi_err": a.A_sinphi_err,
+                "rgk_a1": a.a1, "rgk_a1_err": a.a1_err, "rgk_a1_quality": a.a1a2_quality,
+                "rga_comparison": comparison, "rga_E_GeV": b.pass1_ebeam,
+                "rga_Q2_GeV2": b.pass2_mean_Q2_GeV2, "rga_xB": b.pass2_mean_xB,
+                "rga_t_GeV2": b.pass2_mean_t_abs_GeV2,
+                "rga_A_sinphi": b.pass2_A_sinphi, "rga_A_sinphi_err": b.pass2_A_sinphi_err,
+                "rga_a1": b.pass2_a1, "rga_a1_err": b.pass2_a1_err,
+                "distance": d,
+                "delta_Q2_GeV2": b.pass2_mean_Q2_GeV2-a.Q2_GeV2,
+                "delta_xB": b.pass2_mean_xB-a.xB,
+                "delta_t_GeV2": b.pass2_mean_t_abs_GeV2-a.t_abs_GeV2,
+            })
+        #endfor
+    #endfor
+    matches = pd.DataFrame(mrows).sort_values(["rgk_dataset", "rga_comparison", "distance"])
+    matches.to_csv(match_dir / "rgk_to_rga_nearest_kinematics.csv", index=False)
+
+    # Data-only amplitude canvases.  These are intentionally overlays, not pull/ratio tests:
+    # the beam-energy dependence has NOT been divided out.
+    for dataset in RGK_BSA_SPECS:
+        ff = rgk_fits[rgk_fits.dataset == dataset]
+        fig, axes = plt.subplots(2, 3, figsize=(13.2, 7.8), sharey=True, squeeze=False)
+        for group, ax in enumerate(axes.ravel()):
+            gg = ff[ff.qx_group == group].sort_values("t_abs_GeV2")
+            if gg.empty: ax.set_visible(False); continue
+            ax.errorbar(gg.t_abs_GeV2, gg.A_sinphi, yerr=gg.A_sinphi_err,
+                        fmt="o", capsize=2, label=f"RGK {dataset}")
+            # Only show reasonably nearby RGA matches; keep actual RGA t coordinate.
+            mm = matches[(matches.rgk_dataset == dataset) & (matches.distance < 3.0)].copy()
+            # Restrict to matches generated by this trajectory's source points.
+            keys = {(round(r.Q2_GeV2,3), round(r.xB,3), round(r.t_abs_GeV2,3)) for _, r in gg.iterrows()}
+            mm = mm[mm.apply(lambda r: (round(r.rgk_Q2_GeV2,3), round(r.rgk_xB,3), round(r.rgk_t_GeV2,3)) in keys, axis=1)]
+            for comp, mk, lab in [("10.6 GeV", "s", "RGA pass-2 10.6 GeV"), ("10.2 GeV", "^", "RGA pass-2 10.2 GeV")]:
+                qq = mm[mm.rga_comparison == comp].drop_duplicates(subset=["rga_Q2_GeV2","rga_xB","rga_t_GeV2"])
+                if not qq.empty:
+                    ax.errorbar(qq.rga_t_GeV2, qq.rga_A_sinphi, yerr=qq.rga_A_sinphi_err,
+                                fmt=mk, mfc="none", capsize=2, label=lab)
+                #endif
+            #endfor
+            ax.axhline(0, lw=0.8, alpha=0.5); ax.grid(alpha=0.18)
+            ax.set_xlim(left=0); ax.set_ylim(-0.05,0.5)
+            ax.set_xlabel(r"$-t$ (GeV$^2$)"); ax.set_ylabel(r"$A_{\sin\phi}$")
+            ax.set_title(rf"Trajectory {group+1}: $\langle Q^2\rangle={gg.Q2_GeV2.mean():.2f}$ GeV$^2$, $\langle x_B\rangle={gg.xB.mean():.2f}$")
+            from matplotlib.lines import Line2D
+            handles = [
+                Line2D([0],[0],marker="o",linestyle="none",label=f"RGK {dataset}"),
+                Line2D([0],[0],marker="s",markerfacecolor="none",linestyle="none",label="RGA pass-2 10.6 GeV"),
+                Line2D([0],[0],marker="^",markerfacecolor="none",linestyle="none",label="RGA pass-2 10.2 GeV"),
+            ]
+            ax.legend(handles=handles, fontsize=7, frameon=False)
+        #endfor
+        fig.suptitle(f"Data-only RGK--RGA BSA amplitude proximity comparison: {dataset}", fontsize=14)
+        fig.tight_layout(rect=(0,0,1,0.96))
+        tag = RGK_BSA_SPECS[dataset]["tag"]
+        fig.savefig(amp_dir / f"rgk_rga_A_sinphi_{tag}.png", dpi=220)
+        plt.close(fig)
+    #endfor
+
+    print(f"[BSA CROSS-DATASET OUTPUT] {outdir}")
+    return epairs, matches
 #enddef
 
 # =============================================================================
@@ -7945,15 +8093,16 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.bsa_only:
         bsa_root = Path(args.bsa_output_dir).expanduser().resolve()
         bsa_root.mkdir(parents=True, exist_ok=True)
-        run_pass1_bsa_comparison(
+        rga_bsa_fits = run_pass1_bsa_comparison(
             Path(args.pass1_bsa_file).expanduser().resolve(),
             Path(args.pass2_bsa_file).expanduser().resolve(),
             bsa_root / "pass1_pass2",
         )
-        run_rgk_bsa_comparison(
+        rgk_bsa_fits = run_rgk_bsa_comparison(
             Path(args.rgk_bsa_dir).expanduser().resolve(),
             bsa_root / "rgk",
         )
+        run_bsa_cross_dataset_comparisons(rga_bsa_fits, rgk_bsa_fits, bsa_root)
         return 0
     #endif
 
