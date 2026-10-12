@@ -139,6 +139,12 @@ def read_pass2(path, label):
     production schema: xBavg/Q2avg/t_abs_avg/phiavg for the requested label.
     No Pass-1 rebinned CSV and no bin-center substitution are allowed.
     """
+    if label == '10.6 GeV Unpol':
+        raise ValueError(
+            "Pass-2 BSA must use label '10.6 GeV'; "
+            "'10.6 GeV Unpol' is the unpolarized cross-section group."
+        )
+    #endif
     df = pd.read_csv(path, low_memory=False)
     bcol = f'BSA, counts, {label}'
     cols = {
@@ -147,6 +153,9 @@ def read_pass2(path, label):
         'ptp': f'{bcol}, point-to-point sys',
     }
     required = [bcol, *cols.values()]
+    print(f"[pass2 schema] file={path}")
+    print(f"[pass2 schema] label={label!r}")
+    print(f"[pass2 schema] BSA column={bcol!r}")
     missing = [c for c in required if c not in df.columns]
     if missing:
         raise ValueError('Native Pass-2 CSV is missing required production columns:\n  ' +
