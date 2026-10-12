@@ -8101,6 +8101,31 @@ def _rga_published_bin_number(q2min, q2max, xbmin, xbmax, tmin, tmax):
 #enddef
 
 
+
+def _rga_bin_display_labels(bin_id):
+    """Return compact xB and |t| labels for the published 64-cell RGA binning."""
+    groups = [
+        (1, 12, [r"$x_B<0.13$", r"$0.13<x_B<0.21$", r"$x_B>0.21$"]),
+        (13, 24, [r"$x_B<0.13$", r"$0.13<x_B<0.21$", r"$x_B>0.21$"]),
+        (25, 36, [r"$x_B<0.16$", r"$0.16<x_B<0.26$", r"$x_B>0.26$"]),
+        (37, 48, [r"$x_B<0.21$", r"$0.21<x_B<0.33$", r"$x_B>0.33$"]),
+        (49, 56, [r"$x_B<0.33$", r"$x_B>0.33$"]),
+        (57, 64, [r"$x_B<0.55$", r"$x_B>0.55$"]),
+    ]
+    tlabels = [r"$|t|<0.2$", r"$0.2<|t|<0.4$", r"$0.4<|t|<0.8$", r"$|t|>0.8$"]
+    for first, last, xlabels in groups:
+        if first <= int(bin_id) <= last:
+            nx = len(xlabels)
+            local = int(bin_id) - first
+            row, col = divmod(local, nx)
+            if row < 4:
+                return xlabels[col], tlabels[row]
+            #endif
+        #endif
+    #endfor
+    return "", ""
+#enddef
+
 def run_sebastian_bsa_comparison(sebastian_csv: Path, pass2_path: Path, outdir: Path):
     """Compare vector-extracted Sebastian e-gamma-p Pass-2 BSA with our Pass-2 and published RGA.
 
@@ -8221,7 +8246,7 @@ def run_sebastian_bsa_comparison(sebastian_csv: Path, pass2_path: Path, outdir: 
             if not available:
                 continue
             #endif
-            fig, axes = plt.subplots(4, nx, figsize=(4.35*nx, 10.8), sharex=True, sharey=True, squeeze=False)
+            fig, axes = plt.subplots(4, nx, figsize=(4.15*nx, 8.9), sharex=True, sharey=True, squeeze=False)
             for ax in axes.flat:
                 ax.set_visible(False)
             #endfor
@@ -8237,10 +8262,15 @@ def run_sebastian_bsa_comparison(sebastian_csv: Path, pass2_path: Path, outdir: 
                 ax.errorbar(ss.phi_deg, ss.bsa, yerr=ss.bsa_error_graphical, fmt="s", color=dataset_colors["sebastian"], mfc="none", ms=3.3, capsize=1.3, label=f"Sebastian Pass-2 {torus}")
                 if len(ph_o):
                     ax.errorbar(ph_o, A_o, yerr=e_o, fmt="^", color=dataset_colors["ours"], mfc="none", ms=3.3, capsize=1.3, label=f"Our Pass-2 ({our_label})")
+                else:
+                    ax.text(0.98, 0.94, f"no valid {our_label} BSA", transform=ax.transAxes,
+                            ha="right", va="top", fontsize=7.2, color=dataset_colors["ours"])
                 #endif
                 ax.axhline(0.0, color="0.55", lw=0.7)
                 ax.set_xlim(0, 360); ax.set_ylim(-1, 1); ax.set_xticks([0, 90, 180, 270, 360])
-                ax.grid(alpha=0.16); ax.set_title(f"RGA bin {bin_id}", fontsize=9)
+                ax.grid(alpha=0.16)
+                xlab, tlab = _rga_bin_display_labels(bin_id)
+                ax.set_title(f"RGA bin {bin_id}: {xlab}, {tlab} (GeV$^2$)", fontsize=8.5)
                 if col == 0: ax.set_ylabel(r"$A_{LU}$")
                 if row == 3: ax.set_xlabel(r"$\phi$ (deg)")
             #endfor
@@ -8249,9 +8279,9 @@ def run_sebastian_bsa_comparison(sebastian_csv: Path, pass2_path: Path, outdir: 
                 Line2D([0],[0], marker="s", ls="none", mfc="none", color=dataset_colors["sebastian"], label=f"Sebastian Pass-2 {torus}"),
                 Line2D([0],[0], marker="^", ls="none", mfc="none", color=dataset_colors["ours"], label=f"Our Pass-2 ({torus_preferred.get(torus, '10.6 GeV')})"),
             ]
-            fig.suptitle(f"Sebastian / published / our Pass-2: {torus}, {qtitle}", fontsize=13)
-            fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.965), ncol=3, frameon=False, fontsize=9)
-            fig.tight_layout(rect=(0,0,1,0.93))
+            fig.suptitle(f"Sebastian / published / our Pass-2: {torus}, {qtitle}", fontsize=13, y=0.985)
+            fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.955), ncol=3, frameon=False, fontsize=9)
+            fig.subplots_adjust(left=0.075, right=0.985, bottom=0.075, top=0.895, hspace=0.28, wspace=0.10)
             fig.savefig(canvas_dir / f"sebastian_comparison_{torus}_{tag}.png", dpi=220)
             plt.close(fig)
         #endfor
@@ -8297,6 +8327,81 @@ def run_sebastian_bsa_comparison(sebastian_csv: Path, pass2_path: Path, outdir: 
         ax.set_title("Pass-2 run periods minus published RGA BSA amplitude")
         ax.grid(alpha=0.18); ax.legend(ncol=4, frameon=False)
         fig.tight_layout(); fig.savefig(summary_dir / "run_period_amplitude_difference_by_bin.png", dpi=220); plt.close(fig)
+    #endif
+
+    # Same-cell diagnostic: require all four 10.6-GeV run periods and the combined
+    # 10.6-GeV extraction to have finite fits in the same published cells.  This puts
+    # the external Pass-1 residual and internal run-period consistency on identical footing.
+    if not decomposition.empty and "BSA, counts, 10.6 GeV" in p2.columns:
+        pub_by_bin = {}
+        for bin_id in sorted(int(x) for x in seb.rga_bin.dropna().unique()):
+            pubs = seb[(seb.rga_bin == bin_id) & (seb.series == "rga_published")]
+            if pubs.empty:
+                continue
+            #endif
+            # Prefer the inbending graphical extraction when the same published points
+            # occur in both appendix sections; fall back to any available copy.
+            pin = pubs[pubs.torus == "inbending"] if "torus" in pubs.columns else pubs.iloc[0:0]
+            pp = pin if not pin.empty else pubs
+            fp = fit_arrays(pp.phi_deg, pp.bsa, pp.bsa_error_graphical)
+            if np.isfinite(fp[0]) and np.isfinite(fp[1]):
+                pub_by_bin[bin_id] = fp
+            #endif
+        #endfor
+
+        rows = []
+        for bin_id, fpub in pub_by_bin.items():
+            cell = p2[p2.rga_bin == bin_id]
+            fits = {}
+            for label in period_labels + ["10.6 GeV"]:
+                ph, aa, ee, _ = _pass2_bsa_arrays(cell, label)
+                fits[label] = fit_arrays(ph, aa, ee)
+            #endfor
+            if not all(np.isfinite(fits[p][0]) and np.isfinite(fits[p][1]) for p in period_labels):
+                continue
+            #endif
+            if not (np.isfinite(fits["10.6 GeV"][0]) and np.isfinite(fits["10.6 GeV"][1])):
+                continue
+            #endif
+            for period in period_labels:
+                rows.append({
+                    "rga_bin": bin_id, "run_period": period,
+                    "period_A_sinphi": fits[period][0], "period_A_sinphi_err": fits[period][1],
+                    "combined_A_sinphi": fits["10.6 GeV"][0], "combined_A_sinphi_err": fits["10.6 GeV"][1],
+                    "published_A_sinphi": fpub[0], "published_A_sinphi_err": fpub[1],
+                    "period_minus_published": fits[period][0] - fpub[0],
+                    "period_minus_combined": fits[period][0] - fits["10.6 GeV"][0],
+                })
+            #endfor
+        #endfor
+        common = pd.DataFrame(rows)
+        common.to_csv(table_dir / "same_cell_four_period_residuals.csv", index=False)
+        if not common.empty:
+            bins = sorted(common.rga_bin.unique())
+            xpos = {b:i for i,b in enumerate(bins)}
+            offsets = {"Fa18 Inb":-0.24, "Fa18 Out":-0.08, "Sp18 Inb":0.08, "Sp18 Out":0.24}
+            fig, axes = plt.subplots(2, 1, figsize=(12.0, 8.0), sharex=True)
+            for period in period_labels:
+                q = common[common.run_period == period].sort_values("rga_bin")
+                xx = np.asarray([xpos[b] for b in q.rga_bin], float) + offsets[period]
+                axes[0].plot(xx, q.period_minus_published, "o", ms=4.0, color=period_colors[period], label=period)
+                axes[1].plot(xx, q.period_minus_combined, "o", ms=4.0, color=period_colors[period], label=period)
+            #endfor
+            for ax in axes:
+                ax.axhline(0.0, color="black", lw=1.0)
+                ax.grid(alpha=0.18)
+                ax.set_ylabel(r"$\Delta A_{\sin\phi}$")
+            #endfor
+            axes[0].set_title("Same-cell external residual: each Pass-2 period minus published Pass-1")
+            axes[1].set_title("Same-cell internal residual: each Pass-2 period minus combined Pass-2")
+            axes[1].set_xlabel("Published RGA bin")
+            axes[1].set_xticks(range(len(bins)), [str(int(b)) for b in bins], rotation=90, fontsize=8)
+            axes[0].legend(ncol=4, frameon=False, loc="best")
+            fig.tight_layout()
+            fig.savefig(summary_dir / "same_cell_four_period_residuals.png", dpi=220)
+            plt.close(fig)
+            print(f"[SEBASTIAN BSA] same-cell four-period intersection: {len(bins)} published RGA cells")
+        #endif
     #endif
 
     print(f"[SEBASTIAN BSA] compared {len(summary)} torus/bin combinations; compact output: {outdir}")
