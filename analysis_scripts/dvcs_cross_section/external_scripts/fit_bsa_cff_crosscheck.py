@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize, minimize_scalar
+import hashlib
 
 HERE = Path(__file__).resolve().parent
 M = 0.9382720813
@@ -89,51 +90,50 @@ def read_sebastian(path, q2_lookup=None):
 
 
 def read_pass2(path, label):
-    """Use native pass-2 rows; require REAL per-period mean kinematics.
+    """Read native production Pass-2 BSA at its measured mean kinematics.
 
-    The production CSV can have per-period Q2/xB/t mean columns with variant
-    spellings; explicit --pass2-kinematics-cols can be added after schema audit.
-    Never substitute cell centers silently.
+    This intentionally uses the regular dvcs_pass2_analysis.csv and the exact
+    production schema: xBavg/Q2avg/t_abs_avg/phiavg for the requested label.
+    No Pass-1 rebinned CSV and no bin-center substitution are allowed.
     """
     df = pd.read_csv(path, low_memory=False)
     bcol = f'BSA, counts, {label}'
-    if bcol not in df:
-        raise ValueError(f'No {bcol} in {path}')
+    cols = {
+        'xB': f'xBavg, {label}', 'Q2': f'Q2avg, {label}',
+        'tabs': f't_abs_avg, {label}', 'phi': f'phiavg, {label}',
+        'ptp': f'{bcol}, point-to-point sys',
+    }
+    required = [bcol, *cols.values()]
+    missing = [c for c in required if c not in df.columns]
+    if missing:
+        raise ValueError('Native Pass-2 CSV is missing required production columns:\n  ' +
+                         '\n  '.join(missing))
     #endif
     output = []
-    missing_kin = 0
+    rejected = {'bad_bsa_or_stat':0, 'bad_ptp':0, 'bad_kinematics':0}
     for _, row in df.iterrows():
         A, stat = parse_tuple(row[bcol])
-        ptp = get_col(row, [f'BSA, counts, {label}, point-to-point sys'])
-        phi = get_col(row, [f'phiavg, {label}'])
-        if not np.isfinite(phi):
-            lo, hi = get_col(row, ['phimin']), get_col(row, ['phimax'])
-            phi = (lo + hi)/2 if np.isfinite(lo+hi) else np.nan
+        try:
+            ptp=float(row[cols['ptp']]); xb=float(row[cols['xB']]); q2=float(row[cols['Q2']])
+            tabs=float(row[cols['tabs']]); phi=float(row[cols['phi']])
+        except (TypeError, ValueError):
+            rejected['bad_kinematics'] += 1; continue
+        #endtry
+        if not (np.isfinite(A) and np.isfinite(stat) and stat > 0):
+            rejected['bad_bsa_or_stat'] += 1; continue
         #endif
-        if not (np.isfinite(A) and np.isfinite(stat) and stat > 0 and
-                np.isfinite(ptp) and ptp >= 0 and np.isfinite(phi)):
-            continue
+        if not (np.isfinite(ptp) and ptp >= 0):
+            rejected['bad_ptp'] += 1; continue
         #endif
-        q2 = get_col(row, [f'Q2avg, {label}', f'Q2_avg, {label}', f'mean Q2, {label}'])
-        xb = get_col(row, [f'xBavg, {label}', f'xB_avg, {label}', f'mean xB, {label}'])
-        t = get_col(row, [f'tavg, {label}', f't_avg, {label}', f'mean t, {label}'])
-        if not np.isfinite(t):
-            tabs = get_col(row, [f't_abs_avg, {label}', f'tabsavg, {label}', f'mean -t, {label}'])
-            t = -abs(tabs) if np.isfinite(tabs) else np.nan
+        if not all(np.isfinite(v) for v in [xb,q2,tabs,phi]):
+            rejected['bad_kinematics'] += 1; continue
         #endif
-        if not np.isfinite(q2+xb+t):
-            missing_kin += 1
-            continue
-        #endif
-        output.append(dict(dataset='our_pass2_'+label.replace(' ','_'), E=10.2 if label=='Sp19 Inb' else 10.6,
-                           Q2=q2,xB=xb,t=t,phi_deg=phi,A=A,err=math.hypot(stat,ptp),
-                           error_type='stat_plus_ptp'))
+        output.append(dict(dataset='our_pass2_'+label.replace(' ','_'),
+                           E=10.2 if label=='Sp19 Inb' else 10.6,
+                           Q2=q2,xB=xb,t=-abs(tabs),phi_deg=phi,A=A,
+                           err=math.hypot(stat,ptp),error_type='stat_plus_ptp'))
     #endfor
-    print(f'[pass2 {label}] accepted {len(output)}, missing mean kinematics {missing_kin}')
-    if not output:
-        print('[pass2] No valid rows. Inspect CSV mean-kinematics column names; '
-              'this script deliberately does not use bin centers as measured means.')
-    #endif
+    print(f'[pass2 {label}] accepted {len(output)} native-bin points; rejected {rejected}')
     return pd.DataFrame(output)
 #enddef
 
@@ -226,68 +226,129 @@ class GepardEngine:
 #endclass
 
 
-def fit_dataset(engine, data, nrep, seed, fit_slope, max_points, tref, outdir):
+
+def _dataset_fingerprint(data, rgrid, fit_slope, tref):
+    cols=['E','Q2','xB','t','phi_deg']
+    raw=np.ascontiguousarray(data[cols].to_numpy(float)).tobytes()
+    raw += np.ascontiguousarray(rgrid,dtype=float).tobytes()
+    raw += f'fit_slope={fit_slope};tref={tref};v=2'.encode()
+    return hashlib.sha256(raw).hexdigest()[:16]
+#enddef
+
+
+def build_response_grid(engine, data, rgrid, cache_file, force=False):
+    """Precompute A_LU(r_ImH) once; replica fits then require no Gepard calls."""
+    fingerprint=_dataset_fingerprint(data,rgrid,False,-0.3)
+    if cache_file.exists() and not force:
+        z=np.load(cache_file,allow_pickle=False)
+        if str(z['fingerprint']) == fingerprint and np.array_equal(z['rgrid'],rgrid):
+            response=np.asarray(z['response'],float)
+            if response.shape == (len(data),len(rgrid)):
+                print(f'[grid] loaded {cache_file} ({response.shape[0]} points x {response.shape[1]} r values)')
+                return response
+            #endif
+        #endif
+        print('[grid] cache fingerprint/schema mismatch; rebuilding')
+    #endif
+    rows=list(data.itertuples(index=False))
+    response=np.empty((len(rows),len(rgrid)),float)
+    total=len(rows)*len(rgrid)
+    done=0
+    print(f'[grid] building {len(rows)} x {len(rgrid)} = {total} Gepard predictions once',flush=True)
+    for j,r in enumerate(rgrid):
+        response[:,j]=[engine.predict(row,float(r),0.,-0.3) for row in rows]
+        done += len(rows)
+        if j==0 or (j+1)%5==0 or j+1==len(rgrid):
+            print(f'  grid {j+1}/{len(rgrid)} ({100*done/total:.1f}%)',flush=True)
+        #endif
+    #endfor
+    cache_file.parent.mkdir(parents=True,exist_ok=True)
+    np.savez_compressed(cache_file,fingerprint=np.array(fingerprint),rgrid=rgrid,response=response)
+    print(f'[grid] wrote {cache_file}')
+    return response
+#enddef
+
+
+def interpolate_response(response,rgrid,r):
+    """Vectorized linear interpolation: one common r for all measured points."""
+    r=float(r)
+    if r < rgrid[0] or r > rgrid[-1]:
+        return np.full(response.shape[0],np.nan)
+    #endif
+    j=int(np.searchsorted(rgrid,r,side='right')-1)
+    if j >= len(rgrid)-1:
+        return response[:,-1].copy()
+    #endif
+    f=(r-rgrid[j])/(rgrid[j+1]-rgrid[j])
+    return response[:,j]*(1.-f)+response[:,j+1]*f
+#enddef
+
+def fit_dataset(engine, data, nrep, seed, fit_slope, max_points, tref, outdir,
+                grid_points, force_grid):
     data = data.sort_values(['Q2','xB','t','phi_deg']).copy()
     if max_points and len(data) > max_points:
-        # Deterministic subsample spanning kinematic domain; exploratory only.
         data = data.iloc[np.linspace(0,len(data)-1,max_points,dtype=int)].copy()
         print(f'[warning] subsampling to {len(data)} points for pilot runtime')
     #endif
-    rows = list(data.itertuples(index=False))
-    obs = data.A.to_numpy(float)
-    err = data.err.to_numpy(float)
-    def predict(theta):
-        r = float(theta[0]); b = float(theta[1]) if fit_slope else 0.
-        return np.asarray([engine.predict(row,r,b,tref) for row in rows])
-    #enddef
-    def objective(theta, target):
-        theory = predict(theta)
-        if not np.all(np.isfinite(theory)):
-            return 1e15
-        #endif
-        return float(np.sum(((target-theory)/err)**2))
-    #enddef
-    bounds = [(0.1,3.0)] + ([(-3.,3.)] if fit_slope else [])
-    def solve(target, initial=None):
-        if fit_slope:
-            res = minimize(lambda th:objective(th,target),
-                           np.asarray(initial if initial is not None else [1.,0.]),
-                           bounds=bounds, method='L-BFGS-B')
-            return np.asarray(res.x), float(res.fun), bool(res.success)
-        #endif
-        res = minimize_scalar(lambda r: objective([r],target),bounds=bounds[0],method='bounded',
-                              options={'xatol':1e-4})
-        return np.array([res.x]),float(res.fun),bool(res.success)
-    #enddef
-    best, chi2, ok = solve(obs)
-    if not ok:
-        raise RuntimeError('Nominal fit failed')
+    obs=data.A.to_numpy(float); err=data.err.to_numpy(float)
+    if fit_slope:
+        raise NotImplementedError('--fit-t-slope is temporarily disabled in the accelerated stage-II path. '
+                                  'Validate the one-parameter response-grid study first.')
     #endif
-    rng = np.random.default_rng(seed)
-    reps = []
+    rgrid=np.linspace(0.1,3.0,int(grid_points))
+    cache_file=outdir/'theory_response_grid.npz'
+    response=build_response_grid(engine,data,rgrid,cache_file,force_grid)
+    if not np.all(np.isfinite(response)):
+        bad=np.argwhere(~np.isfinite(response))
+        raise RuntimeError(f'Nonfinite theory response grid; first bad index {bad[0].tolist()}')
+    #endif
+    # Validate interpolation at non-grid r values against direct Gepard before fitting.
+    rows=list(data.itertuples(index=False))
+    check_rs=[0.735,1.173,1.641]
+    check_indices=sorted(set([0,len(rows)//2,len(rows)-1]))
+    max_interp=0.
+    for r in check_rs:
+        pred=interpolate_response(response,rgrid,r)
+        for i in check_indices:
+            direct=engine.predict(rows[i],r,0.,tref)
+            max_interp=max(max_interp,abs(float(pred[i])-float(direct)))
+        #endfor
+    #endfor
+    print(f'[grid] max interpolation validation |delta A_LU| = {max_interp:.3g}')
+    if max_interp > 5e-4:
+        raise RuntimeError('Theory response grid is too coarse: interpolation validation exceeds 5e-4')
+    #endif
+    def objective_r(r,target):
+        theory=interpolate_response(response,rgrid,r)
+        return float(np.sum(((target-theory)/err)**2)) if np.all(np.isfinite(theory)) else 1e15
+    #enddef
+    def solve(target):
+        res=minimize_scalar(lambda r:objective_r(r,target),bounds=(rgrid[0],rgrid[-1]),method='bounded',
+                            options={'xatol':1e-5})
+        return float(res.x),float(res.fun),bool(res.success)
+    #enddef
+    best,chi2,ok=solve(obs)
+    if not ok: raise RuntimeError('Nominal fit failed')
+    rng=np.random.default_rng(seed); reps=[]
     for j in range(nrep):
-        theta, value, success = solve(obs + rng.normal(size=len(obs))*err, best)
-        reps.append(dict(replica=j, r_ImH=float(theta[0]),
-                         b_t=float(theta[1]) if fit_slope else 0.,
-                         chi2=value, valid=success))
-        if (j+1)%25==0:
+        rr,value,success=solve(obs+rng.normal(size=len(obs))*err)
+        reps.append(dict(replica=j,r_ImH=rr,b_t=0.,chi2=value,valid=success))
+        if (j+1)%100==0 or j+1==nrep:
             print(f'  replicas {j+1}/{nrep}',flush=True)
         #endif
     #endfor
-    pd.DataFrame(reps).to_csv(outdir/'replicas.csv',index=False)
-    pred = predict(best)
-    data['theory'] = pred
-    data['residual'] = obs-pred
+    repdf=pd.DataFrame(reps); repdf.to_csv(outdir/'replicas.csv',index=False)
+    pred=interpolate_response(response,rgrid,best)
+    data['theory']=pred; data['residual']=obs-pred
     data.to_csv(outdir/'point_predictions.csv',index=False)
-    good = pd.DataFrame(reps).query('valid')
-    summary = dict(n_points=len(data),r_ImH=float(best[0]),
-                   b_t=float(best[1]) if fit_slope else 0.,
-                   chi2=chi2,ndf=len(data)-len(best),
-                   replica_r_16=float(good.r_ImH.quantile(.16)) if len(good) else None,
-                   replica_r_50=float(good.r_ImH.quantile(.50)) if len(good) else None,
-                   replica_r_84=float(good.r_ImH.quantile(.84)) if len(good) else None,
-                   replica_valid=len(good),
-                   r_boundary=bool(abs(best[0]-bounds[0][0])<.001 or abs(best[0]-bounds[0][1])<.001))
+    good=repdf.query('valid')
+    summary=dict(n_points=len(data),r_ImH=best,b_t=0.,chi2=chi2,ndf=len(data)-1,
+                 chi2_ndf=chi2/max(1,len(data)-1),
+                 replica_r_16=float(good.r_ImH.quantile(.16)) if len(good) else None,
+                 replica_r_50=float(good.r_ImH.quantile(.50)) if len(good) else None,
+                 replica_r_84=float(good.r_ImH.quantile(.84)) if len(good) else None,
+                 replica_valid=len(good),max_interpolation_delta_ALU=max_interp,
+                 r_boundary=bool(abs(best-rgrid[0])<.001 or abs(best-rgrid[-1])<.001))
     (outdir/'summary.json').write_text(json.dumps(summary,indent=2)+'\n')
     return summary
 #enddef
@@ -304,8 +365,11 @@ def main():
     ap.add_argument('--output',type=Path,default=HERE/'output/bsa_cff_crosscheck')
     ap.add_argument('--datasets',default='pass1',help='Comma-separated: pass1,sebastian,pass2')
     ap.add_argument('--replicas',type=int,default=100)
-    ap.add_argument('--max-points',type=int,default=100,
+    ap.add_argument('--max-points',type=int,default=0,
                     help='Pilot limit per dataset (0=all); deterministic subsample')
+    ap.add_argument('--grid-points',type=int,default=81,
+                    help='Number of precomputed r_ImH values spanning 0.1--3.0')
+    ap.add_argument('--force-grid',action='store_true',help='Rebuild saved Gepard response grid')
     ap.add_argument('--seed',type=int,default=20261012)
     ap.add_argument('--fit-t-slope',action='store_true',help='r(t)=r0*exp[b*(t-tref)]')
     ap.add_argument('--t-ref',type=float,default=-0.3)
@@ -344,7 +408,7 @@ def main():
             dest.mkdir(parents=True,exist_ok=True)
             print(f'[fit] {tag}: {len(group)} available points',flush=True)
             summary[tag]=fit_dataset(engine,group,args.replicas,args.seed,args.fit_t_slope,
-                                     args.max_points,args.t_ref,dest)
+                                     args.max_points,args.t_ref,dest,args.grid_points,args.force_grid)
             print('[result]',tag,summary[tag],flush=True)
         #endfor
     #endfor
