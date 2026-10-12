@@ -8102,14 +8102,24 @@ def _rga_published_bin_number(q2min, q2max, xbmin, xbmax, tmin, tmax):
 
 
 def run_sebastian_bsa_comparison(sebastian_csv: Path, pass2_path: Path, outdir: Path):
-    """Compare vector-extracted Sebastian e-gamma-p Pass-2 BSA with our Pass-2 and published RGA."""
+    """Compare vector-extracted Sebastian e-gamma-p Pass-2 BSA with our Pass-2 and published RGA.
+
+    The default output is deliberately compact: one multi-panel phi canvas per
+    torus/Q2 range plus summary amplitude plots/tables.  Individual-bin PNGs
+    are not written.
+    """
     if not sebastian_csv.exists():
         print(f"[SEBASTIAN BSA] extracted CSV not found; skipping: {sebastian_csv}")
         return pd.DataFrame()
     #endif
     outdir.mkdir(parents=True, exist_ok=True)
-    plot_dir = outdir / "phi_comparisons"
-    plot_dir.mkdir(parents=True, exist_ok=True)
+    canvas_dir = outdir / "phi_canvases"
+    summary_dir = outdir / "summary"
+    table_dir = outdir / "tables"
+    for d in (canvas_dir, summary_dir, table_dir):
+        d.mkdir(parents=True, exist_ok=True)
+    #endfor
+
     seb = pd.read_csv(sebastian_csv)
     p2 = pd.read_csv(pass2_path, low_memory=False)
     boundary_cols = ["xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max"]
@@ -8122,54 +8132,175 @@ def run_sebastian_bsa_comparison(sebastian_csv: Path, pass2_path: Path, outdir: 
     key_to_bin = {tuple(float(r[c]) for c in boundary_cols): int(r.rga_bin) for _, r in cells.iterrows()}
     p2["rga_bin"] = [key_to_bin.get(tuple(float(r[c]) for c in boundary_cols), -1) for _, r in p2.iterrows()]
 
-    summary=[]
+    period_labels = ["Fa18 Inb", "Fa18 Out", "Sp18 Inb", "Sp18 Out"]
+    period_colors = {
+        "Fa18 Inb": "tab:blue", "Fa18 Out": "tab:orange",
+        "Sp18 Inb": "tab:green", "Sp18 Out": "tab:red",
+    }
+    torus_preferred = {"inbending": "Fa18 Inb", "outbending": "Fa18 Out"}
+    dataset_colors = {"published": "black", "sebastian": "tab:blue", "ours": "tab:orange"}
+
+    def fit_arrays(ph, aa, ee):
+        return _weighted_sinphi_fit(np.deg2rad(np.asarray(ph, float)), np.asarray(aa, float), np.asarray(ee, float))
+    #enddef
+
+    # Cache every distribution and fit once.  The same cache feeds tables and canvases,
+    # preventing plot/table selection from drifting apart.
+    cache = {}
+    summary = []
+    decomposition = []
     for torus, seb_t in seb.groupby("torus"):
-        preferred = "Fa18 Inb" if torus == "inbending" else "Fa18 Out"
+        preferred = torus_preferred.get(torus, "10.6 GeV")
         our_label = preferred if f"BSA, counts, {preferred}" in p2.columns else "10.6 GeV"
-        for bin_id in sorted(seb_t.rga_bin.unique()):
+        for bin_id in sorted(int(x) for x in seb_t.rga_bin.unique()):
             ss = seb_t[(seb_t.rga_bin == bin_id) & (seb_t.series == "sebastian_pass2")].copy()
             pub = seb_t[(seb_t.rga_bin == bin_id) & (seb_t.series == "rga_published")].copy()
-            ours = p2[p2.rga_bin == bin_id].copy()
-            ph_o, A_o, e_o, _ = _pass2_bsa_arrays(ours, our_label)
+            ours_cell = p2[p2.rga_bin == bin_id].copy()
             if ss.empty or pub.empty:
                 continue
             #endif
-            fits={}
-            for name, ph, aa, ee in [
-                ("sebastian_pass2", ss.phi_deg.to_numpy(float), ss.bsa.to_numpy(float), ss.bsa_error_graphical.to_numpy(float)),
-                ("rga_published", pub.phi_deg.to_numpy(float), pub.bsa.to_numpy(float), pub.bsa_error_graphical.to_numpy(float)),
-                ("our_pass2", ph_o, A_o, e_o),
-            ]:
-                amp, damp, chi2, ndf = _weighted_sinphi_fit(np.deg2rad(ph), aa, ee)
-                fits[name]=(amp,damp,chi2,ndf)
-            #endfor
+            ph_o, A_o, e_o, _ = _pass2_bsa_arrays(ours_cell, our_label)
+            f_seb = fit_arrays(ss.phi_deg, ss.bsa, ss.bsa_error_graphical)
+            f_pub = fit_arrays(pub.phi_deg, pub.bsa, pub.bsa_error_graphical)
+            f_our = fit_arrays(ph_o, A_o, e_o)
+            cache[(torus, bin_id)] = (ss, pub, ph_o, A_o, e_o, our_label, f_seb, f_pub, f_our)
             summary.append({
-                "torus":torus,"rga_bin":int(bin_id),"our_series":our_label,
-                "sebastian_A_sinphi":fits["sebastian_pass2"][0],"sebastian_A_sinphi_err":fits["sebastian_pass2"][1],
-                "published_A_sinphi":fits["rga_published"][0],"published_A_sinphi_err":fits["rga_published"][1],
-                "our_A_sinphi":fits["our_pass2"][0],"our_A_sinphi_err":fits["our_pass2"][1],
-                "sebastian_nphi":len(ss),"published_nphi":len(pub),"our_nphi":len(ph_o),
+                "torus": torus, "rga_bin": bin_id, "our_series": our_label,
+                "sebastian_A_sinphi": f_seb[0], "sebastian_A_sinphi_err": f_seb[1],
+                "published_A_sinphi": f_pub[0], "published_A_sinphi_err": f_pub[1],
+                "our_A_sinphi": f_our[0], "our_A_sinphi_err": f_our[1],
+                "sebastian_nphi": len(ss), "published_nphi": len(pub), "our_nphi": len(ph_o),
             })
 
-            fig,ax=plt.subplots(figsize=(7.4,5.2))
-            h1=ax.errorbar(pub.phi_deg,pub.bsa,yerr=pub.bsa_error_graphical,fmt="o",color="black",ms=3.8,capsize=1.8,label="RGA published Pass-1")
-            h2=ax.errorbar(ss.phi_deg,ss.bsa,yerr=ss.bsa_error_graphical,fmt="s",color="tab:blue",mfc="none",ms=4.0,capsize=1.8,label=f"Sebastian Pass-2 {torus}")
-            handles=[h1,h2]
-            if len(ph_o):
-                h3=ax.errorbar(ph_o,A_o,yerr=e_o,fmt="^",color="tab:orange",mfc="none",ms=4.0,capsize=1.8,label=f"Our Pass-2 ({our_label})")
-                handles.append(h3)
-            #endif
-            ax.axhline(0.0,color="0.5",lw=0.8)
-            ax.set_xlim(0,360); ax.set_ylim(-1,1); ax.set_xticks([0,90,180,270,360])
-            ax.set_xlabel(r"$\phi$ (deg)"); ax.set_ylabel(r"$A_{LU}$")
-            ax.set_title(f"RGA published bin {int(bin_id)}: Sebastian / published / our Pass-2")
-            ax.grid(alpha=0.18); ax.legend(handles=handles,fontsize=8,frameon=False)
-            fig.tight_layout(); fig.savefig(plot_dir/f"{torus}_bin_{int(bin_id):02d}.png",dpi=220); plt.close(fig)
+            # Four-way run-period decomposition against exactly the same published curve.
+            for period in period_labels:
+                if f"BSA, counts, {period}" not in p2.columns:
+                    continue
+                #endif
+                ph_p, A_p, e_p, _ = _pass2_bsa_arrays(ours_cell, period)
+                f_p = fit_arrays(ph_p, A_p, e_p)
+                amp, damp = f_p[0], f_p[1]
+                pub_amp, pub_err = f_pub[0], f_pub[1]
+                ratio = amp / pub_amp if np.isfinite(amp) and np.isfinite(pub_amp) and abs(pub_amp) > 1e-12 else np.nan
+                dratio = abs(ratio) * np.sqrt((damp/amp)**2 + (pub_err/pub_amp)**2) if np.isfinite(ratio) and amp != 0 and pub_amp != 0 and np.isfinite(damp) and np.isfinite(pub_err) else np.nan
+                diff = amp - pub_amp if np.isfinite(amp) and np.isfinite(pub_amp) else np.nan
+                ddiff = np.hypot(damp, pub_err) if np.isfinite(damp) and np.isfinite(pub_err) else np.nan
+                decomposition.append({
+                    "reference_torus": torus, "rga_bin": bin_id, "run_period": period,
+                    "pass2_A_sinphi": amp, "pass2_A_sinphi_err": damp,
+                    "published_A_sinphi": pub_amp, "published_A_sinphi_err": pub_err,
+                    "pass2_over_published": ratio, "pass2_over_published_err_independent": dratio,
+                    "pass2_minus_published": diff,
+                    "difference_err_independent": ddiff,
+                    "difference_over_independent_err": diff/ddiff if np.isfinite(diff) and np.isfinite(ddiff) and ddiff > 0 else np.nan,
+                    "nphi": len(ph_p),
+                })
+            #endfor
         #endfor
     #endfor
-    summary=pd.DataFrame(summary)
-    summary.to_csv(outdir/"sebastian_pass2_amplitude_comparison.csv",index=False)
-    print(f"[SEBASTIAN BSA] compared {len(summary)} torus/bin combinations; output: {outdir}")
+
+    summary = pd.DataFrame(summary)
+    decomposition = pd.DataFrame(decomposition)
+    summary.to_csv(table_dir / "sebastian_pass2_amplitude_comparison.csv", index=False)
+    decomposition.to_csv(table_dir / "run_period_vs_published_amplitudes.csv", index=False)
+
+    # Published RGA bin layout: four t rows, with three xB columns below Q2=3.25
+    # and two xB columns above it.  This mirrors the published binning rather than
+    # producing dozens of disconnected one-bin figures.
+    q2_groups = [
+        ("Q2_lt_1p4", 1, 12, 3, r"$Q^2<1.4$ (GeV$^2$)"),
+        ("Q2_1p4_1p8", 13, 24, 3, r"$1.4<Q^2<1.8$ (GeV$^2$)"),
+        ("Q2_1p8_2p4", 25, 36, 3, r"$1.8<Q^2<2.4$ (GeV$^2$)"),
+        ("Q2_2p4_3p25", 37, 48, 3, r"$2.4<Q^2<3.25$ (GeV$^2$)"),
+        ("Q2_3p25_5", 49, 56, 2, r"$3.25<Q^2<5.0$ (GeV$^2$)"),
+        ("Q2_gt_5", 57, 64, 2, r"$Q^2>5.0$ (GeV$^2$)"),
+    ]
+    for torus in sorted(seb.torus.dropna().unique()):
+        for tag, first_bin, last_bin, nx, qtitle in q2_groups:
+            available = [b for b in range(first_bin, last_bin + 1) if (torus, b) in cache]
+            if not available:
+                continue
+            #endif
+            fig, axes = plt.subplots(4, nx, figsize=(4.35*nx, 10.8), sharex=True, sharey=True, squeeze=False)
+            for ax in axes.flat:
+                ax.set_visible(False)
+            #endfor
+            for bin_id in available:
+                local = bin_id - first_bin
+                row, col = divmod(local, nx)
+                if row >= 4:
+                    continue
+                #endif
+                ax = axes[row, col]; ax.set_visible(True)
+                ss, pub, ph_o, A_o, e_o, our_label, f_seb, f_pub, f_our = cache[(torus, bin_id)]
+                ax.errorbar(pub.phi_deg, pub.bsa, yerr=pub.bsa_error_graphical, fmt="o", color=dataset_colors["published"], ms=3.0, capsize=1.3, label="RGA published Pass-1")
+                ax.errorbar(ss.phi_deg, ss.bsa, yerr=ss.bsa_error_graphical, fmt="s", color=dataset_colors["sebastian"], mfc="none", ms=3.3, capsize=1.3, label=f"Sebastian Pass-2 {torus}")
+                if len(ph_o):
+                    ax.errorbar(ph_o, A_o, yerr=e_o, fmt="^", color=dataset_colors["ours"], mfc="none", ms=3.3, capsize=1.3, label=f"Our Pass-2 ({our_label})")
+                #endif
+                ax.axhline(0.0, color="0.55", lw=0.7)
+                ax.set_xlim(0, 360); ax.set_ylim(-1, 1); ax.set_xticks([0, 90, 180, 270, 360])
+                ax.grid(alpha=0.16); ax.set_title(f"RGA bin {bin_id}", fontsize=9)
+                if col == 0: ax.set_ylabel(r"$A_{LU}$")
+                if row == 3: ax.set_xlabel(r"$\phi$ (deg)")
+            #endfor
+            handles = [
+                Line2D([0],[0], marker="o", ls="none", color=dataset_colors["published"], label="RGA published Pass-1"),
+                Line2D([0],[0], marker="s", ls="none", mfc="none", color=dataset_colors["sebastian"], label=f"Sebastian Pass-2 {torus}"),
+                Line2D([0],[0], marker="^", ls="none", mfc="none", color=dataset_colors["ours"], label=f"Our Pass-2 ({torus_preferred.get(torus, '10.6 GeV')})"),
+            ]
+            fig.suptitle(f"Sebastian / published / our Pass-2: {torus}, {qtitle}", fontsize=13)
+            fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.965), ncol=3, frameon=False, fontsize=9)
+            fig.tight_layout(rect=(0,0,1,0.93))
+            fig.savefig(canvas_dir / f"sebastian_comparison_{torus}_{tag}.png", dpi=220)
+            plt.close(fig)
+        #endfor
+    #endfor
+
+    # Compact amplitude-ratio summary.  Ratios are descriptive only; published and
+    # Pass-2 samples are not independent, so these error bars are not calibrated pulls.
+    if not decomposition.empty:
+        # Avoid double-counting the two graphical extractions of the same published
+        # reference: use the torus-matched rows for Fa18 and the inbending graphical
+        # reference for Sp18 unless unavailable.
+        dd = decomposition.copy()
+        keep = ((dd.run_period == "Fa18 Inb") & (dd.reference_torus == "inbending")) | \
+               ((dd.run_period == "Fa18 Out") & (dd.reference_torus == "outbending")) | \
+               ((dd.run_period.str.startswith("Sp18")) & (dd.reference_torus == "inbending"))
+        dd = dd.loc[keep & np.isfinite(dd.pass2_over_published)].copy()
+        fig, ax = plt.subplots(figsize=(12.0, 5.7))
+        offsets = {"Fa18 Inb":-0.24, "Fa18 Out":-0.08, "Sp18 Inb":0.08, "Sp18 Out":0.24}
+        for period in period_labels:
+            q = dd[dd.run_period == period].sort_values("rga_bin")
+            if q.empty: continue
+            ax.errorbar(q.rga_bin.to_numpy(float)+offsets[period], q.pass2_over_published,
+                        yerr=q.pass2_over_published_err_independent, fmt="o", ms=3.8,
+                        capsize=1.5, color=period_colors[period], label=period)
+        #endfor
+        ax.axhline(1.0, color="black", lw=1.0)
+        ax.set_xlabel("Published RGA bin")
+        ax.set_ylabel(r"$A_{\sin\phi}^{\rm Pass2}/A_{\sin\phi}^{\rm published}$")
+        ax.set_title("Pass-2 run periods versus published RGA BSA amplitude")
+        ax.grid(alpha=0.18); ax.legend(ncol=4, frameon=False)
+        fig.tight_layout(); fig.savefig(summary_dir / "run_period_amplitude_ratio_by_bin.png", dpi=220); plt.close(fig)
+
+        fig, ax = plt.subplots(figsize=(12.0, 5.7))
+        for period in period_labels:
+            q = dd[dd.run_period == period].sort_values("rga_bin")
+            if q.empty: continue
+            ax.errorbar(q.rga_bin.to_numpy(float)+offsets[period], q.pass2_minus_published,
+                        yerr=q.difference_err_independent, fmt="o", ms=3.8,
+                        capsize=1.5, color=period_colors[period], label=period)
+        #endfor
+        ax.axhline(0.0, color="black", lw=1.0)
+        ax.set_xlabel("Published RGA bin"); ax.set_ylabel(r"$\Delta A_{\sin\phi}$")
+        ax.set_title("Pass-2 run periods minus published RGA BSA amplitude")
+        ax.grid(alpha=0.18); ax.legend(ncol=4, frameon=False)
+        fig.tight_layout(); fig.savefig(summary_dir / "run_period_amplitude_difference_by_bin.png", dpi=220); plt.close(fig)
+    #endif
+
+    print(f"[SEBASTIAN BSA] compared {len(summary)} torus/bin combinations; compact output: {outdir}")
+    print(f"[SEBASTIAN BSA] run-period decomposition rows: {len(decomposition)}")
     return summary
 #enddef
 
