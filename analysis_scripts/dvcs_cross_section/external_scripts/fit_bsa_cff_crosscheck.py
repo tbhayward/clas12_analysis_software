@@ -62,30 +62,73 @@ def read_pass1(path):
 
 
 def read_sebastian(path, q2_lookup=None):
-    """PDF extraction has phi and A, but NO event-level Q2/xB/t per point.
+    """Read Sebastian e-gamma-p Pass-2 points from Appendix H.
 
-    For now do not invent means: require a supplied explicit bin-kinematics
-    table, with rga_bin,Q2,xB,t columns. It must be documented as proxy.
+    IMPORTANT: ``published_rga_bin`` is the bin number printed in Appendix H
+    and defined by Sebastian's Table 10 (the published 64-bin RGA scheme). It
+    is NOT Sebastian's separate native 1--94 bin numbering used in Tables 8/9.
+
+    Tables 8/9 therefore cannot be joined by integer bin number. For the
+    Appendix-H comparison the note does not tabulate per-bin mean Q2,xB,t.
+    By default we use the supplied, explicit proxy table constructed from the
+    published 10.6-GeV Pass-1 mean kinematics in the identical Table-10 cell.
+    The provenance is retained in every output row. An independently verified
+    Sebastian Appendix-H mean-kinematics table can override this via
+    --sebastian-kinematics.
     """
     if q2_lookup is None:
-        print('[skip] Sebastian: no independently verified per-bin Q2/xB/t map. '
-              'Supply --sebastian-kinematics CSV to enable; no fabricated means.')
-        return pd.DataFrame()
+        q2_lookup = HERE / 'import' / 'sebastian_appendixH_kinematics_proxy.csv'
+    #endif
+    if not Path(q2_lookup).exists():
+        raise FileNotFoundError(f'Sebastian Appendix-H kinematics map not found: {q2_lookup}')
     #endif
     a = pd.read_csv(path)
+    if 'published_rga_bin' not in a.columns:
+        if 'rga_bin' not in a.columns:
+            raise ValueError('Sebastian CSV needs published_rga_bin (Table 10)')
+        #endif
+        a['published_rga_bin'] = a['rga_bin']
+    #endif
+    if 'bin_numbering' in a.columns:
+        bad = a.loc[a.bin_numbering.ne('published_RGA_Table10_64bin')]
+        if len(bad):
+            raise ValueError('Sebastian CSV contains an unexpected bin-numbering scheme')
+        #endif
+    #endif
     a = a[(a.series == 'sebastian_pass2') & (a.topology == 'egamma_p')].copy()
     k = pd.read_csv(q2_lookup)
-    required = {'rga_bin','Q2','xB','t'}
-    if not required.issubset(k.columns) or k.rga_bin.duplicated().any():
-        raise ValueError('Sebastian kinematics must have unique rga_bin,Q2,xB,t columns')
+    bincol = 'published_rga_bin' if 'published_rga_bin' in k.columns else 'rga_bin'
+    required = {bincol,'Q2','xB','t'}
+    if not required.issubset(k.columns) or k[bincol].duplicated().any():
+        raise ValueError('Sebastian kinematics must have unique published_rga_bin,Q2,xB,t columns')
     #endif
-    a = a.merge(k[['rga_bin','Q2','xB','t']], on='rga_bin', how='left', validate='many_to_one')
+    if bincol != 'published_rga_bin':
+        k = k.rename(columns={bincol:'published_rga_bin'})
+    #endif
+    keep = ['published_rga_bin','Q2','xB','t']
+    for c in ['kinematics_source','note']:
+        if c in k.columns:
+            keep.append(c)
+        #endif
+    #endfor
+    a = a.merge(k[keep], on='published_rga_bin', how='left', validate='many_to_one')
+    missing = a[['Q2','xB','t']].isna().any(axis=1)
+    if missing.any():
+        bins = sorted(a.loc[missing,'published_rga_bin'].unique().tolist())
+        raise ValueError(f'Missing Sebastian Appendix-H kinematics for Table-10 bins: {bins}')
+    #endif
     a['dataset'] = 'sebastian_' + a.torus
     a['E'] = 10.6
     a['A'] = a.bsa
     a['err'] = a.bsa_error_graphical
     a['error_type'] = 'PDF_graphical_error'
-    return a[['dataset','E','Q2','xB','t','phi_deg','A','err','error_type']]
+    if 'kinematics_source' not in a.columns:
+        a['kinematics_source'] = 'user_supplied_verified_map'
+    #endif
+    print('[sebastian] Appendix-H bin IDs interpreted explicitly as published RGA Table-10 bins; '
+          f'kinematics source: {a.kinematics_source.iloc[0]}')
+    return a[['dataset','E','Q2','xB','t','phi_deg','A','err','error_type',
+              'published_rga_bin','kinematics_source']]
 #enddef
 
 
@@ -359,9 +402,9 @@ def main():
     ap.add_argument('--pass1',type=Path,default=HERE/'import/rga_pass1_bsa.txt')
     ap.add_argument('--sebastian',type=Path,default=HERE/'import/sebastian_pass2_bsa_from_note.csv')
     ap.add_argument('--sebastian-kinematics',type=Path,default=None,
-                    help='Verified bin means CSV (rga_bin,Q2,xB,t); required to include Sebastian')
+                    help='Optional verified Appendix-H means CSV (published_rga_bin,Q2,xB,t). Default uses documented Pass-1 10.6 mean proxy in the identical Table-10 cell.')
     ap.add_argument('--pass2',type=Path,default=HERE.parent/'output/csvs/dvcs_pass2_analysis.csv')
-    ap.add_argument('--pass2-label',default='10.6 GeV Unpol',help='BSA column label in native Pass2 CSV')
+    ap.add_argument('--pass2-label',default='10.6 GeV',help='BSA column label in native Pass2 CSV')
     ap.add_argument('--output',type=Path,default=HERE/'output/bsa_cff_crosscheck')
     ap.add_argument('--datasets',default='pass1',help='Comma-separated: pass1,sebastian,pass2')
     ap.add_argument('--replicas',type=int,default=100)
