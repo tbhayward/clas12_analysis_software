@@ -19,6 +19,9 @@ import pandas as pd
 from scipy.optimize import minimize, minimize_scalar
 from scipy.stats import chi2 as chi2_dist
 import hashlib
+import matplotlib
+matplotlib.use('Agg')
+import matplotlib.pyplot as plt
 
 HERE = Path(__file__).resolve().parent
 M = 0.9382720813
@@ -184,7 +187,7 @@ def read_pass2(path, label):
         output.append(dict(dataset='our_pass2_'+label.replace(' ','_'),
                            E=10.2 if label=='Sp19 Inb' else 10.6,
                            Q2=q2,xB=xb,t=-abs(tabs),phi_deg=phi,A=A,
-                           err=math.hypot(stat,ptp),error_type='stat_plus_ptp'))
+                           err=math.hypot(stat,ptp),stat_err=stat,error_type='stat_plus_ptp'))
     #endfor
     print(f'[pass2 {label}] accepted {len(output)} native-bin points; rejected {rejected}')
     return pd.DataFrame(output)
@@ -452,7 +455,118 @@ def minimize_r(obs,err,response,rgrid):
 #enddef
 
 
-def matched_local_test(engine,p1,p2,energy,outdir,args):
+def reuse_global_grid(engine,selected,rgrid,source,force=False):
+    """Load validated full-grid cache and select rows by unique kinematic key.
+
+    No theory evaluations are needed for local fits when full grids exist.
+    """
+    full,cache_file=source
+    full=full.sort_values(['Q2','xB','t','phi_deg']).copy()
+    full_response=build_response_grid(engine,full,rgrid,cache_file,force)
+    keys=['E','Q2','xB','t','phi_deg']
+    # Exact numerical coordinates, including duplicates. Repeated phi-bin
+    # means can occur, so match each row to a unique occurrence.
+    full_keys=pd.MultiIndex.from_frame(full[keys].reset_index(drop=True))
+    if full_keys.has_duplicates:
+        # Duplicates at identical kinematics have identical theory responses.
+        lookup={k:i for i,k in enumerate(full_keys)}
+    else:
+        lookup={k:i for i,k in enumerate(full_keys)}
+    #endif
+    selected_keys=pd.MultiIndex.from_frame(selected[keys].reset_index(drop=True))
+    missing=[k for k in selected_keys if k not in lookup]
+    if missing:
+        raise RuntimeError(f'{len(missing)} local points absent from global cache {cache_file}; '
+                           'check source filtering and kinematics before running Gepard.')
+    #endif
+    indices=np.array([lookup[k] for k in selected_keys],dtype=int)
+    print(f'[grid] reused {len(indices)} rows from {cache_file}')
+    return full_response[indices]
+#enddef
+
+
+def plot_local_diagnostics(result,p1,p2,g1,g2,grid,outdir,energy):
+    """Compact matched-cell visual checks, with no fabricated predictions."""
+    if result.empty:
+        return
+    #endif
+    figdir=outdir/'figures'
+    figdir.mkdir(parents=True,exist_ok=True)
+    good=result[result.fit_valid].sort_values('cell_id')
+    if good.empty:
+        return
+    #endif
+    x=good.cell_id.to_numpy()
+    fig,axes=plt.subplots(2,1,figsize=(14,8),sharex=True,layout='constrained')
+    axes[0].errorbar(x-.12,good.r_pass1,yerr=good.sigma_r_pass1_conditional,
+                     fmt='o',label='Published Pass-1')
+    axes[0].errorbar(x+.12,good.r_pass2,yerr=good.sigma_r_pass2_conditional,
+                     fmt='s',label='Our Pass-2')
+    axes[0].set_ylabel(r'Local $r_{\\Im\\mathcal{H}}$')
+    axes[0].legend()
+    axes[1].axhline(0,color='0.4',lw=1)
+    axes[1].errorbar(x,good.delta_r,
+                     yerr=np.hypot(good.sigma_r_pass1_conditional,good.sigma_r_pass2_conditional),
+                     fmt='o')
+    axes[1].set(xlabel='Published Pass-1 kinematic cell',ylabel=r'$r_{Pass2}-r_{Pass1}$')
+    fig.suptitle(f'Pass-1 / Pass-2 local CFF comparison — {energy:g} GeV')
+    fig.savefig(figdir/'local_r_comparison.png',dpi=170)
+    plt.close(fig)
+
+    fig,axes=plt.subplots(2,1,figsize=(14,8),sharex=True,layout='constrained')
+    axes[0].axhline(1,color='0.4',ls='--')
+    axes[0].plot(x,good.precision_ratio_sigma_pass2_over_pass1,'o',label='Total Pass-2 / published Pass-1')
+    axes[0].plot(x,good.precision_ratio_pass2_stat_over_pass1_published,'s',
+                 label='Stat-only Pass-2 / published Pass-1 (not stat/stat)')
+    axes[0].set_ylabel('Conditional uncertainty ratio')
+    axes[0].legend()
+    axes[1].plot(x,good.delta_chi2,'o')
+    axes[1].set(xlabel='Published Pass-1 kinematic cell',
+                ylabel=r'$\\Delta\\chi^2$ (shared vs independent)')
+    fig.suptitle(f'Precision and compatibility diagnostics — {energy:g} GeV')
+    fig.savefig(figdir/'precision_compatibility.png',dpi=170)
+    plt.close(fig)
+
+    # Representative panels: highest local incompatibilities, plus best match.
+    ids=list(good.sort_values('delta_chi2',ascending=False).cell_id.head(5))
+    ids+=list(good.sort_values('delta_chi2').cell_id.head(1))
+    ids=list(dict.fromkeys(ids))
+    fig,axes=plt.subplots(2,3,figsize=(16,9),sharex=True,sharey=True,layout='constrained')
+    for ax,cid in zip(axes.flat,ids):
+        row=good[good.cell_id==cid].iloc[0]
+        for df,gg,rr,fmt,label in [(p1,g1,row.r_pass1,'o','Pass-1'),
+                                   (p2,g2,row.r_pass2,'s','Pass-2')]:
+            idx=np.flatnonzero(df.cell_id.to_numpy()==cid)
+            if not len(idx):
+                continue
+            #endif
+            phi=df.phi_deg.to_numpy()[idx]
+            ax.errorbar(phi,df.A.to_numpy()[idx],yerr=df.err.to_numpy()[idx],
+                        fmt=fmt,ms=3,alpha=.75,label=label)
+            pred=interpolate_response(gg[idx],grid,rr)
+            order=np.argsort(phi)
+            ax.plot(phi[order],pred[order],lw=1.4,label=f'{label} own fit')
+            shared=interpolate_response(gg[idx],grid,row.r_shared)
+            ax.plot(phi[order],shared[order],ls=':',lw=1.1,label=f'{label} shared')
+        #endfor
+        ax.set_title(f'Cell {cid}: Δχ²={row.delta_chi2:.2f}',fontsize=10)
+        ax.set(xlim=(0,360),ylim=(-.6,.6))
+        ax.grid(alpha=.15)
+    #endfor
+    for ax in axes.flat[len(ids):]:
+        ax.set_visible(False)
+    #endfor
+    handles,labels=axes.flat[0].get_legend_handles_labels()
+    fig.legend(handles,labels,loc='upper center',ncol=4,fontsize=9)
+    fig.supxlabel('φ (degrees)')
+    fig.supylabel(r'$A_{LU}$')
+    fig.suptitle(f'Representative matched-cell BSA fits — {energy:g} GeV')
+    fig.savefig(figdir/'representative_bsa_fits.png',dpi=170)
+    plt.close(fig)
+#enddef
+
+
+def matched_local_test(engine,p1,p2,energy,outdir,args,global_grids=None):
     # Restrict BOTH datasets to the common physical phase-space envelope.
     # Pass-1 has substantially wider high-|t|, Q2 and xB reach.
     def overlap_cut(df):
@@ -471,8 +585,8 @@ def matched_local_test(engine,p1,p2,energy,outdir,args):
     #endif
     outdir.mkdir(parents=True,exist_ok=True)
     grid=np.linspace(.1,3.,args.grid_points)
-    g1=build_response_grid(engine,p1,grid,outdir/'pass1_grid.npz',args.force_grid)
-    g2=build_response_grid(engine,p2,grid,outdir/'pass2_grid.npz',args.force_grid)
+    g1=reuse_global_grid(engine,p1,grid,global_grids['pass1'][energy],args.force_grid)
+    g2=reuse_global_grid(engine,p2,grid,global_grids['pass2'][energy],args.force_grid)
     if not (np.isfinite(g1).all() and np.isfinite(g2).all()):
         raise ValueError('Nonfinite Gepard response in matched-cell study')
     #endif
@@ -508,6 +622,9 @@ def matched_local_test(engine,p1,p2,energy,outdir,args):
         #enddef
         sig1=local_sigma(g1[i1],e1,r1)
         sig2=local_sigma(g2[i2],e2,r2)
+        # Statistical-only Pass-2 precision uses the original statistical error.
+        stat2=p2.stat_err.to_numpy(float)[i2] if 'stat_err' in p2 else e2
+        sig2_stat=local_sigma(g2[i2],stat2,r2)
         boundary=any(abs(r-grid[0])<.001 or abs(r-grid[-1])<.001 for r in [r1,r2,rs])
         rows.append(dict(energy_GeV=energy,cell_id=cid,n_pass1=len(i1),n_pass2=len(i2),
                          r_pass1=r1,r_pass2=r2,r_shared=rs,delta_r=r2-r1,
@@ -528,6 +645,7 @@ def matched_local_test(engine,p1,p2,energy,outdir,args):
     #endfor
     result=pd.DataFrame(rows)
     result.to_csv(outdir/'matched_local_cells.csv',index=False)
+    plot_local_diagnostics(result,p1,p2,g1,g2,grid,outdir,energy)
     valid=result[result.fit_valid] if len(result) else result
     if len(valid):
         dchi=float(valid.delta_chi2.sum())
@@ -547,7 +665,7 @@ def matched_local_test(engine,p1,p2,energy,outdir,args):
 #enddef
 
 
-def run_matched(engine,args):
+def run_matched(engine,args,global_grids):
     p1=read_pass1(args.pass1)
     # Use native Sp19 Inb 10.2-GeV BSA and combined 10.6-GeV BSA.
     jobs=[(10.6,'10.6 GeV'),(10.2,args.pass2_10p2_label)]
@@ -568,7 +686,7 @@ def run_matched(engine,args):
             continue
         #endif
         dest=args.output/'matched_local'/f'{energy:g}_GeV'.replace('.','p')
-        summary=matched_local_test(engine,q,p2,energy,dest,args)
+        summary=matched_local_test(engine,q,p2,energy,dest,args,global_grids)
         if summary is not None:
             summaries.append(summary)
         #endif
@@ -577,6 +695,30 @@ def run_matched(engine,args):
         pd.DataFrame(summaries).to_csv(args.output/'matched_local'/'summary.csv',index=False)
     #endif
 #enddef
+
+def plot_global_summary(summary,outdir):
+    rows=[]
+    for tag,value in summary.items():
+        rows.append((tag,value['r_ImH'],value.get('replica_r_16'),value.get('replica_r_84')))
+    #endfor
+    if not rows:
+        return
+    #endif
+    fig,ax=plt.subplots(figsize=(11,5),layout='constrained')
+    for i,(tag,r,lo,hi) in enumerate(rows):
+        ax.errorbar(r,i,xerr=[[max(0,r-lo)],[max(0,hi-r)]] if lo is not None and hi is not None else None,
+                    fmt='o',capsize=3)
+    #endfor
+    ax.set_yticks(range(len(rows)),[v[0] for v in rows])
+    ax.invert_yaxis()
+    ax.axvline(1,ls='--',color='0.5')
+    ax.set_xlabel(r'Global $r_{\\Im\\mathcal{H}}$ (KM15-relative; differing kinematic coverage)')
+    figdir=outdir/'figures'
+    figdir.mkdir(parents=True,exist_ok=True)
+    fig.savefig(figdir/'global_r_comparison.png',dpi=170)
+    plt.close(fig)
+#enddef
+
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
@@ -587,8 +729,8 @@ def main():
     ap.add_argument('--pass2',type=Path,default=HERE.parent/'output/csvs/dvcs_pass2_analysis.csv')
     ap.add_argument('--pass2-label',default='10.6 GeV',help='BSA column label in native Pass2 CSV')
     ap.add_argument('--output',type=Path,default=HERE.parent/'output/bsa/cff_crosscheck')
-    ap.add_argument('--datasets',default='pass1',help='Comma-separated: pass1,sebastian,pass2,pass2_10p2')
-    ap.add_argument('--replicas',type=int,default=100)
+    ap.add_argument('--datasets',default='all',help='Comma-separated: pass1,sebastian,pass2,pass2_10p2')
+    ap.add_argument('--replicas',type=int,default=20)
     ap.add_argument('--max-points',type=int,default=0,
                     help='Pilot limit per dataset (0=all); deterministic subsample')
     ap.add_argument('--grid-points',type=int,default=81,
@@ -609,18 +751,14 @@ def main():
                     help='Common-overlap maximum Q2 (GeV^2)')
     args=ap.parse_args()
     args.output.mkdir(parents=True,exist_ok=True)
-    if args.matched_compatibility:
-        p1=read_pass1(args.pass1)
-        engine=GepardEngine()
-        preflight=engine.preflight(p1.iloc[0])
-        (args.output/'preflight.json').write_text(json.dumps(preflight,indent=2)+'\n')
-        if not args.preflight_only:
-            run_matched(engine,args)
-        #endif
-        return
-    #endif
     sets={}
     requested={x.strip() for x in args.datasets.split(',')}
+    if args.matched_compatibility:
+        requested.add('all')
+    #endif
+    if 'all' in requested:
+        requested.update(['pass1','pass2','pass2_10p2'])
+    #endif
     if 'pass1' in requested:
         sets['pass1']=read_pass1(args.pass1)
     #endif
@@ -658,7 +796,26 @@ def main():
             print('[result]',tag,summary[tag],flush=True)
         #endfor
     #endfor
-    (args.output/'all_summaries.json').write_text(json.dumps(summary,indent=2)+'\n')
+    (args.output/'all_summaries.json').write_text(json.dumps(summary,indent=2)+'\\n')
+    if 'all' in requested or args.matched_compatibility:
+        if args.max_points:
+            raise ValueError('Matched compatibility requires full global grids; omit --max-points')
+        #endif
+        grid_sources={'pass1':{},'pass2':{}}
+        for (dataset,E),group in sets['pass1'].groupby(['dataset','E']):
+            tag=f'pass1_{dataset}_{E:g}'.replace(' ','_').replace('.','p')
+            grid_sources['pass1'][round(float(E),1)]=(group,args.output/tag/'theory_response_grid.npz')
+        #endfor
+        for key in ['pass2','pass2_10p2']:
+            for (dataset,E),group in sets[key].groupby(['dataset','E']):
+                tag=f'{key}_{dataset}_{E:g}'.replace(' ','_').replace('.','p')
+                grid_sources['pass2'][round(float(E),1)]=(group,args.output/tag/'theory_response_grid.npz')
+            #endfor
+        #endfor
+        run_matched(engine,args,grid_sources)
+    #endif
+    plot_global_summary(summary,args.output)
+
 #enddef
 
 if __name__=='__main__':
