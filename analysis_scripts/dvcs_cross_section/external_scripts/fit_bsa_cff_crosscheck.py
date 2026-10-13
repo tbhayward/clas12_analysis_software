@@ -453,8 +453,16 @@ def minimize_r(obs,err,response,rgrid):
 
 
 def matched_local_test(engine,p1,p2,energy,outdir,args):
-    p1=assign_published_cells(p1)
-    p2=assign_published_cells(p2)
+    # Restrict BOTH datasets to the common physical phase-space envelope.
+    # Pass-1 has substantially wider high-|t|, Q2 and xB reach.
+    def overlap_cut(df):
+        return df[(df.t.abs() <= args.max_t_abs) &
+                  (df.xB <= args.max_xb) & (df.Q2 <= args.max_q2)].copy()
+    #enddef
+    p1=assign_published_cells(overlap_cut(p1))
+    p2=assign_published_cells(overlap_cut(p2))
+    print(f'[matched {energy:g}] overlap envelope: Pass-1={len(p1)}, Pass-2={len(p2)} '
+          f'(|t|<={args.max_t_abs}, xB<={args.max_xb}, Q2<={args.max_q2})')
     p1=p1.sort_values(['cell_id','Q2','xB','t','phi_deg']).reset_index(drop=True)
     p2=p2.sort_values(['cell_id','Q2','xB','t','phi_deg']).reset_index(drop=True)
     if p1.empty or p2.empty:
@@ -484,10 +492,32 @@ def matched_local_test(engine,p1,p2,energy,outdir,args):
         both_g=np.vstack([g1[i1],g2[i2]])
         rs,cs,oks=minimize_r(both_a,both_e,both_g,grid)
         dchi=max(0.,cs-c1-c2)
+        # Cross-prediction: evaluate each independently fitted response at the
+        # OTHER dataset's actual measured mean kinematics and phi coordinates.
+        pass1_predicts_pass2=interpolate_response(g2[i2],grid,r1)
+        pass2_predicts_pass1=interpolate_response(g1[i1],grid,r2)
+        chi2_cross_1_to_2=float(np.sum(((a2-pass1_predicts_pass2)/e2)**2))
+        chi2_cross_2_to_1=float(np.sum(((a1-pass2_predicts_pass1)/e1)**2))
+        # Local curvature estimates (conditional, diagonal uncertainties).
+        def local_sigma(response,err,r):
+            h=0.002
+            if r-h<=grid[0] or r+h>=grid[-1]: return np.nan
+            deriv=(interpolate_response(response,grid,r+h)-interpolate_response(response,grid,r-h))/(2*h)
+            fisher=float(np.sum((deriv/err)**2))
+            return 1/np.sqrt(fisher) if fisher>0 else np.nan
+        #enddef
+        sig1=local_sigma(g1[i1],e1,r1)
+        sig2=local_sigma(g2[i2],e2,r2)
         boundary=any(abs(r-grid[0])<.001 or abs(r-grid[-1])<.001 for r in [r1,r2,rs])
         rows.append(dict(energy_GeV=energy,cell_id=cid,n_pass1=len(i1),n_pass2=len(i2),
                          r_pass1=r1,r_pass2=r2,r_shared=rs,delta_r=r2-r1,
+                         sigma_r_pass1_conditional=sig1,sigma_r_pass2_conditional=sig2,
+                         precision_ratio_sigma_pass2_over_pass1=sig2/sig1 if sig1>0 else np.nan,
                          chi2_pass1=c1,chi2_pass2=c2,chi2_shared=cs,
+                         chi2_pass1_predicts_pass2=chi2_cross_1_to_2,
+                         chi2_pass2_predicts_pass1=chi2_cross_2_to_1,
+                         cross_prediction_delta_chi2_pass2=chi2_cross_1_to_2-c2,
+                         cross_prediction_delta_chi2_pass1=chi2_cross_2_to_1-c1,
                          delta_chi2=dchi,compatibility_p_value=chi2_dist.sf(dchi,1),
                          fit_valid=ok1 and ok2 and oks and not boundary,
                          r_boundary=boundary,
@@ -503,7 +533,10 @@ def matched_local_test(engine,p1,p2,energy,outdir,args):
         dchi=float(valid.delta_chi2.sum())
         summary=dict(energy_GeV=energy,n_valid_cells=len(valid),n_cells=len(result),
                      delta_chi2=dchi,delta_ndf=len(valid),global_compatibility_p_value=float(chi2_dist.sf(dchi,len(valid))),
-                     median_delta_r=float(valid.delta_r.median()))
+                     median_delta_r=float(valid.delta_r.median()),
+                     median_conditional_precision_ratio_pass2_over_pass1=float(valid.precision_ratio_sigma_pass2_over_pass1.median()),
+                     total_chi2_pass1_predicts_pass2=float(valid.chi2_pass1_predicts_pass2.sum()),
+                     total_chi2_pass2_predicts_pass1=float(valid.chi2_pass2_predicts_pass1.sum()))
         (outdir/'matched_local_summary.json').write_text(json.dumps(summary,indent=2)+'\n')
         print(f'[matched {energy:g}] {len(valid)} valid cells; delta chi2={dchi:.3f} '
               f'for {len(valid)} dof; p={summary["global_compatibility_p_value"]:.4g}')
@@ -554,7 +587,7 @@ def main():
     ap.add_argument('--pass2',type=Path,default=HERE.parent/'output/csvs/dvcs_pass2_analysis.csv')
     ap.add_argument('--pass2-label',default='10.6 GeV',help='BSA column label in native Pass2 CSV')
     ap.add_argument('--output',type=Path,default=HERE.parent/'output/bsa/cff_crosscheck')
-    ap.add_argument('--datasets',default='pass1',help='Comma-separated: pass1,sebastian,pass2')
+    ap.add_argument('--datasets',default='pass1',help='Comma-separated: pass1,sebastian,pass2,pass2_10p2')
     ap.add_argument('--replicas',type=int,default=100)
     ap.add_argument('--max-points',type=int,default=0,
                     help='Pilot limit per dataset (0=all); deterministic subsample')
@@ -568,6 +601,12 @@ def main():
     ap.add_argument('--matched-compatibility',action='store_true',help='Local shared-vs-independent Pass-1/Pass-2 ImH test')
     ap.add_argument('--pass2-10p2-label',default='Sp19 Inb',help='Native Pass-2 10.2-GeV BSA label (default: Sp19 Inb)')
     ap.add_argument('--min-points-per-dataset',type=int,default=4)
+    ap.add_argument('--max-t-abs',type=float,default=0.92,
+                    help='Common-overlap maximum |t| (GeV^2)')
+    ap.add_argument('--max-xb',type=float,default=0.53,
+                    help='Common-overlap maximum xB')
+    ap.add_argument('--max-q2',type=float,default=5.1,
+                    help='Common-overlap maximum Q2 (GeV^2)')
     args=ap.parse_args()
     args.output.mkdir(parents=True,exist_ok=True)
     if args.matched_compatibility:
@@ -590,6 +629,9 @@ def main():
     #endif
     if 'pass2' in requested:
         sets['pass2']=read_pass2(args.pass2,args.pass2_label)
+    #endif
+    if 'pass2_10p2' in requested:
+        sets['pass2_10p2']=read_pass2(args.pass2,args.pass2_10p2_label)
     #endif
     sets={k:v for k,v in sets.items() if len(v)}
     if not sets:
