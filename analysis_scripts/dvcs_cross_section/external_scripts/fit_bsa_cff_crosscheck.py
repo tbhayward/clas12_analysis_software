@@ -502,7 +502,7 @@ def plot_local_diagnostics(result,p1,p2,g1,g2,grid,outdir,energy):
                      fmt='o',label='Published Pass-1')
     axes[0].errorbar(x+.12,good.r_pass2,yerr=good.sigma_r_pass2_conditional,
                      fmt='s',label='Our Pass-2')
-    axes[0].set_ylabel(r'Local $r_{\\Im\\mathcal{H}}$')
+    axes[0].set_ylabel(r'Local $r_{\Im\mathcal{H}}$')
     axes[0].legend()
     axes[1].axhline(0,color='0.4',lw=1)
     axes[1].errorbar(x,good.delta_r,
@@ -522,7 +522,7 @@ def plot_local_diagnostics(result,p1,p2,g1,g2,grid,outdir,energy):
     axes[0].legend()
     axes[1].plot(x,good.delta_chi2,'o')
     axes[1].set(xlabel='Published Pass-1 kinematic cell',
-                ylabel=r'$\\Delta\\chi^2$ (shared vs independent)')
+                ylabel=r'$\Delta\chi^2$ (shared vs independent)')
     fig.suptitle(f'Precision and compatibility diagnostics — {energy:g} GeV')
     fig.savefig(figdir/'precision_compatibility.png',dpi=170)
     plt.close(fig)
@@ -712,7 +712,7 @@ def plot_global_summary(summary,outdir):
     ax.set_yticks(range(len(rows)),[v[0] for v in rows])
     ax.invert_yaxis()
     ax.axvline(1,ls='--',color='0.5')
-    ax.set_xlabel(r'Global $r_{\\Im\\mathcal{H}}$ (KM15-relative; differing kinematic coverage)')
+    ax.set_xlabel(r'Global $r_{\Im\mathcal{H}}$ (KM15-relative; differing kinematic coverage)')
     figdir=outdir/'figures'
     figdir.mkdir(parents=True,exist_ok=True)
     fig.savefig(figdir/'global_r_comparison.png',dpi=170)
@@ -796,7 +796,7 @@ def main():
             print('[result]',tag,summary[tag],flush=True)
         #endfor
     #endfor
-    (args.output/'all_summaries.json').write_text(json.dumps(summary,indent=2)+'\\n')
+    (args.output/'all_summaries.json').write_text(json.dumps(summary,indent=2)+'\n')
     if 'all' in requested or args.matched_compatibility:
         if args.max_points:
             raise ValueError('Matched compatibility requires full global grids; omit --max-points')
