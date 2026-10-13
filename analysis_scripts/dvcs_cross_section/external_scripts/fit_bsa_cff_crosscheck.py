@@ -763,7 +763,9 @@ def run_matched(engine,args,global_grids):
             subset_cache=args.output/'native_subset_grids'/label.replace(' ','_')/'theory_response_grid.npz'
             subset_cache.parent.mkdir(parents=True,exist_ok=True)
             subset_grid=np.linspace(.1,3.,args.grid_points)
-            build_response_grid(engine,p2,subset_grid,subset_cache,args.force_grid)
+            # The matched-local loader builds or loads the sorted response grid.
+            # Do not build an unsorted grid here: its fingerprint differs and
+            # causes a complete second Gepard evaluation.
             sources={'pass1':global_grids['pass1'],'pass2':dict(global_grids['pass2'])}
             sources['pass2'][energy]=(p2,subset_cache)
         #endif
