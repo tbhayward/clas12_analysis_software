@@ -17,6 +17,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy.optimize import minimize, minimize_scalar
+from scipy.stats import chi2 as chi2_dist
 import hashlib
 
 HERE = Path(__file__).resolve().parent
@@ -406,6 +407,144 @@ def fit_dataset(engine, data, nrep, seed, fit_slope, max_points, tref, outdir,
 #enddef
 
 
+
+def exact_tmin(Q2, xB):
+    eps2 = 4*M*M*xB*xB/Q2
+    return -Q2*(2*(1-xB)*(1-np.sqrt(1+eps2))+eps2)/(4*xB*(1-xB)+eps2)
+#enddef
+
+
+def assign_published_cells(df):
+    # Published Pass-1 binning: 16 (Q2,xB) regions x four t-prime regions.
+    xedges = [(0,1.4,[0,.13,.21,np.inf]),
+              (1.4,1.8,[0,.13,.21,np.inf]),
+              (1.8,2.4,[0,.16,.26,np.inf]),
+              (2.4,3.25,[0,.21,.33,np.inf]),
+              (3.25,5,[0,.33,np.inf]),
+              (5,np.inf,[0,.55,np.inf])]
+    tp_edges=[0,.2,.4,.8,np.inf]
+    out=df.copy().reset_index(drop=True)
+    tp=exact_tmin(out.Q2.to_numpy(float),out.xB.to_numpy(float))-out.t.to_numpy(float)
+    ids=np.full(len(out),-1,dtype=int)
+    cell=0
+    for qlo,qhi,xs in xedges:
+        for xlo,xhi in zip(xs[:-1],xs[1:]):
+            for tlo,thi in zip(tp_edges[:-1],tp_edges[1:]):
+                cell+=1
+                mask=(out.Q2>=qlo)&(out.Q2<qhi)&(out.xB>=xlo)&(out.xB<xhi)&(tp>=tlo)&(tp<thi)
+                ids[mask.to_numpy()]=cell
+            #endfor
+        #endfor
+    #endfor
+    out['cell_id']=ids
+    out['tprime']=tp
+    return out[out.cell_id>0].reset_index(drop=True)
+#enddef
+
+
+def minimize_r(obs,err,response,rgrid):
+    def objective(r):
+        theory=interpolate_response(response,rgrid,r)
+        return float(np.sum(((obs-theory)/err)**2)) if np.all(np.isfinite(theory)) else 1e15
+    #enddef
+    result=minimize_scalar(objective,bounds=(rgrid[0],rgrid[-1]),method='bounded',options={'xatol':1e-5})
+    return float(result.x),float(result.fun),bool(result.success)
+#enddef
+
+
+def matched_local_test(engine,p1,p2,energy,outdir,args):
+    p1=assign_published_cells(p1)
+    p2=assign_published_cells(p2)
+    p1=p1.sort_values(['cell_id','Q2','xB','t','phi_deg']).reset_index(drop=True)
+    p2=p2.sort_values(['cell_id','Q2','xB','t','phi_deg']).reset_index(drop=True)
+    if p1.empty or p2.empty:
+        print(f'[matched {energy:g}] no valid points, skipping')
+        return None
+    #endif
+    outdir.mkdir(parents=True,exist_ok=True)
+    grid=np.linspace(.1,3.,args.grid_points)
+    g1=build_response_grid(engine,p1,grid,outdir/'pass1_grid.npz',args.force_grid)
+    g2=build_response_grid(engine,p2,grid,outdir/'pass2_grid.npz',args.force_grid)
+    if not (np.isfinite(g1).all() and np.isfinite(g2).all()):
+        raise ValueError('Nonfinite Gepard response in matched-cell study')
+    #endif
+    ids=sorted(set(p1.cell_id).intersection(set(p2.cell_id)))
+    rows=[]
+    for cid in ids:
+        i1=np.flatnonzero(p1.cell_id.to_numpy()==cid)
+        i2=np.flatnonzero(p2.cell_id.to_numpy()==cid)
+        if min(len(i1),len(i2))<args.min_points_per_dataset:
+            continue
+        #endif
+        a1=p1.A.to_numpy(float)[i1]; e1=p1.err.to_numpy(float)[i1]
+        a2=p2.A.to_numpy(float)[i2]; e2=p2.err.to_numpy(float)[i2]
+        r1,c1,ok1=minimize_r(a1,e1,g1[i1],grid)
+        r2,c2,ok2=minimize_r(a2,e2,g2[i2],grid)
+        both_a=np.concatenate([a1,a2]); both_e=np.concatenate([e1,e2])
+        both_g=np.vstack([g1[i1],g2[i2]])
+        rs,cs,oks=minimize_r(both_a,both_e,both_g,grid)
+        dchi=max(0.,cs-c1-c2)
+        boundary=any(abs(r-grid[0])<.001 or abs(r-grid[-1])<.001 for r in [r1,r2,rs])
+        rows.append(dict(energy_GeV=energy,cell_id=cid,n_pass1=len(i1),n_pass2=len(i2),
+                         r_pass1=r1,r_pass2=r2,r_shared=rs,delta_r=r2-r1,
+                         chi2_pass1=c1,chi2_pass2=c2,chi2_shared=cs,
+                         delta_chi2=dchi,compatibility_p_value=chi2_dist.sf(dchi,1),
+                         fit_valid=ok1 and ok2 and oks and not boundary,
+                         r_boundary=boundary,
+                         mean_Q2_pass1=float(p1.Q2.iloc[i1].mean()),mean_Q2_pass2=float(p2.Q2.iloc[i2].mean()),
+                         mean_xB_pass1=float(p1.xB.iloc[i1].mean()),mean_xB_pass2=float(p2.xB.iloc[i2].mean()),
+                         mean_tprime_pass1=float(p1.tprime.iloc[i1].mean()),
+                         mean_tprime_pass2=float(p2.tprime.iloc[i2].mean())))
+    #endfor
+    result=pd.DataFrame(rows)
+    result.to_csv(outdir/'matched_local_cells.csv',index=False)
+    valid=result[result.fit_valid] if len(result) else result
+    if len(valid):
+        dchi=float(valid.delta_chi2.sum())
+        summary=dict(energy_GeV=energy,n_valid_cells=len(valid),n_cells=len(result),
+                     delta_chi2=dchi,delta_ndf=len(valid),global_compatibility_p_value=float(chi2_dist.sf(dchi,len(valid))),
+                     median_delta_r=float(valid.delta_r.median()))
+        (outdir/'matched_local_summary.json').write_text(json.dumps(summary,indent=2)+'\n')
+        print(f'[matched {energy:g}] {len(valid)} valid cells; delta chi2={dchi:.3f} '
+              f'for {len(valid)} dof; p={summary["global_compatibility_p_value"]:.4g}')
+        return summary
+    #endif
+    print(f'[matched {energy:g}] no valid matched cells')
+    return None
+#enddef
+
+
+def run_matched(engine,args):
+    p1=read_pass1(args.pass1)
+    # Use native Sp19 Inb 10.2-GeV BSA and combined 10.6-GeV BSA.
+    jobs=[(10.6,'10.6 GeV'),(10.2,args.pass2_10p2_label)]
+    summaries=[]
+    for energy,label in jobs:
+        if not label:
+            print(f'[matched {energy:g}] skipped: no native Pass-2 BSA label supplied')
+            continue
+        #endif
+        try:
+            p2=read_pass2(args.pass2,label)
+        except ValueError as exc:
+            raise ValueError(f'[matched {energy:g}] required native Pass-2 BSA unavailable: {exc}') from exc
+        #endtry
+        q=p1[np.isclose(p1.E,energy,atol=.05)].copy()
+        if q.empty:
+            print(f'[matched {energy:g}] no Pass-1 points at this energy')
+            continue
+        #endif
+        dest=args.output/'matched_local'/f'{energy:g}_GeV'.replace('.','p')
+        summary=matched_local_test(engine,q,p2,energy,dest,args)
+        if summary is not None:
+            summaries.append(summary)
+        #endif
+    #endfor
+    if summaries:
+        pd.DataFrame(summaries).to_csv(args.output/'matched_local'/'summary.csv',index=False)
+    #endif
+#enddef
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__,formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument('--pass1',type=Path,default=HERE/'import/rga_pass1_bsa.txt')
@@ -414,7 +553,7 @@ def main():
                     help='Optional verified Appendix-H means CSV (published_rga_bin,Q2,xB,t). Default uses documented Pass-1 10.6 mean proxy in the identical Table-10 cell.')
     ap.add_argument('--pass2',type=Path,default=HERE.parent/'output/csvs/dvcs_pass2_analysis.csv')
     ap.add_argument('--pass2-label',default='10.6 GeV',help='BSA column label in native Pass2 CSV')
-    ap.add_argument('--output',type=Path,default=HERE/'output/bsa_cff_crosscheck')
+    ap.add_argument('--output',type=Path,default=HERE.parent/'output/bsa/cff_crosscheck')
     ap.add_argument('--datasets',default='pass1',help='Comma-separated: pass1,sebastian,pass2')
     ap.add_argument('--replicas',type=int,default=100)
     ap.add_argument('--max-points',type=int,default=0,
@@ -426,8 +565,21 @@ def main():
     ap.add_argument('--fit-t-slope',action='store_true',help='r(t)=r0*exp[b*(t-tref)]')
     ap.add_argument('--t-ref',type=float,default=-0.3)
     ap.add_argument('--preflight-only',action='store_true')
+    ap.add_argument('--matched-compatibility',action='store_true',help='Local shared-vs-independent Pass-1/Pass-2 ImH test')
+    ap.add_argument('--pass2-10p2-label',default='Sp19 Inb',help='Native Pass-2 10.2-GeV BSA label (default: Sp19 Inb)')
+    ap.add_argument('--min-points-per-dataset',type=int,default=4)
     args=ap.parse_args()
     args.output.mkdir(parents=True,exist_ok=True)
+    if args.matched_compatibility:
+        p1=read_pass1(args.pass1)
+        engine=GepardEngine()
+        preflight=engine.preflight(p1.iloc[0])
+        (args.output/'preflight.json').write_text(json.dumps(preflight,indent=2)+'\n')
+        if not args.preflight_only:
+            run_matched(engine,args)
+        #endif
+        return
+    #endif
     sets={}
     requested={x.strip() for x in args.datasets.split(',')}
     if 'pass1' in requested:
