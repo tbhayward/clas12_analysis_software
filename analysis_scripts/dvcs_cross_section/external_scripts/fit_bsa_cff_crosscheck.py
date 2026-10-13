@@ -156,7 +156,11 @@ def read_pass2(path, label):
         'tabs': f't_abs_avg, {label}', 'phi': f'phiavg, {label}',
         'ptp': f'{bcol}, point-to-point sys',
     }
-    required = [bcol, *cols.values()]
+    required = [bcol, *[v for k,v in cols.items() if k!='ptp']]
+    has_ptp=cols['ptp'] in df.columns
+    if not has_ptp:
+        print(f'[pass2 {label}] WARNING: no aggregate point-to-point systematic column; using statistical uncertainties only for this polarity subset. Interpret comparisons separately.')
+    #endif
     print(f"[pass2 schema] file={path}")
     print(f"[pass2 schema] label={label!r}")
     print(f"[pass2 schema] BSA column={bcol!r}")
@@ -170,7 +174,7 @@ def read_pass2(path, label):
     for _, row in df.iterrows():
         A, stat = parse_tuple(row[bcol])
         try:
-            ptp=float(row[cols['ptp']]); xb=float(row[cols['xB']]); q2=float(row[cols['Q2']])
+            ptp=float(row[cols['ptp']]) if has_ptp else 0.0; xb=float(row[cols['xB']]); q2=float(row[cols['Q2']])
             tabs=float(row[cols['tabs']]); phi=float(row[cols['phi']])
         except (TypeError, ValueError):
             rejected['bad_kinematics'] += 1; continue
@@ -503,14 +507,29 @@ def plot_local_diagnostics(result,p1,p2,g1,g2,grid,outdir,energy):
     axes[0].errorbar(x+.12,good.r_pass2,yerr=good.sigma_r_pass2_conditional,
                      fmt='s',label='Our Pass-2')
     axes[0].set_ylabel(r'Local $r_{\Im\mathcal{H}}$')
+    axes[0].set_ylim(0,3.2)
+    axes[0].text(.01,.03,'Uncertainties beyond axis limits are clipped',transform=axes[0].transAxes,fontsize=9)
     axes[0].legend()
     axes[1].axhline(0,color='0.4',lw=1)
     axes[1].errorbar(x,good.delta_r,
                      yerr=np.hypot(good.sigma_r_pass1_conditional,good.sigma_r_pass2_conditional),
                      fmt='o')
     axes[1].set(xlabel='Published Pass-1 kinematic cell',ylabel=r'$r_{Pass2}-r_{Pass1}$')
+    axes[1].set_ylim(-1.5,1.5)
     fig.suptitle(f'Pass-1 / Pass-2 local CFF comparison — {energy:g} GeV')
     fig.savefig(figdir/'local_r_comparison.png',dpi=170)
+    plt.close(fig)
+
+    # Normalized parameter difference: visualization only, ignores common-event covariance.
+    denom=np.hypot(good.sigma_r_pass1_conditional.to_numpy(float),good.sigma_r_pass2_conditional.to_numpy(float))
+    z=np.divide(good.delta_r.to_numpy(float),denom,out=np.full(len(good),np.nan),where=denom>0)
+    fig,ax=plt.subplots(figsize=(14,4.5),layout='constrained')
+    ax.axhline(0,color='0.5',lw=1)
+    ax.axhline(2,color='0.6',ls='--',lw=1);ax.axhline(-2,color='0.6',ls='--',lw=1)
+    ax.plot(x,np.clip(z,-4,4),'o')
+    ax.set(xlabel='Published Pass-1 kinematic cell',ylabel='Approximate normalized difference',ylim=(-4.2,4.2))
+    ax.set_title(f'Local parameter differences — {energy:g} GeV (common-event covariance not included)')
+    fig.savefig(figdir/'normalized_r_differences.png',dpi=170)
     plt.close(fig)
 
     fig,axes=plt.subplots(2,1,figsize=(14,8),sharex=True,layout='constrained')
@@ -519,12 +538,32 @@ def plot_local_diagnostics(result,p1,p2,g1,g2,grid,outdir,energy):
     axes[0].plot(x,good.precision_ratio_pass2_stat_over_pass1_published,'s',
                  label='Stat-only Pass-2 / published Pass-1 (not stat/stat)')
     axes[0].set_ylabel('Conditional uncertainty ratio')
+    axes[0].set_yscale('log')
+    axes[0].set_ylim(.05,5)
     axes[0].legend()
     axes[1].plot(x,good.delta_chi2,'o')
+    axes[1].axhline(3.841,ls='--',lw=1,color='0.5',label='Nominal 95% (1 dof)')
+    axes[1].axhline(6.635,ls=':',lw=1,color='0.5',label='Nominal 99% (1 dof)')
+    axes[1].set_ylim(0,18)
+    axes[1].legend(fontsize=9)
     axes[1].set(xlabel='Published Pass-1 kinematic cell',
                 ylabel=r'$\Delta\chi^2$ (shared vs independent)')
     fig.suptitle(f'Precision and compatibility diagnostics — {energy:g} GeV')
     fig.savefig(figdir/'precision_compatibility.png',dpi=170)
+    plt.close(fig)
+
+    fig,axes=plt.subplots(2,1,figsize=(14,7),sharex=True,layout='constrained')
+    for ax,key,title in [(axes[0],'cross_prediction_delta_chi2_pass2','Pass-1 fit predicting Pass-2'),
+                         (axes[1],'cross_prediction_delta_chi2_pass1','Pass-2 fit predicting Pass-1')]:
+        n=good.n_pass2 if 'pass2' in key else good.n_pass1
+        ax.plot(x,good[key]/n,'o')
+        ax.axhline(0,color='0.5',lw=1)
+        ax.set_ylabel(r'$\Delta\chi^2$ per target point')
+        ax.set_title(title)
+    #endfor
+    axes[-1].set_xlabel('Published Pass-1 kinematic cell')
+    fig.suptitle(f'Cross-prediction cost at measured kinematics — {energy:g} GeV')
+    fig.savefig(figdir/'cross_prediction_per_point.png',dpi=170)
     plt.close(fig)
 
     # Representative panels: highest local incompatibilities, plus best match.
@@ -557,11 +596,11 @@ def plot_local_diagnostics(result,p1,p2,g1,g2,grid,outdir,energy):
         ax.set_visible(False)
     #endfor
     handles,labels=axes.flat[0].get_legend_handles_labels()
-    fig.legend(handles,labels,loc='upper center',ncol=4,fontsize=9)
+    fig.legend(handles,labels,loc='lower center',bbox_to_anchor=(.5,-.015),ncol=4,fontsize=9)
     fig.supxlabel('φ (degrees)')
     fig.supylabel(r'$A_{LU}$')
     fig.suptitle(f'Representative matched-cell BSA fits — {energy:g} GeV')
-    fig.savefig(figdir/'representative_bsa_fits.png',dpi=170)
+    fig.savefig(figdir/'representative_bsa_fits.png',dpi=170,bbox_inches='tight')
     plt.close(fig)
 #enddef
 
@@ -637,6 +676,8 @@ def matched_local_test(engine,p1,p2,energy,outdir,args,global_grids=None):
                          cross_prediction_delta_chi2_pass2=chi2_cross_1_to_2-c2,
                          cross_prediction_delta_chi2_pass1=chi2_cross_2_to_1-c1,
                          delta_chi2=dchi,compatibility_p_value=chi2_dist.sf(dchi,1),
+                         z_delta_r_diagonal=(r2-r1)/math.hypot(sig1,sig2) if np.isfinite(sig1) and np.isfinite(sig2) and math.hypot(sig1,sig2)>0 else np.nan,
+                         chi2_ndf_pass1=c1/(len(i1)-1),chi2_ndf_pass2=c2/(len(i2)-1),
                          fit_valid=ok1 and ok2 and oks and not boundary,
                          r_boundary=boundary,
                          mean_Q2_pass1=float(p1.Q2.iloc[i1].mean()),mean_Q2_pass2=float(p2.Q2.iloc[i2].mean()),
@@ -646,6 +687,27 @@ def matched_local_test(engine,p1,p2,energy,outdir,args,global_grids=None):
     #endfor
     result=pd.DataFrame(rows)
     result.to_csv(outdir/'matched_local_cells.csv',index=False)
+    # Observable-level residuals, at each dataset's measured mean kinematics.
+    residual_rows=[]
+    for row in rows:
+        cid=row['cell_id']
+        for name,df,gg,other_r in [('pass1',p1,g1,row['r_pass2']),('pass2',p2,g2,row['r_pass1'])]:
+            indices=np.flatnonzero(df.cell_id.to_numpy()==cid)
+            obs=df.A.to_numpy(float)[indices];err=df.err.to_numpy(float)[indices]
+            self_r=row['r_pass1'] if name=='pass1' else row['r_pass2']
+            self_pred=interpolate_response(gg[indices],grid,self_r)
+            cross_pred=interpolate_response(gg[indices],grid,other_r)
+            for j,idx in enumerate(indices):
+                r=df.iloc[idx]
+                residual_rows.append(dict(cell_id=cid,dataset=name,energy_GeV=energy,
+                    Q2_GeV2=r.Q2,xB=r.xB,t_GeV2=r.t,phi_deg=r.phi_deg,
+                    A_observed=obs[j],sigma_A=err[j],A_own_fit=self_pred[j],A_other_fit=cross_pred[j],
+                    pull_own=(obs[j]-self_pred[j])/err[j],pull_cross=(obs[j]-cross_pred[j])/err[j],
+                    fit_valid=row['fit_valid']))
+            #endfor
+        #endfor
+    #endfor
+    pd.DataFrame(residual_rows).to_csv(outdir/'observable_residuals.csv',index=False)
     plot_local_diagnostics(result,p1,p2,g1,g2,grid,outdir,energy)
     valid=result[result.fit_valid] if len(result) else result
     if len(valid):
@@ -670,6 +732,12 @@ def run_matched(engine,args,global_grids):
     p1=read_pass1(args.pass1)
     # Use native Sp19 Inb 10.2-GeV BSA and combined 10.6-GeV BSA.
     jobs=[(10.6,'10.6 GeV'),(10.2,args.pass2_10p2_label)]
+    if args.compare_fa18:
+        jobs.extend((10.6,label) for label in ['Fa18','Fa18 Inb','Fa18 Out'])
+    #endif
+    if args.compare_sp18:
+        jobs.extend((10.6,label) for label in ['Sp18','Sp18 Inb','Sp18 Out'])
+    #endif
     summaries=[]
     for energy,label in jobs:
         if not label:
@@ -686,8 +754,22 @@ def run_matched(engine,args,global_grids):
             print(f'[matched {energy:g}] no Pass-1 points at this energy')
             continue
         #endif
-        dest=args.output/'matched_local'/f'{energy:g}_GeV'.replace('.','p')
-        summary=matched_local_test(engine,q,p2,energy,dest,args,global_grids)
+        tag=f'{energy:g}_GeV_{label}'.replace('.','p').replace(' ','_')
+        dest=args.output/'matched_local'/tag
+        sources=global_grids
+        if label not in ('10.6 GeV',args.pass2_10p2_label):
+            # Build an independent response for this native Pass-2 subset once, then cache it.
+            # Global Pass-1 grids are reused unchanged.
+            subset_cache=args.output/'native_subset_grids'/label.replace(' ','_')/'theory_response_grid.npz'
+            subset_cache.parent.mkdir(parents=True,exist_ok=True)
+            subset_grid=np.linspace(.1,3.,args.grid_points)
+            build_response_grid(engine,p2,subset_grid,subset_cache,args.force_grid)
+            sources={'pass1':global_grids['pass1'],'pass2':dict(global_grids['pass2'])}
+            sources['pass2'][energy]=(p2,subset_cache)
+        #endif
+        summary=matched_local_test(engine,q,p2,energy,dest,args,sources)
+        if summary is not None:
+            summary['pass2_label']=label
         if summary is not None:
             summaries.append(summary)
         #endif
@@ -741,6 +823,8 @@ def main():
     ap.add_argument('--fit-t-slope',action='store_true',help='r(t)=r0*exp[b*(t-tref)]')
     ap.add_argument('--t-ref',type=float,default=-0.3)
     ap.add_argument('--preflight-only',action='store_true')
+    ap.add_argument('--compare-fa18',action='store_true',help='Also compare Pass-1 with native Fa18 combined, Inb and Out BSA')
+    ap.add_argument('--compare-sp18',action='store_true',help='Also compare Pass-1 with native Sp18 combined, Inb and Out BSA')
     ap.add_argument('--matched-compatibility',action='store_true',help='Local shared-vs-independent Pass-1/Pass-2 ImH test')
     ap.add_argument('--pass2-10p2-label',default='Sp19 Inb',help='Native Pass-2 10.2-GeV BSA label (default: Sp19 Inb)')
     ap.add_argument('--min-points-per-dataset',type=int,default=4)
