@@ -61,6 +61,23 @@ def main():
         if c not in raw:raise KeyError('Missing '+c)
         a=np.array([parse_tuple(x) for x in raw[c]],dtype=float)
         raw[label]=a[:,0];raw[label+'_stat']=a[:,1]
+    # The C++ CSV stores azimuthal bin boundaries, not a phi_slot column.
+    # Construct the integer bin identifier from the *boundaries only*.
+    # The BSA fits still use measured, event-weighted phiavg values.
+    for name in ('phimin', 'phimax'):
+        if name not in raw.columns:
+            raise KeyError(f'Missing required azimuthal boundary column: {name}')
+        raw[name] = pd.to_numeric(raw[name], errors='raise')
+    slot_float = raw['phimin'] / 22.5
+    if (not np.all(np.isfinite(slot_float)) or
+        not np.allclose(slot_float, np.rint(slot_float), atol=1e-7) or
+        not np.allclose(raw['phimax'] - raw['phimin'], 22.5, atol=1e-7) or
+        not raw['phimin'].between(0, 337.5).all()):
+        raise ValueError('Unexpected phi bin boundaries: expected 16 slots of 22.5 degrees')
+    raw['phi_slot'] = np.rint(slot_float).astype(int)
+    # Normalize key dtypes before exact-bin merging.
+    for k in KEY[:-1]:
+        raw[k] = pd.to_numeric(raw[k], errors='raise')
     if raw.duplicated(KEY).any():raise ValueError('Duplicate analysis bins')
     if ref.duplicated(KEY).any():raise ValueError('Duplicate published bins')
     merged=ref.merge(raw[KEY+['phi','our_Fa18','our_Fa18_stat','our_Fa18_Inb',
