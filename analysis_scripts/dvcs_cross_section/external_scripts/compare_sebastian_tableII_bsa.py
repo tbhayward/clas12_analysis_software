@@ -39,8 +39,16 @@ def main():
     raw=pd.read_csv(args.our,low_memory=False)
     ref=pd.read_csv(args.reference)
     for k in KEY[:-1]:ref[k]=pd.to_numeric(ref[k])
-    raw['phi_slot']=np.floor(pd.to_numeric(raw['phimin'])/22.5+1e-9).astype(int)
-    raw['phi']=pd.to_numeric(raw['phiavg'])
+    # Use the measured Fa18 event-weighted azimuth, never the geometric midpoint.
+    phi_col = 'phiavg, Fa18'
+    if phi_col not in raw.columns:
+        raise KeyError(f'Missing {phi_col!r}; rerun the updated C++ analysis '
+                       'to populate Sebastian-binning kinematic means.')
+    raw['phi'] = pd.to_numeric(raw[phi_col], errors='coerce')
+    if not raw['phi'].notna().any():
+        raise ValueError(f'{phi_col!r} is entirely empty. The Sebastian-binning '
+                         'CSV was not passed through update_bin_means_csv; '
+                         'rerun the updated C++ analysis.')
     ref['phi']=pd.to_numeric(ref['phi'])
     def parse_tuple(x):
         if pd.isna(x):return np.nan,np.nan

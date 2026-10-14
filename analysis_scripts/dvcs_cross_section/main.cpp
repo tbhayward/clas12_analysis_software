@@ -131,6 +131,8 @@ static SystematicRunSelection parse_systematic_selection(
 } // namespace
 
 int main(int argc, char* argv[]) {
+    bool run_pass1_bsa_binning = false;
+    bool run_sebastian_bsa_binning = false;
     bool acceptance_reweighting_only = false;
     bool topology_acceptance_study = false;
     std::string topology_study_csv;
@@ -143,7 +145,14 @@ int main(int argc, char* argv[]) {
     int proton_fd_sector_cli = 0;
     int proton_cd_sector_cli = 0;
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--acceptance-reweighting-only") {
+        if (std::string(argv[i]) == "--pass1-bsa-binning") {
+            run_pass1_bsa_binning = true;
+        } else if (std::string(argv[i]) == "--sebastian-bsa-binning") {
+            run_sebastian_bsa_binning = true;
+        } else if (std::string(argv[i]) == "--all-bsa-binning-cross-checks") {
+            run_pass1_bsa_binning = true;
+            run_sebastian_bsa_binning = true;
+        } else if (std::string(argv[i]) == "--acceptance-reweighting-only") {
             acceptance_reweighting_only = true;
         } else if (std::string(argv[i]) == "--topology-acceptance-study") {
             topology_acceptance_study = true;
@@ -948,7 +957,7 @@ int main(int argc, char* argv[]) {
         // pass-1 BSA analysis note. The pass-1 phi edges were adaptive and are
         // not tabulated, so this cross-check uses uniform 15-degree phi bins.
         // The nominal pass-2 CSV and its production binning are untouched.
-        {
+        if (run_pass1_bsa_binning) {
             const std::string pass1_import = "imports/pass1_bsa_binning.csv";
             const std::string pass1_csv =
                 "output/csvs/dvcs_pass2_pass1_bsa_binning.csv";
@@ -1072,7 +1081,7 @@ int main(int argc, char* argv[]) {
         // Uses the exact published Q2, xB, |t| and 22.5-degree phi boundaries.
         // The 90 published 3D cells are recomputed from event-level yields;
         // this is NOT a remapping of nominal BSA points. Nominal CSV untouched.
-        {
+        if (run_sebastian_bsa_binning) {
             const std::string seb_import = "imports/sebastian_tableII_binning.csv";
             const std::string seb_csv = "output/csvs/dvcs_pass2_sebastian_binning.csv";
             const std::string seb_root = "output/sebastian_bsa_cross_check";
@@ -1124,6 +1133,15 @@ int main(int argc, char* argv[]) {
             bsa.make_helicity_scrambling_study = false;
             if (!update_bsa_counts_csv(dataTrees, eppi0DataTrees, bsa)) {
                 std::cerr << "[main] ERROR: Sebastian-binning BSA failed.\n";
+                std::exit(EXIT_FAILURE);
+            }
+            // Fill event-weighted kinematic means for Sebastian's actual bins.
+            // In particular, phiavg, Fa18 must be populated from selected events,
+            // not approximated using (phimin + phimax)/2.
+            BinMeansOptions seb_mean_opts;
+            seb_mean_opts.make_note_outputs = false;
+            if (!update_bin_means_csv(seb_csv, dataTrees, 7, seb_mean_opts)) {
+                std::cerr << "[main] ERROR: Sebastian-binning means failed.\n";
                 std::exit(EXIT_FAILURE);
             }
             if (systematic_selection.cuts) {
