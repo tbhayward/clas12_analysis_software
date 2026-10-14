@@ -88,22 +88,50 @@ def load(our,reference):
     return m,raw,ref
 
 def overview(m,out):
-    common=m.loc[m.common_valid]
+    common=m.loc[m.common_valid].copy()
     if common.empty:raise ValueError('No common finite BSA measurements')
+    x=common.pub_bsa.to_numpy();y=common.our_bsa.to_numpy();delta=y-x
+    r=np.corrcoef(x,y)[0,1] if len(x)>2 and np.std(x)>0 and np.std(y)>0 else np.nan
+    slope,intercept=np.polyfit(x,y,1) if len(x)>2 and np.std(x)>0 else (np.nan,np.nan)
     fig,ax=plt.subplots(figsize=(7,6))
-    ax.scatter(common.pub_bsa,common.our_bsa,s=13,alpha=.55,color=COLORS['our'])
-    lim=max(.2,np.nanpercentile(np.abs(np.r_[common.pub_bsa,common.our_bsa]),99)*1.15)
-    ax.plot([-lim,lim],[-lim,lim],'k--',lw=1,label='Equality')
-    ax.set(xlim=(-lim,lim),ylim=(-lim,lim),xlabel='Alvarado Table II BSA',ylabel='Our Fa18 BSA',
-           title=f'Point-by-point BSA comparison ({len(common)} common valid points)')
-    ax.legend();ax.grid(alpha=.2);save(fig,out/'01_bsa_scatter.png')
-    fig,axes=plt.subplots(1,2,figsize=(12,4.5))
-    axes[0].hist(common.delta,bins=50,color=COLORS['our'],alpha=.85)
-    axes[0].axvline(0,color='k',ls='--');axes[0].set(xlabel='Our BSA − Table II BSA',ylabel='Number of points',title='Point-by-point differences')
-    axes[1].scatter(common.pub_phi,common.delta,s=12,alpha=.5,color=COLORS['our'])
-    axes[1].axhline(0,color='k',ls='--');axes[1].set(xlabel='Published measured φ (deg)',ylabel='Our BSA − Table II BSA',title='Difference versus azimuth',xlim=(0,360))
+    ax.scatter(x,y,s=13,alpha=.55,color=COLORS['our'],label='Matched measurements')
+    lim=max(.2,np.nanpercentile(np.abs(np.r_[x,y]),99)*1.15)
+    xx=np.array([-lim,lim]);ax.plot(xx,xx,'k--',lw=1,label='Equality')
+    if np.isfinite(slope):ax.plot(xx,slope*xx+intercept,color='0.35',ls=':',lw=1.6,label=f'OLS: y={slope:.3f}x{intercept:+.3f}')
+    ax.text(.03,.97,f'N = {len(common)}\nPearson r = {r:.3f}\nMean Δ = {np.mean(delta):+.4f}\nRMS Δ = {np.sqrt(np.mean(delta**2)):.4f}',
+            transform=ax.transAxes,va='top',fontsize=10,bbox=dict(facecolor='white',alpha=.85,edgecolor='0.8'))
+    ax.set(xlim=(-lim,lim),ylim=(-lim,lim),xlabel='Alvarado BSA',ylabel='Hayward BSA',title='Point-by-point BSA comparison')
+    ax.legend(loc='lower right');ax.grid(alpha=.2);save(fig,out/'01_bsa_scatter.png')
+    records=[]
+    for category,part in [('all',common),('complete',common.loc[common.cell_id.isin(m.groupby('cell_id').filter(lambda g: int(g.common_valid.sum())==16).cell_id.unique())]),('incomplete',common.loc[~common.cell_id.isin(m.groupby('cell_id').filter(lambda g: int(g.common_valid.sum())==16).cell_id.unique())])]:
+        a=part.pub_bsa.to_numpy();b=part.our_bsa.to_numpy()
+        records.append(dict(coverage=category,n=len(part),pearson_r=np.corrcoef(a,b)[0,1] if len(a)>2 and np.std(a)>0 and np.std(b)>0 else np.nan,
+                            mean_delta=np.mean(b-a) if len(a) else np.nan,rms_delta=np.sqrt(np.mean((b-a)**2)) if len(a) else np.nan))
+    pd.DataFrame(records).to_csv(out/'bsa_correlation_by_coverage.csv',index=False)
+    fig,axes=plt.subplots(1,2,figsize=(12.5,4.7))
+    axes[0].hist(delta,bins=50,color=COLORS['our'],alpha=.85)
+    axes[0].axvline(0,color='k',ls='--')
+    axes[0].set(xlabel='Hayward − Alvarado BSA',ylabel='Number of points',title=f'Raw differences (mean {np.mean(delta):+.4f}, RMS {np.sqrt(np.mean(delta**2)):.4f})')
+    slot_rows=[]
+    for slot,g in common.groupby('phi_slot'):
+        vals=g.delta.to_numpy();n=len(vals);sem=np.std(vals,ddof=1)/np.sqrt(n) if n>1 else np.nan
+        slot_rows.append(dict(phi_slot=int(slot),phi_center=(int(slot)+.5)*22.5,n=n,mean_delta=np.mean(vals),sem_delta=sem,rms_delta=np.sqrt(np.mean(vals**2))))
+    slot_stats=pd.DataFrame(slot_rows).sort_values('phi_slot');slot_stats.to_csv(out/'bsa_differences_by_phi_slot.csv',index=False)
+    axes[1].errorbar(slot_stats.phi_center,slot_stats.mean_delta,yerr=slot_stats.sem_delta,fmt='o-',color=COLORS['our'],capsize=3)
+    axes[1].axhline(0,color='k',ls='--')
+    for row in slot_stats.itertuples():axes[1].annotate(f'{row.n}',(row.phi_center,row.mean_delta),xytext=(0,8),textcoords='offset points',ha='center',fontsize=7)
+    axes[1].set(xlabel='Azimuthal bin center (degrees)',ylabel='Mean Hayward − Alvarado BSA',title='Mean difference by azimuth (labels: N)',xlim=(0,360),xticks=np.arange(0,361,45))
     for ax in axes:ax.grid(alpha=.2)
-    fig.suptitle('BSA differences (shared events; not independent measurements)');save(fig,out/'02_bsa_differences.png')
+    fig.tight_layout();save(fig,out/'02_bsa_differences.png')
+    z=common.independent_error_pull.to_numpy();z=z[np.isfinite(z)]
+    fig,ax=plt.subplots(figsize=(7,4.7));ax.hist(z,bins=55,color=COLORS['our'],alpha=.85)
+    ax.axvline(0,color='k',ls='--');ax.set(xlabel='ΔBSA / sqrt(stat(Hayward)² + stat(Alvarado)²)',ylabel='Number of points',
+      title=f'Naively normalized differences (N={len(z)}, mean={np.mean(z):+.3f}, RMS={np.sqrt(np.mean(z*z)):.3f})')
+    ax.text(.02,.98,'Shared events: unknown covariance; NOT calibrated pulls',transform=ax.transAxes,va='top',fontsize=9)
+    ax.grid(alpha=.2);fig.tight_layout();save(fig,out/'02b_naive_normalized_differences.png')
+    fig,ax=plt.subplots(figsize=(7,4.7));ax.scatter(common.pub_phi,common.delta,s=12,alpha=.5,color=COLORS['our']);ax.axhline(0,color='k',ls='--')
+    ax.set(xlabel='Alvarado measured φ (degrees)',ylabel='Hayward − Alvarado BSA',title='Individual BSA differences versus azimuth',xlim=(0,360));ax.grid(alpha=.2)
+    fig.tight_layout();save(fig,out/'02c_raw_azimuth_scatter.png')
 
 def amplitudes(m,out):
     rows=[]
@@ -112,7 +140,7 @@ def amplitudes(m,out):
         p_all=fit(d,'pub');o_all=fit(d,'our')
         p=fit(d,'pub',common);o=fit(d,'our',common)
         row=dict(zip(CELL,cell));row['cell_id']=int(d.cell_id.iloc[0]) if 'cell_id' in d and pd.notna(d.cell_id.iloc[0]) else np.nan
-        row.update(n_published=len(d),n_published_valid=int(d.pub_valid.sum()),n_our_valid=int(d.our_valid.sum()),n_common=int(common.sum()),n_flagged=int(d.flagged.sum()),n_common_before_flags=int(d.common_valid.sum()))
+        row.update(coverage_class=('complete' if int(common.sum())==16 else 'severe' if int(common.sum())<=4 else 'partial'),n_published=len(d),n_published_valid=int(d.pub_valid.sum()),n_our_valid=int(d.our_valid.sum()),n_common=int(common.sum()),n_flagged=int(d.flagged.sum()),n_common_before_flags=int(d.common_valid.sum()))
         for tag,res in [('published_all',p_all),('our_all',o_all),('published_common',p),('our_common',o)]:
             for k,v in res.items():row[f'{tag}_{k}']=v
         for param in ['a1','a2']:
@@ -120,6 +148,14 @@ def amplitudes(m,out):
             row[f'naive_delta_{param}_err']=np.hypot(o[f'{param}_err'],p[f'{param}_err'])
         rows.append(row)
     s=pd.DataFrame(rows);s.to_csv(out/'amplitude_comparison.csv',index=False)
+    stats=[]
+    for cls,g in s.groupby('coverage_class'):
+        for p in ['a1','a2']:
+            v=g[f'delta_{p}_common'].dropna()
+            stats.append(dict(coverage_class=cls,parameter=p,n_fitted=len(v),mean_delta=v.mean() if len(v) else np.nan,
+                              rms_delta=np.sqrt(np.mean(v**2)) if len(v) else np.nan))
+    pd.DataFrame(stats).to_csv(out/'amplitude_differences_by_coverage.csv',index=False)
+
     for param in ['a1','a2']:
         ok=np.isfinite(s[f'published_common_{param}']) & np.isfinite(s[f'our_common_{param}'])
         d=s.loc[ok].copy()
@@ -131,10 +167,10 @@ def amplitudes(m,out):
         vals=np.r_[d[f'published_common_{param}'],d[f'our_common_{param}']]
         lo,hi=np.nanmin(vals),np.nanmax(vals);pad=max(.05,(hi-lo)*.1)
         axes[0].plot([lo-pad,hi+pad],[lo-pad,hi+pad],'k--',lw=1)
-        axes[0].set(xlim=(lo-pad,hi+pad),ylim=(lo-pad,hi+pad),xlabel=f'Table II {param}',ylabel=f'Our {param}',title='Common-φ-bin fits')
+        axes[0].set(xlim=(lo-pad,hi+pad),ylim=(lo-pad,hi+pad),xlabel=f'Alvarado {param}',ylabel=f'Hayward {param}',title='Common-φ-bin fits')
         idx=np.arange(len(d))
         axes[1].errorbar(idx,d[f'delta_{param}_common'],yerr=d[f'naive_delta_{param}_err'],fmt='o',ms=3,color=COLORS['our'],ecolor='0.65',elinewidth=.7)
-        axes[1].axhline(0,color='k',ls='--');axes[1].set(xlabel='Kinematic cell (sorted by Q², xB, |t|)',ylabel=f'Our {param} − Table II {param}',title='Amplitude differences (errors ignore covariance)')
+        axes[1].axhline(0,color='k',ls='--');axes[1].set(xlabel='Kinematic cell (sorted by Q², xB, |t|)',ylabel=f'Hayward {param} − Alvarado {param}',title='Amplitude differences (errors ignore covariance)')
         for ax in axes:ax.grid(alpha=.2)
         fig.suptitle(f'{param} comparison: {len(d)} cells with both fits; common measured φ bins')
         save(fig,out/f'03_amplitude_{param}_comparison.png')
@@ -150,12 +186,34 @@ def missing(m,s,out):
     axes[1].set(xlabel='Kinematic cell (sorted by Q², xB, |t|)',ylabel='Published φ bins',title='Coverage by cell')
     axes[1].legend(fontsize=8)
     fig.suptitle('Coverage is not a fit-quality statistic');save(fig,out/'04_coverage.png')
+    # Full 0–360 degree coverage map: every published cell and all 16 azimuthal slots.
+    cells=s[['cell_id']+CELL].drop_duplicates().sort_values('cell_id')
+    maps=[]
+    for row in cells.itertuples(index=False):
+        g=m.loc[m.cell_id==row.cell_id].set_index('phi_slot')
+        for slot in range(16):
+            present=slot in g.index
+            rec=g.loc[slot] if present else None
+            maps.append(dict(cell_id=int(row.cell_id),phi_slot=slot,
+                alvarado_valid=bool(rec.pub_valid) if present else False,
+                hayward_valid=bool(rec.our_valid) if present else False,
+                common_valid=bool(rec.common_valid) if present else False,
+                excluded=bool(rec.flagged) if present else False))
+    coverage=pd.DataFrame(maps);coverage.to_csv(out/'phi_coverage_map.csv',index=False)
+    for field,filename,title in [('alvarado_valid','04b_alvarado_phi_coverage.png','Alvarado'),('hayward_valid','04c_hayward_phi_coverage.png','Hayward'),('common_valid','04d_common_phi_coverage.png','Common')]:
+        grid=coverage.pivot(index='cell_id',columns='phi_slot',values=field).fillna(False).astype(int)
+        fig,ax=plt.subplots(figsize=(11,max(6,len(grid)*.13)))
+        ax.imshow(grid.to_numpy(),aspect='auto',interpolation='nearest',cmap='Greys',vmin=0,vmax=1)
+        ax.set(xlabel='Azimuthal slot (0–15)',ylabel='Cell ID',title=f'{title} valid azimuthal coverage (dark = valid)',xticks=range(16))
+        ax.set_yticks(np.arange(0,len(grid),max(1,len(grid)//20)))
+        ax.set_yticklabels(grid.index[::max(1,len(grid)//20)])
+        fig.tight_layout();save(fig,out/filename)
     miss=m.loc[~m.common_valid].copy();miss.to_csv(out/'missing_or_invalid_points.csv',index=False)
     return miss
 
 def cell_plot(d,path,cell_title):
     fig,(ax,axd)=plt.subplots(2,1,figsize=(7.5,6.2),sharex=True,gridspec_kw={'height_ratios':[2.5,1]})
-    for prefix,label,col,mark in [('pub','Alvarado Table II',COLORS['pub'],'o'),('our','Our Fa18 Pass-2',COLORS['our'],'s')]:
+    for prefix,label,col,mark in [('pub','Alvarado',COLORS['pub'],'o'),('our','Hayward',COLORS['our'],'s')]:
         ok=valid(d,prefix)
         ax.errorbar(d.loc[ok,f'{prefix}_phi'],d.loc[ok,f'{prefix}_bsa'],yerr=d.loc[ok,f'{prefix}_stat'],
                     fmt=mark,ms=4,capsize=2,color=col,label=f'{label} (N={ok.sum()})')
@@ -173,7 +231,7 @@ def cell_plot(d,path,cell_title):
         ax.axvspan(slot*22.5,(slot+1)*22.5,color='0.85',alpha=.5)
     ax.axhline(0,color='0.4',lw=.8);axd.axhline(0,color='0.4',lw=.8,ls='--')
     ax.set(ylabel=r'$A_{LU}$',title=cell_title);ax.legend(fontsize=7,loc='best');ax.grid(alpha=.2)
-    axd.set(xlabel=r'Measured $\phi$ (degrees)',ylabel='Our − Table II',xlim=(0,360));axd.grid(alpha=.2)
+    axd.set(xlabel=r'Measured $\phi$ (degrees)',ylabel='Hayward − Alvarado',xlim=(0,360));axd.grid(alpha=.2)
     fig.tight_layout();save(fig,path)
 
 def diagnostics(m,s,out,all_cells=False,top_n=12):
@@ -208,7 +266,7 @@ def diagnostics(m,s,out,all_cells=False,top_n=12):
                         fmt=marker,ms=2.8,color=col,alpha=.85,elinewidth=.7)
         ax.axhline(0,color='0.5',lw=.6);ax.set(xlim=(0,360),title=f"{cell_label(row)}\nΔa₁={row.delta_a1_common:+.3f}; common N={row.n_common}")
         ax.tick_params(labelsize=8);ax.title.set_fontsize(8)
-    fig.suptitle('Selected Fa18 BSA comparisons: blue = Sebastian; red = ours',fontsize=14)
+    fig.suptitle('Selected Fa18 BSA comparisons: blue = Alvarado; red = Hayward',fontsize=14)
     fig.tight_layout(rect=[0,0,1,.98]);save(fig,out/'05_selected_cell_overlays.png')
 
 def apply_flags(m, exclude_cells, exclude_points, out):
@@ -233,6 +291,7 @@ def apply_flags(m, exclude_cells, exclude_points, out):
     template['exclude']=0
     template['reason']=''
     template.to_csv(out/'cell_flag_template.csv',index=False)
+    pd.DataFrame(columns=['cell_id','phi_slot','reason']).to_csv(out/'point_flag_template.csv',index=False)
     m[['cell_id','phi_slot','pub_phi','our_phi','delta_phi','common_valid','flagged']].to_csv(out/'phi_point_audit.csv',index=False)
     return m
 
@@ -276,10 +335,10 @@ def xb_canvases(m,s,out):
             for ax in axes[:,0]:
                 if ax.get_visible():ax.set_ylabel(r'$A_{LU}$',fontsize=10)
             from matplotlib.lines import Line2D
-            handles=[Line2D([0],[0],color=COLORS['pub'],marker='o',lw=1.5,ms=5,label='Sebastian (Table II)'),
-                     Line2D([0],[0],color=COLORS['our'],marker='s',lw=1.5,ms=5,label='Ours (Fa18 combined)')]
+            handles=[Line2D([0],[0],color=COLORS['pub'],marker='o',lw=1.5,ms=5,label='Alvarado'),
+                     Line2D([0],[0],color=COLORS['our'],marker='s',lw=1.5,ms=5,label='Hayward')]
             fig.legend(handles=handles,loc='upper center',ncol=2,bbox_to_anchor=(.5,.972),fontsize=11)
-            fig.suptitle(f'Fa18 Pass-2 BSA comparison — xB in [{xblo:g}, {xbhi:g}]  (page {page})',fontsize=15,y=.998)
+            fig.suptitle(f'BSA comparison — xB in [{xblo:g}, {xbhi:g}]  (page {page})',fontsize=15,y=.998)
             fig.tight_layout(rect=[0,0,1,.925])
             save(fig,directory/f'xB_{xblo:.3f}_{xbhi:.3f}_page{page:02d}.png')
 
@@ -288,10 +347,10 @@ def phi_diagnostics(m,s,out,individual=False):
     d=m.loc[m.common_valid].copy()
     fig,axes=plt.subplots(1,2,figsize=(12.5,4.6))
     axes[0].hist(d.delta_phi.dropna(),bins=55,color='0.45')
-    axes[0].set(xlabel='Our measured φ − Sebastian measured φ (degrees)',ylabel='Number of common points',title='Difference in event-weighted φ means')
+    axes[0].set(xlabel='Hayward measured φ − Alvarado measured φ (degrees)',ylabel='Number of common points',title='Difference in event-weighted φ means')
     axes[1].scatter(d.delta_phi,d.delta,s=12,alpha=.5,color=COLORS['our'])
     axes[1].axhline(0,color='0.4',ls='--',lw=.8)
-    axes[1].set(xlabel='Our measured φ − Sebastian measured φ (degrees)',ylabel='Our BSA − Sebastian BSA',title='BSA differences versus φ-mean differences')
+    axes[1].set(xlabel='Hayward measured φ − Alvarado measured φ (degrees)',ylabel='Hayward BSA − Alvarado BSA',title='BSA differences versus φ-mean differences')
     for ax in axes:ax.grid(alpha=.2)
     fig.tight_layout();save(fig,directory/'phi_mean_differences.png')
     rows=[]
@@ -310,7 +369,7 @@ def phi_diagnostics(m,s,out,individual=False):
         for k in CELL:mask &= np.isclose(m[k],row[k],rtol=0,atol=1e-8)
         g=m.loc[mask].sort_values('phi_slot')
         fig,(ax,ax2)=plt.subplots(2,1,figsize=(8,5.5),sharex=False,gridspec_kw={'height_ratios':[2,1]})
-        for prefix,col,mark,label in [('pub',COLORS['pub'],'o','Sebastian'),('our',COLORS['our'],'s','Ours')]:
+        for prefix,col,mark,label in [('pub',COLORS['pub'],'o','Alvarado'),('our',COLORS['our'],'s','Hayward')]:
             ok=valid(g,prefix)
             ax.errorbar(g.loc[ok,f'{prefix}_phi'],g.loc[ok,f'{prefix}_bsa'],yerr=g.loc[ok,f'{prefix}_stat'],
                         fmt=mark,color=col,ms=3.5,capsize=2,label=label)
@@ -321,7 +380,7 @@ def phi_diagnostics(m,s,out,individual=False):
             ax.axvspan(slot*22.5,(slot+1)*22.5,color='0.85',alpha=.5)
         ax.set(ylabel=r'$A_{LU}$',title=f"Cell {int(row.cell_id):03d}: {cell_label(row)}")
         ax.legend(fontsize=9);ax.grid(alpha=.15)
-        ax2.set(xlabel='φ bin slot (0–15)',ylabel='Our − Sebastian\nmean φ (deg)',xlim=(-.5,15.5),xticks=[0,3,6,9,12,15])
+        ax2.set(xlabel='φ bin slot (0–15)',ylabel='Hayward − Alvarado\nmean φ (deg)',xlim=(-.5,15.5),xticks=[0,3,6,9,12,15])
         ax2.grid(alpha=.2)
         fig.tight_layout();save(fig,directory/f'phi_cell_{int(row.cell_id):03d}.png')
 
@@ -329,11 +388,11 @@ def filtered_amplitude_summary(s,out):
     """Simple unweighted summaries only; covariance between datasets is unknown."""
     lines=['COMMON-BIN FIT SUMMARY (descriptive, not a covariance-aware consistency test)',
            'The two analyses share events, so errors on their differences are NOT known.',
-           'Cells excluded using flags are omitted from this summary.']
+           'Flagged points are excluded from fits; fully excluded cells have no accepted fit.']
     for p in ['a1','a2']:
-        ok=np.isfinite(s[f'delta_{p}_common']) & (s.n_flagged==0)
+        ok=np.isfinite(s[f'delta_{p}_common'])
         vals=s.loc[ok,f'delta_{p}_common'].to_numpy()
-        lines += [f'{p}: {len(vals)} unflagged jointly fitted cells; mean(ours−Sebastian)={np.mean(vals):+.6f}; median={np.median(vals):+.6f}' if len(vals) else f'{p}: no unflagged jointly fitted cells']
+        lines += [f'{p}: {len(vals)} unflagged jointly fitted cells; mean(Hayward−Alvarado)={np.mean(vals):+.6f}; median={np.median(vals):+.6f}' if len(vals) else f'{p}: no unflagged jointly fitted cells']
     (out/'amplitude_summary.txt').write_text('\n'.join(lines)+'\n')
 
 def main():
@@ -351,6 +410,12 @@ def main():
     m=apply_flags(m,args.exclude_cells,args.exclude_points,out)
     m.to_csv(out/'point_by_point.csv',index=False)
     overview(m,out);s=amplitudes(m,out);miss=missing(m,s,out)
+    uncertainty_rows=[]
+    for prefix,label in [('our','Hayward'),('pub','Alvarado')]:
+        d=m.loc[valid(m,prefix),f'{prefix}_stat'].to_numpy()
+        uncertainty_rows.append(dict(analysis=label,n=len(d),median_stat=np.median(d),mean_stat=np.mean(d),p16_stat=np.percentile(d,16),p84_stat=np.percentile(d,84)))
+    pd.DataFrame(uncertainty_rows).to_csv(out/'statistical_uncertainty_summary.csv',index=False)
+
     diagnostics(m,s,out,True,args.top_cells)
     xb_canvases(m,s,out)
     phi_diagnostics(m,s,out,args.phi_cell_plots)
@@ -364,7 +429,7 @@ def main():
             'xB canvases: xB_canvases/; detailed plots: individual_cells/; phi checks: phi_diagnostics/',
             'Amplitudes fitted to common valid phi slots using each dataset’s own measured phiavg.',
             'Difference/error ratios are NOT calibrated significance: datasets share experimental events.',
-            'Table II includes some anomalous entries; see the reference CSV and invalid-point listing.',
+            'Reference data are from Table II (proton detected); statistical uncertainties only for both analyses.',
             f'Output: {out}']
     (out/'README_results.txt').write_text('\n'.join(report)+'\n')
     print('\n'.join(report))
