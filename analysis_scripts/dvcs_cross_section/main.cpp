@@ -1067,6 +1067,100 @@ int main(int argc, char* argv[]) {
             std::cout << "[main] Pass-1 BSA-binning cross-check written to "
                       << pass1_csv << " and " << pass1_root << "/.\n";
         }
+
+        // --------- Sebastian PRL Table II: Fa18 Pass-2 direct BSA cross-check ----------
+        // Uses the exact published Q2, xB, |t| and 22.5-degree phi boundaries.
+        // The 90 published 3D cells are recomputed from event-level yields;
+        // this is NOT a remapping of nominal BSA points. Nominal CSV untouched.
+        {
+            const std::string seb_import = "imports/sebastian_tableII_binning.csv";
+            const std::string seb_csv = "output/csvs/dvcs_pass2_sebastian_binning.csv";
+            const std::string seb_root = "output/sebastian_bsa_cross_check";
+            if (!initialize_pass2_csv(seb_import, seb_csv)) {
+                std::cerr << "[main] ERROR: Sebastian Table II CSV initialization failed.\n";
+                std::exit(EXIT_FAILURE);
+            }
+            TotalCountsOptions counts;
+            counts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
+            counts.make_plots = false;
+            counts.make_note_outputs = false;
+            counts.apply_event_level_current_correction = true;
+            counts.apply_neupane_proton_efficiency_correction =
+                !use_eppi0_production_normalization;
+            counts.apply_eppi0_efficiency_to_dvcs_rec_mc =
+                use_eppi0_production_normalization;
+            counts.eppi0_efficiency_summary_csv =
+                "output/data_mc_normalization/eppi0_normalization_summary.csv";
+            counts.current_response_model_json =
+                "output/dvcs_current_dependence/calibration/current_response_model.json";
+            counts.require_sp18_out_epg_e_theta_current_model = true;
+            counts.use_epg_mc_current_factor_for_eppi0_bkg =
+                use_epg_mc_current_factor_for_eppi0_bkg;
+            counts.write_current_nuisance_responses = false;
+            counts.use_tprime_binning = false; // Sebastian publishes t, NOT t-prime.
+            if (!update_total_counts_csv(
+                    seb_csv, dataTrees, eppi0DataTrees, genMcTrees, recMcTrees,
+                    eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
+                    cuts_json, seb_root, 7, counts,
+                    currentStudyGenMcTrees, currentStudyRecMcTrees)) {
+                std::cerr << "[main] ERROR: Sebastian-binning counts failed.\n";
+                std::exit(EXIT_FAILURE);
+            }
+            Pi0ContaminationOptions pi0;
+            pi0.use_epg_mc_current_factor_for_eppi0_bkg =
+                use_epg_mc_current_factor_for_eppi0_bkg;
+            if (!compute_pi0_contamination_overall(
+                    dataTrees, eppi0DataTrees, eppi0RecMcTrees, eppi0BkgTrees,
+                    cuts_json, seb_csv, seb_root, 7, pi0)) {
+                std::cerr << "[main] ERROR: Sebastian-binning pi0 contamination failed.\n";
+                std::exit(EXIT_FAILURE);
+            }
+            BSAOptions bsa = bsa_opts;
+            bsa.csv_path = seb_csv;
+            bsa.output_root = seb_root;
+            bsa.use_tprime_binning = false;
+            bsa.make_plots = true;
+            bsa.make_photon_topology_study = false;
+            bsa.make_helicity_scrambling_study = false;
+            if (!update_bsa_counts_csv(dataTrees, eppi0DataTrees, bsa)) {
+                std::cerr << "[main] ERROR: Sebastian-binning BSA failed.\n";
+                std::exit(EXIT_FAILURE);
+            }
+            if (systematic_selection.cuts) {
+                AutomaticCutVariationOptions variation;
+                variation.enabled = true;
+                variation.bsa_only = true;
+                variation.use_tprime_binning = false;
+                variation.make_exclusivity_extraction_plots = false;
+                variation.make_final_diagnostic_plots = false;
+                variation.max_workers = 7;
+                variation.nominal_csv = seb_csv;
+                variation.output_dir = seb_root + "/cut_variation_systematics";
+                variation.use_eppi0_production_normalization =
+                    use_eppi0_production_normalization;
+                variation.eppi0_charge_csv_path =
+                    "imports/integrated_luminosity/global.csv";
+                variation.eppi0_normalization_json_path =
+                    "imports/eppi0_aao_normalization_inputs.json";
+                variation.current_response_model_json =
+                    "output/dvcs_current_dependence/calibration/current_response_model.json";
+                if (!run_automatic_cut_variation_systematics(
+                        variation, global_cfg,
+                        dataTrees, genMcTrees, recMcTrees,
+                        eppi0DataTrees, eppi0GenMcTrees, eppi0RecMcTrees,
+                        eppi0BkgTrees, currentStudyGenMcTrees, currentStudyRecMcTrees,
+                        use_nobkg_dvcs_mc_for_acceptance,
+                        use_epg_mc_current_factor_for_eppi0_bkg)) {
+                    std::cerr << "[main] ERROR: Sebastian-binning cut variations failed.\n";
+                    std::exit(EXIT_FAILURE);
+                }
+                if (!materialize_bsa_point_to_point_systematics(seb_csv, 0.02)) {
+                    std::cerr << "[main] ERROR: Sebastian-binning BSA systematics failed.\n";
+                    std::exit(EXIT_FAILURE);
+                }
+            }
+            std::cout << "[main] Sebastian Table II comparison CSV: " << seb_csv << "\n";
+        }
     }
 
     // // --------- Pi0-subtracted DVCS kinematic DATA/MC shape comparisons ----------
