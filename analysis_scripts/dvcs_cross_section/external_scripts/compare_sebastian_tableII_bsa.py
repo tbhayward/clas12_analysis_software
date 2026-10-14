@@ -299,10 +299,10 @@ def apply_flags(m, exclude_cells, exclude_points, out):
     return m
 
 def xb_canvases(m,s,out):
-    """One canvas per xB interval: Q2 columns and |t| rows.
+    """Compact xB canvases, with |t| rows and populated Q2 panels only.
 
-    The lower strip shows Hayward minus Alvarado with quadrature statistical
-    uncertainties. Compatibility uses common measured slots, no curve fit.
+    Each row is packed left-to-right in Q2 order, avoiding blank subplots.
+    A common figure-level x/y label replaces repeated subplot labels.
     """
     from matplotlib.lines import Line2D
     from matplotlib.gridspec import GridSpecFromSubplotSpec
@@ -314,81 +314,90 @@ def xb_canvases(m,s,out):
              Line2D([0],[0],color=COLORS['our'],marker='s',lw=1.5,ms=5,label='Hayward')]
     compatibility=[]
     for (xblo,xbhi),group in s.groupby(['xBmin','xBmax'],sort=True):
+        # A cell is displayed only when it has at least one usable shared point.
         group=group.loc[group.n_common>0].copy()
-        if group.empty:continue
-        qbins=sorted(set(zip(group.Q2min,group.Q2max)))
+        if group.empty:
+            continue
         tbins=sorted(set(zip(group.t_abs_min,group.t_abs_max)))
-        ncols,nrows=len(qbins),len(tbins)
-        fig=plt.figure(figsize=(max(6,4.4*ncols),max(4.6,3.65*nrows)))
-        grid=fig.add_gridspec(nrows,ncols,left=.105,right=.975,bottom=.085,top=.86,
-                             wspace=.25,hspace=.52)
-        slots={}
-        for _,r in group.iterrows():
-            i=tbins.index((r.t_abs_min,r.t_abs_max))
-            j=qbins.index((r.Q2min,r.Q2max))
-            sub=GridSpecFromSubplotSpec(2,1,subplot_spec=grid[i,j],height_ratios=[3,1],hspace=.05)
-            ax=fig.add_subplot(sub[0]);axd=fig.add_subplot(sub[1],sharex=ax)
-            slots[(i,j)]=(ax,axd)
-            mask=np.ones(len(m),dtype=bool)
-            for k in CELL:mask &= np.isclose(m[k],r[k],rtol=0,atol=1e-8)
-            d=m.loc[mask].sort_values('phi_slot')
-            common=d.loc[d.common_valid & ~d.flagged].copy()
-            n=len(common)
-            if not n:
-                plt.delaxes(ax);plt.delaxes(axd)
-                del slots[(i,j)]
-                continue
-            variance=common.pub_stat.to_numpy()**2+common.our_stat.to_numpy()**2
-            difference=common.our_bsa.to_numpy()-common.pub_bsa.to_numpy()
-            chisq=float(np.sum(difference**2/variance))
-            pvalue=float(chi2_distribution.sf(chisq,n))
-            compatibility.append(dict(cell_id=int(r.cell_id),xBmin=xblo,xBmax=xbhi,
-                Q2min=r.Q2min,Q2max=r.Q2max,t_abs_min=r.t_abs_min,t_abs_max=r.t_abs_max,
-                n_common=n,chi2=chisq,ndf=n,chi2_ndf=chisq/n,p_value_naive=pvalue))
-            # Use real newlines and single backslashes in matplotlib mathtext.
-            annotation=(rf'$\chi^2/\mathrm{{ndf}}={chisq:.1f}/{n}$'+'\n'+
-                        rf'$p_{{\mathrm{{naive}}}}={pvalue:.2g}$')
-            for prefix,col,marker in [('pub',COLORS['pub'],'o'),('our',COLORS['our'],'s')]:
-                ok=valid(d,prefix)
-                ax.errorbar(d.loc[ok,f'{prefix}_phi'],d.loc[ok,f'{prefix}_bsa'],
-                    yerr=d.loc[ok,f'{prefix}_stat'],fmt=marker,color=col,
-                    ms=3,elinewidth=.8,capsize=1.3,ls='none',alpha=.9)
-                result=fit(d,prefix,d.common_valid & ~d.flagged)
-                if np.isfinite(result['a1']):
-                    xx=np.linspace(0,360,361)
-                    ax.plot(xx,model(xx,result['a1'],result['a2']),color=col,lw=1.2)
-            axd.errorbar(common.pub_phi,difference,yerr=np.sqrt(variance),
-                fmt='o',color='0.3',ecolor='0.65',ms=2.6,capsize=1,elinewidth=.7)
-            ax.axhline(0,color='0.5',lw=.6,ls='--')
-            axd.axhline(0,color='0.5',lw=.6,ls='--')
-            ax.set(xlim=(0,360),ylim=(-1,1))
-            axd.set(xlim=(0,360),xticks=[0,90,180,270,360])
-            # Keep the difference band compact, but avoid hiding outliers.
-            spread=max(.15,float(np.nanmax(np.abs(difference)+np.sqrt(variance)))*1.1)
-            axd.set_ylim(-spread,spread)
-            ax.set_title(f'Cell {int(r.cell_id):03d} · common {n}/16',fontsize=9,pad=4)
-            ax.text(.03,.04,annotation,transform=ax.transAxes,ha='left',va='bottom',
-                fontsize=7.5,bbox=dict(facecolor='white',alpha=.8,edgecolor='none',pad=1.5))
-            ax.tick_params(labelbottom=False,labelsize=7)
-            axd.tick_params(labelsize=7)
-            ax.grid(alpha=.15);axd.grid(alpha=.15)
-            axd.set_xlabel(r'$\phi$ (degrees)',fontsize=8)
-            if j==0:
-                ax.set_ylabel(r'$A_{LU}$',fontsize=9)
-                axd.set_ylabel(r'$\Delta A$',fontsize=8)
-        # Put column and row headings in figure coordinates, clear of data panels.
-        for j,(lo,hi) in enumerate(qbins):
-            x=.105+(j+.5)*(.87/ncols)
-            fig.text(x,.89,rf'$Q^2\in[{lo:g},{hi:g}]$ GeV$^2$',ha='center',fontsize=10)
-        for i,(lo,hi) in enumerate(tbins):
-            y=.86-(i+.5)*(.775/nrows)
-            fig.text(.025,y,rf'$|t|\in[{lo:g},{hi:g}]$ GeV$^2$',rotation=90,
-                     ha='center',va='center',fontsize=9)
-        fig.suptitle(rf'BSA comparison: $x_B\in[{xblo:g},{xbhi:g}]$',fontsize=14,y=.995)
-        fig.legend(handles=handles,loc='upper center',ncol=2,bbox_to_anchor=(.5,.965),
+        row_groups=[]
+        for lo,hi in tbins:
+            rg=group.loc[np.isclose(group.t_abs_min,lo)&np.isclose(group.t_abs_max,hi)]
+            rg=rg.sort_values(['Q2min','Q2max'])
+            row_groups.append(rg)
+        nrows=len(row_groups)
+        ncols=max(map(len,row_groups))
+        fig=plt.figure(figsize=(max(6.4,3.55*ncols+1.1),max(3.8,2.85*nrows+1.05)))
+        grid=fig.add_gridspec(nrows,ncols,left=.105,right=.987,bottom=.095,top=.875,
+                              wspace=.13,hspace=.26)
+        for i,(tbin,rg) in enumerate(zip(tbins,row_groups)):
+            for j,(_,r) in enumerate(rg.iterrows()):
+                sub=GridSpecFromSubplotSpec(2,1,subplot_spec=grid[i,j],
+                                            height_ratios=[3.3,1],hspace=.035)
+                ax=fig.add_subplot(sub[0]);axd=fig.add_subplot(sub[1],sharex=ax)
+                mask=np.ones(len(m),dtype=bool)
+                for k in CELL:
+                    mask &= np.isclose(m[k],r[k],rtol=0,atol=1e-8)
+                d=m.loc[mask].sort_values('phi_slot')
+                common=d.loc[d.common_valid & ~d.flagged].copy()
+                n=len(common)
+                if not n:
+                    fig.delaxes(ax);fig.delaxes(axd)
+                    continue
+                variance=common.pub_stat.to_numpy()**2+common.our_stat.to_numpy()**2
+                difference=common.our_bsa.to_numpy()-common.pub_bsa.to_numpy()
+                chisq=float(np.sum(difference**2/variance))
+                pvalue=float(chi2_distribution.sf(chisq,n))
+                compatibility.append(dict(cell_id=int(r.cell_id),xBmin=xblo,xBmax=xbhi,
+                    Q2min=r.Q2min,Q2max=r.Q2max,t_abs_min=r.t_abs_min,t_abs_max=r.t_abs_max,
+                    n_common=n,chi2=chisq,ndf=n,chi2_ndf=chisq/n,p_value_naive=pvalue))
+                annotation=(rf'$\chi^2/\mathrm{{ndf}}={chisq:.1f}/{n}={chisq/n:.2f}$'+'\n'+
+                            rf'$p_{{\mathrm{{naive}}}}={pvalue:.2g}$')
+                for prefix,col,marker in [('pub',COLORS['pub'],'o'),('our',COLORS['our'],'s')]:
+                    ok=valid(d,prefix)
+                    ax.errorbar(d.loc[ok,f'{prefix}_phi'],d.loc[ok,f'{prefix}_bsa'],
+                        yerr=d.loc[ok,f'{prefix}_stat'],fmt=marker,color=col,
+                        ms=2.8,elinewidth=.75,capsize=1.2,ls='none',alpha=.9)
+                    result=fit(d,prefix,d.common_valid & ~d.flagged)
+                    if np.isfinite(result['a1']):
+                        xx=np.linspace(0,360,361)
+                        yy=model(xx,result['a1'],result['a2'])
+                        # Display only the visible part of the guide curve.
+                        ax.plot(xx,np.ma.masked_outside(yy,-.5,.5),color=col,lw=1.2)
+                axd.errorbar(common.pub_phi,difference,yerr=np.sqrt(variance),
+                    fmt='o',color='0.3',ecolor='0.65',ms=2.5,capsize=1,elinewidth=.7)
+                ax.axhline(0,color='0.5',lw=.6,ls='--')
+                axd.axhline(0,color='0.5',lw=.6,ls='--')
+                ax.set(xlim=(0,360),ylim=(-.5,.5),yticks=[-.5,-.25,0,.25,.5])
+                axd.set(xlim=(0,360),xticks=[0,90,180,270,360])
+                spread=max(.15,float(np.nanmax(np.abs(difference)+np.sqrt(variance)))*1.1)
+                axd.set_ylim(-spread,spread)
+                ax.set_title(rf'$Q^2\in[{r.Q2min:g},{r.Q2max:g}]$ GeV$^2$'
+                             f'  ·  Cell {int(r.cell_id):03d}  ·  {n}/16',fontsize=9,pad=4)
+                ax.text(.025,.035,annotation,transform=ax.transAxes,ha='left',va='bottom',
+                    fontsize=7.5,bbox=dict(facecolor='white',alpha=.83,edgecolor='none',pad=1.3))
+                ax.tick_params(labelbottom=False,labelsize=7)
+                axd.tick_params(labelsize=7)
+                ax.grid(alpha=.15);axd.grid(alpha=.15)
+                # Only the outermost column carries numeric y tick labels.
+                if j>0:
+                    ax.tick_params(labelleft=False)
+                    axd.tick_params(labelleft=False)
+                # Only the bottom row carries numeric phi tick labels.
+                if i<nrows-1:
+                    axd.tick_params(labelbottom=False)
+            # Kinematic row label is outside the plots, not a subplot.
+            ypos=.875-(i+.5)*(.78/nrows)
+            fig.text(.026,ypos,rf'$|t|\in[{tbin[0]:g},{tbin[1]:g}]$ GeV$^2$',
+                     rotation=90,ha='center',va='center',fontsize=10)
+        # Title/legend are inside a dedicated, compact header.
+        fig.text(.53,.965,rf'BSA comparison: $x_B\in[{xblo:g},{xbhi:g}]$',
+                 ha='center',va='top',fontsize=14)
+        fig.legend(handles=handles,loc='upper center',ncol=2,bbox_to_anchor=(.53,.944),
                    fontsize=10,frameon=False)
-        fig.text(.5,.018,'Compatibility p values assume independent statistical errors; shared-event covariance unknown.',
-                 ha='center',fontsize=8,color='0.35')
+        fig.supylabel(r'$A_{LU}$ (main)   /   $\Delta A_{LU}$ (lower)',x=.055,fontsize=10)
+        fig.supxlabel(r'$\phi$ (degrees)',y=.052,fontsize=10)
+        fig.text(.53,.016,'Compatibility p values assume independent statistical errors; shared-event covariance unknown.',
+                 ha='center',fontsize=7.5,color='0.35')
         save(fig,directory/f'xB_{xblo:.3f}_{xbhi:.3f}.png')
     pd.DataFrame(compatibility,columns=['cell_id','xBmin','xBmax','Q2min','Q2max',
         't_abs_min','t_abs_max','n_common','chi2','ndf','chi2_ndf','p_value_naive']
