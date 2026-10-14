@@ -172,6 +172,8 @@ def amplitudes(m,out):
         idx=np.arange(len(d))
         axes[1].errorbar(idx,d[f'delta_{param}_common'],yerr=d[f'naive_delta_{param}_err'],fmt='o',ms=3,color=COLORS['our'],ecolor='0.65',elinewidth=.7)
         axes[1].axhline(0,color='k',ls='--');axes[1].set(xlabel='Kinematic cell (sorted by Q², xB, |t|)',ylabel=f'Hayward {param} − Alvarado {param}',title='Amplitude differences (errors ignore covariance)')
+        axes[1].set_ylim(*((-0.2,0.2) if param=='a1' else (-0.3,0.3)))
+        axes[1].text(.99,.98,'Points outside axis range are clipped',transform=axes[1].transAxes,ha='right',va='top',fontsize=8)
         for ax in axes:ax.grid(alpha=.2)
         fig.suptitle(f'{param} comparison: {len(d)} cells with both fits; common measured φ bins')
         save(fig,out/f'03_amplitude_{param}_comparison.png')
@@ -297,90 +299,96 @@ def apply_flags(m, exclude_cells, exclude_points, out):
     return m
 
 def xb_canvases(m,s,out):
-    """One xB canvas: Q² columns, |t| rows, common-point compatibility tests."""
+    """One canvas per xB interval: Q2 columns and |t| rows.
+
+    The lower strip shows Hayward minus Alvarado with quadrature statistical
+    uncertainties. Compatibility uses common measured slots, no curve fit.
+    """
+    from matplotlib.lines import Line2D
+    from matplotlib.gridspec import GridSpecFromSubplotSpec
     directory=out/'xB_canvases'
     directory.mkdir(exist_ok=True)
-    # Prevent old paginated images from being mistaken for current outputs.
     for old in directory.glob('xB_*_page*.png'):
         old.unlink()
-
-    from matplotlib.lines import Line2D
     handles=[Line2D([0],[0],color=COLORS['pub'],marker='o',lw=1.5,ms=5,label='Alvarado'),
              Line2D([0],[0],color=COLORS['our'],marker='s',lw=1.5,ms=5,label='Hayward')]
     compatibility=[]
     for (xblo,xbhi),group in s.groupby(['xBmin','xBmax'],sort=True):
-        # Cells with no overlapping measured phi slots are not displayed.
         group=group.loc[group.n_common>0].copy()
-        if group.empty:
-            continue
+        if group.empty:continue
         qbins=sorted(set(zip(group.Q2min,group.Q2max)))
         tbins=sorted(set(zip(group.t_abs_min,group.t_abs_max)))
-        qindex={v:i for i,v in enumerate(qbins)}
-        tindex={v:i for i,v in enumerate(tbins)}
         ncols,nrows=len(qbins),len(tbins)
-        fig,axes=plt.subplots(nrows,ncols,figsize=(max(5.2,4.0*ncols),max(4.0,3.15*nrows)),
-                              squeeze=False,sharex=True,sharey=True)
-        for ax in axes.flat:
-            ax.set_visible(False)
+        fig=plt.figure(figsize=(max(6,4.4*ncols),max(4.6,3.65*nrows)))
+        grid=fig.add_gridspec(nrows,ncols,left=.105,right=.975,bottom=.085,top=.86,
+                             wspace=.25,hspace=.52)
+        slots={}
         for _,r in group.iterrows():
-            ax=axes[tindex[(r.t_abs_min,r.t_abs_max)],qindex[(r.Q2min,r.Q2max)]]
-            ax.set_visible(True)
+            i=tbins.index((r.t_abs_min,r.t_abs_max))
+            j=qbins.index((r.Q2min,r.Q2max))
+            sub=GridSpecFromSubplotSpec(2,1,subplot_spec=grid[i,j],height_ratios=[3,1],hspace=.05)
+            ax=fig.add_subplot(sub[0]);axd=fig.add_subplot(sub[1],sharex=ax)
+            slots[(i,j)]=(ax,axd)
             mask=np.ones(len(m),dtype=bool)
-            for k in CELL:
-                mask &= np.isclose(m[k],r[k],rtol=0,atol=1e-8)
+            for k in CELL:mask &= np.isclose(m[k],r[k],rtol=0,atol=1e-8)
             d=m.loc[mask].sort_values('phi_slot')
             common=d.loc[d.common_valid & ~d.flagged].copy()
-            # No parameters are fitted in this point-by-point compatibility test.
-            # Its denominator assumes independent errors; shared-event covariance
-            # is unknown, so the nominal p value is descriptive only.
             n=len(common)
-            if n:
-                variance=common.pub_stat.to_numpy()**2+common.our_stat.to_numpy()**2
-                chisq=float(np.sum((common.our_bsa.to_numpy()-common.pub_bsa.to_numpy())**2/variance))
-                pvalue=float(chi2_distribution.sf(chisq,n))
-                compatibility.append(dict(cell_id=int(r.cell_id),xBmin=xblo,xBmax=xbhi,
-                                          Q2min=r.Q2min,Q2max=r.Q2max,
-                                          t_abs_min=r.t_abs_min,t_abs_max=r.t_abs_max,
-                                          n_common=n,chi2=chisq,ndf=n,
-                                          chi2_ndf=chisq/n,p_value_naive=pvalue))
-                annotation=rf'$\\chi^2/\\mathrm{{ndf}}={chisq:.1f}/{n}$'+'\\n'+rf'$p_{{\\mathrm{{naive}}}}={pvalue:.2g}$'
-            else:
-                annotation='No unflagged common points'
+            if not n:
+                plt.delaxes(ax);plt.delaxes(axd)
+                del slots[(i,j)]
+                continue
+            variance=common.pub_stat.to_numpy()**2+common.our_stat.to_numpy()**2
+            difference=common.our_bsa.to_numpy()-common.pub_bsa.to_numpy()
+            chisq=float(np.sum(difference**2/variance))
+            pvalue=float(chi2_distribution.sf(chisq,n))
+            compatibility.append(dict(cell_id=int(r.cell_id),xBmin=xblo,xBmax=xbhi,
+                Q2min=r.Q2min,Q2max=r.Q2max,t_abs_min=r.t_abs_min,t_abs_max=r.t_abs_max,
+                n_common=n,chi2=chisq,ndf=n,chi2_ndf=chisq/n,p_value_naive=pvalue))
+            # Use real newlines and single backslashes in matplotlib mathtext.
+            annotation=(rf'$\chi^2/\mathrm{{ndf}}={chisq:.1f}/{n}$'+'\n'+
+                        rf'$p_{{\mathrm{{naive}}}}={pvalue:.2g}$')
             for prefix,col,marker in [('pub',COLORS['pub'],'o'),('our',COLORS['our'],'s')]:
                 ok=valid(d,prefix)
                 ax.errorbar(d.loc[ok,f'{prefix}_phi'],d.loc[ok,f'{prefix}_bsa'],
-                            yerr=d.loc[ok,f'{prefix}_stat'],fmt=marker,color=col,
-                            ms=3.1,elinewidth=.8,capsize=1.5,ls='none',alpha=.9)
-                fitresult=fit(d,prefix,d.common_valid & ~d.flagged)
-                if np.isfinite(fitresult['a1']):
+                    yerr=d.loc[ok,f'{prefix}_stat'],fmt=marker,color=col,
+                    ms=3,elinewidth=.8,capsize=1.3,ls='none',alpha=.9)
+                result=fit(d,prefix,d.common_valid & ~d.flagged)
+                if np.isfinite(result['a1']):
                     xx=np.linspace(0,360,361)
-                    ax.plot(xx,model(xx,fitresult['a1'],fitresult['a2']),color=col,lw=1.3)
+                    ax.plot(xx,model(xx,result['a1'],result['a2']),color=col,lw=1.2)
+            axd.errorbar(common.pub_phi,difference,yerr=np.sqrt(variance),
+                fmt='o',color='0.3',ecolor='0.65',ms=2.6,capsize=1,elinewidth=.7)
             ax.axhline(0,color='0.5',lw=.6,ls='--')
-            ax.set(xlim=(0,360),ylim=(-1,1),xticks=[0,90,180,270,360])
-            ax.set_title(f"cell {int(r.cell_id):03d} · common {int(r.n_common)}/16",fontsize=9,pad=5)
+            axd.axhline(0,color='0.5',lw=.6,ls='--')
+            ax.set(xlim=(0,360),ylim=(-1,1))
+            axd.set(xlim=(0,360),xticks=[0,90,180,270,360])
+            # Keep the difference band compact, but avoid hiding outliers.
+            spread=max(.15,float(np.nanmax(np.abs(difference)+np.sqrt(variance)))*1.1)
+            axd.set_ylim(-spread,spread)
+            ax.set_title(f'Cell {int(r.cell_id):03d} · common {n}/16',fontsize=9,pad=4)
             ax.text(.03,.04,annotation,transform=ax.transAxes,ha='left',va='bottom',
-                    fontsize=8,bbox=dict(facecolor='white',alpha=.82,edgecolor='none',pad=2))
-            ax.tick_params(labelsize=8)
-            ax.grid(alpha=.16)
-        # Column headers indicate Q²; row headers indicate |t|.
+                fontsize=7.5,bbox=dict(facecolor='white',alpha=.8,edgecolor='none',pad=1.5))
+            ax.tick_params(labelbottom=False,labelsize=7)
+            axd.tick_params(labelsize=7)
+            ax.grid(alpha=.15);axd.grid(alpha=.15)
+            axd.set_xlabel(r'$\phi$ (degrees)',fontsize=8)
+            if j==0:
+                ax.set_ylabel(r'$A_{LU}$',fontsize=9)
+                axd.set_ylabel(r'$\Delta A$',fontsize=8)
+        # Put column and row headings in figure coordinates, clear of data panels.
         for j,(lo,hi) in enumerate(qbins):
-            fig.text((j+.5)/ncols,.945,rf'$Q^2\\in[{lo:g},{hi:g}]$ GeV$^2$',
-                     ha='center',va='center',fontsize=11)
+            x=.105+(j+.5)*(.87/ncols)
+            fig.text(x,.89,rf'$Q^2\in[{lo:g},{hi:g}]$ GeV$^2$',ha='center',fontsize=10)
         for i,(lo,hi) in enumerate(tbins):
-            fig.text(.008, .875-(i+.5)*(.79/nrows),rf'$|t|\\in[{lo:g},{hi:g}]$ GeV$^2$',
-                     rotation=90,ha='center',va='center',fontsize=10)
-        for j in range(ncols):
-            visible=[axes[i,j] for i in range(nrows) if axes[i,j].get_visible()]
-            if visible:
-                visible[-1].set_xlabel(r'$\\phi$ (degrees)',fontsize=9)
-        for i in range(nrows):
-            visible=[axes[i,j] for j in range(ncols) if axes[i,j].get_visible()]
-            if visible:
-                visible[0].set_ylabel(r'$A_{LU}$',fontsize=10)
-        fig.suptitle(rf'BSA comparison — $x_B\\in[{xblo:g},{xbhi:g}]$',fontsize=15,y=.997)
-        fig.legend(handles=handles,loc='upper center',ncol=2,bbox_to_anchor=(.5,.975),
-                   fontsize=11,frameon=False)
-        fig.subplots_adjust(left=.095,right=.985,bottom=.065,top=.90,hspace=.48,wspace=.23)
+            y=.86-(i+.5)*(.775/nrows)
+            fig.text(.025,y,rf'$|t|\in[{lo:g},{hi:g}]$ GeV$^2$',rotation=90,
+                     ha='center',va='center',fontsize=9)
+        fig.suptitle(rf'BSA comparison: $x_B\in[{xblo:g},{xbhi:g}]$',fontsize=14,y=.995)
+        fig.legend(handles=handles,loc='upper center',ncol=2,bbox_to_anchor=(.5,.965),
+                   fontsize=10,frameon=False)
+        fig.text(.5,.018,'Compatibility p values assume independent statistical errors; shared-event covariance unknown.',
+                 ha='center',fontsize=8,color='0.35')
         save(fig,directory/f'xB_{xblo:.3f}_{xbhi:.3f}.png')
     pd.DataFrame(compatibility,columns=['cell_id','xBmin','xBmax','Q2min','Q2max',
         't_abs_min','t_abs_max','n_common','chi2','ndf','chi2_ndf','p_value_naive']
