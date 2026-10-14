@@ -405,8 +405,18 @@ def main():
     ap.add_argument('--phi-cell-plots',action='store_true',help='Generate additional per-cell phi-mean diagnostic figures')
     ap.add_argument('--exclude-points',default='',help='Optional CSV listing cell_id,phi_slot pairs to exclude from common-bin fits')
     ap.add_argument('--top-cells',type=int,default=12,help='Number of representative cell overlays (default: 12)')
+    ap.add_argument('--min-t-bin-edge',type=float,default=0.12,
+                    help='Minimum lower edge of |t| bin in GeV^2 (default: 0.12; use 0 to restore all bins)')
     args=ap.parse_args();out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
     m,raw,ref=load(args.our,args.reference)
+    if not np.isfinite(args.min_t_bin_edge) or args.min_t_bin_edge < 0:
+        ap.error('--min-t-bin-edge must be a finite nonnegative value')
+    total_rows, total_cells = len(m), m[CELL].drop_duplicates().shape[0]
+    selected = m['t_abs_min'] >= args.min_t_bin_edge - 1e-9
+    m = m.loc[selected].copy()
+    if m.empty:
+        ap.error(f'No reference rows with |t| lower bin edge >= {args.min_t_bin_edge:g} GeV^2')
+    ref = ref.loc[ref['t_abs_min'] >= args.min_t_bin_edge - 1e-9].copy()
     m=apply_flags(m,args.exclude_cells,args.exclude_points,out)
     m.to_csv(out/'point_by_point.csv',index=False)
     overview(m,out);s=amplitudes(m,out);miss=missing(m,s,out)
@@ -420,7 +430,9 @@ def main():
     xb_canvases(m,s,out)
     phi_diagnostics(m,s,out,args.phi_cell_plots)
     filtered_amplitude_summary(s,out)
-    report=[f'Published Table II rows: {len(ref)}',f'Kinematic cells: {len(s)}',
+    report=[f'Published Table II rows after |t| selection: {len(ref)} (of {total_rows})',
+            f'Kinematic cells after |t| selection: {len(s)} (of {total_cells})',
+            f'Applied |t| lower-bin-edge threshold: {args.min_t_bin_edge:g} GeV^2',
             f'Rows matched to analysis bin keys: {(m._merge=="both").sum()}',
             f'Common valid BSA points: {m.common_valid.sum()}',
             f'Published rows without common valid BSA: {len(miss)}',
