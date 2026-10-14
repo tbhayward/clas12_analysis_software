@@ -9,6 +9,7 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 from scipy.optimize import curve_fit
+from scipy.stats import chi2 as chi2_distribution
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -296,51 +297,94 @@ def apply_flags(m, exclude_cells, exclude_points, out):
     return m
 
 def xb_canvases(m,s,out):
-    """Multi-panel xB canvases, ordered by Q2 and |t|; raw points plus common-bin fits."""
-    directory=out/'xB_canvases';directory.mkdir(exist_ok=True)
-    xb_groups=s.groupby(['xBmin','xBmax'],sort=True)
-    for (xblo,xbhi),group in xb_groups:
-        group=group.sort_values(['Q2min','t_abs_min'])
-        ncols=4
-        # Limit each page to 12 subplots to retain legibility.
-        for page,start in enumerate(range(0,len(group),12),1):
-            subset=group.iloc[start:start+12]
-            nrows=int(np.ceil(len(subset)/ncols))
-            fig,axes=plt.subplots(nrows,ncols,figsize=(16,3.45*nrows),squeeze=False,sharex=True,sharey=True)
-            for ax in axes.flat:ax.set_visible(False)
-            for ax,(_,r) in zip(axes.flat,subset.iterrows()):
-                ax.set_visible(True)
-                mask=np.ones(len(m),dtype=bool)
-                for k in CELL:mask &= np.isclose(m[k],r[k],rtol=0,atol=1e-8)
-                d=m.loc[mask].sort_values('phi_slot')
-                for prefix,col,marker in [('pub',COLORS['pub'],'o'),('our',COLORS['our'],'s')]:
-                    ok=valid(d,prefix)
-                    ax.errorbar(d.loc[ok,f'{prefix}_phi'],d.loc[ok,f'{prefix}_bsa'],
-                                yerr=d.loc[ok,f'{prefix}_stat'],fmt=marker,color=col,
-                                ms=3.1,elinewidth=.8,capsize=1.5,ls='none',alpha=.9)
-                    fitresult=fit(d,prefix,d.common_valid & ~d.flagged)
-                    if np.isfinite(fitresult['a1']):
-                        xx=np.linspace(0,360,361)
-                        ax.plot(xx,model(xx,fitresult['a1'],fitresult['a2']),color=col,lw=1.3)
-                if d.flagged.any():
-                    ax.text(.98,.97,'FLAGGED',transform=ax.transAxes,ha='right',va='top',fontsize=7,color='darkred')
-                ax.axhline(0,color='0.5',lw=.6,ls='--')
-                ax.set(xlim=(0,360),ylim=(-1,1),xticks=[0,90,180,270,360])
-                ax.set_title(f"Q² [{r.Q2min:g},{r.Q2max:g}]   |t| [{r.t_abs_min:g},{r.t_abs_max:g}]\n"
-                             f"cell {int(r.cell_id):03d}  common {int(r.n_common)}/{int(r.n_published)}",
-                             fontsize=9)
-                ax.tick_params(labelsize=8);ax.grid(alpha=.16)
-            for ax in axes[-1,:]:
-                if ax.get_visible():ax.set_xlabel(r'$\phi$ (degrees)',fontsize=9)
-            for ax in axes[:,0]:
-                if ax.get_visible():ax.set_ylabel(r'$A_{LU}$',fontsize=10)
-            from matplotlib.lines import Line2D
-            handles=[Line2D([0],[0],color=COLORS['pub'],marker='o',lw=1.5,ms=5,label='Alvarado'),
-                     Line2D([0],[0],color=COLORS['our'],marker='s',lw=1.5,ms=5,label='Hayward')]
-            fig.legend(handles=handles,loc='upper center',ncol=2,bbox_to_anchor=(.5,.972),fontsize=11)
-            fig.suptitle(f'BSA comparison — xB in [{xblo:g}, {xbhi:g}]  (page {page})',fontsize=15,y=.998)
-            fig.tight_layout(rect=[0,0,1,.925])
-            save(fig,directory/f'xB_{xblo:.3f}_{xbhi:.3f}_page{page:02d}.png')
+    """One xB canvas: Q² columns, |t| rows, common-point compatibility tests."""
+    directory=out/'xB_canvases'
+    directory.mkdir(exist_ok=True)
+    # Prevent old paginated images from being mistaken for current outputs.
+    for old in directory.glob('xB_*_page*.png'):
+        old.unlink()
+
+    from matplotlib.lines import Line2D
+    handles=[Line2D([0],[0],color=COLORS['pub'],marker='o',lw=1.5,ms=5,label='Alvarado'),
+             Line2D([0],[0],color=COLORS['our'],marker='s',lw=1.5,ms=5,label='Hayward')]
+    compatibility=[]
+    for (xblo,xbhi),group in s.groupby(['xBmin','xBmax'],sort=True):
+        # Cells with no overlapping measured phi slots are not displayed.
+        group=group.loc[group.n_common>0].copy()
+        if group.empty:
+            continue
+        qbins=sorted(set(zip(group.Q2min,group.Q2max)))
+        tbins=sorted(set(zip(group.t_abs_min,group.t_abs_max)))
+        qindex={v:i for i,v in enumerate(qbins)}
+        tindex={v:i for i,v in enumerate(tbins)}
+        ncols,nrows=len(qbins),len(tbins)
+        fig,axes=plt.subplots(nrows,ncols,figsize=(max(5.2,4.0*ncols),max(4.0,3.15*nrows)),
+                              squeeze=False,sharex=True,sharey=True)
+        for ax in axes.flat:
+            ax.set_visible(False)
+        for _,r in group.iterrows():
+            ax=axes[tindex[(r.t_abs_min,r.t_abs_max)],qindex[(r.Q2min,r.Q2max)]]
+            ax.set_visible(True)
+            mask=np.ones(len(m),dtype=bool)
+            for k in CELL:
+                mask &= np.isclose(m[k],r[k],rtol=0,atol=1e-8)
+            d=m.loc[mask].sort_values('phi_slot')
+            common=d.loc[d.common_valid & ~d.flagged].copy()
+            # No parameters are fitted in this point-by-point compatibility test.
+            # Its denominator assumes independent errors; shared-event covariance
+            # is unknown, so the nominal p value is descriptive only.
+            n=len(common)
+            if n:
+                variance=common.pub_stat.to_numpy()**2+common.our_stat.to_numpy()**2
+                chisq=float(np.sum((common.our_bsa.to_numpy()-common.pub_bsa.to_numpy())**2/variance))
+                pvalue=float(chi2_distribution.sf(chisq,n))
+                compatibility.append(dict(cell_id=int(r.cell_id),xBmin=xblo,xBmax=xbhi,
+                                          Q2min=r.Q2min,Q2max=r.Q2max,
+                                          t_abs_min=r.t_abs_min,t_abs_max=r.t_abs_max,
+                                          n_common=n,chi2=chisq,ndf=n,
+                                          chi2_ndf=chisq/n,p_value_naive=pvalue))
+                annotation=rf'$\\chi^2/\\mathrm{{ndf}}={chisq:.1f}/{n}$'+'\\n'+rf'$p_{{\\mathrm{{naive}}}}={pvalue:.2g}$'
+            else:
+                annotation='No unflagged common points'
+            for prefix,col,marker in [('pub',COLORS['pub'],'o'),('our',COLORS['our'],'s')]:
+                ok=valid(d,prefix)
+                ax.errorbar(d.loc[ok,f'{prefix}_phi'],d.loc[ok,f'{prefix}_bsa'],
+                            yerr=d.loc[ok,f'{prefix}_stat'],fmt=marker,color=col,
+                            ms=3.1,elinewidth=.8,capsize=1.5,ls='none',alpha=.9)
+                fitresult=fit(d,prefix,d.common_valid & ~d.flagged)
+                if np.isfinite(fitresult['a1']):
+                    xx=np.linspace(0,360,361)
+                    ax.plot(xx,model(xx,fitresult['a1'],fitresult['a2']),color=col,lw=1.3)
+            ax.axhline(0,color='0.5',lw=.6,ls='--')
+            ax.set(xlim=(0,360),ylim=(-1,1),xticks=[0,90,180,270,360])
+            ax.set_title(f"cell {int(r.cell_id):03d} · common {int(r.n_common)}/16",fontsize=9,pad=5)
+            ax.text(.03,.04,annotation,transform=ax.transAxes,ha='left',va='bottom',
+                    fontsize=8,bbox=dict(facecolor='white',alpha=.82,edgecolor='none',pad=2))
+            ax.tick_params(labelsize=8)
+            ax.grid(alpha=.16)
+        # Column headers indicate Q²; row headers indicate |t|.
+        for j,(lo,hi) in enumerate(qbins):
+            fig.text((j+.5)/ncols,.945,rf'$Q^2\\in[{lo:g},{hi:g}]$ GeV$^2$',
+                     ha='center',va='center',fontsize=11)
+        for i,(lo,hi) in enumerate(tbins):
+            fig.text(.008, .875-(i+.5)*(.79/nrows),rf'$|t|\\in[{lo:g},{hi:g}]$ GeV$^2$',
+                     rotation=90,ha='center',va='center',fontsize=10)
+        for j in range(ncols):
+            visible=[axes[i,j] for i in range(nrows) if axes[i,j].get_visible()]
+            if visible:
+                visible[-1].set_xlabel(r'$\\phi$ (degrees)',fontsize=9)
+        for i in range(nrows):
+            visible=[axes[i,j] for j in range(ncols) if axes[i,j].get_visible()]
+            if visible:
+                visible[0].set_ylabel(r'$A_{LU}$',fontsize=10)
+        fig.suptitle(rf'BSA comparison — $x_B\\in[{xblo:g},{xbhi:g}]$',fontsize=15,y=.997)
+        fig.legend(handles=handles,loc='upper center',ncol=2,bbox_to_anchor=(.5,.975),
+                   fontsize=11,frameon=False)
+        fig.subplots_adjust(left=.095,right=.985,bottom=.065,top=.90,hspace=.48,wspace=.23)
+        save(fig,directory/f'xB_{xblo:.3f}_{xbhi:.3f}.png')
+    pd.DataFrame(compatibility,columns=['cell_id','xBmin','xBmax','Q2min','Q2max',
+        't_abs_min','t_abs_max','n_common','chi2','ndf','chi2_ndf','p_value_naive']
+        ).to_csv(directory/'pointwise_compatibility.csv',index=False)
 
 def phi_diagnostics(m,s,out,individual=False):
     directory=out/'phi_diagnostics';directory.mkdir(exist_ok=True)
