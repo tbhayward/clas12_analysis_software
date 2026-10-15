@@ -18,7 +18,7 @@ from matplotlib.gridspec import GridSpecFromSubplotSpec
 from matplotlib.lines import Line2D
 
 KEY=['Q2min','Q2max','xBmin','xBmax','t_abs_min','t_abs_max']
-PERIODS={'Fa18':('Fa18',10.6),'Sp18':('Sp18',10.6),'Sp19':('Sp19',10.2)}
+PERIODS={'Fa18':('Fa18',10.6),'Sp18':('Sp18',10.6),'Sp19':('Sp19 Inb',10.2)}
 COLORS={'Fa18':'#d62728','Sp18':'#1764ad','Sp19':'#228b55'}
 
 def modulation(phi,a1,a2):
@@ -42,11 +42,18 @@ def load(path):
         if k not in df:raise KeyError(f'Missing bin key {k}; available: {list(df.columns)}')
         df[k]=pd.to_numeric(df[k],errors='raise')
     if not {'phimin','phimax'}.issubset(df):raise KeyError('Expected phimin and phimax')
-    df['phi_slot']=np.rint(pd.to_numeric(df.phimin)/22.5).astype(int)
-    if df.duplicated(KEY+['phi_slot']).any():raise ValueError('Duplicate bin/phi rows')
+    # The analysis uses variable-width phi bins (often 15 or 30 degrees).
+    # Dividing phimin by 22.5 incorrectly aliases distinct bins.
+    df['phimin']=pd.to_numeric(df['phimin'],errors='raise')
+    df['phimax']=pd.to_numeric(df['phimax'],errors='raise')
+    if df.duplicated(KEY+['phimin','phimax']).any():
+        raise ValueError('Duplicate rows with identical 4D bin edges')
+    df=df.sort_values(KEY+['phimin','phimax']).copy()
+    df['phi_slot']=df.groupby(KEY,sort=False).cumcount()
     for period in PERIODS:
-        bcol=find_col(df.columns,[f'BSA, counts, {period}',f'BSA, {period}'])
-        pcol=find_col(df.columns,[f'phiavg, {period}',f'phiavg, {period} Inb', 'phiavg'])
+        source=PERIODS[period][0]
+        bcol=find_col(df.columns,[f'BSA, counts, {source}',f'BSA, {source}'])
+        pcol=find_col(df.columns,[f'phiavg, {source}'])
         if bcol is None:raise KeyError(f'Missing BSA column for {period}; available: {list(df.columns)}')
         if pcol is None:raise KeyError(f'Missing measured phiavg for {period}; available: {list(df.columns)}')
         pair=np.array([parse_pair(v) for v in df[bcol]],dtype=float)
