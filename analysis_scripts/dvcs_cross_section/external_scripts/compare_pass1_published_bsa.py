@@ -53,7 +53,11 @@ def cell_info(cid):
 
 def parse_pair(v):
     try:
-        z=ast.literal_eval(str(v));return float(z[0]),float(z[1])
+        z=ast.literal_eval(str(v))
+        # The analysis exports (value, statistical_error, auxiliary_flag).
+        # Only the first two entries are used for this comparison.
+        if not isinstance(z,(tuple,list)) or len(z)<2:return np.nan,np.nan
+        return float(z[0]),float(z[1])
     except (ValueError,TypeError,SyntaxError,IndexError):return np.nan,np.nan
     #endtry
 #enddef
@@ -72,34 +76,37 @@ def read_pass2(path):
     src=pd.read_csv(path,low_memory=False)
     out=[]
     for energy,label in [(10.6,'10.6 GeV'),(10.2,'Sp19 Inb')]:
-        required=[f'BSA, counts, {label}',f'phiavg, {label}',f'Q2avg, {label}',
-                  f'xBavg, {label}',f't_abs_avg, {label}']
+        bsa_col=f'BSA, counts, {label}'
+        required=['Bin Name','phimin','phimax','Q2min','Q2max','xBmin','xBmax',
+                  't_abs_min','t_abs_max',bsa_col]
         missing=[c for c in required if c not in src.columns]
         if missing:raise ValueError(f'Missing Pass-2 CSV columns: {missing}')
         #endif
         for _,r in src.iterrows():
-            a,e=parse_pair(r[required[0]])
-            phi=pd.to_numeric(r[required[1]],errors='coerce')
-            q=pd.to_numeric(r[required[2]],errors='coerce')
-            x=pd.to_numeric(r[required[3]],errors='coerce')
-            t=pd.to_numeric(r[required[4]],errors='coerce')
-            if not all(np.isfinite(z) for z in (a,e,phi,q,x,t)) or e<=0:continue
+            a,e=parse_pair(r[bsa_col])
+            if not np.isfinite(a) or not np.isfinite(e) or e<=0:continue
             #endif
-            # CRITICAL: CSV t_abs_min/max denote -t' boundaries for this special export.
-            # Bin Name is the authoritative 3D cell identifier (1..64).
-            cid=int(float(r['Bin Name'])) if pd.notna(r['Bin Name']) else -1
+            cid=pd.to_numeric(r['Bin Name'],errors='coerce')
+            low=pd.to_numeric(r['phimin'],errors='coerce')
+            high=pd.to_numeric(r['phimax'],errors='coerce')
+            if not all(np.isfinite(z) for z in (cid,low,high)):continue
+            #endif
+            cid=int(cid)
             if cid<1 or cid>64:continue
             #endif
-            tp=float(tprime(q,x,t))
-            assigned=cell_id(q,x,tp)
-            # Do not silently change the Pass-1 cell from mean kinematics: this is
-            # a diagnostic because means of t and tmin need not commute.
-            out.append(dict(phi=float(phi)%360,Q2=float(q),xB=float(x),t=-abs(float(t)),
-                            tp=tp,energy=energy,A=a,err=e,cell=cid,source='Pass-2',
-                            mean_kinematics_cell=assigned))
+            # This dedicated CSV uses -t' in the t_abs_min/max columns.
+            # Period-specific mean kinematics are not populated in this export.
+            # Use the actual Pass-2 azimuthal bin center for plotting instead.
+            phi=(float(low)+float(high))/2.0
+            out.append(dict(phi=phi%360,Q2=np.nan,xB=np.nan,t=np.nan,tp=np.nan,
+                            energy=energy,A=float(a),err=float(e),cell=cid,
+                            source='Pass-2',mean_kinematics_cell=-1,
+                            phi_min=float(low),phi_max=float(high)))
         #endfor
     #endfor
-    return pd.DataFrame(out)
+    return pd.DataFrame(out,columns=['phi','Q2','xB','t','tp','energy','A','err',
+                                     'cell','source','mean_kinematics_cell',
+                                     'phi_min','phi_max'])
 #enddef
 
 def coverage(g,maxgap,minpts):
@@ -253,8 +260,8 @@ def main():
     if len(p2)==0:raise RuntimeError('No valid Pass-2 BSA values; check the alternate CSV was populated.')
     #endif
     mismatches=p2[(p2.mean_kinematics_cell>0)&(p2.cell!=p2.mean_kinematics_cell)]
-    print(f'[bin audit] {len(mismatches)} Pass-2 phi points have mean-kinematics cell different from assigned bin; '
-          'matching always uses authoritative CSV Bin Name.')
+    print('[bin audit] Pass-2 mean kinematics unavailable in this export; '
+          'using authoritative CSV Bin Name and azimuthal-bin centers.')
     allpoints=pd.concat([p1,p2],ignore_index=True)
     allpoints.to_csv(out/'csv_matched_source_points.csv',index=False)
     records=[]
