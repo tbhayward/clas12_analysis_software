@@ -1,3 +1,4 @@
+#include "sebastian_tgamma_binning.h"
 // bsa.cpp
 // -----------------------------------------------------------------------------
 // Pi0-subtracted, direct count-based beam-spin asymmetry stage for the DVCS
@@ -835,7 +836,7 @@ struct BranchBinder {
     }
 
     double phi_deg() const { return wrap_phi_deg(phi2 * RAD2DEG); }
-    double t_abs() const { return std::fabs(t1); }
+    double t_abs() const { return sebastian_bin_t(t1,e_p,e_theta,e_phi,p2_p,p2_theta,p2_phi); }
 
     double delta_phi_value(bool& has_val) const {
         if (has_Delta_phi) { has_val = true; return Delta_phi; }

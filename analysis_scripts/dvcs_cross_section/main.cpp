@@ -1,3 +1,4 @@
+#include "sebastian_tgamma_binning.h"
 #include "initialize_pass2_csv.h"
 #include "make_dirs.h"
 #include "load_trees.h"
@@ -133,6 +134,7 @@ static SystematicRunSelection parse_systematic_selection(
 int main(int argc, char* argv[]) {
     bool run_pass1_bsa_binning = false;
     bool run_sebastian_bsa_binning = false;
+    bool run_sebastian_tgamma_binning = false;
     bool acceptance_reweighting_only = false;
     bool topology_acceptance_study = false;
     std::string topology_study_csv;
@@ -149,9 +151,12 @@ int main(int argc, char* argv[]) {
             run_pass1_bsa_binning = true;
         } else if (std::string(argv[i]) == "--sebastian-bsa-binning") {
             run_sebastian_bsa_binning = true;
+        } else if (std::string(argv[i]) == "--sebastian-tgamma-binning") {
+            run_sebastian_tgamma_binning = true;
         } else if (std::string(argv[i]) == "--all-bsa-binning-cross-checks") {
             run_pass1_bsa_binning = true;
             run_sebastian_bsa_binning = true;
+            run_sebastian_tgamma_binning = true;
         } else if (std::string(argv[i]) == "--acceptance-reweighting-only") {
             acceptance_reweighting_only = true;
         } else if (std::string(argv[i]) == "--topology-acceptance-study") {
@@ -1081,10 +1086,13 @@ int main(int argc, char* argv[]) {
         // Uses the exact published Q2, xB, |t| and 22.5-degree phi boundaries.
         // The 90 published 3D cells are recomputed from event-level yields;
         // this is NOT a remapping of nominal BSA points. Nominal CSV untouched.
-        if (run_sebastian_bsa_binning) {
+        if (run_sebastian_bsa_binning || run_sebastian_tgamma_binning) {
+          for (const bool tgamma_mode : {false, true}) {
+            if (tgamma_mode ? !run_sebastian_tgamma_binning : !run_sebastian_bsa_binning) continue;
+            sebastian_use_tgamma_binning.store(tgamma_mode);
             const std::string seb_import = "imports/sebastian_tableII_binning.csv";
-            const std::string seb_csv = "output/csvs/dvcs_pass2_sebastian_binning.csv";
-            const std::string seb_root = "output/sebastian_bsa_cross_check";
+            const std::string seb_csv = tgamma_mode ? "output/csvs/dvcs_pass2_sebastian_tgamma_binning.csv" : "output/csvs/dvcs_pass2_sebastian_binning.csv";
+            const std::string seb_root = tgamma_mode ? "output/sebastian_bsa_tgamma_cross_check" : "output/sebastian_bsa_cross_check";
             if (!initialize_pass2_csv(seb_import, seb_csv)) {
                 std::cerr << "[main] ERROR: Sebastian Table II CSV initialization failed.\n";
                 std::exit(EXIT_FAILURE);
@@ -1178,6 +1186,8 @@ int main(int argc, char* argv[]) {
                 }
             }
             std::cout << "[main] Sebastian Table II comparison CSV: " << seb_csv << "\n";
+          }
+          sebastian_use_tgamma_binning.store(false);
         }
     }
 

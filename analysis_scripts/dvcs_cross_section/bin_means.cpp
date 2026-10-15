@@ -1,3 +1,4 @@
+#include "sebastian_tgamma_binning.h"
 // bin_means.cpp
 // Progress-enabled, thread-safe binding for ROOT. Single pass per TTree.
 // Uses ONLY phi2 (radians) -> converts to degrees for CSV phimin/phimax checks.
@@ -737,7 +738,7 @@ static bool row_accepts_kin(const BranchBinder& b,
                             double xBmin, double xBmax,
                             double Q2min, double Q2max,
                             double tmin, double tmax) {
-    const double tabs = std::fabs(b.t1);
+    const double tabs = sebastian_bin_t(b.t1,b.e_p,b.e_theta,b.e_phi,b.p2_p,b.p2_theta,b.p2_phi);
     if (!in_range(b.x,  xBmin, xBmax)) return false;
     if (!in_range(b.Q2, Q2min, Q2max)) return false;
     if (!in_range(tabs, tmin, tmax))   return false;
@@ -895,7 +896,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         const double p_phi_deg = b.p_phi_deg();
         const double g_theta_deg = b.g_theta_deg();
 
-        const double tabs = std::fabs(b.t1);
+        const double tabs = sebastian_bin_t(b.t1,b.e_p,b.e_theta,b.e_phi,b.p2_p,b.p2_theta,b.p2_phi);
         bool used_any_row = false;
 
         auto test_rows = [&](const std::vector<int>& candidate_rows) {
