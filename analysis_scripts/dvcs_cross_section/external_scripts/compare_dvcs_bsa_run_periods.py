@@ -19,7 +19,8 @@ from matplotlib.lines import Line2D
 
 KEY=['Q2min','Q2max','xBmin','xBmax','t_abs_min','t_abs_max']
 PERIODS={'Fa18':('Fa18',10.6),'Sp18':('Sp18',10.6),'Sp19':('Sp19 Inb',10.2)}
-COLORS={'Fa18':'#d62728','Sp18':'#1764ad','Sp19':'#228b55'}
+# Colorblind-accessible pairings: blue versus orange (no red/green pairing).
+COLORS={'Fa18':'#0072B2','Sp18':'#E69F00','Sp19':'#009E73'}
 
 def modulation(phi,a1,a2):
     theta=np.deg2rad(phi)
