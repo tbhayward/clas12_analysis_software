@@ -734,11 +734,24 @@ static bool row_accepts_phi(double phi_deg, double pmin_deg, double pmax_deg) {
     if (pmax_deg > pmin_deg) return in_range(phi_deg, pmin_deg, pmax_deg);
     return (phi_deg >= pmin_deg) || (phi_deg < pmax_deg); // wrap-around
 }
+// Keep the event-level definition identical to total_counts.cpp and bsa.cpp.
+static double bin_means_dvcs_tprime(double xB, double Q2, double t_abs) {
+    static constexpr double MP = 0.9382720813;
+    if (!(xB > 0.0 && xB < 1.0 && Q2 > 0.0)) return -1.0;
+    const double eps2 = 4.0 * MP * MP * xB * xB / Q2;
+    const double minus_tmin = Q2 *
+        (2.0 * (1.0 - xB) * (1.0 - std::sqrt(1.0 + eps2)) + eps2) /
+        (4.0 * xB * (1.0 - xB) + eps2);
+    return t_abs - minus_tmin;
+}
+
 static bool row_accepts_kin(const BranchBinder& b,
                             double xBmin, double xBmax,
                             double Q2min, double Q2max,
-                            double tmin, double tmax) {
-    const double tabs = sebastian_bin_t(b.t1,b.e_p,b.e_theta,b.e_phi,b.p2_p,b.p2_theta,b.p2_phi);
+                            double tmin, double tmax, bool use_tprime_binning) {
+    const double tabs = use_tprime_binning
+        ? bin_means_dvcs_tprime(b.x, b.Q2, std::abs(b.t1))
+        : sebastian_bin_t(b.t1,b.e_p,b.e_theta,b.e_phi,b.p2_p,b.p2_theta,b.p2_phi);
     if (!in_range(b.x,  xBmin, xBmax)) return false;
     if (!in_range(b.Q2, Q2min, Q2max)) return false;
     if (!in_range(tabs, tmin, tmax))   return false;
@@ -819,7 +832,7 @@ struct PeriodResult {
     std::unordered_map<int, Accum> per_row; // row index -> Accum
 };
 
-static PeriodResult process_period(const std::string& period_key, TTree* tree, const BinLookup& lookup) {
+static PeriodResult process_period(const std::string& period_key, TTree* tree, const BinLookup& lookup, bool use_tprime_binning) {
     PeriodResult R;
     if (!tree) return R;
 
@@ -896,7 +909,9 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
         const double p_phi_deg = b.p_phi_deg();
         const double g_theta_deg = b.g_theta_deg();
 
-        const double tabs = sebastian_bin_t(b.t1,b.e_p,b.e_theta,b.e_phi,b.p2_p,b.p2_theta,b.p2_phi);
+        const double tabs = use_tprime_binning
+            ? bin_means_dvcs_tprime(b.x, b.Q2, std::abs(b.t1))
+            : sebastian_bin_t(b.t1,b.e_p,b.e_theta,b.e_phi,b.p2_p,b.p2_theta,b.p2_phi);
         bool used_any_row = false;
 
         auto test_rows = [&](const std::vector<int>& candidate_rows) {
@@ -904,7 +919,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
                 const RowWin& w = lookup.rows[static_cast<std::size_t>(r)];
                 if (!row_accepts_kin(b, w.xBmin, w.xBmax,
                                      w.Q2min, w.Q2max,
-                                     w.tmin, w.tmax)) continue;
+                                     w.tmin, w.tmax, use_tprime_binning)) continue;
                 if (!row_accepts_phi(phi_deg, w.pmin, w.pmax)) continue;
                 R.per_row[r].add(b.x, b.Q2, tabs, phi_deg,
                                  e_theta_deg, p_theta_deg, p_phi_deg, g_theta_deg);
@@ -1323,7 +1338,7 @@ bool update_bin_means_csv(const std::string& csv_path,
         const std::string& pk = period_keys[i];
         auto it = dataTrees.find(pk);
         TTree* t = (it == dataTrees.end()) ? nullptr : it->second;
-        results[i] = process_period(pk, t, bin_lookup);
+        results[i] = process_period(pk, t, bin_lookup, options.use_tprime_binning);
     }
 
     std::unordered_map<std::string, std::unordered_map<int, Accum>> per_period_rows;

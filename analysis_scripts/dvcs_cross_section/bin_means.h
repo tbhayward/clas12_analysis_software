@@ -13,6 +13,8 @@ struct BinMeansOptions {
     // means have been filled. These are separate from the production CSV and
     // are intended only for documentation/QA.
     bool make_note_outputs = true;
+    // Dedicated published Pass-1 BSA CSV bins in -t' rather than |t|.
+    bool use_tprime_binning = false;
     std::string note_output_dir = "output/bin_means/analysis_note";
 };
 

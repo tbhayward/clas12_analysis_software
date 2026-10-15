@@ -94,19 +94,26 @@ def read_pass2(path):
             cid=int(cid)
             if cid<1 or cid>64:continue
             #endif
-            # This dedicated CSV uses -t' in the t_abs_min/max columns.
-            # Period-specific mean kinematics are not populated in this export.
-            # Use the actual Pass-2 azimuthal bin center for plotting instead.
-            phi=(float(low)+float(high))/2.0
-            out.append(dict(phi=phi%360,Q2=np.nan,xB=np.nan,t=np.nan,tp=np.nan,
+            # In this dedicated CSV t_abs_avg stores event-weighted -t',
+            # matching its t_abs_min/max boundaries. Use real mean phi.
+            def mean_value(prefix):
+                col=f'{prefix}, {label}'
+                return pd.to_numeric(r[col],errors='coerce') if col in src.columns else np.nan
+            phiavg=mean_value('phiavg')
+            qavg=mean_value('Q2avg')
+            xavg=mean_value('xBavg')
+            tpavg=mean_value('t_abs_avg')
+            phi=float(phiavg) if np.isfinite(phiavg) else (float(low)+float(high))/2.0
+            complete=all(np.isfinite(z) for z in (phiavg,qavg,xavg,tpavg))
+            out.append(dict(phi=phi%360,Q2=qavg,xB=xavg,t=np.nan,tp=tpavg,
                             energy=energy,A=float(a),err=float(e),cell=cid,
-                            source='Pass-2',mean_kinematics_cell=-1,
-                            phi_min=float(low),phi_max=float(high)))
+                            source='Pass-2',mean_kinematics_cell=cid if complete else -1,
+                            phi_min=float(low),phi_max=float(high),mean_available=complete))
         #endfor
     #endfor
     return pd.DataFrame(out,columns=['phi','Q2','xB','t','tp','energy','A','err',
                                      'cell','source','mean_kinematics_cell',
-                                     'phi_min','phi_max'])
+                                     'phi_min','phi_max','mean_available'])
 #enddef
 
 def coverage(g,maxgap,minpts):
@@ -156,68 +163,63 @@ def fit(g,model):
 def create_plots(p1,p2,fit_df,pairs,out,energy,no_fits):
     base=out/('10p6_GeV' if energy==10.6 else '10p2_GeV')
     canvas=base/'xb_canvases';canvas.mkdir(parents=True,exist_ok=True)
+    # Remove legacy xB-grouped plots so old canvases are not mistaken for new output.
+    for stale in canvas.glob('bsa_xB_*.png'):stale.unlink()
     aa=p1[np.isclose(p1.energy,energy)];bb=p2[np.isclose(p2.energy,energy)]
     common=sorted(set(aa.cell)&set(bb.cell))
-    groups={}
-    for cid in common:
-        iq,ix,it=cell_info(cid)
-        key=(tuple(XEDGES[iq][ix:ix+2]),ix)
-        groups.setdefault(key,[]).append(cid)
-    #endfor
-    for index,(key,cids) in enumerate(sorted(groups.items(),key=lambda v:v[0][0]),1):
-        qs=sorted({cell_info(c)[0] for c in cids})
-        fig,axes=plt.subplots(4,len(qs),figsize=(4.2*len(qs)+1,11),squeeze=False,sharex=True,sharey=True)
+    # Six canvases per energy, one per published Q2 region. The xB
+    # subdivisions vary with Q2 and must not be grouped across Q2 regions.
+    for iq in range(6):
+        cids=[c for c in common if cell_info(c)[0]==iq]
+        if not cids:continue
+        nx=len(XEDGES[iq])-1
+        fig,axes=plt.subplots(4,nx,figsize=(4.5*nx+1,12.0),
+                              squeeze=False,sharex=True,sharey=True)
         for ax in axes.flat:
-            ax.set_xlim(0,360);ax.set_ylim(-.8,.8);ax.axhline(0,color='.7',lw=.7)
-            ax.set_xticks([0,90,180,270,360]);ax.grid(alpha=.12)
-        #endfor
+            ax.set_xlim(0,360);ax.set_ylim(-.8,.8)
+            ax.axhline(0,color='.65',lw=.75)
+            ax.set_xticks([0,90,180,270,360]);ax.grid(alpha=.14)
         for cid in cids:
-            iq,ix,it=cell_info(cid);ax=axes[it,qs.index(iq)]
-            for data,color,marker,name in [(aa,BLUE,'s','Published Pass-1'),(bb,ORANGE,'o','Pass-2')]:
+            _,ix,it=cell_info(cid);ax=axes[it,ix]
+            for data,color,marker,name in [(aa,BLUE,'s','Published Pass-1'),
+                                            (bb,ORANGE,'o','Pass-2')]:
                 g=data[data.cell==cid].sort_values('phi')
-                if len(g)==0:continue
-                #endif
-                ax.errorbar(g.phi,g.A,yerr=g.err,fmt=marker,ms=3.4,capsize=1.4,
-                            lw=.9,color=color,alpha=.9,label=name)
+                if g.empty:continue
+                ax.errorbar(g.phi,g.A,yerr=g.err,fmt=marker,ms=3.5,
+                            capsize=1.5,lw=.9,color=color,alpha=.9)
                 if not no_fits:
                     row=fit_df[(fit_df.energy==energy)&(fit_df.cell==cid)&
-                               (fit_df.source==('Pass-1' if name=='Published Pass-1' else 'Pass-2'))]
+                               (fit_df.source==name.replace('Published ',''))]
                     if len(row):
                         r=row.iloc[0]
                         if r['good'] and np.isfinite(r['a_two']):
                             x=np.linspace(0,360,361)
-                            ax.plot(x,twopar(x,r['a_two'],r['b_two']),color=color,lw=1.25)
-                        #endif
-                    #endif
+                            ax.plot(x,twopar(x,r['a_two'],r['b_two']),color=color,lw=1.35)
                 #endif
-            #endfor
-            ax.text(.04,.95,f'cell {cid}',transform=ax.transAxes,va='top',fontsize=8)
-        #endfor
-        for j,iq in enumerate(qs):
-            lo,hi=QEDGES[iq:iq+2]
-            axes[0,j].set_title(rf'$Q^2$: {lo:g}–{hi:g} GeV$^2$',fontsize=10)
-            axes[-1,j].set_xlabel(r'$\phi$ (deg)')
-        #endfor
+            ax.text(.035,.95,f'Cell {cid}',transform=ax.transAxes,
+                    va='top',fontsize=9)
+        for ix in range(nx):
+            lo,hi=XEDGES[iq][ix:ix+2]
+            txt=rf'$x_B\in[{lo:g},{hi:g})$' if np.isfinite(hi) else rf'$x_B\geq {lo:g}$'
+            axes[0,ix].set_title(txt,fontsize=11,pad=9)
+            axes[-1,ix].set_xlabel(r'$\phi$ (deg)')
         for it in range(4):
             lo,hi=TEDGES[it:it+2]
             lab=f'{lo:g}–{hi:g}' if np.isfinite(hi) else f'>{lo:g}'
             axes[it,0].set_ylabel(r'$A_{LU}$'+'\n'+rf'$-t^\prime$: {lab} GeV$^2$',fontsize=10)
-        #endfor
-        handles,labels=axes.flat[0].get_legend_handles_labels()
-        if not handles:
-            for ax in axes.flat:
-                handles,labels=ax.get_legend_handles_labels()
-                if handles:break
-            #endfor
-        #endif
-        if handles:fig.legend(handles,labels,loc='upper center',ncol=2,bbox_to_anchor=(.5,.965),fontsize=10)
-        #endif
-        lo,hi=key[0]
-        fig.suptitle(f'CLAS12 DVCS BSA: Pass-1 versus Pass-2 | {energy:g} GeV | '
-                     +rf'$x_B$: {lo:g}–{hi:g}' if np.isfinite(hi) else
-                     f'CLAS12 DVCS BSA: Pass-1 versus Pass-2 | {energy:g} GeV | '+rf'$x_B>{lo:g}$',y=.998)
-        fig.tight_layout(rect=(0,0,1,.935))
-        fig.savefig(canvas/f'bsa_xB_{index:02d}.png',dpi=170);plt.close(fig)
+        qlo,qhi=QEDGES[iq:iq+2]
+        qtxt=f'{qlo:g}–{qhi:g}' if np.isfinite(qhi) else f'>{qlo:g}'
+        fig.suptitle(rf'CLAS12 DVCS BSA: Pass-1 vs Pass-2 | {energy:g} GeV | '
+                     +rf'$Q^2$: {qtxt} GeV$^2$',fontsize=15,y=.986)
+        from matplotlib.lines import Line2D
+        handles=[Line2D([0],[0],color=BLUE,marker='s',ls='-',lw=1.3,ms=5),
+                 Line2D([0],[0],color=ORANGE,marker='o',ls='-',lw=1.3,ms=5)]
+        fig.legend(handles,['Published Pass-1','Pass-2'],loc='upper center',
+                   bbox_to_anchor=(.5,.956),ncol=2,frameon=False,fontsize=11)
+        fig.subplots_adjust(left=.105,right=.985,bottom=.075,top=.885,
+                            hspace=.22,wspace=.12)
+        fig.savefig(canvas/f'bsa_Q2_{iq+1:02d}.png',dpi=170)
+        plt.close(fig)
     #endfor
     sub=pairs[np.isclose(pairs.energy,energy)] if len(pairs) else pd.DataFrame()
     if len(sub):
@@ -241,7 +243,7 @@ def create_plots(p1,p2,fit_df,pairs,out,energy,no_fits):
         ax.set(xlabel='Naive statistical pull',ylabel='Number of cells',title=f'{energy:g} GeV | amplitude pulls')
         fig.tight_layout();fig.savefig(base/'pull_distribution.png',dpi=180);plt.close(fig)
     #endif
-    return len(common),len(groups)
+    return len(common),len({cell_info(c)[0] for c in common})
 #enddef
 
 def main():
@@ -260,8 +262,12 @@ def main():
     if len(p2)==0:raise RuntimeError('No valid Pass-2 BSA values; check the alternate CSV was populated.')
     #endif
     mismatches=p2[(p2.mean_kinematics_cell>0)&(p2.cell!=p2.mean_kinematics_cell)]
-    print('[bin audit] Pass-2 mean kinematics unavailable in this export; '
-          'using authoritative CSV Bin Name and azimuthal-bin centers.')
+    if nmeans==0:
+        print('[warning] No event-weighted means found. Rebuild the C++ suite and rerun '
+              'the --pass1-bsa-binning workflow before publication plots.')
+    nmeans=int(p2.mean_available.sum())
+    print(f'[bin audit] Pass-2 mean kinematics available for {nmeans}/{len(p2)} valid points. '
+          'Using mean phi when present, nominal phi center only when absent.')
     allpoints=pd.concat([p1,p2],ignore_index=True)
     allpoints.to_csv(out/'csv_matched_source_points.csv',index=False)
     records=[]
@@ -298,14 +304,45 @@ def main():
     #endfor
     pairs=pd.DataFrame(pairs,columns=['energy','cell','model','a_pass1','sa_pass1','a_pass2','sa_pass2','delta','naive_sigma','pull'])
     pairs.to_csv(out/'modulation_comparison.csv',index=False)
-    summary=['Pass-1 vs Pass-2 BSA; same underlying events imply correlated statistical errors.',
+    # Report both functional forms, independently of which is primary.
+    model_rows=[]
+    for (energy,cid),g in fits.groupby(['energy','cell']):
+        if set(g.source)!={'Pass-1','Pass-2'}:continue
+        z=g.set_index('source'); a=z.loc['Pass-1'];b=z.loc['Pass-2']
+        if not (a.good and b.good):continue
+        for model in ('sin','two'):
+            key='a_'+model;errkey='sa_'+model
+            delta=b[key]-a[key];sig=math.hypot(a[errkey],b[errkey])
+            model_rows.append(dict(energy=energy,cell=cid,model=model,
+                                   a_pass1=a[key],a_pass2=b[key],
+                                   sa_pass1=a[errkey],sa_pass2=b[errkey],
+                                   delta=delta,pull=delta/sig,
+                                   ratio=b[key]/a[key] if abs(a[key])>1e-8 else np.nan))
+    pd.DataFrame(model_rows).to_csv(out/'modulation_comparison_both_models.csv',index=False)
+    # Compare actual event-weighted Pass-2 kinematics with the published means.
+    kinematics=[]
+    for (energy,cid),g in p2.groupby(['energy','cell']):
+        if not g.mean_available.any():continue
+        v=g[g.mean_available];old=p1[(p1.energy==energy)&(p1.cell==cid)]
+        if old.empty:continue
+        kinematics.append(dict(energy=energy,cell=cid,
+            Q2_pass1=float(old.Q2.mean()),Q2_pass2=float(v.Q2.mean()),
+            xB_pass1=float(old.xB.mean()),xB_pass2=float(v.xB.mean()),
+            tprime_pass1=float(old.tp.mean()),tprime_pass2=float(v.tp.mean()),
+            delta_Q2=float(v.Q2.mean()-old.Q2.mean()),
+            delta_xB=float(v.xB.mean()-old.xB.mean()),
+            delta_tprime=float(v.tp.mean()-old.tp.mean())))
+    pd.DataFrame(kinematics).to_csv(out/'mean_kinematics_comparison.csv',index=False)
+
+    summary=[f'Pass-2 populated mean-kinematics rows: {nmeans}/{len(p2)}',
+             'Pass-1 vs Pass-2 BSA; same underlying events imply correlated statistical errors.',
              'Naive independent-error pulls are diagnostic only.',
              f'Pass-2 mean-kinematics cell mismatches: {len(mismatches)}']
     for energy in [10.6,10.2]:
         ncell,ncanvas=create_plots(p1,p2,fits,pairs,out,energy,args.no_fits)
         sub=pairs[np.isclose(pairs.energy,energy)]
         chisq=float(np.sum(sub.pull**2)) if len(sub) else np.nan
-        line=(f'{energy:g} GeV: {ncell} matched 3D cells, {ncanvas} xB canvases, '
+        line=(f'{energy:g} GeV: {ncell} matched 3D cells, {ncanvas} Q2 canvases, '
               f'{len(sub)} qualified amplitude pairs, naive chi2/N={chisq/len(sub) if len(sub) else np.nan:.3f}')
         print('[summary]',line);summary.append(line)
     #endfor

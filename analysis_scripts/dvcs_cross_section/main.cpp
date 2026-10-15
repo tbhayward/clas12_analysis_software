@@ -1032,6 +1032,18 @@ int main(int argc, char* argv[]) {
                 std::exit(EXIT_FAILURE);
             }
 
+            // The Pass-1-compatible CSV uses -t' in its t_abs_min/max fields.
+            // Fill event-weighted means with the same event-level -t' binning
+            // as the count and BSA extraction. The t_abs_avg columns in this
+            // alternate CSV consequently hold the mean -t' (not mean |t|).
+            BinMeansOptions pass1_mean_opts;
+            pass1_mean_opts.make_note_outputs = false;
+            pass1_mean_opts.use_tprime_binning = true;
+            if (!update_bin_means_csv(pass1_csv, dataTrees, 7, pass1_mean_opts)) {
+                std::cerr << "[main] ERROR: Pass-1-binning means failed.\n";
+                std::exit(EXIT_FAILURE);
+            }
+
             // The alternate CSV must carry its own point-to-point systematics.
             // The nominal cut-variation products cannot be copied because these
             // rows use different Q2/xB/t' cells. Re-run the four varied event
