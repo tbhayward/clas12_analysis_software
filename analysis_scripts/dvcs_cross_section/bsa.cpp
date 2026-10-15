@@ -271,6 +271,16 @@ static inline std::string period_global_cuts_label_from_display(const std::strin
     return "";
 }
 
+// Nearest Moller measurement by run number, shared across Sp18 Inb and Out.
+// Midpoint ties are assigned to the earlier measurement.
+static inline double sp18_beam_pol_for_run(int runnum) {
+    if (runnum <= 3354) return 0.8931828; // Moller run 3231
+    if (runnum <= 3481) return 0.8416775; // Moller run 3478
+    if (runnum <= 3672) return 0.8342609; // Moller run 3484
+    if (runnum <= 3991) return 0.8267543; // Moller run 3861
+    return 0.8861296;                    // Moller run 4121
+}
+
 static inline double beam_pol_for_period(const std::string& period, const BSAOptions& opt) {
     if (period == "Sp18 Inb") return opt.beam_pol_sp18_inb;
     if (period == "Sp18 Out") return opt.beam_pol_sp18_out;
@@ -957,15 +967,24 @@ static bool passes_global_cuts_dispatch(const BranchBinder& b,
 struct HelCounts {
     double plus = 0.0;
     double minus = 0.0;
+    double pol_plus = 0.0, pol_minus = 0.0;
+    double pol2_plus = 0.0, pol2_minus = 0.0;
 };
 
 using RowCounts = std::unordered_map<int, HelCounts>;
 using PeriodCounts = std::unordered_map<std::string, RowCounts>;
 using DenseCounts = std::vector<HelCounts>;
 
-static inline void add_event(HelCounts& h, int helicity) {
-    if (helicity > 0) h.plus += 1.0;
-    else if (helicity < 0) h.minus += 1.0;
+static inline void add_event(HelCounts& h, int helicity, double pol) {
+    if (helicity > 0) {
+        h.plus += 1.0;
+        h.pol_plus += pol;
+        h.pol2_plus += pol * pol;
+    } else if (helicity < 0) {
+        h.minus += 1.0;
+        h.pol_minus += pol;
+        h.pol2_minus += pol * pol;
+    }
 }
 
 struct CompiledSigmaCut {
@@ -1103,6 +1122,7 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
                                       const TopoCutMap& sigma_cuts,
                                       int max_workers,
                                       bool use_tprime_binning,
+                                      const BSAOptions& options,
                                       PhotonTopologyFilter topology_filter = PhotonTopologyFilter::All,
                                       std::vector<PeriodCounts>* scramble_outputs = nullptr,
                                       int scramble_replicas = 0,
@@ -1177,7 +1197,8 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
             b.bind(task.tree);
         if (!(b.has_detector1 && b.has_detector2 && b.has_helicity && b.has_x &&
               b.has_Q2 && b.has_t1 && b.has_phi2) ||
-            (scramble_outputs && scramble_replicas > 0 && !b.has_runnum)) {
+            ((task.period == "Sp18 Inb" || task.period == "Sp18 Out" ||
+              (scramble_outputs && scramble_replicas > 0)) && !b.has_runnum)) {
             fatal("[bsa] " + channel_name + " tree " + task.tree_key +
                   " is missing one or more required branches: detector1, detector2, helicity, x, Q2, t1, phi2");
         }
@@ -1220,18 +1241,21 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
                 candidate_rows_ptr = &fast_bins.rows_by_xqt[ix][iq][it];
             } //endif
 
+            const double event_pol = (task.period == "Sp18 Inb" || task.period == "Sp18 Out")
+                ? sp18_beam_pol_for_run(b.runnum)
+                : beam_pol_for_period(task.period, options);
             bool matched = false;
             for (int row_index : *candidate_rows_ptr) {
                 const RowBin& rb = rows[row_index];
                 if (!row_accepts_phi(phi_deg, rb.pmin, rb.pmax)) continue;
-                add_event(local.counts[row_index], b.helicity);
+                add_event(local.counts[row_index], b.helicity, event_pol);
                 if (scramble_outputs && scramble_replicas > 0) {
                     const unsigned long long salt =
                         (cut_prefix == "DVCS") ? 0x44564353ULL : 0x504930ULL;
                     for (int rep = 0; rep < scramble_replicas; ++rep) {
                         const int h_scr = scrambled_helicity(
                             b.helicity, b.runnum, i, rep, scramble_seed, salt);
-                        add_event(local.scramble_counts[rep][row_index], h_scr);
+                        add_event(local.scramble_counts[rep][row_index], h_scr, event_pol);
                     } //endfor
                 } //endif
                 matched = true;
@@ -1258,6 +1282,10 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
             HelCounts& dst = period_counts[r];
             dst.plus += h.plus;
             dst.minus += h.minus;
+            dst.pol_plus += h.pol_plus;
+            dst.pol_minus += h.pol_minus;
+            dst.pol2_plus += h.pol2_plus;
+            dst.pol2_minus += h.pol2_minus;
         }
         if (scramble_outputs && scramble_replicas > 0) {
             for (int rep = 0; rep < scramble_replicas; ++rep) {
@@ -1268,6 +1296,10 @@ static PeriodCounts accumulate_counts(const std::map<std::string, TTree*>& trees
                     HelCounts& dst = rep_period[r];
                     dst.plus += h.plus;
                     dst.minus += h.minus;
+            dst.pol_plus += h.pol_plus;
+            dst.pol_minus += h.pol_minus;
+            dst.pol2_plus += h.pol2_plus;
+            dst.pol2_minus += h.pol2_minus;
                 } //endfor
             } //endfor
         } //endif
@@ -1494,11 +1526,9 @@ struct AsymResult {
 };
 
 struct ComponentForVariance {
-    double pol = 0.0;
-    double s_plus = 0.0;
-    double s_minus = 0.0;
-    double var_s_plus = 0.0;
-    double var_s_minus = 0.0;
+    HelCounts gamma;
+    HelCounts pi0;
+    double f = 0.0;
 };
 
 static HelCounts get_counts_for_row(const PeriodCounts& counts,
@@ -1552,7 +1582,6 @@ static AsymResult compute_group_bsa(const PeriodCounts& gamma_counts,
     for (const std::string& period : component_periods) {
         const HelCounts g = get_counts_for_row(gamma_counts, period, row_index);
         const HelCounts p = get_counts_for_row(pi0_counts, period, row_index);
-        const double pol = beam_pol_for_period(period, opt);
         const double f = opt.enable_pi0_subtraction
             ? pi0_leakage_scale * get_vector_value(leaks.f_pi0, period, row_index)
             : 0.0;
@@ -1576,7 +1605,7 @@ static AsymResult compute_group_bsa(const PeriodCounts& gamma_counts,
         const double raw_d = gp - gm;
         if (raw_s > 0.0) {
             raw_num += raw_d;
-            raw_den += pol * raw_s;
+            raw_den += g.pol_plus + g.pol_minus;
             raw_var_num += std::max(0.0, raw_s - raw_d * raw_d / raw_s);
         } //endif
 
@@ -1584,7 +1613,7 @@ static AsymResult compute_group_bsa(const PeriodCounts& gamma_counts,
         const double pi0_d = pp - pm;
         if (pi0_s > 0.0) {
             pi0_num += pi0_d;
-            pi0_den += pol * pi0_s;
+            pi0_den += p.pol_plus + p.pol_minus;
             pi0_var_num += std::max(0.0, pi0_s - pi0_d * pi0_d / pi0_s);
         } //endif
 
@@ -1592,8 +1621,8 @@ static AsymResult compute_group_bsa(const PeriodCounts& gamma_counts,
         const double sig_d = sp - sm;
         if (sig_s > 0.0) {
             numerator += sig_d;
-            denominator += pol * sig_s;
-            comps.push_back(ComponentForVariance{pol, sp, sm, gp + f * f * pp, gm + f * f * pm});
+            denominator += g.pol_plus + g.pol_minus - f * (p.pol_plus + p.pol_minus);
+            comps.push_back(ComponentForVariance{g, p, f});
             weighted_f_num += f * sig_s;
             weighted_c_num += c * sig_s;
             weight_sum += sig_s;
@@ -1602,13 +1631,25 @@ static AsymResult compute_group_bsa(const PeriodCounts& gamma_counts,
 
     if (raw_den > 0.0) {
         r.raw_value = raw_num / raw_den;
-        r.raw_stat = std::sqrt(std::max(0.0, raw_var_num)) / raw_den;
+        double raw_variance = 0.0;
+        for (const std::string& period : component_periods) {
+            const HelCounts g = get_counts_for_row(gamma_counts, period, row_index);
+            raw_variance += g.plus + g.minus - 2.0 * r.raw_value * (g.pol_plus - g.pol_minus)
+                + r.raw_value * r.raw_value * (g.pol2_plus + g.pol2_minus);
+        }
+        r.raw_stat = std::sqrt(std::max(0.0, raw_variance)) / raw_den;
         r.raw_valid = std::isfinite(r.raw_value) && std::isfinite(r.raw_stat);
     } //endif
 
     if (pi0_den > 0.0) {
         r.pi0_value = pi0_num / pi0_den;
-        r.pi0_stat = std::sqrt(std::max(0.0, pi0_var_num)) / pi0_den;
+        double pi0_variance = 0.0;
+        for (const std::string& period : component_periods) {
+            const HelCounts p = get_counts_for_row(pi0_counts, period, row_index);
+            pi0_variance += p.plus + p.minus - 2.0 * r.pi0_value * (p.pol_plus - p.pol_minus)
+                + r.pi0_value * r.pi0_value * (p.pol2_plus + p.pol2_minus);
+        }
+        r.pi0_stat = std::sqrt(std::max(0.0, pi0_variance)) / pi0_den;
         r.pi0_valid = std::isfinite(r.pi0_value) && std::isfinite(r.pi0_stat);
     } //endif
 
@@ -1621,13 +1662,21 @@ static AsymResult compute_group_bsa(const PeriodCounts& gamma_counts,
     if (!(denominator > 0.0)) return r;
 
     r.value = numerator / denominator;
+    // Event-level delta-method variance. Each event contributes +/-1 to the
+    // helicity numerator and its own beam polarization to the denominator.
+    // The pi0 subtraction carries a factor -f for both contributions.
     for (const ComponentForVariance& comp : comps) {
-        const double dA_dSp = (denominator - numerator * comp.pol) / (denominator * denominator);
-        const double dA_dSm = (-denominator - numerator * comp.pol) / (denominator * denominator);
-        variance += dA_dSp * dA_dSp * comp.var_s_plus;
-        variance += dA_dSm * dA_dSm * comp.var_s_minus;
+        const HelCounts& g = comp.gamma;
+        const HelCounts& p = comp.pi0;
+        const double f2 = comp.f * comp.f;
+        const auto numerator_variance = [&](const HelCounts& h) {
+            return (h.plus + h.minus)
+                - 2.0 * r.value * (h.pol_plus - h.pol_minus)
+                + r.value * r.value * (h.pol2_plus + h.pol2_minus);
+        };
+        variance += numerator_variance(g) + f2 * numerator_variance(p);
     } //endfor
-
+    variance /= denominator * denominator;
     r.stat = std::sqrt(std::max(0.0, variance));
 
     // A finite algebraic ratio is not by itself a usable BSA measurement.
@@ -2156,12 +2205,12 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
             ? std::max(0, options.helicity_scramble_replicas) : 0;
         const PeriodCounts gamma_counts =
             accumulate_counts(dvcsDataTrees, "DVCS", "DVCS", rows, fast_bins, sigma_cuts,
-                              options.max_workers, options.use_tprime_binning, PhotonTopologyFilter::All,
+                              options.max_workers, options.use_tprime_binning, options, PhotonTopologyFilter::All,
                               n_scrambles > 0 ? &gamma_scrambles : nullptr, n_scrambles,
                               options.helicity_scramble_seed);
         const PeriodCounts pi0_counts =
             accumulate_counts(eppi0DataTrees, "eppi0", "eppi0", rows, fast_bins, sigma_cuts,
-                              options.max_workers, options.use_tprime_binning, PhotonTopologyFilter::All,
+                              options.max_workers, options.use_tprime_binning, options, PhotonTopologyFilter::All,
                               n_scrambles > 0 ? &pi0_scrambles : nullptr, n_scrambles,
                               options.helicity_scramble_seed);
 
@@ -2170,16 +2219,16 @@ bool update_bsa_counts_csv(const std::map<std::string, TTree*>& dvcsDataTrees,
             std::cout << "[bsa] Building independent FD-photon and FT-photon BSA samples.\n";
             gamma_fd_counts = accumulate_counts(
                 dvcsDataTrees, "DVCS FD-photon", "DVCS", rows, fast_bins, sigma_cuts,
-                options.max_workers, options.use_tprime_binning, PhotonTopologyFilter::FDPhoton);
+                options.max_workers, options.use_tprime_binning, options, PhotonTopologyFilter::FDPhoton);
             gamma_ft_counts = accumulate_counts(
                 dvcsDataTrees, "DVCS FT-photon", "DVCS", rows, fast_bins, sigma_cuts,
-                options.max_workers, options.use_tprime_binning, PhotonTopologyFilter::FTPhoton);
+                options.max_workers, options.use_tprime_binning, options, PhotonTopologyFilter::FTPhoton);
             pi0_fd_counts = accumulate_counts(
                 eppi0DataTrees, "eppi0 FD-photon", "eppi0", rows, fast_bins, sigma_cuts,
-                options.max_workers, options.use_tprime_binning, PhotonTopologyFilter::FDPhoton);
+                options.max_workers, options.use_tprime_binning, options, PhotonTopologyFilter::FDPhoton);
             pi0_ft_counts = accumulate_counts(
                 eppi0DataTrees, "eppi0 FT-photon", "eppi0", rows, fast_bins, sigma_cuts,
-                options.max_workers, options.use_tprime_binning, PhotonTopologyFilter::FTPhoton);
+                options.max_workers, options.use_tprime_binning, options, PhotonTopologyFilter::FTPhoton);
         } //endif
 
         std::map<std::string, std::vector<AsymResult>> results;
