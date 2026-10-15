@@ -1,3 +1,4 @@
+#include "sebastian_tgamma_binning.h"
 // total_counts.cpp
 // -----------------------------------------------------------------------------
 // Fill raw data counts and MC counts into the pass-2 CSV.
@@ -1411,6 +1412,12 @@ struct BranchBinder {
         ena("Q2");
         ena("t1");
         ena("phi2");
+        // Photon-derived t needs the measured e and photon four-vectors in
+        // every sample, including generated MC used in count normalization.
+        if (sebastian_use_tgamma_binning.load()) {
+            for (const char* branch : {"e_p", "e_theta", "e_phi",
+                                       "p2_p", "p2_theta", "p2_phi"}) ena(branch);
+        }
 
         if (!is_gen) {
             const GlobalCutConfig& cfg = default_global_cuts();
@@ -1538,7 +1545,7 @@ struct BranchBinder {
     }
 
     double t_abs() const {
-        return std::fabs(t1);
+        return sebastian_bin_t(t1,e_p,e_theta,e_phi,p2_p,p2_theta,p2_phi);
     }
 
     double delta_phi_value(bool& has_val) const {
