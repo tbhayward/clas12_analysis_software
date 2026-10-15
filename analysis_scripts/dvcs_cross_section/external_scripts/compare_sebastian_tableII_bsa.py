@@ -394,7 +394,7 @@ def xb_canvases(m,s,out):
                  ha='center',va='top',fontsize=14)
         fig.legend(handles=handles,loc='upper center',ncol=2,bbox_to_anchor=(.53,.944),
                    fontsize=10,frameon=False)
-        fig.supylabel(r'$A_{LU}$ (main)   /   $\Delta A_{LU}$ (lower)',x=.055,fontsize=10)
+        # No figure-level y label: preserve the unobstructed |t| row labels.
         fig.supxlabel(r'$\phi$ (degrees)',y=.052,fontsize=10)
         fig.text(.53,.016,'Compatibility p values assume independent statistical errors; shared-event covariance unknown.',
                  ha='center',fontsize=7.5,color='0.35')
