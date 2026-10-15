@@ -160,8 +160,9 @@ def fit(g,model):
     #endtry
 #enddef
 
-def create_plots(p1,p2,fit_df,pairs,out,energy,no_fits):
-    base=out/('10p6_GeV' if energy==10.6 else '10p2_GeV')
+def create_plots(p1,p2,fit_df,pairs,out,energy,no_fits,model):
+    base=out/model/('10p6_GeV' if energy==10.6 else '10p2_GeV')
+    base.mkdir(parents=True,exist_ok=True)
     canvas=base/'xb_canvases';canvas.mkdir(parents=True,exist_ok=True)
     # Remove legacy xB-grouped plots so old canvases are not mistaken for new output.
     for stale in canvas.glob('bsa_xB_*.png'):stale.unlink()
@@ -192,9 +193,10 @@ def create_plots(p1,p2,fit_df,pairs,out,energy,no_fits):
                                (fit_df.source==name.replace('Published ',''))]
                     if len(row):
                         r=row.iloc[0]
-                        if r['good'] and np.isfinite(r['a_two']):
+                        if r['good_'+model] and np.isfinite(r['a_'+model]):
                             x=np.linspace(0,360,361)
-                            ax.plot(x,twopar(x,r['a_two'],r['b_two']),color=color,lw=1.35)
+                            yfit=sinonly(x,r['a_sin']) if model=='sin' else twopar(x,r['a_two'],r['b_two'])
+                            ax.plot(x,yfit,color=color,lw=1.35)
                 #endif
             ax.text(.035,.95,f'Cell {cid}',transform=ax.transAxes,
                     va='top',fontsize=9)
@@ -221,7 +223,7 @@ def create_plots(p1,p2,fit_df,pairs,out,energy,no_fits):
         fig.savefig(canvas/f'bsa_Q2_{iq+1:02d}.png',dpi=170)
         plt.close(fig)
     #endfor
-    sub=pairs[np.isclose(pairs.energy,energy)] if len(pairs) else pd.DataFrame()
+    sub=pairs[(np.isclose(pairs.energy,energy)) & (pairs.model==model)] if len(pairs) else pd.DataFrame()
     if len(sub):
         fig,ax=plt.subplots(figsize=(6.5,5.7))
         ax.errorbar(sub.a_pass1,sub.a_pass2,xerr=sub.sa_pass1,yerr=sub.sa_pass2,
@@ -230,17 +232,17 @@ def create_plots(p1,p2,fit_df,pairs,out,energy,no_fits):
         hi=max(sub.a_pass1.max(),sub.a_pass2.max())+.05
         ax.plot([lo,hi],[lo,hi],'--',color='.4');ax.set(xlim=(lo,hi),ylim=(lo,hi),
             xlabel='Published Pass-1 sine amplitude',ylabel='Pass-2 sine amplitude',
-            title=f'{energy:g} GeV | qualified modulation fits')
+            title=f'{energy:g} GeV | qualified {model} modulation fits')
         ax.grid(alpha=.2);fig.tight_layout();fig.savefig(base/'amplitude_comparison.png',dpi=180);plt.close(fig)
         fig,ax=plt.subplots(figsize=(max(8,len(sub)*.12),4.5))
         ax.errorbar(np.arange(len(sub)),sub.pull,fmt='o',color=BLUE,ms=3)
         for y in [-2,0,2]:ax.axhline(y,color='.5',ls='--' if y else '-',lw=.8)
         #endfor
         ax.set(xlabel='Qualified matched kinematic cell (ordered)',ylabel='Naive statistical pull',
-               title=f'{energy:g} GeV | Pass-2 minus Pass-1')
+               title=f'{energy:g} GeV | {model} | Pass-2 minus Pass-1')
         fig.tight_layout();fig.savefig(base/'amplitude_pulls.png',dpi=180);plt.close(fig)
         fig,ax=plt.subplots(figsize=(6,4.5));ax.hist(sub.pull,bins=np.linspace(-4,4,25),edgecolor='white',color=BLUE)
-        ax.set(xlabel='Naive statistical pull',ylabel='Number of cells',title=f'{energy:g} GeV | amplitude pulls')
+        ax.set(xlabel='Naive statistical pull',ylabel='Number of cells',title=f'{energy:g} GeV | {model} amplitude pulls')
         fig.tight_layout();fig.savefig(base/'pull_distribution.png',dpi=180);plt.close(fig)
     #endif
     return len(common),len({cell_info(c)[0] for c in common})
@@ -253,7 +255,8 @@ def main():
     ap.add_argument('--output-dir',type=Path,default=HERE.parent/'output/pass1_bsa_comparison')
     ap.add_argument('--min-phi-points',type=int,default=8)
     ap.add_argument('--max-phi-gap',type=float,default=90.)
-    ap.add_argument('--fit-model',choices=['both','sin','two'],default='both')
+    ap.add_argument('--fit-model',choices=['both','sin','two'],default='both',
+                    help='Models to compare and plot; both (default) produces separate sets')
     ap.add_argument('--no-fits',action='store_true')
     ap.add_argument('--verbose',action='store_true')
     args=ap.parse_args();out=args.output_dir;out.mkdir(parents=True,exist_ok=True)
@@ -261,11 +264,16 @@ def main():
     print(f'[inputs] Pass-1 {len(p1)} valid points; Pass-2 {len(p2)} valid points')
     if len(p2)==0:raise RuntimeError('No valid Pass-2 BSA values; check the alternate CSV was populated.')
     #endif
-    mismatches=p2[(p2.mean_kinematics_cell>0)&(p2.cell!=p2.mean_kinematics_cell)]
+    # Reconstruct cell from event-weighted means rather than echoing the input ID.
+    complete=p2.mean_available
+    p2.loc[complete,'mean_kinematics_cell']=[cell_id(q,x,t) for q,x,t in zip(
+        p2.loc[complete,'Q2'],p2.loc[complete,'xB'],p2.loc[complete,'tp'])]
+    mismatches=p2[complete&(p2.cell!=p2.mean_kinematics_cell)]
     nmeans=int(p2.mean_available.sum())
     if nmeans==0:
         print('[warning] No event-weighted means found. Rebuild the C++ suite and rerun '
               'the --pass1-bsa-binning workflow before publication plots.')
+    print(f'[bin audit] mean-kinematics cell mismatches: {len(mismatches)}')
     print(f'[bin audit] Pass-2 mean kinematics available for {nmeans}/{len(p2)} valid points. '
           'Using mean phi when present, nominal phi center only when absent.')
     allpoints=pd.concat([p1,p2],ignore_index=True)
@@ -275,12 +283,14 @@ def main():
         ok,gap,quadrants,halves=coverage(g,args.max_phi_gap,args.min_phi_points)
         s=fit(g,'sin') if not args.no_fits else None
         t=fit(g,'two') if not args.no_fits else None
-        good=bool(ok and t is not None and s is not None and
-                  (not np.isfinite(t['corr']) or abs(t['corr'])<.98) and
+        good_sin=bool(ok and s is not None)
+        good_two=bool(ok and t is not None and abs(t['corr'])<.98)
+        good=bool(good_sin and good_two and
                   abs(t['a']-s['a'])<=2*math.hypot(t['sa'],s['sa']))
         records.append(dict(energy=energy,cell=cid,source=source,n=len(g),max_phi_gap=gap,
                             quadrants=quadrants,min_half_points=halves,coverage_ok=ok,
                             sin_fit_ok=s is not None,two_fit_ok=t is not None,good=good,
+                            good_sin=good_sin,good_two=good_two,
                             a_sin=s['a'] if s else np.nan,sa_sin=s['sa'] if s else np.nan,
                             a_two=t['a'] if t else np.nan,sa_two=t['sa'] if t else np.nan,
                             b_two=t['b'] if t else np.nan,sb_two=t['sb'] if t else np.nan,
@@ -288,37 +298,28 @@ def main():
                             ndf_two=t['ndf'] if t else np.nan))
     #endfor
     fits=pd.DataFrame(records);fits.to_csv(out/'modulation_fits.csv',index=False)
+    # Evaluate each model on its own valid sample. A failed two-parameter fit
+    # must never veto a perfectly acceptable sine-only comparison.
+    models=['sin','two'] if args.fit_model=='both' else [args.fit_model]
     pairs=[]
     for (energy,cid),g in fits.groupby(['energy','cell']):
         if set(g.source)!={'Pass-1','Pass-2'}:continue
-        #endif
         r=g.set_index('source');a=r.loc['Pass-1'];b=r.loc['Pass-2']
-        if not (a.good and b.good):continue
-        #endif
-        use_two=args.fit_model!='sin'
-        av='a_two' if use_two else 'a_sin';sv='sa_two' if use_two else 'sa_sin'
-        delta=b[av]-a[av];sig=math.hypot(a[sv],b[sv])
-        pairs.append(dict(energy=energy,cell=cid,model='two' if use_two else 'sin',
-                          a_pass1=a[av],sa_pass1=a[sv],a_pass2=b[av],sa_pass2=b[sv],
-                          delta=delta,naive_sigma=sig,pull=delta/sig))
-    #endfor
-    pairs=pd.DataFrame(pairs,columns=['energy','cell','model','a_pass1','sa_pass1','a_pass2','sa_pass2','delta','naive_sigma','pull'])
-    pairs.to_csv(out/'modulation_comparison.csv',index=False)
-    # Report both functional forms, independently of which is primary.
-    model_rows=[]
-    for (energy,cid),g in fits.groupby(['energy','cell']):
-        if set(g.source)!={'Pass-1','Pass-2'}:continue
-        z=g.set_index('source'); a=z.loc['Pass-1'];b=z.loc['Pass-2']
-        if not (a.good and b.good):continue
-        for model in ('sin','two'):
-            key='a_'+model;errkey='sa_'+model
-            delta=b[key]-a[key];sig=math.hypot(a[errkey],b[errkey])
-            model_rows.append(dict(energy=energy,cell=cid,model=model,
-                                   a_pass1=a[key],a_pass2=b[key],
-                                   sa_pass1=a[errkey],sa_pass2=b[errkey],
-                                   delta=delta,pull=delta/sig,
-                                   ratio=b[key]/a[key] if abs(a[key])>1e-8 else np.nan))
-    pd.DataFrame(model_rows).to_csv(out/'modulation_comparison_both_models.csv',index=False)
+        for model in models:
+            if not (a['good_'+model] and b['good_'+model]):continue
+            av='a_'+model;sv='sa_'+model
+            delta=b[av]-a[av];sig=math.hypot(a[sv],b[sv])
+            pairs.append(dict(energy=energy,cell=cid,model=model,
+                              a_pass1=a[av],sa_pass1=a[sv],
+                              a_pass2=b[av],sa_pass2=b[sv],
+                              delta=delta,naive_sigma=sig,pull=delta/sig,
+                              ratio=b[av]/a[av] if abs(a[av])>1e-8 else np.nan))
+    pairs=pd.DataFrame(pairs,columns=['energy','cell','model','a_pass1','sa_pass1',
+        'a_pass2','sa_pass2','delta','naive_sigma','pull','ratio'])
+    pairs.to_csv(out/'modulation_comparison_both_models.csv',index=False)
+    # Preserve the old default two-parameter CSV for downstream readers.
+    primary='two' if 'two' in models else 'sin'
+    pairs[pairs.model==primary].to_csv(out/'modulation_comparison.csv',index=False)
     # Compare actual event-weighted Pass-2 kinematics with the published means.
     kinematics=[]
     for (energy,cid),g in p2.groupby(['energy','cell']):
@@ -339,13 +340,13 @@ def main():
              'Naive independent-error pulls are diagnostic only.',
              f'Pass-2 mean-kinematics cell mismatches: {len(mismatches)}']
     for energy in [10.6,10.2]:
-        ncell,ncanvas=create_plots(p1,p2,fits,pairs,out,energy,args.no_fits)
-        sub=pairs[np.isclose(pairs.energy,energy)]
-        chisq=float(np.sum(sub.pull**2)) if len(sub) else np.nan
-        line=(f'{energy:g} GeV: {ncell} matched 3D cells, {ncanvas} Q2 canvases, '
-              f'{len(sub)} qualified amplitude pairs, naive chi2/N={chisq/len(sub) if len(sub) else np.nan:.3f}')
-        print('[summary]',line);summary.append(line)
-    #endfor
+        for model in models:
+            ncell,ncanvas=create_plots(p1,p2,fits,pairs,out,energy,args.no_fits,model)
+            sub=pairs[(np.isclose(pairs.energy,energy))&(pairs.model==model)]
+            chisq=float(np.sum(sub.pull**2)) if len(sub) else np.nan
+            line=(f'{energy:g} GeV [{model}]: {ncell} matched 3D cells, {ncanvas} Q2 canvases, '
+                  f'{len(sub)} qualified amplitude pairs, naive chi2/N={chisq/len(sub) if len(sub) else np.nan:.3f}')
+            print('[summary]',line);summary.append(line)
     (out/'comparison_summary.txt').write_text('\n'.join(summary)+'\n')
     print('[output]',out)
 #enddef
