@@ -262,10 +262,10 @@ def main():
     if len(p2)==0:raise RuntimeError('No valid Pass-2 BSA values; check the alternate CSV was populated.')
     #endif
     mismatches=p2[(p2.mean_kinematics_cell>0)&(p2.cell!=p2.mean_kinematics_cell)]
+    nmeans=int(p2.mean_available.sum())
     if nmeans==0:
         print('[warning] No event-weighted means found. Rebuild the C++ suite and rerun '
               'the --pass1-bsa-binning workflow before publication plots.')
-    nmeans=int(p2.mean_available.sum())
     print(f'[bin audit] Pass-2 mean kinematics available for {nmeans}/{len(p2)} valid points. '
           'Using mean phi when present, nominal phi center only when absent.')
     allpoints=pd.concat([p1,p2],ignore_index=True)
