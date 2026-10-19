@@ -2,7 +2,8 @@
 """BSA point-to-point systematic components vs xB, Q2 and |t|.
 
 Uses the row indices in output/systematics/bsa_systematics_summary.csv to join
-with output/csvs/dvcs_pass2_analysis.csv. Each kinematic interval is summarized
+with output/csvs/dvcs_pass2_analysis.csv. The latter stores group-specific mean
+kinematics as columns such as "xBavg, Sp18" (not plain "xBavg"). Each kinematic interval is summarized
 by the median of the individual phi-bin absolute uncertainties, with a shaded
 16th–84th percentile envelope. Sp18, Fa18 and Sp19 remain separate.
 """
@@ -58,7 +59,14 @@ def main():
     sys_cols, sys_rows = read_csv(sys_path)
     kin_cols, kin_rows = read_csv(kin_path)
     require_columns(sys_cols, ['group', 'row'] + [x[0] for x in COMPONENTS], sys_path)
-    require_columns(kin_cols, [v for _, low, high, avg, _ in AXES for v in (low, high, avg)], kin_path)
+    require_columns(kin_cols, [v for _, low, high, avg, _ in AXES for v in (low, high)], kin_path)
+    # Mean kinematics are stored separately for each period, e.g. 'Q2avg, Fa18'.
+    # Fall back to the geometric bin midpoint if a group-specific mean is absent.
+    for group, _, _ in GROUPS:
+        for _, _, _, avg, _ in AXES:
+            col = f'{avg}, {group}'
+            if col not in kin_cols:
+                print(f'[warning] {kin_path}: no {col!r}; using bin midpoint')
     groups = {g for g, _, _ in GROUPS}
     joined = []
     for row in sys_rows:
@@ -74,7 +82,14 @@ def main():
                 continue
             coords = {}
             for name, low, high, avg, _ in AXES:
-                l, h, a = (float(kin[key]) for key in (low, high, avg))
+                l, h = (float(kin[key]) for key in (low, high))
+                avg_key = f"{avg}, {row['group'].strip()}"
+                try:
+                    a = float(kin.get(avg_key, ''))
+                except (ValueError, TypeError):
+                    a = float('nan')
+                if not np.isfinite(a):
+                    a = 0.5 * (l + h)
                 if not (np.isfinite(l) and np.isfinite(h) and np.isfinite(a)):
                     raise ValueError('nonfinite kinematic value')
                 coords[name] = (l, h, a)
