@@ -42,7 +42,11 @@ def main():
     p.add_argument('--bins',type=int,default=7)
     a=p.parse_args();a.outdir.mkdir(parents=True,exist_ok=True)
     f=a.world_dir/'tables'/'lee_hayward_exact_same_bin_points.csv'
-    if not f.exists():raise FileNotFoundError(f)
+    if not f.exists():
+        matches=list(a.world_dir.rglob('lee_hayward_exact_same_bin_points.csv'))
+        if not matches:raise FileNotFoundError(f'Cannot find exact-bin CSV under {a.world_dir}. Check --world-dir and confirm the world-comparison output is present.')
+        f=matches[0]
+    print('[world] reading',f)
     d=pd.read_csv(f)
     vars=[('hayward_Q2',r'$Q^2$ (GeV$^2$)'),('hayward_xB',r'$x_B$'),('hayward_t_abs',r'$|t|$ (GeV$^2$)')]
     summary=[]
@@ -68,12 +72,15 @@ def main():
     if summary:pd.concat(summary,ignore_index=True).to_csv(a.outdir/'pass2_pass1_binned_summary.csv',index=False)
     # Topology Pass-1 comparison: use the original matching output, not guessed CSV schema.
     f=a.topology_dir/'pass2_vs_authoritative_pass1_matched_points.csv'
+    if not f.exists():
+        matches=list(a.topology_dir.rglob('pass2_vs_authoritative_pass1_matched_points.csv'))
+        if matches:f=matches[0]
     if f.exists():
         t=pd.read_csv(f)
         print('[topology] columns:',list(t.columns))
         # Discover expected columns conservatively; fail visibly rather than plotting incorrect quantities.
         def col(names):return next((n for n in names if n in t.columns),None)
-        typ=col(['topology','selection','topology_label']);ratio=col(['pass2_over_pass1','ratio_pass2_pass1','ratio','pass2_pass1_ratio']);tabs=col(['t_abs','t_abs_avg','t','abs_t'])
+        typ=col(['topology','selection','topology_label']);ratio=col(['pass2_over_pass1','ratio_pass2_pass1','ratio','pass2_pass1_ratio']);tabs=col(['t_abs','t_abs_avg','t','abs_t','t_pass2'])
         if typ and ratio and tabs:
             fig,ax=plt.subplots(figsize=(7.4,4.8),layout='constrained')
             rows=[]
@@ -91,6 +98,9 @@ def main():
             print('[warning] topology CSV schema not recognized; topology plot not generated. Provide column names above.')
     if a.common_dir:
         f=a.common_dir/'topology_common_kinematics_bin_by_bin.csv'
+        if not f.exists():
+            matches=list(a.common_dir.rglob('topology_common_kinematics_bin_by_bin.csv'))
+            if matches:f=matches[0]
         if f.exists():
             t=pd.read_csv(f)
             fig,ax=plt.subplots(figsize=(7.4,4.8),layout='constrained')
