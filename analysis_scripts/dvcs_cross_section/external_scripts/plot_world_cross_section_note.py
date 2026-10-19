@@ -16,7 +16,7 @@ import matplotlib.pyplot as plt
 
 plt.rcParams.update({'font.size': 11, 'axes.labelsize': 12,
                      'axes.titlesize': 12, 'legend.fontsize': 9,
-                     'savefig.dpi': 250, 'pdf.fonttype': 42,
+                     'savefig.dpi': 250,
                      'axes.linewidth': 1.0})
 COLORS = {'Inclusive': '#222222', 'CD-FD': '#0072B2',
           'CD-FT': '#D55E00', 'FD-FD': '#009E73'}
@@ -38,7 +38,9 @@ def numeric(frame, name):
     return pd.to_numeric(frame[name], errors='coerce')
 
 
-def summarize(frame, xname, edges, ratio_name, label):
+def summarize(frame, xname, edges, ratio_name, label, rng=None):
+    if rng is None:
+        rng = np.random.default_rng(20261019)
     x = numeric(frame, xname).to_numpy(dtype=float)
     r = numeric(frame, ratio_name).to_numpy(dtype=float)
     rows = []
@@ -47,31 +49,55 @@ def summarize(frame, xname, edges, ratio_name, label):
         if not mask.any():
             continue
         values = r[mask]
+        # Resample matched ratios to estimate the sampling uncertainty of
+        # the median. This is NOT the propagated cross-section stat error.
+        if len(values) >= 2:
+            draws = rng.choice(values, size=(2000, len(values)), replace=True)
+            medians = np.median(draws, axis=1)
+            ci16, ci84 = np.percentile(medians, [16, 84])
+        else:
+            ci16 = ci84 = float(values[0])
         rows.append({'selection': label, 'variable': xname,
                      'lower': low, 'upper': high, 'N': len(values),
                      'x_mean': np.mean(x[mask]), 'median': np.median(values),
+                     'median_bootstrap_p16': ci16, 'median_bootstrap_p84': ci84,
                      'p16': np.percentile(values, 16),
                      'p84': np.percentile(values, 84),
                      'arithmetic_mean': np.mean(values)})
     return pd.DataFrame(rows)
 
 
-def plot_series(ax, stats, label, color, marker='o', offset=0):
+def plot_series(ax, stats, label, color, marker='o', offset=0,
+                show_counts=False):
     if stats.empty:
         return
-    x = stats.x_mean.to_numpy() + offset
-    y = stats['median'].to_numpy()
-    lower = np.maximum(y - stats.p16.to_numpy(), 0)
-    upper = np.maximum(stats.p84.to_numpy() - y, 0)
-    ax.errorbar(x, y, yerr=np.vstack([lower, upper]), fmt=marker + '-',
-                lw=1.5, ms=5, capsize=2, color=color, label=label)
+    x = stats.x_mean.to_numpy(dtype=float) + offset
+    y = stats['median'].to_numpy(dtype=float)
+    # Gray: 16th–84th percentiles of individual matched ratios.
+    spread_lo = np.maximum(y - stats.p16.to_numpy(dtype=float), 0)
+    spread_hi = np.maximum(stats.p84.to_numpy(dtype=float) - y, 0)
+    ax.errorbar(x, y, yerr=np.vstack([spread_lo, spread_hi]), fmt='none',
+                ecolor='0.68', elinewidth=1.15, capsize=3, capthick=1,
+                zorder=2)
+    # Colored: bootstrap 68% confidence interval on the binned median.
+    ci_lo = np.maximum(y - stats.median_bootstrap_p16.to_numpy(dtype=float), 0)
+    ci_hi = np.maximum(stats.median_bootstrap_p84.to_numpy(dtype=float) - y, 0)
+    ax.errorbar(x, y, yerr=np.vstack([ci_lo, ci_hi]), fmt=marker + '-',
+                lw=1.5, ms=5.5, capsize=4, capthick=2.2, elinewidth=2.6,
+                color=color, label=label, zorder=4)
+    if show_counts:
+        # Annotate above the upper distribution bar. Keep labels clear of data.
+        for xi, yi, upper, count in zip(x, y, spread_hi, stats.N):
+            ax.annotate(f'N={int(count)}', (xi, yi + upper),
+                        xytext=(0, 6), textcoords='offset points',
+                        ha='center', va='bottom', fontsize=8, color='0.32')
 
 
 def save(fig, path):
-    fig.savefig(path.with_suffix('.pdf'), bbox_inches='tight')
-    fig.savefig(path.with_suffix('.png'), bbox_inches='tight', dpi=250)
+    target = path.with_suffix('.png')
+    fig.savefig(target, bbox_inches='tight', dpi=250)
     plt.close(fig)
-    print('[write]', path.with_suffix('.pdf'))
+    print('[write]', target)
 
 
 def main():
@@ -115,12 +141,14 @@ def main():
         edges[-1] = np.nextafter(edges[-1], np.inf)
         stats = summarize(inclusive, key, edges, 'pass2_over_pass1', 'Inclusive')
         summaries.append(stats)
-        plot_series(ax, stats, 'Inclusive', COLORS['Inclusive'])
+        plot_series(ax, stats, 'Inclusive', COLORS['Inclusive'], show_counts=True)
         ax.axhline(1, ls='--', lw=1, color='0.45')
         ax.set_xlabel(xlabel)
         ax.grid(alpha=0.18)
         ax.set_ylim(bottom=0)
     axes[0].set_ylabel('Pass-2 / Pass-1')
+    fig.text(0.5, -0.035, 'Thick black: 68% bootstrap interval on median    |    Thin gray: 16th–84th percentile spread    |    N: matched points',
+             ha='center', va='top', fontsize=9, color='0.35')
     fig.suptitle('CLAS12 DVCS cross sections: direct Pass-2 / Pass-1', fontsize=13)
     save(fig, args.outdir / 'pass2_pass1_vs_kinematics')
     pd.concat(summaries, ignore_index=True).to_csv(
@@ -145,6 +173,8 @@ def main():
     ax.set_ylim(bottom=0)
     ax.legend(frameon=False, ncol=2)
     fig.suptitle('CLAS12 DVCS cross sections by detector topology', fontsize=13)
+    fig.text(0.5, -0.035, 'Thick colored: 68% bootstrap interval on median    |    Thin gray: 16th–84th percentile spread',
+             ha='center', va='top', fontsize=9, color='0.35')
     save(fig, args.outdir / 'pass2_pass1_by_topology')
     pd.concat(topology_stats, ignore_index=True).to_csv(
         args.outdir / 'topology_binned_summary.csv', index=False)
@@ -183,6 +213,8 @@ def main():
             ax.legend(frameon=False, fontsize=9)
         fig.suptitle('CD-FD / CD-FT: sensitivity to mean-kinematics matching',
                      fontsize=13)
+        fig.text(0.5, -0.035, 'Thick colored: 68% bootstrap interval on median    |    Thin gray: 16th–84th percentile spread',
+                 ha='center', va='top', fontsize=9, color='0.35')
         save(fig, args.outdir / 'cd_fd_cd_ft_tight_kinematics')
         scan = []
         for max_dx, max_dq in [(.04, .4), (.03, .3), (.02, .2),
@@ -196,8 +228,9 @@ def main():
         pd.DataFrame(scan).to_csv(
             args.outdir / 'kinematics_matching_threshold_scan.csv', index=False)
     print('[done]', args.outdir)
-    print('[note] Plot interval bars are point-distribution 16th–84th percentiles, '
-          'not statistical errors on the median.')
+    print('[note] Thick bars: bootstrap 68% confidence intervals on binned medians; '
+          'thin gray bars: 16th–84th percentiles of individual ratios. '
+          'Neither is a propagated cross-section statistical error.')
 
 
 if __name__ == '__main__':
