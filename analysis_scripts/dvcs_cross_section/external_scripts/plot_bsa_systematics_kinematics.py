@@ -140,7 +140,7 @@ def main():
             ax.set_title(title, fontsize=13)
             ax.set_xlabel(xlabel)
             ax.set_ylabel(r'Absolute BSA uncertainty $\delta A_{LU}$')
-            ax.set_ylim(bottom=0)
+            ax.set_ylim(0.0, 0.2)
             ax.grid(alpha=0.20)
             ax.legend(frameon=False, fontsize=9)
         path = out / f'bsa_point_to_point_systematics_vs_{axis}.png'
