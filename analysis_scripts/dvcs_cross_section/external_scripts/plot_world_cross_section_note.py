@@ -18,6 +18,7 @@ plt.rcParams.update({'font.size': 11, 'axes.labelsize': 12,
                      'axes.titlesize': 12, 'legend.fontsize': 9,
                      'savefig.dpi': 250,
                      'axes.linewidth': 1.0})
+PASS1_NORM = 0.31  # Pass-1 pi0-model normalization scale, fully correlated
 COLORS = {'Inclusive': '#222222', 'CD-FD': '#0072B2',
           'CD-FT': '#D55E00', 'FD-FD': '#009E73'}
 
@@ -100,6 +101,58 @@ def save(fig, path):
     print('[write]', target)
 
 
+def pass1_normalization_band(ax, label=False):
+    """Pass-1 +/-31% scale, mapped exactly onto a Pass-2/Pass-1 ratio.
+
+    Since Pass-1 is in the denominator, the resulting ratio interval is
+    asymmetric: [1/(1+0.31), 1/(1-0.31)]. It is a single correlated
+    normalization nuisance, NOT independent point-to-point uncertainty.
+    """
+    low, high = 1 / (1 + PASS1_NORM), 1 / (1 - PASS1_NORM)
+    ax.axhspan(low, high, color='#B8C6D8', alpha=.24, lw=0,
+               zorder=0, label='Pass-1 norm. (31%, correlated)' if label else None)
+    ax.axhline(1, ls='--', lw=1, color='0.45', zorder=1)
+
+
+def attach_inclusive_angles(inclusive, csv_path):
+    """Join original Pass-2 combined mean angles to matched comparison rows.
+
+    The matching study exports the 4D combined Pass-2 means but not angles.
+    Use those four original values as a strict composite key; do not assign
+    detector angles based on the published Pass-1 bin center.
+    """
+    if not csv_path.is_file():
+        raise FileNotFoundError(f'Angle plots need the original inclusive Pass-2 CSV: {csv_path}')
+    names = {'xB_pass2': 'xBavg, 10.6 GeV',
+             'Q2_pass2': 'Q2avg, 10.6 GeV',
+             't_pass2': 't_abs_avg, 10.6 GeV',
+             'phi_pass2': 'phiavg, 10.6 GeV',
+             'e_theta': 'e_theta, 10.6 GeV',
+             'p_theta': 'p_theta, 10.6 GeV',
+             'g_theta': 'g_theta, 10.6 GeV'}
+    raw = pd.read_csv(csv_path, usecols=list(names.values()), low_memory=False)
+    raw = raw.rename(columns={v: k for k, v in names.items()})
+    left = inclusive.copy()
+    keys = ['xB_pass2', 'Q2_pass2', 't_pass2', 'phi_pass2']
+    # Both tables originate from the same Pass-2 CSV; 7-decimal rounding
+    # accommodates CSV float formatting without permitting coarse bin matching.
+    for key in keys:
+        raw[key] = pd.to_numeric(raw[key], errors='coerce')
+        left[key] = pd.to_numeric(left[key], errors='coerce')
+        raw['_join_' + key] = raw[key].round(7)
+        left['_join_' + key] = left[key].round(7)
+    join_keys = ['_join_' + key for key in keys]
+    if raw.duplicated(join_keys).any():
+        raise ValueError('Original inclusive Pass-2 CSV has duplicate combined 4D mean kinematics; cannot assign angles uniquely')
+    angles = raw[join_keys + ['e_theta', 'p_theta', 'g_theta']]
+    merged = left.merge(angles, how='left', on=join_keys, validate='many_to_one')
+    matched = merged['e_theta'].notna() & merged['p_theta'].notna() & merged['g_theta'].notna()
+    print(f'[angles] Matched {matched.sum()}/{len(merged)} inclusive points to original Pass-2 angle means')
+    if matched.sum() < .95 * len(merged):
+        raise ValueError('Less than 95% of matched Pass-2 points recovered angles. Check inclusive CSV provenance and combined kinematics.')
+    return merged.drop(columns=join_keys)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--topology-dir', type=Path, required=True)
@@ -107,6 +160,8 @@ def main():
     parser.add_argument('--outdir', type=Path,
                         default=Path('output/world_cross_section_note_figures'))
     parser.add_argument('--bins', type=int, default=7)
+    parser.add_argument('--inclusive-csv', type=Path, default=Path('output/csvs/dvcs_pass2_INCLUSIVE.csv'),
+                        help='Original inclusive Pass-2 CSV supplying combined mean detector angles')
     args = parser.parse_args()
     if args.bins < 2:
         parser.error('--bins must be at least 2')
@@ -142,17 +197,47 @@ def main():
         stats = summarize(inclusive, key, edges, 'pass2_over_pass1', 'Inclusive')
         summaries.append(stats)
         plot_series(ax, stats, 'Inclusive', COLORS['Inclusive'], show_counts=True)
-        ax.axhline(1, ls='--', lw=1, color='0.45')
+        pass1_normalization_band(ax)
         ax.set_xlabel(xlabel)
         ax.grid(alpha=0.18)
         ax.set_ylim(bottom=0)
     axes[0].set_ylabel('Pass-2 / Pass-1')
-    fig.text(0.5, -0.035, 'Thick black: 68% bootstrap interval on median    |    Thin gray: 16th–84th percentile spread    |    N: matched points',
+    fig.text(0.5, -0.035, 'Thick black: 68% bootstrap median CI   |   Thin gray: point spread (16–84%)   |   Shading: Pass-1 norm. (31%, correlated)   |   N: points',
              ha='center', va='top', fontsize=9, color='0.35')
     fig.suptitle('CLAS12 DVCS cross sections: direct Pass-2 / Pass-1', fontsize=13)
     save(fig, args.outdir / 'pass2_pass1_vs_kinematics')
     pd.concat(summaries, ignore_index=True).to_csv(
         args.outdir / 'pass2_pass1_binned_summary.csv', index=False)
+
+    # Angular dependence from the original inclusive Pass-2 mean angles.
+    with_angles = attach_inclusive_angles(inclusive, args.inclusive_csv)
+    angle_specs = [('e_theta', r'$\theta_e$ (deg)'),
+                   ('p_theta', r'$\theta_p$ (deg)'),
+                   ('g_theta', r'$\theta_\gamma$ (deg)')]
+    fig, axes = plt.subplots(1, 3, figsize=(14.3, 4.2), layout='constrained')
+    angle_summaries = []
+    for ax, (key, xlabel) in zip(axes, angle_specs):
+        values = numeric(with_angles, key).to_numpy(dtype=float)
+        values = values[np.isfinite(values)]
+        edges = np.unique(np.quantile(values, np.linspace(0, 1, args.bins + 1)))
+        if len(edges) < 3:
+            raise ValueError(f'Insufficient distinct values for {key}')
+        edges[-1] = np.nextafter(edges[-1], np.inf)
+        stats = summarize(with_angles, key, edges, 'pass2_over_pass1', 'Inclusive')
+        angle_summaries.append(stats)
+        plot_series(ax, stats, 'Inclusive', COLORS['Inclusive'], show_counts=True)
+        pass1_normalization_band(ax)
+        ax.set_xlabel(xlabel)
+        ax.grid(alpha=.18)
+        ax.set_ylim(bottom=0)
+    axes[0].set_ylabel('Pass-2 / Pass-1')
+    fig.suptitle('CLAS12 DVCS cross sections: dependence on laboratory angles', fontsize=13)
+    fig.text(0.5, -0.035,
+             'Thick black: 68% bootstrap median CI   |   Thin gray: point spread (16–84%)   |   Shading: Pass-1 norm. (31%, correlated)',
+             ha='center', va='top', fontsize=9, color='0.35')
+    save(fig, args.outdir / 'pass2_pass1_vs_angles')
+    pd.concat(angle_summaries, ignore_index=True).to_csv(
+        args.outdir / 'pass2_pass1_angle_binned_summary.csv', index=False)
 
     # Topology comparison. These samples have different coverage; this is
     # descriptive, not an acceptance-matched topology-efficiency measurement.
@@ -167,13 +252,13 @@ def main():
         topology_stats.append(stats)
         plot_series(ax, stats, f'{tag} (N={len(part)})', COLORS[tag],
                     offset=(i - 1.5) * .004)
-    ax.axhline(1, ls='--', lw=1, color='0.45')
+    pass1_normalization_band(ax, label=True)
     ax.set(xlabel=r'$|t|$ (GeV$^2$)', ylabel='Pass-2 / Pass-1')
     ax.grid(alpha=.18)
     ax.set_ylim(bottom=0)
     ax.legend(frameon=False, ncol=2)
     fig.suptitle('CLAS12 DVCS cross sections by detector topology', fontsize=13)
-    fig.text(0.5, -0.035, 'Thick colored: 68% bootstrap interval on median    |    Thin gray: 16th–84th percentile spread',
+    fig.text(0.5, -0.035, 'Thick colored: 68% bootstrap median CI   |   Thin gray: point spread (16–84%)   |   Shading: Pass-1 norm. (31%, correlated)',
              ha='center', va='top', fontsize=9, color='0.35')
     save(fig, args.outdir / 'pass2_pass1_by_topology')
     pd.concat(topology_stats, ignore_index=True).to_csv(
