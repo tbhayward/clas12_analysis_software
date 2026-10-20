@@ -16,6 +16,8 @@
 #include "bsa.h"
 #include "radiative_corrections.h"
 #include <filesystem>
+#include <fstream>
+#include <optional>
 #include <algorithm>
 #include <iostream>
 #include <map>
@@ -42,6 +44,43 @@
 
 
 namespace {
+// Restore shared configuration products after a topology/sector study, including
+// early returns. The study may use them while running, but must not leave them
+// as the defaults for the next invocation.
+struct ScopedStudyConfigurationRestore {
+    struct Snapshot { std::string path; std::optional<std::string> bytes; };
+    std::vector<Snapshot> files;
+    explicit ScopedStudyConfigurationRestore(bool enabled) {
+        if (!enabled) return;
+        for (const char* name : {"output/jsons/global_cuts_config.json",
+                                 "output/jsons/combined_cuts.json"}) {
+            Snapshot item{name, std::nullopt};
+            std::ifstream input(name, std::ios::binary);
+            if (input) item.bytes = std::string(std::istreambuf_iterator<char>(input),
+                                                std::istreambuf_iterator<char>());
+            files.push_back(std::move(item));
+        }
+    }
+    ~ScopedStudyConfigurationRestore() {
+        for (const auto& item : files) {
+            if (item.bytes) {
+                const auto temp = item.path + ".restore.tmp";
+                std::ofstream out(temp, std::ios::binary | std::ios::trunc);
+                out.write(item.bytes->data(), static_cast<std::streamsize>(item.bytes->size()));
+                out.close();
+                if (out) {
+                    std::error_code ec;
+                    std::filesystem::rename(temp, item.path, ec);
+                    if (ec) std::cerr << "[main] WARNING: failed to restore " << item.path
+                                      << ": " << ec.message() << '\n';
+                }
+            } else {
+                std::error_code ec;
+                std::filesystem::remove(item.path, ec);
+            }
+        }
+    }
+};
 
 struct SystematicRunSelection {
     bool cuts = true;
@@ -352,6 +391,11 @@ int main(int argc, char* argv[]) {
     // Record the exact global-cut configuration before the Python process is
     // launched. The Python exclusivity stage must apply the same minimally
     // selected event population used by every downstream C++ stage.
+    // Save shared JSONs before a restricted study changes them. This guard
+    // restores them on normal completion and early return (not SIGKILL).
+    const bool restricted_study = !topology_cli.empty() || electron_sector_cli != 0 ||
+        proton_fd_sector_cli != 0 || proton_cd_sector_cli != 0 || photon_sector_cli != 0;
+    ScopedStudyConfigurationRestore restore_shared_study_json(restricted_study);
     write_global_cuts_config_json("output/jsons", global_cfg);
 
     // Run the production Python template-fit exclusivity extraction before

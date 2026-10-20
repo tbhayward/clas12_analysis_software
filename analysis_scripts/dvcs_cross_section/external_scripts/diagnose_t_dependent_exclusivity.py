@@ -7,6 +7,7 @@ os.environ.setdefault('MPLBACKEND','Agg')
 os.environ.setdefault('OPENBLAS_NUM_THREADS','1')
 os.environ.setdefault('OMP_NUM_THREADS','1')
 import argparse,csv,json,sys
+from dataclasses import replace
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor,as_completed
 import numpy as np
@@ -43,7 +44,15 @@ def vector_t(a,beam):
 
 def read_sample(job):
     pk,tk,kind,path,edges,step,global_json=job
-    fitlib.ACTIVE_GLOBAL_CUTS=fitlib.load_global_cuts_config(global_json)
+    cfg=fitlib.load_global_cuts_config(global_json)
+    # Explicit topology is selected below; never inherit a previous run's
+    # persisted topology/sector restriction. Retain all other global cuts.
+    fitlib.ACTIVE_GLOBAL_CUTS=replace(cfg,
+        enable_topology_filter=False,
+        enable_electron_fd_sector_filter=False,
+        enable_proton_fd_sector_filter=False,
+        enable_proton_cd_sector_filter=False,
+        enable_photon_fd_sector_filter=False)
     topo=next(t for t in fitlib.TOPOLOGIES if t.key==tk)
     with uproot.open(f'{path}:{fitlib.TREE_NAME}') as tree:
         resolved=fitlib.resolve_variable_branches(path,VARS)
@@ -91,7 +100,7 @@ def contained(shape,v,low,high):
     return float(a[(centers>=low)&(centers<=high)].sum()/a.sum()) if a.sum()>0 else np.nan
 
 def fit_one(job):
-    pk,tk,i,edges,inputs,cutmap,opts=job
+    pk,tk,i,edges,inputs,cutmap_data,cutmap_mc,opts=job
     topo=next(t for t in fitlib.TOPOLOGIES if t.key==tk)
     dh={v.branch:inputs['data'][0][v.branch][i] for v in VARS}
     mh={v.branch:inputs['mc'][0][v.branch][i] for v in VARS}
@@ -103,7 +112,8 @@ def fit_one(job):
     for v in VARS:
         f=(result.variable_results or {}).get(v.branch)
         if f is None or not f.success:continue
-        lo,hi=cut_bounds(cutmap[v.branch]) if v.branch in cutmap else (np.nan,np.nan)
+        lo,hi=cut_bounds(cutmap_data[v.branch]) if v.branch in cutmap_data else (np.nan,np.nan)
+        lo_mc,hi_mc=cut_bounds(cutmap_mc[v.branch]) if v.branch in cutmap_mc else (np.nan,np.nan)
         mc=mh[v.branch]/max(1,np.sum(mh[v.branch]))
         data_shape=f.transformed_dvcs_shape
         rows.append(dict(period=pk,topology=tk,t_min=edges[i],t_max=edges[i+1],variable=v.branch,
@@ -112,7 +122,9 @@ def fit_one(job):
                          n_data=inputs['data'][2][i],n_mc=inputs['mc'][2][i],n_pi0=inputs['pi0'][2][i],
                          fitted_data_dvcs_width=shape_width(data_shape,v),mc_dvcs_width=shape_width(mc,v),
                          fitted_data_single_containment=contained(data_shape,v,lo,hi),
-                         mc_single_containment=contained(mc,v,lo,hi),
+                         mc_single_containment=contained(mc,v,lo_mc,hi_mc),
+                         mc_common_window_containment=contained(mc,v,lo,hi),
+                         cut_low_mc=lo_mc,cut_high_mc=hi_mc,
                          cut_low=lo,cut_high=hi))
     return pk,tk,i,result,rows,dh,mh,ph
 
@@ -153,7 +165,9 @@ def main():
             cmap=cuts[key]
             sample={kind:inputs[(pk,tk,kind)] for kind in ('data','mc','pi0')}
             for i in range(len(edges)-1):
-                fitjobs.append((pk,tk,i,edges,sample,cmap['data'],dict(shift=args.max_shift_bins,smear=args.max_smear_bins,min_counts=args.fit_min_counts)))
+                fitjobs.append((pk,tk,i,edges,sample,cmap['data'],cmap['mc'],dict(shift=args.max_shift_bins,smear=args.max_smear_bins,min_counts=args.fit_min_counts)))
+    empty=[(pk,tk,kind) for (pk,tk,kind),(_,_,n) in inputs.items() if not n.any()]
+    if empty: raise RuntimeError(f'Empty samples after selection: {empty}')
     allrows=[];fits={}
     with ProcessPoolExecutor(max_workers=min(8,max(1,args.workers))) as pool:
         for future in as_completed([pool.submit(fit_one,j) for j in fitjobs]):
@@ -161,6 +175,8 @@ def main():
             fits[(pk,tk,i)]=(result,dh,mh,ph)
             allrows.extend(rows)
             print(f'[fit] {pk} {tk} bin {i+1}: success={result.success} f_pi0={result.f_pi0:.3g}',flush=True)
+    if not allrows:
+        raise RuntimeError('No successful template-fit rows; refusing to create empty canvases')
     if allrows:
         with open(out/'template_fit_by_t.csv','w',newline='') as f:
             w=csv.DictWriter(f,fieldnames=list(allrows[0]));w.writeheader();w.writerows(allrows)
@@ -205,12 +221,14 @@ def main():
                     if len(dt)>5:
                         q=np.quantile(dt,[.01,.99]);ax.hist(dt,bins=65,range=(max(-2,q[0]),min(2,q[1])),density=True,histtype='step',label=kind,color=color)
                 ax.set_title(f'{edges[i]:.2f}–{edges[i+1]:.2f} GeV²');ax.set_xlabel(r'$t_p-t_\gamma$ (GeV$^2$)');ax.grid(alpha=.2)
-            axs.flat[0].legend(fontsize=8);fig.suptitle(f'{pk} / {tk}: four-vector momentum-transfer closure')
+            handles,labels=axs.flat[0].get_legend_handles_labels()
+            if handles:axs.flat[0].legend(fontsize=8)
+            fig.suptitle(f'{pk} / {tk}: four-vector momentum-transfer closure')
             fig.savefig(out/f'delta_t_{pk}_{tk}.png',dpi=150);plt.close(fig)
     (out/'README.txt').write_text('Reuses fit_shared_two_templates from the production exclusivity fitter, with the same default nuisance priors and shared pi0 fraction drivers.\n'
         'Each fit uses the production |t| bin edges pooled over xB/Q2/phi and the production global-cut configuration.\n'
         'Widths are central 68% quantile half-widths of the MORPHED fitted DVCS component, not fitted Gaussian sigma parameters.\n'
-        'Containment is ONE-DIMENSIONAL only, evaluated on the nominal data cut window. This is NOT joint signal efficiency and NOT a cross-section correction.\n'
+        'Containment is ONE-DIMENSIONAL only; data and MC each use their own nominal cut window. This is NOT joint signal efficiency and NOT a cross-section correction.\n'
         'No iterative multi-variable conditional fitting or data event-level signal weighting is performed.\n'
         'The pi0 MC is included in every fit; fit failures are not silently replaced by raw widths.\n'
         'Delta t uses measured e, p and gamma four-vectors with period-dependent beam energies.\n'
