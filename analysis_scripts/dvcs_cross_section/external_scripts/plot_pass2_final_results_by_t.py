@@ -10,6 +10,8 @@ Requires existing dvcsgen and km15_cli.py installations used by the comparison c
 A dedicated persistent JSON model cache avoids reevaluation on subsequent runs.
 """
 import argparse
+from concurrent.futures import ProcessPoolExecutor, as_completed
+import os
 import csv
 import json
 import math
@@ -28,6 +30,42 @@ def finite(x):
     return math.isfinite(x)
 
 
+def model_cache_key(k, args, kind):
+    return json.dumps([k.xb_min, k.xb_max, k.q2_min, k.q2_max,
+                       k.t_min, k.t_max, args.e_beam, args.phi_dense,
+                       args.dvcsgen_dir, args.km15_cli, args.python_km15, kind])
+
+
+def compute_cell_models(job):
+    """One process per kinematic cell; compute only missing observables."""
+    k, cfg, kinds = job
+    phi = [360.0 * i / (cfg.phi_dense - 1) for i in range(cfg.phi_dense)]
+    xb = (k.xb_min + k.xb_max) / 2
+    q2 = (k.q2_min + k.q2_max) / 2
+    t = (k.t_min + k.t_max) / 2
+    result = {}
+    if 'xs' in kinds:
+        result['xs'] = {'phi': phi, 'km15': [], 'bh': []}
+    if 'bsa' in kinds:
+        result['bsa'] = {'phi': phi, 'km15': [], 'bh': [0.0] * len(phi)}
+    for angle in phi:
+        if 'xs' in kinds:
+            result['xs']['bh'].append(base.bh_xs(xb, q2, t, angle, cfg))
+            result['xs']['km15'].append(base.km15_xs(xb, q2, t, angle, cfg, helicity=0))
+        if 'bsa' in kinds:
+            plus = base.km15_xs(xb, q2, t, angle, cfg, helicity=+1)
+            minus = base.km15_xs(xb, q2, t, angle, cfg, helicity=-1)
+            denom = plus + minus
+            result['bsa']['km15'].append((plus - minus) / denom if math.isfinite(denom) and denom != 0 else float('nan'))
+    return k, result
+
+
+def save_cache_atomic(path, cache):
+    temp = path.with_name(path.name + '.tmp')
+    temp.write_text(json.dumps(cache, separators=(',', ':')))
+    os.replace(temp, path)
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('csv', type=Path, help='Pass-2 extracted 4D CSV')
@@ -42,7 +80,10 @@ def main():
     ap.add_argument('--bsa-total-ptp', action='store_true', help='BSA error bars: stat and point-to-point systematics in quadrature, if available')
     ap.add_argument('--recompute-models', action='store_true')
     ap.add_argument('--dpi', type=int, default=180)
+    ap.add_argument('--workers', type=int, default=8, help='Parallel model workers (1–8; default 8)')
     args = ap.parse_args()
+    if not 1 <= args.workers <= 8:
+        ap.error('--workers must be between 1 and 8')
     if args.phi_dense < 2:
         ap.error('--phi-dense must be >=2')
     args.output_dir.mkdir(parents=True, exist_ok=True)
@@ -94,6 +135,34 @@ def main():
     for k in panels:
         groups.setdefault((k.t_min, k.t_max), []).append(k)
     print(f'[results] {len(panels)} populated kinematic cells; {len(groups)} |t| bins', flush=True)
+    # Calculate missing model curves once, in parallel across independent cells.
+    # The plotting phase is deliberately serial: matplotlib is not process-safe
+    # and parallel PNG rendering would waste memory and initialization time.
+    jobs = []
+    for k in panels:
+        kinds = tuple(kind for kind in ('xs', 'bsa')
+                      if panels[k][kind] and model_cache_key(k, args, kind) not in cache)
+        if kinds:
+            jobs.append((k, cfg, kinds))
+    if jobs:
+        print(f'[models] Computing {len(jobs)} cells using up to {args.workers} workers', flush=True)
+        with ProcessPoolExecutor(max_workers=min(args.workers, len(jobs))) as pool:
+            futures = [pool.submit(compute_cell_models, job) for job in jobs]
+            try:
+                for i, future in enumerate(as_completed(futures), 1):
+                    k, curves = future.result()
+                    for kind, entry in curves.items():
+                        cache[model_cache_key(k, args, kind)] = entry
+                    # Checkpoint occasionally, not after every curve/phi point.
+                    if i % 8 == 0 or i == len(jobs):
+                        save_cache_atomic(cache_path, cache)
+                    print(f'[models] {i}/{len(jobs)} cells complete', flush=True)
+            except BaseException:
+                save_cache_atomic(cache_path, cache)
+                raise
+    else:
+        print('[models] All required curves loaded from cache', flush=True)
+
     for it, (trange, keys) in enumerate(sorted(groups.items()), start=1):
         xbins = sorted(set((k.xb_min, k.xb_max) for k in keys))
         qbins = sorted(set((k.q2_min, k.q2_max) for k in keys))
@@ -116,16 +185,7 @@ def main():
                         continue
                     phi, yy, ee = np.array(dat).T
                     ax.errorbar(phi, yy, yerr=ee, fmt='o', ms=3.5, lw=0.9, capsize=1.5, color='#1f77b4', label='CLAS12 Pass-2', zorder=4)
-                    cache_key = json.dumps([k.xb_min, k.xb_max, k.q2_min, k.q2_max, k.t_min, k.t_max, args.e_beam, args.phi_dense, args.dvcsgen_dir, args.km15_cli, args.python_km15, kind])
-                    if cache_key not in cache:
-                        print(f'  [model] {kind} xB={xb}, Q2={qb}', flush=True)
-                        if kind == 'xs':
-                            curve = base.compute_model_curves_without_cache(k, cfg)
-                            cache[cache_key] = {'phi': curve.phi, 'km15': curve.km15, 'bh': curve.bh}
-                        else:
-                            curve = base.compute_bsa_km15_curve_without_cache(k, '10.6 GeV', cfg)
-                            cache[cache_key] = {'phi': curve.phi, 'km15': curve.km15_bsa, 'bh': [0.0] * len(curve.phi)}
-                        cache_path.write_text(json.dumps(cache))
+                    cache_key = model_cache_key(k, args, kind)
                     curves = cache[cache_key]
                     for model, color, name in [('km15', '#d62728', 'KM15'), ('bh', '#2ca02c', 'BH')]:
                         vv = np.asarray(curves[model], dtype=float)
