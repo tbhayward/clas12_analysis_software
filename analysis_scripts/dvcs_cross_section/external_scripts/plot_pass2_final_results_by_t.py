@@ -171,6 +171,9 @@ def main():
             fig, axs = plt.subplots(len(qbins), len(xbins), figsize=(4.0 * len(xbins), 2.85 * len(qbins)), squeeze=False, sharex=True, sharey=(kind == 'bsa'))
             fig.subplots_adjust(left=0.075, right=0.985, bottom=0.10, top=0.87, hspace=0.0, wspace=0.0)
             fig.suptitle(rf'CLAS12 Pass-2 $ep\to ep\gamma$ — {"cross section" if kind == "xs" else "beam-spin asymmetry"}' + '\n' + rf'$|t|\in[{trange[0]:.3f},\,{trange[1]:.3f}]\ \mathrm{{GeV}}^2$, $E_{{beam}}={args.e_beam:g}$ GeV', fontsize=15, y=0.985)
+            occupied = {(len(qbins) - 1 - iq, ix) for iq, qb in enumerate(qbins) for ix, xb in enumerate(xbins) if any((k.xb_min, k.xb_max) == xb and (k.q2_min, k.q2_max) == qb and panels[k][kind] for k in keys)}
+            bottom_by_col = {ix: max(row for row, col in occupied if col == ix) for ix in range(len(xbins)) if any(col == ix for row, col in occupied)}
+            left_by_row = {row: min(col for rr, col in occupied if rr == row) for row in range(len(qbins)) if any(rr == row for rr, col in occupied)}
             for iq, qb in enumerate(qbins):
                 for ix, xb in enumerate(xbins):
                     ax = axs[len(qbins) - 1 - iq, ix]
@@ -199,10 +202,19 @@ def main():
                     ax.text(0.035, 0.96, rf'$x_B=[{xb[0]:.3f},{xb[1]:.3f}]$' + '\n' + rf'$Q^2=[{qb[0]:.2f},{qb[1]:.2f}]\ \mathrm{{GeV}}^2$', transform=ax.transAxes, va='top', ha='left', fontsize=8, bbox={'facecolor': 'white', 'alpha': 0.78, 'edgecolor': 'none', 'pad': 2})
                     if kind == 'bsa':
                         ax.set_ylim(-0.65, 0.65)
-                    if iq == 0:
+                    row = len(qbins) - 1 - iq
+                    show_x = row == bottom_by_col.get(ix)
+                    show_y = ix == left_by_row.get(row)
+                    ax.tick_params(axis='x', labelbottom=show_x, bottom=show_x)
+                    ax.tick_params(axis='y', labelleft=show_y, left=show_y)
+                    if show_x:
                         ax.set_xlabel(r'$\phi$ (deg)')
-                    if ix == 0:
+                    if show_y:
                         ax.set_ylabel(r'$d^4\sigma$ (analysis units)' if kind == 'xs' else r'$A_{LU}$')
+            # Shared axes may hide tick labels on non-bottom rows; restore only
+            # the lowest populated panel in each column (staircase layouts).
+            for ix, row in bottom_by_col.items():
+                axs[row, ix].tick_params(axis='x', labelbottom=True, bottom=True)
             from matplotlib.lines import Line2D
             handles = [Line2D([], [], color='black', marker='o', ls='none', markersize=5, label='CLAS12 Pass-2'), Line2D([], [], color='#1f77b4', lw=2, ls='-', label='KM15'), Line2D([], [], color='#ff7f0e', lw=2, ls='--', label='BH')]
             fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.914), ncol=3, frameon=False)
