@@ -286,10 +286,16 @@ def main():
                 # Keep endpoint tick labels inside their own panel. At zero
                 # inter-panel spacing, centered 0/360 labels cross the shared spine.
                 for ix, row in bottom_by_col.items():
-                    tick_labels = axs[row, ix].get_xticklabels()
-                    if tick_labels:
-                        tick_labels[0].set_horizontalalignment('left')
-                        tick_labels[-1].set_horizontalalignment('right')
+                    ax = axs[row, ix]
+                    # Only the leftmost populated panel in this row labels 0°.
+                    # Adjacent panels otherwise visually concatenate 360 and 0.
+                    labels = ['0' if ix == left_by_row[row] else '',
+                              '90', '180', '270', '360']
+                    ax.set_xticks([0, 90, 180, 270, 360])
+                    ax.set_xticklabels(labels)
+                    tick_labels = ax.get_xticklabels()
+                    tick_labels[0].set_horizontalalignment('left')
+                    tick_labels[-1].set_horizontalalignment('right')
                 from matplotlib.lines import Line2D
                 handles = [Line2D([], [], color='black', marker='o', ls='none', markersize=5, label='CLAS12 Pass-2'), Line2D([], [], color='#1f77b4', lw=2, ls='-', label='KM15'), Line2D([], [], color='#ff7f0e', lw=2, ls='--', label='BH')]
                 fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.914), ncol=3, frameon=False)
