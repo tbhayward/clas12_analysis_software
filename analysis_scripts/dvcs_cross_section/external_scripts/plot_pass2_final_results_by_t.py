@@ -23,6 +23,9 @@ matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 import numpy as np
 
+# Avoid rewriting tracked .pyc files on the ifarm when importing local helpers.
+# This must precede the local module import.
+sys.dont_write_bytecode = True
 import plot_pass2_vs_pass1_model_comparison as base
 
 
