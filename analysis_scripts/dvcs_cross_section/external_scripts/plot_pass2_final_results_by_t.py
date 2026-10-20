@@ -169,11 +169,11 @@ def main():
         print(f'[results] |t| {trange}: {len(keys)} cells, {len(xbins)} xB columns, {len(qbins)} Q2 rows', flush=True)
         for kind in ('xs', 'bsa'):
             fig, axs = plt.subplots(len(qbins), len(xbins), figsize=(4.0 * len(xbins), 2.85 * len(qbins)), squeeze=False, sharex=True, sharey=(kind == 'bsa'))
-            fig.subplots_adjust(left=0.075, right=0.985, bottom=0.10, top=0.87, hspace=0.20, wspace=0.20)
+            fig.subplots_adjust(left=0.075, right=0.985, bottom=0.10, top=0.87, hspace=0.0, wspace=0.0)
             fig.suptitle(rf'CLAS12 Pass-2 $ep\to ep\gamma$ — {"cross section" if kind == "xs" else "beam-spin asymmetry"}' + '\n' + rf'$|t|\in[{trange[0]:.3f},\,{trange[1]:.3f}]\ \mathrm{{GeV}}^2$, $E_{{beam}}={args.e_beam:g}$ GeV', fontsize=15, y=0.985)
             for iq, qb in enumerate(qbins):
                 for ix, xb in enumerate(xbins):
-                    ax = axs[iq, ix]
+                    ax = axs[len(qbins) - 1 - iq, ix]
                     matches = [k for k in keys if (k.xb_min, k.xb_max) == xb and (k.q2_min, k.q2_max) == qb]
                     if not matches:
                         ax.axis('off')
@@ -199,7 +199,7 @@ def main():
                     ax.text(0.035, 0.96, rf'$x_B=[{xb[0]:.3f},{xb[1]:.3f}]$' + '\n' + rf'$Q^2=[{qb[0]:.2f},{qb[1]:.2f}]\ \mathrm{{GeV}}^2$', transform=ax.transAxes, va='top', ha='left', fontsize=8, bbox={'facecolor': 'white', 'alpha': 0.78, 'edgecolor': 'none', 'pad': 2})
                     if kind == 'bsa':
                         ax.set_ylim(-0.65, 0.65)
-                    if iq == len(qbins)-1:
+                    if iq == 0:
                         ax.set_xlabel(r'$\phi$ (deg)')
                     if ix == 0:
                         ax.set_ylabel(r'$d^4\sigma$ (analysis units)' if kind == 'xs' else r'$A_{LU}$')
