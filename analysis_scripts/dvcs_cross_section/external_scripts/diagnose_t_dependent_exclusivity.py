@@ -125,7 +125,15 @@ def fit_one(job):
                          mc_single_containment=contained(mc,v,lo_mc,hi_mc),
                          mc_common_window_containment=contained(mc,v,lo,hi),
                          cut_low_mc=lo_mc,cut_high_mc=hi_mc,
-                         cut_low=lo,cut_high=hi))
+                         cut_low=lo,cut_high=hi,
+                         shift=f.shift,shift_error=f.shift_err,
+                         sigma_add=f.sigma_add,sigma_add_error=f.sigma_add_err,
+                         sigma_right=f.sigma_right,sigma_right_error=f.sigma_right_err,
+                         pi0_shift=f.pi0_shift,pi0_sigma_add=f.pi0_sigma_add,
+                         variable_deviance=f.deviance,variable_ndf=f.ndf,
+                         variable_deviance_ndf=f.deviance/f.ndf if f.ndf>0 else np.nan,
+                         fit_region_closure_difference=f.fit_region_closure_difference,
+                         excluded_excess_fraction=f.excluded_excess_fraction))
     return pk,tk,i,result,rows,dh,mh,ph
 
 def main():
@@ -225,11 +233,93 @@ def main():
             if handles:axs.flat[0].legend(fontsize=8)
             fig.suptitle(f'{pk} / {tk}: four-vector momentum-transfer closure')
             fig.savefig(out/f'delta_t_{pk}_{tk}.png',dpi=150);plt.close(fig)
+    # Fit-validation canvases: genuine fitted components from the production fitter.
+    # Three |t| intervals (low, middle, high) per period/topology, seven
+    # variable projections per interval; pulls use sqrt(observed) convention.
+    for pk in args.periods:
+        for tk in args.topologies:
+            available=[i for i in range(len(edges)-1) if (pk,tk,i) in fits]
+            if not available: continue
+            chosen=sorted(set((available[0],available[len(available)//2],available[-1])))
+            for i in chosen:
+                result,dh,mh,ph=fits[(pk,tk,i)]
+                fig,axs=plt.subplots(len(VARS),2,figsize=(14,2.65*len(VARS)),
+                                     gridspec_kw={'width_ratios':[3.5,1]},
+                                     constrained_layout=True)
+                for j,v in enumerate(VARS):
+                    ax,pullax=axs[j]
+                    fr=(result.variable_results or {}).get(v.branch)
+                    observed=np.asarray(dh[v.branch],float)
+                    centers=v.xmin+(np.arange(v.bins)+.5)*(v.xmax-v.xmin)/v.bins
+                    if fr is None or not fr.success or fr.model_counts is None:
+                        ax.text(.5,.5,'Fit unavailable',transform=ax.transAxes,ha='center')
+                        pullax.axis('off');continue
+                    model=np.asarray(fr.model_counts,float)
+                    signal=np.asarray(fr.dvcs_component_counts,float)
+                    background=np.asarray(fr.pi0_component_counts,float)
+                    shown=np.asarray(fr.fit_data_counts,float) if fr.fit_data_counts is not None else observed
+                    if len(shown)!=len(model):
+                        shown=observed
+                    ax.errorbar(centers,shown,yerr=np.sqrt(np.maximum(shown,1)),fmt='.',
+                                color='black',ms=3,lw=.6,label='Data')
+                    ax.step(centers,model,where='mid',color='tab:red',label='Total fit')
+                    ax.step(centers,signal,where='mid',color='tab:blue',label='DVCS')
+                    ax.step(centers,background,where='mid',color='tab:orange',label=r'$\pi^0$')
+                    if fr.fit_mask is not None and len(fr.fit_mask)==len(model):
+                        fm=np.asarray(fr.fit_mask,bool)
+                        # Mark bins omitted from the objective, if any.
+                        if np.any(~fm):
+                            ax.scatter(centers[~fm],np.zeros(np.count_nonzero(~fm)),
+                                       marker='|',color='gray',s=15)
+                    ax.set_ylabel(v.branch+' (counts/bin)')
+                    ax.grid(alpha=.15)
+                    if j==0:ax.legend(fontsize=8,ncol=4)
+                    pulls=(shown-model)/np.sqrt(np.maximum(shown,1))
+                    pullax.axhline(0,color='gray',lw=.8)
+                    pullax.plot(centers,pulls,'.',ms=2.5,color='black')
+                    pullax.set_ylim(-6,6)
+                    pullax.set_ylabel('Pull')
+                    pullax.grid(alpha=.15)
+                    if j==len(VARS)-1:
+                        ax.set_xlabel(v.branch);pullax.set_xlabel(v.branch)
+                quality=(result.deviance/result.ndf if result.ndf>0 else np.nan)
+                fig.suptitle(f'{pk} / {tk} / |t| = {edges[i]:.3f}–{edges[i+1]:.3f} (GeV²)'
+                             f'   f_pi0={result.f_pi0:.3f}   deviance/ndf={quality:.2f}')
+                fig.savefig(out/f'template_overlay_{pk}_{tk}_tbin{i+1}.png',dpi=150)
+                plt.close(fig)
+            # Fit-quality and nuisance-parameter trends in one compact canvas.
+            fig,axs=plt.subplots(2,2,figsize=(12,8),constrained_layout=True)
+            rr=[r for r in allrows if r['period']==pk and r['topology']==tk]
+            if rr:
+                unique={ (r['t_min'],r['t_max']):r for r in rr }
+                ordered=[unique[k] for k in sorted(unique)]
+                xx=[.5*(r['t_min']+r['t_max']) for r in ordered]
+                axs[0,0].plot(xx,[r['deviance']/r['ndf'] if r['ndf'] else np.nan for r in ordered],'o-')
+                axs[0,0].set_title('Shared-fit deviance / ndf (diagnostic only)')
+                axs[0,1].errorbar(xx,[r['f_pi0'] for r in ordered],
+                                  yerr=[r['f_pi0_error'] for r in ordered],fmt='o-')
+                axs[0,1].set_title(r'Fitted $\pi^0$ fraction')
+                for v in VARS:
+                    subset=sorted((r for r in rr if r['variable']==v.branch),key=lambda r:r['t_min'])
+                    x=[.5*(r['t_min']+r['t_max']) for r in subset]
+                    axs[1,0].plot(x,[r['shift'] for r in subset],'o-',ms=3,label=v.branch)
+                    axs[1,1].plot(x,[r['sigma_add'] for r in subset],'o-',ms=3,label=v.branch)
+                axs[1,0].set_title('DVCS template shift (variable units)')
+                axs[1,1].set_title('DVCS additive smearing (variable units)')
+                axs[1,0].legend(fontsize=7,ncol=2)
+                for ax in axs.flat:
+                    ax.set_xlabel(r'$|t|$ (GeV$^2$)');ax.grid(alpha=.2)
+                fig.suptitle(f'{pk} / {tk}: fit quality and nuisance diagnostics')
+                fig.savefig(out/f'fit_quality_{pk}_{tk}.png',dpi=150)
+                plt.close(fig)
     (out/'README.txt').write_text('Reuses fit_shared_two_templates from the production exclusivity fitter, with the same default nuisance priors and shared pi0 fraction drivers.\n'
         'Each fit uses the production |t| bin edges pooled over xB/Q2/phi and the production global-cut configuration.\n'
         'Widths are central 68% quantile half-widths of the MORPHED fitted DVCS component, not fitted Gaussian sigma parameters.\n'
         'Containment is ONE-DIMENSIONAL only; data and MC each use their own nominal cut window. This is NOT joint signal efficiency and NOT a cross-section correction.\n'
         'No iterative multi-variable conditional fitting or data event-level signal weighting is performed.\n'
+        'IMPORTANT: cumulative data/MC signal efficiency is NOT inferred from one-dimensional fits.\n'
+        'Template overlays show the actual fitter components; pulls are (data-model)/sqrt(max(data,1)).\n'
+        'Deviance/ndf combines correlated projections and is a diagnostic, not a chi-square p-value.\n'
         'The pi0 MC is included in every fit; fit failures are not silently replaced by raw widths.\n'
         'Delta t uses measured e, p and gamma four-vectors with period-dependent beam energies.\n'
         'No caches, no PDF, no production modifications.\n')
