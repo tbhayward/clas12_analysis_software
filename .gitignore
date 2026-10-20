@@ -7,3 +7,5 @@
 
 # Object files
 *.o
+__pycache__/
+*.pyc
