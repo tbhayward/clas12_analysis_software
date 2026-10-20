@@ -241,6 +241,44 @@ def main():
                             ax.set_xlabel(r'$\phi$ (deg)')
                         if show_y:
                             ax.set_ylabel(r'$d^4\sigma$ (analysis units)' if kind == 'xs' else r'$A_{LU}$')
+                if kind == 'xs':
+                    # Each Q2 row has one common logarithmic range, including
+                    # measured uncertainties and both model predictions.
+                    # Do not share y across rows: their scales can differ greatly.
+                    for row in range(len(qbins)):
+                        positives = []
+                        for col in range(len(xbins)):
+                            if (row, col) not in occupied:
+                                continue
+                            qb = qbins[len(qbins) - 1 - row]
+                            xb = xbins[col]
+                            matches = [k for k in keys if (k.xb_min, k.xb_max) == xb and (k.q2_min, k.q2_max) == qb and panels[k][kind]]
+                            if not matches:
+                                continue
+                            k = matches[0]
+                            for _, val, err in panels[k][kind]:
+                                for candidate in (val, val - err, val + err):
+                                    if finite(candidate) and candidate > 0:
+                                        positives.append(candidate)
+                            curves = cache[model_cache_key(k, args, kind)]
+                            for model in ('km15', 'bh'):
+                                positives.extend(float(v) for v in curves[model] if finite(float(v)) and float(v) > 0)
+                        #endfor
+                        if positives:
+                            lo, hi = min(positives), max(positives)
+                            padding = max(0.10, 0.06 * math.log10(hi / lo)) if hi > lo else 0.15
+                            limits = (10 ** (math.log10(lo) - padding), 10 ** (math.log10(hi) + padding))
+                            for col in range(len(xbins)):
+                                if (row, col) in occupied:
+                                    axs[row, col].set_ylim(*limits)
+                                    # Only the leftmost occupied panel in this row
+                                    # displays y tick labels (including minor ticks).
+                                    if col != left_by_row[row]:
+                                        axs[row, col].tick_params(axis='y', which='both', left=False, right=False, labelleft=False, labelright=False)
+                                        axs[row, col].yaxis.get_offset_text().set_visible(False)
+                            #endfor
+                        #endif
+                    #endfor
                 # Shared axes may hide tick labels on non-bottom rows; restore only
                 # the lowest populated panel in each column (staircase layouts).
                 for ix, row in bottom_by_col.items():
