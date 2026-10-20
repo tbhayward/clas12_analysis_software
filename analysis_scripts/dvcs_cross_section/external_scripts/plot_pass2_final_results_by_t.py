@@ -184,15 +184,15 @@ def main():
                         ax.axis('off')
                         continue
                     phi, yy, ee = np.array(dat).T
-                    ax.errorbar(phi, yy, yerr=ee, fmt='o', ms=3.5, lw=0.9, capsize=1.5, color='#1f77b4', label='CLAS12 Pass-2', zorder=4)
+                    ax.errorbar(phi, yy, yerr=ee, fmt='o', ms=3.5, lw=0.9, capsize=1.5, color='black', label='CLAS12 Pass-2', zorder=4)
                     cache_key = model_cache_key(k, args, kind)
                     curves = cache[cache_key]
-                    for model, color, name in [('km15', '#d62728', 'KM15'), ('bh', '#2ca02c', 'BH')]:
+                    for model, color, name in [('km15', '#1f77b4', 'KM15'), ('bh', '#ff7f0e', 'BH')]:
                         vv = np.asarray(curves[model], dtype=float)
                         xx = np.asarray(curves['phi'], dtype=float)
                         valid = np.isfinite(vv) & np.isfinite(xx)
                         if np.any(valid):
-                            ax.plot(xx[valid], vv[valid], '-', lw=1.65, color=color, label=name, zorder=2)
+                            ax.plot(xx[valid], vv[valid], '--' if model == 'bh' else '-', lw=1.65, color=color, label=name, zorder=2)
                     ax.set_xlim(0, 360)
                     ax.set_xticks([0, 90, 180, 270, 360])
                     ax.grid(alpha=0.18)
@@ -204,7 +204,7 @@ def main():
                     if ix == 0:
                         ax.set_ylabel(r'$d^4\sigma$ (analysis units)' if kind == 'xs' else r'$A_{LU}$')
             from matplotlib.lines import Line2D
-            handles = [Line2D([], [], color='#1f77b4', marker='o', ls='none', markersize=5, label='CLAS12 Pass-2'), Line2D([], [], color='#d62728', lw=2, label='KM15'), Line2D([], [], color='#2ca02c', lw=2, label='BH')]
+            handles = [Line2D([], [], color='black', marker='o', ls='none', markersize=5, label='CLAS12 Pass-2'), Line2D([], [], color='#1f77b4', lw=2, ls='-', label='KM15'), Line2D([], [], color='#ff7f0e', lw=2, ls='--', label='BH')]
             fig.legend(handles=handles, loc='upper center', bbox_to_anchor=(0.5, 0.914), ncol=3, frameon=False)
             output = args.output_dir / f'pass2_{kind}_tbin_{it:02d}_{trange[0]:.3f}_{trange[1]:.3f}.png'
             fig.savefig(output, dpi=args.dpi)
