@@ -224,7 +224,10 @@ def main():
                         ax.set_xticks([0, 90, 180, 270, 360])
                         ax.grid(alpha=0.18)
                         ax.text(0.035, 0.96, rf'$x_B=[{xb[0]:.3f},{xb[1]:.3f}]$' + '\n' + rf'$Q^2=[{qb[0]:.2f},{qb[1]:.2f}]\ \mathrm{{GeV}}^2$', transform=ax.transAxes, va='top', ha='left', fontsize=8, bbox={'facecolor': 'white', 'alpha': 0.78, 'edgecolor': 'none', 'pad': 2})
-                        if kind == 'bsa':
+                        if kind == 'xs':
+                            # Logarithmic cross-section axis; nonpositive points cannot be displayed.
+                            ax.set_yscale('log')
+                        else:
                             ax.set_ylim(-0.65, 0.65)
                         row = len(qbins) - 1 - iq
                         show_x = row == bottom_by_col.get(ix)
