@@ -365,6 +365,7 @@ struct BranchBinder {
     double p2_phi = 0.0;         bool has_p2_phi = false;
 
     // proton theta/phi (branch names p1_theta/p1_phi, radians)
+    double p1_p = 0.0; bool has_p1_p = false;
     double p1_theta = 0.0;       bool has_p1_theta = false;
     double p1_phi = 0.0;         bool has_p1_phi = false;
 
@@ -410,6 +411,7 @@ struct BranchBinder {
         enable("p2_phi");
 
         // proton theta for bin means
+        enable("p1_p");
         enable("p1_theta");
 
         // Binning variables
@@ -449,6 +451,8 @@ struct BranchBinder {
         bindD("p2_p",     &p2_p,     has_p2_p);
         bindD("p2_theta", &p2_theta, has_p2_theta);
         bindD("p2_phi",   &p2_phi,   has_p2_phi);
+
+        bindD("p1_p", &p1_p, has_p1_p);
 
         bindD("p1_theta", &p1_theta, has_p1_theta);
 
@@ -515,6 +519,9 @@ static inline bool passes_global(const BranchBinder& b, const std::string& perio
     if (b.has_runnum && is_excluded_run(b.runnum)) return false;
 
     const GlobalCutConfig& cfg = default_global_cuts();
+    if (cfg.auxiliary_cd_proton_p_min_GeV > 0.0 && b.has_det1 && b.detector1 == 2 &&
+        (!b.has_p1_p || !std::isfinite(b.p1_p) || !(b.p1_p > cfg.auxiliary_cd_proton_p_min_GeV))) return false;
+
 
     if (cfg.enable_topology_filter || global_cuts_require_sector_phi(cfg) || cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_det1 && b.has_det2)) {

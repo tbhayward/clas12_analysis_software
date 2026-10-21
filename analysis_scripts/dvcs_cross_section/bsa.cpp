@@ -780,6 +780,7 @@ struct BranchBinder {
     double e_p = 0.0; bool has_e_p = false;
     double e_theta = 0.0; bool has_e_theta = false;
     double e_phi = 0.0; bool has_e_phi = false;
+    double p1_p = 0.0; bool has_p1_p = false;
     double p1_theta = 0.0; bool has_p1_theta = false;
     double p1_phi = 0.0; bool has_p1_phi = false;
     double p2_p = 0.0; bool has_p2_p = false;
@@ -802,7 +803,7 @@ struct BranchBinder {
             "open_angle_ep2", "pTmiss",
             "theta", "theta_gamma_gamma", "theta_pi0_pi0",
             "Emiss2", "Mx2", "Mx2_2",
-            "e_p", "e_theta", "e_phi", "p1_theta", "p1_phi",
+            "e_p", "e_theta", "e_phi", "p1_p", "p1_theta", "p1_phi",
             "p2_p", "p2_theta", "p2_phi"
         };
         for (const char* name : names) enable(name);
@@ -838,6 +839,7 @@ struct BranchBinder {
         bind_double("e_p", &e_p, has_e_p);
         bind_double("e_theta", &e_theta, has_e_theta);
         bind_double("e_phi", &e_phi, has_e_phi);
+        bind_double("p1_p", &p1_p, has_p1_p);
         bind_double("p1_theta", &p1_theta, has_p1_theta);
         bind_double("p1_phi", &p1_phi, has_p1_phi);
         bind_double("p2_p", &p2_p, has_p2_p);
@@ -902,6 +904,9 @@ static bool passes_sigma_cuts(const TopoCutMap& cuts,
 static bool passes_global_cuts_dispatch(const BranchBinder& b,
                                         const std::string& period_display_label) {
     const GlobalCutConfig& cfg = default_global_cuts();
+    if (cfg.auxiliary_cd_proton_p_min_GeV > 0.0 && b.detector1 == 2 &&
+        (!b.has_p1_p || !std::isfinite(b.p1_p) || !(b.p1_p > cfg.auxiliary_cd_proton_p_min_GeV))) return false;
+
     const std::string period_label = period_global_cuts_label_from_display(period_display_label);
 
     if (!(b.has_t1 && b.has_open_angle)) return false;

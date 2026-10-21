@@ -189,6 +189,8 @@ struct BranchBinder {
     double e_theta = 0.0;   bool has_e_theta = false;
     double e_phi = 0.0;     bool has_e_phi = false;
 
+    double p1_p = 0.0; bool has_p1_p = false;
+
     double p1_theta = 0.0;  bool has_p1_theta = false;
     double p1_phi = 0.0;    bool has_p1_phi = false;
 
@@ -228,6 +230,7 @@ struct BranchBinder {
         ena("e_p");
         ena("e_theta");
         ena("e_phi");
+        ena("p1_p");
         ena("p1_theta");
         ena("p1_phi");
         ena("p2_p");
@@ -263,6 +266,7 @@ struct BranchBinder {
         bD("e_p",     &e_p,     has_e_p);
         bD("e_theta", &e_theta, has_e_theta);
         bD("e_phi",   &e_phi,   has_e_phi);
+        bD("p1_p", &p1_p, has_p1_p);
         bD("p1_theta", &p1_theta, has_p1_theta);
         bD("p1_phi",  &p1_phi,  has_p1_phi);
 
@@ -396,6 +400,9 @@ static bool passesGlobalForStage(const BranchBinder& b,
                                  const std::string& period_label,
                                  const GlobalCutConfig& gcfg) {
     if (!(b.has_t1 && b.has_open_angle_ep2)) return false;
+    if (gcfg.auxiliary_cd_proton_p_min_GeV > 0.0 && b.detector1 == 2 &&
+        (!b.has_p1_p || !std::isfinite(b.p1_p) || !(b.p1_p > gcfg.auxiliary_cd_proton_p_min_GeV))) return false;
+
     if (gcfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
     if (!(b.has_detector1 && b.has_detector2)) return false;
 
@@ -1045,6 +1052,9 @@ static bool passesGlobalWithConfig(const BranchBinder& b,
                                    const std::string& period_label,
                                    const GlobalCutConfig& gcfg) {
     if (!(b.has_t1 && b.has_open_angle_ep2)) return false;
+    if (gcfg.auxiliary_cd_proton_p_min_GeV > 0.0 && b.detector1 == 2 &&
+        (!b.has_p1_p || !std::isfinite(b.p1_p) || !(b.p1_p > gcfg.auxiliary_cd_proton_p_min_GeV))) return false;
+
     if (gcfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
     if (!(b.has_detector1 && b.has_detector2)) return false;
 

@@ -1170,6 +1170,9 @@ struct Branches {
 static bool passes_global_dispatch(const Branches& b,
                                    const PeriodTags& tags) {
     const GlobalCutConfig& cfg = default_global_cuts();
+    if (cfg.auxiliary_cd_proton_p_min_GeV > 0.0 && b.detector1 == 2 &&
+        (!b.has_p1_p || !std::isfinite(b.p1_p) || !(b.p1_p > cfg.auxiliary_cd_proton_p_min_GeV))) return false;
+
 
     if (!(b.has_t1 && b.has_open_angle_ep2)) return false;
     if (cfg.enable_pTmiss_cut && !b.has_pTmiss) return false;

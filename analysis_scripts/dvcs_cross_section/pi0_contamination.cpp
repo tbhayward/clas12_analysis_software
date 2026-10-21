@@ -1123,6 +1123,7 @@ struct TreeDiagBranches {
     int detector2 = 0; bool has_detector2 = false;
 
     double Delta_phi = 0.0; bool has_Delta_phi = false;
+    double p1_p = 0.0; bool has_p1_p = false;
     double p1_theta = 0.0; bool has_p1_theta = false;
     double p1_phi = 0.0; bool has_p1_phi = false;
     double p2_phi = 0.0; bool has_p2_phi = false;
@@ -1166,6 +1167,7 @@ struct TreeDiagBranches {
         enable("detector1");
         enable("detector2");
         enable("Delta_phi");
+        enable("p1_p");
         enable("p1_theta");
         enable("p1_phi");
         enable("p2_phi");
@@ -1205,6 +1207,7 @@ struct TreeDiagBranches {
         bI("detector2", &detector2, has_detector2);
 
         bD("Delta_phi", &Delta_phi, has_Delta_phi);
+        bD("p1_p", &p1_p, has_p1_p);
         bD("p1_theta", &p1_theta, has_p1_theta);
         bD("p1_phi", &p1_phi, has_p1_phi);
         bD("p2_phi", &p2_phi, has_p2_phi);
@@ -1300,6 +1303,9 @@ struct TreeDiagBranches {
 
     bool passes_global_selection(const std::string& period, int d1, int d2) const {
         const GlobalCutConfig& cfg = default_global_cuts();
+    if (cfg.auxiliary_cd_proton_p_min_GeV > 0.0 && d1 == 2 &&
+        (!has_p1_p || !std::isfinite(p1_p) || !(p1_p > cfg.auxiliary_cd_proton_p_min_GeV))) return false;
+
 
         if (!(has_t1 && has_open_angle_ep2 && has_pTmiss)) return false;
         if (has_runnum && is_excluded_run(runnum)) return false;

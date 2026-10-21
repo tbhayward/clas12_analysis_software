@@ -126,6 +126,7 @@ class GlobalCutsConfig:
     auxiliary_fd_proton_theta_max_deg: float
     auxiliary_fd_photon_theta_min_deg: float
     auxiliary_fd_photon_theta_max_deg: float
+    auxiliary_cd_proton_p_min_GeV: float
     auxiliary_cd_proton_theta_min_deg: float
     auxiliary_cd_proton_theta_max_deg: float
     auxiliary_ft_photon_p_min_GeV: float
@@ -820,6 +821,7 @@ def load_global_cuts_config(path: str) -> GlobalCutsConfig:
         auxiliary_fd_proton_theta_max_deg=float(raw["auxiliary_fd_proton_theta_max_deg"]),
         auxiliary_fd_photon_theta_min_deg=float(raw["auxiliary_fd_photon_theta_min_deg"]),
         auxiliary_fd_photon_theta_max_deg=float(raw["auxiliary_fd_photon_theta_max_deg"]),
+        auxiliary_cd_proton_p_min_GeV=float(raw.get("auxiliary_cd_proton_p_min_GeV", 0.0)),
         auxiliary_cd_proton_theta_min_deg=float(raw["auxiliary_cd_proton_theta_min_deg"]),
         auxiliary_cd_proton_theta_max_deg=float(raw["auxiliary_cd_proton_theta_max_deg"]),
         auxiliary_ft_photon_p_min_GeV=float(raw["auxiliary_ft_photon_p_min_GeV"]),
@@ -863,6 +865,8 @@ def global_cut_required_branches() -> List[str]:
     ]
     if cfg.enable_auxiliary_fiducial_cuts:
         branches.extend(["e_theta", "p1_theta", "p2_p", "p2_theta"])
+        if cfg.auxiliary_cd_proton_p_min_GeV > 0.0:
+            branches.append("p1_p")
     return branches
 
 
@@ -914,6 +918,8 @@ def global_cut_mask_uproot(
     if cfg.enable_auxiliary_fiducial_cuts:
         e_theta_deg = np.degrees(np.asarray(arrays["e_theta"], dtype=np.float64))
         p1_theta_deg = np.degrees(np.asarray(arrays["p1_theta"], dtype=np.float64))
+        p1_p = (np.asarray(arrays["p1_p"], dtype=np.float64)
+                if cfg.auxiliary_cd_proton_p_min_GeV > 0.0 else np.full_like(p1_theta_deg, np.inf))
         p2_theta_deg = np.degrees(np.asarray(arrays["p2_theta"], dtype=np.float64))
         p2_p = np.asarray(arrays["p2_p"], dtype=np.float64)
         mask &= (
@@ -927,6 +933,7 @@ def global_cut_mask_uproot(
              & (p1_theta_deg > cfg.auxiliary_fd_proton_theta_min_deg)
              & (p1_theta_deg < cfg.auxiliary_fd_proton_theta_max_deg))
             | ((detector1 == 2)
+               & (p1_p > cfg.auxiliary_cd_proton_p_min_GeV)
                & (p1_theta_deg > cfg.auxiliary_cd_proton_theta_min_deg)
                & (p1_theta_deg < cfg.auxiliary_cd_proton_theta_max_deg))
         )
@@ -990,6 +997,8 @@ def event_passes_global_cuts(event: object, period_key: str) -> bool:
     if cfg.enable_auxiliary_fiducial_cuts:
         e_theta_deg = math.degrees(float(getattr(event, "e_theta")))
         p1_theta_deg = math.degrees(float(getattr(event, "p1_theta")))
+        p1_p = (float(getattr(event, "p1_p"))
+                if cfg.auxiliary_cd_proton_p_min_GeV > 0.0 else math.inf)
         p2_theta_deg = math.degrees(float(getattr(event, "p2_theta")))
         p2_p = float(getattr(event, "p2_p"))
         if not all(map(math.isfinite, (e_theta_deg, p1_theta_deg, p2_theta_deg, p2_p))):
@@ -1002,6 +1011,8 @@ def event_passes_global_cuts(event: object, period_key: str) -> bool:
             if not (cfg.auxiliary_fd_proton_theta_min_deg < p1_theta_deg < cfg.auxiliary_fd_proton_theta_max_deg):
                 return False
         elif detector1 == 2:
+            if cfg.auxiliary_cd_proton_p_min_GeV > 0.0 and not (math.isfinite(p1_p) and p1_p > cfg.auxiliary_cd_proton_p_min_GeV):
+                return False
             if not (cfg.auxiliary_cd_proton_theta_min_deg < p1_theta_deg < cfg.auxiliary_cd_proton_theta_max_deg):
                 return False
         else:

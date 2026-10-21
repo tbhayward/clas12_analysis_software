@@ -640,6 +640,7 @@ void write_global_cuts_config_json(const std::string& out_json_dir,
         << "  \"auxiliary_fd_proton_theta_max_deg\": " << std::setprecision(6) << cfg.auxiliary_fd_proton_theta_max_deg << ",\n"
         << "  \"auxiliary_fd_photon_theta_min_deg\": " << std::setprecision(6) << cfg.auxiliary_fd_photon_theta_min_deg << ",\n"
         << "  \"auxiliary_fd_photon_theta_max_deg\": " << std::setprecision(6) << cfg.auxiliary_fd_photon_theta_max_deg << ",\n"
+        << "  \"auxiliary_cd_proton_p_min_GeV\": " << std::setprecision(6) << cfg.auxiliary_cd_proton_p_min_GeV << ",\n"
         << "  \"auxiliary_cd_proton_theta_min_deg\": " << std::setprecision(6) << cfg.auxiliary_cd_proton_theta_min_deg << ",\n"
         << "  \"auxiliary_cd_proton_theta_max_deg\": " << std::setprecision(6) << cfg.auxiliary_cd_proton_theta_max_deg << ",\n"
         << "  \"auxiliary_ft_photon_p_min_GeV\": " << std::setprecision(6) << cfg.auxiliary_ft_photon_p_min_GeV << ",\n"

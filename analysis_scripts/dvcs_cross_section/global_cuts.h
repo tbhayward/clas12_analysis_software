@@ -51,6 +51,7 @@ struct GlobalCutConfig {
     double auxiliary_fd_photon_theta_min_deg = 8.0;  // applied only in FD-FD
     double auxiliary_fd_photon_theta_max_deg = 40.0; // applied to all FD photons
 
+    double auxiliary_cd_proton_p_min_GeV = 0.0; // optional diagnostic threshold
     double auxiliary_cd_proton_theta_min_deg = 40.0;
     double auxiliary_cd_proton_theta_max_deg = 64.23;
 

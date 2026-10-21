@@ -171,6 +171,7 @@ static SystematicRunSelection parse_systematic_selection(
 } // namespace
 
 int main(int argc, char* argv[]) {
+    bool quick_xsec_only = false;
     bool run_pass1_bsa_binning = false;
     bool run_sebastian_bsa_binning = false;
     bool run_sebastian_tgamma_binning = false;
@@ -185,8 +186,12 @@ int main(int argc, char* argv[]) {
     int electron_sector_cli = 0;
     int proton_fd_sector_cli = 0;
     int proton_cd_sector_cli = 0;
+    double proton_p_min_cli = 0.0;
+    double proton_theta_max_cli = 64.23;
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--pass1-bsa-binning") {
+        if (std::string(argv[i]) == "--quick-xsec-only") {
+            quick_xsec_only = true;
+        } else if (std::string(argv[i]) == "--pass1-bsa-binning") {
             run_pass1_bsa_binning = true;
         } else if (std::string(argv[i]) == "--sebastian-bsa-binning") {
             run_sebastian_bsa_binning = true;
@@ -212,6 +217,16 @@ int main(int argc, char* argv[]) {
         } else if (std::string(argv[i]) == "--no-eppi0-normalization") {
             // Backward-compatible explicit spelling of the production default.
             use_eppi0_production_normalization = false;
+        } else if (std::string(argv[i]) == "--proton-p-min") {
+            if (i + 1 >= argc) { std::cerr << "--proton-p-min requires GeV value\n"; return 1; }
+            try { proton_p_min_cli = std::stod(argv[++i]); }
+            catch (...) { std::cerr << "Invalid --proton-p-min\n"; return 1; }
+            if (!(std::isfinite(proton_p_min_cli) && proton_p_min_cli >= 0.0)) return 1;
+        } else if (std::string(argv[i]) == "--proton-theta-max") {
+            if (i + 1 >= argc) { std::cerr << "--proton-theta-max requires degree value\n"; return 1; }
+            try { proton_theta_max_cli = std::stod(argv[++i]); }
+            catch (...) { std::cerr << "Invalid --proton-theta-max\n"; return 1; }
+            if (!(std::isfinite(proton_theta_max_cli) && proton_theta_max_cli > 40.0 && proton_theta_max_cli <= 64.23)) return 1;
         } else if (std::string(argv[i]) == "--electron-sector") {
             if (i + 1 >= argc) { std::cerr << "[main] FATAL: --electron-sector requires an integer 1--6\n"; return 1; }
             try { electron_sector_cli = std::stoi(argv[++i]); }
@@ -371,6 +386,8 @@ int main(int argc, char* argv[]) {
     // FD-sector separation, particle-angle, and FT-photon momentum cuts
     // analysis-wide. The numerical values are defined in GlobalCutConfig.
     global_cfg.enable_auxiliary_fiducial_cuts = true;
+    global_cfg.auxiliary_cd_proton_p_min_GeV = proton_p_min_cli;
+    global_cfg.auxiliary_cd_proton_theta_max_deg = proton_theta_max_cli;
 
     // Existing optional propagator/ycol mirror cut.
     global_cfg.enable_dvcsgen_ycol_cut = false;
@@ -394,7 +411,8 @@ int main(int argc, char* argv[]) {
     // Save shared JSONs before a restricted study changes them. This guard
     // restores them on normal completion and early return (not SIGKILL).
     const bool restricted_study = !topology_cli.empty() || electron_sector_cli != 0 ||
-        proton_fd_sector_cli != 0 || proton_cd_sector_cli != 0 || photon_sector_cli != 0;
+        proton_fd_sector_cli != 0 || proton_cd_sector_cli != 0 || photon_sector_cli != 0 ||
+        proton_p_min_cli > 0.0 || proton_theta_max_cli != 64.23;
     ScopedStudyConfigurationRestore restore_shared_study_json(restricted_study);
     write_global_cuts_config_json("output/jsons", global_cfg);
 
@@ -927,7 +945,7 @@ int main(int argc, char* argv[]) {
     // The BSA stage uses helicity-separated measured ep->epgamma and ep->eppi0
     // event counts, plus finalized CSV contamination/normalized-yield columns,
     // to form S+ = G+ - f_pi0 P+ and S- = G- - f_pi0 P-.
-    if (global_cfg.enable_topology_filter) {
+    if (quick_xsec_only || global_cfg.enable_topology_filter) {
         // A topology-restricted cross-section run already fixes the photon/proton
         // detector configuration globally.  The BSA module performs its own
         // independent FD-vs-FT photon subdivision and helicity diagnostics, so
@@ -1349,7 +1367,7 @@ int main(int argc, char* argv[]) {
     // taken from imports/all_bin_v3.csv; the old MC recalculation remains
     // available as a cross-check but is not run in the standard pass-2 chain.
     {
-        if (!write_radiative_corrections_analysis_note_outputs(
+        if (!quick_xsec_only && !write_radiative_corrections_analysis_note_outputs(
                 "imports/all_bin_v3.csv",
                 "output/radiative_corrections")) {
             std::cerr << "[main] ERROR: radiative-correction analysis-note outputs failed.\n";
@@ -1385,7 +1403,7 @@ int main(int argc, char* argv[]) {
     // it produces diagnostics for the reused pass-1 factors and does not
     // modify the pass-2 analysis CSV.
     {
-        if (!write_bin_centering_analysis_note_outputs(
+        if (!quick_xsec_only && !write_bin_centering_analysis_note_outputs(
                 "imports/all_bin_v3.csv",
                 "output/bin_centering_corrections")) {
             std::cerr
@@ -1454,7 +1472,7 @@ int main(int argc, char* argv[]) {
 
         if (!compute_cross_sections(csv_main, lumi_map)) {
             std::cerr << "[main] ERROR: compute_cross_sections failed.\n";
-        } else if (!write_cross_section_analysis_note_outputs(csv_main, lumi_map)) {
+        } else if (!quick_xsec_only && !write_cross_section_analysis_note_outputs(csv_main, lumi_map)) {
             std::cerr << "[main] WARNING: cross-section analysis-note output generation failed.\n";
         }
 
@@ -1559,6 +1577,14 @@ int main(int argc, char* argv[]) {
     // by total_counts.cpp.  This does not rerun event loops.  CSV-only finalization
     // depends on these columns, so regenerate them automatically whenever csv_only
     // is requested, even if the user did not explicitly select current.
+    if (quick_xsec_only) {
+        const std::string source = "output/csvs/dvcs_pass2_analysis.csv";
+        const std::string target = "output/csvs/dvcs_pass2_proton_p0p5_theta58.csv";
+        std::filesystem::copy_file(source, target, std::filesystem::copy_options::overwrite_existing);
+        std::cout << "[main] Quick proton-study CSV: " << target << "\n";
+        return 0;
+    }
+
     if (systematic_selection.current || systematic_selection.csv_only) {
         CurrentSystematicsOptions current_syst_opts;
         current_syst_opts.nuisance_response_csv =
