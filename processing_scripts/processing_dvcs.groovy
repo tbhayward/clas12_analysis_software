@@ -303,6 +303,8 @@ public static void main(String[] args) {
 		                Mx2_1 = variables.Mx2_1(); // missing mass calculated with p1
 		                Mx2_2 = variables.Mx2_2(); // missing mass squared
 
+		                if (Mx2 < -0.15 || Mx2 > 0.15) continue;
+
 		                // SIDIS variables
 		                z = variables.z(); // fractional hadron energy wrt virtual photon
 		                xF = variables.xF(); // Feynman-x
