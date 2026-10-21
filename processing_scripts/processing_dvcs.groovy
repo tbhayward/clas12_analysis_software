@@ -102,8 +102,8 @@ public static void main(String[] args) {
 	
 	// set filter for final states
 	// EventFilter filter = new EventFilter("11:2212:22:Xn");
-	EventFilter filter = new EventFilter("11:321:22:Xn");
-	// EventFilter filter = new EventFilter("11:211:22:Xn"); 
+	// EventFilter filter = new EventFilter("11:321:22:Xn");
+	EventFilter filter = new EventFilter("11:211:22:Xn"); 
 
 	// setup QA database
 	QADB qa = new QADB("latest");
