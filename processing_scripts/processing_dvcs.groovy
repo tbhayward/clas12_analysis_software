@@ -94,12 +94,16 @@ public static void main(String[] args) {
 	double Emiss2, theta_gamma_gamma, pTmiss;
 
 	// load my kinematic fitter/PID
-	GenericKinematicFitter fitter = new dvcs_fitter(10.6041); 
+	// GenericKinematicFitter fitter = new dvcs_fitter(10.6041); 
 	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
 	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041); 
+
+	GenericKinematicFitter fitter = new analysis_fitter(10.6041); 
 	
 	// set filter for final states
-	EventFilter filter = new EventFilter("11:2212:22:Xn"); 
+	EventFilter filter = new EventFilter("11:2212:22:Xn");
+	// EventFilter filter = new EventFilter("11:321:22:Xn");
+	// EventFilter filter = new EventFilter("11:211:22:Xn"); 
 
 	// setup QA database
 	QADB qa = new QADB("latest");
