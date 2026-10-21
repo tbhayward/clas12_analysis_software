@@ -24,10 +24,10 @@ PERIODS=['Sp18_inb','Sp18_out','Fa18_inb','Fa18_out','Sp19_inb']
 BASE=Path('/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2')
 ENERGY={'Sp18_inb':'10594','Sp18_out':'10594','Fa18_inb':'10604','Fa18_out':'10604','Sp19_inb':'10200'}
 CURRENT={'Sp18_inb':'50','Sp18_out':'45','Fa18_inb':'50','Fa18_out':'50','Sp19_inb':'50'}
-PBINS=np.linspace(0.15,2.5,95); TBINS=np.linspace(30,70,81)
+PBINS=np.linspace(0.15,1.30,93); TBINS=np.linspace(30,70,81)
 CUTS=[(.30,64.23),(.35,62),(.40,60),(.45,60),(.50,58),(.50,50)]
-T_EDGES=[0,.15,.2,.3,.4,.6,1.0]
-P_REGIONS=[(.30,.40),(.40,.50),(.50,.70),(.70,1.5)]
+T_EDGES=[0,.09,.10,.11,.12,.13,.15,.20,.30,.40,.60,1.0]
+P_REGIONS=[(.30,.34),(.34,.38),(.38,.45),(.45,.55),(.55,.70),(.70,1.30)]
 TH_REGIONS=[(37,50),(50,58),(58,64.23)]
 
 def path_for(period,kind):
@@ -74,6 +74,8 @@ def collect(period,kind,step,exclusivity_path,strict):
         required=['p1_p','p1_theta']
         if any(x not in keys for x in required): raise RuntimeError(f'{file}: missing {set(required)-keys}')
         optional=['detector1','detector2','t1','open_angle_ep2','pTmiss','e_theta','p1_phi','e_phi','p2_phi']
+        if 't1' not in keys: raise RuntimeError(f'{file}: t1 branch is required for |t|-resolved diagnostics')
+        if kind!='gen' and 'detector1' not in keys: raise RuntimeError(f'{file}: detector1 required for CD-only reconstructed selection')
         cuts_by_top={}
         if payload is not None:
             for det2 in (0,1):
@@ -85,6 +87,7 @@ def collect(period,kind,step,exclusivity_path,strict):
         branches=list(dict.fromkeys(required+[x for x in optional if x in keys]+[x for x in set().union(*(v.keys() for v in cuts_by_top.values())) if x in keys]))
         h2=np.zeros((len(PBINS)-1,len(TBINS)-1)); hlow=np.zeros_like(h2); hmid=np.zeros_like(h2); hhigh=np.zeros_like(h2)
         ht=np.zeros((len(T_EDGES)-1,len(PBINS)-1,len(TBINS)-1))
+        migration_proxy=np.zeros((len(T_EDGES)-1,3))  # counts where proton-derived |t| differs from t1 by > thresholds
         counts=np.zeros(len(CUTS)); total=0; lowtotal=0
         status(period,f"{kind}: {tree.num_entries:,} ROOT entries; {len(branches)} branches; exclusivity={'ON' if payload else 'OFF'}")
         scanned=0
@@ -113,6 +116,11 @@ def collect(period,kind,step,exclusivity_path,strict):
             h2+=np.histogram2d(p,th,bins=(PBINS,TBINS))[0]
             if t is not None:
                 abs_t=np.abs(t)
+                t_proton=2*.9382720813*(np.sqrt(.9382720813**2+p**2)-.9382720813)
+                disagreement=np.abs(t_proton-abs_t)
+                for itbin in range(len(T_EDGES)-1):
+                    sel=(abs_t>=T_EDGES[itbin])&(abs_t<T_EDGES[itbin+1])
+                    migration_proxy[itbin,:]+=np.array([np.count_nonzero(sel),np.count_nonzero(sel&(disagreement>.01)),np.count_nonzero(sel&(disagreement>.03))])
                 regions=[abs_t<.2,(abs_t>=.2)&(abs_t<.4),abs_t>=.4]
                 for h,sel in zip((hlow,hmid,hhigh),regions): h+=np.histogram2d(p[sel],th[sel],bins=(PBINS,TBINS))[0]
                 ht+=np.histogramdd((abs_t,p,th),bins=(T_EDGES,PBINS,TBINS))[0]
@@ -120,7 +128,7 @@ def collect(period,kind,step,exclusivity_path,strict):
             total+=len(p)
             for i,(pc,tc) in enumerate(CUTS): counts[i]+=np.count_nonzero((p>pc)&(th<tc))
         status(period,f"{kind}: DONE, selected {total:,}, elapsed {time.monotonic()-start:.1f}s")
-        return dict(kind=kind,period=period,h=h2,low=hlow,mid=hmid,high=hhigh,ht=ht,counts=counts,total=total,lowtotal=lowtotal)
+        return dict(kind=kind,period=period,h=h2,low=hlow,mid=hmid,high=hhigh,ht=ht,counts=counts,total=total,lowtotal=lowtotal,migration_proxy=migration_proxy)
 
 def plot1d(results,period,out):
     fig,axs=plt.subplots(2,2,figsize=(13,9)); colors={'data':'black','rec':'tab:blue','gen':'tab:orange'}
@@ -139,6 +147,7 @@ def plot1d(results,period,out):
     for ax in axs[:,1]:
         for x in (50,58,64.23): ax.axvline(x,color='gray',linestyle='--',alpha=.5)
     axs[0,0].axvline(.5,color='gray',linestyle='--')
+    axs[0,0].set_xlim(0.15,1.30)
     fig.suptitle(f'{period}: generated MC / reconstructed MC / reconstructed data (shape only)')
     fig.tight_layout();fig.savefig(out/'distributions.png',dpi=155);plt.close(fig)
 
@@ -154,7 +163,7 @@ def maps(results,period,out):
         im=axs[1,j].pcolormesh(PBINS,TBINS,val.T,shading='auto',vmin=0,vmax=2,cmap='coolwarm');fig.colorbar(im,ax=axs[1,j]);axs[1,j].set_title(title+' (unit-area normalized)')
     for ax in axs.flat:
         ax.axvline(.5,color='white',ls='--',lw=1);ax.axhline(58,color='white',ls='--',lw=1)
-        ax.set(xlabel='Proton momentum (GeV)',ylabel='Proton angle (degrees)')
+        ax.set(xlabel='Proton momentum (GeV)',ylabel='Proton angle (degrees)',xlim=(0.15,1.30))
     fig.suptitle(period);fig.savefig(out/'maps.png',dpi=145);plt.close(fig)
 
 def ratio_map(data,mc,refdata,refmc,min_mc=15):
@@ -162,52 +171,122 @@ def ratio_map(data,mc,refdata,refmc,min_mc=15):
     scale=refmc.sum()/refdata.sum() if refdata.sum()>0 else np.nan
     return np.divide(data*scale,mc,out=np.full(data.shape,np.nan),where=mc>=min_mc)
 
+def safe_ratio(d,m,scale=1.,minimum=15):
+    # Poisson-only uncertainty; ignores correlations, generator and luminosity systematics.
+    good=(m>=minimum)&np.isfinite(scale)&(scale>0)
+    ratio=np.full(d.shape,np.nan,dtype=float)
+    err=np.full(d.shape,np.nan,dtype=float)
+    ratio[good]=scale*d[good]/m[good]
+    err[good]=scale*np.sqrt(d[good]+(d[good]**2/m[good]))/m[good]
+    return ratio,err
+
 def plot_t_slices(results,period,out):
-    d=results['data']['ht'];m=results['rec']['ht']
-    reference_d=d[-2:].sum(axis=0);reference_m=m[-2:].sum(axis=0)
-    fig,axs=plt.subplots(2,3,figsize=(16,10),layout='constrained')
-    for i,ax in enumerate(axs.flat):
-        ratio=ratio_map(d[i],m[i],reference_d,reference_m)
-        im=ax.pcolormesh(PBINS,TBINS,ratio.T,shading='auto',cmap='coolwarm',vmin=0,vmax=2)
-        ax.axvline(.5,color='white',ls='--');ax.axhline(58,color='white',ls='--')
-        ax.set(title=f'{T_EDGES[i]:.2f} < |t| < {T_EDGES[i+1]:.2f} (GeV²)',xlabel='Proton momentum (GeV)',ylabel='Proton angle (degrees)')
-        fig.colorbar(im,ax=ax)
-    fig.suptitle(f'{period}: exclusive data/recMC ratios; common high-|t| normalization' if d.sum() else period)
-    fig.savefig(out/'data_mc_ratio_by_t.png',dpi=150);plt.close(fig)
-    # Momentum-sliced theta and angle-sliced momentum; ratios use SAME high-|t| reference scale.
-    for mode,regions,axis in [('theta_by_momentum',P_REGIONS,0),('momentum_by_angle',TH_REGIONS,1)]:
-        fig,axs=plt.subplots(len(regions),2,figsize=(13,3.2*len(regions)),layout='constrained')
-        for i,(lo,hi) in enumerate(regions):
-            edges=PBINS if axis==0 else TBINS
-            select=(edges[:-1]>=lo)&(edges[1:]<=hi)
-            for j,idx in enumerate((0,len(T_EDGES)-2)):
-                hd=d[idx];hm=m[idx]
-                dd=hd[select,:].sum(axis=0) if axis==0 else hd[:,select].sum(axis=1)
-                mm=hm[select,:].sum(axis=0) if axis==0 else hm[:,select].sum(axis=1)
-                rd=reference_d[select,:].sum() if axis==0 else reference_d[:,select].sum()
-                rm=reference_m[select,:].sum() if axis==0 else reference_m[:,select].sum()
-                ratio=np.divide(dd*(rm/rd if rd>0 else np.nan),mm,out=np.full(dd.shape,np.nan),where=mm>=10)
-                bins=TBINS if axis==0 else PBINS
-                axs[i,j].stairs(ratio,bins,color='black');axs[i,j].axhline(1,color='gray',ls='--')
-                axs[i,j].set(xlabel='Proton angle (degrees)' if axis==0 else 'Proton momentum (GeV)',ylabel='Data/recMC (reference normalized)',title=f'{lo:g}–{hi:g} '+('GeV' if axis==0 else 'degrees')+('  low |t|' if j==0 else '  high |t|'))
-                axs[i,j].grid(alpha=.2)
-        fig.suptitle(period+' — '+mode)
-        fig.savefig(out/(mode+'.png'),dpi=145);plt.close(fig)
-    # CSV grid for inspection, including counts and normalized ratio.
+    d=results['data']['ht']; m=results['rec']['ht']
+    # Common reference uses |t| >= 0.4; per-|t| normalization isolates angular shapes.
+    refmask=np.array(T_EDGES[:-1])>=.4
+    refd=d[refmask].sum(); refm=m[refmask].sum()
+    common=refm/refd if refd>0 else np.nan
+    n=len(T_EDGES)-1
+    fig,axs=plt.subplots(3,4,figsize=(17,11),layout='constrained')
+    fig2,axs2=plt.subplots(3,4,figsize=(17,11),layout='constrained')
+    for i in range(n):
+        local=m[i].sum()/d[i].sum() if d[i].sum()>0 else np.nan
+        for ax,scale,tag in ((axs.flat[i],common,'common'),(axs2.flat[i],local,'per-|t|')):
+            r,e=safe_ratio(d[i],m[i],scale)
+            im=ax.pcolormesh(PBINS,TBINS,r.T,cmap='coolwarm',vmin=0,vmax=2,shading='auto')
+            ax.axhline(50,color='white',ls=':',lw=.8);ax.axhline(58,color='white',ls='--',lw=.8)
+            ax.set(xlim=(.2,1.30),ylim=(34,66),title=f'{T_EDGES[i]:.2f}–{T_EDGES[i+1]:.2f} GeV²',xlabel='Proton momentum (GeV)',ylabel='Proton angle (degrees)')
+    for ax in list(axs.flat)[n:]+list(axs2.flat)[n:]: ax.axis('off')
+    fig.colorbar(im,ax=list(axs.flat),shrink=.6,label='Data / reconstructed MC')
+    fig2.colorbar(im,ax=list(axs2.flat),shrink=.6,label='Data / reconstructed MC')
+    fig.suptitle(f'{period}: common high-|t| normalization (shape + |t| yield)')
+    fig2.suptitle(f'{period}: independently normalized in each |t| bin (angular shape)')
+    fig.savefig(out/'data_mc_ratio_by_t_common.png',dpi=150);plt.close(fig)
+    fig2.savefig(out/'data_mc_ratio_by_t_shape.png',dpi=150);plt.close(fig2)
+
+    # Nonempty by construction: theta distributions at fixed proton momentum, no conflicting |t| cut.
+    fig,axs=plt.subplots(3,2,figsize=(14,12),layout='constrained')
+    for ax,(lo,hi) in zip(axs.flat,P_REGIONS):
+        sel=(PBINS[:-1]>=lo)&(PBINS[1:]<=hi)
+        dd=d[:,sel,:].sum(axis=(0,1));mm=m[:,sel,:].sum(axis=(0,1))
+        scale=mm.sum()/dd.sum() if dd.sum() else np.nan
+        r,e=safe_ratio(dd,mm,scale,minimum=10)
+        mid=(TBINS[1:]+TBINS[:-1])/2
+        ax.errorbar(mid,r,yerr=e,fmt='o',ms=2.8,lw=.8)
+        ax.axhline(1,color='gray',ls='--');ax.axvline(50,color='gray',ls=':');ax.axvline(58,color='gray',ls=':')
+        ax.set(title=f'{lo:.2f}–{hi:.2f} GeV; data {int(dd.sum()):,}, MC {int(mm.sum()):,}',xlabel='Proton angle (degrees)',ylabel='Shape-normalized data/MC',xlim=(34,66),ylim=(0,3));ax.grid(alpha=.2)
+    fig.suptitle(f'{period}: angular shape at fixed proton momentum (no incompatible |t| selection)')
+    fig.savefig(out/'theta_by_momentum.png',dpi=155);plt.close(fig)
+
+    fig,axs=plt.subplots(3,1,figsize=(12,11),layout='constrained')
+    for ax,(lo,hi) in zip(axs,TH_REGIONS):
+        sel=(TBINS[:-1]>=lo)&(TBINS[1:]<=hi)
+        dd=d[:,:,sel].sum(axis=(0,2));mm=m[:,:,sel].sum(axis=(0,2))
+        scale=mm.sum()/dd.sum() if dd.sum() else np.nan
+        r,e=safe_ratio(dd,mm,scale,minimum=10)
+        mid=(PBINS[1:]+PBINS[:-1])/2
+        ax.errorbar(mid,r,yerr=e,fmt='o',ms=2.5,lw=.8)
+        ax.axhline(1,color='gray',ls='--');ax.axvline(.336,color='gray',ls=':')
+        ax.set(title=f'{lo:g}–{hi:g} degrees; data {int(dd.sum()):,}, MC {int(mm.sum()):,}',xlabel='Proton momentum (GeV)',ylabel='Shape-normalized data/MC',xlim=(.2,1.3),ylim=(0,3));ax.grid(alpha=.2)
+    fig.suptitle(f'{period}: proton momentum shape at fixed angle')
+    fig.savefig(out/'momentum_by_angle.png',dpi=155);plt.close(fig)
+
+    # Focused low-|t| angular shapes, bin-by-bin counts and uncertainty.
+    fig,axs=plt.subplots(3,3,figsize=(15,12),layout='constrained')
+    with (out/'angular_ratios_by_t.csv').open('w',newline='') as f:
+        w=csv.writer(f);w.writerow(['period','t_low','t_high','theta_low','theta_high','data','rec_mc','shape_ratio','shape_ratio_stat','common_ratio','common_ratio_stat'])
+        for i in range(n):
+            dd=d[i].sum(axis=0);mm=m[i].sum(axis=0)
+            local=mm.sum()/dd.sum() if dd.sum() else np.nan
+            shape,se=safe_ratio(dd,mm,local,minimum=10)
+            absolute,ae=safe_ratio(dd,mm,common,minimum=10)
+            for j in range(len(dd)):
+                if dd[j]+mm[j]>0:w.writerow([period,T_EDGES[i],T_EDGES[i+1],TBINS[j],TBINS[j+1],int(dd[j]),int(mm[j]),shape[j],se[j],absolute[j],ae[j]])
+            if i<9:
+                ax=axs.flat[i]; mid=(TBINS[1:]+TBINS[:-1])/2
+                ax.errorbar(mid,shape,yerr=se,fmt='o',ms=2.5,lw=.8)
+                ax.axhline(1,color='gray',ls='--');ax.axvline(50,color='gray',ls=':');ax.axvline(58,color='gray',ls=':')
+                ax.set(title=f'{T_EDGES[i]:.2f}–{T_EDGES[i+1]:.2f} GeV² (D={int(dd.sum()):,}, M={int(mm.sum()):,})',xlabel='Proton angle (degrees)',ylabel='Angular shape D/MC',xlim=(34,66),ylim=(0,3));ax.grid(alpha=.2)
+    fig.suptitle(f'{period}: angular ratios near |t|=0.11 GeV² boundary')
+    fig.savefig(out/'angular_ratios_near_t_boundary.png',dpi=155);plt.close(fig)
+
+    # Boundary occupancy and generator/reconstruction *marginals*; not a migration matrix.
+    fig,axs=plt.subplots(2,1,figsize=(11,9),layout='constrained')
+    centers=(np.array(T_EDGES[:-1])+np.array(T_EDGES[1:]))/2
+    widths=np.diff(T_EDGES)
+    for kind,color in [('gen','tab:orange'),('rec','tab:blue'),('data','black')]:
+        yy=results[kind]['ht'].sum(axis=(1,2))
+        yy=yy/(yy.sum()*widths) if yy.sum()>0 else yy
+        axs[0].stairs(yy,T_EDGES,label=kind,color=color)
+    axs[0].set(ylabel='Unit-area density / GeV²',xlabel='|t1| (GeV²)',xlim=(0,.3),title='Generated / reconstructed / data |t| marginals (not event matched)');axs[0].legend()
+    dm=d.sum(axis=(1,2)); mm=m.sum(axis=(1,2))
+    ratio,err=safe_ratio(dm,mm,common,minimum=10)
+    axs[1].errorbar(centers,ratio,yerr=err,fmt='o',ms=4)
+    axs[1].axhline(1,color='gray',ls='--');axs[1].set(xlim=(0,.3),xlabel='|t1| (GeV²)',ylabel='Data / reconstructed MC',title='Common-normalized yield ratio near lower boundary')
+    for ax in axs:ax.axvline(.11,color='tab:red',ls=':',label='0.11 GeV² boundary');ax.grid(alpha=.2)
+    fig.suptitle(f'{period}: lower-|t| boundary diagnostic')
+    fig.savefig(out/'low_t_boundary.png',dpi=155);plt.close(fig)
+
     with (out/'data_mc_ratio_by_t_grid.csv').open('w',newline='') as f:
-        w=csv.writer(f);w.writerow(['period','t_low_GeV2','t_high_GeV2','p_low_GeV','p_high_GeV','theta_low_deg','theta_high_deg','data','rec_mc','ratio_reference_normalized'])
-        for i in range(len(T_EDGES)-1):
-            r=ratio_map(d[i],m[i],reference_d,reference_m)
+        w=csv.writer(f);w.writerow(['period','t_low_GeV2','t_high_GeV2','p_low_GeV','p_high_GeV','theta_low_deg','theta_high_deg','data','rec_mc','ratio_common','stat_common','ratio_shape','stat_shape'])
+        for i in range(n):
+            local=m[i].sum()/d[i].sum() if d[i].sum()>0 else np.nan
+            r,re=safe_ratio(d[i],m[i],common);rs,rse=safe_ratio(d[i],m[i],local)
             for ip in range(len(PBINS)-1):
                 for it in range(len(TBINS)-1):
                     if d[i,ip,it]+m[i,ip,it]==0:continue
-                    w.writerow([period,T_EDGES[i],T_EDGES[i+1],PBINS[ip],PBINS[ip+1],TBINS[it],TBINS[it+1],int(d[i,ip,it]),int(m[i,ip,it]),r[ip,it]])
+                    w.writerow([period,T_EDGES[i],T_EDGES[i+1],PBINS[ip],PBINS[ip+1],TBINS[it],TBINS[it+1],int(d[i,ip,it]),int(m[i,ip,it]),r[ip,it],re[ip,it],rs[ip,it],rse[ip,it]])
+
+    with (out/'t_definition_disagreement.csv').open('w',newline='') as f:
+        w=csv.writer(f);w.writerow(['period','sample','t_low','t_high','n','n_delta_t_gt_0p01','n_delta_t_gt_0p03'])
+        for kind,r in results.items():
+            for i,row in enumerate(r['migration_proxy']):w.writerow([period,kind,T_EDGES[i],T_EDGES[i+1],*[int(v) for v in row]])
 
 def worker(args):
     period,outdir,step,exclusivity_path,strict=args; out=Path(outdir)/period;out.mkdir(parents=True,exist_ok=True)
     status(period,'START')
     results={k:collect(period,k,step,exclusivity_path,strict) for k in ('data','rec','gen')}
-    status(period,'Making distribution plots, |t|-sliced maps, 1D comparisons and CSV')
+    status(period,'Plotting: two normalization schemes, exact low-|t| boundary, nonempty momentum/angle slices, CSV diagnostics')
     plot1d(results,period,out);maps(results,period,out);plot_t_slices(results,period,out)
     rows=[]
     for kind,r in results.items():
