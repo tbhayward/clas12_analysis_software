@@ -6,11 +6,23 @@ import json
 import os
 import shlex
 import subprocess
+import threading
+import time
 from collections import defaultdict
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
 
 SCRIPTS = {'dvcs_data':'processing_dvcs.groovy','pi0_data':'processing_exclusive_pi0.groovy','dvcs_gen':'processing_mc_dvcs.groovy','dvcs_rec':'processing_mc_rec_dvcs.groovy','pi0_gen':'processing_mc_exclusive_pi0.groovy','pi0_rec':'processing_mc_rec_exclusive_pi0.groovy','pi0_as_dvcs':'processing_mc_rec_dvcs.groovy'}
+PROGRESS_LOCK = threading.Lock()
+PROGRESS = {'done': 0, 'total': 0, 'started': time.monotonic()}
+
+def report_progress(label):
+    with PROGRESS_LOCK:
+        PROGRESS['done'] += 1
+        done, total = PROGRESS['done'], PROGRESS['total']
+        elapsed = (time.monotonic() - PROGRESS['started']) / 60
+        print(f'[PROGRESS] {done}/{total} jobs ({100*done/total:.1f}%) | elapsed={elapsed:.1f} min | {label}', flush=True)
+
 UNVERIFIED = {'pi0_as_dvcs':'Verify aaogen-as-DVCS selection before production.'}
 
 def prepare_shared():
@@ -37,6 +49,7 @@ def run_group(group, pilot, skip_existing):
         expected = [Path(x) for x in r['expected'].split(';')]
         if all(x.is_file() and x.stat().st_size > 0 for x in expected) and skip_existing:
             print('SKIP', r['output'], flush=True)
+            report_progress('skipped '+r['period']+' '+r['mode'])
             continue
         if any(x.exists() for x in expected):
             raise RuntimeError('Existing or partial outputs, refusing overwrite: '+r['output'])
@@ -51,9 +64,16 @@ def run_group(group, pilot, skip_existing):
             elif link.exists(): raise RuntimeError('Unexpected staging file: '+str(link))
             else: link.symlink_to(target)
         print('RUN', r['period'], r['mode'], r['current'], r['output'], flush=True)
-        subprocess.run(shlex.split(r['command']), check=True, env=env)
+        log_path = Path(r['output'] + '.processing.log')
+        with log_path.open('w') as job_log:
+            result = subprocess.run(shlex.split(r['command']), stdout=job_log, stderr=subprocess.STDOUT, env=env)
+        if result.returncode:
+            print(f'[ERROR] {r["period"]} {r["mode"]}: exit={result.returncode}; full log: {log_path}', flush=True)
+            print('\n'.join(log_path.read_text(errors='replace').splitlines()[-30:]), flush=True)
+            raise RuntimeError(f'Processing failed: {log_path}')
         if not all(x.is_file() and x.stat().st_size>0 for x in expected):
-            raise RuntimeError('Missing output after job: '+r['output'])
+            raise RuntimeError('Missing output after job: '+r['output']+'; log: '+str(log_path))
+        report_progress(r['period']+' '+r['mode']+' '+r['current'])
     return len(group)
 
 def main():
@@ -98,6 +118,8 @@ def main():
     with manifest.open('w',newline='') as f:
         w=csv.DictWriter(f,fieldnames=['period','mode','current','input','staged_input','output','expected','warning','command','source_directory'])
         w.writeheader();w.writerows(rows)
+    PROGRESS['total'] = len(rows)
+    PROGRESS['started'] = time.monotonic()
     groups=defaultdict(list)
     for r in rows: groups[r['source_directory']].append(r)
     print(f'{len(rows)} invocations in {len(groups)} distinct input directories; pilot={a.pilot}; execute={a.execute}; workers={a.workers}; manifest={manifest}',flush=True)
