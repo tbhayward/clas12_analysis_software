@@ -1,0 +1,46 @@
+./dvcs_analysis --topology CD-FD --skip-systematics --no-eppi0-normalization >& cd_fd.log ; cp output/csvs/dvcs_pass2_analysis.csv output/csvs/dvcs_CD-FD.csv
+
+./dvcs_analysis --topology CD-FT --skip-systematics --no-eppi0-normalization >& cd_ft.log ; cp output/csvs/dvcs_pass2_analysis.csv output/csvs/dvcs_CD-FT.csv
+
+
+
+
+
+
+Oh but I've never actually used "1. Initial findings from the processing code
+
+The first important finding is in processing_mc_dvcs.groovy." we need to make sure it's all up-to-date etc.
+
+--
+
+channel_test is in three_particles.java
+
+public static boolean channel_test(ThreeParticles variables) {
+//        if (variables.helicity == 0 && variables.runnum != 11) {
+//            return false;
+//        }
+        if (variables.Q2() < 1.00) {
+            return false;
+        } 
+        else if (variables.W() < 2) {
+            return false;
+        } 
+        else if (variables.y() > 0.85) {
+            return false;
+        } 
+        else if (variables.y() < 0.19) {
+            return false;
+        } 
+        return true;
+    }
+
+--
+
+"In particular, I would remove the automatic git pull from individual processing jobs." No I want this included
+
+--
+
+"I would also avoid compiling the ROOT converter independently for every processing job." why? Seems good
+
+--
+
