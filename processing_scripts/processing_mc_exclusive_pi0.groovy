@@ -128,6 +128,8 @@ public static void main(String[] args) {
 	long maxEvents = args.length > 6 ? Long.parseLong(args[6]) : 0L;
 	println("Maximum events per invocation: " + (maxEvents > 0 ? maxEvents : "unlimited"));
 	int num_events = 0;
+    long nFilter = 0, nMass = 0, nDetector = 0, nChannel = 0, nWritten = 0;
+    int nPidSamples = 0;
 	int max_lines = 1000;
 	int lineCount = 0;
 	for (current_file in 0..<n_files) {
@@ -155,7 +157,12 @@ public static void main(String[] args) {
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
 
-		    boolean process_event = filter.isValid(research_Event);
+		    if (nPidSamples < 5) {
+                println("Generated MC PID sample: e=" + research_Event.countByPid(11) + " p=" + research_Event.countByPid(2212) + " gamma=" + research_Event.countByPid(22) + " pi0=" + research_Event.countByPid(111));
+                nPidSamples++;
+            }
+            boolean process_event = filter.isValid(research_Event);
+            if (process_event) nFilter++;
 	    if (process_event) {
 
 		    	int num_photons = research_Event.countByPid(22);
@@ -183,7 +190,9 @@ public static void main(String[] args) {
 		    		}
 		    	}
 		    	if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
-		    	if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
+                nMass++;
+                // No reconstructed detector topology requirement for generated MC.
+                nDetector++;
 
         		// supply runnum and boolean for radiative simulation or not
 				BeamEnergy Eb = new BeamEnergy(research_Event, runnum, false);
@@ -194,6 +203,7 @@ public static void main(String[] args) {
 	            // this is my class for defining all relevant kinematic variables
 
 	            if (variables.channel_test(variables)) {
+                nChannel++;
 
 	                fiducial_status = variables.get_fiducial_status(); // fiducial_status of track
 	                helicity = variables.get_helicity(); // helicity of event
@@ -366,6 +376,7 @@ public static void main(String[] args) {
 
 	                // Append the line to the batchLines StringBuilder
 	                batchLines.append(line.toString());
+                    nWritten++;
 	                lineCount++; // Increment the line count
 
 	                // If the line count reaches 1000, write to the file and reset
@@ -399,6 +410,7 @@ public static void main(String[] args) {
 	    "75: Emiss2, 76: theta_pi0_pi0, 77: pTmiss.");
 
 		println("output text file is: $file");
+        println("Generated pi0 cutflow: processed=${num_events} filter=${nFilter} mass=${nMass} detector_stage=${nDetector} channel=${nChannel} written=${nWritten}");
 	}
 
 	writer.close();

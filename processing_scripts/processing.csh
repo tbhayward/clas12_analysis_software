@@ -249,5 +249,4 @@ if ($convert_arg3 == 7 || $convert_arg3 == 8) then
     endif
     /bin/rm -f "$3.txt.events.tsv" "$3.txt.particles.tsv"
 endif
-/bin/rm -f "$3.txt"
-echo "ROOT conversion complete; intermediate text files removed."
+echo "ROOT conversion complete; legacy .txt retained; diagnostic TSV intermediates removed."
