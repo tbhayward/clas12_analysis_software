@@ -1,7 +1,5 @@
 #!/bin/sh
 
-rm coatjava/lib/services/processing_classes.jar;
-cp processing_classes/dist/processing_classes.jar coatjava/lib/services/
 
 . `dirname $0`/env.sh 
 

@@ -16,6 +16,13 @@ UNVERIFIED = {'pi0_as_dvcs':'Verify aaogen-as-DVCS selection before production.'
 def prepare_shared():
     print('Preparing shared checkout and ROOT converters once before workers start.', flush=True)
     subprocess.run(['git','pull'], check=True)
+    jar = Path('processing_classes/dist/processing_classes.jar')
+    service = Path('coatjava/lib/services/processing_classes.jar')
+    if not jar.is_file(): raise RuntimeError(f'Missing locally built Java JAR: {jar}')
+    import shutil
+    service.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copy2(jar, service)
+    print('Installed processing_classes.jar once before starting workers.', flush=True)
     for name in ('convert_txt_to_root', 'convert_dvcs_mc_diagnostics'):
         source = Path('processing_scripts')/(name+'.cpp')
         if not source.is_file(): raise RuntimeError(f'Missing converter source: {source}')

@@ -84,6 +84,12 @@ else
     echo "Pulling the latest changes from the repository..."
     git pull
     if ($status != 0) exit 1
+    if (! -f processing_classes/dist/processing_classes.jar) then
+        echo "ERROR: locally built processing_classes.jar missing"
+        exit 1
+    endif
+    cp processing_classes/dist/processing_classes.jar coatjava/lib/services/processing_classes.jar
+    if ($status != 0) exit 1
 endif
 # Java processing classes are compiled separately by the user.
 echo "Loading QADB module for classpath compatibility; MC selection bypasses QADB."
