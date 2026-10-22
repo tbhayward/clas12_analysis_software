@@ -112,6 +112,8 @@ public static void main(String[] args) {
 	// create a StringBuilder for accumulating lines
 	StringBuilder batchLines = new StringBuilder();
 
+	long maxEvents = args.length > 6 ? Long.parseLong(args[6]) : 0L;
+	println("Maximum events per invocation: " + (maxEvents > 0 ? maxEvents : "unlimited"));
 	int num_events = 0;
 	int max_lines = 1000;
 	int lineCount = 0;
@@ -125,6 +127,7 @@ public static void main(String[] args) {
 		HipoDataEvent event = reader.getNextEvent(); 
 
 		while (reader.hasEvent()) {
+			if (maxEvents > 0 && num_events >= maxEvents) break;
 
 			reconstructed = -999; // if you intend to use –999 as a flag (though normally this would be a boolean)
 			fiducial_status = -999;

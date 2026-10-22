@@ -1,0 +1,351 @@
+{
+  "output_root": "/volatile/clas12/thayward/dvcs_reprocessing_20261022",
+  "jobs": [
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_data",
+      "input": "/cache/clas12/rg-a/production/recon/fall2018/torus-1/pass2/main/train/DVCSWagon/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "pi0_data",
+      "input": "/cache/clas12/rg-a/production/recon/fall2018/torus-1/pass2/main/train/DVPi0P/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_gen",
+      "current": "45nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_inb/45nA/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_rec",
+      "current": "45nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_inb/45nA/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_gen",
+      "current": "50nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_inb/50nA/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_rec",
+      "current": "50nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_inb/50nA/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_gen",
+      "current": "55nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_inb/55nA/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_rec",
+      "current": "55nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_inb/55nA/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_gen",
+      "current": "no_bkg",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_inb/no_bkg/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_rec",
+      "current": "no_bkg",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_inb/no_bkg/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "pi0_gen",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/fa18_inb/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "pi0_rec",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/fa18_inb/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "pi0_as_dvcs",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/fa18_inb/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_out",
+      "mode": "dvcs_data",
+      "input": "/cache/clas12/rg-a/production/recon/fall2018/torus+1/pass2/train/DVCSWagon/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_out",
+      "mode": "pi0_data",
+      "input": "/cache/clas12/rg-a/production/recon/fall2018/torus+1/pass2/train/DVPi0P/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_out",
+      "mode": "dvcs_gen",
+      "current": "40nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_out/40nA/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_out",
+      "mode": "dvcs_rec",
+      "current": "40nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_out/40nA/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_out",
+      "mode": "dvcs_gen",
+      "current": "50nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_out/50nA/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_out",
+      "mode": "dvcs_rec",
+      "current": "50nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_out/50nA/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_out",
+      "mode": "dvcs_gen",
+      "current": "no_bkg",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_out/no_bkg/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_out",
+      "mode": "dvcs_rec",
+      "current": "no_bkg",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/fa18_out/no_bkg/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_out",
+      "mode": "pi0_gen",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/fa18_out/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_out",
+      "mode": "pi0_rec",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/fa18_out/",
+      "energy": 10.604
+    },
+    {
+      "period": "fa18_out",
+      "mode": "pi0_as_dvcs",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/fa18_out/",
+      "energy": 10.604
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "dvcs_data",
+      "input": "/cache/clas12/rg-a/production/recon/spring2019/torus-1/pass2/dst/train/DVCSWagon/",
+      "energy": 10.1998
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "pi0_data",
+      "input": "/cache/clas12/rg-a/production/recon/spring2019/torus-1/pass2/dst/train/DVPi0P/",
+      "energy": 10.1998
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "dvcs_gen",
+      "current": "50nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp19_inb/50nA/",
+      "energy": 10.1998
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "dvcs_rec",
+      "current": "50nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp19_inb/50nA/",
+      "energy": 10.1998
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "dvcs_gen",
+      "current": "no_bkg",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp19_inb/no_bkg/",
+      "energy": 10.1998
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "dvcs_rec",
+      "current": "no_bkg",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp19_inb/no_bkg/",
+      "energy": 10.1998
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "pi0_gen",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/sp19_inb/",
+      "energy": 10.1998
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "pi0_rec",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/sp19_inb/",
+      "energy": 10.1998
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "pi0_as_dvcs",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/sp19_inb/",
+      "energy": 10.1998
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "dvcs_data",
+      "input": "/cache/clas12/rg-a/production/recon/spring2018/10.59gev/torus-1/pass1/dst/train/DVCSWagon/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "pi0_data",
+      "input": "/cache/clas12/rg-a/production/recon/spring2018/10.59gev/torus-1/pass1/dst/train/DVPi0P/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "dvcs_gen",
+      "current": "35nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp18_inb/35nA/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "dvcs_rec",
+      "current": "35nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp18_inb/35nA/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "dvcs_gen",
+      "current": "50nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp18_inb/50nA/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "dvcs_rec",
+      "current": "50nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp18_inb/50nA/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "dvcs_gen",
+      "current": "no_bkg",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp18_inb/no_bkg/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "dvcs_rec",
+      "current": "no_bkg",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp18_inb/no_bkg/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "pi0_gen",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/sp18_inb/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "pi0_rec",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/sp18_inb/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "pi0_as_dvcs",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/sp18_inb/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_out",
+      "mode": "dvcs_data",
+      "input": "/cache/clas12/rg-a/production/recon/spring2018/10.59gev/torus+1/pass1/dst/train/DVCSWagon/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_out",
+      "mode": "pi0_data",
+      "input": "/cache/clas12/rg-a/production/recon/spring2018/10.59gev/torus+1/pass1/dst/train/DVPi0P/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_out",
+      "mode": "dvcs_gen",
+      "current": "45nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp18_out/45nA/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_out",
+      "mode": "dvcs_rec",
+      "current": "45nA",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp18_out/45nA/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_out",
+      "mode": "dvcs_gen",
+      "current": "no_bkg",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp18_out/no_bkg/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_out",
+      "mode": "dvcs_rec",
+      "current": "no_bkg",
+      "input": "/volatile/clas12/thayward/efficiency_study/mc/dvcs/sp18_out/no_bkg/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_out",
+      "mode": "pi0_gen",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/sp18_out/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_out",
+      "mode": "pi0_rec",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/sp18_out/",
+      "energy": 10.594
+    },
+    {
+      "period": "sp18_out",
+      "mode": "pi0_as_dvcs",
+      "input": "/cache/clas12/rg-a/production/montecarlo/aao_gen/pass2/sp18_out/",
+      "energy": 10.594
+    }
+  ]
+}

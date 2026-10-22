@@ -75,7 +75,7 @@ endif
 echo "Pulling the latest changes from the repository..."
 git pull
 # Java processing classes are compiled separately by the user.
-echo "Loading QADB module for classpath compatibility (MC selection bypasses QADB)..."
+echo "Loading QADB module for classpath compatibility; MC selection bypasses QADB."
 module load qadb/3.4.1
 
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
@@ -91,7 +91,21 @@ if ($convert_arg3 == 7 || $convert_arg3 == 8) then
     endif
 endif
 
-echo "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
+if ($convert_arg3 == 7 || $convert_arg3 == 8) then
+    if ($#argv < 9) then
+        echo "ERROR: MC processing requires 9 arguments: script input output nfiles energy run qadb_override max_events correction_period"
+        exit 2
+    endif
+    echo "MC processing: script=$arg1 input=$arg2 output=$3 nfiles=$4 energy=$5 run=$6 max_events=$8 period=$9"
+else
+    echo "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
+endif
+
+# Optional per-invocation event cap for DVCS data, pi0 data and generated DVCS.
+set campaign_max_events = 0
+if ($#argv >= 8) then
+    set campaign_max_events = "$8"
+endif
 
 # execute command based on number of entries (or dvcs/eppi0/calibration designation)
 if ($arg1 == "processing_scripts/processing_inclusive.groovy") then
@@ -137,19 +151,19 @@ else if ($arg1 == "processing_scripts/processing_four_particles.groovy") then
     set root_file = "$6.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
 else if ($arg1 == "processing_scripts/processing_dvcs.groovy") then
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7" "$campaign_max_events"
     # Run the convert_txt_to_root program
     set txt_file = "$3.txt"
     set root_file = "$3.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
 else if ($arg1 == "processing_scripts/processing_mc_dvcs.groovy") then
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7" "$campaign_max_events"
     # Run the convert_txt_to_root program
     set txt_file = "$3.txt"
     set root_file = "$3.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
 else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7" "$campaign_max_events"
     # Run the convert_txt_to_root program
     set txt_file = "$3.txt"
     set root_file = "$3.root"

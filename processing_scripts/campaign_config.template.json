@@ -1,0 +1,333 @@
+{
+  "jobs": [
+    {
+      "period": "sp18_inb",
+      "mode": "dvcs_data",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_inb/dvcs_data/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_inb/dvcs_data"
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "pi0_data",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_inb/pi0_data/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_inb/pi0_data"
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "dvcs_gen",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_inb/dvcs_gen/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_inb/dvcs_gen"
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "dvcs_rec",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_inb/dvcs_rec/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_inb/dvcs_rec"
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "pi0_gen",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_inb/pi0_gen/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_inb/pi0_gen"
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "pi0_rec",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_inb/pi0_rec/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_inb/pi0_rec"
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "pi0_as_dvcs",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_inb/pi0_as_dvcs/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_inb/pi0_as_dvcs"
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "dvcs_gen_rad",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_inb/dvcs_gen_rad/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_inb/dvcs_gen_rad"
+    },
+    {
+      "period": "sp18_inb",
+      "mode": "dvcs_rec_rad",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_inb/dvcs_rec_rad/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_inb/dvcs_rec_rad"
+    },
+    {
+      "period": "sp18_out",
+      "mode": "dvcs_data",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_out/dvcs_data/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_out/dvcs_data"
+    },
+    {
+      "period": "sp18_out",
+      "mode": "pi0_data",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_out/pi0_data/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_out/pi0_data"
+    },
+    {
+      "period": "sp18_out",
+      "mode": "dvcs_gen",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_out/dvcs_gen/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_out/dvcs_gen"
+    },
+    {
+      "period": "sp18_out",
+      "mode": "dvcs_rec",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_out/dvcs_rec/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_out/dvcs_rec"
+    },
+    {
+      "period": "sp18_out",
+      "mode": "pi0_gen",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_out/pi0_gen/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_out/pi0_gen"
+    },
+    {
+      "period": "sp18_out",
+      "mode": "pi0_rec",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_out/pi0_rec/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_out/pi0_rec"
+    },
+    {
+      "period": "sp18_out",
+      "mode": "pi0_as_dvcs",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_out/pi0_as_dvcs/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_out/pi0_as_dvcs"
+    },
+    {
+      "period": "sp18_out",
+      "mode": "dvcs_gen_rad",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_out/dvcs_gen_rad/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_out/dvcs_gen_rad"
+    },
+    {
+      "period": "sp18_out",
+      "mode": "dvcs_rec_rad",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp18_out/dvcs_rec_rad/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp18_out/dvcs_rec_rad"
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_data",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_inb/dvcs_data/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_inb/dvcs_data"
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "pi0_data",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_inb/pi0_data/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_inb/pi0_data"
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_gen",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_inb/dvcs_gen/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_inb/dvcs_gen"
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_rec",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_inb/dvcs_rec/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_inb/dvcs_rec"
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "pi0_gen",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_inb/pi0_gen/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_inb/pi0_gen"
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "pi0_rec",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_inb/pi0_rec/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_inb/pi0_rec"
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "pi0_as_dvcs",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_inb/pi0_as_dvcs/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_inb/pi0_as_dvcs"
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_gen_rad",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_inb/dvcs_gen_rad/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_inb/dvcs_gen_rad"
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_rec_rad",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_inb/dvcs_rec_rad/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_inb/dvcs_rec_rad"
+    },
+    {
+      "period": "fa18_out",
+      "mode": "dvcs_data",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_out/dvcs_data/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_out/dvcs_data"
+    },
+    {
+      "period": "fa18_out",
+      "mode": "pi0_data",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_out/pi0_data/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_out/pi0_data"
+    },
+    {
+      "period": "fa18_out",
+      "mode": "dvcs_gen",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_out/dvcs_gen/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_out/dvcs_gen"
+    },
+    {
+      "period": "fa18_out",
+      "mode": "dvcs_rec",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_out/dvcs_rec/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_out/dvcs_rec"
+    },
+    {
+      "period": "fa18_out",
+      "mode": "pi0_gen",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_out/pi0_gen/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_out/pi0_gen"
+    },
+    {
+      "period": "fa18_out",
+      "mode": "pi0_rec",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_out/pi0_rec/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_out/pi0_rec"
+    },
+    {
+      "period": "fa18_out",
+      "mode": "pi0_as_dvcs",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_out/pi0_as_dvcs/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_out/pi0_as_dvcs"
+    },
+    {
+      "period": "fa18_out",
+      "mode": "dvcs_gen_rad",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_out/dvcs_gen_rad/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_out/dvcs_gen_rad"
+    },
+    {
+      "period": "fa18_out",
+      "mode": "dvcs_rec_rad",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/fa18_out/dvcs_rec_rad/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_out/dvcs_rec_rad"
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "dvcs_data",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp19_inb/dvcs_data/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp19_inb/dvcs_data"
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "pi0_data",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp19_inb/pi0_data/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp19_inb/pi0_data"
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "dvcs_gen",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp19_inb/dvcs_gen/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp19_inb/dvcs_gen"
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "dvcs_rec",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp19_inb/dvcs_rec/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp19_inb/dvcs_rec"
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "pi0_gen",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp19_inb/pi0_gen/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp19_inb/pi0_gen"
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "pi0_rec",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp19_inb/pi0_rec/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp19_inb/pi0_rec"
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "pi0_as_dvcs",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp19_inb/pi0_as_dvcs/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp19_inb/pi0_as_dvcs"
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "dvcs_gen_rad",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp19_inb/dvcs_gen_rad/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp19_inb/dvcs_gen_rad"
+    },
+    {
+      "period": "sp19_inb",
+      "mode": "dvcs_rec_rad",
+      "enabled": false,
+      "input": "/REPLACE_WITH_HIPO_DIRECTORY/sp19_inb/dvcs_rec_rad/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/sp19_inb/dvcs_rec_rad"
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "dvcs_data",
+      "enabled": false,
+      "input": "/REPLACE_WITH_SUPPLEMENTAL_HIPO_DIRECTORY/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_inb_supp/dvcs_data"
+    },
+    {
+      "period": "fa18_inb",
+      "mode": "pi0_data",
+      "enabled": false,
+      "input": "/REPLACE_WITH_SUPPLEMENTAL_HIPO_DIRECTORY/",
+      "output": "/volatile/clas12/thayward/dvcs_reprocessing/fa18_inb_supp/pi0_data"
+    }
+  ]
+}
