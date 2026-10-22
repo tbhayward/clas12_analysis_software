@@ -15,6 +15,40 @@ public class analysis_fitter extends GenericKinematicFitter {
 
     protected final Double mybeam;
 
+    // Index correspondence for the most recent getPhysicsEvent call on this fitter.
+    // Entries follow PhysicsEvent insertion order, including synthetic pi0 (-1).
+    private final java.util.ArrayList<Integer> lastRecIndices = new java.util.ArrayList<>();
+    private final java.util.ArrayList<Particle> lastFittedParticles = new java.util.ArrayList<>();
+
+    public int getLastRecIndexForPidOccurrence(int pid, int occurrence) {
+        int seen = 0;
+        for (int i = 0; i < lastFittedParticles.size(); i++) {
+            if (lastFittedParticles.get(i).pid() == pid) {
+                if (seen == occurrence) return lastRecIndices.get(i);
+                seen++;
+            }
+        }
+        return -1;
+    }
+
+    public Particle getLastCorrectedParticleForPidOccurrence(int pid, int occurrence) {
+        int seen = 0;
+        for (Particle particle : lastFittedParticles) {
+            if (particle.pid() == pid) {
+                if (seen == occurrence) return particle;
+                seen++;
+            }
+        }
+        return null;
+    }
+
+    private void addTrackedParticle(PhysicsEvent event, Particle particle, int recIndex) {
+        event.addParticle(particle);
+        lastFittedParticles.add(particle);
+        lastRecIndices.add(recIndex);
+    }
+
+
     public analysis_fitter(double beam) {
         super(beam);
         mybeam = beam;
@@ -173,6 +207,8 @@ public class analysis_fitter extends GenericKinematicFitter {
     ////////////////////////////////////////////////////////////////////////////////////////////////
     @Override
     public PhysicsEvent getPhysicsEvent(DataEvent event) {
+        lastRecIndices.clear();
+        lastFittedParticles.clear();
 
         generic_tests generic_tests = new generic_tests();
         if (generic_tests.banks_test(event)) {
@@ -272,7 +308,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                     pz = momentum[2];
 
                     Particle electron = new Particle(pid, px, py, pz, vx, vy, vz_e);
-                    physEvent.addParticle(electron);
+                    addTrackedParticle(physEvent, electron, particle_Index);
                 }
 
                 if (Math.abs(pid) == 211 && pion_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
@@ -292,7 +328,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                     pz = momentum[2];
 
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
-                    physEvent.addParticle(part);
+                    addTrackedParticle(physEvent, part, particle_Index);
                 }
 
                 if (Math.abs(pid) == 321 && kaon_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
@@ -300,7 +336,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                     // check for pion PID
 
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
-                    physEvent.addParticle(part);
+                    addTrackedParticle(physEvent, part, particle_Index);
                 }
 
                 if (pid == 2212 && proton_test(particle_Index, pid, vz, vz_e, rec_Bank, cal_Bank,
@@ -314,7 +350,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                     pz = momentum[2];
 
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
-                    physEvent.addParticle(part);
+                    addTrackedParticle(physEvent, part, particle_Index);
                 }
 
                 if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e, num_photon)) {
@@ -326,7 +362,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                     py = momentum[1];
                     pz = momentum[2];
                     Particle part = new Particle(pid, px, py, pz, vx, vy, vz);
-                    physEvent.addParticle(part);
+                    addTrackedParticle(physEvent, part, particle_Index);
                     num_photon++;
                 }
             }
@@ -344,7 +380,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 
                     // Check if a valid Particle was returned before adding it to the event
                     if (part != null) {
-                        physEvent.addParticle(part);
+                        addTrackedParticle(physEvent, part, -1);
                     }
                 }
             }
@@ -362,7 +398,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 
                     // Check if a valid Particle was returned before adding it to the event
                     if (part != null) {
-                        physEvent.addParticle(part);
+                        addTrackedParticle(physEvent, part, -1);
                     }
                 }
             }
@@ -376,7 +412,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 
                     // Check if a valid Particle was returned before adding it to the event
                     if (part != null) {
-                        physEvent.addParticle(part);
+                        addTrackedParticle(physEvent, part, -1);
                     }
                 }
             }
@@ -390,7 +426,7 @@ public class analysis_fitter extends GenericKinematicFitter {
 
                     // Check if a valid Particle was returned before adding it to the event
                     if (part != null) {
-                        physEvent.addParticle(part);
+                        addTrackedParticle(physEvent, part, -1);
                     }
                 }
             }
