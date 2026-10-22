@@ -60,6 +60,8 @@ else if ($arg1 == "processing_scripts/processing_mc_three_particles.groovy") the
     set is_mc = 1;
 else if ($arg1 == "processing_scripts/processing_mc_dvcs.groovy") then
     set is_mc = 1;
+else if ($arg1 == "processing_scripts/processing_mc_exclusive_pi0.groovy") then
+    set is_mc = 1;
 else if ($arg1 == "processing_scripts/processing_mc_rec_dvcs.groovy") then
     set is_mc = 1;
 else if ($arg1 == "processing_scripts/processing_mc_rec_exclusive_pi0.groovy") then
@@ -74,22 +76,24 @@ else
     set arg2 = "$2"
 endif
 
-echo "Pulling the latest changes from the repository..."
-git pull
+# Campaign workers share one checkout and converter binaries. The campaign launcher
+# performs git pull and compiles both converters ONCE before starting workers.
+if ($?DVCS_CAMPAIGN_WORKER) then
+    echo "Campaign worker: shared git pull and converter compilation completed by launcher."
+else
+    echo "Pulling the latest changes from the repository..."
+    git pull
+    if ($status != 0) exit 1
+endif
 # Java processing classes are compiled separately by the user.
 echo "Loading QADB module for classpath compatibility; MC selection bypasses QADB."
 module load qadb/3.4.1
-
-g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
-if ($status != 0) then
-    echo "ERROR: legacy converter compilation failed"
-    exit 1
-endif
-if ($convert_arg3 == 7 || $convert_arg3 == 8) then
-    g++ `root-config --cflags --libs` -o processing_scripts/convert_dvcs_mc_diagnostics processing_scripts/convert_dvcs_mc_diagnostics.cpp
-    if ($status != 0) then
-        echo "ERROR: diagnostic converter compilation failed"
-        exit 1
+if (! $?DVCS_CAMPAIGN_WORKER) then
+    g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
+    if ($status != 0) exit 1
+    if ($convert_arg3 == 7 || $convert_arg3 == 8) then
+        g++ `root-config --cflags --libs` -o processing_scripts/convert_dvcs_mc_diagnostics processing_scripts/convert_dvcs_mc_diagnostics.cpp
+        if ($status != 0) exit 1
     endif
 endif
 
