@@ -75,7 +75,7 @@ endif
 echo "Pulling the latest changes from the repository..."
 git pull
 # Java processing classes are compiled separately by the user.
-echo "Sourcing qadb..."
+echo "Loading QADB module for classpath compatibility (MC selection bypasses QADB)..."
 module load qadb/3.4.1
 
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp

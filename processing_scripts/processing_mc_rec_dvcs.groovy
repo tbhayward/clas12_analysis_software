@@ -145,27 +145,7 @@ public static void main(String[] args) {
 	// set filter for final states
 	EventFilter filter = new EventFilter("11:2212:22:Xn"); 
 
-	// setup QA database
-	QADB qa = new QADB("latest");
-	qa.checkForDefect('TotalOutlier')    
-	qa.checkForDefect('TerminalOutlier')
-	qa.checkForDefect('MarginalOutlier')
-	qa.checkForDefect('SectorLoss')
-	qa.checkForDefect('LowLiveTime')
-	qa.checkForDefect('Misc')
-	qa.checkForDefect('ChargeHigh')
-	qa.checkForDefect('ChargeNegative')
-	qa.checkForDefect('ChargeUnknown')
-	[ // list of runs with `Misc` that should be allowed
-		5418, 5419, // RGA Fa18 Inb 5nA run
-		5443, // RGA Fa18 Out 5nA run
-		5444, // RGA Fa18 Out 20nA run
-		6616, // RGA Sp19 Inb 5nA run
-  		6736, 6737, 6738, 6739, 6740, 6741, 
-  			6742, 6743, 6744, 6746, 6747, 6748, 
-  			6749, 6750, 6751, 6753, 6754, 6755, 
-  			6756, 6757 // RGA runs FADC failure sector 6
-	].each{ run -> qa.allowMiscBit(run) }
+    // MC processing: no QADB initialization, queries or data-run vetoes.
 
 	// create a StringBuilder for accumulating lines
 	StringBuilder batchLines = new StringBuilder();
@@ -291,96 +271,9 @@ public static void main(String[] args) {
             }
 
 
-		    // do not use the qa if it is MC (runnum = 11) 
-		    // boolean process_event = filter.isValid(research_Event);
-	    	boolean process_event = filter.isValid(research_Event) && 
-		    	(runnum == 11 ||  // MC
-		    	userProvidedOverride == 1 || // skip QADB
-		    	qa.pass(runnum, evnum));
-		    if (runnum == 5247) process_event = false; // sector 4 loss, should be removed by qa but maybe early events need it too?
-	    	if (runnum == 5345) process_event = false; // beam lowered to 20 nA for part of the run
+            // MC selection is independent of RUN::config and any correction-period override.
+            boolean process_event = filter.isValid(research_Event);
 
-	    	if (runnum == 5158 || 
-			    runnum == 5163 ||
-			    runnum == 5181 ||
-			    runnum == 5519 ||
-			    runnum == 5528 ||
-			    runnum == 5627 ||
-			    runnum == 3355 ||
-			    runnum == 3404 ||
-			    runnum == 3408 ||
-			    runnum == 3449 ||
-			    runnum == 3490 ||
-			    runnum == 3499 ||
-			    runnum == 3500 ||
-			    runnum == 3505 ||
-			    runnum == 3526 ||
-			    runnum == 3527 ||
-			    runnum == 3528 ||
-			    runnum == 3529 ||
-			    runnum == 3530 ||
-			    runnum == 3531 ||
-			    runnum == 3532 ||
-			    runnum == 3533 ||
-			    runnum == 3534 ||
-			    runnum == 3535 ||
-			    runnum == 3536 ||
-			    runnum == 3538 ||
-			    runnum == 3540 ||
-			    runnum == 3544 ||
-			    runnum == 3545 ||
-			    runnum == 3547 ||
-			    runnum == 3548 ||
-			    runnum == 3709 ||
-			    runnum == 3736 ||
-			    runnum == 3793 ||
-			    runnum == 3800 ||
-			    runnum == 3801 ||
-			    runnum == 3807 ||
-			    runnum == 3508 ||
-			    runnum == 3808 ||
-			    runnum == 3809 ||
-			    runnum == 3810 ||
-			    runnum == 3813 ||
-			    runnum == 3698 ||
-			    runnum == 3814 ||
-			    runnum == 3815 ||
-			    runnum == 3817 ||
-			    runnum == 4018 ||
-			    runnum == 4059 ||
-			    runnum == 4142 ||
-			    runnum == 4145 ||
-			    runnum == 4146 ||
-			    runnum == 4159 ||
-			    runnum == 4160 ||
-			    runnum == 4162 ||
-			    runnum == 4163 ||
-			    runnum == 4176 ||
-			    runnum == 4209 ||
-			    runnum == 4227 ||
-			    runnum == 4246 ||
-			    runnum == 4252 ||
-			    runnum == 4325 ||
-			    runnum == 3867 ||
-			    runnum == 3877 ||
-			    runnum == 3882 ||
-			    runnum == 3927 ||
-			    runnum == 3951 ||
-			    runnum == 3953 ||
-			    runnum == 3965 ||
-			    runnum == 3967 ||
-			    runnum == 3968 ||
-			    runnum == 3499 ||
-			    runnum == 3712 ||
-			    runnum == 3801 ||
-			    runnum == 3807 ||
-			    runnum == 3808 ||
-			    runnum == 3267 ||
-			    runnum == 3879 ||
-			    runnum == 3923 ||
-			    runnum == 3929 ||
-			    runnum == 3947) process_event = false;
-	    	
 		    if (process_event) {
 		        // get # of particles 
 		        int num_p1 = research_Event.countByPid(2212);
