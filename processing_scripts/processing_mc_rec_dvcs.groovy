@@ -94,6 +94,19 @@ public static void main(String[] args) {
 		userProvidedOverride = Integer.parseInt(args[5]);
 	}
 
+    // MC truth diagnostics are always written; no environment variable required.
+    // Optional seventh Groovy argument: maximum number of processed HIPO records (0 = unlimited).
+    long maxEvents = args.length > 6 ? Long.parseLong(args[6]) : 0L;
+    boolean writeDiagnostics = true; // Always enabled for MC DVCS processing.
+    BufferedWriter diagnosticEvents = null;
+    BufferedWriter diagnosticParticles = null;
+    if (writeDiagnostics) {
+        diagnosticEvents = new BufferedWriter(new FileWriter(output_file + ".events.tsv"));
+        diagnosticParticles = new BufferedWriter(new FileWriter(output_file + ".particles.tsv"));
+        diagnosticEvents.write("file_index event_sequence run event weight n_mc n_rec n_match gen_e gen_p gen_g gen_Q2 gen_xB gen_y gen_t_proton rec_final_state\n");
+        diagnosticParticles.write("file_index event_sequence run event mcindex truth_pid gen_px gen_py gen_pz gen_p gen_theta gen_phi rec_pindex rec_pid rec_px rec_py rec_pz rec_p rec_theta rec_phi rec_status rec_detector gen_t_proton rec_t_proton_raw\n");
+    }
+
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
 	// declare physics event variables
@@ -147,6 +160,7 @@ public static void main(String[] args) {
 	int max_lines = 1000;
 	int lineCount = 0;
 	for (current_file in 0..<n_files) {
+        if (maxEvents > 0 && num_events >= maxEvents) break;
 		// limit to a certain number of files defined by n_files
 		println("\n Opening file "+Integer.toString(current_file+1)
 			+" out of "+n_files+".\n"); 
@@ -156,6 +170,7 @@ public static void main(String[] args) {
 		HipoDataEvent event = reader.getNextEvent(); 
 
 		while (reader.hasEvent()) {
+            if (maxEvents > 0 && num_events >= maxEvents) break;
 		    ++num_events;
 		    if (num_events % 500000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
@@ -170,6 +185,76 @@ public static void main(String[] args) {
 		    weight = get_mc_event_weight(event);
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
+            // Diagnostic sidecars run BEFORE the reconstructed DVCS final-state filter.
+            // This records generated events even when no reconstructed DVCS candidate exists.
+            if (writeDiagnostics) {
+                def mcBank = event.hasBank("MC::Particle") ? event.getBank("MC::Particle") : null;
+                def recBank = event.hasBank("REC::Particle") ? event.getBank("REC::Particle") : null;
+                def matchBank = event.hasBank("MC::RecMatch") ? event.getBank("MC::RecMatch") : null;
+                int nmc = mcBank == null ? 0 : mcBank.rows();
+                int nrec = recBank == null ? 0 : recBank.rows();
+                int nmatch = matchBank == null ? 0 : matchBank.rows();
+                int[] recForMc = new int[nmc];
+                java.util.Arrays.fill(recForMc, -1);
+                for (int k = 0; k < nmatch; k++) {
+                    int mi = matchBank.getInt("mcindex", k);
+                    int ri = matchBank.getInt("pindex", k);
+                    if (mi >= 0 && mi < nmc && ri >= 0 && ri < nrec && recForMc[mi] == -1) recForMc[mi] = ri;
+                }
+                double[] gm = [-999d, -999d, -999d];
+                int[] genRows = [-1, -1, -1];
+                for (int k = 0; k < nmc; k++) {
+                    int pid = mcBank.getInt("pid", k);
+                    int slot = pid == 11 ? 0 : (pid == 2212 ? 1 : (pid == 22 ? 2 : -1));
+                    if (slot >= 0 && genRows[slot] < 0) {
+                        genRows[slot] = k;
+                        double px = mcBank.getFloat("px", k), py = mcBank.getFloat("py", k), pz = mcBank.getFloat("pz", k);
+                        gm[slot] = Math.sqrt(px*px + py*py + pz*pz);
+                    }
+                }
+                double genQ2 = -999d, genXB = -999d, genY = -999d, genT = -999d;
+                if (genRows[0] >= 0) {
+                    int ei = genRows[0];
+                    double ex = mcBank.getFloat("px", ei), ey = mcBank.getFloat("py", ei), ez = mcBank.getFloat("pz", ei);
+                    double ee = Math.sqrt(ex*ex + ey*ey + ez*ez + 0.0005109989461d*0.0005109989461d);
+                    double nu = beam_energy - ee;
+                    genQ2 = 2d*beam_energy*(ee-ez) - 2d*0.0005109989461d*0.0005109989461d;
+                    genY = nu / beam_energy;
+                    if (nu > 0) genXB = genQ2 / (2d*0.9382720813d*nu);
+                }
+                if (genRows[1] >= 0) {
+                    int pi = genRows[1];
+                    double pp = gm[1];
+                    genT = 2d*0.9382720813d*(0.9382720813d - Math.sqrt(pp*pp + 0.9382720813d*0.9382720813d));
+                }
+                diagnosticEvents.write([current_file, num_events, runnum, evnum, weight, nmc, nrec, nmatch,
+                    gm[0], gm[1], gm[2], genQ2, genXB, genY, genT, (filter.isValid(research_Event) ? 1 : 0)].join(" ") + "\n");
+                for (int k = 0; k < nmc; k++) {
+                    int pid = mcBank.getInt("pid", k);
+                    if (pid != 11 && pid != 2212 && pid != 22) continue;
+                    double gx = mcBank.getFloat("px", k), gy = mcBank.getFloat("py", k), gz = mcBank.getFloat("pz", k);
+                    double gp = Math.sqrt(gx*gx + gy*gy + gz*gz);
+                    double gt = gp > 0 ? Math.acos(Math.max(-1d, Math.min(1d, gz/gp))) : -999d;
+                    double gf = Math.atan2(gy,gx);
+                    int ri = recForMc[k];
+                    int rpid = -999, status = -999, detector = -999;
+                    double rx=-999d, ry=-999d, rz=-999d, rp=-999d, rt=-999d, rf=-999d, recT=-999d;
+                    if (ri >= 0) {
+                        rpid = recBank.getInt("pid", ri);
+                        status = recBank.getInt("status", ri);
+                        detector = Math.abs(status) >= 4000 ? 2 : (Math.abs(status) >= 2000 ? 1 : (Math.abs(status) >= 1000 ? 0 : -1));
+                        // Store the actual REC::Particle status; detector classification can be validated separately.
+                        rx=recBank.getFloat("px",ri); ry=recBank.getFloat("py",ri); rz=recBank.getFloat("pz",ri);
+                        rp=Math.sqrt(rx*rx+ry*ry+rz*rz);
+                        rt=rp > 0 ? Math.acos(Math.max(-1d,Math.min(1d,rz/rp))) : -999d;
+                        rf=Math.atan2(ry,rx);
+                        if (pid == 2212) recT=2d*0.9382720813d*(0.9382720813d-Math.sqrt(rp*rp+0.9382720813d*0.9382720813d));
+                    }
+                    diagnosticParticles.write([current_file,num_events,runnum,evnum,k,pid,gx,gy,gz,gp,gt,gf,
+                        ri,rpid,rx,ry,rz,rp,rt,rf,status,detector,(pid==2212 ? genT : -999d),recT].join(" ")+"\n");
+                }
+            }
+
 
 		    // do not use the qa if it is MC (runnum = 11) 
 		    // boolean process_event = filter.isValid(research_Event);
@@ -304,7 +389,7 @@ public static void main(String[] args) {
 
 	                // DIS variables
 	                Q2 = variables.Q2(); // exchanged virtual photon energy
-	                if (torus == -1 && Q2 < 1.5) { continue;}
+	                if (torus == -1 && Q2 < 1.456) { continue;}
 
 	                W = variables.W(); // hadronic mass
 	                x = variables.x(); // Bjorken-x
@@ -472,6 +557,7 @@ public static void main(String[] args) {
 		println("output text file is: $file");
 	}
 
+    if (writeDiagnostics) { diagnosticEvents.close(); diagnosticParticles.close(); }
 	writer.close();
 
 	// End time
