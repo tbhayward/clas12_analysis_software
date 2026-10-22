@@ -35,6 +35,8 @@ else if ($arg1 == "processing_scripts/processing_mc_dvcs.groovy") then
     set convert_arg3 = 4 # dvcs
 else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
     set convert_arg3 = 5 # eppi0
+else if ($arg1 == "processing_scripts/processing_mc_exclusive_pi0.groovy") then
+    set convert_arg3 = 5 # generated aaogen, legacy eppi0 branch schema
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
     set convert_arg3 = 6 # calibration
 else if ($arg1 == "processing_scripts/processing_dvcs_calibration.groovy") then
@@ -180,6 +182,17 @@ else if ($arg1 == "processing_scripts/processing_mc_rec_dvcs.groovy") then
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
     if ($status != 0) then
         echo "ERROR: legacy DVCS MC ROOT conversion failed"
+        exit 1
+    endif
+else if ($arg1 == "processing_scripts/processing_mc_exclusive_pi0.groovy") then
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7" "$campaign_max_events"
+    if ($status != 0) then
+        echo "ERROR: generated pi0 Groovy processing failed"
+        exit 1
+    endif
+    ./processing_scripts/convert_txt_to_root "$3.txt" "$3.root" 5 0
+    if ($status != 0) then
+        echo "ERROR: generated pi0 ROOT conversion failed"
         exit 1
     endif
 else if ($arg1 == "processing_scripts/processing_mc_rec_exclusive_pi0.groovy") then

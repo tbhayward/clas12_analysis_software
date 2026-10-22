@@ -6,7 +6,7 @@ Run from clas12_analysis_software repository root on ifarm.
 import argparse, csv, json, os, shlex, subprocess, sys
 from pathlib import Path
 
-SCRIPTS={'dvcs_data':'processing_dvcs.groovy','pi0_data':'processing_exclusive_pi0.groovy','dvcs_gen':'processing_mc_dvcs.groovy','dvcs_rec':'processing_mc_rec_dvcs.groovy','pi0_rec':'processing_mc_rec_exclusive_pi0.groovy','pi0_as_dvcs':'processing_mc_rec_dvcs.groovy'}
+SCRIPTS={'dvcs_data':'processing_dvcs.groovy','pi0_data':'processing_exclusive_pi0.groovy','dvcs_gen':'processing_mc_dvcs.groovy','dvcs_rec':'processing_mc_rec_dvcs.groovy','pi0_gen':'processing_mc_exclusive_pi0.groovy','pi0_rec':'processing_mc_rec_exclusive_pi0.groovy','pi0_as_dvcs':'processing_mc_rec_dvcs.groovy'}
 UNVERIFIED={'pi0_as_dvcs':'Check DVCS fitter acceptance and generator weights on aaogen before production.'}
 
 def main():
@@ -16,7 +16,7 @@ def main():
  ap.add_argument('--execute',action='store_true')
  ap.add_argument('--pilot',action='store_true',help='10,000 events per input HIPO file, with isolated output per file')
  ap.add_argument('--events-per-file',type=int,default=10000)
- ap.add_argument('--only',nargs='*',choices=list(SCRIPTS)+['pi0_gen'])
+ ap.add_argument('--only',nargs='*',choices=list(SCRIPTS))
  ap.add_argument('--allow-unverified',action='store_true')
  ap.add_argument('--skip-existing',action='store_true')
  a=ap.parse_args()
@@ -26,9 +26,6 @@ def main():
  for job in cfg['jobs']:
   if a.only and job['mode'] not in a.only:continue
   mode=job['mode']; period=job['period']; inp=Path(job['input']); energy=str(job['energy']); current=job.get('current','')
-  if mode=='pi0_gen':
-   blocked.append(f'{period} pi0_gen: generated-pi0 script and output convention not verified')
-   continue
   if mode not in SCRIPTS:raise ValueError(f'Unknown mode: {mode}')
   # Discover HIPO files for pilot; production Groovy receives whole input directory.
   files=sorted(inp.rglob('*.hipo')) if inp.is_dir() and a.pilot else ([None] if not a.pilot else [])
@@ -41,7 +38,7 @@ def main():
    mc=mode not in ('dvcs_data','pi0_data')
    args=['csh','processing_scripts/processing.csh','processing_scripts/'+SCRIPTS[mode],str(stage),str(output),'1' if a.pilot else '0',energy,'11' if mc else '0','1' if mc else '0']
    # Legacy data/generated scripts patched to take optional cap at args[6].
-   if mode in ('dvcs_data','pi0_data','dvcs_gen'):
+   if mode in ('dvcs_data','pi0_data','dvcs_gen','pi0_gen'):
     if a.pilot:args.append(str(a.events_per_file))
    else:
     args.extend([str(a.events_per_file) if a.pilot else '0',period])
