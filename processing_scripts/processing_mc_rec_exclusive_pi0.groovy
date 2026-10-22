@@ -35,21 +35,61 @@ public static double get_mc_event_weight(HipoDataEvent event) {
 
 // Generated and reconstructed quantities are evaluated with the SAME analyzer.
 // Entries remain aligned by construction (one per HIPO event), not RUN::config numbers.
-static List<String> pairedNames() { return ["fiducial_status","num_pos","num_neg","num_neutrals","runnum","evnum","helicity","detector1","detector2","e_p","e_theta","e_phi","vz_e","p1_p","p1_theta","p1_phi","vz_p1","p2_p","p2_theta","p2_phi","vz_p2","open_angle_ep","open_angle_ep1","open_angle_ep2","open_angle_p1p2","Q2","W","Mx2","Mx2_1","Mx2_2","x","t","t1","t2","tmin","y","z","z1","z2","Mh","xF","xF1","xF2","pT","pT1","pT2","pTpT","xi","xi1","xi2","eta","eta1","eta2","Delta_eta","eta1_gN","eta2_gN","phi1","phi2","Delta_phi","phih","phiR","theta","DepA","DepB","DepC","DepV","DepW","Emiss2","theta_gamma_gamma","pTmiss","weight"] }
-static List<String> pairedMethods() { return ["get_fiducial_status","get_num_pos","get_num_neg","get_num_neutrals","__runnum","__evnum","get_helicity","get_detector1","get_detector2","e_p","e_theta","e_phi","vz_e","p1_p","p1_theta","p1_phi","vz_p1","p2_p","p2_theta","p2_phi","vz_p2","open_angle_ep","open_angle_ep1","open_angle_ep2","open_angle_p1p2","Q2","W","Mx2","Mx2_1","Mx2_2","x","t","t1","t2","tmin","y","z","z1","z2","Mh","xF","xF1","xF2","pT","pT1","pT2","pTpT","xi","xi1","xi2","eta","eta1","eta2","Delta_eta","eta1_gN","eta2_gN","phi1","phi2","Delta_phi","phih","phiR","theta","Depolarization_A","Depolarization_B","Depolarization_C","Depolarization_V","Depolarization_W","Emiss2","theta_gamma_gamma","pTmiss","__weight"] }
-static List<Double> pairedKinematics(def analyzer, int run, int ev, double w) {
-    if (analyzer == null) return pairedNames().collect { Double.NaN }
+static List<String> pairedNames() { return ["fiducial_status","num_pos","num_neg","num_neutrals","runnum","evnum","helicity","detector1","detector2","e_p","e_theta","e_phi","vz_e","p1_p","p1_theta","p1_phi","vz_p1","p2_p","p2_theta","p2_phi","vz_p2","open_angle_ep","open_angle_ep1","open_angle_ep2","open_angle_p1p2","Q2","W","Mx2","Mx2_1","Mx2_2","x","t","t1","t2","tmin","y","z","z1","z2","Mh","xF","xF1","xF2","pT","pT1","pT2","pTpT","xi","xi1","xi2","eta","eta1","eta2","Delta_eta","eta1_gN","eta2_gN","phi1","phi2","Delta_phi","phih","phiR","theta","DepA","DepB","DepC","DepV","DepW","Mh_gammagamma","detector_gamma1","detector_gamma2","open_angle_egamma1","open_angle_egamma2","gamma_phi1","gamma_phi2","Emiss2","theta_pi0_pi0","pTmiss","weight"] }
+static List<String> pairedMethods() { return ["get_fiducial_status","get_num_pos","get_num_neg","get_num_neutrals","__runnum","__evnum","get_helicity","get_detector1","get_detector2","e_p","e_theta","e_phi","vz_e","p1_p","p1_theta","p1_phi","vz_p1","p2_p","p2_theta","p2_phi","vz_p2","open_angle_ep","open_angle_ep1","open_angle_ep2","open_angle_p1p2","Q2","W","Mx2","Mx2_1","Mx2_2","x","t","t1","t2","tmin","y","z","z1","z2","Mh","xF","xF1","xF2","pT","pT1","pT2","pTpT","xi","xi1","xi2","eta","eta1","eta2","Delta_eta","eta1_gN","eta2_gN","phi1","phi2","Delta_phi","phih","phiR","theta","Depolarization_A","Depolarization_B","Depolarization_C","Depolarization_V","Depolarization_W","__pair_Mh","__pair_detector1","__pair_detector2","__pair_open1","__pair_open2","__pair_phi1","__pair_phi2","Emiss2","theta_gamma_gamma","pTmiss","__weight"] }
+// Both kinematic sets are constructed through the same ThreeParticles analyzer.
+// For the pi0-specific fields, pairAnalyzer is the two-photon analyzer.
+static List<Double> pairedKinematics(def analyzer, def pairAnalyzer, int run, int ev, double w, boolean generated) {
+    if (analyzer == null || pairAnalyzer == null) return pairedNames().collect { Double.NaN }
     List<Double> values = []
     for (int j = 0; j < pairedNames().size(); j++) {
         String name = pairedNames()[j]
+        String method = pairedMethods()[j]
         if (name == 'runnum') { values.add((double)run); continue }
         if (name == 'evnum') { values.add((double)ev); continue }
         if (name == 'weight') { values.add(w); continue }
-        String method = pairedMethods()[j]
+        if (method.startsWith('__pair_')) {
+            if (method == '__pair_Mh') { values.add((double)pairAnalyzer.Mh()); continue }
+            if (method == '__pair_detector1') { values.add(generated ? Double.NaN : (double)pairAnalyzer.get_detector1()); continue }
+            if (method == '__pair_detector2') { values.add(generated ? Double.NaN : (double)pairAnalyzer.get_detector2()); continue }
+            if (method == '__pair_open1') { values.add((double)pairAnalyzer.open_angle_ep1()); continue }
+            if (method == '__pair_open2') { values.add((double)pairAnalyzer.open_angle_ep2()); continue }
+            if (method == '__pair_phi1') { values.add((double)pairAnalyzer.phi1()); continue }
+            if (method == '__pair_phi2') { values.add((double)pairAnalyzer.phi2()); continue }
+        }
+        if (generated && ['fiducial_status','detector1','detector2'].contains(name)) {
+            values.add(Double.NaN); continue
+        }
         def value = analyzer."${method}"()
         values.add(value instanceof Number ? ((Number)value).doubleValue() : Double.NaN)
     }
     return values
+}
+
+// Select a unique photon pair using the same gamma-gamma mass window as the
+// legacy exclusive pi0 processing. The reconstructed pair additionally uses
+// the original photon detector exclusion. This does not apply detector cuts
+// to generator truth.
+static Map choosePhotonPair(def event, def physicsEvent, double energy, boolean generated) {
+    if (physicsEvent == null || physicsEvent.countByPid(11) < 1 ||
+        physicsEvent.countByPid(2212) < 1 || physicsEvent.countByPid(22) < 2) return null
+    Map best = null
+    double bestDistance = Double.POSITIVE_INFINITY
+    int n = physicsEvent.countByPid(22)
+    for (int i = 0; i < n; i++) {
+        for (int j = i + 1; j < n; j++) {
+            def pair = new ThreeParticles(event, physicsEvent, 22, i, 22, j, energy, generated)
+            double mass = pair.Mh()
+            if (!Double.isFinite(mass) || mass < 0.11d || mass > 0.16d) continue
+            if (!generated && (pair.get_detector1() == 2 || pair.get_detector2() == 2)) continue
+            double distance = Math.abs(mass - 0.1349768d)
+            if (distance < bestDistance) {
+                bestDistance = distance
+                best = [first:i, second:j, analyzer:pair]
+            }
+        }
+    }
+    return best
 }
 
 public static void main(String[] args) {
@@ -126,7 +166,12 @@ public static void main(String[] args) {
     println("MC pi0 correction period: ${correctionPeriod}; correction run: ${correctionRun}; MC QADB bypass enabled.");
     BufferedWriter diagnosticEvents = new BufferedWriter(new FileWriter(output_file + ".events.tsv"));
     BufferedWriter diagnosticParticles = new BufferedWriter(new FileWriter(output_file + ".particles.tsv"));
-    diagnosticEvents.write("file_index event_sequence run event weight n_mc n_rec n_match gen_e gen_p gen_g raw_gen_Q2 raw_gen_xB raw_gen_y gen_t_proton rec_final_state correction_run gen_fiducial_status gen_num_pos gen_num_neg gen_num_neutrals gen_runnum gen_evnum gen_helicity gen_detector1 gen_detector2 gen_e_p gen_e_theta gen_e_phi gen_vz_e gen_p1_p gen_p1_theta gen_p1_phi gen_vz_p1 gen_p2_p gen_p2_theta gen_p2_phi gen_vz_p2 gen_open_angle_ep gen_open_angle_ep1 gen_open_angle_ep2 gen_open_angle_p1p2 gen_Q2 gen_W gen_Mx2 gen_Mx2_1 gen_Mx2_2 gen_x gen_t gen_t1 gen_t2 gen_tmin gen_y gen_z gen_z1 gen_z2 gen_Mh gen_xF gen_xF1 gen_xF2 gen_pT gen_pT1 gen_pT2 gen_pTpT gen_xi gen_xi1 gen_xi2 gen_eta gen_eta1 gen_eta2 gen_Delta_eta gen_eta1_gN gen_eta2_gN gen_phi1 gen_phi2 gen_Delta_phi gen_phih gen_phiR gen_theta gen_DepA gen_DepB gen_DepC gen_DepV gen_DepW gen_Emiss2 gen_theta_gamma_gamma gen_pTmiss gen_weight rec_fiducial_status rec_num_pos rec_num_neg rec_num_neutrals rec_runnum rec_evnum rec_helicity rec_detector1 rec_detector2 rec_e_p rec_e_theta rec_e_phi rec_vz_e rec_p1_p rec_p1_theta rec_p1_phi rec_vz_p1 rec_p2_p rec_p2_theta rec_p2_phi rec_vz_p2 rec_open_angle_ep rec_open_angle_ep1 rec_open_angle_ep2 rec_open_angle_p1p2 rec_Q2 rec_W rec_Mx2 rec_Mx2_1 rec_Mx2_2 rec_x rec_t rec_t1 rec_t2 rec_tmin rec_y rec_z rec_z1 rec_z2 rec_Mh rec_xF rec_xF1 rec_xF2 rec_pT rec_pT1 rec_pT2 rec_pTpT rec_xi rec_xi1 rec_xi2 rec_eta rec_eta1 rec_eta2 rec_Delta_eta rec_eta1_gN rec_eta2_gN rec_phi1 rec_phi2 rec_Delta_phi rec_phih rec_phiR rec_theta rec_DepA rec_DepB rec_DepC rec_DepV rec_DepW rec_Emiss2 rec_theta_gamma_gamma rec_pTmiss rec_weight rec_kinematics_valid gen_kinematics_valid\n");
+    List<String> eventColumns = ['file_index','event_sequence','run','event','weight','n_mc','n_rec','n_match',
+        'gen_e','gen_p','gen_g','raw_gen_Q2','raw_gen_xB','raw_gen_y','gen_t_proton','rec_final_state','correction_run']
+    eventColumns.addAll(pairedNames().collect { 'gen_' + it })
+    eventColumns.addAll(pairedNames().collect { 'rec_' + it })
+    eventColumns.addAll(['rec_kinematics_valid','gen_kinematics_valid'])
+    diagnosticEvents.write(eventColumns.join(' ') + "\n");
     diagnosticParticles.write("file_index event_sequence run event mcindex truth_pid gen_px gen_py gen_pz gen_p gen_theta gen_phi rec_pindex rec_pid rec_px rec_py rec_pz rec_p rec_theta rec_phi rec_status rec_detector gen_t_proton rec_t_proton_raw fitted_selected fitted_px fitted_py fitted_pz fitted_p fitted_theta fitted_phi rec_t_proton_corrected\n");
 
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
@@ -152,7 +197,8 @@ public static void main(String[] args) {
 	GenericKinematicFitter fitter;
 
 	// Uncomment the desired fitter
-	fitter = new analysis_fitter(beam_energy); 
+	fitter = new analysis_fitter(beam_energy);
+    monte_carlo_fitter truthFitter = new monte_carlo_fitter(beam_energy); 
 	// fitter = new monte_carlo_fitter(10.6041);
 	// fitter = new event_builder_fitter(10.6041);  
 
@@ -205,6 +251,18 @@ public static void main(String[] args) {
 		    weight = get_mc_event_weight(event);
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
+            PhysicsEvent generated_Event = truthFitter.getPhysicsEvent(event);
+            Map generatedPair = choosePhotonPair(event, generated_Event, beam_energy, true);
+            Map reconstructedPair = filter.isValid(research_Event) ?
+                choosePhotonPair(event, research_Event, beam_energy, false) : null;
+            // Use the composite pi0 (PID 111) created by the corresponding fitter.
+            boolean truthValid = generatedPair != null && generated_Event.countByPid(111) > 0;
+            boolean recoValid = reconstructedPair != null && research_Event.countByPid(111) > 0;
+            def genAnalyzer = truthValid ? new ThreeParticles(event, generated_Event, 2212, 0, 111, 0, beam_energy, true) : null;
+            def recAnalyzer = recoValid ? new ThreeParticles(event, research_Event, 2212, 0, 111, 0, beam_energy) : null;
+            List<Double> genValues = pairedKinematics(genAnalyzer, generatedPair?.analyzer, runnum, evnum, weight, true);
+            List<Double> recValues = pairedKinematics(recAnalyzer, reconstructedPair?.analyzer, runnum, evnum, weight, false);
+
             // Diagnostic sidecars run BEFORE the reconstructed exclusive pi0 final-state filter.
             // This records generated events even when no reconstructed pi0 candidate exists.
             if (true) {
@@ -318,7 +376,6 @@ public static void main(String[] args) {
 
 			            Mh_gammagamma = variables.Mh();
 			            if (Mh_gammagamma < 0.11 || Mh_gammagamma > 0.16) continue;
-			            if (detector_gamma1 == 2 || detector_gamma2 == 2) continue;
 			            detector_gamma1 = variables.get_detector1();
 			            detector_gamma2 = variables.get_detector2();
 			            open_angle_egamma1 = variables.open_angle_ep1();
