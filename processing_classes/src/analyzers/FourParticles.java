@@ -103,6 +103,11 @@ public class FourParticles {
 
     public FourParticles(DataEvent event, PhysicsEvent recEvent, int p1PID, int p1Index, int p2PID, int p2Index,
             int p3PID, int p3Index, double Eb) {
+        this(event, recEvent, p1PID, p1Index, p2PID, p2Index, p3PID, p3Index, Eb, false);
+    }
+
+    public FourParticles(DataEvent event, PhysicsEvent recEvent, int p1PID, int p1Index, int p2PID, int p2Index,
+            int p3PID, int p3Index, double Eb, boolean generated) { 
         // provide the PDG PID of the three hadrons
 
         kinematic_variables kinematic_variables = new kinematic_variables();
@@ -114,8 +119,8 @@ public class FourParticles {
         HipoDataBank cal_Bank = (HipoDataBank) event.getBank("REC::Calorimeter");
         HipoDataBank traj_Bank = (HipoDataBank) event.getBank("REC::Traj");
 
-        helicity = eventBank.getByte("helicity", 0);
-        runnum = configBank.getInt("run", 0); // used for beam energy and polarization
+        helicity = generated || eventBank == null ? 0 : eventBank.getByte("helicity", 0);
+        runnum = configBank == null ? 0 : configBank.getInt("run", 0); // used for beam energy and polarization
 
         num_elec = recEvent.countByPid(11); // returns number of electrons
         num_positrons = recEvent.countByPid(-11); // returns number of positrons
@@ -130,6 +135,7 @@ public class FourParticles {
         num_neg = num_elec + num_piminus + num_kminus + num_antiprotons;
         num_neutrals = recEvent.countByPid(22) + recEvent.countByPid(2112);
 
+        if (!generated) {
         generic_tests generic_tests = new generic_tests();
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
 
@@ -205,6 +211,8 @@ public class FourParticles {
             detector3 = 2; // Central Detector
         }
         
+
+        } // Generated truth has no detector-dependent fiducial or topology assignment.
 
         // Set up Lorentz vectors
         // beam electron

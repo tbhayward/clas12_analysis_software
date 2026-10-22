@@ -34,6 +34,26 @@ public static double get_mc_event_weight(HipoDataEvent event) {
 	return weight;
 }
 
+
+// Generated and reconstructed quantities are evaluated with the SAME analyzer.
+// Entries remain aligned by construction (one per HIPO event), not RUN::config numbers.
+static List<String> pairedNames() { return ["fiducial_status","num_pos","num_neg","num_neutrals","runnum","evnum","helicity","detector1","detector2","e_p","e_theta","e_phi","vz_e","p1_p","p1_theta","p1_phi","vz_p1","p2_p","p2_theta","p2_phi","vz_p2","open_angle_ep","open_angle_ep1","open_angle_ep2","open_angle_p1p2","Q2","W","Mx2","Mx2_1","Mx2_2","x","t","t1","t2","tmin","y","z","z1","z2","Mh","xF","xF1","xF2","pT","pT1","pT2","pTpT","xi","xi1","xi2","eta","eta1","eta2","Delta_eta","eta1_gN","eta2_gN","phi1","phi2","Delta_phi","phih","phiR","theta","DepA","DepB","DepC","DepV","DepW","Emiss2","theta_gamma_gamma","pTmiss","weight"] }
+static List<String> pairedMethods() { return ["get_fiducial_status","get_num_pos","get_num_neg","get_num_neutrals","__runnum","__evnum","get_helicity","get_detector1","get_detector2","e_p","e_theta","e_phi","vz_e","p1_p","p1_theta","p1_phi","vz_p1","p2_p","p2_theta","p2_phi","vz_p2","open_angle_ep","open_angle_ep1","open_angle_ep2","open_angle_p1p2","Q2","W","Mx2","Mx2_1","Mx2_2","x","t","t1","t2","tmin","y","z","z1","z2","Mh","xF","xF1","xF2","pT","pT1","pT2","pTpT","xi","xi1","xi2","eta","eta1","eta2","Delta_eta","eta1_gN","eta2_gN","phi1","phi2","Delta_phi","phih","phiR","theta","Depolarization_A","Depolarization_B","Depolarization_C","Depolarization_V","Depolarization_W","Emiss2","theta_gamma_gamma","pTmiss","__weight"] }
+static List<Double> pairedKinematics(def analyzer, int run, int ev, double w) {
+    if (analyzer == null) return pairedNames().collect { Double.NaN }
+    List<Double> values = []
+    for (int j = 0; j < pairedNames().size(); j++) {
+        String name = pairedNames()[j]
+        if (name == 'runnum') { values.add((double)run); continue }
+        if (name == 'evnum') { values.add((double)ev); continue }
+        if (name == 'weight') { values.add(w); continue }
+        String method = pairedMethods()[j]
+        def value = analyzer."${method}"()
+        values.add(value instanceof Number ? ((Number)value).doubleValue() : Double.NaN)
+    }
+    return values
+}
+
 public static void main(String[] args) {
 
 	// Start time
@@ -116,7 +136,7 @@ public static void main(String[] args) {
     if (writeDiagnostics) {
         diagnosticEvents = new BufferedWriter(new FileWriter(output_file + ".events.tsv"));
         diagnosticParticles = new BufferedWriter(new FileWriter(output_file + ".particles.tsv"));
-        diagnosticEvents.write("file_index event_sequence run event weight n_mc n_rec n_match gen_e gen_p gen_g gen_Q2 gen_xB gen_y gen_t_proton rec_final_state correction_run\n");
+        diagnosticEvents.write("file_index event_sequence run event weight n_mc n_rec n_match gen_e gen_p gen_g raw_gen_Q2 raw_gen_xB raw_gen_y gen_t_proton rec_final_state correction_run gen_fiducial_status gen_num_pos gen_num_neg gen_num_neutrals gen_runnum gen_evnum gen_helicity gen_detector1 gen_detector2 gen_e_p gen_e_theta gen_e_phi gen_vz_e gen_p1_p gen_p1_theta gen_p1_phi gen_vz_p1 gen_p2_p gen_p2_theta gen_p2_phi gen_vz_p2 gen_open_angle_ep gen_open_angle_ep1 gen_open_angle_ep2 gen_open_angle_p1p2 gen_Q2 gen_W gen_Mx2 gen_Mx2_1 gen_Mx2_2 gen_x gen_t gen_t1 gen_t2 gen_tmin gen_y gen_z gen_z1 gen_z2 gen_Mh gen_xF gen_xF1 gen_xF2 gen_pT gen_pT1 gen_pT2 gen_pTpT gen_xi gen_xi1 gen_xi2 gen_eta gen_eta1 gen_eta2 gen_Delta_eta gen_eta1_gN gen_eta2_gN gen_phi1 gen_phi2 gen_Delta_phi gen_phih gen_phiR gen_theta gen_DepA gen_DepB gen_DepC gen_DepV gen_DepW gen_Emiss2 gen_theta_gamma_gamma gen_pTmiss gen_weight rec_fiducial_status rec_num_pos rec_num_neg rec_num_neutrals rec_runnum rec_evnum rec_helicity rec_detector1 rec_detector2 rec_e_p rec_e_theta rec_e_phi rec_vz_e rec_p1_p rec_p1_theta rec_p1_phi rec_vz_p1 rec_p2_p rec_p2_theta rec_p2_phi rec_vz_p2 rec_open_angle_ep rec_open_angle_ep1 rec_open_angle_ep2 rec_open_angle_p1p2 rec_Q2 rec_W rec_Mx2 rec_Mx2_1 rec_Mx2_2 rec_x rec_t rec_t1 rec_t2 rec_tmin rec_y rec_z rec_z1 rec_z2 rec_Mh rec_xF rec_xF1 rec_xF2 rec_pT rec_pT1 rec_pT2 rec_pTpT rec_xi rec_xi1 rec_xi2 rec_eta rec_eta1 rec_eta2 rec_Delta_eta rec_eta1_gN rec_eta2_gN rec_phi1 rec_phi2 rec_Delta_phi rec_phih rec_phiR rec_theta rec_DepA rec_DepB rec_DepC rec_DepV rec_DepW rec_Emiss2 rec_theta_gamma_gamma rec_pTmiss rec_weight rec_kinematics_valid gen_kinematics_valid\n");
         diagnosticParticles.write("file_index event_sequence run event mcindex truth_pid gen_px gen_py gen_pz gen_p gen_theta gen_phi rec_pindex rec_pid rec_px rec_py rec_pz rec_p rec_theta rec_phi rec_status rec_detector gen_t_proton rec_t_proton_raw fitted_selected fitted_px fitted_py fitted_pz fitted_p fitted_theta fitted_phi rec_t_proton_corrected\n");
     }
 
@@ -145,6 +165,7 @@ public static void main(String[] args) {
 	// set filter for final states
 	EventFilter filter = new EventFilter("11:2212:22:Xn"); 
 
+    monte_carlo_fitter truthFitter = new monte_carlo_fitter(beam_energy);
     // MC processing: no QADB initialization, queries or data-run vetoes.
 
 	// create a StringBuilder for accumulating lines
@@ -179,6 +200,17 @@ public static void main(String[] args) {
 		    weight = get_mc_event_weight(event);
 
             PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
+            PhysicsEvent generated_Event = truthFitter.getPhysicsEvent(event);
+            def genAnalyzer = null;
+            def recAnalyzer = null;
+            // Truth-level composite pi0 is built by monte_carlo_fitter.
+            boolean truthValid = generated_Event != null && generated_Event.countByPid(11)>0 && generated_Event.countByPid(2212)>0 && generated_Event.countByPid(22)>0;
+            boolean recoValid = filter.isValid(research_Event);
+            if (truthValid) genAnalyzer = new ThreeParticles(event, generated_Event, 2212, 0, 22, 0, beam_energy, true);
+            if (recoValid) recAnalyzer = new ThreeParticles(event, research_Event, 2212, 0, 22, 0, beam_energy);
+            List<Double> genValues = pairedKinematics(genAnalyzer, runnum, evnum, weight);
+            List<Double> recValues = pairedKinematics(recAnalyzer, runnum, evnum, weight);
+
             // Diagnostic sidecars run BEFORE the reconstructed DVCS final-state filter.
             // This records generated events even when no reconstructed DVCS candidate exists.
             if (writeDiagnostics) {
@@ -231,8 +263,8 @@ public static void main(String[] args) {
                         if (originalRow >= 0 && corrected != null) fittedByRec.put(originalRow, corrected);
                     }
                 }
-                diagnosticEvents.write([current_file, num_events, runnum, evnum, weight, nmc, nrec, nmatch,
-                    gm[0], gm[1], gm[2], genQ2, genXB, genY, genT, (filter.isValid(research_Event) ? 1 : 0), (correctionRun == null ? -1 : correctionRun)].join(" ") + "\n");
+                diagnosticEvents.write(([current_file, num_events, runnum, evnum, weight, nmc, nrec, nmatch,
+                    gm[0], gm[1], gm[2], genQ2, genXB, genY, genT, (filter.isValid(research_Event) ? 1 : 0), (correctionRun == null ? -1 : correctionRun)] + genValues + recValues + [(recoValid ? 1 : 0), (truthValid ? 1 : 0)]).join(" ") + "\n");
                 for (int k = 0; k < nmc; k++) {
                     int pid = mcBank.getInt("pid", k);
                     if (pid != 11 && pid != 2212 && pid != 22) continue;

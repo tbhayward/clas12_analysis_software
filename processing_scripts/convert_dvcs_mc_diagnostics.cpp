@@ -19,7 +19,7 @@ int main(int argc,char** argv){
  std::vector<Long64_t> integerValues(names.size(),0);
  const std::set<std::string> integerFields = {
    "file_index", "event_sequence", "run", "event", "n_mc", "n_rec", "n_match",
-   "rec_final_state", "correction_run", "mcindex", "truth_pid", "rec_pindex",
+   "rec_final_state", "correction_run", "rec_kinematics_valid", "gen_kinematics_valid", "mcindex", "truth_pid", "rec_pindex",
    "rec_pid", "rec_status", "rec_detector", "fitted_selected"
  };
  for(size_t i=0;i<names.size();++i){
@@ -29,7 +29,7 @@ int main(int argc,char** argv){
  std::string line;size_t rows=0,bad=0;
  while(std::getline(in,line)){
   if(line.empty())continue;std::istringstream ls(line);bool valid=true;
-  for(auto &v:values){if(!(ls>>v)){valid=false;break;}}
+  for(auto &v:values){std::string token;if(!(ls>>token)){valid=false;break;}try{size_t consumed=0;v=std::stod(token,&consumed);if(consumed!=token.size()){valid=false;break;}}catch(...){valid=false;break;}}
   double extra;if(ls>>extra)valid=false;
   if(!valid){++bad;continue;}
   for(size_t i=0;i<names.size();++i){
