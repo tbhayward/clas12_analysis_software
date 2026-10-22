@@ -104,7 +104,7 @@ public static void main(String[] args) {
         diagnosticEvents = new BufferedWriter(new FileWriter(output_file + ".events.tsv"));
         diagnosticParticles = new BufferedWriter(new FileWriter(output_file + ".particles.tsv"));
         diagnosticEvents.write("file_index event_sequence run event weight n_mc n_rec n_match gen_e gen_p gen_g gen_Q2 gen_xB gen_y gen_t_proton rec_final_state\n");
-        diagnosticParticles.write("file_index event_sequence run event mcindex truth_pid gen_px gen_py gen_pz gen_p gen_theta gen_phi rec_pindex rec_pid rec_px rec_py rec_pz rec_p rec_theta rec_phi rec_status rec_detector gen_t_proton rec_t_proton_raw\n");
+        diagnosticParticles.write("file_index event_sequence run event mcindex truth_pid gen_px gen_py gen_pz gen_p gen_theta gen_phi rec_pindex rec_pid rec_px rec_py rec_pz rec_p rec_theta rec_phi rec_status rec_detector gen_t_proton rec_t_proton_raw fitted_selected fitted_px fitted_py fitted_pz fitted_p fitted_theta fitted_phi rec_t_proton_corrected\n");
     }
 
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
@@ -124,7 +124,7 @@ public static void main(String[] args) {
 	double weight;
 
 	// load my kinematic fitter/PID
-	GenericKinematicFitter fitter = new dvcs_fitter(10.6041); 
+	dvcs_fitter fitter = new dvcs_fitter(beam_energy); 
 	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
 	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041); 
 	
@@ -227,6 +227,16 @@ public static void main(String[] args) {
                     double pp = gm[1];
                     genT = 2d*0.9382720813d*(0.9382720813d - Math.sqrt(pp*pp + 0.9382720813d*0.9382720813d));
                 }
+                // Exact fitter selection: original REC::Particle row -> corrected Particle.
+                Map<Integer, Object> fittedByRec = new HashMap<Integer, Object>();
+                for (int wantedPid : [11, 2212, 22]) {
+                    int count = research_Event.countByPid(wantedPid);
+                    for (int occ = 0; occ < count; occ++) {
+                        int originalRow = fitter.getLastRecIndexForPidOccurrence(wantedPid, occ);
+                        def corrected = fitter.getLastCorrectedParticleForPidOccurrence(wantedPid, occ);
+                        if (originalRow >= 0 && corrected != null) fittedByRec.put(originalRow, corrected);
+                    }
+                }
                 diagnosticEvents.write([current_file, num_events, runnum, evnum, weight, nmc, nrec, nmatch,
                     gm[0], gm[1], gm[2], genQ2, genXB, genY, genT, (filter.isValid(research_Event) ? 1 : 0)].join(" ") + "\n");
                 for (int k = 0; k < nmc; k++) {
@@ -250,8 +260,19 @@ public static void main(String[] args) {
                         rf=Math.atan2(ry,rx);
                         if (pid == 2212) recT=2d*0.9382720813d*(0.9382720813d-Math.sqrt(rp*rp+0.9382720813d*0.9382720813d));
                     }
+                    def fittedParticle = ri >= 0 ? fittedByRec.get(ri) : null;
+                    int fittedSelected = fittedParticle == null ? 0 : 1;
+                    double fx=-999d, fy=-999d, fz=-999d, fp=-999d, ft=-999d, ff=-999d, correctedT=-999d;
+                    if (fittedParticle != null) {
+                        fx=fittedParticle.px(); fy=fittedParticle.py(); fz=fittedParticle.pz();
+                        fp=Math.sqrt(fx*fx+fy*fy+fz*fz);
+                        ft=fp > 0 ? Math.acos(Math.max(-1d,Math.min(1d,fz/fp))) : -999d;
+                        ff=Math.atan2(fy,fx);
+                        if (pid == 2212 && rpid == 2212)
+                            correctedT=2d*0.9382720813d*(0.9382720813d-Math.sqrt(fp*fp+0.9382720813d*0.9382720813d));
+                    }
                     diagnosticParticles.write([current_file,num_events,runnum,evnum,k,pid,gx,gy,gz,gp,gt,gf,
-                        ri,rpid,rx,ry,rz,rp,rt,rf,status,detector,(pid==2212 ? genT : -999d),recT].join(" ")+"\n");
+                        ri,rpid,rx,ry,rz,rp,rt,rf,status,detector,(pid==2212 ? genT : -999d),recT,fittedSelected,fx,fy,fz,fp,ft,ff,correctedT].join(" ")+"\n");
                 }
             }
 

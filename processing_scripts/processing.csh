@@ -74,6 +74,11 @@ endif
 
 echo "Pulling the latest changes from the repository..."
 git pull
+if ($convert_arg3 == 7) then
+    echo "Building updated processing_classes.jar for exact fitter-index matching..."
+    ant -f processing_classes/build.xml jar
+    if ( $status != 0 ) exit 1
+endif
 echo "Sourcing qadb..."
 module load qadb/3.4.1
 
