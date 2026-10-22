@@ -79,9 +79,16 @@ echo "Sourcing qadb..."
 module load qadb/3.4.1
 
 g++ `root-config --cflags --libs` -o processing_scripts/convert_txt_to_root processing_scripts/convert_txt_to_root.cpp
+if ($status != 0) then
+    echo "ERROR: legacy converter compilation failed"
+    exit 1
+endif
 if ($convert_arg3 == 7) then
     g++ `root-config --cflags --libs` -o processing_scripts/convert_dvcs_mc_diagnostics processing_scripts/convert_dvcs_mc_diagnostics.cpp
-    if ( $status != 0 ) exit 1
+    if ($status != 0) then
+        echo "ERROR: diagnostic converter compilation failed"
+        exit 1
+    endif
 endif
 
 echo "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
@@ -148,15 +155,19 @@ else if ($arg1 == "processing_scripts/processing_exclusive_pi0.groovy") then
     set root_file = "$3.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
 else if ($arg1 == "processing_scripts/processing_mc_rec_dvcs.groovy") then
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7" "$8"
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7" "$8" "$9"
+    if ($status != 0) then
+        echo "ERROR: DVCS MC Groovy processing failed"
+        exit 1
+    endif
     # Run the convert_txt_to_root program
     set txt_file = "$3.txt"
     set root_file = "$3.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
-    ./processing_scripts/convert_dvcs_mc_diagnostics "$txt_file.events.tsv" "$3.mc_events.root"
-    if ( $status != 0 ) exit 1
-    ./processing_scripts/convert_dvcs_mc_diagnostics "$txt_file.particles.tsv" "$3.mc_particles.root"
-    if ( $status != 0 ) exit 1
+    if ($status != 0) then
+        echo "ERROR: legacy DVCS MC ROOT conversion failed"
+        exit 1
+    endif
 else if ($arg1 == "processing_scripts/processing_mc_rec_exclusive_pi0.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
     # Run the convert_txt_to_root program
@@ -175,4 +186,18 @@ else if ($arg1 == "processing_scripts/processing_dvcs_calibration.groovy") then
     set txt_file = "$3.txt"
     set root_file = "$3.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+endif
+# Sidecars are converted after the main dispatch block; csh nested conditionals
+# must not appear on the same line as `else`/`endif` tokens.
+if ($convert_arg3 == 7) then
+    ./processing_scripts/convert_dvcs_mc_diagnostics "$3.txt.events.tsv" "$3.mc_events.root"
+    if ($status != 0) then
+        echo "ERROR: MC event diagnostic conversion failed"
+        exit 1
+    endif
+    ./processing_scripts/convert_dvcs_mc_diagnostics "$3.txt.particles.tsv" "$3.mc_particles.root"
+    if ($status != 0) then
+        echo "ERROR: MC particle diagnostic conversion failed"
+        exit 1
+    endif
 endif

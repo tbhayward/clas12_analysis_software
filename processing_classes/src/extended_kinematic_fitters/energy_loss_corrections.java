@@ -401,6 +401,11 @@ public class energy_loss_corrections {
 
     public void proton_energy_loss_corrections(int particle_Index, float[] p_array,
             HipoDataBank rec_Bank, HipoDataBank run_Bank) {
+        proton_energy_loss_corrections(particle_Index, p_array, rec_Bank, run_Bank, run_Bank.getInt("run", 0));
+    }
+
+    public void proton_energy_loss_corrections(int particle_Index, float[] p_array,
+            HipoDataBank rec_Bank, HipoDataBank run_Bank, int correctionRun) {
 
         double px = p_array[0];
         double py = p_array[1];
@@ -414,7 +419,7 @@ public class energy_loss_corrections {
         boolean isForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
         boolean isCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
-        int runnum = run_Bank.getInt("run", 0);
+        int runnum = correctionRun;
 
         double dp = 0;
         double A_p = 0;
@@ -924,6 +929,11 @@ public class energy_loss_corrections {
     // needs further validation, seems to not improve anything
     public static void sebastian_photon_energy_loss_corrections(int particle_Index, float[] p_array,
             HipoDataBank rec_Bank, HipoDataBank run_Bank) {
+        sebastian_photon_energy_loss_corrections(particle_Index, p_array, rec_Bank, run_Bank, run_Bank.getInt("run", 0));
+    }
+
+    public static void sebastian_photon_energy_loss_corrections(int particle_Index, float[] p_array,
+            HipoDataBank rec_Bank, HipoDataBank run_Bank, int correctionRun) {
 
         double px = p_array[0];
         double py = p_array[1];
@@ -936,7 +946,7 @@ public class energy_loss_corrections {
         generic_tests genericTests = new generic_tests();
         boolean isForwardTagger = genericTests.forward_tagger_cut(particle_Index, rec_Bank);
 
-        int runnum = run_Bank.getInt("run", 0);
+        int runnum = correctionRun;
 
         // Check if run is in allowed ranges
         boolean validRun = (runnum >= 4763 && runnum <= 5419)

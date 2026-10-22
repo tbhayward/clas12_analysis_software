@@ -16,6 +16,11 @@ public class dvcs_fitter extends GenericKinematicFitter {
 
     protected final Double mybeam;
 
+    // -1 retains the physical RUN::config run (default, unchanged for data).
+    private int correctionRunOverride = -1;
+    public void setCorrectionRunOverride(int run) { correctionRunOverride = run; }
+
+
     // Index correspondence for the most recent getPhysicsEvent call on this fitter.
     // Entries follow PhysicsEvent insertion order, including synthetic pi0 (-1).
     private final java.util.ArrayList<Integer> lastRecIndices = new java.util.ArrayList<>();
@@ -188,7 +193,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
 
                 int sector = generic_tests.sector(particle_Index, track_Bank); // 0 FT/CD, 1-6 FD
 
-                int runnum = run_Bank.getInt("run", 0);
+                int runnum = correctionRunOverride >= 0 ? correctionRunOverride : run_Bank.getInt("run", 0);
                 int runPeriod = -1;
                 if (runnum >= 4763 && runnum <= 5666) {
                     runPeriod = 3; // this is how Richard Capobianco labeled them in his momentum corrections
@@ -228,7 +233,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
                         traj_Bank, run_Bank)) {
 
                     float[] momentum = {px, py, pz};
-                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank, runnum);
 //                    energy_loss_corrections.krishna_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 //                    energy_loss_corrections.mariana_proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
 
@@ -242,7 +247,7 @@ public class dvcs_fitter extends GenericKinematicFitter {
                 if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e)) {
 
                     float[] momentum = {px, py, pz};
-                    energy_loss_corrections.sebastian_photon_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank);
+                    energy_loss_corrections.sebastian_photon_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank, runnum);
 //
                     px = momentum[0];
                     py = momentum[1];

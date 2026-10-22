@@ -94,6 +94,19 @@ public static void main(String[] args) {
 		userProvidedOverride = Integer.parseInt(args[5]);
 	}
 
+    // Optional eighth Groovy argument: explicit MC correction period. The raw
+    // RUN::config run remains 11 for QA and output. Temporarily substitute a
+    // representative real run ONLY while constructing the fitted PhysicsEvent.
+    Map correctionRuns = [fa18_inb:5000, fa18_out:5500, sp18_inb:3600,
+                          sp18_out:3900, sp19_inb:6700];
+    String correctionPeriod = args.length > 7 ? args[7].toLowerCase() : "none";
+    if (correctionPeriod != "none" && !correctionRuns.containsKey(correctionPeriod)) {
+        System.err.println("ERROR: invalid MC correction period: " + correctionPeriod);
+        System.exit(2);
+    }
+    Integer correctionRun = correctionPeriod == "none" ? null : (Integer) correctionRuns[correctionPeriod];
+    println("MC correction period: ${correctionPeriod}; correction run: ${correctionRun}; recorded run unchanged.");
+
     // MC truth diagnostics are always written; no environment variable required.
     // Optional seventh Groovy argument: maximum number of processed HIPO records (0 = unlimited).
     long maxEvents = args.length > 6 ? Long.parseLong(args[6]) : 0L;
@@ -103,7 +116,7 @@ public static void main(String[] args) {
     if (writeDiagnostics) {
         diagnosticEvents = new BufferedWriter(new FileWriter(output_file + ".events.tsv"));
         diagnosticParticles = new BufferedWriter(new FileWriter(output_file + ".particles.tsv"));
-        diagnosticEvents.write("file_index event_sequence run event weight n_mc n_rec n_match gen_e gen_p gen_g gen_Q2 gen_xB gen_y gen_t_proton rec_final_state\n");
+        diagnosticEvents.write("file_index event_sequence run event weight n_mc n_rec n_match gen_e gen_p gen_g gen_Q2 gen_xB gen_y gen_t_proton rec_final_state correction_run\n");
         diagnosticParticles.write("file_index event_sequence run event mcindex truth_pid gen_px gen_py gen_pz gen_p gen_theta gen_phi rec_pindex rec_pid rec_px rec_py rec_pz rec_p rec_theta rec_phi rec_status rec_detector gen_t_proton rec_t_proton_raw fitted_selected fitted_px fitted_py fitted_pz fitted_p fitted_theta fitted_phi rec_t_proton_corrected\n");
     }
 
@@ -124,7 +137,8 @@ public static void main(String[] args) {
 	double weight;
 
 	// load my kinematic fitter/PID
-	dvcs_fitter fitter = new dvcs_fitter(beam_energy); 
+	dvcs_fitter fitter = new dvcs_fitter(beam_energy);
+    if (correctionRun != null) fitter.setCorrectionRunOverride(correctionRun); 
 	// GenericKinematicFitter fitter = new monte_carlo_fitter(10.6041);
 	// GenericKinematicFitter fitter = new event_builder_fitter(10.6041); 
 	
@@ -184,7 +198,7 @@ public static void main(String[] args) {
 		    float torus = event.getBank("RUN::config").getFloat("torus", 0);
 		    weight = get_mc_event_weight(event);
 
-		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
+            PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
             // Diagnostic sidecars run BEFORE the reconstructed DVCS final-state filter.
             // This records generated events even when no reconstructed DVCS candidate exists.
             if (writeDiagnostics) {
@@ -238,7 +252,7 @@ public static void main(String[] args) {
                     }
                 }
                 diagnosticEvents.write([current_file, num_events, runnum, evnum, weight, nmc, nrec, nmatch,
-                    gm[0], gm[1], gm[2], genQ2, genXB, genY, genT, (filter.isValid(research_Event) ? 1 : 0)].join(" ") + "\n");
+                    gm[0], gm[1], gm[2], genQ2, genXB, genY, genT, (filter.isValid(research_Event) ? 1 : 0), (correctionRun == null ? -1 : correctionRun)].join(" ") + "\n");
                 for (int k = 0; k < nmc; k++) {
                     int pid = mcBank.getInt("pid", k);
                     if (pid != 11 && pid != 2212 && pid != 22) continue;
