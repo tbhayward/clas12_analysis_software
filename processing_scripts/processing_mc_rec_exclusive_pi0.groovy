@@ -92,6 +92,23 @@ public static void main(String[] args) {
 		userProvidedOverride = Integer.parseInt(args[5]);
 	}
 
+
+    // Optional MC pilot controls: maxEvents (0=unlimited), correction period.
+    long maxEvents = args.length > 6 ? Long.parseLong(args[6]) : 0L;
+    Map correctionRuns = [fa18_inb:5000, fa18_out:5500, sp18_inb:3600,
+                          sp18_out:3900, sp19_inb:6700];
+    String correctionPeriod = args.length > 7 ? args[7].toLowerCase() : "none";
+    if (correctionPeriod != "none" && !correctionRuns.containsKey(correctionPeriod)) {
+        System.err.println("ERROR: invalid MC correction period: " + correctionPeriod);
+        System.exit(2);
+    }
+    Integer correctionRun = correctionPeriod == "none" ? null : (Integer) correctionRuns[correctionPeriod];
+    println("MC pi0 correction period: ${correctionPeriod}; correction run: ${correctionRun}; MC QADB bypass enabled.");
+    BufferedWriter diagnosticEvents = new BufferedWriter(new FileWriter(output_file + ".events.tsv"));
+    BufferedWriter diagnosticParticles = new BufferedWriter(new FileWriter(output_file + ".particles.tsv"));
+    diagnosticEvents.write("file_index event_sequence run event weight n_mc n_rec n_match gen_e gen_p gen_g gen_Q2 gen_xB gen_y gen_t_proton rec_final_state correction_run\n");
+    diagnosticParticles.write("file_index event_sequence run event mcindex truth_pid gen_px gen_py gen_pz gen_p gen_theta gen_phi rec_pindex rec_pid rec_px rec_py rec_pz rec_p rec_theta rec_phi rec_status rec_detector gen_t_proton rec_t_proton_raw fitted_selected fitted_px fitted_py fitted_pz fitted_p fitted_theta fitted_phi rec_t_proton_corrected\n");
+
 	// ~~~~~~~~~~~~~~~~ prepare physics analysis ~~~~~~~~~~~~~~~~ //
 
 	// declare physics event variables
@@ -115,9 +132,11 @@ public static void main(String[] args) {
 	GenericKinematicFitter fitter;
 
 	// Uncomment the desired fitter
-	fitter = new analysis_fitter(10.6041); 
+	fitter = new analysis_fitter(beam_energy); 
 	// fitter = new monte_carlo_fitter(10.6041);
 	// fitter = new event_builder_fitter(10.6041);  
+
+    if (correctionRun != null) ((analysis_fitter)fitter).setCorrectionRunOverride(correctionRun);
 
 	// Set filter for final states based on fitter type
 	EventFilter filter;
@@ -133,27 +152,7 @@ public static void main(String[] args) {
 	    filter = new EventFilter("11:2212:111:22:22:Xn");
 	}
 	
-	// setup QA database
-	QADB qa = new QADB("latest");
-	qa.checkForDefect('TotalOutlier')    
-	qa.checkForDefect('TerminalOutlier')
-	qa.checkForDefect('MarginalOutlier')
-	qa.checkForDefect('SectorLoss')
-	qa.checkForDefect('LowLiveTime')
-	qa.checkForDefect('Misc')
-	qa.checkForDefect('ChargeHigh')
-	qa.checkForDefect('ChargeNegative')
-	qa.checkForDefect('ChargeUnknown')
-	[ // list of runs with `Misc` that should be allowed
-		5418, 5419, // RGA Fa18 Inb 5nA run
-		5443, // RGA Fa18 Out 5nA run
-		5444, // RGA Fa18 Out 20nA run
-		6616, // RGA Sp19 Inb 5nA run
-  		6736, 6737, 6738, 6739, 6740, 6741, 
-  			6742, 6743, 6744, 6746, 6747, 6748, 
-  			6749, 6750, 6751, 6753, 6754, 6755, 
-  			6756, 6757 // RGA runs FADC failure sector 6
-	].each{ run -> qa.allowMiscBit(run) }
+	// MC processing deliberately does not instantiate or query QADB.
 
 	// create a StringBuilder for accumulating lines
 	StringBuilder batchLines = new StringBuilder();
@@ -171,6 +170,7 @@ public static void main(String[] args) {
 		HipoDataEvent event = reader.getNextEvent(); 
 
 		while (reader.hasEvent()) {
+            if (maxEvents > 0 && num_events >= maxEvents) break;
 		    ++num_events;
 		    if (num_events % 1000000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
@@ -185,97 +185,103 @@ public static void main(String[] args) {
 		    weight = get_mc_event_weight(event);
 
 		    PhysicsEvent research_Event = fitter.getPhysicsEvent(event);
+            // Diagnostic sidecars run BEFORE the reconstructed exclusive pi0 final-state filter.
+            // This records generated events even when no reconstructed pi0 candidate exists.
+            if (true) {
+                def mcBank = event.hasBank("MC::Particle") ? event.getBank("MC::Particle") : null;
+                def recBank = event.hasBank("REC::Particle") ? event.getBank("REC::Particle") : null;
+                def matchBank = event.hasBank("MC::RecMatch") ? event.getBank("MC::RecMatch") : null;
+                int nmc = mcBank == null ? 0 : mcBank.rows();
+                int nrec = recBank == null ? 0 : recBank.rows();
+                int nmatch = matchBank == null ? 0 : matchBank.rows();
+                int[] recForMc = new int[nmc];
+                java.util.Arrays.fill(recForMc, -1);
+                for (int k = 0; k < nmatch; k++) {
+                    int mi = matchBank.getInt("mcindex", k);
+                    int ri = matchBank.getInt("pindex", k);
+                    if (mi >= 0 && mi < nmc && ri >= 0 && ri < nrec && recForMc[mi] == -1) recForMc[mi] = ri;
+                }
+                double[] gm = [-999d, -999d, -999d];
+                int[] genRows = [-1, -1, -1];
+                for (int k = 0; k < nmc; k++) {
+                    int pid = mcBank.getInt("pid", k);
+                    int slot = pid == 11 ? 0 : (pid == 2212 ? 1 : (pid == 22 ? 2 : -1));
+                    if (slot >= 0 && genRows[slot] < 0) {
+                        genRows[slot] = k;
+                        double px = mcBank.getFloat("px", k), py = mcBank.getFloat("py", k), pz = mcBank.getFloat("pz", k);
+                        gm[slot] = Math.sqrt(px*px + py*py + pz*pz);
+                    }
+                }
+                double genQ2 = -999d, genXB = -999d, genY = -999d, genT = -999d;
+                if (genRows[0] >= 0) {
+                    int ei = genRows[0];
+                    double ex = mcBank.getFloat("px", ei), ey = mcBank.getFloat("py", ei), ez = mcBank.getFloat("pz", ei);
+                    double ee = Math.sqrt(ex*ex + ey*ey + ez*ez + 0.0005109989461d*0.0005109989461d);
+                    double nu = beam_energy - ee;
+                    genQ2 = 2d*beam_energy*(ee-ez) - 2d*0.0005109989461d*0.0005109989461d;
+                    genY = nu / beam_energy;
+                    if (nu > 0) genXB = genQ2 / (2d*0.9382720813d*nu);
+                }
+                if (genRows[1] >= 0) {
+                    int pi = genRows[1];
+                    double pp = gm[1];
+                    genT = 2d*0.9382720813d*(0.9382720813d - Math.sqrt(pp*pp + 0.9382720813d*0.9382720813d));
+                }
+                // Exact fitter selection: original REC::Particle row -> corrected Particle.
+                Map<Integer, Object> fittedByRec = new HashMap<Integer, Object>();
+                for (int wantedPid : [11, 2212, 22]) {
+                    int count = research_Event.countByPid(wantedPid);
+                    for (int occ = 0; occ < count; occ++) {
+                        int originalRow = fitter.getLastRecIndexForPidOccurrence(wantedPid, occ);
+                        def corrected = fitter.getLastCorrectedParticleForPidOccurrence(wantedPid, occ);
+                        if (originalRow >= 0 && corrected != null) fittedByRec.put(originalRow, corrected);
+                    }
+                }
+                diagnosticEvents.write([current_file, num_events, runnum, evnum, weight, nmc, nrec, nmatch,
+                    gm[0], gm[1], gm[2], genQ2, genXB, genY, genT, (filter.isValid(research_Event) ? 1 : 0), (correctionRun == null ? -1 : correctionRun)].join(" ") + "\n");
+                for (int k = 0; k < nmc; k++) {
+                    int pid = mcBank.getInt("pid", k);
+                    if (pid != 11 && pid != 2212 && pid != 22) continue;
+                    double gx = mcBank.getFloat("px", k), gy = mcBank.getFloat("py", k), gz = mcBank.getFloat("pz", k);
+                    double gp = Math.sqrt(gx*gx + gy*gy + gz*gz);
+                    double gt = gp > 0 ? Math.acos(Math.max(-1d, Math.min(1d, gz/gp))) : -999d;
+                    double gf = Math.atan2(gy,gx);
+                    int ri = recForMc[k];
+                    int rpid = -999, status = -999, detector = -999;
+                    double rx=-999d, ry=-999d, rz=-999d, rp=-999d, rt=-999d, rf=-999d, recT=-999d;
+                    if (ri >= 0) {
+                        rpid = recBank.getInt("pid", ri);
+                        status = recBank.getInt("status", ri);
+                        detector = Math.abs(status) >= 4000 ? 2 : (Math.abs(status) >= 2000 ? 1 : (Math.abs(status) >= 1000 ? 0 : -1));
+                        // Store the actual REC::Particle status; detector classification can be validated separately.
+                        rx=recBank.getFloat("px",ri); ry=recBank.getFloat("py",ri); rz=recBank.getFloat("pz",ri);
+                        rp=Math.sqrt(rx*rx+ry*ry+rz*rz);
+                        rt=rp > 0 ? Math.acos(Math.max(-1d,Math.min(1d,rz/rp))) : -999d;
+                        rf=Math.atan2(ry,rx);
+                        if (pid == 2212) recT=2d*0.9382720813d*(0.9382720813d-Math.sqrt(rp*rp+0.9382720813d*0.9382720813d));
+                    }
+                    def fittedParticle = ri >= 0 ? fittedByRec.get(ri) : null;
+                    int fittedSelected = fittedParticle == null ? 0 : 1;
+                    double fx=-999d, fy=-999d, fz=-999d, fp=-999d, ft=-999d, ff=-999d, correctedT=-999d;
+                    if (fittedParticle != null) {
+                        fx=fittedParticle.px(); fy=fittedParticle.py(); fz=fittedParticle.pz();
+                        fp=Math.sqrt(fx*fx+fy*fy+fz*fz);
+                        ft=fp > 0 ? Math.acos(Math.max(-1d,Math.min(1d,fz/fp))) : -999d;
+                        ff=Math.atan2(fy,fx);
+                        if (pid == 2212 && rpid == 2212)
+                            correctedT=2d*0.9382720813d*(0.9382720813d-Math.sqrt(fp*fp+0.9382720813d*0.9382720813d));
+                    }
+                    diagnosticParticles.write([current_file,num_events,runnum,evnum,k,pid,gx,gy,gz,gp,gt,gf,
+                        ri,rpid,rx,ry,rz,rp,rt,rf,status,detector,(pid==2212 ? genT : -999d),recT,fittedSelected,fx,fy,fz,fp,ft,ff,correctedT].join(" ")+"\n");
+                }
+            }
+
+
+
 
 		    // do not use the qa if it is MC (runnum = 11) 
 		    // boolean process_event = filter.isValid(research_Event);
-	    	boolean process_event = filter.isValid(research_Event) && 
-		    	(runnum == 11 ||  // MC
-		    	userProvidedOverride == 1 || // skip QADB
-		    	qa.pass(runnum, evnum));
-		    if (runnum == 5247) process_event = false; // sector 4 loss, should be removed by qa but maybe early events need it too?
-	    	if (runnum == 5345) process_event = false; // beam lowered to 20 nA for part of the run
-	    	
-	    	if (runnum == 5158 || 
-			    runnum == 5163 ||
-			    runnum == 5181 ||
-			    runnum == 5519 ||
-			    runnum == 5528 ||
-			    runnum == 5627 ||
-			    runnum == 3355 ||
-			    runnum == 3404 ||
-			    runnum == 3408 ||
-			    runnum == 3449 ||
-			    runnum == 3490 ||
-			    runnum == 3499 ||
-			    runnum == 3500 ||
-			    runnum == 3505 ||
-			    runnum == 3526 ||
-			    runnum == 3527 ||
-			    runnum == 3528 ||
-			    runnum == 3529 ||
-			    runnum == 3530 ||
-			    runnum == 3531 ||
-			    runnum == 3532 ||
-			    runnum == 3533 ||
-			    runnum == 3534 ||
-			    runnum == 3535 ||
-			    runnum == 3536 ||
-			    runnum == 3538 ||
-			    runnum == 3540 ||
-			    runnum == 3544 ||
-			    runnum == 3545 ||
-			    runnum == 3547 ||
-			    runnum == 3548 ||
-			    runnum == 3709 ||
-			    runnum == 3736 ||
-			    runnum == 3793 ||
-			    runnum == 3800 ||
-			    runnum == 3801 ||
-			    runnum == 3807 ||
-			    runnum == 3508 ||
-			    runnum == 3808 ||
-			    runnum == 3809 ||
-			    runnum == 3810 ||
-			    runnum == 3813 ||
-			    runnum == 3698 ||
-			    runnum == 3814 ||
-			    runnum == 3815 ||
-			    runnum == 3817 ||
-			    runnum == 4018 ||
-			    runnum == 4059 ||
-			    runnum == 4142 ||
-			    runnum == 4145 ||
-			    runnum == 4146 ||
-			    runnum == 4159 ||
-			    runnum == 4160 ||
-			    runnum == 4162 ||
-			    runnum == 4163 ||
-			    runnum == 4176 ||
-			    runnum == 4209 ||
-			    runnum == 4227 ||
-			    runnum == 4246 ||
-			    runnum == 4252 ||
-			    runnum == 4325 ||
-			    runnum == 3867 ||
-			    runnum == 3877 ||
-			    runnum == 3882 ||
-			    runnum == 3927 ||
-			    runnum == 3951 ||
-			    runnum == 3953 ||
-			    runnum == 3965 ||
-			    runnum == 3967 ||
-			    runnum == 3968 ||
-			    runnum == 3499 ||
-			    runnum == 3712 ||
-			    runnum == 3801 ||
-			    runnum == 3807 ||
-			    runnum == 3808 ||
-			    runnum == 3267 ||
-			    runnum == 3879 ||
-			    runnum == 3923 ||
-			    runnum == 3929 ||
-			    runnum == 3947) process_event = false;
-	    	
+	    	boolean process_event = filter.isValid(research_Event);
 		    if (process_event) {
 
 		    	int num_photons = research_Event.countByPid(22);
@@ -497,6 +503,7 @@ public static void main(String[] args) {
 	            }
 		    } 
 		reader.close();
+        if (maxEvents > 0 && num_events >= maxEvents) break;
 		}
 
 		// Write any remaining lines in the batchLines StringBuilder to the file
@@ -520,6 +527,8 @@ public static void main(String[] args) {
 		println("output text file is: $file");
 	}
 
+    diagnosticEvents.close();
+    diagnosticParticles.close();
 	writer.close();
 
 	// End time

@@ -83,7 +83,7 @@ if ($status != 0) then
     echo "ERROR: legacy converter compilation failed"
     exit 1
 endif
-if ($convert_arg3 == 7) then
+if ($convert_arg3 == 7 || $convert_arg3 == 8) then
     g++ `root-config --cflags --libs` -o processing_scripts/convert_dvcs_mc_diagnostics processing_scripts/convert_dvcs_mc_diagnostics.cpp
     if ($status != 0) then
         echo "ERROR: diagnostic converter compilation failed"
@@ -169,11 +169,18 @@ else if ($arg1 == "processing_scripts/processing_mc_rec_dvcs.groovy") then
         exit 1
     endif
 else if ($arg1 == "processing_scripts/processing_mc_rec_exclusive_pi0.groovy") then
-    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
-    # Run the convert_txt_to_root program
+    coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7" "$8" "$9"
+    if ($status != 0) then
+        echo "ERROR: pi0 MC Groovy processing failed"
+        exit 1
+    endif
     set txt_file = "$3.txt"
     set root_file = "$3.root"
     ./processing_scripts/convert_txt_to_root $txt_file $root_file $convert_arg3 $is_mc
+    if ($status != 0) then
+        echo "ERROR: pi0 MC legacy conversion failed"
+        exit 1
+    endif
 else if ($arg1 == "processing_scripts/processing_calibration.groovy") then
     coatjava/bin/run-groovy -cp processing_classes/dist/processing_classes.jar "$arg1" "$arg2" "$3.txt" "$4" "$5" "$6" "$7"
     # Run the convert_txt_to_root program
@@ -189,7 +196,7 @@ else if ($arg1 == "processing_scripts/processing_dvcs_calibration.groovy") then
 endif
 # Sidecars are converted after the main dispatch block; csh nested conditionals
 # must not appear on the same line as `else`/`endif` tokens.
-if ($convert_arg3 == 7) then
+if ($convert_arg3 == 7 || $convert_arg3 == 8) then
     ./processing_scripts/convert_dvcs_mc_diagnostics "$3.txt.events.tsv" "$3.mc_events.root"
     if ($status != 0) then
         echo "ERROR: MC event diagnostic conversion failed"
@@ -201,3 +208,19 @@ if ($convert_arg3 == 7) then
         exit 1
     endif
 endif
+
+# Delete text intermediates only after every requested ROOT conversion succeeded.
+# Leave intermediates untouched if an earlier stage failed.
+if (! -s "$3.root") then
+    echo "ERROR: legacy ROOT output missing or empty: $3.root"
+    exit 1
+endif
+if ($convert_arg3 == 7 || $convert_arg3 == 8) then
+    if (! -s "$3.mc_events.root" || ! -s "$3.mc_particles.root") then
+        echo "ERROR: one or more diagnostic ROOT outputs missing or empty; retaining intermediates"
+        exit 1
+    endif
+    /bin/rm -f "$3.txt.events.tsv" "$3.txt.particles.tsv"
+endif
+/bin/rm -f "$3.txt"
+echo "ROOT conversion complete; intermediate text files removed."
