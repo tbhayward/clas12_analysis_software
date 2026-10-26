@@ -1,277 +1,217 @@
 #!/usr/bin/env python3
-"""Paired CLAS12 DVCS MC |t| response, underflow and shape-closure diagnostics.
-
-MCEvents is one entry per HIPO event. gen_t1/rec_t1 are proton-based t;
-gen_kinematics_valid and rec_kinematics_valid are independent.
-Only preliminary 1D, truth-valid, reconstructed-candidate selection is imposed.
+"""CLAS12 paired-MC DVCS migration: global |t| and actual (xB,Q2,|t|) cells.
+Unweighted MC::Event counting; independent even/odd response/closure; PNG/CSV only.
+Extended from supplied diagnostics_dvcs(2).py. Candidate-level only (NOT full exclusivity/fiducial selection).
 """
-import argparse
-import csv
+import argparse, csv, re
 from pathlib import Path
 import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.colors import LogNorm
 
+EDGES=np.array([.11,.15,.25,.40,.60,.80,1.00])
 
-def divide(a, b):
-    return np.divide(a, b, out=np.full(np.broadcast_shapes(np.shape(a), np.shape(b)), np.nan), where=np.asarray(b) != 0)
+def ratio(a,b):
+    return np.divide(a,b,out=np.full(np.broadcast_shapes(np.shape(a),np.shape(b)),np.nan),where=np.asarray(b)!=0)
 
-
-def unfold(d, response, prior, niter=5):
-    """D'Agostini iteration with explicit generated underflow/overflow bins."""
-    t = np.maximum(prior.astype(float), 1e-12).copy()
-    eff = response.sum(axis=0)
-    for _ in range(niter):
-        predicted = response @ t
-        correction = response.T @ np.nan_to_num(divide(d, predicted))
-        t = np.where(eff > 1e-12, t * correction / np.maximum(eff, 1e-12), 0.0)
+def unfold(y,R,prior,iters):
+    t=np.maximum(prior.astype(float),1.e-12)
+    eff=R.sum(axis=0)
+    for _ in range(iters):
+        pred=R@t
+        t=np.where(eff>0,t*np.nan_to_num(R.T@np.nan_to_num(ratio(y,pred)))/np.maximum(eff,1.e-12),0)
     #endfor
     return t
 
+def load_cells(path):
+    cells=[]
+    with open(path) as f:
+        for line in f.readlines()[2:]:
+            tok=[v.strip() for v in line.split('\t') if v.strip()]
+            if len(tok)<11 or not tok[0].isdigit(): continue
+            cells.append(dict(id=int(tok[0]),xb0=float(tok[2]),xb1=float(tok[3]),q0=float(tok[5]),q1=float(tok[6]),t0=float(tok[8]),t1=float(tok[9])))
+        #endfor
+    #endfor
+    if not cells: raise ValueError('No cells parsed from binning CSV')
+    return cells
+
+def assign(q,x,t,cells):
+    """Assign to exact published 3D cell; -1 denotes outside published bins."""
+    ans=np.full(len(t),-1,dtype=np.int16)
+    # Group by Q2/xB rectangular cells; only 147 small loops per chunk.
+    groups={}
+    for c in cells:
+        key=(c['q0'],c['q1'],c['xb0'],c['xb1'])
+        groups.setdefault(key,[]).append(c)
+    #endfor
+    for (q0,q1,x0,x1),group in groups.items():
+        base=(q>=q0)&(q<q1)&(x>=x0)&(x<x1)
+        if not np.any(base): continue
+        for c in group:
+            match=base&(t>=c['t0'])&(t<c['t1'])
+            ans[match]=c['id']-1
+        #endfor
+    #endfor
+    return ans
 
 def main():
-    ap = argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--input', default='/volatile/clas12/thayward/dvcs_reprocessing_20261022/production/fa18_inb/dvcs_rec/50nA/all.mc_events.root')
-    ap.add_argument('--output', default='/u/home/thayward/clas12_analysis_software/analysis_scripts/misc/diagnostics/dvcs/dvcs_low_t_migration_v4')
-    ap.add_argument('--max-events', type=int, default=10000000)
-    ap.add_argument('--chunk', type=int, default=200000)
-    ap.add_argument('--t-edges', default='0.11,0.15,0.25,0.40,0.60,0.80,1.00', help='Comma-separated analysis |t| edges (GeV^2); REPLACE with exact analysis edges')
-    ap.add_argument('--q2', default=None, help='Optional generated Q2 range: min,max (GeV^2)')
-    ap.add_argument('--xb', default=None, help='Optional generated xB range: min,max')
-    ap.add_argument('--cell', type=int, default=None, help='1-based row/bin number in integrated_bin_v2.csv; restrict generated Q2,xB and use that cell t interval')
-    ap.add_argument('--binning-file', default='/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_bin_v2.csv')
-    ap.add_argument('--iterations', type=int, default=5)
-    ap.add_argument('--shape-slopes', default='0,-2,2', help='Pseudo-data reweight slopes in 1/GeV^2')
-    args = ap.parse_args()
+    ap=argparse.ArgumentParser(description=__doc__)
+    ap.add_argument('--input',default='/volatile/clas12/thayward/dvcs_reprocessing_20261022/production/fa18_inb/dvcs_rec/50nA/all.mc_events.root')
+    ap.add_argument('--output',default='/u/home/thayward/clas12_analysis_software/analysis_scripts/misc/diagnostic_dvcs')
+    ap.add_argument('--binning-file',default='/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_bin_v2.csv')
+    ap.add_argument('--max-events',type=int,default=10000000)
+    ap.add_argument('--chunk',type=int,default=200000)
+    ap.add_argument('--iterations',type=int,default=5)
+    ap.add_argument('--slopes',default='0,-2,2')
+    ap.add_argument('--min-cell-generated',type=int,default=200)
+    args=ap.parse_args()
     import uproot
-    path = Path(args.input)
+    out=Path(args.output);out.mkdir(parents=True,exist_ok=True)
+    cells=load_cells(args.binning_file); C=len(cells)
+    print(f'Loaded {C} published analysis cells from {args.binning_file}',flush=True)
+    if sorted(c['id'] for c in cells)!=list(range(1,C+1)): raise ValueError('Nonsequential cell IDs')
+    if not (abs(cells[0]['xb0']-0.062)<1e-5 and abs(cells[0]['q0']-1.0)<1e-5 and abs(cells[0]['t0']-0.11)<1e-5): raise ValueError('Binning CSV columns parsed incorrectly')
+    n=len(EDGES)-1;m=n+2; slopes=[float(s) for s in args.slopes.split(',')]
+    # Global |t| counts, split response/validation.
+    gen=np.zeros((2,m)); mat=np.zeros((2,m,m)); pseudo_g=np.zeros((len(slopes),m));pseudo_r=np.zeros_like(pseudo_g)
+    genall=np.zeros(m);matall=np.zeros((m,m)); origins=np.zeros((5,120));origin_edges=np.linspace(0,1.2,121)
+    # Published-cell migration: rows reconstructed cell, columns generated cell.
+    # Additional category C = outside all published analysis cells.
+    G=C+1; cellgen=np.zeros((2,G)); cellmat=np.zeros((2,G,G));
+    cellpseudo_g=np.zeros((len(slopes),G));cellpseudo_r=np.zeros_like(cellpseudo_g)
+    cell_gen_all=np.zeros(G); cell_rec_all=np.zeros(G); cell_diag=np.zeros(G)
+    cell_deltas=np.zeros(C);cell_delta2=np.zeros(C);cell_deltan=np.zeros(C)
+    # Row-level origin categories: same cell, different t bin in same Q2/xB, different Q2/xB, outside.
+    cell_orig=np.zeros((C,4))
+    nraw=ntruth=nrec=0
+    path=Path(args.input)
     if path.is_dir():
-        matches = sorted(path.glob('*.mc_events.root'))
-        if len(matches) != 1:
-            raise RuntimeError(f'Expected one *.mc_events.root in {path}; found {matches}')
-        #endif
-        path = matches[0]
+        files=sorted(path.glob('*.mc_events.root'))
+        if len(files)!=1: raise ValueError(f'Expected one *.mc_events.root: {files}')
+        path=files[0]
     #endif
-    out = Path(args.output)
-    out.mkdir(parents=True, exist_ok=True)
-    edges = np.asarray([float(v) for v in args.t_edges.split(',')])
-    if args.cell is not None:
-        import re
-        with open(args.binning_file) as bf:
-            lines = bf.readlines()[2:]
-        records = []
-        for line in lines:
-            tok = re.split(r'\s+', line.strip())
-            if len(tok) >= 14 and tok[0].isdigit():
-                records.append((int(tok[0]), float(tok[4]), float(tok[5]), float(tok[7]), float(tok[8]), float(tok[10]), float(tok[11])))
-        match = [v for v in records if v[0] == args.cell]
-        if len(match) != 1:
-            raise ValueError(f'Cell {args.cell} not uniquely found in {args.binning_file}')
-        _, xbmin, xbmax, qmin, qmax, tmin, tmax = match[0]
-        args.xb, args.q2 = f'{xbmin},{xbmax}', f'{qmin},{qmax}'
-        # Preserve full analysis t bins, with selected cell emphasized by its range.
-        print(f'Analysis cell {args.cell}: xB={args.xb}, Q2={args.q2}, |t|={tmin:g}-{tmax:g} GeV^2')
-    #endif
-    if len(edges) < 3 or not np.all(np.diff(edges) > 0):
-        raise ValueError('Analysis edges must be strictly increasing')
-    #endif
-    n = len(edges) - 1
-    m = n + 2  # underflow, analysis bins, overflow
-    names = ['below'] + [f'{edges[i]:.3f}-{edges[i+1]:.3f}' for i in range(n)] + ['above']
-    def index(t):
-        return np.searchsorted(edges, t, side='right').astype(int)
-    #endfor
-    def parse_range(value):
-        if value is None:
-            return None
-        #endif
-        lo, hi = [float(x) for x in value.split(',')]
-        return (lo, hi)
-    #endfor
-    q2range, xbrange = parse_range(args.q2), parse_range(args.xb)
+    fields=['gen_kinematics_valid','rec_kinematics_valid','gen_t1','rec_t1','gen_Q2','rec_Q2','gen_x','rec_x','rec_final_state']
     with uproot.open(path) as f:
-        if 'MCEvents' not in f:
-            raise RuntimeError(f'MCEvents tree not found; ROOT keys: {f.keys()}')
-        #endif
-        tree = f['MCEvents']
-        mandatory = ['gen_kinematics_valid', 'rec_kinematics_valid', 'gen_t1', 'rec_t1']
-        optional = ['gen_Q2', 'gen_x', 'rec_final_state']
-        missing = [k for k in mandatory if k not in tree.keys()]
-        if missing:
-            raise RuntimeError(f'Missing branches: {missing}; available: {list(tree.keys())}')
-        #endif
-        fields = mandatory + [k for k in optional if k in tree.keys()]
-        if q2range and 'gen_Q2' not in fields or xbrange and 'gen_x' not in fields:
-            raise RuntimeError('Requested Q2/xB selection but truth kinematic branch missing')
-        #endif
-        total = min(args.max_events, tree.num_entries)
-        # Independent nominal response (even entries) and pseudo-data (odd entries).
-        counts = np.zeros((2, m), dtype=float)
-        counts2 = np.zeros((2, m), dtype=float)
-        flow = np.zeros((2, m, m), dtype=float)
-        flow2 = np.zeros((2, m, m), dtype=float)
-        slopes = [float(s) for s in args.shape_slopes.split(',')]
-        pseudo_truth = np.zeros((len(slopes), m))
-        pseudo_reco = np.zeros((len(slopes), m))
-        unweighted_truth = np.zeros(m)
-        unweighted_flow = np.zeros((m, m))
-        origin = np.zeros((n, 100), dtype=float)
-        origin_edges = np.linspace(0, max(1.3, edges[-1] * 1.25), 101)
-        n_truth = n_reco = n_inside = n_raw = 0
-        negweights = 0
-        for start in range(0, total, args.chunk):
-            stop = min(start + args.chunk, total)
-            a = tree.arrays(fields, entry_start=start, entry_stop=stop, library='np')
-            n_raw += len(a['gen_t1'])
-            gen = (a['gen_kinematics_valid'] > 0.5) & np.isfinite(a['gen_t1']) & (a['gen_t1'] < 0)
-            if q2range:
-                gen &= (a['gen_Q2'] >= q2range[0]) & (a['gen_Q2'] < q2range[1])
-            #endif
-            if xbrange:
-                gen &= (a['gen_x'] >= xbrange[0]) & (a['gen_x'] < xbrange[1])
-            #endif
-            rec = (a['rec_kinematics_valid'] > 0.5) & np.isfinite(a['rec_t1']) & (a['rec_t1'] < 0)
-            if 'rec_final_state' in a:
-                rec &= a['rec_final_state'] > 0.5
-            #endif
-            g = -a['gen_t1'][gen]
-            r = -a['rec_t1'][gen]
-            rr = rec[gen]
-            weights = np.ones(len(g), dtype=float)  # Each generated HIPO event counts once; NEVER use MC::Event.weight
-            weights = np.where(np.isfinite(weights), weights, 0)
-            negweights += int(np.count_nonzero(weights < 0))
-            if np.any(weights < 0):
-                raise RuntimeError('Negative MC weights detected: probability response requires a different treatment')
-            #endif
-            gi = index(g)
-            ri = index(r[rr])
-            partition = ((np.arange(start, stop)[gen] % 2) == 0).astype(int)
-            n_truth += len(g)
-            n_reco += int(rr.sum())
-            n_inside += int(np.count_nonzero(rr & (index(r) >= 1) & (index(r) <= n)))
-            np.add.at(unweighted_truth, gi, 1)
-            np.add.at(unweighted_flow, (index(r[rr]), gi[rr]), 1)
-            for split in (0, 1):
-                sel = partition == split
-                np.add.at(counts[split], gi[sel], weights[sel])
-                np.add.at(counts2[split], gi[sel], weights[sel]**2)
-                both = sel & rr
-                np.add.at(flow[split], (index(r[both]), gi[both]), weights[both])
-                np.add.at(flow2[split], (index(r[both]), gi[both]), weights[both]**2)
+        tree=f['MCEvents']; missing=[v for v in fields if v not in tree.keys()]
+        if missing: raise ValueError(f'Missing paired-MC branches: {missing}')
+        total=min(args.max_events,tree.num_entries)
+        for start in range(0,total,args.chunk):
+            stop=min(total,start+args.chunk); a=tree.arrays(fields,entry_start=start,entry_stop=stop,library='np'); nraw+=stop-start
+            valid=(a['gen_kinematics_valid']>.5)&np.isfinite(a['gen_t1'])&(a['gen_t1']<0)&np.isfinite(a['gen_Q2'])&np.isfinite(a['gen_x'])
+            rec=(a['rec_kinematics_valid']>.5)&(a['rec_final_state']>.5)&np.isfinite(a['rec_t1'])&(a['rec_t1']<0)&np.isfinite(a['rec_Q2'])&np.isfinite(a['rec_x'])
+            g=-a['gen_t1'][valid];r=-a['rec_t1'][valid];q=a['gen_Q2'][valid];x=a['gen_x'][valid];qr=a['rec_Q2'][valid];xr=a['rec_x'][valid];rr=rec[valid]
+            gi=np.searchsorted(EDGES,g,side='right');ri=np.searchsorted(EDGES,r[rr],side='right')
+            gc=assign(q,x,g,cells);rc=np.full(len(g),C,dtype=np.int16);tmp=assign(qr[rr],xr[rr],r[rr],cells);rc[rr]=np.where(tmp>=0,tmp,C)
+            gc=np.where(gc>=0,gc,C)
+            split=(np.arange(start,stop)[valid]%2).astype(int)
+            ntruth+=len(g);nrec+=int(rr.sum())
+            np.add.at(genall,gi,1);np.add.at(matall,(ri,gi[rr]),1)
+            np.add.at(cell_gen_all,gc,1);np.add.at(cell_rec_all,rc[rr],1)
+            for s in (0,1):
+                keep=split==s; both=keep&rr
+                np.add.at(gen[s],gi[keep],1);np.add.at(mat[s],(np.searchsorted(EDGES,r[both],side='right'),gi[both]),1)
+                np.add.at(cellgen[s],gc[keep],1);np.add.at(cellmat[s],(rc[both],gc[both]),1)
             #endfor
-            # Pseudo-data use odd events; truth reweighted event by event.
-            test = partition == 0
-            for k, slope in enumerate(slopes):
-                w = weights[test] * np.exp(np.clip(slope * (g[test] - edges[0]), -20, 20))
-                np.add.at(pseudo_truth[k], gi[test], w)
-                both = test & rr
-                wrec = weights[both] * np.exp(np.clip(slope * (g[both] - edges[0]), -20, 20))
-                np.add.at(pseudo_reco[k], index(r[both]), wrec)
+            test=split==0
+            for k,slope in enumerate(slopes):
+                w=np.exp(np.clip(slope*(g[test]-EDGES[0]),-20,20));both=test&rr
+                np.add.at(pseudo_g[k],gi[test],w)
+                np.add.at(pseudo_r[k],np.searchsorted(EDGES,r[both],side='right'),np.exp(np.clip(slope*(g[both]-EDGES[0]),-20,20)))
+                np.add.at(cellpseudo_g[k],gc[test],w)
+                np.add.at(cellpseudo_r[k],rc[both],np.exp(np.clip(slope*(g[both]-EDGES[0]),-20,20)))
             #endfor
-            for j in range(min(n, 5)):
-                selected = rr & (index(r) == j + 1)
-                origin[j] += np.histogram(g[selected], bins=origin_edges, weights=weights[selected])[0]
+            for j in range(5):
+                origins[j]+=np.histogram(g[rr&(np.searchsorted(EDGES,r,side='right')==j+1)],bins=origin_edges)[0]
             #endfor
-            print(f'Processed {stop:,}/{total:,} HIPO events', flush=True)
-        #endfor
-    # Nominal response from odd entries; pseudo-data from even entries.
-    denom = counts[1]
-    response = np.divide(flow[1], denom[None, :], out=np.zeros_like(flow[1]), where=denom[None, :] > 0)
-    # Conditional probability for a reconstructed event to originate in each generated bin.
-    incoming = unweighted_flow[1:n+1]
-    incoming_total = incoming.sum(axis=1)
-    fraction_below = np.nan_to_num(divide(incoming[:, 0], incoming_total))
-    fraction_same = np.nan_to_num(divide(np.diag(incoming[:, 1:n+1]), incoming_total))
-    fraction_above = np.nan_to_num(divide(incoming[:, -1], incoming_total))
-    fraction_other = 1 - fraction_below - fraction_same - fraction_above
-    efficiency = np.nan_to_num(divide(unweighted_flow.sum(axis=0), unweighted_truth))
-    retention = np.nan_to_num(divide(np.diag(unweighted_flow), unweighted_truth))
-    fig, ax = plt.subplots(figsize=(9, 7))
-    display = np.ma.masked_where(unweighted_flow == 0, unweighted_flow)
-    from matplotlib.colors import LogNorm
-    im = ax.imshow(display, origin='lower', aspect='auto', norm=LogNorm(vmin=1, vmax=max(2, unweighted_flow.max())), cmap='viridis')
-    ax.set(xticks=np.arange(m), yticks=np.arange(m), xticklabels=names, yticklabels=names, xlabel='Generated |t| bin (GeV²)', ylabel='Reconstructed |t| bin (GeV²)', title='Paired DVCS MC migration (counts; unselected reconstructed DVCS candidates)')
-    ax.tick_params(axis='x', rotation=50)
-    fig.colorbar(im, ax=ax, label='Matched event count')
-    fig.tight_layout(); fig.savefig(out/'01_t_migration_matrix.png', dpi=180); plt.close(fig)
-    fig, ax = plt.subplots(figsize=(9, 5))
-    x = np.arange(n)
-    ax.plot(x, efficiency[1:n+1], 'o-', label='Reconstructed anywhere / generated in bin')
-    ax.plot(x, retention[1:n+1], 's-', label='Reconstructed in same bin / generated in bin')
-    ax.plot(x, np.nan_to_num(divide(unweighted_flow[1:n+1, 1:n+1].sum(axis=0), unweighted_truth[1:n+1])), '^-', label='Reconstructed within analysis / generated in bin')
-    ax.set(xticks=x, xticklabels=names[1:-1], xlabel='Generated |t| bin (GeV²)', ylabel='Probability', ylim=(0, 1.05), title='Truth-normalized reconstruction and retention')
-    ax.tick_params(axis='x', rotation=35); ax.legend(fontsize=9); ax.grid(alpha=.25)
-    fig.tight_layout(); fig.savefig(out/'02_reconstruction_efficiency.png', dpi=180); plt.close(fig)
-    fig, ax = plt.subplots(figsize=(9, 5))
-    bottom = np.zeros(n)
-    for values, label in [(fraction_below, 'Generated below analysis'), (fraction_same, 'Same generated bin'), (fraction_other, 'Other generated analysis bin'), (fraction_above, 'Generated above analysis')]:
-        ax.bar(x, values, bottom=bottom, label=label)
-        bottom += values
-    #endfor
-    ax.set(xticks=x, xticklabels=names[1:-1], xlabel='Reconstructed |t| bin (GeV²)', ylabel='Fraction of reconstructed yield', ylim=(0, 1.05), title='Origins of events in each reconstructed bin')
-    ax.tick_params(axis='x', rotation=35); ax.legend(fontsize=9, loc='upper right')
-    fig.tight_layout(); fig.savefig(out/'03_incoming_migration_fractions.png', dpi=180); plt.close(fig)
-    fig, ax = plt.subplots(figsize=(9, 5))
-    centers = (origin_edges[:-1] + origin_edges[1:])/2
-    for j in range(min(n, 5)):
-        if origin[j].sum():
-            ax.step(centers, origin[j]/origin[j].sum(), where='mid', label=f'Rec {names[j+1]}')
-        #endif
-    #endfor
-    ax.axvline(edges[0], ls='--', c='black', label='Analysis minimum')
-    ax.set(xlabel='Generated |t| (GeV²)', ylabel='Fraction per generated-|t| histogram bin', title='Generated origins of lowest reconstructed |t| bins')
-    ax.legend(fontsize=9); ax.grid(alpha=.2)
-    fig.tight_layout(); fig.savefig(out/'04_generated_origins_low_t.png', dpi=180); plt.close(fig)
-    # Conventional correction is based on reconstructed analysis-bin counts divided by generated same-bin counts.
-    acceptance = np.nan_to_num(divide(flow[1, 1:n+1, :].sum(axis=1), denom[1:n+1]))
-    fig, axs = plt.subplots(len(slopes), 1, figsize=(10, 4.2*len(slopes)), squeeze=False)
-    closure_rows = []
-    for k, slope in enumerate(slopes):
-        truth = pseudo_truth[k, 1:n+1]
-        conventional = np.nan_to_num(divide(pseudo_reco[k, 1:n+1], acceptance))
-        unfolded = unfold(pseudo_reco[k], response, np.maximum(denom, 1e-9), args.iterations)[1:n+1]
-        conv_bias = 100 * (divide(conventional, truth) - 1)
-        matrix_bias = 100 * (divide(unfolded, truth) - 1)
-        ax = axs[k, 0]
-        ax.axhline(0, color='black', lw=1)
-        ax.plot(x, conv_bias, 'o-', label='Conventional bin-by-bin')
-        ax.plot(x, matrix_bias, 's-', label=f'Iterative response ({args.iterations} iterations)')
-        ax.set(xticks=x, xticklabels=names[1:-1], ylabel='Closure bias (%)', title=f'Generator reweight slope {slope:+g} (GeV⁻²); independent even/odd samples')
-        ax.tick_params(axis='x', rotation=35); ax.legend(); ax.grid(alpha=.2)
-        for j in range(n):
-            closure_rows.append(dict(slope=slope, bin=j+1, t_low=edges[j], t_high=edges[j+1], truth=truth[j], conventional=conventional[j], matrix=unfolded[j], conventional_bias_pct=conv_bias[j], matrix_bias_pct=matrix_bias[j]))
-        #endfor
-        print(f'Slope {slope:+g}: first-bin conventional bias {conv_bias[0]:+.2f}%; response bias {matrix_bias[0]:+.2f}%')
-    #endfor
-    fig.tight_layout(); fig.savefig(out/'05_generator_shape_closure.png', dpi=180); plt.close(fig)
-    with open(out/'bin_summary.csv', 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=['bin', 't_low', 't_high', 'generated', 'reconstructed_in_bin', 'efficiency_anywhere', 'same_bin_probability', 'fraction_below', 'fraction_same', 'fraction_other', 'fraction_above'])
-        writer.writeheader()
-        for j in range(n):
-            writer.writerow(dict(bin=j+1, t_low=edges[j], t_high=edges[j+1], generated=unweighted_truth[j+1], reconstructed_in_bin=incoming_total[j], efficiency_anywhere=efficiency[j+1], same_bin_probability=retention[j+1], fraction_below=fraction_below[j], fraction_same=fraction_same[j], fraction_other=fraction_other[j], fraction_above=fraction_above[j]))
+            good=rr&(rc<C)
+            recidx=rc[good];gidx=gc[good];d=r[good]-g[good]
+            np.add.at(cell_deltas,recidx,d);np.add.at(cell_delta2,recidx,d*d);np.add.at(cell_deltan,recidx,1)
+            # Same Q2/xB rectangle even when t bin differs, using boundaries of reconstructed cell.
+            for c in cells:
+                sel=good&(rc==c['id']-1)
+                if not np.any(sel):continue
+                same=(gc[sel]==c['id']-1)
+                same_qx=(q[sel]>=c['q0'])&(q[sel]<c['q1'])&(x[sel]>=c['xb0'])&(x[sel]<c['xb1'])
+                cat=np.where(same,0,np.where(same_qx,1,np.where(gc[sel]<C,2,3)))
+                np.add.at(cell_orig,(np.full(cat.size,c['id']-1),cat),1)
+            #endfor
+            print(f'Processed {stop:,}/{total:,} events',flush=True)
         #endfor
     #endfor
-    with open(out/'closure_summary.csv', 'w', newline='') as f:
-        writer = csv.DictWriter(f, fieldnames=list(closure_rows[0]))
-        writer.writeheader(); writer.writerows(closure_rows)
+    labels=['below']+[f'{EDGES[i]:.2f}–{EDGES[i+1]:.2f}' for i in range(n)]+['above']
+    R=ratio(mat[1],gen[1][None,:]);R=np.nan_to_num(R)
+    incoming=matall[1:n+1]; incoming_total=incoming.sum(axis=1)
+    below=np.nan_to_num(ratio(incoming[:,0],incoming_total));same=np.nan_to_num(ratio(np.diag(incoming[:,1:n+1]),incoming_total));above=np.nan_to_num(ratio(incoming[:,-1],incoming_total));other=1-below-same-above
+    fig,ax=plt.subplots(figsize=(9,7));img=np.ma.masked_where(matall==0,matall);im=ax.imshow(img,origin='lower',aspect='auto',norm=LogNorm(vmin=1,vmax=max(2,matall.max())));ax.set(xticks=np.arange(m),yticks=np.arange(m),xticklabels=labels,yticklabels=labels,xlabel='Generated |t| bin (GeV²)',ylabel='Reconstructed |t| bin (GeV²)',title='Global DVCS |t| migration');ax.tick_params(axis='x',rotation=40);fig.colorbar(im,ax=ax,label='Events');fig.tight_layout();fig.savefig(out/'01_t_migration_matrix.png',dpi=170);plt.close(fig)
+    fig,ax=plt.subplots(figsize=(9,5));xx=np.arange(n);ax.plot(xx,ratio(matall.sum(axis=0)[1:-1],genall[1:-1]),'o-',label='Reconstructed anywhere');ax.plot(xx,ratio(np.diag(matall)[1:-1],genall[1:-1]),'s-',label='Same bin');ax.plot(xx,ratio(matall[1:-1,1:-1].sum(axis=0),genall[1:-1]),'^-',label='Inside analysis');ax.set(xticks=xx,xticklabels=labels[1:-1],xlabel='Generated |t| bin (GeV²)',ylabel='Probability',title='Truth-normalized reconstruction probabilities');ax.legend();ax.grid(alpha=.2);fig.tight_layout();fig.savefig(out/'02_reconstruction_efficiency.png',dpi=170);plt.close(fig)
+    fig,ax=plt.subplots(figsize=(9,5));bottom=np.zeros(n)
+    for vals,name in [(below,'Below analysis'),(same,'Same bin'),(other,'Other analysis bin'),(above,'Above analysis')]:ax.bar(xx,vals,bottom=bottom,label=name);bottom+=vals
     #endfor
-    np.savetxt(out/'response_matrix.csv', response, delimiter=',', header='Rows reconstructed: below, analysis bins, above; columns generated: below, analysis bins, above')
-    print(f'\nRaw HIPO events read: {n_raw:,}; truth-valid selected: {n_truth:,}; reconstructed DVCS candidates: {n_reco:,}; reconstructed in analysis: {n_inside:,}')
-    print(f'First reconstructed bin from generated below threshold: {fraction_below[0]:.3%} ({incoming[0,0]:.0f}/{incoming_total[0]:.0f})')
-    for j in range(min(5, n)):
-        print(f'  Rec bin {j+1}: below={fraction_below[j]:.2%}, other-inside={fraction_other[j]:.2%}, above={fraction_above[j]:.2%}, same={fraction_same[j]:.2%}')
+    ax.set(xticks=xx,xticklabels=labels[1:-1],xlabel='Reconstructed |t| bin (GeV²)',ylabel='Fraction of reconstructed yield',ylim=(0,1.04),title='Origins of reconstructed events');ax.legend(fontsize=9);fig.tight_layout();fig.savefig(out/'03_incoming_migration_fractions.png',dpi=170);plt.close(fig)
+    fig,ax=plt.subplots(figsize=(9,5));centers=(origin_edges[1:]+origin_edges[:-1])/2
+    for j in range(5):
+        if origins[j].sum():ax.step(centers,origins[j]/origins[j].sum(),where='mid',label=f'Rec {labels[j+1]}')
+        #endif
     #endfor
-    print(f'Generated analysis events lost outside reconstructed analysis range or reconstruction: {np.sum(unweighted_truth[1:n+1]) - np.sum(unweighted_flow[1:n+1,1:n+1]):.0f}')
-    print(f'Response condition number (analysis submatrix): {np.linalg.cond(response[1:n+1,1:n+1]):.3g}')
-    if np.any(denom < 100) or np.any(incoming_total < 100):
-        print('WARNING: Some response bins have fewer than 100 nominal generated or reconstructed events.')
-    #endif
-    print('WARNING: 1D candidate-level study, not the full 4D analysis/exclusivity selection; analysis t edges from integrated_bin_v2.csv; cell selection uses generated Q2/xB only.')
-    print('All response and closure calculations use unweighted generated-event counts; MC::Event.weight is ignored.')
-    print('WARNING: Pseudo-data and response are independent, but statistical closure fluctuations remain; finite-iteration unfolding is prior dependent.')
-    print(f'PNG and CSV output: {out.resolve()}')
+    ax.axvline(EDGES[0],ls='--',c='black',label='Analysis threshold');ax.set(xlabel='Generated |t| (GeV²)',ylabel='Fraction per 0.01 GeV² bin',title='Generated origins of low-|t| reconstructed bins');ax.legend();fig.tight_layout();fig.savefig(out/'04_generated_origins_low_t.png',dpi=170);plt.close(fig)
+    accept=np.nan_to_num(ratio(mat[1,1:n+1].sum(axis=1),gen[1,1:n+1]));closure=[]
+    fig,axes=plt.subplots(len(slopes),1,figsize=(10,3.8*len(slopes)),squeeze=False)
+    for k,slope in enumerate(slopes):
+        truth=pseudo_g[k,1:n+1];conv=ratio(pseudo_r[k,1:n+1],accept);unf=unfold(pseudo_r[k],R,gen[1],args.iterations)[1:n+1]
+        b1=100*(ratio(conv,truth)-1);b2=100*(ratio(unf,truth)-1)
+        for j in range(n):closure.append(dict(slope=slope,bin=j+1,t_low=EDGES[j],t_high=EDGES[j+1],truth=truth[j],conventional_bias_pct=b1[j],matrix_bias_pct=b2[j]))
+        #endfor
+        ax=axes[k,0];ax.axhline(0,c='black',lw=1);ax.plot(xx,b1,'o-',label='Conventional');ax.plot(xx,b2,'s-',label=f'Bayesian ({args.iterations} iter)');ax.set(xticks=xx,xticklabels=labels[1:-1],ylabel='Closure bias (%)',title=f'Global closure: shape slope {slope:+g} (GeV⁻²)');ax.legend();ax.grid(alpha=.2)
+        print(f'Global slope {slope:+g}: first-bin conventional {b1[0]:+.2f}%, matrix {b2[0]:+.2f}%')
+    #endfor
+    fig.tight_layout();fig.savefig(out/'05_generator_shape_closure.png',dpi=170);plt.close(fig)
+    # Cell-level diagnostics: full reconstructed versus generated Q2/xB/t matching.
+    cellR=np.nan_to_num(ratio(cellmat[1],cellgen[1][None,:]));cellaccept=np.nan_to_num(ratio(cellmat[1,:C,:].sum(axis=1),cellgen[1,:C]))
+    cellclosure={}
+    # High-dimensional response may be poorly populated: use response forward prediction for nominal and reweighted closure.
+    # Iterative Bayes uses explicit outside category and zero-efficiency protection; DO NOT interpret sparse cells as validated.
+    for k,slope in enumerate(slopes):
+        truth=cellpseudo_g[k,:C];conv=ratio(cellpseudo_r[k,:C],cellaccept)
+        unf=unfold(cellpseudo_r[k],cellR,cellgen[1],args.iterations)[:C]
+        cellclosure[slope]=(100*(ratio(conv,truth)-1),100*(ratio(unf,truth)-1),truth)
+        good=(cellgen[1,:C]>=args.min_cell_generated)&(truth>=args.min_cell_generated)&(cellmat[1,:C,:].sum(axis=1)>=30)
+        print(f'Cell slope {slope:+g}: {good.sum()}/{C} cells meet minimum-count thresholds; median |conventional bias|={np.nanmedian(np.abs(cellclosure[slope][0][good])) if good.any() else np.nan:.2f}%')
+    #endfor
+    rows=[]
+    for j,c in enumerate(cells):
+        origins_total=cell_orig[j].sum();v=cell_orig[j];mean=cell_deltas[j]/cell_deltan[j] if cell_deltan[j] else np.nan
+        rms=np.sqrt(max(0,cell_delta2[j]/cell_deltan[j]-mean**2)) if cell_deltan[j] else np.nan
+        row=dict(cell=c['id'],xb_min=c['xb0'],xb_max=c['xb1'],Q2_min=c['q0'],Q2_max=c['q1'],t_min=c['t0'],t_max=c['t1'],generated=cell_gen_all[j],reconstructed=cell_rec_all[j],reconstructed_same_cell=cellmat[:,j,j].sum(),fraction_same_cell=v[0]/origins_total if origins_total else np.nan,fraction_other_t_same_Q2_xB=v[1]/origins_total if origins_total else np.nan,fraction_other_Q2_xB=v[2]/origins_total if origins_total else np.nan,fraction_outside_published_cells=v[3]/origins_total if origins_total else np.nan,delta_t_mean=mean,delta_t_rms=rms,nominal_response_generated=cellgen[1,j],nominal_response_reconstructed=cellmat[1,j,:].sum(),sufficient_statistics=int(cellgen[1,j]>=args.min_cell_generated and cellmat[1,j,:].sum()>=30))
+        for slope in slopes:
+            a,b,t=cellclosure[slope];tag=f'{slope:+g}'.replace('+','p').replace('-','m').replace('.','d')
+            row[f'closure_conventional_{tag}_pct']=a[j];row[f'closure_matrix_{tag}_pct']=b[j]
+        #endfor
+        rows.append(row)
+    #endfor
+    def writecsv(name,records):
+        with open(out/name,'w',newline='') as f:
+            writer=csv.DictWriter(f,fieldnames=list(records[0]));writer.writeheader();writer.writerows(records)
+        #endfor
+    #endfor
+    writecsv('cell_migration_summary.csv',rows);writecsv('global_closure_summary.csv',closure)
+    writecsv('global_bin_summary.csv',[dict(bin=j+1,t_low=EDGES[j],t_high=EDGES[j+1],generated=genall[j+1],reconstructed=incoming_total[j],fraction_below=below[j],fraction_same=same[j],fraction_other=other[j],fraction_above=above[j]) for j in range(n)])
+    np.savetxt(out/'global_response_matrix.csv',R,delimiter=',');np.savetxt(out/'published_cell_response_matrix.csv',cellR,delimiter=',')
+    def heatmap(vals,title,filename,vmin=None,vmax=None):
+        fig,ax=plt.subplots(figsize=(13,5));im=ax.scatter([c['id'] for c in cells],[.5*(c['t0']+c['t1']) for c in cells],c=vals,s=35,cmap='viridis',vmin=vmin,vmax=vmax);fig.colorbar(im,ax=ax,label=title);ax.set(xlabel='Published (xB, Q², |t|) cell number',ylabel='Cell center |t| (GeV²)',title=title);fig.tight_layout();fig.savefig(out/filename,dpi=170);plt.close(fig)
+    #endfor
+    heatmap([r['fraction_same_cell'] for r in rows],'Fraction reconstructed from same published 3D cell','06_cell_retention_map.png',0,1)
+    heatmap([r['fraction_other_Q2_xB'] for r in rows],'Fraction from different generated (Q²,xB) region','07_cross_Q2_xB_migration.png',0,1)
+    heatmap([r['delta_t_mean'] for r in rows],'Mean |t|rec − |t|gen (GeV²)','08_t_resolution_bias.png')
+    for slope in slopes:
+        tag=f'{slope:+g}'.replace('+','p').replace('-','m').replace('.','d')
+        heatmap(cellclosure[slope][0],'Conventional closure bias (%) slope '+str(slope),'09_cell_closure_conventional_'+tag+'.png',-30,30)
+    #endfor
+    print(f'Events read {nraw:,}; generated valid {ntruth:,}; reconstructed candidates {nrec:,}; published cells {C}')
+    print(f'First global bin: {below[0]:.2%} below analysis, {other[0]:.2%} other analysis bins, {same[0]:.2%} same bin')
+    print('WARNING: 3D cell unfolding can be prior-dependent and statistically unstable. Review per-cell counts and zero-slope closure before interpretation.')
+    print('WARNING: candidate-level selection only; published-cell assignment uses actual generated AND reconstructed Q2, xB, t, but not phi or full exclusivity cuts.')
+    print('MC::Event.weight is deliberately ignored.');print('PNG/CSV output:',out)
 
-
-if __name__ == '__main__':
-    main()
+if __name__=='__main__':main()
