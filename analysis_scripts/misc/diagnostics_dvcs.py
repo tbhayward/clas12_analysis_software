@@ -27,6 +27,7 @@ def main():
     p.add_argument('--output',default='/u/home/thayward/clas12_analysis_software/analysis_scripts/misc/diagnostic_dvcs')
     p.add_argument('--max-events',type=int,default=10000000)
     p.add_argument('--chunk',type=int,default=200000)
+    p.add_argument('--max-particle-entries',type=int,default=50000000,help='Hard safety limit for particle rows scanned')
     a=p.parse_args();out=Path(a.output);out.mkdir(parents=True,exist_ok=True)
     root=Path(a.input);folder=root if root.is_dir() else root.parent
     ef=root if root.is_file() else folder/'all.mc_events.root';pf=folder/'all.mc_particles.root'
@@ -37,6 +38,10 @@ def main():
         missing=[z for z in fields if z not in t.keys()]
         if missing:raise ValueError(f'Missing event branches {missing}')
         d={k:[] for k in ['g','r','gp','rp','gt','rt','det']};maxn=min(a.max_events,t.num_entries)
+        # Use the actual last selected event identifier, not an assumed 1-based entry index.
+        selected_last_sequence=int(t['event_sequence'].array(entry_start=maxn-1,entry_stop=maxn,library='np')[0])
+        selected_first_sequence=int(t['event_sequence'].array(entry_start=0,entry_stop=1,library='np')[0])
+        print(f'Selected event_sequence range: {selected_first_sequence:,} to {selected_last_sequence:,}',flush=True)
         for start in range(0,maxn,a.chunk):
             b=t.arrays(fields,entry_start=start,entry_stop=min(start+a.chunk,maxn),library='np');v=(b['gen_kinematics_valid']>0)&(b['rec_kinematics_valid']>0)&(b['rec_final_state']>0)&(b['gen_t1']<0)&(b['rec_t1']<0)
             for k,field in [('g','gen_t1'),('r','rec_t1'),('gp','gen_p1_p'),('rp','rec_p1_p'),('gt','gen_p1_theta'),('rt','rec_p1_theta'),('det','rec_detector1')]:d[k].append(b[field][v])
@@ -75,13 +80,35 @@ def main():
         keys=['event_sequence','truth_pid','rec_pindex','rec_pid','gen_p','rec_p','gen_theta','rec_theta','gen_t_proton','rec_t_proton_raw','rec_t_proton_corrected','fitted_selected','rec_detector']
         missing=[k for k in keys if k not in t.keys()]
         if missing:raise RuntimeError(f'Missing particle branches: {missing}')
-        records={k:[] for k in keys}; n=0
-        for b in t.iterate(keys,step_size=a.chunk,library='np'):
-            sel=(b['truth_pid']==2212)&(b['event_sequence']<=maxn)
+        records={k:[] for k in keys}; n=0; stopped_at_boundary=False; previous_last=None
+        if selected_last_sequence < selected_first_sequence:
+            raise RuntimeError('Event identifiers are not ordered at the endpoints; cannot safely select particle entries.')
+        # Particle rows are ordered by event_sequence in the intended production format.
+        # Check ordering as we go and stop at the first row beyond the selected event range.
+        for b in t.iterate(keys,step_size=a.chunk,entry_stop=min(t.num_entries,a.max_particle_entries),library='np'):
+            seq=b['event_sequence']
+            if len(seq)==0:continue
+            #endif
+            if (previous_last is not None and seq[0]<previous_last) or np.any(seq[1:]<seq[:-1]):
+                raise RuntimeError('Particle event_sequence is not monotonic. Cannot use early termination safely; inspect ROOT event mapping.')
+            #endif
+            previous_last=seq[-1]
+            eligible=seq<=selected_last_sequence
+            sel=(b['truth_pid']==2212)&(seq>=selected_first_sequence)&eligible
             for k in keys:records[k].append(b[k][sel])
             #endfor
-            n+=len(b['truth_pid']);print(f'Particle entries scanned {n:,}',flush=True)
+            n+=len(seq)
+            if n%2000000<a.chunk:print(f'Particle entries scanned {n:,}; latest event_sequence {int(seq[-1]):,}',flush=True)
+            #endif
+            if np.any(~eligible):
+                stopped_at_boundary=True
+                print(f'Particle event boundary reached after scanning {n:,} particle rows.',flush=True)
+                break
+            #endif
         #endfor
+        if not stopped_at_boundary and n>=a.max_particle_entries and n<t.num_entries:
+            raise RuntimeError(f'Particle safety cap reached at {n:,} entries without reaching event_sequence {selected_last_sequence:,}. Increase --max-particle-entries only after checking event IDs.')
+        #endif
     #endwith
     z={k:np.concatenate(v) for k,v in records.items()};proton=(z['gen_p']>0)&(z['rec_pindex']>=0)&(z['rec_pid']==2212)&(z['gen_t_proton']<0)&(z['rec_t_proton_raw']<0)
     fit=proton&(z['fitted_selected']>0)&(z['rec_t_proton_corrected']<0)
