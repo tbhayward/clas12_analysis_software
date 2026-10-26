@@ -33,14 +33,16 @@ def unfold(d, response, prior, niter=5):
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--input', default='/volatile/clas12/thayward/dvcs_reprocessing_20261022/production/fa18_inb/dvcs_rec/50nA/all.mc_events.root')
-    ap.add_argument('--output', default='dvcs_low_t_migration_v3')
+    ap.add_argument('--output', default='/u/home/thayward/clas12_analysis_software/analysis_scripts/misc/diagnostics/dvcs/dvcs_low_t_migration_v4')
     ap.add_argument('--max-events', type=int, default=10000000)
     ap.add_argument('--chunk', type=int, default=200000)
-    ap.add_argument('--t-edges', default='0.14,0.20,0.27,0.36,0.48,0.64,0.82,1.00', help='Comma-separated analysis |t| edges (GeV^2); REPLACE with exact analysis edges')
+    ap.add_argument('--t-edges', default='0.11,0.15,0.25,0.40,0.60,0.80,1.00', help='Comma-separated analysis |t| edges (GeV^2); REPLACE with exact analysis edges')
     ap.add_argument('--q2', default=None, help='Optional generated Q2 range: min,max (GeV^2)')
     ap.add_argument('--xb', default=None, help='Optional generated xB range: min,max')
+    ap.add_argument('--cell', type=int, default=None, help='1-based row/bin number in integrated_bin_v2.csv; restrict generated Q2,xB and use that cell t interval')
+    ap.add_argument('--binning-file', default='/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_bin_v2.csv')
     ap.add_argument('--iterations', type=int, default=5)
-    ap.add_argument('--shape-slopes', default='-2,2', help='Pseudo-data reweight slopes in 1/GeV^2')
+    ap.add_argument('--shape-slopes', default='0,-2,2', help='Pseudo-data reweight slopes in 1/GeV^2')
     args = ap.parse_args()
     import uproot
     path = Path(args.input)
@@ -54,6 +56,23 @@ def main():
     out = Path(args.output)
     out.mkdir(parents=True, exist_ok=True)
     edges = np.asarray([float(v) for v in args.t_edges.split(',')])
+    if args.cell is not None:
+        import re
+        with open(args.binning_file) as bf:
+            lines = bf.readlines()[2:]
+        records = []
+        for line in lines:
+            tok = re.split(r'\s+', line.strip())
+            if len(tok) >= 14 and tok[0].isdigit():
+                records.append((int(tok[0]), float(tok[4]), float(tok[5]), float(tok[7]), float(tok[8]), float(tok[10]), float(tok[11])))
+        match = [v for v in records if v[0] == args.cell]
+        if len(match) != 1:
+            raise ValueError(f'Cell {args.cell} not uniquely found in {args.binning_file}')
+        _, xbmin, xbmax, qmin, qmax, tmin, tmax = match[0]
+        args.xb, args.q2 = f'{xbmin},{xbmax}', f'{qmin},{qmax}'
+        # Preserve full analysis t bins, with selected cell emphasized by its range.
+        print(f'Analysis cell {args.cell}: xB={args.xb}, Q2={args.q2}, |t|={tmin:g}-{tmax:g} GeV^2')
+    #endif
     if len(edges) < 3 or not np.all(np.diff(edges) > 0):
         raise ValueError('Analysis edges must be strictly increasing')
     #endif
@@ -77,7 +96,7 @@ def main():
         #endif
         tree = f['MCEvents']
         mandatory = ['gen_kinematics_valid', 'rec_kinematics_valid', 'gen_t1', 'rec_t1']
-        optional = ['gen_Q2', 'gen_x', 'rec_final_state', 'weight']
+        optional = ['gen_Q2', 'gen_x', 'rec_final_state']
         missing = [k for k in mandatory if k not in tree.keys()]
         if missing:
             raise RuntimeError(f'Missing branches: {missing}; available: {list(tree.keys())}')
@@ -119,7 +138,7 @@ def main():
             g = -a['gen_t1'][gen]
             r = -a['rec_t1'][gen]
             rr = rec[gen]
-            weights = a['weight'][gen] if 'weight' in a else np.ones(len(g))
+            weights = np.ones(len(g), dtype=float)  # Each generated HIPO event counts once; NEVER use MC::Event.weight
             weights = np.where(np.isfinite(weights), weights, 0)
             negweights += int(np.count_nonzero(weights < 0))
             if np.any(weights < 0):
@@ -248,7 +267,8 @@ def main():
     if np.any(denom < 100) or np.any(incoming_total < 100):
         print('WARNING: Some response bins have fewer than 100 nominal generated or reconstructed events.')
     #endif
-    print('WARNING: 1D candidate-level study, not the full 4D analysis/exclusivity selection; analysis edges are user-supplied.')
+    print('WARNING: 1D candidate-level study, not the full 4D analysis/exclusivity selection; analysis t edges from integrated_bin_v2.csv; cell selection uses generated Q2/xB only.')
+    print('All response and closure calculations use unweighted generated-event counts; MC::Event.weight is ignored.')
     print('WARNING: Pseudo-data and response are independent, but statistical closure fluctuations remain; finite-iteration unfolding is prior dependent.')
     print(f'PNG and CSV output: {out.resolve()}')
 
