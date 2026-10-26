@@ -83,6 +83,11 @@ def main():
     for r in rows:
         for p in r['expected'].split(';'):
             if Path(p).exists() and not (a.skip_existing and all(Path(q).is_file() and Path(q).stat().st_size>0 for q in r['expected'].split(';'))):raise SystemExit('Existing output: '+p)
+    # Execute manifest rows, not the original configuration dictionaries.
+    # The latter do not contain 'expected', 'output' or 'command'.
+    execution_groups=defaultdict(list)
+    for r in rows:
+        execution_groups[r['source']].append(r)
     state={'done':0,'bytes':0,'active':{},'fail':0};start=time.monotonic(); total_bytes=sum(r['input_bytes'] for r in rows)
     def run_group(group):
         for r in group:
@@ -120,7 +125,7 @@ def main():
     thread=threading.Thread(target=reporter,daemon=True);thread.start();errors=[]
     try:
         with ThreadPoolExecutor(max_workers=a.workers) as pool:
-            futures={pool.submit(run_group,group):source for source,group in selected}
+            futures={pool.submit(run_group,execution_groups[source]):source for source,_ in selected}
             for future in as_completed(futures):
                 try:future.result()
                 except Exception as e:errors.append(str(e));print('[ERROR]',e,flush=True)
