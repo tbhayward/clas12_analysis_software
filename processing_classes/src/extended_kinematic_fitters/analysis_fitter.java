@@ -259,26 +259,25 @@ public class analysis_fitter extends GenericKinematicFitter {
                 float vz = rec_Bank.getFloat("vz", particle_Index);
                 double p = Math.sqrt(px * px + py * py + pz * pz);
 
-                int sector = generic_tests.sector(particle_Index, track_Bank); // 0 FT/CD, 1-6 FD
+//                int sector = generic_tests.sector(particle_Index, track_Bank); // 0 FT/CD, 1-6 FD
+//                int runnum = correctionRunOverride >= 0 ? correctionRunOverride : run_Bank.getInt("run", 0);
+//                int runPeriod = -1;
+//                if (runnum >= 4763 && runnum <= 5666) {
+//                    runPeriod = 3; // this is how Richard Capobianco labeled them in his momentum corrections
+//                } // RGA Fa18
+//                else if (runnum >= 6616 && runnum <= 6783) {
+//                    runPeriod = 2;
+//                } // RGA Sp19 
+//                boolean inbending = false;
+//                boolean outbending = false;
+//                if (run_Bank.getFloat("torus", 0) == 1) {
+//                    outbending = true;
+//                } else {
+//                    inbending = true;
+//                }
 
-                int runnum = correctionRunOverride >= 0 ? correctionRunOverride : run_Bank.getInt("run", 0);
-                int runPeriod = -1;
-                if (runnum >= 4763 && runnum <= 5666) {
-                    runPeriod = 3; // this is how Richard Capobianco labeled them in his momentum corrections
-                } // RGA Fa18
-                else if (runnum >= 6616 && runnum <= 6783) {
-                    runPeriod = 2;
-                } // RGA Sp19 
-                boolean inbending = false;
-                boolean outbending = false;
-                if (run_Bank.getFloat("torus", 0) == 1) {
-                    outbending = true;
-                } else {
-                    inbending = true;
-                }
-
-                energy_loss_corrections energy_loss_corrections = new energy_loss_corrections();
-                momentum_corrections momentum_corrections = new momentum_corrections();
+//                energy_loss_corrections energy_loss_corrections = new energy_loss_corrections();
+//                momentum_corrections momentum_corrections = new momentum_corrections();
 
                 if (pid == 11 && electron_test(particle_Index, p, rec_Bank, cal_Bank,
                         traj_Bank, run_Bank, cc_Bank)) {
@@ -303,11 +302,11 @@ public class analysis_fitter extends GenericKinematicFitter {
 //                    }
                     
                     float[] momentum = {px, py, pz};
-                    if (inbending) {
-                        momentum_corrections.inbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
-                    } else if (outbending) {
-                        momentum_corrections.outbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
-                    }
+//                    if (inbending) {
+//                        momentum_corrections.inbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
+//                    } else if (outbending) {
+//                        momentum_corrections.outbending_momentum_corrections(momentum, sector, 0, runPeriod, runPeriod, 0, 0);
+//                    }
                     px = momentum[0];
                     py = momentum[1];
                     pz = momentum[2];
@@ -348,7 +347,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                         traj_Bank, run_Bank)) {
 
                     float[] momentum = {px, py, pz};
-                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank, runnum);
+//                    energy_loss_corrections.proton_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank, runnum);
 
                     px = momentum[0];
                     py = momentum[1];
@@ -361,7 +360,7 @@ public class analysis_fitter extends GenericKinematicFitter {
                 if (pid == 22 && photon_test(particle_Index, run_Bank, rec_Bank, cal_Bank, ft_Bank, lv_e, num_photon)) {
 
                     float[] momentum = {px, py, pz};
-                    energy_loss_corrections.sebastian_photon_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank, runnum);
+//                    energy_loss_corrections.sebastian_photon_energy_loss_corrections(particle_Index, momentum, rec_Bank, run_Bank, runnum);
                  
                     px = momentum[0];
                     py = momentum[1];

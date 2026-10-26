@@ -1,149 +1,130 @@
 #!/usr/bin/env python3
-"""DVCS processing campaign. Dry run by default; --execute runs at most 8 directory-isolated workers."""
-import argparse
-import csv
-import json
-import os
-import shlex
-import subprocess
-import threading
-import time
-from collections import defaultdict
-from concurrent.futures import ThreadPoolExecutor, as_completed
+"""Two-node DVCS campaign: 5 required modes, nine workers/node, progress by input bytes.
+Run --prepare-only once, then --execute --node 1/2 and --node 2/2 on separate hosts.
+Byte-weighted progress is an estimate of workload, NOT an exact HIPO event percentage.
+"""
+import argparse,csv,json,os,re,shlex,subprocess,threading,time,shutil
 from pathlib import Path
+from collections import defaultdict
+from concurrent.futures import ThreadPoolExecutor,as_completed
 
-SCRIPTS = {'dvcs_data':'processing_dvcs.groovy','pi0_data':'processing_exclusive_pi0.groovy','dvcs_gen':'processing_mc_dvcs.groovy','dvcs_rec':'processing_mc_rec_dvcs.groovy','pi0_gen':'processing_mc_exclusive_pi0.groovy','pi0_rec':'processing_mc_rec_exclusive_pi0.groovy','pi0_as_dvcs':'processing_mc_rec_dvcs.groovy'}
-PROGRESS_LOCK = threading.Lock()
-PROGRESS = {'done': 0, 'total': 0, 'started': time.monotonic()}
+SCRIPTS={'dvcs_data':'processing_dvcs.groovy','pi0_data':'processing_exclusive_pi0.groovy','dvcs_rec':'processing_mc_rec_dvcs.groovy','pi0_rec':'processing_mc_rec_exclusive_pi0.groovy','pi0_as_dvcs':'processing_mc_rec_dvcs.groovy'}
+lock=threading.Lock()
 
-def report_progress(label):
-    with PROGRESS_LOCK:
-        PROGRESS['done'] += 1
-        done, total = PROGRESS['done'], PROGRESS['total']
-        elapsed = (time.monotonic() - PROGRESS['started']) / 60
-        print(f'[PROGRESS] {done}/{total} jobs ({100*done/total:.1f}%) | elapsed={elapsed:.1f} min | {label}', flush=True)
-
-UNVERIFIED = {'pi0_as_dvcs':'Verify aaogen-as-DVCS selection before production.'}
-
-def prepare_shared():
-    print('Preparing shared checkout and ROOT converters once before workers start.', flush=True)
-    subprocess.run(['git','pull'], check=True)
-    jar = Path('processing_classes/dist/processing_classes.jar')
-    service = Path('coatjava/lib/services/processing_classes.jar')
-    if not jar.is_file(): raise RuntimeError(f'Missing locally built Java JAR: {jar}')
-    import shutil
-    service.parent.mkdir(parents=True, exist_ok=True)
-    shutil.copy2(jar, service)
-    print('Installed processing_classes.jar once before starting workers.', flush=True)
-    for name in ('convert_txt_to_root', 'convert_dvcs_mc_diagnostics'):
-        source = Path('processing_scripts')/(name+'.cpp')
-        if not source.is_file(): raise RuntimeError(f'Missing converter source: {source}')
-        cflags = shlex.split(subprocess.check_output(['root-config','--cflags'], text=True).strip())
-        libs = shlex.split(subprocess.check_output(['root-config','--libs'], text=True).strip())
-        subprocess.run(['g++', *cflags, str(source), '-o', str(source.with_suffix('')), *libs], check=True)
-
-def run_group(group, pilot, skip_existing):
-    env = os.environ.copy()
-    env['DVCS_CAMPAIGN_WORKER'] = '1'
-    for r in group:
-        expected = [Path(x) for x in r['expected'].split(';')]
-        if all(x.is_file() and x.stat().st_size > 0 for x in expected) and skip_existing:
-            print('SKIP', r['output'], flush=True)
-            report_progress('skipped '+r['period']+' '+r['mode'])
-            continue
-        if any(x.exists() for x in expected):
-            raise RuntimeError('Existing or partial outputs, refusing overwrite: '+r['output'])
-        Path(r['output']).parent.mkdir(parents=True, exist_ok=True)
-        if pilot:
-            stage=Path(r['staged_input'])
-            stage.mkdir(parents=True, exist_ok=True)
-            link=stage/Path(r['input']).name
-            target=Path(r['input']).resolve()
-            if link.is_symlink():
-                if link.resolve()!=target: raise RuntimeError('Staging link mismatch: '+str(link))
-            elif link.exists(): raise RuntimeError('Unexpected staging file: '+str(link))
-            else: link.symlink_to(target)
-        print('RUN', r['period'], r['mode'], r['current'], r['output'], flush=True)
-        log_path = Path(r['output'] + '.processing.log')
-        with log_path.open('w') as job_log:
-            result = subprocess.run(shlex.split(r['command']), stdout=job_log, stderr=subprocess.STDOUT, env=env)
-        if result.returncode:
-            print(f'[ERROR] {r["period"]} {r["mode"]}: exit={result.returncode}; full log: {log_path}', flush=True)
-            print('\n'.join(log_path.read_text(errors='replace').splitlines()[-30:]), flush=True)
-            raise RuntimeError(f'Processing failed: {log_path}')
-        if not all(x.is_file() and x.stat().st_size>0 for x in expected):
-            raise RuntimeError('Missing output after job: '+r['output']+'; log: '+str(log_path))
-        report_progress(r['period']+' '+r['mode']+' '+r['current'])
-    return len(group)
+def prepare():
+    jar=Path('processing_classes/dist/processing_classes.jar'); service=Path('coatjava/lib/services/processing_classes.jar')
+    if not jar.is_file(): raise RuntimeError('Missing JAR; rebuild processing_classes first: '+str(jar))
+    service.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(jar,service)
+    for name in ('convert_txt_to_root','convert_dvcs_mc_diagnostics'):
+        src=Path('processing_scripts')/(name+'.cpp')
+        cflags=shlex.split(subprocess.check_output(['root-config','--cflags'],text=True))
+        libs=shlex.split(subprocess.check_output(['root-config','--libs'],text=True))
+        subprocess.run(['g++',*cflags,str(src),'-o',str(src.with_suffix('')),*libs],check=True)
+    print('Preparation complete: JAR installed and converters compiled. No git pull performed.',flush=True)
 
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
-    ap.add_argument('--config', default='campaign_config.json')
-    ap.add_argument('--manifest', default='campaign_manifest.csv')
-    ap.add_argument('--execute', action='store_true')
-    ap.add_argument('--pilot', action='store_true')
-    ap.add_argument('--events-per-file', type=int, default=10000)
-    ap.add_argument('--workers', type=int, default=8, help='Maximum simultaneous jobs (default 8)')
-    ap.add_argument('--only', nargs='*', choices=list(SCRIPTS))
-    ap.add_argument('--periods', nargs='*', choices=['fa18_inb','fa18_out','sp18_inb','sp18_out','sp19_inb'])
-    ap.add_argument('--allow-unverified', action='store_true')
-    ap.add_argument('--skip-existing', action='store_true')
+    ap.add_argument('--config',default='processing_scripts/campaign_config.json')
+    ap.add_argument('--node',default='1/2',help='Node partition 1/2 or 2/2 (or 1/1)')
+    ap.add_argument('--workers',type=int,default=9)
+    ap.add_argument('--execute',action='store_true');ap.add_argument('--prepare-only',action='store_true')
+    ap.add_argument('--skip-existing',action='store_true');ap.add_argument('--manifest',default=None)
+    ap.add_argument('--output-root',default=None)
+    ap.add_argument('--periods',nargs='*');ap.add_argument('--only',nargs='*',choices=sorted(SCRIPTS))
+    ap.add_argument('--progress-seconds',type=int,default=60)
     a=ap.parse_args()
-    if not 1<=a.workers<=8: ap.error('--workers must be 1 through 8')
-    if a.pilot and a.events_per_file<=0: ap.error('--events-per-file must be positive')
-    cfg=json.loads(Path(a.config).read_text())
-    base=Path(cfg['output_root'])/('pilot_10k' if a.pilot else 'production')
-    rows=[]; blocked=[]
-    for job in cfg['jobs']:
-        mode=job['mode']; period=job['period']
-        if a.only and mode not in a.only: continue
-        if a.periods and period not in a.periods: continue
-        inp=Path(job['input']); current=job.get('current','')
-        if mode not in SCRIPTS: raise RuntimeError('Unknown mode: '+mode)
-        files=sorted(inp.rglob('*.hipo')) if a.pilot and inp.is_dir() else ([None] if not a.pilot else [])
-        if not files: blocked.append(f'{period} {mode}: input unavailable or contains no HIPO files: {inp}'); continue
-        for idx, hipo in enumerate(files):
-            tag=f'file_{idx:05d}_{hipo.stem}' if a.pilot else 'all'
-            output=base/period/mode/(current or 'nominal')/tag
-            stage=base/'_hipo_links'/period/mode/(current or 'nominal')/tag if a.pilot else inp
-            mc=mode not in ('dvcs_data','pi0_data')
-            args=['csh','processing_scripts/processing.csh','processing_scripts/'+SCRIPTS[mode],str(stage),str(output),'1' if a.pilot else '0',str(job['energy']),'11' if mc else '0','1' if mc else '0']
-            if mode in ('dvcs_data','pi0_data','dvcs_gen','pi0_gen'):
-                if a.pilot: args.append(str(a.events_per_file))
-            else: args.extend([str(a.events_per_file) if a.pilot else '0',period])
-            expected=[str(output)+'.root']
-            if mode in ('dvcs_rec','pi0_rec','pi0_as_dvcs'): expected.extend([str(output)+'.mc_events.root',str(output)+'.mc_particles.root'])
-            rows.append(dict(period=period,mode=mode,current=current,input=str(hipo or inp),staged_input=str(stage),output=str(output),expected=';'.join(expected),warning=UNVERIFIED.get(mode,''),command=shlex.join(args),source_directory=str(inp.resolve())))
-    manifest=Path(a.manifest);manifest.parent.mkdir(parents=True,exist_ok=True)
-    with manifest.open('w',newline='') as f:
-        w=csv.DictWriter(f,fieldnames=['period','mode','current','input','staged_input','output','expected','warning','command','source_directory'])
-        w.writeheader();w.writerows(rows)
-    PROGRESS['total'] = len(rows)
-    PROGRESS['started'] = time.monotonic()
+    if a.prepare_only: prepare();return
+    if a.workers<1 or a.workers>9:ap.error('workers must be 1..9')
+    m=re.fullmatch(r'(\d+)/(\d+)',a.node)
+    if not m:ap.error('node must be N/T, e.g. 1/2')
+    node,total=map(int,m.groups())
+    if not 1<=node<=total:ap.error('invalid node partition')
+    cfg=json.loads(Path(a.config).read_text()); root=Path(a.output_root or (cfg['output_root']+'_no_proton_eloss'))/'production'
+    jobs=[]; missing=[]
+    for j in cfg['jobs']:
+        if j['mode'] not in SCRIPTS:continue
+        if a.periods and j['period'] not in a.periods:continue
+        if a.only and j['mode'] not in a.only:continue
+        inp=Path(j['input'])
+        if not inp.is_dir():missing.append(str(inp));continue
+        files=sorted(inp.rglob('*.hipo'))
+        if not files:missing.append(str(inp)+' (no HIPO files)');continue
+        size=sum(f.stat().st_size for f in files)
+        jobs.append(dict(j,files=len(files),bytes=size,source=str(inp.resolve())))
+    if missing:
+        print('Missing input directories:',*missing,sep='\n  ')
+        if a.execute:raise SystemExit('Refusing incomplete production campaign')
+    # Keep all modes reading a given directory on one node, and sequential within that node.
     groups=defaultdict(list)
-    for r in rows: groups[r['source_directory']].append(r)
-    print(f'{len(rows)} invocations in {len(groups)} distinct input directories; pilot={a.pilot}; execute={a.execute}; workers={a.workers}; manifest={manifest}',flush=True)
-    for b in blocked: print('BLOCKED:',b,flush=True)
-    if not a.execute: return
-    if blocked: raise SystemExit('Missing inputs: no jobs started.')
-    if any(r['warning'] for r in rows) and not a.allow_unverified: raise SystemExit('Unverified modes included; use --only to exclude them or --allow-unverified after checking.')
-    if not rows: raise SystemExit('No jobs selected.')
+    for j in jobs:groups[j['source']].append(j)
+    bins=[{'size':0,'groups':[]} for _ in range(total)]
+    for source,group in sorted(groups.items(),key=lambda kv:-sum(x['bytes'] for x in kv[1])):
+        k=min(range(total),key=lambda i:bins[i]['size'])
+        bins[k]['groups'].append((source,group));bins[k]['size']+=sum(x['bytes'] for x in group)
+    selected=bins[node-1]['groups']; rows=[]
+    for source,group in selected:
+        for j in group:
+            mode=j['mode']; current=j.get('current','nominal'); period=j['period']
+            out=root/period/mode/current/'all'
+            mc=mode not in ('dvcs_data','pi0_data')
+            args=['csh','processing_scripts/processing.csh','processing_scripts/'+SCRIPTS[mode],j['input'],str(out),'0',str(j['energy']),'11' if mc else '0','1' if mc else '0','0']
+            if mc:args.append(period)
+            expected=[str(out)+'.root']+([str(out)+'.mc_events.root',str(out)+'.mc_particles.root'] if mc else [])
+            rows.append(dict(node=a.node,period=period,mode=mode,current=current,input=j['input'],input_files=j['files'],input_bytes=j['bytes'],output=str(out),expected=';'.join(expected),command=shlex.join(args),source=source))
+    manifest=Path(a.manifest or f'processing_scripts/campaign_manifest_node{node}of{total}.csv')
+    manifest.parent.mkdir(parents=True,exist_ok=True)
+    with manifest.open('w',newline='') as f:
+        w=csv.DictWriter(f,fieldnames=['node','period','mode','current','input','input_files','input_bytes','output','expected','command','source']);w.writeheader();w.writerows(rows)
+    print(f'Node {a.node}: {len(rows)} jobs, {len(selected)} independent input directories, {sum(r["input_files"] for r in rows)} HIPO-file reads, {sum(r["input_bytes"] for r in rows)/1e12:.3f} TB scheduled input (counting repeated reads); workers={a.workers}; execute={a.execute}; manifest={manifest}',flush=True)
+    for k,b in enumerate(bins,1):print(f'  node {k}/{total}: {sum(len(g) for _,g in b["groups"])} jobs; {b["size"]/1e12:.3f} TB input',flush=True)
+    if not a.execute:return
+    if not rows:raise SystemExit('No jobs selected')
+    if not Path('processing_scripts/convert_txt_to_root').is_file() or not Path('processing_scripts/convert_dvcs_mc_diagnostics').is_file():raise SystemExit('Converters missing. Run --prepare-only once first.')
     for r in rows:
-        script=shlex.split(r['command'])[2]
-        if not Path(script).is_file(): raise SystemExit('Missing script: '+script)
-        outputs=[Path(x) for x in r['expected'].split(';')]
-        if any(x.exists() for x in outputs) and not (a.skip_existing and all(x.is_file() and x.stat().st_size>0 for x in outputs)):
-            raise SystemExit('Existing/partial output, no jobs started: '+r['output'])
-    prepare_shared()
-    print(f'Starting {min(a.workers,len(groups))} workers; jobs sharing a source directory run sequentially.',flush=True)
-    errors=[]
-    with ThreadPoolExecutor(max_workers=a.workers) as pool:
-        futures={pool.submit(run_group,g,a.pilot,a.skip_existing):directory for directory,g in groups.items()}
-        for future in as_completed(futures):
-            try: future.result()
-            except Exception as e:
-                errors.append((futures[future],str(e)))
-                print('FAILED directory:',futures[future],e,flush=True)
-    if errors: raise SystemExit(f'{len(errors)} source-directory groups failed; inspect terminal output.')
-    print('All selected jobs completed.',flush=True)
-if __name__=='__main__': main()
+        for p in r['expected'].split(';'):
+            if Path(p).exists() and not (a.skip_existing and all(Path(q).is_file() and Path(q).stat().st_size>0 for q in r['expected'].split(';'))):raise SystemExit('Existing output: '+p)
+    state={'done':0,'bytes':0,'active':{},'fail':0};start=time.monotonic(); total_bytes=sum(r['input_bytes'] for r in rows)
+    def run_group(group):
+        for r in group:
+            exp=[Path(p) for p in r['expected'].split(';')]
+            if a.skip_existing and all(p.is_file() and p.stat().st_size>0 for p in exp):
+                with lock:state['done']+=1;state['bytes']+=r['input_bytes']
+                continue
+            out=Path(r['output']);out.parent.mkdir(parents=True,exist_ok=True)
+            log=Path(str(out)+'.processing.log')
+            with lock:state['active'][r['output']]=dict(log=str(log),label=f'{r["period"]} {r["mode"]} {r["current"]}')
+            env=os.environ.copy();env['DVCS_CAMPAIGN_WORKER']='1'
+            with log.open('w') as f:res=subprocess.run(shlex.split(r['command']),stdout=f,stderr=subprocess.STDOUT,env=env)
+            with lock:state['active'].pop(r['output'],None)
+            if res.returncode or not all(p.is_file() and p.stat().st_size>0 for p in exp):
+                with lock:state['fail']+=1
+                raise RuntimeError(f'Failed {r["period"]} {r["mode"]} {r["current"]}, exit={res.returncode}; log={log}')
+            with lock:state['done']+=1;state['bytes']+=r['input_bytes']
+            print(f'[DONE] {r["period"]} {r["mode"]} {r["current"]} ({state["done"]}/{len(rows)} jobs)',flush=True)
+    stop=threading.Event()
+    def reporter():
+        while not stop.wait(a.progress_seconds):
+            with lock:done=state['done'];done_bytes=state['bytes'];active=list(state['active'].values());fail=state['fail']
+            # The only defensible exact progress measure without pre-scanning HIPO is completed jobs/files.
+            pct=100*done_bytes/total_bytes if total_bytes else 100
+            samples=[]
+            for item in active[:5]:
+                try:
+                    with open(item['log'],'rb') as f:
+                        f.seek(max(0,os.fstat(f.fileno()).st_size-12000));tail=f.read().decode(errors='replace')
+                    matches=re.findall(r'processed:\s*([\d,]+)\s*events',tail)
+                    if matches:samples.append(item['label']+': '+matches[-1]+' events')
+                except OSError:pass
+            elapsed=(time.monotonic()-start)/60
+            print(f'[PROGRESS] completed {done}/{len(rows)} jobs; {pct:.1f}% of scheduled input bytes in completed jobs; active={len(active)}; failures={fail}; elapsed={elapsed:.1f} min'+(' | '+ ' | '.join(samples) if samples else ''),flush=True)
+    thread=threading.Thread(target=reporter,daemon=True);thread.start();errors=[]
+    try:
+        with ThreadPoolExecutor(max_workers=a.workers) as pool:
+            futures={pool.submit(run_group,group):source for source,group in selected}
+            for future in as_completed(futures):
+                try:future.result()
+                except Exception as e:errors.append(str(e));print('[ERROR]',e,flush=True)
+    finally:stop.set();thread.join(timeout=2)
+    if errors:raise SystemExit(f'{len(errors)} groups failed; inspect logs')
+    print(f'COMPLETE node {a.node}: {len(rows)} jobs; elapsed={(time.monotonic()-start)/60:.1f} min',flush=True)
+if __name__=='__main__':main()
