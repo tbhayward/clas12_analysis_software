@@ -7,6 +7,7 @@ acceptance. No MC::Event.weight is used. Outputs PNGs and CSVs directly to --out
 """
 import argparse
 import csv
+from concurrent.futures import ProcessPoolExecutor
 from pathlib import Path
 import numpy as np
 import matplotlib
@@ -47,16 +48,64 @@ def load_cells(path):
     return rows
 
 
+def process_chunk(task):
+    """Read one ROOT entry range in an independent process; return reduced counts."""
+    input_path, start, stop, mandatory, cells, boundary = task
+    import uproot
+    with uproot.open(input_path) as root:
+        b = root['MCEvents'].arrays(mandatory, entry_start=start, entry_stop=stop, library='np')
+    good = ((b['gen_kinematics_valid'] > 0) & np.isfinite(b['gen_t1']) &
+            (b['gen_t1'] < 0) & np.isfinite(b['gen_p1_p']) &
+            (b['gen_p1_p'] > 0) & np.isfinite(b['gen_p1_theta']) &
+            np.isfinite(b['gen_Q2']) & np.isfinite(b['gen_x']))
+    shape1 = (len(T_EDGES)-1, len(THETA_EDGES)-1)
+    shape2 = (len(P_EDGES)-1, len(THETA_EDGES)-1)
+    empty1 = np.zeros(shape1, dtype=np.int64)
+    empty2 = np.zeros(shape2, dtype=np.int64)
+    counts = np.zeros((len(cells), 6), dtype=np.int64)
+    if not np.any(good):
+        return len(b['gen_t1']), 0, 0, empty1, empty1.copy(), empty2, empty2.copy(), counts
+    g = -b['gen_t1'][good]
+    p = b['gen_p1_p'][good]
+    theta = np.degrees(b['gen_p1_theta'][good])
+    q = b['gen_Q2'][good]
+    x = b['gen_x'][good]
+    rec = (b['rec_kinematics_valid'][good] > 0) & (b['rec_final_state'][good] > 0)
+    tbin = np.searchsorted(T_EDGES, g, side='right')-1
+    ib = np.searchsorted(THETA_EDGES, theta, side='right')-1
+    pb = np.searchsorted(P_EDGES, p, side='right')-1
+    valid = (tbin >= 0) & (tbin < shape1[0]) & (ib >= 0) & (ib < shape1[1])
+    linear = tbin[valid]*shape1[1] + ib[valid]
+    gen1 = np.bincount(linear, minlength=np.prod(shape1)).reshape(shape1)
+    rec1 = np.bincount((tbin[valid & rec]*shape1[1]+ib[valid & rec]), minlength=np.prod(shape1)).reshape(shape1)
+    valid2 = valid & (pb >= 0) & (pb < shape2[0])
+    gen2 = np.bincount(pb[valid2]*shape2[1]+ib[valid2], minlength=np.prod(shape2)).reshape(shape2)
+    rec2 = np.bincount(pb[valid2 & rec]*shape2[1]+ib[valid2 & rec], minlength=np.prod(shape2)).reshape(shape2)
+    # Preselect by |t| before testing xB and Q2 cell boundaries.
+    for k, (_, xmin, xmax, qmin, qmax, tmin, tmax) in enumerate(cells):
+        v = (g >= tmin) & (g < tmax) & (x >= xmin) & (x < xmax) & (q >= qmin) & (q < qmax)
+        if not np.any(v):
+            continue
+        counts[k] = (np.count_nonzero(v), np.count_nonzero(v & rec),
+                     np.count_nonzero(v & (theta > boundary)),
+                     np.count_nonzero(v & (theta < 40)),
+                     np.count_nonzero(v & (theta >= 40) & (theta <= boundary)),
+                     np.count_nonzero(v & (theta > boundary)))
+    return len(b['gen_t1']), len(g), int(np.count_nonzero(rec)), gen1, rec1, gen2, rec2, counts
+
+
 def main():
     ap=argparse.ArgumentParser(description=__doc__)
     ap.add_argument('--input', default='/volatile/clas12/thayward/dvcs_reprocessing_20261022/production/fa18_inb/dvcs_rec/50nA/all.mc_events.root')
     ap.add_argument('--output', default='/u/home/thayward/clas12_analysis_software/analysis_scripts/misc/diagnostic_dvcs')
     ap.add_argument('--binning-file', default='/u/home/thayward/clas12_analysis_software/analysis_scripts/dvcs_cross_section/imports/integrated_bin_v2.csv')
-    ap.add_argument('--max-events', type=int, default=10000000)
-    ap.add_argument('--chunk', type=int, default=200000)
+    ap.add_argument('--max-events', type=int, default=1000000)
+    ap.add_argument('--chunk', type=int, default=100000)
+    ap.add_argument('--workers', type=int, default=4, help='Parallel ROOT readers; use 1 for serial execution')
     ap.add_argument('--theta-boundary', type=float, default=64.23, help='Illustrative polar-angle threshold, NOT a validated geometric cut')
     ap.add_argument('--min-generated', type=int, default=100, help='Minimum generated events for displayed 2D efficiency')
     args=ap.parse_args()
+    if args.workers < 1 or args.chunk < 1: ap.error('--workers and --chunk must be positive')
     import uproot
     inp=Path(args.input)
     if inp.is_dir(): inp=inp/'all.mc_events.root'
@@ -73,49 +122,28 @@ def main():
     cellcounts=np.zeros((len(cells),6),dtype=np.int64)
     n_processed=0; n_truth=0; n_reco=0
     with uproot.open(inp) as root:
-        tree=root['MCEvents']
-        mandatory=['gen_kinematics_valid','gen_t1','gen_p1_p','gen_p1_theta','gen_Q2','gen_x','rec_kinematics_valid','rec_final_state']
-        missing=[k for k in mandatory if k not in tree.keys()]
+        tree = root['MCEvents']
+        mandatory = ['gen_kinematics_valid','gen_t1','gen_p1_p','gen_p1_theta','gen_Q2','gen_x','rec_kinematics_valid','rec_final_state']
+        missing = [k for k in mandatory if k not in tree.keys()]
         if missing: raise RuntimeError('Missing required MCEvents branches: '+str(missing))
-        #endif
-        total=min(args.max_events,tree.num_entries)
-        print('Reading',inp,'entries',total,flush=True)
-        for start in range(0,total,args.chunk):
-            b=tree.arrays(mandatory,entry_start=start,entry_stop=min(total,start+args.chunk),library='np')
-            n_processed+=len(b['gen_t1'])
-            good=(b['gen_kinematics_valid']>0)&np.isfinite(b['gen_t1'])&(b['gen_t1']<0)&np.isfinite(b['gen_p1_p'])&(b['gen_p1_p']>0)&np.isfinite(b['gen_p1_theta'])&np.isfinite(b['gen_Q2'])&np.isfinite(b['gen_x'])
-            if not np.any(good): continue
-            #endif
-            g=-b['gen_t1'][good]
-            p=b['gen_p1_p'][good]
-            theta=np.degrees(b['gen_p1_theta'][good])
-            q=b['gen_Q2'][good];x=b['gen_x'][good]
-            rec=(b['rec_kinematics_valid'][good]>0)&(b['rec_final_state'][good]>0)
-            n_truth+=len(g);n_reco+=int(np.sum(rec))
-            tbin=np.searchsorted(T_EDGES,g,side='right')-1
-            ib=np.searchsorted(THETA_EDGES,theta,side='right')-1
-            pb=np.searchsorted(P_EDGES,p,side='right')-1
-            valid=(tbin>=0)&(tbin<nbin)&(ib>=0)&(ib<nt)
-            np.add.at(generated,(tbin[valid],ib[valid]),1)
-            np.add.at(reconstructed,(tbin[valid&rec],ib[valid&rec]),1)
-            valid2=(pb>=0)&(pb<npb)&(ib>=0)&(ib<nt)&(tbin>=0)&(tbin<nbin)
-            np.add.at(generated_2d,(pb[valid2],ib[valid2]),1)
-            np.add.at(reconstructed_2d,(pb[valid2&rec],ib[valid2&rec]),1)
-            # Each cell uses generated kinematics, including cases that reconstruct elsewhere.
-            for k,(_,xmin,xmax,qmin,qmax,tmin,tmax) in enumerate(cells):
-                v=(x>=xmin)&(x<xmax)&(q>=qmin)&(q<qmax)&(g>=tmin)&(g<tmax)
-                if not np.any(v):continue
-                #endif
-                cellcounts[k,0]+=int(np.sum(v))
-                cellcounts[k,1]+=int(np.sum(v&rec))
-                cellcounts[k,2]+=int(np.sum(v&(theta>args.theta_boundary)))
-                cellcounts[k,3]+=int(np.sum(v&(theta<40)))
-                cellcounts[k,4]+=int(np.sum(v&(theta>=40)&(theta<=args.theta_boundary)))
-                cellcounts[k,5]+=int(np.sum(v&(theta>args.theta_boundary)))
-            #endfor
-            print(f'Processed {n_processed:,}/{total:,}',flush=True)
-        #endfor
-    #endwith
+        total = min(args.max_events, tree.num_entries) if args.max_events > 0 else tree.num_entries
+    tasks = ((str(inp), start, min(total, start+args.chunk), mandatory, cells, args.theta_boundary)
+             for start in range(0, total, args.chunk))
+    print(f'Reading {inp} entries {total:,} with {args.workers} worker(s)', flush=True)
+    def accumulate(result):
+        nonlocal n_processed, n_truth, n_reco
+        processed, truth, reco, gen1, rec1, gen2, rec2, cc = result
+        n_processed += processed; n_truth += truth; n_reco += reco
+        generated[:] += gen1; reconstructed[:] += rec1
+        generated_2d[:] += gen2; reconstructed_2d[:] += rec2
+        cellcounts[:] += cc
+        print(f'Processed {n_processed:,}/{total:,}', flush=True)
+    if args.workers == 1:
+        for task in tasks: accumulate(process_chunk(task))
+    else:
+        with ProcessPoolExecutor(max_workers=args.workers) as executor:
+            for result in executor.map(process_chunk, tasks):
+                accumulate(result)
     # Summary by |t| bin
     rows=[]
     for k in range(nbin):
