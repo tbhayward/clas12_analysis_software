@@ -238,11 +238,12 @@ public static void main(String[] args) {
 		
 		HipoDataSource reader = new HipoDataSource();
 		reader.open(hipo_list[current_file]); // open next hipo file
-		HipoDataEvent event = reader.getNextEvent(); 
+		HipoDataEvent event = null; // Do not consume an event before the loop. 
 
 		while (reader.hasEvent()) {
             if (maxEvents > 0 && num_events >= maxEvents) break;
 		    ++num_events;
+            if (num_events % 100000 == 0) println("[HIPO_PROGRESS] " + hipo_list[current_file].absolutePath + " events_processed=" + num_events);
 		    if (num_events % 1000000 == 0) { // not necessary, just updates output
 		        print("processed: " + num_events + " events. ");
 		    }
