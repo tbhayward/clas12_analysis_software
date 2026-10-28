@@ -7,7 +7,7 @@ P=pathlib.Path
 SCRIPTS={'dvcs_data':'processing_dvcs_stream.groovy','pi0_data':'processing_exclusive_pi0_stream.groovy'}
 def main():
  ap=argparse.ArgumentParser(description=__doc__)
- ap.add_argument('--config',default='processing_scripts/campaign_config.json');ap.add_argument('--node',type=int,required=True);ap.add_argument('--nodes',type=int,default=2);ap.add_argument('--workers',type=int,default=10);ap.add_argument('--periods',nargs='+',default=['fa18_inb']);ap.add_argument('--only',nargs='+',choices=list(SCRIPTS),default=list(SCRIPTS));ap.add_argument('--max-events',type=int,default=10000);ap.add_argument('--output-root',default='rebuild_data_pilot_v1');ap.add_argument('--execute',action='store_true');ap.add_argument('--converter-timeout',type=int,default=180)
+ ap.add_argument('--config',default='processing_scripts/campaign_config.json');ap.add_argument('--node',type=int,required=True);ap.add_argument('--nodes',type=int,default=2);ap.add_argument('--workers',type=int,default=10);ap.add_argument('--periods',nargs='+',default=['fa18_inb']);ap.add_argument('--only',nargs='+',choices=list(SCRIPTS),default=list(SCRIPTS));ap.add_argument('--max-events',type=int,default=10000);ap.add_argument('--output-root',default='rebuild_data_pilot_v1');ap.add_argument('--execute',action='store_true');ap.add_argument('--converter-timeout',type=int,default=180);ap.add_argument('--retry-stale',action='store_true',help='Remove stale FIFO/partial ROOT files only for jobs without a valid completion marker')
  a=ap.parse_args()
  if not 1<=a.node<=a.nodes or a.workers<1 or a.max_events<1:ap.error('invalid node, workers or max-events')
  root=P.cwd();cfg=json.loads(P(a.config).read_text());out=P(a.output_root);jobs=[];missing=[];seen=set()
@@ -43,15 +43,24 @@ def main():
   j,hipo,dest=job;dest.parent.mkdir(parents=True,exist_ok=True)
   ok=P(str(dest)+'.ok')
   required={'input':str(hipo),'mode':j['mode'],'period':j['period'],'max_events':a.max_events,'input_size':hipo.stat().st_size}
-  if dest.exists() or ok.exists():
-   if dest.is_file() and dest.stat().st_size>0 and ok.is_file():
-    marker=json.loads(ok.read_text())
-    if all(marker.get(k)==v for k,v in required.items()):
-     with lock:counts['done']+=1;counts['skipped']+=1
-     print('[SKIP_VALID_MARKER]',j['mode'],hipo.name,flush=True);return
-   raise RuntimeError('Existing output or incompatible marker: '+str(dest))
   fifo=P(str(dest)+'.events.tsv');tmp=P(str(dest)+'.partial.root');gl=P(str(dest)+'.processing.log');cl=P(str(dest)+'.converter.log')
-  if fifo.exists() or tmp.exists():raise RuntimeError('Stale FIFO or partial output: '+str(dest))
+  valid=False
+  if dest.is_file() and dest.stat().st_size>0 and ok.is_file():
+   try:
+    marker=json.loads(ok.read_text())
+    valid=all(marker.get(k)==v for k,v in required.items())
+   except (ValueError,OSError):pass
+  if valid:
+   with lock:counts['done']+=1;counts['skipped']+=1
+   print('[SKIP_VALID_MARKER]',j['mode'],hipo.name,flush=True);return
+  stale=[f for f in (dest,ok,fifo,tmp) if f.exists() or f.is_symlink()]
+  if stale:
+   if not a.retry_stale:raise RuntimeError('Stale FIFO or partial output (use --retry-stale after confirming no other data pilot is active): '+str(dest))
+   # Only clean artifacts belonging to this incomplete job, never completed jobs.
+   for f in stale:
+    if f.is_dir():raise RuntimeError('Unexpected directory at output path: '+str(f))
+    f.unlink()
+   print('[RETRY_STALE]',j['mode'],hipo.name,flush=True)
   os.mkfifo(fifo)
   try:
    with gl.open('w') as g,cl.open('w') as c:
