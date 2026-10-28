@@ -38,7 +38,7 @@ def main():
    groups[(sample,cap)].append(root);validated+=1
    print('[VALID]',root,result.stdout.strip(),flush=True)
   except Exception as e:errors.append(f'{marker}: {e}');print('[INVALID]',errors[-1],flush=True)
- unmarked=[f for f in out.rglob('*.root') if not P(str(f)+'.ok').exists() and f.name!='.validate_mc_part']
+ unmarked=[f for f in out.rglob('*.root') if f.parent.name == 'parts' and not P(str(f)+'.ok').exists()]
  for f in unmarked:errors.append('unmarked ROOT file: '+str(f));print('[INVALID]',errors[-1],flush=True)
  if a.expected_files and validated!=a.expected_files:errors.append(f'expected {a.expected_files} parts, found {validated}')
  caps=collections.defaultdict(set)
