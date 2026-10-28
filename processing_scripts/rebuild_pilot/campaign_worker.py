@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-HIPO, two-node paired-MC campaign runner (FIFO path fix). Does not touch legacy outputs.
+"""Per-HIPO, two-node paired-MC campaign runner (strict completion v4). Does not touch legacy outputs.
 Supports dvcs_mc and pi0_mc; other modes intentionally rejected pending validation.
 Run from clas12_analysis_software root. Both nodes use identical config and --nodes 2.
 """
@@ -103,15 +103,9 @@ def main():
    groovy_log=log.read_text(errors='replace')
    rows=re.findall(r'\[PAIRED_ROOT_ROWS\]\s+(\d+)',converter_log)
    totals=re.findall(r'\[HIPO_FILE_DONE\].*?events_total=(\d+)',groovy_log)
-   # Some Groovy versions emit HIPO_FILE_DONE for each event rather than once.
-   # Accept strictly increasing progress markers only if the last count matches
-   # the converter's single final row count.
-   counts=[int(value) for value in totals]
-   increasing=all(previous < current for previous,current in zip(counts,counts[1:]))
-   if len(rows)!=1 or not counts or not increasing or int(rows[0])!=counts[-1]:
-    raise RuntimeError(f'Event-count mismatch or missing completion markers for {hipo}: converter={rows} Groovy={totals[-3:]}')
-   if len(counts)>1:
-    print(f'[LEGACY_PROGRESS_MARKERS] {hipo.name}: {len(counts)} progress markers; final count agrees with converter',flush=True)
+   # Strict protocol: one final marker per HIPO, matching converter rows.
+   if len(rows)!=1 or len(totals)!=1 or int(rows[0])!=int(totals[0]):
+    raise RuntimeError(f'Event-count mismatch or invalid completion markers for {hipo}: converter={rows} Groovy={totals}')
    n=int(rows[0])
    if o.max_events and n>o.max_events:raise RuntimeError(f'Exceeded event cap for {hipo}: {n}>{o.max_events}')
    if n<1:raise RuntimeError('Empty ROOT event stream: '+str(hipo))
@@ -123,6 +117,9 @@ def main():
   finally:
    with lock:state['active'].pop(hipo.name,None)
    if fifo.exists():fifo.unlink()
+   # Remove only this job's incomplete ROOT temporary on failure.
+   # The final ROOT and its completion marker are never deleted here.
+   if tmp.exists():tmp.unlink()
  stopthread=threading.Thread(target=report,daemon=True);stopthread.start();fail=[]
  try:
   with concurrent.futures.ThreadPoolExecutor(max_workers=o.workers) as pool:
