@@ -451,9 +451,9 @@ public static void main(String[] args) {
 		            }
 		        }  
 		    }
+		}
 		reader.close();
 		println("[HIPO_FILE_DONE] " + hipo_list[current_file].absolutePath + " events_total=" + num_events);
-		}
 
 		// Write any remaining lines in the batchLines StringBuilder to the file
 		if (batchLines.length() > 0) {
