@@ -103,8 +103,15 @@ def main():
    groovy_log=log.read_text(errors='replace')
    rows=re.findall(r'\[PAIRED_ROOT_ROWS\]\s+(\d+)',converter_log)
    totals=re.findall(r'\[HIPO_FILE_DONE\].*?events_total=(\d+)',groovy_log)
-   if len(rows)!=1 or len(totals)!=1 or int(rows[0])!=int(totals[0]):
+   # Some Groovy versions emit HIPO_FILE_DONE for each event rather than once.
+   # Accept strictly increasing progress markers only if the last count matches
+   # the converter's single final row count.
+   counts=[int(value) for value in totals]
+   increasing=all(previous < current for previous,current in zip(counts,counts[1:]))
+   if len(rows)!=1 or not counts or not increasing or int(rows[0])!=counts[-1]:
     raise RuntimeError(f'Event-count mismatch or missing completion markers for {hipo}: converter={rows} Groovy={totals[-3:]}')
+   if len(counts)>1:
+    print(f'[LEGACY_PROGRESS_MARKERS] {hipo.name}: {len(counts)} progress markers; final count agrees with converter',flush=True)
    n=int(rows[0])
    if o.max_events and n>o.max_events:raise RuntimeError(f'Exceeded event cap for {hipo}: {n}>{o.max_events}')
    if n<1:raise RuntimeError('Empty ROOT event stream: '+str(hipo))
