@@ -9,7 +9,7 @@ def main():
  ap=argparse.ArgumentParser(description=__doc__)
  ap.add_argument('--config',default='processing_scripts/campaign_config.json');ap.add_argument('--node',type=int,required=True);ap.add_argument('--nodes',type=int,default=2);ap.add_argument('--workers',type=int,default=10);ap.add_argument('--periods',nargs='+',default=['fa18_inb']);ap.add_argument('--only',nargs='+',choices=list(SCRIPTS),default=list(SCRIPTS));ap.add_argument('--max-events',type=int,default=10000);ap.add_argument('--output-root',default='rebuild_data_pilot_v1');ap.add_argument('--execute',action='store_true');ap.add_argument('--converter-timeout',type=int,default=180);ap.add_argument('--retry-stale',action='store_true',help='Remove stale FIFO/partial ROOT files only for jobs without a valid completion marker')
  a=ap.parse_args()
- if not 1<=a.node<=a.nodes or a.workers<1 or a.max_events<1:ap.error('invalid node, workers or max-events')
+ if not 1<=a.node<=a.nodes or a.workers<1 or a.max_events<0:ap.error('invalid node, workers or max-events')
  root=P.cwd();cfg=json.loads(P(a.config).read_text());out=P(a.output_root);jobs=[];missing=[];seen=set()
  for j in cfg['jobs']:
   if j['mode'] not in a.only or j['period'] not in a.periods:continue
@@ -77,7 +77,7 @@ def main():
    if proc.returncode or code or not tmp.is_file() or tmp.stat().st_size==0:raise RuntimeError(f'Processor={proc.returncode} converter={code}; see {gl} {cl}')
    log=gl.read_text(errors='replace');cv=cl.read_text(errors='replace')
    totals=re.findall(r'\[HIPO_FILE_DONE\].*?events_total=(\d+)',log);rows=re.findall(r'\[DATA_ROOT_ROWS\]\s+(\d+)',cv)
-   if len(totals)!=1 or len(rows)!=1 or int(totals[0])<int(rows[0]) or int(totals[0])>a.max_events:raise RuntimeError(f'Invalid completion counts: processed={totals} selected={rows}; {hipo}')
+   if len(totals)!=1 or len(rows)!=1 or int(totals[0])<int(rows[0]) or (a.max_events>0 and int(totals[0])>a.max_events):raise RuntimeError(f'Invalid completion counts: processed={totals} selected={rows}; {hipo}')
    # Data processors emit only selected candidates: selected rows <= processed events.
    os.replace(tmp,dest);ok.write_text(json.dumps({**required,'processed_events':int(totals[0]),'selected_rows':int(rows[0])})+'\n')
    with lock:counts['done']+=1
