@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Per-HIPO, two-node paired-MC campaign runner (strict completion v4). Does not touch legacy outputs.
-Supports dvcs_mc and pi0_mc; other modes intentionally rejected pending validation.
+Supports only event-aligned dvcs_mc and pi0_mc. AAOgen leakage uses a separate rec-only worker.
 Run from clas12_analysis_software root. Both nodes use identical config and --nodes 2.
 """
 import argparse, concurrent.futures, hashlib, json, os, pathlib, re, shlex, shutil, subprocess, threading, time
@@ -19,22 +19,24 @@ def main():
  if o.converter_timeout < 1:a.error('--converter-timeout must be positive')
  jobs=[];seen=set();missing=[]
  for j in cfg['jobs']:
-  mode=LEGACY.get(j['mode']);
-  if mode is None or (o.only and mode not in o.only) or (o.periods and j['period'] not in o.periods):continue
+  modes=([LEGACY[j['mode']]] if j['mode'] in LEGACY else [])
+  modes=[mode for mode in modes if (not o.only or mode in o.only) and (not o.periods or j['period'] in o.periods)]
+  if not modes:continue
   inp=P(j['input'])
   if not inp.is_dir():missing.append(str(inp));continue
   files=sorted(inp.rglob('*.hipo'))
   if not files:missing.append(str(inp)+' (empty)');continue
-  for f in files:
-   key=(mode,str(f.resolve()))
-   if key in seen:continue
-   seen.add(key)
-   digest=hashlib.sha256((mode+'\0'+str(f.resolve())).encode()).digest()
-   node=int.from_bytes(digest[:8],'big')%o.nodes+1
-   if node!=o.node:continue
-   sample=(j['period'],mode,j.get('current','nominal'))
-   destination=out.joinpath(*sample,'parts',f.stem+'_'+hashlib.sha256(str(f.resolve()).encode()).hexdigest()[:10]+'.root')
-   jobs.append((sample,f,destination,j['energy']))
+  for mode in modes:
+   for f in files:
+    key=(mode,str(f.resolve()))
+    if key in seen:continue
+    seen.add(key)
+    digest=hashlib.sha256((mode+'\0'+str(f.resolve())).encode()).digest()
+    node=int.from_bytes(digest[:8],'big')%o.nodes+1
+    if node!=o.node:continue
+    sample=(j['period'],mode,j.get('current','nominal'))
+    destination=out.joinpath(*sample,'parts',f.stem+'_'+hashlib.sha256(str(f.resolve()).encode()).hexdigest()[:10]+'.root')
+    jobs.append((sample,f,destination,j['energy']))
  print(f'[PLAN] node={o.node}/{o.nodes} files={len(jobs)} workers={o.workers} execute={o.execute}',flush=True)
  if missing:print('[MISSING INPUTS]',*missing,sep='\n  ',flush=True)
  if not o.execute:return

@@ -13,10 +13,11 @@ def main():
  p.add_argument('--expected-files',type=int,default=342)
  p.add_argument('--max-events',type=int,default=1000,help='0 means unlimited/full statistics')
  p.add_argument('--merge',action='store_true')
+ p.add_argument('--only',nargs='+',choices=('dvcs_data','pi0_data','pi0_as_dvcs'),default=['dvcs_data','pi0_data'])
  a=p.parse_args()
  base=P(a.output_root)/a.period
  errors=[];groups=collections.defaultdict(list);total=0
- for mode in ('dvcs_data','pi0_data'):
+ for mode in a.only:
   folder=base/mode/'parts'
   if not folder.is_dir():errors.append(f'missing directory: {folder}');continue
   for marker in sorted(folder.glob('*.root.ok')):
@@ -33,7 +34,7 @@ def main():
   for tmp in folder.glob('*.partial.root'):errors.append(f'partial ROOT: {tmp}')
   for fifo in folder.glob('*.events.tsv'):errors.append(f'leftover FIFO: {fifo}')
  if total!=a.expected_files:errors.append(f'expected {a.expected_files} marked files, found {total}')
- for mode in ('dvcs_data','pi0_data'):
+ for mode in a.only:
   print(f'[GROUP] {mode} files={len(groups[mode])} selected_rows={sum(n for _,n in groups[mode])}',flush=True)
  print(f'[VALIDATE] files={total} errors={len(errors)}',flush=True)
  for error in errors:print('[ERROR]',error,file=sys.stderr)
@@ -48,11 +49,11 @@ def main():
  checker=base/'.check_merged_data_root'
  subprocess.run(['g++','-O2','-std=c++17',*flags,str(src),'-o',str(checker),*libs],check=True)
  # Preflight all destinations before merging either mode.
- for mode in ('dvcs_data','pi0_data'):
+ for mode in a.only:
   dest=base/mode/('merged_full.root' if a.max_events==0 else f'merged_pilot_{a.max_events}.root')
   tmp=P(str(dest)+'.partial.root')
   if dest.exists() or tmp.exists():p.error(f'merged destination or temporary output exists: {dest} (refusing overwrite)')
- for mode in ('dvcs_data','pi0_data'):
+ for mode in a.only:
   dest=base/mode/('merged_full.root' if a.max_events==0 else f'merged_pilot_{a.max_events}.root')
   tmp=P(str(dest)+'.partial.root')
   inputs=groups[mode];expected=sum(n for _,n in inputs)
@@ -61,7 +62,7 @@ def main():
   result=subprocess.run(['hadd','-f',str(tmp),*[str(root) for root,_ in inputs]])
   if result.returncode or not tmp.is_file() or tmp.stat().st_size==0:
    print('[FAILED] hadd; partial output retained:',tmp,file=sys.stderr);return 2
-  check=subprocess.run([str(checker.resolve()),str(tmp.resolve()),str(expected),'70' if mode=='dvcs_data' else '77'])
+  check=subprocess.run([str(checker.resolve()),str(tmp.resolve()),str(expected),'77' if mode=='pi0_data' else '70'])
   if check.returncode:
    print('[FAILED] merged ROOT verification; partial output retained:',tmp,file=sys.stderr);return 3
   tmp.rename(dest)
