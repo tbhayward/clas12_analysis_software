@@ -2,7 +2,7 @@
 """Single-file pilot, not a production launcher. Run from CLAS12 checkout root.
 Example: python3 processing_scripts/rebuild_pilot/pilot_paired.py --mode dvcs_mc --hipo /path/file.hipo --period fa18_inb --energy 10.604 --events 10000
 """
-import argparse, os, subprocess, tempfile, shutil, sys
+import argparse, os, subprocess, tempfile, shutil, sys, shlex
 from pathlib import Path
 p=argparse.ArgumentParser();p.add_argument('--mode',choices=['dvcs_mc','pi0_mc'],required=True);p.add_argument('--hipo',required=True);p.add_argument('--period',required=True,choices=['fa18_inb','fa18_out','sp18_inb','sp18_out','sp19_inb']);p.add_argument('--energy',type=float,required=True);p.add_argument('--events',type=int,default=10000);p.add_argument('--outdir',default='rebuild_pilot_output');a=p.parse_args()
 root=Path.cwd(); scripts=root/'processing_scripts/rebuild_pilot'; source=Path(a.hipo).resolve();out=Path(a.outdir).resolve();out.mkdir(parents=True,exist_ok=True)
@@ -23,7 +23,11 @@ try:
   converter_proc=subprocess.Popen([str(converter),str(fifo),str(result)],stdout=cl,stderr=subprocess.STDOUT)
   args=[str(root/'coatjava/bin/run-groovy'),'-cp',str(jar),str(scripts/name),str(source),str(selected),'1',str(a.energy),'11','1',str(a.events),a.period]
   with gl:
-   processor_proc=subprocess.Popen(args,stdout=gl,stderr=subprocess.STDOUT,cwd=root)
+   # Load QADB in the worker's own tcsh environment, just as processing.csh does.
+   # No manual `module load` is required in the user's interactive shell.
+   quoted=' '.join(shlex.quote(x) for x in args)
+   setup='source source_file.txt; if ($status != 0) exit 90; module load qadb/3.4.1; if ($status != 0) exit 91; exec '+quoted
+   processor_proc=subprocess.Popen(['/bin/tcsh','-c',setup],stdout=gl,stderr=subprocess.STDOUT,cwd=root)
    code=processor_proc.wait()
   # If Groovy fails before opening FIFO, converter would otherwise wait forever.
   if code:converter_proc.terminate()
