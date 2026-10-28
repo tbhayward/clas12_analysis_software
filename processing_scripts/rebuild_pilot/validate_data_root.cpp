@@ -21,7 +21,7 @@ int main(int argc,char**argv){
  fs::create_directories(argv[3]);
  out<<"mode,run,root_file,expected_rows,actual_rows,branches,nonfinite_kinematics,invalid_run,invalid_event,negative_q2,negative_w,negative_xb,negative_t1,negative_t,nonzero_t1,invalid_alias,status\n";
  struct H {std::unique_ptr<TH1D> q2,w,xb,t,t1,phi;};
- auto make=[&](const std::string&m){H h;h.q2=std::make_unique<TH1D>((m+"_q2").c_str(),"Q^{2};Q^{2} (GeV^{2});Candidates",100,0,12);h.w=std::make_unique<TH1D>((m+"_w").c_str(),"W;W (GeV);Candidates",100,0,6);h.xb=std::make_unique<TH1D>((m+"_xb").c_str(),"x_{B};x_{B};Candidates",100,0,1);h.t=std::make_unique<TH1D>((m+"_t").c_str(),"|t| from photon;|t| (GeV^{2});Candidates",100,0,2);h.t1=std::make_unique<TH1D>((m+"_t1").c_str(),"|t| from proton;|t_{p}| (GeV^{2});Candidates",100,0,2);h.phi=std::make_unique<TH1D>((m+"_phi").c_str(),"#phi_{h};#phi_{h} (rad);Candidates",100,-3.3,6.4);return h;};
+ auto make=[&](const std::string&m){H h;h.q2=std::make_unique<TH1D>((m+"_q2").c_str(),"Q^{2};Q^{2} (GeV^{2});Candidates",100,0,12);h.w=std::make_unique<TH1D>((m+"_w").c_str(),"W;W (GeV);Candidates",100,0,6);h.xb=std::make_unique<TH1D>((m+"_xb").c_str(),"x_{B};x_{B};Candidates",100,0,1);h.t=std::make_unique<TH1D>((m+"_t").c_str(),"|t| from photon;|t| (GeV^{2});Candidates",100,0,2);h.t1=std::make_unique<TH1D>((m+"_t1").c_str(),"|t| from proton;|t_{p}| (GeV^{2});Candidates",100,0,2);h.phi=std::make_unique<TH1D>((m+"_phi").c_str(),"#phi_{#gamma} (Trento);#phi_{#gamma} (rad);Candidates",100,-3.3,6.4);return h;};
  H dvcs=make("dvcs"),pi0=make("pi0");
  std::string mode,run,path,expectedstr;long long files=0,bad=0,entries=0;
  while(in>>mode>>run>>expectedstr>>path){
@@ -37,7 +37,7 @@ int main(int argc,char**argv){
     H&h=mode=="dvcs_data"?dvcs:pi0;
     for(long long j=0;j<n;j++){
      tree->GetEntry(j);auto get=[&](int c){return leaf[c-1]->GetValue();};
-     double q=get(26),w=get(27),xb=get(31),t=get(32),t1=get(33),ph=get(60),rn=get(5),ev=get(6);
+     double q=get(26),w=get(27),xb=get(31),t=get(32),t1=get(33),ph=get(58),rn=get(5),ev=get(6);
      if(!std::isfinite(q)||!std::isfinite(w)||!std::isfinite(xb)||!std::isfinite(t)||!std::isfinite(t1)||!std::isfinite(ph))++nonfinite;
      if(!std::isfinite(rn)||std::llround(rn)!=std::stoll(run))++badrun;
      if(!std::isfinite(ev)||ev<0)++badev;
