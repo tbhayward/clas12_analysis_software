@@ -4,7 +4,7 @@ Run from clas12_analysis_software root. One HIPO per job, FIFO -> DataEvents ROO
 """
 import argparse, concurrent.futures, hashlib, json, os, pathlib, re, shlex, shutil, subprocess, threading
 P=pathlib.Path
-SCRIPTS={'dvcs_data':'processing_dvcs_stream_v1.groovy','pi0_data':'processing_exclusive_pi0_stream_v1.groovy'}
+SCRIPTS={'dvcs_data':'processing_dvcs_stream.groovy','pi0_data':'processing_exclusive_pi0_stream.groovy'}
 def main():
  ap=argparse.ArgumentParser(description=__doc__)
  ap.add_argument('--config',default='processing_scripts/campaign_config.json');ap.add_argument('--node',type=int,required=True);ap.add_argument('--nodes',type=int,default=2);ap.add_argument('--workers',type=int,default=10);ap.add_argument('--periods',nargs='+',default=['fa18_inb']);ap.add_argument('--only',nargs='+',choices=list(SCRIPTS),default=list(SCRIPTS));ap.add_argument('--max-events',type=int,default=10000);ap.add_argument('--output-root',default='rebuild_data_pilot_v1');ap.add_argument('--execute',action='store_true');ap.add_argument('--converter-timeout',type=int,default=180)
@@ -34,7 +34,7 @@ def main():
   if not shutil.which(x):raise SystemExit('Missing '+x)
  jar=root/'processing_classes/dist/processing_classes.jar'
  if not jar.is_file():raise SystemExit('Missing '+str(jar))
- source=root/'processing_scripts/rebuild_pilot/convert_data_stream_v1.cpp';converter=root/'processing_scripts/rebuild_pilot/convert_data_stream_v1'
+ source=root/'processing_scripts/rebuild_pilot/convert_data_stream.cpp';converter=root/'processing_scripts/rebuild_pilot/convert_data_stream'
  if not source.is_file():raise SystemExit('Missing '+str(source))
  flags=shlex.split(subprocess.check_output(['root-config','--cflags'],text=True));libs=shlex.split(subprocess.check_output(['root-config','--libs'],text=True))
  subprocess.run(['g++','-O3','-std=c++17',*flags,str(source),'-o',str(converter),*libs],check=True)
