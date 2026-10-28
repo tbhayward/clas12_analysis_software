@@ -33,10 +33,23 @@ public static void main(String[] args) {
 	    println("ERROR: Please enter a hipo file directory as the first argument");
 	    System.exit(0);
 	}
-	// If the input directory is provided, iterate through each file recursively
+	// Accept a single HIPO file (per-file campaign) or a directory (legacy behavior).
 	def hipo_list = []
-	(args[0] as File).eachFileRecurse(FileType.FILES) 
-		{ if (it.name.endsWith('.hipo')) hipo_list << it }
+	File inputPath = new File(args[0])
+	if (inputPath.isFile() && inputPath.name.endsWith('.hipo')) {
+		hipo_list << inputPath
+	} else if (inputPath.isDirectory()) {
+		inputPath.eachFileRecurse(FileType.FILES) { candidate ->
+			if (candidate.name.endsWith('.hipo')) hipo_list << candidate
+		}
+	} else {
+		System.err.println('ERROR: Invalid HIPO input: ' + inputPath)
+		System.exit(2)
+	}
+	if (hipo_list.isEmpty()) {
+		System.err.println('ERROR: No HIPO files found in ' + inputPath)
+		System.exit(2)
+	}
 
 	// Set the output file name based on the provided 2nd argument or use the default name
 	String output_file = args.length < 2 ? "hadron_dummy_out.txt" : args[1];
