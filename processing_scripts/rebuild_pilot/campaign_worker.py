@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Per-HIPO, two-node paired-MC campaign runner. Does not touch legacy outputs.
+"""Per-HIPO, two-node paired-MC campaign runner (FIFO path fix). Does not touch legacy outputs.
 Supports dvcs_mc and pi0_mc; other modes intentionally rejected pending validation.
 Run from clas12_analysis_software root. Both nodes use identical config and --nodes 2.
 """
@@ -64,9 +64,10 @@ def main():
     with lock:state['done']+=1
     return
    raise RuntimeError('Existing incomplete output, refusing overwrite: '+str(destination))
-  fifo=P(str(destination)+'.events.fifo');selected=P(str(destination)+'.selected.txt');log=P(str(destination)+'.processing.log');clog=P(str(destination)+'.converter.log');tmp=P(str(destination)+'.partial.root')
+  selected=P(str(destination)+'.selected.txt');fifo=P(str(selected)+'.events.tsv');log=P(str(destination)+'.processing.log');clog=P(str(destination)+'.converter.log');tmp=P(str(destination)+'.partial.root')
   for p in (fifo,tmp):
    if p.exists():raise RuntimeError('Stale partial/FIFO: '+str(p))
+  if P(str(selected)+'.events.tsv').exists():raise RuntimeError('Stream path already exists: '+str(selected)+'.events.tsv')
   os.mkfifo(fifo)
   with lock:state['active'][hipo.name]=str(log)
   try:
@@ -78,7 +79,9 @@ def main():
      proc=subprocess.run(['/bin/tcsh','-c',command],cwd=root,stdout=gl,stderr=subprocess.STDOUT)
      if proc.returncode:conv.terminate()
      try:code=conv.wait(timeout=180)
-     except subprocess.TimeoutExpired:conv.kill();code=conv.wait()
+     except subprocess.TimeoutExpired:
+      print(f'[CONVERTER_TIMEOUT] {hipo}: converter did not exit within 180 seconds after Groovy. Killing converter.',flush=True)
+      conv.kill();code=conv.wait()
     except BaseException:
      conv.kill();conv.wait();raise
    if proc.returncode or code or not tmp.is_file() or tmp.stat().st_size==0:raise RuntimeError(f'Failed {hipo}: Groovy={proc.returncode} converter={code}; logs {log} {clog}')
