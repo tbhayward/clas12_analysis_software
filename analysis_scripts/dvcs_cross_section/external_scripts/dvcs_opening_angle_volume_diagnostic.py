@@ -218,7 +218,7 @@ def main():
         summaries.append(f'Energy {energy:g} GeV: {len(group)} bins, {len(v)} nonempty')
         if len(v):
             summaries.append(f'  Geometric min={v.min():.6f}, median={v.median():.6f}, max={v.max():.6f}')
-            summaries.extend(f'  R_volume < {cutoff:.2f}: {int((v<cutoff).sum())}' for cutoff in (0.99,0.95,0.90))
+            summaries.extend(f'  R_volume < {cutoff:.3f}: {int((v<cutoff).sum())}' for cutoff in (0.999,0.99,0.95,0.90))
         if args.model!='none':
             w=group.R_model.dropna()
             summaries.append(f'  {args.model.upper()} weighted: {len(w)} valid bins')
