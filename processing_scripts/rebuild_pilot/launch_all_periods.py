@@ -35,7 +35,7 @@ def main():
  mc=base/'mc';data=base/'data';leakage=base/'leakage'
  commands=[
   [sys.executable,'processing_scripts/rebuild_pilot/campaign_worker.py','--node',a.node,'--nodes',2,'--workers',a.workers,'--max-events',a.max_events,'--output-root',mc,'--execute'],
-  [sys.executable,'processing_scripts/rebuild_pilot/data_pilot_worker.py','--node',a.node,'--nodes',2,'--workers',a.workers,'--max-events',a.max_events,'--output-root',data,'--execute','--retry-stale'],
+  [sys.executable,'processing_scripts/rebuild_pilot/data_pilot_worker.py','--node',a.node,'--nodes',2,'--workers',a.workers,'--max-events',a.max_events,'--output-root',data,'--periods',*PERIODS,'--execute','--retry-stale'],
   [sys.executable,'processing_scripts/rebuild_pilot/pi0_as_dvcs_worker.py','--node',a.node,'--nodes',2,'--workers',a.workers,'--max-events',a.max_events,'--output-root',leakage,'--execute','--retry-stale']]
  for command in commands:call(command)
  done=base/f'.node{a.node}.complete.json'
