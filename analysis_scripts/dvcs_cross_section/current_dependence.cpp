@@ -1316,7 +1316,8 @@ struct Branches {
     double p2_theta = 0.0; bool has_p2_theta = false;
     double p2_phi = 0.0; bool has_p2_phi = false;
 
-    void bind(TTree* t, const std::string& mc_prefix = "") {
+    void bind(TTree* t, const std::string& mc_prefix = "",
+              bool direct_pi0_rec = false) {
         // REBUILT PAIRED MC: bind physical gen_/rec_ branches directly.
         // Empty prefix preserves original PhysicsEvents binding.
         std::lock_guard<std::mutex> lock(g_bind_mutex);
@@ -1327,6 +1328,12 @@ struct Branches {
         // metadata (runnum and detector IDs) may remain unprefixed. Resolve
         // only those shared fields through the unprefixed fallback.
         auto branch_name = [&](const char* name) -> std::string {
+            if (direct_pi0_rec && mc_prefix == "rec_" &&
+                std::string(name) == "detector2") {
+                if (!t->GetBranch("rec_detector_gamma1"))
+                    fatal("[current_dependence] Direct pi0 MC missing rec_detector_gamma1");
+                return "rec_detector_gamma1";
+            }
             const std::string prefixed = mc_prefix + name;
             if (t->GetBranch(prefixed.c_str())) return prefixed;
             if (!mc_prefix.empty() &&
@@ -1813,7 +1820,8 @@ static long long count_reconstructed_tree(const ChannelConfig& cfg,
 
     Branches b;
     const bool paired_rec = tree->GetBranch("rec_kinematics_valid") != nullptr;
-    b.bind(tree, paired_rec ? "rec_" : "");
+    b.bind(tree, paired_rec ? "rec_" : "",
+           paired_rec && cfg.channel == Channel::EPPI0);
     if (!(b.has_detector1 && b.has_detector2 && b.has_x && b.has_Q2 && b.has_t1 && b.has_phi2))
         fatal("[current_dependence] Missing required reconstructed MC branches for current-response counting.");
     double rec_valid = 0.0;
@@ -5648,7 +5656,8 @@ static PhotonRegionMcCountMap count_reconstructed_tree_by_photon_region(
     const PeriodTags tags = parse_period_from_key(key);
     Branches b;
     const bool paired_mc = tree->GetBranch("rec_kinematics_valid") != nullptr;
-    b.bind(tree, paired_mc ? "rec_" : "");
+    b.bind(tree, paired_mc ? "rec_" : "",
+           paired_mc && cfg.channel == Channel::EPPI0);
     double paired_validity = 0.0;
     if (paired_mc) {
         tree->SetBranchStatus("rec_kinematics_valid", 1);
@@ -5885,7 +5894,8 @@ static RegionThetaMcAggMap process_reconstructed_tree_region_theta(
 
     Branches b;
     const bool paired_mc = tree->GetBranch("rec_kinematics_valid") != nullptr;
-    b.bind(tree, paired_mc ? "rec_" : "");
+    b.bind(tree, paired_mc ? "rec_" : "",
+           paired_mc && cfg.channel == Channel::EPPI0);
     double paired_validity = 0.0;
     if (paired_mc) {
         tree->SetBranchStatus("rec_kinematics_valid", 1);

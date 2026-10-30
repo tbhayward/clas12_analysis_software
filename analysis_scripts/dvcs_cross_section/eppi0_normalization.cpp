@@ -1027,15 +1027,36 @@ struct Branches {
     double e_theta = 0.0; bool has_e_theta = false;
     double e_phi = 0.0; bool has_e_phi = false;
 
+    double rec_kinematics_valid = 1.0;
+    bool has_rec_kinematics_valid = false;
+
+    bool reconstructed_valid() const {
+        return !has_rec_kinematics_valid || rec_kinematics_valid >= 0.5;
+    }
+
     void bind(TTree* t, bool need_weight) {
         std::lock_guard<std::mutex> lock(g_bind_mutex);
-
+        const bool paired = need_weight && t->GetBranch("rec_kinematics_valid");
+        auto physical = [&](const char* name) -> std::string {
+            if (!paired) return name;
+            if (std::string(name) == "detector2") return "rec_detector_gamma1";
+            if (std::string(name) == "runnum" && t->GetBranch("runnum")) return "runnum";
+            return std::string("rec_") + name;
+        };
+        if (paired && !t->GetBranch("rec_detector_gamma1"))
+            fatal("[eppi0_norm] Direct pi0 MC missing rec_detector_gamma1");
         t->SetBranchStatus("*", 0);
+        if (paired) {
+            t->SetBranchStatus("rec_kinematics_valid", 1);
+            has_rec_kinematics_valid =
+                t->SetBranchAddress("rec_kinematics_valid", &rec_kinematics_valid) >= 0;
+            if (!has_rec_kinematics_valid)
+                fatal("[eppi0_norm] Cannot bind rec_kinematics_valid");
+        }
 
         auto ena = [&](const char* name) {
-            if (t->GetBranch(name)) {
-                t->SetBranchStatus(name, 1);
-            }
+            const std::string actual = physical(name);
+            if (t->GetBranch(actual.c_str())) t->SetBranchStatus(actual.c_str(), 1);
         };
 
         ena("runnum");
@@ -1078,16 +1099,16 @@ struct Branches {
         t->SetCacheSize(16 * 1024 * 1024);
 
         auto bI = [&](const char* name, int* addr, bool& flag) {
-            if (t->GetBranch(name)) {
-                t->SetBranchAddress(name, addr);
-                flag = true;
+            const std::string actual = physical(name);
+            if (t->GetBranch(actual.c_str())) {
+                flag = t->SetBranchAddress(actual.c_str(), addr) >= 0;
             }
         };
 
         auto bD = [&](const char* name, double* addr, bool& flag) {
-            if (t->GetBranch(name)) {
-                t->SetBranchAddress(name, addr);
-                flag = true;
+            const std::string actual = physical(name);
+            if (t->GetBranch(actual.c_str())) {
+                flag = t->SetBranchAddress(actual.c_str(), addr) >= 0;
             }
         };
 
@@ -2789,6 +2810,7 @@ static void fill_p1_momentum_mc_after_theta(const ChannelConfig& cfg,
     const Long64_t N=tree->GetEntries();
     for(Long64_t i=0;i<N;++i){
         tree->GetEntry(i);
+        if (!b.reconstructed_valid()) continue;
         if(!passes_event_selection(cfg,tags,mc_cuts,b)) continue;
         const std::string region=normalization_region_for_event(b);
         auto ir=regions.find(region); if(ir==regions.end() || !ir->second.fit.valid) continue;
@@ -3023,6 +3045,7 @@ static void fill_eppi0_mc_hists_analysis(const ChannelConfig& cfg,
     long long n_pass = 0; double sum_weight = 0.0;
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
+        if (!b.reconstructed_valid()) continue;
         if (!passes_event_selection(cfg, tags, mc_cuts, b)) continue;
         bool skip = false;
         const double current_w = event_current_weight(current_model, "ep->eppi0", tags.display, b, false, skip);
@@ -3081,6 +3104,7 @@ static void fill_eppi0_photon_topology_grid(const ChannelConfig& cfg,
     const Long64_t N = tree->GetEntries();
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
+        if (!b.reconstructed_valid()) continue;
         if (!passes_event_selection(cfg, tags, cuts, b)) continue;
         const std::string topo = photon_pair_topology(b);
         if (topo.empty()) continue;
@@ -3204,6 +3228,7 @@ static void fill_eppi0_photon_topology_hists(const ChannelConfig& cfg,
     const Long64_t N = tree->GetEntries();
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
+        if (!b.reconstructed_valid()) continue;
         if (!passes_event_selection(cfg, tags, cuts, b)) continue;
         const std::string topo = photon_pair_topology(b);
         if (topo.empty()) continue;

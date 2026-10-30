@@ -1149,7 +1149,7 @@ struct TreeDiagBranches {
     double rec_validity = 1.0;
     bool has_rec_validity = false;
 
-    bool bind(TTree* t) {
+    bool bind(TTree* t, bool direct_pi0_rec_mc = false) {
         tree = t;
         if (!tree) return false;
 
@@ -1163,12 +1163,17 @@ struct TreeDiagBranches {
         const bool paired = tree->GetBranch("rec_kinematics_valid") != nullptr;
         auto branch_name = [&](const char* name) -> std::string {
             if (!paired) return name;
+            if (direct_pi0_rec_mc && std::string(name) == "detector2") {
+                return "rec_detector_gamma1";
+            }
             const std::string rec = std::string("rec_") + name;
             if (tree->GetBranch(rec.c_str())) return rec;
             if (std::string(name) == "runnum" || std::string(name) == "detector1" ||
                 std::string(name) == "detector2") return name;
             return rec;
         };
+        if (paired && direct_pi0_rec_mc && !tree->GetBranch("rec_detector_gamma1"))
+            return false;
         tree->SetBranchStatus("*", 0);
         if (paired) {
             tree->SetBranchStatus("rec_kinematics_valid", 1);
@@ -1445,7 +1450,8 @@ static DiagnosticSampleResult fill_all_diagnostic_hists_from_trees(
     const std::string& period,
     const std::vector<DiagnosticVar>& varcfgs,
     bool eppi0_exclusive_sample,
-    const std::array<const DiagnosticCutMap*, 3>& cuts_by_topology) {
+    const std::array<const DiagnosticCutMap*, 3>& cuts_by_topology,
+    bool direct_pi0_rec_mc = false) {
 
     DiagnosticSampleResult result;
     result.hists.resize(kTopologies.size());
@@ -1479,7 +1485,7 @@ static DiagnosticSampleResult fill_all_diagnostic_hists_from_trees(
         if (!key_matches_period(kv.first, period)) continue;
 
         TreeDiagBranches branches;
-        if (!branches.bind(kv.second)) {
+        if (!branches.bind(kv.second, direct_pi0_rec_mc)) {
             for (size_t ivar = 0; ivar < varcfgs.size(); ++ivar) {
                 const std::string warn_key =
                     kv.first + "|" + varcfgs[ivar].name + "|" +
@@ -1812,7 +1818,7 @@ static void make_exclusivity_variable_diagnostics(
                 eppi0DataTrees, period, varcfgs, true, eppi0_data_cuts);
         const DiagnosticSampleResult pi0_rec_result =
             fill_all_diagnostic_hists_from_trees(
-                eppi0RecMcTrees, period, varcfgs, true, eppi0_mc_cuts);
+                eppi0RecMcTrees, period, varcfgs, true, eppi0_mc_cuts, true);
         const DiagnosticSampleResult mis_result =
             fill_all_diagnostic_hists_from_trees(
                 eppi0BkgTrees, period, varcfgs, false, dvcs_mc_cuts);

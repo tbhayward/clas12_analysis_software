@@ -716,6 +716,11 @@ def tree_name_for(path: str) -> str:
 
 
 def branch_name_for(path: str, name: str) -> str:
+    # Direct AAOgen pi0 is a composite: its rec_detector2 is -1. The
+    # legacy topology convention assigns detector2 from the first photon.
+    if name == "detector2" and "/mc/" in path and "/pi0_mc/" in path:
+        return "rec_detector_gamma1"
+    # endif
     return "rec_" + name if is_paired_mc(path) else name
 
 

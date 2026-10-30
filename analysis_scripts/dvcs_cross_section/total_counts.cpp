@@ -1397,6 +1397,13 @@ struct BranchBinder {
         const bool paired_mc = work_cfg.sample_kind != SampleKind::DATA &&
                                t->GetBranch("gen_kinematics_valid") && t->GetBranch("rec_kinematics_valid");
         auto physical = [&](const char* name) -> std::string {
+            if (paired_mc && work_cfg.sample_kind == SampleKind::MC_REC &&
+                work_cfg.channel_cfg.channel == Channel::EPPI0 &&
+                std::string(name) == "detector2") {
+                if (!t->GetBranch("rec_detector_gamma1"))
+                    fatal("[total_counts] Direct pi0 MC missing rec_detector_gamma1");
+                return "rec_detector_gamma1";
+            }
             if (!paired_mc) return name;
             const std::string prefixed = std::string(paired_prefix) + name;
             if (t->GetBranch(prefixed.c_str())) return prefixed;
