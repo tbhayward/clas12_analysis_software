@@ -38,6 +38,7 @@
 // -----------------------------------------------------------------------------
 
 #include "total_counts.h"
+#include "paired_mc_fast_read.h"
 
 #include "periods.h"
 #include "global_cuts.h"
@@ -2275,9 +2276,14 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
 
     out.flow.entries = (long long)N;
 
+    PairedMcFastRead fast_rec(tree, "rec_kinematics_valid", &b.paired_validity);
     for (Long64_t i = 0; i < N; ++i) {
-        tree->GetEntry(i);
-        if (b.has_paired_validity && b.paired_validity < 0.5) continue;
+        if (b.has_paired_validity && !is_gen) {
+            if (!fast_rec.read(i)) continue;
+        } else {
+            if (tree->GetEntry(i) <= 0) continue;
+            if (b.has_paired_validity && b.paired_validity < 0.5) continue;
+        }
 
         TopologyIndex topo = TopologyIndex::INVALID;
         const std::string* topo_dir_ptr = nullptr;
@@ -4932,11 +4938,14 @@ static std::vector<ARWEvent> arw_collect(
     const Long64_t N=tree->GetEntries();
     out.reserve((size_t)std::min<Long64_t>(N,3000000));
 
+    PairedMcFastRead fast_rec(tree, "rec_kinematics_valid", &b.paired_validity);
     for(Long64_t i=0;i<N;++i){
-        tree->GetEntry(i);
-        // REBUILD: acceptance-reweighting samples must use the same
-        // generated/reconstructed validity population as nominal counts.
-        if (b.has_paired_validity && b.paired_validity < 0.5) continue;
+        if (b.has_paired_validity && !is_generated) {
+            if (!fast_rec.read(i)) continue;
+        } else {
+            if (tree->GetEntry(i) <= 0) continue;
+            if (b.has_paired_validity && b.paired_validity < 0.5) continue;
+        }
 
         if(!is_generated){
             const TopologyIndex topo=topology_index(b.detector1,b.detector2);

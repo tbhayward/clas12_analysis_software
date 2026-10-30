@@ -33,6 +33,7 @@
 // -----------------------------------------------------------------------------
 
 #include "current_dependence.h"
+#include "paired_mc_fast_read.h"
 
 #include "global_cuts.h"
 
@@ -1826,9 +1827,11 @@ static long long count_reconstructed_tree(const ChannelConfig& cfg,
     const Long64_t N = tree->GetEntries();
     long long count = 0;
 
+    PairedMcFastRead fast_rec(tree, "rec_kinematics_valid", &rec_valid);
     for (Long64_t i = 0; i < N; ++i) {
-        if (tree->GetEntry(i) <= 0) continue;
-        if (paired_rec && rec_valid < 0.5) continue;
+        if (paired_rec) {
+            if (!fast_rec.read(i)) continue;
+        } else if (tree->GetEntry(i) <= 0) continue;
 
         if (!passes_cone_cut(b)) {
             continue;
@@ -5599,9 +5602,11 @@ static PhotonRegionMcCountMap count_generated_tree_by_photon_region(const std::s
     const Long64_t progress_step = std::max<Long64_t>(250000, N / 10);
     Long64_t next_progress = progress_step;
 
+    PairedMcFastRead fast_rec(tree, "gen_kinematics_valid", &paired_validity);
     for (Long64_t i = 0; i < N; ++i) {
-        if (tree->GetEntry(i) <= 0) continue;
-        if (paired_mc && paired_validity < 0.5) continue;
+        if (paired_mc) {
+            if (!fast_rec.read(i)) continue;
+        } else if (tree->GetEntry(i) <= 0) continue;
 
         if (i + 1 >= next_progress || i + 1 == N) {
             const double sec = std::chrono::duration<double>(
@@ -5657,9 +5662,11 @@ static PhotonRegionMcCountMap count_reconstructed_tree_by_photon_region(
     const Long64_t progress_step = std::max<Long64_t>(250000, N / 10);
     Long64_t next_progress = progress_step;
 
+    PairedMcFastRead fast_rec(tree, "rec_kinematics_valid", &paired_validity);
     for (Long64_t i = 0; i < N; ++i) {
-        if (tree->GetEntry(i) <= 0) continue;
-        if (paired_mc && paired_validity < 0.5) continue;
+        if (paired_mc) {
+            if (!fast_rec.read(i)) continue;
+        } else if (tree->GetEntry(i) <= 0) continue;
 
         if (i + 1 >= next_progress || i + 1 == N) {
             const double sec = std::chrono::duration<double>(
@@ -5816,9 +5823,11 @@ static RegionThetaMcAggMap process_generated_tree_region_theta(
     const auto progress_t0 = std::chrono::steady_clock::now();
     static std::mutex generated_region_theta_progress_mutex;
 
+    PairedMcFastRead fast_rec(tree, "gen_kinematics_valid", &paired_validity);
     for (Long64_t i = 0; i < N; ++i) {
-        if (tree->GetEntry(i) <= 0) continue;
-        if (paired_mc && paired_validity < 0.5) continue;
+        if (paired_mc) {
+            if (!fast_rec.read(i)) continue;
+        } else if (tree->GetEntry(i) <= 0) continue;
 
         if (i > 0 && (i % progress_step) == 0) {
             std::lock_guard<std::mutex> lock(generated_region_theta_progress_mutex);
@@ -5888,9 +5897,11 @@ static RegionThetaMcAggMap process_reconstructed_tree_region_theta(
     const auto progress_t0 = std::chrono::steady_clock::now();
     static std::mutex reconstructed_region_theta_progress_mutex;
 
+    PairedMcFastRead fast_rec(tree, "rec_kinematics_valid", &paired_validity);
     for (Long64_t i = 0; i < N; ++i) {
-        if (tree->GetEntry(i) <= 0) continue;
-        if (paired_mc && paired_validity < 0.5) continue;
+        if (paired_mc) {
+            if (!fast_rec.read(i)) continue;
+        } else if (tree->GetEntry(i) <= 0) continue;
         if (i > 0 && (i % progress_step) == 0) {
             std::lock_guard<std::mutex> lock(reconstructed_region_theta_progress_mutex);
             const double sec = std::chrono::duration<double>(
