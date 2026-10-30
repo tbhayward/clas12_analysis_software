@@ -17,10 +17,13 @@ int main(int argc,char**argv){
  std::ifstream in(argv[1]);if(!in){std::cerr<<"Cannot open FIFO\n";return 2;}
  TFile out(argv[2],"RECREATE");if(out.IsZombie())return 3;
  TTree tree("DataEvents","Original data processor selected-event columns");
- std::vector<double> v(n);std::vector<std::string> names(n);
- for(size_t i=0;i<n;++i){char buf[16];std::snprintf(buf,sizeof(buf),"col%02zu",i+1);names[i]=buf;tree.Branch(names[i].c_str(),&v[i],(names[i]+"/D").c_str());}
- // Explicit alias: original legacy data column 33 is proton-derived t1.
- tree.SetAlias("t1","col33");tree.SetAlias("t","col32");tree.SetAlias("t2","col34");
+ std::vector<double> v(n);
+ const std::string common="fiducial_status num_pos num_neg num_neutrals runnum evnum helicity detector1 detector2 e_p e_theta e_phi vz_e p1_p p1_theta p1_phi vz_p1 p2_p p2_theta p2_phi vz_p2 open_angle_ep open_angle_ep1 open_angle_ep2 open_angle_p1p2 Q2 W Mx2 Mx2_1 Mx2_2 x t t1 t2 tmin y z z1 z2 Mh xF xF1 xF2 pT pT1 pT2 pTpT xi xi1 xi2 eta eta1 eta2 Delta_eta eta1_gN eta2_gN phi1 phi2 Delta_phi phih phiR theta DepA DepB DepC DepV DepW ";
+ const std::string extra=(mode=="dvcs_data") ? "Emiss2 theta_gamma_gamma pTmiss" : "Mh_gammagamma detector_gamma1 detector_gamma2 open_angle_egamma1 open_angle_egamma2 gamma_phi1 gamma_phi2 Emiss2 theta_pi0_pi0 pTmiss";
+ std::istringstream schema(common+extra);std::vector<std::string> names;std::string branch;
+ while(schema>>branch)names.push_back(branch);
+ if(names.size()!=n){std::cerr<<"Invalid schema size "<<names.size()<<" expected "<<n<<"\n";return 5;}
+ for(size_t i=0;i<n;++i)tree.Branch(names[i].c_str(),&v[i],(names[i]+"/D").c_str());
  tree.SetAutoFlush(100000);
  std::string line;unsigned long long rows=0;bool bad=false;
  while(std::getline(in,line)){
