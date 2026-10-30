@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
-"""Repair paired AAOgen MC rec_detector2 using a full fast clone.
+"""Repair paired AAOgen MC rec_detector2 using a full fast clone (v3).
 
-Unlike v1, NEVER disable a source branch before CloneTree('fast'): that
+Never disable a source branch before CloneTree('fast'): that
 combination can produce an invalid TTree in ROOT 6.36/PyROOT. Clone all
-branches, rename the old detector branch, then append the corrected branch.
+branches, detach the old detector branch, then append the corrected branch.
 Original files are untouched unless --replace is explicitly requested.
 """
 import argparse
@@ -57,20 +57,24 @@ def patch(src, dst, ROOT, replace=False, progress=5000000):
             raise RuntimeError('Fast clone entry count mismatch')
         #endif
         print('  fast clone completed', flush=True)
-        # Retain the original values for audit, under a new name.
-        old = cloned.GetBranch('rec_detector2')
+        # Remove the old branch from the cloned TTree's branch collection.
+        # Do NOT rename it: TObjArray/ROOT name lookup can retain a stale
+        # lookup after TBranch.SetName(), which caused the v2 failure.
+        # The source file remains untouched and is the audit copy.
+        branches = cloned.GetListOfBranches()
+        old = branches.FindObject('rec_detector2')
         if not old:
             raise RuntimeError('Original detector2 branch missing after full clone')
         #endif
-        old.SetName('rec_detector2_original')
-        # Rename leaf too, so there is no ambiguous leaf name.
-        leaf = old.GetLeaf('rec_detector2')
-        if leaf:
-            leaf.SetName('rec_detector2_original')
+        removed = branches.Remove(old)
+        if not removed:
+            raise RuntimeError('Could not detach old detector2 branch')
         #endif
-        if cloned.GetBranch('rec_detector2'):
-            raise RuntimeError('Branch rename did not remove old name')
+        branches.Compress()
+        if branches.FindObject('rec_detector2'):
+            raise RuntimeError('Old detector2 still present in branch collection')
         #endif
+        print('  detached incorrect rec_detector2 branch', flush=True)
         corrected = array('d', [-1.0])
         new_branch = cloned.Branch('rec_detector2', corrected, 'rec_detector2/D')
         if not new_branch:
@@ -126,7 +130,7 @@ def patch(src, dst, ROOT, replace=False, progress=5000000):
         if not ct or int(ct.GetEntries()) != n:
             raise RuntimeError('Staged MCEvents entry count mismatch')
         #endif
-        for name in ('rec_detector2', 'rec_detector2_original', 'rec_detector_gamma1', 'rec_kinematics_valid'):
+        for name in ('rec_detector2', 'rec_detector_gamma1', 'rec_kinematics_valid'):
             if not ct.GetBranch(name):
                 raise RuntimeError(f'Staged file missing {name}')
             #endif
