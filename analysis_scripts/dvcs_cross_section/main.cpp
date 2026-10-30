@@ -385,7 +385,12 @@ int main(int argc, char* argv[]) {
     // Auxiliary fiducial cuts. Enable this single switch to apply the additional
     // FD-sector separation, particle-angle, and FT-photon momentum cuts
     // analysis-wide. The numerical values are defined in GlobalCutConfig.
-    global_cfg.enable_auxiliary_fiducial_cuts = true;
+    // REBUILD BASELINE: disable the auxiliary fiducial block, which includes
+    // the legacy 64.23-degree CD proton angular boundary. The legacy setting
+    // was: global_cfg.enable_auxiliary_fiducial_cuts = true;
+    // NOTE: this also disables other auxiliary cuts; it is NOT yet a final
+    // independently factored proton-only selection implementation.
+    global_cfg.enable_auxiliary_fiducial_cuts = false;
     global_cfg.auxiliary_cd_proton_p_min_GeV = proton_p_min_cli;
     global_cfg.auxiliary_cd_proton_theta_max_deg = proton_theta_max_cli;
 

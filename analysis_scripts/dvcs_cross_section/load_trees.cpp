@@ -4,6 +4,7 @@
 
 #include <TFile.h>
 #include <TTree.h>
+#include <TChain.h>
 
 #include <algorithm>
 #include <cctype>
@@ -38,6 +39,46 @@ static constexpr const char* kTreeName = "PhysicsEvents";
 
 static const std::string kDvcsMcDir =
     "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen";
+
+// REBUILD: Load all part files for a period as one logical PhysicsEvents tree.
+// TChain objects remain alive for the duration of the analysis.
+static std::vector<TChain*>& rebuilt_chain_registry() {
+    static std::vector<TChain*> chains;
+    return chains;
+}
+
+static bool load_rebuilt_parts(const std::string& category,
+                               const std::string& mode,
+                               const std::map<std::string,std::string>& tags,
+                               std::map<std::string,TTree*>& output) {
+    namespace fs = std::filesystem;
+    const fs::path root("/volatile/clas12/thayward/dvcs_pass2_full_rebuild");
+    for (const auto& item : tags) {
+        const fs::path dir = root / category / item.second / mode / "parts";
+        if (!fs::is_directory(dir)) {
+            std::cerr << "[loadTrees] FATAL: missing rebuilt parts directory: " << dir << "\n";
+            return false;
+        }
+        auto* chain = new TChain("PhysicsEvents");
+        std::vector<fs::path> paths;
+        for (const auto& entry : fs::directory_iterator(dir)) {
+            if (entry.is_regular_file() && entry.path().extension() == ".root")
+                paths.push_back(entry.path());
+        }
+        std::sort(paths.begin(), paths.end());
+        for (const auto& path : paths) chain->Add(path.string().c_str());
+        if (paths.empty() || chain->GetNtrees() == 0) {
+            std::cerr << "[loadTrees] FATAL: no usable rebuilt files: " << dir << "\n";
+            delete chain;
+            return false;
+        }
+        rebuilt_chain_registry().push_back(chain);
+        output[item.first] = chain;
+        std::cout << "[loadTrees] REBUILD " << item.first << ": "
+                  << paths.size() << " parts, " << chain->GetEntries() << " entries\n";
+    }
+    return true;
+}
 
 static std::vector<TFile*>& open_file_registry() {
     static std::vector<TFile*> files;
@@ -473,16 +514,25 @@ bool loadTrees(std::map<std::string, TTree*>& dataTrees,
                std::map<std::string, TTree*>& radRecMcTrees,
                std::map<std::string, TTree*>& currentStudyGenMcTrees,
                std::map<std::string, TTree*>& currentStudyRecMcTrees) {
-    // ---------------- DVCS data ----------------
-    if (!load_category("DVCS data", {
-        {"DVCS_Sp18_inb",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root"},
-        {"DVCS_Sp18_out",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"},
-        {"DVCS_Fa18_inb",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root"},
-        {"DVCS_Fa18_out",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root"},
-        {"DVCS_Sp19_inb",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"}
-    }, dataTrees)) {
-        return false;
-    }
+    // ---------------- DVCS data (REBUILD) ----------------
+    // ORIGINAL LEGACY BLOCK PRESERVED BELOW (COMMENTED OUT):
+    //     // ---------------- DVCS data ----------------
+    //     if (!load_category("DVCS data", {
+    //         {"DVCS_Sp18_inb",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root"},
+    //         {"DVCS_Sp18_out",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root"},
+    //         {"DVCS_Fa18_inb",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root"},
+    //         {"DVCS_Fa18_out",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root"},
+    //         {"DVCS_Sp19_inb",      "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root"}
+    //     }, dataTrees)) {
+    //         return false;
+    //     }
+    if (!load_rebuilt_parts("data", "dvcs_data", {
+        {"DVCS_Sp18_inb", "sp18_inb"},
+        {"DVCS_Sp18_out", "sp18_out"},
+        {"DVCS_Fa18_inb", "fa18_inb"},
+        {"DVCS_Fa18_out", "fa18_out"},
+        {"DVCS_Sp19_inb", "sp19_inb"}
+    }, dataTrees)) return false;
 
     // ---------------- DVCS generated MC for acceptance, no radiative ----------------
     if (!load_category("DVCS generated MC for acceptance", {
@@ -528,16 +578,25 @@ bool loadTrees(std::map<std::string, TTree*>& dataTrees,
         return false;
     }
 
-    // ---------------- eppi0 data ----------------
-    if (!load_category("eppi0 data", {
-        {"EPPI0_Sp18_inb_data",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_inb_eppi0.root"},
-        {"EPPI0_Sp18_out_data",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_out_eppi0.root"},
-        {"EPPI0_Fa18_inb_data",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root"},
-        {"EPPI0_Fa18_out_data",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root"},
-        {"EPPI0_Sp19_inb_data",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root"}
-    }, eppi0DataTrees)) {
-        return false;
-    }
+    // ---------------- eppi0 data (REBUILD) ----------------
+    // ORIGINAL LEGACY BLOCK PRESERVED BELOW (COMMENTED OUT):
+    //     // ---------------- eppi0 data ----------------
+    //     if (!load_category("eppi0 data", {
+    //         {"EPPI0_Sp18_inb_data",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_inb_eppi0.root"},
+    //         {"EPPI0_Sp18_out_data",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_out_eppi0.root"},
+    //         {"EPPI0_Fa18_inb_data",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root"},
+    //         {"EPPI0_Fa18_out_data",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root"},
+    //         {"EPPI0_Sp19_inb_data",      "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root"}
+    //     }, eppi0DataTrees)) {
+    //         return false;
+    //     }
+    if (!load_rebuilt_parts("data", "pi0_data", {
+        {"EPPI0_Sp18_inb_data", "sp18_inb"},
+        {"EPPI0_Sp18_out_data", "sp18_out"},
+        {"EPPI0_Fa18_inb_data", "fa18_inb"},
+        {"EPPI0_Fa18_out_data", "fa18_out"},
+        {"EPPI0_Sp19_inb_data", "sp19_inb"}
+    }, eppi0DataTrees)) return false;
 
     // ---------------- eppi0 generated MC ----------------
     if (!load_category("eppi0 generated MC", {
@@ -561,16 +620,25 @@ bool loadTrees(std::map<std::string, TTree*>& dataTrees,
         return false;
     }
 
-    // ---------------- eppi0 -> DVCS background MC ----------------
-    if (!load_category("eppi0 background MC", {
-        {"EPPI0_AS_DVCS_Sp18_inb_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_inb_50nA_10594MeV_epgamma.root"},
-        {"EPPI0_AS_DVCS_Sp18_out_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_out_45nA_10594MeV_epgamma.root"},
-        {"EPPI0_AS_DVCS_Fa18_inb_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_50nA_10604MeV_epgamma.root"},
-        {"EPPI0_AS_DVCS_Fa18_out_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_50nA_10604MeV_epgamma.root"},
-        {"EPPI0_AS_DVCS_Sp19_inb_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_50nA_10200MeV_epgamma.root"}
-    }, eppi0BkgTrees)) {
-        return false;
-    }
+    // ---------------- eppi0 -> DVCS background MC (REBUILD) ----------------
+    // ORIGINAL LEGACY BLOCK PRESERVED BELOW (COMMENTED OUT):
+    //     // ---------------- eppi0 -> DVCS background MC ----------------
+    //     if (!load_category("eppi0 background MC", {
+    //         {"EPPI0_AS_DVCS_Sp18_inb_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_inb_50nA_10594MeV_epgamma.root"},
+    //         {"EPPI0_AS_DVCS_Sp18_out_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_out_45nA_10594MeV_epgamma.root"},
+    //         {"EPPI0_AS_DVCS_Fa18_inb_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_50nA_10604MeV_epgamma.root"},
+    //         {"EPPI0_AS_DVCS_Fa18_out_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_50nA_10604MeV_epgamma.root"},
+    //         {"EPPI0_AS_DVCS_Sp19_inb_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_50nA_10200MeV_epgamma.root"}
+    //     }, eppi0BkgTrees)) {
+    //         return false;
+    //     }
+    if (!load_rebuilt_parts("leakage", "pi0_as_dvcs", {
+        {"EPPI0_AS_DVCS_Sp18_inb_rec", "sp18_inb"},
+        {"EPPI0_AS_DVCS_Sp18_out_rec", "sp18_out"},
+        {"EPPI0_AS_DVCS_Fa18_inb_rec", "fa18_inb"},
+        {"EPPI0_AS_DVCS_Fa18_out_rec", "fa18_out"},
+        {"EPPI0_AS_DVCS_Sp19_inb_rec", "sp19_inb"}
+    }, eppi0BkgTrees)) return false;
 
     // ---------------- DVCS additional current-study MC ----------------
     if (!load_current_study_dvcs_mc(currentStudyGenMcTrees, currentStudyRecMcTrees)) {
