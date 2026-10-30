@@ -60,6 +60,11 @@ static List<Double> pairedKinematics(def analyzer, def pairAnalyzer, int run, in
         if (generated && ['fiducial_status','detector1','detector2'].contains(name)) {
             values.add(Double.NaN); continue
         }
+        // The composite pi0 has no detector assignment. Use the first selected photon,
+        // matching the legacy exclusive-pi0 processing convention.
+        if (name == 'detector2' && !generated) {
+            values.add((double)pairAnalyzer.get_detector1()); continue
+        }
         def value = analyzer."${method}"()
         values.add(value instanceof Number ? ((Number)value).doubleValue() : Double.NaN)
     }
