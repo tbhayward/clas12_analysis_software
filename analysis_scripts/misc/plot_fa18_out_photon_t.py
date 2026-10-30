@@ -2,6 +2,7 @@
 """Fa18 Out reconstructed |t_gamma| for FD versus FT photons.
 
 Read DataEvents colXX branches produced by rebuild_pilot/convert_data_stream.cpp.
+Angles in the ROOT tree are already in radians; no conversion is applied.
 """
 import argparse
 from pathlib import Path
@@ -21,11 +22,11 @@ BRANCHES = ['col09', 'col10', 'col11', 'col12', 'col18', 'col19', 'col20']
 def calculate_abs_t(arrays):
     """Calculate -(k-k'-p_gamma)^2 using electron and photon four-vectors."""
     ep = np.asarray(arrays['col10'], dtype=np.float64)
-    et = np.deg2rad(np.asarray(arrays['col11'], dtype=np.float64))
-    ef = np.deg2rad(np.asarray(arrays['col12'], dtype=np.float64))
+    et = np.asarray(arrays['col11'], dtype=np.float64)  # radians in ROOT
+    ef = np.asarray(arrays['col12'], dtype=np.float64)  # radians in ROOT
     gp = np.asarray(arrays['col18'], dtype=np.float64)
-    gt = np.deg2rad(np.asarray(arrays['col19'], dtype=np.float64))
-    gf = np.deg2rad(np.asarray(arrays['col20'], dtype=np.float64))
+    gt = np.asarray(arrays['col19'], dtype=np.float64)  # radians in ROOT
+    gf = np.asarray(arrays['col20'], dtype=np.float64)  # radians in ROOT
     beam_p = np.sqrt(BEAM_E**2 - M_E**2)
     electron_e = np.sqrt(ep**2 + M_E**2)
     q_e = BEAM_E - electron_e
