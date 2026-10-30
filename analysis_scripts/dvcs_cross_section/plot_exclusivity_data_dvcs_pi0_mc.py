@@ -60,6 +60,7 @@ import math
 import os
 import sys
 import time
+import warnings
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
@@ -725,14 +726,27 @@ def iterate_rebuilt(path: str, expressions: Sequence[str], step_size: str):
     if paired:
         physical.append("rec_kinematics_valid")
     specs = [f"{file}:{tree_name_for(path)}" for file in input_files(path)]
-    for chunk in uproot.iterate(specs, expressions=sorted(set(physical)), step_size=step_size, library="np"):
-        if paired:
-            valid = np.asarray(chunk["rec_kinematics_valid"]) >= 0.5
-            yield {name: np.asarray(chunk[branch_name_for(path, name)])[valid] for name in expressions}
-        else:
-            yield chunk
-        # endif
-    # endfor
+    # Rebuilt ROOT trees may contain redundant aliases named t, t1 and t2.
+    # Uproot warns when those aliases collide with real branches, even when
+    # the requested expressions explicitly name physical branches.  Ignore
+    # only that known, harmless collision during this input stream; preserve
+    # all other uproot warnings and continue reading the actual t1/rec_t1.
+    with warnings.catch_warnings():
+        warnings.filterwarnings(
+            "ignore",
+            message=r"^'(?:t|t1|t2)' is both an alias and a branch name$",
+            category=Warning,
+            module=r"^uproot\.language\.python$",
+        )
+        for chunk in uproot.iterate(specs, expressions=sorted(set(physical)), step_size=step_size, library="np"):
+            if paired:
+                valid = np.asarray(chunk["rec_kinematics_valid"]) >= 0.5
+                yield {name: np.asarray(chunk[branch_name_for(path, name)])[valid] for name in expressions}
+            else:
+                yield chunk
+            # endif
+        # endfor
+    # endwith
 
 
 def io_backend() -> str:
