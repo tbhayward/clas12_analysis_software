@@ -1382,6 +1382,8 @@ struct BranchBinder {
     double p2_theta = 0.0;  bool has_p2_theta = false;
     double p2_phi = 0.0;    bool has_p2_phi = false;
 
+    double paired_validity = 1.0;
+    bool has_paired_validity = false;
     void bind(TTree* t, const WorkConfig& work_cfg) {
         if (!t) {
             return;
@@ -1390,6 +1392,25 @@ struct BranchBinder {
         std::lock_guard<std::mutex> lock(g_root_bind_mutex);
 
         t->SetBranchStatus("*", 0);
+        const char* paired_prefix = work_cfg.sample_kind == SampleKind::MC_GEN ? "gen_" : "rec_";
+        const bool paired_mc = work_cfg.sample_kind != SampleKind::DATA &&
+                               t->GetBranch("gen_kinematics_valid") && t->GetBranch("rec_kinematics_valid");
+        auto physical = [&](const char* name) -> std::string {
+            if (!paired_mc) return name;
+            const std::string prefixed = std::string(paired_prefix) + name;
+            if (t->GetBranch(prefixed.c_str())) return prefixed;
+            // Only explicitly shared event metadata may use unprefixed names.
+            if (std::string(name) == "runnum" || std::string(name) == "detector1" ||
+                std::string(name) == "detector2") return name;
+            return prefixed; // Missing required physics branch remains missing.
+        };
+        if (paired_mc) {
+            const std::string flag = std::string(paired_prefix) + "kinematics_valid";
+            t->SetBranchStatus(flag.c_str(), 1);
+            if (t->SetBranchAddress(flag.c_str(), &paired_validity) < 0)
+                fatal("[total_counts] Cannot bind paired MC validity branch: " + flag);
+            has_paired_validity = true;
+        }
 
         // Use a modest per-tree read cache. Only explicitly enabled branches are
         // added below, so generated MC does not spend I/O on reconstructed-only
@@ -1398,9 +1419,10 @@ struct BranchBinder {
         t->SetCacheSize(kTreeCacheBytes);
 
         auto ena = [&](const char* n) {
-            if (t->GetBranch(n)) {
-                t->SetBranchStatus(n, 1);
-                t->AddBranchToCache(n, true);
+            const std::string pn = physical(n);
+            if (t->GetBranch(pn.c_str())) {
+                t->SetBranchStatus(pn.c_str(), 1);
+                t->AddBranchToCache(pn.c_str(), true);
             }
         };
 
@@ -1485,16 +1507,22 @@ struct BranchBinder {
         t->StopCacheLearningPhase();
 
         auto bI = [&](const char* n, int* a, bool& f) {
-            if (t->GetBranch(n) && t->GetBranchStatus(n)) {
-                t->SetBranchAddress(n, a);
-                f = true;
+            const std::string pn = physical(n);
+            if (t->GetBranch(pn.c_str()) && t->GetBranchStatus(pn.c_str())) {
+                const int status = t->SetBranchAddress(pn.c_str(), a);
+                if (status >= 0) f = true;
+                else std::cerr << "[total_counts] ERROR binding branch " << pn
+                               << " (ROOT status " << status << ")\n";
             }
         };
 
         auto bD = [&](const char* n, double* a, bool& f) {
-            if (t->GetBranch(n) && t->GetBranchStatus(n)) {
-                t->SetBranchAddress(n, a);
-                f = true;
+            const std::string pn = physical(n);
+            if (t->GetBranch(pn.c_str()) && t->GetBranchStatus(pn.c_str())) {
+                const int status = t->SetBranchAddress(pn.c_str(), a);
+                if (status >= 0) f = true;
+                else std::cerr << "[total_counts] ERROR binding branch " << pn
+                               << " (ROOT status " << status << ")\n";
             }
         };
 
@@ -2249,6 +2277,7 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
+        if (b.has_paired_validity && b.paired_validity < 0.5) continue;
 
         TopologyIndex topo = TopologyIndex::INVALID;
         const std::string* topo_dir_ptr = nullptr;
@@ -4905,6 +4934,9 @@ static std::vector<ARWEvent> arw_collect(
 
     for(Long64_t i=0;i<N;++i){
         tree->GetEntry(i);
+        // REBUILD: acceptance-reweighting samples must use the same
+        // generated/reconstructed validity population as nominal counts.
+        if (b.has_paired_validity && b.paired_validity < 0.5) continue;
 
         if(!is_generated){
             const TopologyIndex topo=topology_index(b.detector1,b.detector2);

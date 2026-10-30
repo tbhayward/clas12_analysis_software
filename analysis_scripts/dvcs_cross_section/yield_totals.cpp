@@ -1116,6 +1116,9 @@ struct Branches {
         ena("t1");
         ena("phi2");
         ena("open_angle_ep2");
+        // REBUILD: Delta_phi is bound below and required by exclusivity cuts.
+        // Previously it was disabled by SetBranchStatus("*", 0).
+        ena("Delta_phi");
         ena("pTmiss");
         ena("Emiss2");
         ena("Mx2");

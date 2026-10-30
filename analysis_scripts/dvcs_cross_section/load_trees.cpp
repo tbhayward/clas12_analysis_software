@@ -80,6 +80,67 @@ static bool load_rebuilt_parts(const std::string& category,
     return true;
 }
 
+
+// REBUILD paired MC: each logical sample chains MCEvents files at ONE current.
+// NOTE: consumers must bind gen_*/rec_* and check validity; no aliases are used.
+static bool load_paired_mc(const std::string& category,
+                           const std::map<std::string,std::string>& periods,
+                           const std::map<std::string,std::string>& currents,
+                           std::map<std::string,TTree*>& gen,
+                           std::map<std::string,TTree*>& rec,
+                           const std::string& tag_prefix,
+                           bool pi0=false) {
+    namespace fs = std::filesystem;
+    const fs::path root("/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc");
+    for (const auto& entry : periods) {
+        const std::string& tag = entry.first;
+        const std::string& period = entry.second;
+        const std::string current = currents.at(period);
+        const fs::path dir = root / period / category / (pi0 ? "nominal" : current) / "parts";
+        if (!fs::is_directory(dir)) {
+            std::cerr << "[loadTrees] FATAL: missing paired MC directory " << dir << "\n";
+            return false;
+        }
+        std::vector<fs::path> files;
+        for (const auto& file : fs::directory_iterator(dir)) {
+            if (!file.is_regular_file() || file.path().extension() != ".root") continue;
+            // AAOgen nominal directories may also contain no-background runs.
+            if (pi0 && file.path().filename().string().find("_" + current + "_") == std::string::npos) continue;
+            files.push_back(file.path());
+        }
+        std::sort(files.begin(), files.end());
+        if (files.empty()) {
+            std::cerr << "[loadTrees] FATAL: no paired MC parts at " << dir << " for " << current << "\n";
+            return false;
+        }
+        auto* generated = new TChain("MCEvents");
+        auto* reconstructed = new TChain("MCEvents");
+        for (const auto& file : files) {
+            if (generated->Add(file.string().c_str()) == 0 ||
+                reconstructed->Add(file.string().c_str()) == 0) {
+                std::cerr << "[loadTrees] FATAL: failed to chain " << file << "\n";
+                delete generated;
+                delete reconstructed;
+                return false;
+            }
+        }
+        if (!generated->GetBranch("gen_kinematics_valid") ||
+            !reconstructed->GetBranch("rec_kinematics_valid")) {
+            std::cerr << "[loadTrees] FATAL: paired MC validity branches missing in " << dir << "\n";
+            delete generated;
+            delete reconstructed;
+            return false;
+        }
+        rebuilt_chain_registry().push_back(generated);
+        rebuilt_chain_registry().push_back(reconstructed);
+        gen[tag_prefix + tag + "_gen"] = generated;
+        rec[tag_prefix + tag + "_rec"] = reconstructed;
+        std::cout << "[loadTrees] PAIRED MC " << tag << " " << current << ": "
+                  << files.size() << " files, " << generated->GetEntries() << " entries\n";
+    }
+    return true;
+}
+
 static std::vector<TFile*>& open_file_registry() {
     static std::vector<TFile*> files;
     return files;
@@ -534,27 +595,33 @@ bool loadTrees(std::map<std::string, TTree*>& dataTrees,
         {"DVCS_Sp19_inb", "sp19_inb"}
     }, dataTrees)) return false;
 
-    // ---------------- DVCS generated MC for acceptance, no radiative ----------------
-    if (!load_category("DVCS generated MC for acceptance", {
-        {"DVCS_Sp18_inb_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_inb_50nA_10594MeV.root"},
-        {"DVCS_Sp18_out_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_out_45nA_10594MeV.root"},
-        {"DVCS_Fa18_inb_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV.root"},
-        {"DVCS_Fa18_out_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_fa18_out_50nA_10604MeV.root"},
-        {"DVCS_Sp19_inb_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp19_inb_50nA_10200MeV.root"}
-    }, genMcTrees)) {
-        return false;
-    }
-
-    // ---------------- DVCS reconstructed MC for acceptance, no radiative ----------------
-    if (!load_category("DVCS reconstructed MC for acceptance", {
-        {"DVCS_Sp18_inb_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_inb_50nA_10594MeV.root"},
-        {"DVCS_Sp18_out_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_out_45nA_10594MeV.root"},
-        {"DVCS_Fa18_inb_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV.root"},
-        {"DVCS_Fa18_out_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV.root"},
-        {"DVCS_Sp19_inb_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV.root"}
-    }, recMcTrees)) {
-        return false;
-    }
+    // REBUILD paired DVCS MC (original generated/reconstructed blocks preserved below).
+    if (!load_paired_mc("dvcs_mc", {{"Sp18_inb", "sp18_inb"}, {"Sp18_out", "sp18_out"}, {"Fa18_inb", "fa18_inb"}, {"Fa18_out", "fa18_out"}, {"Sp19_inb", "sp19_inb"}}, {{"sp18_inb", "50nA"}, {"sp18_out", "45nA"}, {"fa18_inb", "50nA"}, {"fa18_out", "50nA"}, {"sp19_inb", "50nA"}}, genMcTrees, recMcTrees, "DVCS_")) return false;
+    // ============================================================
+    // LEGACY ROOT INPUTS — PRESERVED FOR EASY RESTORATION
+    // ============================================================
+    //     // ---------------- DVCS generated MC for acceptance, no radiative ----------------
+    //     if (!load_category("DVCS generated MC for acceptance", {
+    //         {"DVCS_Sp18_inb_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_inb_50nA_10594MeV.root"},
+    //         {"DVCS_Sp18_out_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp18_out_45nA_10594MeV.root"},
+    //         {"DVCS_Fa18_inb_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_fa18_inb_50nA_10604MeV.root"},
+    //         {"DVCS_Fa18_out_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_fa18_out_50nA_10604MeV.root"},
+    //         {"DVCS_Sp19_inb_gen",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/gen_dvcsgen_rga_sp19_inb_50nA_10200MeV.root"}
+    //     }, genMcTrees)) {
+    //         return false;
+    //     }
+    // 
+    //     // ---------------- DVCS reconstructed MC for acceptance, no radiative ----------------
+    //     if (!load_category("DVCS reconstructed MC for acceptance", {
+    //         {"DVCS_Sp18_inb_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_inb_50nA_10594MeV.root"},
+    //         {"DVCS_Sp18_out_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_out_45nA_10594MeV.root"},
+    //         {"DVCS_Fa18_inb_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV.root"},
+    //         {"DVCS_Fa18_out_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV.root"},
+    //         {"DVCS_Sp19_inb_rec",  "/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV.root"}
+    //     }, recMcTrees)) {
+    //         return false;
+    //     }
+    // 
 
     // ---------------- DVCS generated MC for radiative studies ----------------
     if (!load_optional_category("DVCS generated MC radiative", {
@@ -598,27 +665,33 @@ bool loadTrees(std::map<std::string, TTree*>& dataTrees,
         {"EPPI0_Sp19_inb_data", "sp19_inb"}
     }, eppi0DataTrees)) return false;
 
-    // ---------------- eppi0 generated MC ----------------
-    if (!load_category("eppi0 generated MC", {
-        {"EPPI0_Sp18_inb_gen", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp18_inb_50nA_10594MeV.root"},
-        {"EPPI0_Sp18_out_gen", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp18_out_45nA_10594MeV.root"},
-        {"EPPI0_Fa18_inb_gen", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_fa18_inb_50nA_10604MeV.root"},
-        {"EPPI0_Fa18_out_gen", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_fa18_out_50nA_10604MeV.root"},
-        {"EPPI0_Sp19_inb_gen", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp19_inb_50nA_10200MeV.root"}
-    }, eppi0GenMcTrees)) {
-        return false;
-    }
-
-    // ---------------- eppi0 reconstructed MC ----------------
-    if (!load_category("eppi0 reconstructed MC", {
-        {"EPPI0_Sp18_inb_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_inb_50nA_10594MeV.root"},
-        {"EPPI0_Sp18_out_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_out_45nA_10594MeV.root"},
-        {"EPPI0_Fa18_inb_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_inb_50nA_10604MeV.root"},
-        {"EPPI0_Fa18_out_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_out_50nA_10604MeV.root"},
-        {"EPPI0_Sp19_inb_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp19_inb_50nA_10200MeV.root"}
-    }, eppi0RecMcTrees)) {
-        return false;
-    }
+    // REBUILD paired AAOgen MC (original generated/reconstructed blocks preserved below).
+    if (!load_paired_mc("pi0_mc", {{"Sp18_inb", "sp18_inb"}, {"Sp18_out", "sp18_out"}, {"Fa18_inb", "fa18_inb"}, {"Fa18_out", "fa18_out"}, {"Sp19_inb", "sp19_inb"}}, {{"sp18_inb", "50nA"}, {"sp18_out", "45nA"}, {"fa18_inb", "50nA"}, {"fa18_out", "50nA"}, {"sp19_inb", "50nA"}}, eppi0GenMcTrees, eppi0RecMcTrees, "EPPI0_", true)) return false;
+    // ============================================================
+    // LEGACY ROOT INPUTS — PRESERVED FOR EASY RESTORATION
+    // ============================================================
+    //     // ---------------- eppi0 generated MC ----------------
+    //     if (!load_category("eppi0 generated MC", {
+    //         {"EPPI0_Sp18_inb_gen", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp18_inb_50nA_10594MeV.root"},
+    //         {"EPPI0_Sp18_out_gen", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp18_out_45nA_10594MeV.root"},
+    //         {"EPPI0_Fa18_inb_gen", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_fa18_inb_50nA_10604MeV.root"},
+    //         {"EPPI0_Fa18_out_gen", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_fa18_out_50nA_10604MeV.root"},
+    //         {"EPPI0_Sp19_inb_gen", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/gen_aaogen_norad_sp19_inb_50nA_10200MeV.root"}
+    //     }, eppi0GenMcTrees)) {
+    //         return false;
+    //     }
+    // 
+    //     // ---------------- eppi0 reconstructed MC ----------------
+    //     if (!load_category("eppi0 reconstructed MC", {
+    //         {"EPPI0_Sp18_inb_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_inb_50nA_10594MeV.root"},
+    //         {"EPPI0_Sp18_out_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_out_45nA_10594MeV.root"},
+    //         {"EPPI0_Fa18_inb_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_inb_50nA_10604MeV.root"},
+    //         {"EPPI0_Fa18_out_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_out_50nA_10604MeV.root"},
+    //         {"EPPI0_Sp19_inb_rec", "/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp19_inb_50nA_10200MeV.root"}
+    //     }, eppi0RecMcTrees)) {
+    //         return false;
+    //     }
+    // 
 
     // ---------------- eppi0 -> DVCS background MC (REBUILD) ----------------
     // ORIGINAL LEGACY BLOCK PRESERVED BELOW (COMMENTED OUT):
@@ -640,9 +713,32 @@ bool loadTrees(std::map<std::string, TTree*>& dataTrees,
         {"EPPI0_AS_DVCS_Sp19_inb_rec", "sp19_inb"}
     }, eppi0BkgTrees)) return false;
 
-    // ---------------- DVCS additional current-study MC ----------------
-    if (!load_current_study_dvcs_mc(currentStudyGenMcTrees, currentStudyRecMcTrees)) {
-        return false;
+    // REBUILD: current-study MC comes from the same paired MCEvents format.
+    // Keep nominal samples separate from other current configurations.
+    const std::map<std::string, std::string> period_tags = {
+        {"Sp18_inb", "sp18_inb"}, {"Sp18_out", "sp18_out"},
+        {"Fa18_inb", "fa18_inb"}, {"Fa18_out", "fa18_out"},
+        {"Sp19_inb", "sp19_inb"}
+    };
+    const std::map<std::string, std::vector<std::string>> current_configs = {
+        {"sp18_inb", {"35nA", "50nA"}},
+        {"sp18_out", {"45nA"}},
+        {"fa18_inb", {"45nA", "50nA", "55nA"}},
+        {"fa18_out", {"40nA", "50nA"}},
+        {"sp19_inb", {"50nA"}}
+    };
+    for (const auto& period : period_tags) {
+        for (const auto& current : current_configs.at(period.second)) {
+            std::map<std::string, TTree*> gen_tmp, rec_tmp;
+            if (!load_paired_mc("dvcs_mc", {{period.first, period.second}},
+                                {{period.second, current}}, gen_tmp, rec_tmp, "DVCS_"))
+                return false;
+            const std::string old_gen = "DVCS_" + period.first + "_gen";
+            const std::string old_rec = "DVCS_" + period.first + "_rec";
+            const std::string stem = "DVCS_" + period.first + "_" + current + "_";
+            currentStudyGenMcTrees[stem + "gen_current"] = gen_tmp.at(old_gen);
+            currentStudyRecMcTrees[stem + "rec_current"] = rec_tmp.at(old_rec);
+        }
     }
 
     return true;

@@ -1146,6 +1146,9 @@ struct TreeDiagBranches {
     double theta_gamma_gamma = 0.0; bool has_theta_gamma_gamma = false;
     double theta_pi0_pi0 = 0.0; bool has_theta_pi0_pi0 = false;
 
+    double rec_validity = 1.0;
+    bool has_rec_validity = false;
+
     bool bind(TTree* t) {
         tree = t;
         if (!tree) return false;
@@ -1157,10 +1160,25 @@ struct TreeDiagBranches {
         // binder follows the same robust pattern used elsewhere in the analysis:
         // enable only the needed branches, bind them into local C++ storage, and
         // read those values after GetEntry().
+        const bool paired = tree->GetBranch("rec_kinematics_valid") != nullptr;
+        auto branch_name = [&](const char* name) -> std::string {
+            if (!paired) return name;
+            const std::string rec = std::string("rec_") + name;
+            if (tree->GetBranch(rec.c_str())) return rec;
+            if (std::string(name) == "runnum" || std::string(name) == "detector1" ||
+                std::string(name) == "detector2") return name;
+            return rec;
+        };
         tree->SetBranchStatus("*", 0);
+        if (paired) {
+            tree->SetBranchStatus("rec_kinematics_valid", 1);
+            has_rec_validity = tree->SetBranchAddress("rec_kinematics_valid", &rec_validity) >= 0;
+            if (!has_rec_validity) return false;
+        }
 
         auto enable = [&](const char* name) {
-            if (tree->GetBranch(name)) tree->SetBranchStatus(name, 1);
+            const std::string actual = branch_name(name);
+            if (tree->GetBranch(actual.c_str())) tree->SetBranchStatus(actual.c_str(), 1);
         };
 
         enable("runnum");
@@ -1190,16 +1208,14 @@ struct TreeDiagBranches {
         tree->AddBranchToCache("*", true);
 
         auto bI = [&](const char* name, int* addr, bool& flag) {
-            if (tree->GetBranch(name)) {
-                tree->SetBranchAddress(name, addr);
-                flag = true;
-            }
+            const std::string actual = branch_name(name);
+            if (tree->GetBranch(actual.c_str()) &&
+                tree->SetBranchAddress(actual.c_str(), addr) >= 0) flag = true;
         };
         auto bD = [&](const char* name, double* addr, bool& flag) {
-            if (tree->GetBranch(name)) {
-                tree->SetBranchAddress(name, addr);
-                flag = true;
-            }
+            const std::string actual = branch_name(name);
+            if (tree->GetBranch(actual.c_str()) &&
+                tree->SetBranchAddress(actual.c_str(), addr) >= 0) flag = true;
         };
 
         bI("runnum", &runnum, has_runnum);
@@ -1485,6 +1501,7 @@ static DiagnosticSampleResult fill_all_diagnostic_hists_from_trees(
 
         for (Long64_t i = 0; i < n; ++i) {
             kv.second->GetEntry(i);
+            if (branches.has_rec_validity && branches.rec_validity < 0.5) continue;
 
             const int itopo = diagnostic_topology_index(branches.detector1, branches.detector2);
             if (itopo < 0) continue;

@@ -187,7 +187,8 @@ int main(int argc, char* argv[]) {
     int proton_fd_sector_cli = 0;
     int proton_cd_sector_cli = 0;
     double proton_p_min_cli = 0.0;
-    double proton_theta_max_cli = 64.23;
+    // REBUILD baseline: legacy default was 64.23 degrees.
+    double proton_theta_max_cli = 180.0;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--quick-xsec-only") {
             quick_xsec_only = true;
@@ -226,7 +227,7 @@ int main(int argc, char* argv[]) {
             if (i + 1 >= argc) { std::cerr << "--proton-theta-max requires degree value\n"; return 1; }
             try { proton_theta_max_cli = std::stod(argv[++i]); }
             catch (...) { std::cerr << "Invalid --proton-theta-max\n"; return 1; }
-            if (!(std::isfinite(proton_theta_max_cli) && proton_theta_max_cli > 40.0 && proton_theta_max_cli <= 64.23)) return 1;
+            if (!(std::isfinite(proton_theta_max_cli) && proton_theta_max_cli > 40.0 && proton_theta_max_cli <= 180.0)) return 1;
         } else if (std::string(argv[i]) == "--electron-sector") {
             if (i + 1 >= argc) { std::cerr << "[main] FATAL: --electron-sector requires an integer 1--6\n"; return 1; }
             try { electron_sector_cli = std::stoi(argv[++i]); }
@@ -390,9 +391,12 @@ int main(int argc, char* argv[]) {
     // was: global_cfg.enable_auxiliary_fiducial_cuts = true;
     // NOTE: this also disables other auxiliary cuts; it is NOT yet a final
     // independently factored proton-only selection implementation.
-    global_cfg.enable_auxiliary_fiducial_cuts = false;
-    global_cfg.auxiliary_cd_proton_p_min_GeV = proton_p_min_cli;
-    global_cfg.auxiliary_cd_proton_theta_max_deg = proton_theta_max_cli;
+    global_cfg.enable_auxiliary_fiducial_cuts = true; // REBUILD: retain electron/photon auxiliary cuts
+    global_cfg.auxiliary_cd_proton_p_min_GeV = 0.0; // REBUILD: no CD proton momentum threshold
+    global_cfg.auxiliary_cd_proton_theta_max_deg = 180.0; // REBUILD: remove legacy 64.23 degree ceiling
+    global_cfg.auxiliary_cd_proton_theta_min_deg = 0.0; // REBUILD: no CD proton theta floor
+    global_cfg.auxiliary_fd_proton_theta_min_deg = 0.0; // REBUILD: no FD proton theta floor
+    global_cfg.auxiliary_fd_proton_theta_max_deg = 180.0; // REBUILD: no FD proton theta ceiling
 
     // Existing optional propagator/ycol mirror cut.
     global_cfg.enable_dvcsgen_ycol_cut = false;
@@ -417,7 +421,7 @@ int main(int argc, char* argv[]) {
     // restores them on normal completion and early return (not SIGKILL).
     const bool restricted_study = !topology_cli.empty() || electron_sector_cli != 0 ||
         proton_fd_sector_cli != 0 || proton_cd_sector_cli != 0 || photon_sector_cli != 0 ||
-        proton_p_min_cli > 0.0 || proton_theta_max_cli != 64.23;
+        proton_p_min_cli > 0.0 || proton_theta_max_cli != 180.0;
     ScopedStudyConfigurationRestore restore_shared_study_json(restricted_study);
     write_global_cuts_config_json("output/jsons", global_cfg);
 
@@ -1347,7 +1351,7 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    // --------- Unfolding: acceptance-corrected DVCS yields ----------
+    // --------- Existing bin-by-bin acceptance correction (S/A), NOT matrix unfolding ----------
     {
         const std::string csv_main   = "output/csvs/dvcs_pass2_analysis.csv";
         const std::string csv_backup = "output/csvs/dvcs_pass2_analysis_backup_unfolding.csv";

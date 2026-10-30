@@ -100,7 +100,10 @@ except ImportError:
 #endif
 
 
-TREE_NAME = "PhysicsEvents"
+TREE_NAME = "PhysicsEvents"  # Legacy/data tree; rebuilt MC uses MCEvents.
+REBUILT_ROOT = "/volatile/clas12/thayward/dvcs_pass2_full_rebuild"
+REBUILT_NOMINAL_CURRENT = {"sp18_inb": "50nA", "sp18_out": "45nA", "fa18_inb": "50nA", "fa18_out": "50nA", "sp19_inb": "50nA"}
+
 DEFAULT_OUTPUT_DIR = "output/exclusivity_data_dvcs_pi0_mc"
 DEFAULT_STEP_SIZE = "250 MB"
 WRITE_DETAILED_PLOTS = False
@@ -233,47 +236,47 @@ PERIODS: Tuple[PeriodConfig, ...] = (
     PeriodConfig(
         key="fa18_inb",
         label="Fa18 Inb",
-        data_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_inb_epgamma.root",
-        dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_inb_50nA_10604MeV.root",
-        pi0_as_dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_inb_50nA_10604MeV_epgamma.root",
-        eppi0_data_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_inb_eppi0.root",
-        eppi0_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_inb_50nA_10604MeV.root",
+        data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/fa18_inb/dvcs_data/parts/*.root",
+        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/fa18_inb/dvcs_mc/50nA/parts/*.root",
+        pi0_as_dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/leakage/fa18_inb/pi0_as_dvcs/parts/*.root",
+        eppi0_data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/fa18_inb/pi0_data/parts/*.root",
+        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/fa18_inb/pi0_mc/nominal/parts/*_50nA_*.root",
     ),
     PeriodConfig(
         key="fa18_out",
         label="Fa18 Out",
-        data_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_fa18_out_epgamma.root",
-        dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_fa18_out_50nA_10604MeV.root",
-        pi0_as_dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_fa18_out_50nA_10604MeV_epgamma.root",
-        eppi0_data_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_fa18_out_eppi0.root",
-        eppi0_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_fa18_out_50nA_10604MeV.root",
+        data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/fa18_out/dvcs_data/parts/*.root",
+        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/fa18_out/dvcs_mc/50nA/parts/*.root",
+        pi0_as_dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/leakage/fa18_out/pi0_as_dvcs/parts/*.root",
+        eppi0_data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/fa18_out/pi0_data/parts/*.root",
+        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/fa18_out/pi0_mc/nominal/parts/*_50nA_*.root",
     ),
     PeriodConfig(
         key="sp19_inb",
         label="Sp19 Inb",
-        data_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp19_inb_epgamma.root",
-        dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp19_inb_50nA_10200MeV.root",
-        pi0_as_dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp19_inb_50nA_10200MeV_epgamma.root",
-        eppi0_data_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp19_inb_eppi0.root",
-        eppi0_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp19_inb_50nA_10200MeV.root",
+        data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/sp19_inb/dvcs_data/parts/*.root",
+        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp19_inb/dvcs_mc/50nA/parts/*.root",
+        pi0_as_dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/leakage/sp19_inb/pi0_as_dvcs/parts/*.root",
+        eppi0_data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/sp19_inb/pi0_data/parts/*.root",
+        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp19_inb/pi0_mc/nominal/parts/*_50nA_*.root",
     ),
     PeriodConfig(
         key="sp18_inb",
         label="Sp18 Inb",
-        data_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_inb_epgamma.root",
-        dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_inb_50nA_10594MeV.root",
-        pi0_as_dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_inb_50nA_10594MeV_epgamma.root",
-        eppi0_data_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_inb_eppi0.root",
-        eppi0_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_inb_50nA_10594MeV.root",
+        data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/sp18_inb/dvcs_data/parts/*.root",
+        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp18_inb/dvcs_mc/50nA/parts/*.root",
+        pi0_as_dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/leakage/sp18_inb/pi0_as_dvcs/parts/*.root",
+        eppi0_data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/sp18_inb/pi0_data/parts/*.root",
+        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp18_inb/pi0_mc/nominal/parts/*_50nA_*.root",
     ),
     PeriodConfig(
         key="sp18_out",
         label="Sp18 Out",
-        data_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/data/dvcs/rga_sp18_out_epgamma.root",
-        dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/dvcs/data/pass2/mc/dvcsgen/rec_dvcsgen_rga_sp18_out_45nA_10594MeV.root",
-        pi0_as_dvcs_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/eppi0_bkg_aaogen_norad_rga_sp18_out_45nA_10594MeV_epgamma.root",
-        eppi0_data_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/data/rga_sp18_out_eppi0.root",
-        eppi0_mc_file="/work/clas12/thayward/CLAS12_exclusive/eppi0/data/pass2/mc/hipo_files/rec_aaogen_norad_sp18_out_45nA_10594MeV.root",
+        data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/sp18_out/dvcs_data/parts/*.root",
+        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp18_out/dvcs_mc/45nA/parts/*.root",
+        pi0_as_dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/leakage/sp18_out/pi0_as_dvcs/parts/*.root",
+        eppi0_data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/sp18_out/pi0_data/parts/*.root",
+        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp18_out/pi0_mc/nominal/parts/*_45nA_*.root",
     ),
 )
 
@@ -689,10 +692,47 @@ def selected_topologies(keys: Optional[Sequence[str]]) -> List[TopologyConfig]:
     return [topology for topology in TOPOLOGIES if topology.key in wanted]
 
 
+def input_files(path: str) -> List[str]:
+    """Expand rebuilt ROOT parts deterministically; never silently use legacy files."""
+    import glob
+    files = sorted(glob.glob(path)) if any(c in path for c in "*?[") else [path]
+    files = [item for item in files if os.path.isfile(item)]
+    if not files:
+        raise FileNotFoundError(f"No ROOT input files matched: {path}")
+    return files
+
+
 def require_input_file(path: str) -> None:
-    if not os.path.isfile(path):
-        raise FileNotFoundError(f"Input ROOT file does not exist: {path}")
-    # endif
+    input_files(path)
+
+
+def is_paired_mc(path: str) -> bool:
+    return "/mc/" in path and "/dvcs_mc/" in path or "/mc/" in path and "/pi0_mc/" in path
+
+
+def tree_name_for(path: str) -> str:
+    return "MCEvents" if is_paired_mc(path) else TREE_NAME
+
+
+def branch_name_for(path: str, name: str) -> str:
+    return "rec_" + name if is_paired_mc(path) else name
+
+
+def iterate_rebuilt(path: str, expressions: Sequence[str], step_size: str):
+    """Stream ROOT parts, presenting reconstructed MC branches as legacy names."""
+    paired = is_paired_mc(path)
+    physical = [branch_name_for(path, name) for name in expressions]
+    if paired:
+        physical.append("rec_kinematics_valid")
+    specs = [f"{file}:{tree_name_for(path)}" for file in input_files(path)]
+    for chunk in uproot.iterate(specs, expressions=sorted(set(physical)), step_size=step_size, library="np"):
+        if paired:
+            valid = np.asarray(chunk["rec_kinematics_valid"]) >= 0.5
+            yield {name: np.asarray(chunk[branch_name_for(path, name)])[valid] for name in expressions}
+        else:
+            yield chunk
+        # endif
+    # endfor
 
 
 def io_backend() -> str:
@@ -714,20 +754,20 @@ def available_tree_branches(path: str) -> set[str]:
     backend = io_backend()
 
     if backend == "uproot":
-        with uproot.open(path) as root_file:
-            if TREE_NAME not in root_file:
+        with uproot.open(input_files(path)[0]) as root_file:
+            if tree_name_for(path) not in root_file:
                 raise KeyError(f"Tree '{TREE_NAME}' not found in {path}")
             # endif
-            return set(root_file[TREE_NAME].keys())
+            return {name[4:] for name in root_file[tree_name_for(path)].keys() if name.startswith("rec_") and name != "rec_kinematics_valid"} if is_paired_mc(path) else set(root_file[tree_name_for(path)].keys())
         # endwith
     # endif
 
-    root_file = ROOT.TFile.Open(path, "READ")
+    root_file = ROOT.TFile.Open(input_files(path)[0], "READ")
     if not root_file or root_file.IsZombie():
         raise OSError(f"Could not open ROOT file: {path}")
     # endif
 
-    tree = root_file.Get(TREE_NAME)
+    tree = root_file.Get(tree_name_for(path))
     if tree is None:
         root_file.Close()
         raise KeyError(f"Tree '{TREE_NAME}' not found in {path}")
@@ -735,7 +775,7 @@ def available_tree_branches(path: str) -> set[str]:
 
     branches = {branch.GetName() for branch in tree.GetListOfBranches()}
     root_file.Close()
-    return branches
+    return {name[4:] for name in branches if name.startswith("rec_") and name != "rec_kinematics_valid"} if is_paired_mc(path) else branches
 
 
 def resolve_variable_branches(path: str, variables: Sequence[VariableConfig] = VARIABLES) -> Dict[str, str]:
@@ -1076,15 +1116,10 @@ def fill_histograms_uproot(
     histograms = {topology.key: empty_histograms(variables) for topology in topologies}
     selected_events = {topology.key: 0 for topology in topologies}
 
-    tree_spec = f"{path}:{TREE_NAME}"
+    tree_spec = f"{path}:{tree_name_for(path)}"
     log(f"Reading {tree_spec}")
 
-    for arrays in uproot.iterate(
-        tree_spec,
-        expressions=expressions,
-        step_size=step_size,
-        library="np",
-    ):
+    for arrays in iterate_rebuilt(path, expressions, step_size):
         detector1 = np.asarray(arrays["detector1"])
         detector2 = np.asarray(arrays["detector2"])
         base_mask = global_cut_mask_uproot(arrays, period_key, detector1, detector2)
@@ -1133,6 +1168,8 @@ def fill_histograms_pyroot(
     apply_mx2_1_cut: bool = False,
     variables: Sequence[VariableConfig] = VARIABLES,
 ) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str, int]]:
+    if is_paired_mc(path) or len(input_files(path)) != 1:
+        raise RuntimeError("Rebuilt ROOT parts require uproot for streaming and rec_* adaptation")
     del step_size  # PyROOT performs a direct TTree event loop.
 
     require_input_file(path)
@@ -1140,12 +1177,12 @@ def fill_histograms_pyroot(
     histograms = {topology.key: empty_histograms(variables) for topology in topologies}
     selected_events = {topology.key: 0 for topology in topologies}
 
-    root_file = ROOT.TFile.Open(path, "READ")
+    root_file = ROOT.TFile.Open(input_files(path)[0], "READ")
     if not root_file or root_file.IsZombie():
         raise OSError(f"Could not open ROOT file: {path}")
     # endif
 
-    tree = root_file.Get(TREE_NAME)
+    tree = root_file.Get(tree_name_for(path))
     if tree is None:
         root_file.Close()
         raise KeyError(f"Tree '{TREE_NAME}' not found in {path}")
@@ -3862,12 +3899,7 @@ def load_selected_arrays_uproot(
         for topology in topologies
     }
 
-    for arrays in uproot.iterate(
-        f"{path}:{TREE_NAME}",
-        expressions=expressions,
-        step_size=step_size,
-        library="np",
-    ):
+    for arrays in iterate_rebuilt(path, expressions, step_size):
         detector1 = np.asarray(arrays["detector1"])
         detector2 = np.asarray(arrays["detector2"])
         t1 = np.asarray(arrays["t1"], dtype=np.float64)
@@ -3937,6 +3969,8 @@ def load_selected_arrays_pyroot(
     step_size: str,
     variables: Sequence[VariableConfig],
 ) -> Dict[str, Dict[str, np.ndarray]]:
+    if is_paired_mc(path) or len(input_files(path)) != 1:
+        raise RuntimeError("Rebuilt ROOT parts require uproot for streaming and rec_* adaptation")
     del step_size
     require_input_file(path)
     resolved = resolve_variable_branches(path, variables)
@@ -3944,11 +3978,11 @@ def load_selected_arrays_pyroot(
         topology.key: {variable.branch: [] for variable in variables}
         for topology in topologies
     }
-    root_file = ROOT.TFile.Open(path, "READ")
+    root_file = ROOT.TFile.Open(input_files(path)[0], "READ")
     if not root_file or root_file.IsZombie():
         raise OSError(f"Could not open ROOT file: {path}")
     # endif
-    tree = root_file.Get(TREE_NAME)
+    tree = root_file.Get(tree_name_for(path))
     if tree is None:
         root_file.Close()
         raise KeyError(f"Tree '{TREE_NAME}' not found in {path}")

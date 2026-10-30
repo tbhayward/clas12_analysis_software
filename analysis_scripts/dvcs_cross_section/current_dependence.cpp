@@ -1315,15 +1315,29 @@ struct Branches {
     double p2_theta = 0.0; bool has_p2_theta = false;
     double p2_phi = 0.0; bool has_p2_phi = false;
 
-    void bind(TTree* t) {
+    void bind(TTree* t, const std::string& mc_prefix = "") {
+        // REBUILT PAIRED MC: bind physical gen_/rec_ branches directly.
+        // Empty prefix preserves original PhysicsEvents binding.
         std::lock_guard<std::mutex> lock(g_bind_mutex);
 
         t->SetBranchStatus("*", 0);
 
+        // Rebuilt MC stores reconstructed quantities under rec_*, but some
+        // metadata (runnum and detector IDs) may remain unprefixed. Resolve
+        // only those shared fields through the unprefixed fallback.
+        auto branch_name = [&](const char* name) -> std::string {
+            const std::string prefixed = mc_prefix + name;
+            if (t->GetBranch(prefixed.c_str())) return prefixed;
+            if (!mc_prefix.empty() &&
+                (std::string(name) == "runnum" ||
+                 std::string(name) == "detector1" ||
+                 std::string(name) == "detector2") &&
+                t->GetBranch(name)) return name;
+            return prefixed;
+        };
         auto ena = [&](const char* name) {
-            if (t->GetBranch(name)) {
-                t->SetBranchStatus(name, 1);
-            }
+            const std::string physical = branch_name(name);
+            if (t->GetBranch(physical.c_str())) t->SetBranchStatus(physical.c_str(), 1);
         };
 
         ena("runnum");
@@ -1366,16 +1380,15 @@ struct Branches {
         t->AddBranchToCache("*", true);
 
         auto bI = [&](const char* name, int* addr, bool& flag) {
-            if (t->GetBranch(name)) {
-                t->SetBranchAddress(name, addr);
-                flag = true;
+            const std::string physical = branch_name(name);
+            if (t->GetBranch(physical.c_str())) {
+                flag = t->SetBranchAddress(physical.c_str(), addr) >= 0;
             }
         };
-
         auto bD = [&](const char* name, double* addr, bool& flag) {
-            if (t->GetBranch(name)) {
-                t->SetBranchAddress(name, addr);
-                flag = true;
+            const std::string physical = branch_name(name);
+            if (t->GetBranch(physical.c_str())) {
+                flag = t->SetBranchAddress(physical.c_str(), addr) >= 0;
             }
         };
 
@@ -1767,7 +1780,24 @@ static long long count_generated_tree(TTree* tree) {
         return 0;
     }
 
-    return (long long)tree->GetEntries();
+    // REBUILT PAIRED MC: only generated-valid entries belong in N_gen.
+    // Legacy generated trees retain their original entry-count behavior.
+    if (!tree->GetBranch("gen_kinematics_valid")) {
+        return (long long)tree->GetEntries();
+    }
+    double valid = 0.0;
+    tree->SetBranchStatus("*", 0);
+    tree->SetBranchStatus("gen_kinematics_valid", 1);
+    if (tree->SetBranchAddress("gen_kinematics_valid", &valid) < 0) {
+        fatal("[current_dependence] Cannot bind gen_kinematics_valid.");
+    }
+    long long count = 0;
+    const Long64_t entries = tree->GetEntries();
+    for (Long64_t i = 0; i < entries; ++i) {
+        if (tree->GetEntry(i) > 0 && valid >= 0.5) ++count;
+    }
+    tree->ResetBranchAddresses();
+    return count;
 }
 
 static long long count_reconstructed_tree(const ChannelConfig& cfg,
@@ -1781,13 +1811,24 @@ static long long count_reconstructed_tree(const ChannelConfig& cfg,
     }
 
     Branches b;
-    b.bind(tree);
+    const bool paired_rec = tree->GetBranch("rec_kinematics_valid") != nullptr;
+    b.bind(tree, paired_rec ? "rec_" : "");
+    if (!(b.has_detector1 && b.has_detector2 && b.has_x && b.has_Q2 && b.has_t1 && b.has_phi2))
+        fatal("[current_dependence] Missing required reconstructed MC branches for current-response counting.");
+    double rec_valid = 0.0;
+    if (paired_rec) {
+        tree->SetBranchStatus("rec_kinematics_valid", 1);
+        if (tree->SetBranchAddress("rec_kinematics_valid", &rec_valid) < 0) {
+            fatal("[current_dependence] Cannot bind rec_kinematics_valid.");
+        }
+    }
 
     const Long64_t N = tree->GetEntries();
     long long count = 0;
 
     for (Long64_t i = 0; i < N; ++i) {
-        tree->GetEntry(i);
+        if (tree->GetEntry(i) <= 0) continue;
+        if (paired_rec && rec_valid < 0.5) continue;
 
         if (!passes_cone_cut(b)) {
             continue;
@@ -5539,7 +5580,14 @@ static PhotonRegionMcCountMap count_generated_tree_by_photon_region(const std::s
     }
 
     Branches b;
-    b.bind(tree);
+    const bool paired_mc = tree->GetBranch("gen_kinematics_valid") != nullptr;
+    b.bind(tree, paired_mc ? "gen_" : "");
+    double paired_validity = 0.0;
+    if (paired_mc) {
+        tree->SetBranchStatus("gen_kinematics_valid", 1);
+        if (tree->SetBranchAddress("gen_kinematics_valid", &paired_validity) < 0)
+            fatal("[current_dependence] Cannot bind gen_kinematics_valid in auxiliary MC routine.");
+    }
 
     if (!(b.has_p2_theta && b.has_p2_phi)) {
         fatal("[current_dependence] FATAL: generated MC photon-region diagnostic requires p2_theta and p2_phi.");
@@ -5552,7 +5600,8 @@ static PhotonRegionMcCountMap count_generated_tree_by_photon_region(const std::s
     Long64_t next_progress = progress_step;
 
     for (Long64_t i = 0; i < N; ++i) {
-        tree->GetEntry(i);
+        if (tree->GetEntry(i) <= 0) continue;
+        if (paired_mc && paired_validity < 0.5) continue;
 
         if (i + 1 >= next_progress || i + 1 == N) {
             const double sec = std::chrono::duration<double>(
@@ -5593,7 +5642,14 @@ static PhotonRegionMcCountMap count_reconstructed_tree_by_photon_region(
 
     const PeriodTags tags = parse_period_from_key(key);
     Branches b;
-    b.bind(tree);
+    const bool paired_mc = tree->GetBranch("rec_kinematics_valid") != nullptr;
+    b.bind(tree, paired_mc ? "rec_" : "");
+    double paired_validity = 0.0;
+    if (paired_mc) {
+        tree->SetBranchStatus("rec_kinematics_valid", 1);
+        if (tree->SetBranchAddress("rec_kinematics_valid", &paired_validity) < 0)
+            fatal("[current_dependence] Cannot bind rec_kinematics_valid in auxiliary MC routine.");
+    }
 
     const Long64_t N = tree->GetEntries();
     using ProgressClock = std::chrono::steady_clock;
@@ -5602,7 +5658,8 @@ static PhotonRegionMcCountMap count_reconstructed_tree_by_photon_region(
     Long64_t next_progress = progress_step;
 
     for (Long64_t i = 0; i < N; ++i) {
-        tree->GetEntry(i);
+        if (tree->GetEntry(i) <= 0) continue;
+        if (paired_mc && paired_validity < 0.5) continue;
 
         if (i + 1 >= next_progress || i + 1 == N) {
             const double sec = std::chrono::duration<double>(
@@ -5746,14 +5803,22 @@ static RegionThetaMcAggMap process_generated_tree_region_theta(
     if (!tree || tags.display == "Fa18 Inb Supp") return out;
 
     Branches b;
-    b.bind(tree);
+    const bool paired_mc = tree->GetBranch("gen_kinematics_valid") != nullptr;
+    b.bind(tree, paired_mc ? "gen_" : "");
+    double paired_validity = 0.0;
+    if (paired_mc) {
+        tree->SetBranchStatus("gen_kinematics_valid", 1);
+        if (tree->SetBranchAddress("gen_kinematics_valid", &paired_validity) < 0)
+            fatal("[current_dependence] Cannot bind gen_kinematics_valid in auxiliary MC routine.");
+    }
     const Long64_t N = tree->GetEntries();
     const Long64_t progress_step = std::max<Long64_t>(1000000, N / 10);
     const auto progress_t0 = std::chrono::steady_clock::now();
     static std::mutex generated_region_theta_progress_mutex;
 
     for (Long64_t i = 0; i < N; ++i) {
-        tree->GetEntry(i);
+        if (tree->GetEntry(i) <= 0) continue;
+        if (paired_mc && paired_validity < 0.5) continue;
 
         if (i > 0 && (i % progress_step) == 0) {
             std::lock_guard<std::mutex> lock(generated_region_theta_progress_mutex);
@@ -5810,14 +5875,22 @@ static RegionThetaMcAggMap process_reconstructed_tree_region_theta(
     if (!tree || tags.display == "Fa18 Inb Supp") return out;
 
     Branches b;
-    b.bind(tree);
+    const bool paired_mc = tree->GetBranch("rec_kinematics_valid") != nullptr;
+    b.bind(tree, paired_mc ? "rec_" : "");
+    double paired_validity = 0.0;
+    if (paired_mc) {
+        tree->SetBranchStatus("rec_kinematics_valid", 1);
+        if (tree->SetBranchAddress("rec_kinematics_valid", &paired_validity) < 0)
+            fatal("[current_dependence] Cannot bind rec_kinematics_valid in auxiliary MC routine.");
+    }
     const Long64_t N = tree->GetEntries();
     const Long64_t progress_step = std::max<Long64_t>(1000000, N / 10);
     const auto progress_t0 = std::chrono::steady_clock::now();
     static std::mutex reconstructed_region_theta_progress_mutex;
 
     for (Long64_t i = 0; i < N; ++i) {
-        tree->GetEntry(i);
+        if (tree->GetEntry(i) <= 0) continue;
+        if (paired_mc && paired_validity < 0.5) continue;
         if (i > 0 && (i % progress_step) == 0) {
             std::lock_guard<std::mutex> lock(reconstructed_region_theta_progress_mutex);
             const double sec = std::chrono::duration<double>(
