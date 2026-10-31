@@ -338,11 +338,11 @@ static std::mutex g_root_bind_mutex;
 // ---------------- branch binder ----------------
 struct BranchBinder {
     // run info
-    int runnum = 0;              bool has_runnum = false;
+    double runnum = 0;           bool has_runnum = false;
 
     // topology info
-    int detector1 = 0;           bool has_det1 = false;
-    int detector2 = 0;           bool has_det2 = false;
+    double detector1 = 0;        bool has_det1 = false;
+    double detector2 = 0;        bool has_det2 = false;
 
     // global/exclusivity inputs
     double t1 = 0.0;             bool has_t1 = false;
@@ -425,13 +425,11 @@ struct BranchBinder {
         auto bindD = [&](const char* n, double* a, bool& f){
             if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; }
         };
-        auto bindI = [&](const char* n, int* a, bool& f){
-            if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; }
-        };
-
-        bindI("runnum",    &runnum,    has_runnum);
-        bindI("detector1", &detector1, has_det1);
-        bindI("detector2", &detector2, has_det2);
+        // Rebuilt data ROOT trees store these nominally integral values as
+        // Double_t. Binding Int_t buffers fails and leaves topology unavailable.
+        bindD("runnum",    &runnum,    has_runnum);
+        bindD("detector1", &detector1, has_det1);
+        bindD("detector2", &detector2, has_det2);
 
         bindD("t1",                &t1,                has_t1);
         bindD("open_angle_ep2",    &open_angle_ep2,    has_open);
@@ -1337,7 +1335,10 @@ bool update_bin_means_csv(const std::string& csv_path,
 
     std::vector<PeriodResult> results(period_keys.size());
 
-    const int nth = std::max(1, std::min(7, max_workers));
+    // Conservative safeguard against concurrent TChain basket/file transitions.
+    // Restore parallelism only after independently validating ROOT I/O.
+    const int nth = 1;
+    (void)max_workers;
 #ifdef _OPENMP
 #pragma omp parallel for schedule(static) num_threads(nth)
 #endif

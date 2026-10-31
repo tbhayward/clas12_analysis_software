@@ -254,7 +254,8 @@ bool run_python_exclusivity_analysis(
         << " --tight-containment " << format_decimal(options.tight_containment)
         << " --nominal-containment " << format_decimal(options.nominal_containment)
         << " --loose-containment " << format_decimal(options.loose_containment)
-        << " --workers " << options.workers;
+        << " --workers " << options.workers
+        << " --detailed-plots";
 
     std::cout << "[python_exclusivity_runner] Executing:\n"
               << command.str() << "\n\n" << std::flush;
