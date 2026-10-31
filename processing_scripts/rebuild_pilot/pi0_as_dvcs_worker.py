@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Reconstructed-only AAOgen -> DVCS leakage worker; no generated branches.
-Run from clas12_analysis_software root. One HIPO per job, FIFO -> DataEvents ROOT.
+Run from clas12_analysis_software root. One HIPO per job, FIFO -> PhysicsEvents ROOT.
 """
 import argparse, concurrent.futures, hashlib, json, os, pathlib, re, shlex, shutil, subprocess, threading
 P=pathlib.Path
@@ -35,9 +35,13 @@ def main():
  jar=root/'processing_classes/dist/processing_classes.jar'
  if not jar.is_file():raise SystemExit('Missing '+str(jar))
  source=root/'processing_scripts/rebuild_pilot/convert_data_stream.cpp';converter=root/'processing_scripts/rebuild_pilot/convert_data_stream'
- if not source.is_file():raise SystemExit('Missing '+str(source))
+ validator_source=root/'processing_scripts/rebuild_pilot/validate_reconstructed_root.cpp';validator=root/'processing_scripts/rebuild_pilot/validate_reconstructed_root'
+ schema_header=root/'processing_scripts/rebuild_pilot/reconstructed_data_schema.h'
+ for required_source in (source,validator_source,schema_header):
+  if not required_source.is_file():raise SystemExit('Missing '+str(required_source))
  flags=shlex.split(subprocess.check_output(['root-config','--cflags'],text=True));libs=shlex.split(subprocess.check_output(['root-config','--libs'],text=True))
  subprocess.run(['g++','-O3','-std=c++17',*flags,str(source),'-o',str(converter),*libs],check=True)
+ subprocess.run(['g++','-O3','-std=c++17',*flags,str(validator_source),'-o',str(validator),*libs],check=True)
  counts={'done':0,'skipped':0};lock=threading.Lock()
  def run(job):
   j,hipo,dest=job;dest.parent.mkdir(parents=True,exist_ok=True)
@@ -50,6 +54,8 @@ def main():
     marker=json.loads(ok.read_text())
     valid=all(marker.get(k)==v for k,v in required.items())
    except (ValueError,OSError):pass
+  if valid:
+   valid=subprocess.run([str(validator),str(dest),'pi0_as_dvcs',str(marker['selected_rows'])],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0
   if valid:
    with lock:counts['done']+=1;counts['skipped']+=1
    print('[SKIP_VALID_MARKER]','pi0_as_dvcs',hipo.name,flush=True);return
@@ -64,7 +70,7 @@ def main():
   os.mkfifo(fifo)
   try:
    with gl.open('w') as g,cl.open('w') as c:
-    conv=subprocess.Popen([str(converter),str(fifo),str(tmp),'dvcs_data'],stdout=c,stderr=subprocess.STDOUT)
+    conv=subprocess.Popen([str(converter),str(fifo),str(tmp),'pi0_as_dvcs'],stdout=c,stderr=subprocess.STDOUT)
     script=root/'processing_scripts/rebuild_pilot'/SCRIPTS['pi0_as_dvcs']
     args=[str(root/'coatjava/bin/run-groovy'),'-cp',str(jar),str(script),str(hipo),str(fifo),'1',str(j['energy']),'11','1',str(a.max_events)]
     cmd='source source_file.txt; if ($status != 0) exit 90; module load qadb/3.4.1; if ($status != 0) exit 91; exec '+' '.join(shlex.quote(x) for x in args)
@@ -78,6 +84,8 @@ def main():
    log=gl.read_text(errors='replace');cv=cl.read_text(errors='replace')
    totals=re.findall(r'\[HIPO_FILE_DONE\].*?events_total=(\d+)',log);rows=re.findall(r'\[DATA_ROOT_ROWS\]\s+(\d+)',cv)
    if len(totals)!=1 or len(rows)!=1 or int(totals[0])<int(rows[0]) or (a.max_events>0 and int(totals[0])>a.max_events):raise RuntimeError(f'Invalid completion counts: processed={totals} selected={rows}; {hipo}')
+   checked=subprocess.run([str(validator),str(tmp),'pi0_as_dvcs',rows[0]],capture_output=True,text=True)
+   if checked.returncode:raise RuntimeError(f'ROOT schema validation failed for {hipo}: {checked.stderr.strip()}')
    # Data processors emit only selected candidates: selected rows <= processed events.
    os.replace(tmp,dest);ok.write_text(json.dumps({**required,'processed_events':int(totals[0]),'selected_rows':int(rows[0])})+'\n')
    with lock:counts['done']+=1

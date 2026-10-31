@@ -42,11 +42,13 @@ def main():
  if not a.merge:return 0
  for program in ('hadd','root-config','g++'):
   if not shutil.which(program):p.error('missing '+program)
- src=P(__file__).with_name('check_merged_data_root.cpp')
+ src=P(__file__).with_name('validate_reconstructed_root.cpp')
  if not src.is_file():p.error('missing '+str(src))
+ schema=src.with_name('reconstructed_data_schema.h')
+ if not schema.is_file():p.error('missing '+str(schema))
  import shlex
  flags=shlex.split(subprocess.check_output(['root-config','--cflags'],text=True));libs=shlex.split(subprocess.check_output(['root-config','--libs'],text=True))
- checker=base/'.check_merged_data_root'
+ checker=base/'.validate_reconstructed_root'
  subprocess.run(['g++','-O2','-std=c++17',*flags,str(src),'-o',str(checker),*libs],check=True)
  # Preflight all destinations before merging either mode.
  for mode in a.only:
@@ -57,12 +59,16 @@ def main():
   dest=base/mode/('merged_full.root' if a.max_events==0 else f'merged_pilot_{a.max_events}.root')
   tmp=P(str(dest)+'.partial.root')
   inputs=groups[mode];expected=sum(n for _,n in inputs)
+  for root,rows in inputs:
+   check=subprocess.run([str(checker.resolve()),str(root.resolve()),mode,str(rows)])
+   if check.returncode:
+    print('[FAILED] input ROOT schema verification:',root,file=sys.stderr);return 3
   print(f'[MERGE] {mode} parts={len(inputs)} expected_rows={expected}',flush=True)
   # -f only permits creating the temporary output, never overwriting final files.
   result=subprocess.run(['hadd','-f',str(tmp),*[str(root) for root,_ in inputs]])
   if result.returncode or not tmp.is_file() or tmp.stat().st_size==0:
    print('[FAILED] hadd; partial output retained:',tmp,file=sys.stderr);return 2
-  check=subprocess.run([str(checker.resolve()),str(tmp.resolve()),str(expected),'77' if mode=='pi0_data' else '70'])
+  check=subprocess.run([str(checker.resolve()),str(tmp.resolve()),mode,str(expected)])
   if check.returncode:
    print('[FAILED] merged ROOT verification; partial output retained:',tmp,file=sys.stderr);return 3
   tmp.rename(dest)
