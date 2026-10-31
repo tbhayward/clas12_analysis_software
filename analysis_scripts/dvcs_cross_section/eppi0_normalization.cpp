@@ -992,11 +992,11 @@ static bool check_sigma(const CutVarMap& vm, const std::string& var, bool has, d
 static std::mutex g_bind_mutex;
 
 struct Branches {
-    int runnum = 0; bool has_runnum = false;
-    int detector1 = 0; bool has_detector1 = false;
-    int detector2 = 0; bool has_detector2 = false;
-    int detector_gamma1 = -1; bool has_detector_gamma1 = false;
-    int detector_gamma2 = -1; bool has_detector_gamma2 = false;
+    double runnum = 0; bool has_runnum = false;
+    double detector1 = 0; bool has_detector1 = false;
+    double detector2 = 0; bool has_detector2 = false;
+    double detector_gamma1 = -1; bool has_detector_gamma1 = false;
+    double detector_gamma2 = -1; bool has_detector_gamma2 = false;
     int helicity = 0; bool has_helicity = false;
 
     double x = 0.0; bool has_x = false;
@@ -1112,11 +1112,11 @@ struct Branches {
             }
         };
 
-        bI("runnum", &runnum, has_runnum);
-        bI("detector1", &detector1, has_detector1);
-        bI("detector2", &detector2, has_detector2);
-        bI("detector_gamma1", &detector_gamma1, has_detector_gamma1);
-        bI("detector_gamma2", &detector_gamma2, has_detector_gamma2);
+        bD("runnum", &runnum, has_runnum);
+        bD("detector1", &detector1, has_detector1);
+        bD("detector2", &detector2, has_detector2);
+        bD("detector_gamma1", &detector_gamma1, has_detector_gamma1);
+        bD("detector_gamma2", &detector_gamma2, has_detector_gamma2);
         bI("helicity", &helicity, has_helicity);
 
         bD("x", &x, has_x);

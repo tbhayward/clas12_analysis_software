@@ -168,9 +168,9 @@ static std::mutex g_root_bind_mutex;
 static std::mutex g_fit_mutex;
 
 struct BranchBinder {
-    int runnum = 0;       bool has_runnum = false;
-    int detector1 = 0;    bool has_detector1 = false;
-    int detector2 = 0;    bool has_detector2 = false;
+    double runnum = 0;       bool has_runnum = false;
+    double detector1 = 0;    bool has_detector1 = false;
+    double detector2 = 0;    bool has_detector2 = false;
 
     double t1 = 0.0;                bool has_t1 = false;
     double open_angle_ep2 = 0.0;    bool has_open_angle_ep2 = false;
@@ -245,9 +245,9 @@ struct BranchBinder {
             if (t->GetBranch(n)) { t->SetBranchAddress(n, a, nullptr, nullptr, kDouble_t, false); f = true; }
         };
 
-        bI("runnum",    &runnum,    has_runnum);
-        bI("detector1", &detector1, has_detector1);
-        bI("detector2", &detector2, has_detector2);
+        bD("runnum",    &runnum,    has_runnum);
+        bD("detector1", &detector1, has_detector1);
+        bD("detector2", &detector2, has_detector2);
 
         bD("t1", &t1, has_t1);
         bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);

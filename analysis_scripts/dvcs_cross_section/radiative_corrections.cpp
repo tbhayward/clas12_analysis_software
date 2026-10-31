@@ -694,8 +694,8 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     double g_phi2 = 0.0;
     double g_open_angle = 0.0;
     double g_pTmiss = 0.0;
-    int g_det1 = 0;
-    int g_det2 = 0;
+    double g_det1 = 0;
+    double g_det2 = 0;
     double g_e_p = 0.0;
     double g_e_theta = 0.0;
     double g_e_phi = 0.0;

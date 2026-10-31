@@ -1061,9 +1061,9 @@ static bool fast_cut_passes(const FastCut& cut, bool has_value, double value) {
 static std::mutex g_bind_mutex;
 
 struct Branches {
-    int runnum = 0; bool has_runnum = false;
-    int detector1 = 0; bool has_detector1 = false;
-    int detector2 = 0; bool has_detector2 = false;
+    double runnum = 0; bool has_runnum = false;
+    double detector1 = 0; bool has_detector1 = false;
+    double detector2 = 0; bool has_detector2 = false;
 
     double x = 0.0; bool has_x = false;
     double Q2 = 0.0; bool has_Q2 = false;
@@ -1153,9 +1153,9 @@ struct Branches {
             }
         };
 
-        bI("runnum", &runnum, has_runnum);
-        bI("detector1", &detector1, has_detector1);
-        bI("detector2", &detector2, has_detector2);
+        bD("runnum", &runnum, has_runnum);
+        bD("detector1", &detector1, has_detector1);
+        bD("detector2", &detector2, has_detector2);
 
         bD("x", &x, has_x);
         bD("Q2", &Q2, has_Q2);

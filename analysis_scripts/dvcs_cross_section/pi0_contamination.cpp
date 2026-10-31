@@ -1118,9 +1118,9 @@ static std::string safe_file_token(const std::string& s) {
 struct TreeDiagBranches {
     TTree* tree = nullptr;
 
-    int runnum = 0; bool has_runnum = false;
-    int detector1 = 0; bool has_detector1 = false;
-    int detector2 = 0; bool has_detector2 = false;
+    double runnum = 0; bool has_runnum = false;
+    double detector1 = 0; bool has_detector1 = false;
+    double detector2 = 0; bool has_detector2 = false;
 
     double Delta_phi = 0.0; bool has_Delta_phi = false;
     double p1_p = 0.0; bool has_p1_p = false;
@@ -1223,9 +1223,9 @@ struct TreeDiagBranches {
                 tree->SetBranchAddress(actual.c_str(), addr) >= 0) flag = true;
         };
 
-        bI("runnum", &runnum, has_runnum);
-        bI("detector1", &detector1, has_detector1);
-        bI("detector2", &detector2, has_detector2);
+        bD("runnum", &runnum, has_runnum);
+        bD("detector1", &detector1, has_detector1);
+        bD("detector2", &detector2, has_detector2);
 
         bD("Delta_phi", &Delta_phi, has_Delta_phi);
         bD("p1_p", &p1_p, has_p1_p);

@@ -1349,10 +1349,10 @@ static TopoCutMap load_combined_cuts(const std::string& combined_cuts_json,
 static std::mutex g_root_bind_mutex;
 
 struct BranchBinder {
-    int runnum = 0; bool has_runnum = false;
+    double runnum = 0; bool has_runnum = false;
 
-    int detector1 = 0; bool has_detector1 = false;
-    int detector2 = 0; bool has_detector2 = false;
+    double detector1 = 0; bool has_detector1 = false;
+    double detector2 = 0; bool has_detector2 = false;
 
     int helicity = 0; bool has_helicity = false;
 
@@ -1534,10 +1534,10 @@ struct BranchBinder {
             }
         };
 
-        bI("runnum", &runnum, has_runnum);
+        bD("runnum", &runnum, has_runnum);
 
-        bI("detector1", &detector1, has_detector1);
-        bI("detector2", &detector2, has_detector2);
+        bD("detector1", &detector1, has_detector1);
+        bD("detector2", &detector2, has_detector2);
         bI("helicity",  &helicity,  has_helicity);
 
         bD("x",    &x,    has_x);
