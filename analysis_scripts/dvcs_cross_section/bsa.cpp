@@ -757,10 +757,10 @@ static TopoCutMap load_combined_cuts(const std::string& combined_cuts_json) {
 // -----------------------------------------------------------------------------
 
 struct BranchBinder {
-    int runnum = 0; bool has_runnum = false;
-    int detector1 = 0; bool has_detector1 = false;
-    int detector2 = 0; bool has_detector2 = false;
-    int helicity = 0; bool has_helicity = false;
+    double runnum = 0.0; bool has_runnum = false;
+    double detector1 = 0.0; bool has_detector1 = false;
+    double detector2 = 0.0; bool has_detector2 = false;
+    double helicity = 0.0; bool has_helicity = false;
 
     double x = 0.0; bool has_x = false;
     double Q2 = 0.0; bool has_Q2 = false;
@@ -818,10 +818,10 @@ struct BranchBinder {
             if (t->GetBranch(name)) { t->SetBranchAddress(name, ptr); has = true; }
         };
 
-        bind_int("runnum", &runnum, has_runnum);
-        bind_int("detector1", &detector1, has_detector1);
-        bind_int("detector2", &detector2, has_detector2);
-        bind_int("helicity", &helicity, has_helicity);
+        bind_double("runnum", &runnum, has_runnum);
+        bind_double("detector1", &detector1, has_detector1);
+        bind_double("detector2", &detector2, has_detector2);
+        bind_double("helicity", &helicity, has_helicity);
 
         bind_double("x", &x, has_x);
         bind_double("Q2", &Q2, has_Q2);

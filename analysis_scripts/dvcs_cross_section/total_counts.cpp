@@ -1354,7 +1354,7 @@ struct BranchBinder {
     double detector1 = 0; bool has_detector1 = false;
     double detector2 = 0; bool has_detector2 = false;
 
-    int helicity = 0; bool has_helicity = false;
+    double helicity = 0.0; bool has_helicity = false;
 
     double x = 0.0;     bool has_x = false;
     double Q2 = 0.0;    bool has_Q2 = false;
@@ -1538,7 +1538,7 @@ struct BranchBinder {
 
         bD("detector1", &detector1, has_detector1);
         bD("detector2", &detector2, has_detector2);
-        bI("helicity",  &helicity,  has_helicity);
+        bD("helicity",  &helicity,  has_helicity);
 
         bD("x",    &x,    has_x);
         bD("Q2",   &Q2,   has_Q2);
