@@ -5,6 +5,7 @@
 #include <iostream>
 #include <string>
 #include <cstdlib>
+#include "validate_mc_companion.h"
 int main(int argc,char**argv){
  if(argc!=4){std::cerr<<"usage: validate_merged_mc merged.root expected_entries expected_rec\n";return 2;}
  const long long expected=std::stoll(argv[2]), expectedRec=std::stoll(argv[3]);
@@ -22,5 +23,6 @@ int main(int argc,char**argv){
   if(gen>0.5)ng++;if(rec>0.5)nr++;
  }
  if(ng!=n||nr!=expectedRec){std::cerr<<"BAD_COUNTS gen="<<ng<<" rec="<<nr<<" expected_rec="<<expectedRec<<"\n";return 10;}
+ if(!validate_mc_companion(f,t))return 11;
  std::cout<<"MERGED_VALID entries="<<n<<" gen="<<ng<<" rec="<<nr<<"\n";return 0;
 }

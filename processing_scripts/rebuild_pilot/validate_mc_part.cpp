@@ -3,6 +3,7 @@
 #include <iostream>
 #include <string>
 #include <cmath>
+#include "validate_mc_companion.h"
 int main(int argc,char**argv){
  if(argc!=3){std::cerr<<"usage: validate_mc_part file.root expected_entries (-1 unknown)\n";return 2;}
  TFile f(argv[1],"READ");if(f.IsZombie()||f.TestBit(TFile::kRecovered)){std::cerr<<"BAD_ROOT\n";return 3;}
@@ -13,5 +14,6 @@ int main(int argc,char**argv){
  double sequence=0,gen=0,rec=0; t->SetBranchAddress("event_sequence",&sequence);t->SetBranchAddress("gen_kinematics_valid",&gen);t->SetBranchAddress("rec_kinematics_valid",&rec);
  long long ng=0,nr=0;for(long long i=0;i<n;i++){if(t->GetEntry(i)<=0){std::cerr<<"READ_ERROR entry="<<i<<"\n";return 7;}if(!std::isfinite(sequence)||std::llround(sequence)!=i+1){std::cerr<<"BAD_SEQUENCE entry="<<i<<" value="<<sequence<<"\n";return 8;}if(gen>0.5)ng++;if(rec>0.5)nr++;}
  if(ng!=n){std::cerr<<"GEN_MISMATCH gen="<<ng<<" total="<<n<<"\n";return 9;}
+ if(!validate_mc_companion(f,t))return 10;
  std::cout<<"VALID entries="<<n<<" gen="<<ng<<" rec="<<nr<<"\n";return 0;
 }
