@@ -770,7 +770,10 @@ def iterate_rebuilt(path: str, expressions: Sequence[str], step_size: str):
                 valid = np.asarray(chunk["rec_kinematics_valid"]) >= 0.5
                 yield {name: np.asarray(chunk[branch_name_for(path, name)])[valid] for name in expressions}
             else:
-                yield chunk
+                # Compact pi0 MC still maps logical detector2 to the physical
+                # detector_gamma1 branch. Always return the requested names.
+                yield {name: np.asarray(chunk[branch_name_for(path, name)])
+                       for name in expressions}
             # endif
         # endfor
     # endwith
