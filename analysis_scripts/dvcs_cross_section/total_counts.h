@@ -3,6 +3,8 @@
 
 #include <map>
 #include <string>
+#include <vector>
+#include "global_cuts.h"
 
 class TTree;
 
@@ -74,6 +76,20 @@ struct TotalCountsOptions {
     std::string current_nuisance_response_csv =
         "output/current_systematics/current_yield_nuisance_responses.csv";
 };
+
+struct TotalCountsVariation {
+    std::string name;
+    std::string combined_cuts_json;
+    GlobalCutConfig global_cuts;
+    bool apply_eppi0_efficiency = false;
+    std::string eppi0_efficiency_csv;
+};
+
+// Active only during the automatic variation stage. Aggregates are released
+// by end_total_counts_variations(); no event arrays are retained.
+void begin_total_counts_variations(const std::vector<TotalCountsVariation>& variations);
+void select_total_counts_variation(std::size_t index);
+void end_total_counts_variations();
 
 /**
  * update_total_counts_csv

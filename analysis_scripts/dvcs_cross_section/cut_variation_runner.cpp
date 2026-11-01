@@ -14,6 +14,7 @@
 #include "unfolding.h"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cmath>
 #include <cctype>
 #include <filesystem>
@@ -530,7 +531,8 @@ bool produce_variation(
     const std::map<std::string, TTree*>& currentStudyGenMcTrees,
     const std::map<std::string, TTree*>& currentStudyRecMcTrees,
     bool use_nobkg_dvcs_mc_for_acceptance,
-    bool use_epg_mc_current_factor_for_eppi0_bkg) {
+    bool use_epg_mc_current_factor_for_eppi0_bkg,
+    bool preparation_only = false, bool prepared = false) {
 
     using Clock = std::chrono::steady_clock;
     const auto variation_t0 = Clock::now();
@@ -557,14 +559,19 @@ bool produce_variation(
     fs::create_directories(json_dir);
     fs::create_directories(stage_out);
     fs::create_directories(csv_dir);
-    fs::copy_file(options.nominal_csv, csv_path, fs::copy_options::overwrite_existing);
-
     const GlobalCutConfig cfg =
         varied_global_config(nominal_global_cuts,
                              spec.fiducial_direction);
+    std::string cuts_json = (json_dir / "combined_cuts.json").string();
+    std::string variation_eppi0_summary = options.use_eppi0_production_normalization
+        ? (base / "eppi0_normalization/eppi0_normalization_summary.csv").string() : "";
+    set_default_global_cuts(cfg);
+    if (!prepared) {
+    fs::copy_file(options.nominal_csv, csv_path, fs::copy_options::overwrite_existing);
+
 
     const auto cuts_t0 = stage_start("exclusivity-cut preparation/refit");
-    const std::string cuts_json =
+    cuts_json =
         prepare_exclusivity_json(spec, options, cfg, base, json_dir);
     stage_done("exclusivity-cut preparation/refit", cuts_t0);
 
@@ -574,7 +581,6 @@ bool produce_variation(
     // definition.  Therefore both fiducial and exclusivity variations propagate
     // into the eppi0 DATA/AAOgen sample and its sequential theta_p -> residual-p
     // normalization functions.
-    std::string variation_eppi0_summary;
     if (options.use_eppi0_production_normalization) {
         const fs::path eppi0_out = base / "eppi0_normalization";
         variation_eppi0_summary =
@@ -608,6 +614,9 @@ bool produce_variation(
         }
         stage_done("eppi0 normalization re-derivation", norm_t0);
     }
+
+    }
+    if (preparation_only) return true;
 
     TotalCountsOptions count_opts;
     count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
@@ -750,8 +759,41 @@ bool run_automatic_cut_variation_systematics(
              ExclusivityCutMode::RefitNominal95}
         };
 
+        // Opt-out retains the original independent scans for comparison.
+        const char* shared_env = std::getenv("DVCS_SHARED_VARIATION_COUNTS");
+        const bool shared = shared_env && std::string(shared_env) == "1";
+        struct SharedCountsGuard {
+            ~SharedCountsGuard() { end_total_counts_variations(); }
+        } shared_guard;
+        if (shared) {
+            std::vector<TotalCountsVariation> definitions;
+            for (const auto& v : variations) {
+                if (!produce_variation(v, options, nominal_global_cuts,
+                        dataTrees, genMcTrees, recMcTrees, eppi0DataTrees,
+                        eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
+                        currentStudyGenMcTrees, currentStudyRecMcTrees,
+                        use_nobkg_dvcs_mc_for_acceptance,
+                        use_epg_mc_current_factor_for_eppi0_bkg, true, false)) {
+                    set_default_global_cuts(nominal_global_cuts);
+                    return false;
+                }
+                const fs::path base = fs::path(options.output_dir) / "variations" / v.name;
+                TotalCountsVariation definition;
+                definition.name = v.name;
+                definition.combined_cuts_json = (base / "jsons/combined_cuts.json").string();
+                definition.global_cuts = varied_global_config(nominal_global_cuts, v.fiducial_direction);
+                definition.apply_eppi0_efficiency = options.use_eppi0_production_normalization;
+                definition.eppi0_efficiency_csv = (base / "eppi0_normalization/eppi0_normalization_summary.csv").string();
+                definitions.push_back(std::move(definition));
+            }
+            begin_total_counts_variations(definitions);
+            std::cout << "[cut-variation-runner] Shared counts enabled for " << definitions.size()
+                      << " independently prepared variations." << std::endl;
+        }
+
         for (size_t iv = 0; iv < variations.size(); ++iv) {
             const auto& v = variations[iv];
+            if (shared) select_total_counts_variation(iv);
             std::cout << "[cut-variation-runner] Variation " << (iv + 1)
                       << "/" << variations.size() << ": " << v.name
                       << std::endl;
@@ -761,7 +803,7 @@ bool run_automatic_cut_variation_systematics(
                                    eppi0RecMcTrees, eppi0BkgTrees,
                                    currentStudyGenMcTrees, currentStudyRecMcTrees,
                                    use_nobkg_dvcs_mc_for_acceptance,
-                                   use_epg_mc_current_factor_for_eppi0_bkg)) {
+                                   use_epg_mc_current_factor_for_eppi0_bkg, false, shared)) {
                 set_default_global_cuts(nominal_global_cuts);
                 return false;
             }

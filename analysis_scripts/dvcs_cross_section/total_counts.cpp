@@ -45,6 +45,7 @@
 
 // ROOT
 #include <TTree.h>
+#include <functional>
 #include <TChain.h>
 #include <TFile.h>
 #include <filesystem>
@@ -1388,7 +1389,7 @@ struct BranchBinder {
 
     double paired_validity = 1.0;
     bool has_paired_validity = false;
-    void bind(TTree* t, const WorkConfig& work_cfg) {
+    void bind(TTree* t, const WorkConfig& work_cfg, const GlobalCutConfig* binding_cfg = nullptr) {
         if (!t) {
             return;
         }
@@ -1456,7 +1457,7 @@ struct BranchBinder {
         }
 
         if (!is_gen) {
-            const GlobalCutConfig& cfg = default_global_cuts();
+            const GlobalCutConfig& cfg = binding_cfg ? *binding_cfg : default_global_cuts();
 
             ena("runnum");
             ena("detector1");
@@ -1883,15 +1884,16 @@ static void materialize_sigma_diagnostics(
 }
 
 static inline bool passes_global_cuts_dispatch(const BranchBinder& b,
-                                               const std::string& period_label) {
-    const GlobalCutConfig& cfg = default_global_cuts();
+                                               const std::string& period_label,
+                                               const GlobalCutConfig* override_cfg = nullptr) {
+    const GlobalCutConfig& cfg = override_cfg ? *override_cfg : default_global_cuts();
     if (cfg.auxiliary_cd_proton_p_min_GeV > 0.0 && b.detector1 == 2 &&
         (!b.has_p1_p || !std::isfinite(b.p1_p) || !(b.p1_p > cfg.auxiliary_cd_proton_p_min_GeV))) return false;
 
 
     if (!(b.has_t1 && b.has_open_angle)) return false;
     if (cfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
-    if (b.has_runnum && is_excluded_run(b.runnum)) return false;
+    if (b.has_runnum && std::find(cfg.excluded_runs.begin(), cfg.excluded_runs.end(), b.runnum) != cfg.excluded_runs.end()) return false;
 
     if (cfg.enable_topology_filter || global_cuts_require_sector_phi(cfg) || cfg.enable_dvcsgen_ycol_cut) {
         if (!(b.has_detector1 && b.has_detector2)) {
@@ -2215,7 +2217,7 @@ static std::string generated_denominator_key(TTree* tree,
     key << std::hexfloat << "unit-weight-generated-v1|" << tree << '|'
         << tree->GetName() << '|' << tree->GetEntries() << '|'
         << cfg.channel_cfg.csv_channel << '|' << tags.tree_key << '|'
-        << tags.period_display << '|' << tprime << '|' << rows.size();
+        << tags.period_display << '|' << tprime << '|' << sebastian_use_tgamma_binning.load() << '|' << rows.size();
     auto append_file = [&](const char* filename) {
         const std::filesystem::path path(filename);
         std::error_code error;
@@ -2241,7 +2243,17 @@ static std::string generated_denominator_key(TTree* tree,
     return key.str();
 }
 
-static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
+
+struct SharedCountContext {
+    TotalCountsVariation spec;
+    TopoCutMap data_cuts, mc_cuts;
+    Eppi0EffMap efficiency;
+};
+static std::vector<SharedCountContext> shared_count_contexts;
+static std::size_t shared_count_selected = 0;
+static std::mutex shared_count_mutex;
+static std::map<std::string, std::vector<WorkCounts>> shared_count_results;
+static WorkCounts accumulate_counts_for_tree_legacy(const WorkConfig& work_cfg,
                                              const PeriodTags& tags,
                                              TTree* tree,
                                              const std::vector<RowBin>& rows,
@@ -2260,7 +2272,7 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
     }
 
     const std::string denominator_key =
-        work_cfg.sample_kind == SampleKind::MC_GEN && !trace_matches
+        work_cfg.sample_kind == SampleKind::MC_GEN && !trace_matches && !env_flag("DVCS_VERIFY_SHARED_COUNTS")
         ? generated_denominator_key(tree, work_cfg, tags, rows, use_tprime_binning)
         : std::string();
     if (!denominator_key.empty()) {
@@ -2585,6 +2597,468 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
         std::cout << "[total_counts] STORE_GENERATED_DENOMINATOR " << tags.tree_key << std::endl;
     }
     return out;
+}
+
+struct SharedCountKinematics {
+    double phi_deg = 0, tabs = 0;
+    std::vector<int> pass1_rows;
+    const std::vector<int>* candidate_rows = nullptr;
+};
+
+static std::function<WorkCounts*(const BranchBinder*, Long64_t)> make_count_sink(const WorkConfig& work_cfg,
+                                             const PeriodTags& tags,
+                                             TTree* tree,
+                                             const std::vector<RowBin>& rows,
+                                             const FastBinning& fast_bins,
+                                             const TopoCutMap& sigma_cuts,
+                                             bool trace_matches,
+                                             const CurrentResponseModel* current_model,
+                                             bool use_epg_mc_current_factor_for_eppi0_bkg,
+                                             bool apply_neupane_proton_efficiency_correction,
+                                             const Eppi0EffMap* eppi0_eff_map,
+                                             bool use_tprime_binning,
+                                             const BranchBinder& prototype,
+                                             const GlobalCutConfig& global_config,
+                                             const SharedCountKinematics* common) {
+    WorkCounts out;
+    const std::string denominator_key;
+    BranchBinder b = prototype;
+    const bool is_gen = (work_cfg.sample_kind == SampleKind::MC_GEN);
+    const bool is_data = (work_cfg.sample_kind == SampleKind::DATA);
+    const bool split_helicity = is_data;
+
+    if (is_gen) {
+        if (!b.ready_for_generated_matching()) {
+            std::ostringstream ss;
+            ss << "[total_counts] FATAL: missing required generated-MC matching branches in tree for '"
+               << tags.tree_key << "'. Required: x, Q2, t1, phi2.";
+            fatal(ss.str());
+        }
+    } else {
+        if (!b.ready_for_reconstructed_matching()) {
+            std::ostringstream ss;
+            ss << "[total_counts] FATAL: missing required reconstructed matching branches in tree for '"
+               << tags.tree_key << "'. Required: detector1, detector2, x, Q2, t1, phi2.";
+            fatal(ss.str());
+        }
+
+        if (is_data && !b.has_helicity) {
+            std::ostringstream ss;
+            ss << "[total_counts] FATAL: missing required branch 'helicity' in data tree for '"
+               << tags.tree_key << "'.";
+            fatal(ss.str());
+        }
+    }
+
+    // Dense row-indexed storage avoids two unordered-map lookups for every
+    // matched event. The public/downstream representation is rebuilt once at
+    // the end of the tree, so all existing interfaces and CSV behavior remain
+    // unchanged.
+    std::vector<HelCounts> total_dense(rows.size());
+    std::array<std::vector<HelCounts>, 3> topo_dense;
+    std::vector<WeightedHelCounts> corrected_total_dense;
+    std::array<std::vector<WeightedHelCounts>, 3> corrected_topo_dense;
+    const bool apply_current_weights = (!is_gen && current_model != nullptr && tags.period_display != "Fa18 Inb Supp");
+    if (apply_current_weights) corrected_total_dense.resize(rows.size());
+    if (!is_gen) {
+        for (auto& v : topo_dense) v.resize(rows.size());
+        if (apply_current_weights) {
+            for (auto& v : corrected_topo_dense) v.resize(rows.size());
+        }
+    }
+
+    // The sigma-cut key depends only on channel, period, and topology. Build
+    // the three strings once per tree instead of once per accepted event.
+    std::array<std::string, 3> sigma_keys;
+    std::array<CompiledSigmaPlan, 3> sigma_plans;
+    std::array<bool, 3> sigma_plan_ready{{false, false, false}};
+    DenseSigmaDiagnostics sigma_diag;
+    if (!is_gen) {
+        sigma_keys[0] = combined_cuts_key(work_cfg.channel_cfg, tags, topology_name(TopologyIndex::FD_FD));
+        sigma_keys[1] = combined_cuts_key(work_cfg.channel_cfg, tags, topology_name(TopologyIndex::CD_FD));
+        sigma_keys[2] = combined_cuts_key(work_cfg.channel_cfg, tags, topology_name(TopologyIndex::CD_FT));
+    }
+
+    const Long64_t N = tree->GetEntries();
+    const bool dbg = env_flag("TOTAL_COUNTS_DEBUG");
+
+    long long n_global_pass = 0;
+    long long n_sigma_pass  = 0;
+    long long n_used        = 0;
+    long long n_current_excluded = 0;
+    std::unordered_set<int> current_excluded_runs_seen;
+
+    out.flow.entries = (long long)N;
+
+    return [=](const BranchBinder* event, Long64_t i) mutable -> WorkCounts* {
+      if (event) {
+        b = *event;
+        do {
+        TopologyIndex topo = TopologyIndex::INVALID;
+        const std::string* topo_dir_ptr = nullptr;
+        int topo_idx = -1;
+
+        if (!is_gen) {
+            topo = topology_index(b.detector1, b.detector2);
+
+            if (topo == TopologyIndex::INVALID) {
+                continue;
+            }
+
+            topo_idx = static_cast<int>(topo);
+            const std::string& topoDir = topology_name(topo);
+            topo_dir_ptr = &topoDir;
+
+            ++out.flow.valid_topology;
+            ++out.flow.topology_entries[topoDir];
+
+            if (!passes_global_cuts_dispatch(b, tags.period_label, &global_config)) {
+                continue;
+            }
+
+            ++n_global_pass;
+            ++out.flow.global_pass;
+            ++out.flow.topology_global_pass[topoDir];
+
+            if (!sigma_plan_ready[topo_idx]) {
+                sigma_plans[topo_idx] = compile_sigma_plan(work_cfg.channel_cfg,
+                                                           sigma_cuts,
+                                                           sigma_keys[topo_idx]);
+                sigma_plan_ready[topo_idx] = true;
+            }
+
+            if (!fill_sigma_cut_diagnostics_compiled(sigma_plans[topo_idx],
+                                                     b,
+                                                     topo_idx,
+                                                     sigma_diag)) {
+                continue;
+            }
+
+            ++n_sigma_pass;
+            ++out.flow.sigma_pass;
+            ++out.flow.topology_sigma_pass[topoDir];
+        }
+
+        EventCurrentWeight current_weight;
+        if (apply_current_weights) {
+            current_weight = event_current_weight(*current_model, work_cfg, tags, b,
+                                                  use_epg_mc_current_factor_for_eppi0_bkg);
+            if (current_weight.skip_corrected) {
+                ++n_current_excluded;
+                current_excluded_runs_seen.insert(b.runnum);
+            }
+        }
+
+        const double phi_deg = common->phi_deg;
+        const double tabs = common->tabs;
+        const std::vector<int>* candidate_rows_ptr = common->candidate_rows;
+        if (candidate_rows_ptr->empty()) continue;
+
+        bool matched_any = false;
+
+        for (int r : *candidate_rows_ptr) {
+            const RowBin& w = rows[r];
+
+            if (!row_accepts_phi(phi_deg, w.pmin, w.pmax)) {
+                continue;
+            }
+
+            add_count(total_dense[r], split_helicity, b.helicity);
+
+            if (!is_gen) {
+                add_count(topo_dense[topo_idx][r], split_helicity, b.helicity);
+            }
+            if (apply_current_weights && !current_weight.skip_corrected) {
+                double proton_weight = 1.0;
+                if (is_data && apply_neupane_proton_efficiency_correction)
+                    proton_weight = neupane_proton_data_weight(b);
+                // Pass-1 architecture: the empirical DVpi0P efficiency map
+                // weights reconstructed DVCS MC, never DATA and never generated MC.
+                if (!is_data && !is_gen && eppi0_eff_map &&
+                    work_cfg.channel_cfg.csv_channel == "ep->epg")
+                    proton_weight = eppi0_rec_mc_efficiency_weight(*eppi0_eff_map, tags.period_display, b);
+                add_weighted_count(corrected_total_dense[r], split_helicity, b.helicity, current_weight, proton_weight);
+                add_weighted_count(corrected_topo_dense[topo_idx][r], split_helicity, b.helicity, current_weight, proton_weight);
+            }
+
+            matched_any = true;
+
+            if (trace_matches) {
+                std::cout << "[total_counts][TRACE] channel=" << work_cfg.channel_cfg.csv_channel
+                          << " sample=" << (is_gen ? "gen" : (is_data ? "data" : "rec"))
+                          << " tree=" << tags.tree_key
+                          << " topo=" << (is_gen ? std::string("GEN") : *topo_dir_ptr)
+                          << " row=" << r
+                          << " x=" << b.x
+                          << " Q2=" << b.Q2
+                          << " |t|=" << tabs
+                          << " phi(deg)=" << phi_deg
+                          << " hel=" << b.helicity
+                          << std::endl;
+            }
+        }
+
+        if (matched_any) {
+            ++n_used;
+            ++out.flow.matched;
+
+            if (!is_gen) {
+                ++out.flow.topology_matched[*topo_dir_ptr];
+            }
+        }
+
+        if (dbg && i < 3) {
+            std::cout << "[total_counts][DEBUG] channel=" << work_cfg.channel_cfg.csv_channel
+                      << " tree=" << tags.tree_key
+                      << " i=" << (long long)i
+                      << " sample=" << (is_gen ? "gen" : (is_data ? "data" : "rec"))
+                      << " topo=" << (is_gen ? std::string("GEN") : *topo_dir_ptr)
+                      << " hel=" << b.helicity
+                      << " x=" << b.x
+                      << " Q2=" << b.Q2
+                      << " t1=" << b.t1
+                      << " phi2(rad)=" << b.phi2
+                      << " phi(deg)=" << phi_deg
+                      << std::endl;
+        }
+        } while (false);
+        return nullptr;
+      }
+
+    if (!is_gen) {
+        materialize_sigma_diagnostics(work_cfg.channel_cfg, sigma_diag, out.flow);
+    }
+
+    auto nonzero = [](const HelCounts& h) {
+        return h.unpol != 0.0 || h.pos != 0.0 || h.neg != 0.0;
+    };
+
+    for (int r = 0; r < (int)rows.size(); ++r) {
+        if (nonzero(total_dense[r])) {
+            out.total_counts.emplace(r, total_dense[r]);
+        }
+    }
+
+    if (apply_current_weights) {
+        for (int r = 0; r < (int)rows.size(); ++r) {
+            const WeightedHelCounts& h = corrected_total_dense[r];
+            if (h.sumw.unpol != 0.0 || h.sumw.pos != 0.0 || h.sumw.neg != 0.0) {
+                out.corrected_total_counts.emplace(r, h);
+            }
+        }
+    }
+
+    if (!is_gen) {
+        static const std::array<TopologyIndex, 3> kTopologies = {
+            TopologyIndex::FD_FD,
+            TopologyIndex::CD_FD,
+            TopologyIndex::CD_FT
+        };
+
+        for (int ti = 0; ti < 3; ++ti) {
+            RowCounts dst;
+            WeightedRowCounts corrected_dst;
+            for (int r = 0; r < (int)rows.size(); ++r) {
+                if (nonzero(topo_dense[ti][r])) {
+                    dst.emplace(r, topo_dense[ti][r]);
+                }
+                if (apply_current_weights) {
+                    const WeightedHelCounts& wh = corrected_topo_dense[ti][r];
+                    if (wh.sumw.unpol != 0.0 || wh.sumw.pos != 0.0 || wh.sumw.neg != 0.0) {
+                        corrected_dst.emplace(r, wh);
+                    }
+                }
+            }
+
+            // Preserve the original behavior: a topology key exists only if at
+            // least one event matched a CSV row for that topology.
+            if (!dst.empty()) {
+                out.topo_counts.emplace(topology_name(kTopologies[ti]), std::move(dst));
+            }
+            if (!corrected_dst.empty()) {
+                out.corrected_topo_counts.emplace(topology_name(kTopologies[ti]), std::move(corrected_dst));
+            }
+        }
+    }
+
+    std::cout << "[total_counts] channel=" << work_cfg.channel_cfg.csv_channel
+              << " sample=" << (is_gen ? "gen" : (is_data ? "data" : "rec"))
+              << " tree=" << tags.tree_key
+              << " entries=" << (long long)N
+              << " global_pass=" << n_global_pass
+              << " sig_pass=" << n_sigma_pass
+              << " matched=" << n_used
+              << " current_excluded=" << n_current_excluded
+              << std::endl;
+
+    if (!current_excluded_runs_seen.empty()) {
+        std::ostringstream ss;
+        bool first = true;
+        for (int run : current_excluded_runs_seen) {
+            if (!first) ss << ",";
+            ss << run;
+            first = false;
+        }
+        std::cout << "[total_counts] Skipped from current-corrected accumulator only: "
+                  << n_current_excluded << " accepted event(s) from explicitly unusable/zero-charge run(s): "
+                  << ss.str() << ". Raw yield-total bookkeeping is unchanged." << std::endl;
+    }
+
+    if (!denominator_key.empty()) {
+        if (generated_denominator_key(tree, work_cfg, tags, rows, use_tprime_binning) != denominator_key)
+            fatal("[total_counts] Generated input changed during denominator scan");
+        std::lock_guard<std::mutex> lock(generated_denominator_mutex);
+        generated_denominator_cache.emplace(denominator_key, out);
+        std::cout << "[total_counts] STORE_GENERATED_DENOMINATOR " << tags.tree_key << std::endl;
+    }
+    return &out;
+    };
+}
+
+static nlohmann::json shared_counts_record(const WorkCounts& counts) {
+    using J = nlohmann::json;
+    auto hel = [](const HelCounts& h) { return J::array({h.unpol,h.pos,h.neg}); };
+    auto raw = [&](const RowCounts& rows) {
+        J out = J::object();
+        for (const auto& row : rows) out[std::to_string(row.first)] = hel(row.second);
+        return out;
+    };
+    auto weighted = [&](const WeightedRowCounts& rows) {
+        J out = J::object();
+        for (const auto& row : rows) {
+            const auto& h = row.second;
+            J value = {hel(h.sumw_current_only),hel(h.sumw),hel(h.sumw2),
+                       hel(h.angular_derivative),h.angular_parameter_stat};
+            for (int r=0;r<kCurrentRegionCount;++r) {
+                value.push_back(hel(h.derivative_by_region[r]));
+                value.push_back(h.parameter_stat[r]);
+            }
+            out[std::to_string(row.first)] = value;
+        }
+        return out;
+    };
+    J out;
+    out["raw"] = raw(counts.total_counts);
+    out["weighted"] = weighted(counts.corrected_total_counts);
+    for (const auto& topo : counts.topo_counts) out["topo"][topo.first] = raw(topo.second);
+    for (const auto& topo : counts.corrected_topo_counts) out["weighted_topo"][topo.first] = weighted(topo.second);
+    const auto& f=counts.flow;
+    out["flow"] = {f.entries,f.valid_topology,f.global_pass,f.sigma_pass,f.matched};
+    out["topology_entries"]=f.topology_entries;
+    out["topology_global_pass"]=f.topology_global_pass;
+    out["topology_sigma_pass"]=f.topology_sigma_pass;
+    out["topology_matched"]=f.topology_matched;
+    out["sigma_single_pass"]=f.sigma_single_pass;
+    out["sigma_cumulative_pass"]=f.sigma_cumulative_pass;
+    out["topology_sigma_single_pass"]=f.topology_sigma_single_pass;
+    out["topology_sigma_cumulative_pass"]=f.topology_sigma_cumulative_pass;
+    return out;
+}
+
+static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
+                                             const PeriodTags& tags,
+                                             TTree* tree,
+                                             const std::vector<RowBin>& rows,
+                                             const FastBinning& fast_bins,
+                                             const TopoCutMap& sigma_cuts,
+                                             bool trace_matches,
+                                             const CurrentResponseModel* current_model,
+                                             bool use_epg_mc_current_factor_for_eppi0_bkg,
+                                             bool apply_neupane_proton_efficiency_correction,
+                                             const Eppi0EffMap* eppi0_eff_map,
+                                             bool use_tprime_binning) {
+
+    if (shared_count_contexts.empty() || trace_matches)
+        return accumulate_counts_for_tree_legacy(work_cfg, tags, tree, rows, fast_bins,
+            sigma_cuts, trace_matches, current_model, use_epg_mc_current_factor_for_eppi0_bkg,
+            apply_neupane_proton_efficiency_correction, eppi0_eff_map, use_tprime_binning);
+    if (!tree) return {};
+    auto checked = [&](WorkCounts result) {
+        if (env_flag("DVCS_VERIFY_SHARED_COUNTS")) {
+            const auto reference = accumulate_counts_for_tree_legacy(work_cfg, tags, tree,
+                rows, fast_bins, sigma_cuts, trace_matches, current_model,
+                use_epg_mc_current_factor_for_eppi0_bkg, apply_neupane_proton_efficiency_correction,
+                eppi0_eff_map, use_tprime_binning);
+            if (shared_counts_record(result) != shared_counts_record(reference))
+                fatal("[total_counts] SHARED_VERIFY_FAILED " + tags.tree_key);
+            tree->ResetBranchAddresses();
+            std::cout << "[total_counts] SHARED_VERIFY_PASS " << tags.tree_key << std::endl;
+        }
+        return result;
+    };
+    const std::string key = generated_denominator_key(tree, work_cfg, tags, rows, use_tprime_binning);
+    if (key.empty()) fatal("[total_counts] Shared scans require file-backed trees");
+    {
+        std::lock_guard<std::mutex> lock(shared_count_mutex);
+        auto found = shared_count_results.find(key);
+        if (found != shared_count_results.end()) {
+            std::cout << "[total_counts] SHARED_REUSE " << tags.tree_key << " variation="
+                      << shared_count_contexts.at(shared_count_selected).spec.name << std::endl;
+            return checked(found->second.at(shared_count_selected));
+        }
+    }
+    BranchBinder reader;
+    GlobalCutConfig binding_cfg = default_global_cuts();
+    for (const auto& context : shared_count_contexts) {
+        binding_cfg.enable_auxiliary_fiducial_cuts |= context.spec.global_cuts.enable_auxiliary_fiducial_cuts;
+        binding_cfg.enable_dvcsgen_ycol_cut |= context.spec.global_cuts.enable_dvcsgen_ycol_cut;
+        binding_cfg.enable_electron_fd_sector_filter |= context.spec.global_cuts.enable_electron_fd_sector_filter;
+        binding_cfg.enable_proton_fd_sector_filter |= context.spec.global_cuts.enable_proton_fd_sector_filter;
+        binding_cfg.enable_proton_cd_sector_filter |= context.spec.global_cuts.enable_proton_cd_sector_filter;
+        binding_cfg.enable_photon_fd_sector_filter |= context.spec.global_cuts.enable_photon_fd_sector_filter;
+    }
+    reader.bind(tree, work_cfg, &binding_cfg);
+    SharedCountKinematics common;
+    std::vector<std::function<WorkCounts*(const BranchBinder*, Long64_t)>> sinks;
+    for (const auto& context : shared_count_contexts) {
+        const auto& cuts = work_cfg.sample_kind == SampleKind::DATA ? context.data_cuts : context.mc_cuts;
+        const Eppi0EffMap* efficiency = context.spec.apply_eppi0_efficiency ? &context.efficiency : nullptr;
+        sinks.push_back(make_count_sink(work_cfg, tags, tree, rows, fast_bins, cuts,
+            false, current_model, use_epg_mc_current_factor_for_eppi0_bkg,
+            apply_neupane_proton_efficiency_correction, efficiency, use_tprime_binning,
+            reader, context.spec.global_cuts, &common));
+        // Generated selection and unit weights are variation-independent.
+        if (work_cfg.sample_kind == SampleKind::MC_GEN) break;
+    }
+    const auto n = tree->GetEntries();
+    PairedMcFastRead fast(tree, "rec_kinematics_valid", &reader.paired_validity);
+    for (Long64_t entry = 0; entry < n; ++entry) {
+        if (reader.has_paired_validity && work_cfg.sample_kind != SampleKind::MC_GEN) {
+            if (!fast.read(entry)) continue;
+        } else {
+            if (tree->GetEntry(entry) <= 0) fatal("[total_counts] Shared scan read failure");
+            if (reader.has_paired_validity && reader.paired_validity < 0.5) continue;
+        }
+        common.phi_deg = reader.phi_deg();
+        common.tabs = use_tprime_binning ? dvcs_tprime(reader.x, reader.Q2, reader.t_abs()) : reader.t_abs();
+        common.pass1_rows.clear();
+        common.candidate_rows = &common.pass1_rows;
+        if (use_tprime_binning) {
+            const int row = pass1_bsa_row_index(reader.x, reader.Q2, common.tabs, common.phi_deg);
+            if (row >= 0 && row < static_cast<int>(rows.size())) common.pass1_rows.push_back(row);
+        } else {
+            const int ix = find_axis_bin_index(fast_bins.xbins, reader.x);
+            const int iq = find_axis_bin_index(fast_bins.qbins, reader.Q2);
+            const int it = find_axis_bin_index(fast_bins.tbins, common.tabs);
+            if (ix >= 0 && iq >= 0 && it >= 0) common.candidate_rows = &fast_bins.rows_by_xqt[ix][iq][it];
+        }
+        for (auto& sink : sinks) sink(&reader, entry);
+    }
+    std::vector<WorkCounts> results;
+    for (auto& sink : sinks) results.push_back(*sink(nullptr, n));
+    if (work_cfg.sample_kind == SampleKind::MC_GEN)
+        results.resize(shared_count_contexts.size(), results.front());
+    tree->ResetBranchAddresses();
+    if (generated_denominator_key(tree, work_cfg, tags, rows, use_tprime_binning) != key)
+        fatal("[total_counts] Shared input changed during scan");
+    WorkCounts selected = results.at(shared_count_selected);
+    {
+        std::lock_guard<std::mutex> lock(shared_count_mutex);
+        shared_count_results.emplace(key, std::move(results));
+    }
+    std::cout << "[total_counts] SHARED_SCAN " << tags.tree_key << " entries=" << n
+              << " variations=" << sinks.size() << std::endl;
+    return checked(std::move(selected));
 }
 
 // -----------------------------------------------------------------------------
@@ -4510,6 +4984,29 @@ static void write_analysis_note_raw_yield_outputs(const std::map<std::string, Co
 // -----------------------------------------------------------------------------
 
 } // namespace
+
+
+void begin_total_counts_variations(const std::vector<TotalCountsVariation>& specs) {
+    end_total_counts_variations();
+    for (const auto& spec : specs) {
+        SharedCountContext context;
+        context.spec = spec;
+        context.data_cuts = load_combined_cuts(spec.combined_cuts_json, "data");
+        context.mc_cuts = load_combined_cuts(spec.combined_cuts_json, "mc");
+        if (spec.apply_eppi0_efficiency)
+            context.efficiency = load_eppi0_efficiency_map(spec.eppi0_efficiency_csv);
+        shared_count_contexts.push_back(std::move(context));
+    }
+}
+void select_total_counts_variation(std::size_t index) {
+    if (index >= shared_count_contexts.size()) throw std::out_of_range("Shared variation index");
+    shared_count_selected = index;
+}
+void end_total_counts_variations() {
+    shared_count_results.clear();
+    shared_count_contexts.clear();
+    shared_count_selected = 0;
+}
 
 bool update_total_counts_csv(const std::string& csv_path,
                              const std::map<std::string, TTree*>& dvcsDataTrees,
