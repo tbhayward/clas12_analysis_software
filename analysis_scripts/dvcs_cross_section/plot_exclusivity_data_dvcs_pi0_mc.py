@@ -238,46 +238,46 @@ PERIODS: Tuple[PeriodConfig, ...] = (
         key="fa18_inb",
         label="Fa18 Inb",
         data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/fa18_inb/dvcs_data/parts/*.root",
-        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/fa18_inb/dvcs_mc/50nA/parts/*.root",
+        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/fa18_inb/dvcs_mc/50nA/parts/*.rec_only.root",
         pi0_as_dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/leakage/fa18_inb/pi0_as_dvcs/parts/*.root",
         eppi0_data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/fa18_inb/pi0_data/parts/*.root",
-        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/fa18_inb/pi0_mc/nominal/parts/*_50nA_*.root",
+        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/fa18_inb/pi0_mc/nominal/parts/*_50nA_*.rec_only.root",
     ),
     PeriodConfig(
         key="fa18_out",
         label="Fa18 Out",
         data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/fa18_out/dvcs_data/parts/*.root",
-        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/fa18_out/dvcs_mc/50nA/parts/*.root",
+        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/fa18_out/dvcs_mc/50nA/parts/*.rec_only.root",
         pi0_as_dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/leakage/fa18_out/pi0_as_dvcs/parts/*.root",
         eppi0_data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/fa18_out/pi0_data/parts/*.root",
-        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/fa18_out/pi0_mc/nominal/parts/*_50nA_*.root",
+        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/fa18_out/pi0_mc/nominal/parts/*_50nA_*.rec_only.root",
     ),
     PeriodConfig(
         key="sp19_inb",
         label="Sp19 Inb",
         data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/sp19_inb/dvcs_data/parts/*.root",
-        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp19_inb/dvcs_mc/50nA/parts/*.root",
+        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp19_inb/dvcs_mc/50nA/parts/*.rec_only.root",
         pi0_as_dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/leakage/sp19_inb/pi0_as_dvcs/parts/*.root",
         eppi0_data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/sp19_inb/pi0_data/parts/*.root",
-        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp19_inb/pi0_mc/nominal/parts/*_50nA_*.root",
+        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp19_inb/pi0_mc/nominal/parts/*_50nA_*.rec_only.root",
     ),
     PeriodConfig(
         key="sp18_inb",
         label="Sp18 Inb",
         data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/sp18_inb/dvcs_data/parts/*.root",
-        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp18_inb/dvcs_mc/50nA/parts/*.root",
+        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp18_inb/dvcs_mc/50nA/parts/*.rec_only.root",
         pi0_as_dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/leakage/sp18_inb/pi0_as_dvcs/parts/*.root",
         eppi0_data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/sp18_inb/pi0_data/parts/*.root",
-        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp18_inb/pi0_mc/nominal/parts/*_50nA_*.root",
+        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp18_inb/pi0_mc/nominal/parts/*_50nA_*.rec_only.root",
     ),
     PeriodConfig(
         key="sp18_out",
         label="Sp18 Out",
         data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/sp18_out/dvcs_data/parts/*.root",
-        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp18_out/dvcs_mc/45nA/parts/*.root",
+        dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp18_out/dvcs_mc/45nA/parts/*.rec_only.root",
         pi0_as_dvcs_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/leakage/sp18_out/pi0_as_dvcs/parts/*.root",
         eppi0_data_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/data/sp18_out/pi0_data/parts/*.root",
-        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp18_out/pi0_mc/nominal/parts/*_45nA_*.root",
+        eppi0_mc_file="/volatile/clas12/thayward/dvcs_pass2_full_rebuild/mc/sp18_out/pi0_mc/nominal/parts/*_45nA_*.rec_only.root",
     ),
 )
 
@@ -700,15 +700,37 @@ def input_files(path: str) -> List[str]:
     files = [item for item in files if os.path.isfile(item)]
     if not files:
         raise FileNotFoundError(f"No ROOT input files matched: {path}")
+    if ".rec_only.root" in path:
+        originals = sorted(item for item in glob.glob(path.replace(".rec_only.root", ".root"))
+                           if os.path.isfile(item) and not item.endswith(".rec_only.root")
+                           and ".partial" not in item)
+        expected = {item[:-5] + ".rec_only.root" for item in originals}
+        if expected != set(files):
+            raise FileNotFoundError(f"Compact MC inventory mismatch for {path}: "
+                                    f"missing={sorted(expected-set(files))}, "
+                                    f"unexpected={sorted(set(files)-expected)}")
     return files
 
 
 def require_input_file(path: str) -> None:
-    input_files(path)
+    for filename in input_files(path):
+        if uproot is not None:
+            with uproot.open(filename) as root_file:
+                expected = tree_name_for(path)
+                if expected not in root_file:
+                    raise KeyError(f"Tree '{expected}' not found in {filename}")
+                if ".rec_only.root" in path:
+                    required = {"Q2", "x", "t1", "weight", "event_sequence"}
+                    if "/pi0_mc/" in path:
+                        required.add("detector_gamma1")
+                    missing = required - set(root_file[expected].keys())
+                    if missing:
+                        raise KeyError(f"Missing compact MC branches {sorted(missing)} in {filename}")
 
 
 def is_paired_mc(path: str) -> bool:
-    return "/mc/" in path and "/dvcs_mc/" in path or "/mc/" in path and "/pi0_mc/" in path
+    return ("/mc/" in path and ("/dvcs_mc/" in path or "/pi0_mc/" in path)
+            and ".rec_only.root" not in path)
 
 
 def tree_name_for(path: str) -> str:
@@ -719,7 +741,7 @@ def branch_name_for(path: str, name: str) -> str:
     # Direct AAOgen pi0 is a composite: its rec_detector2 is -1. The
     # legacy topology convention assigns detector2 from the first photon.
     if name == "detector2" and "/mc/" in path and "/pi0_mc/" in path:
-        return "rec_detector_gamma1"
+        return "rec_detector_gamma1" if is_paired_mc(path) else "detector_gamma1"
     # endif
     return "rec_" + name if is_paired_mc(path) else name
 
@@ -775,7 +797,7 @@ def available_tree_branches(path: str) -> set[str]:
     if backend == "uproot":
         with uproot.open(input_files(path)[0]) as root_file:
             if tree_name_for(path) not in root_file:
-                raise KeyError(f"Tree '{TREE_NAME}' not found in {path}")
+                raise KeyError(f"Tree '{tree_name_for(path)}' not found in {input_files(path)[0]}")
             # endif
             return {name[4:] for name in root_file[tree_name_for(path)].keys() if name.startswith("rec_") and name != "rec_kinematics_valid"} if is_paired_mc(path) else set(root_file[tree_name_for(path)].keys())
         # endwith
@@ -789,7 +811,7 @@ def available_tree_branches(path: str) -> set[str]:
     tree = root_file.Get(tree_name_for(path))
     if tree is None:
         root_file.Close()
-        raise KeyError(f"Tree '{TREE_NAME}' not found in {path}")
+        raise KeyError(f"Tree '{tree_name_for(path)}' not found in {input_files(path)[0]}")
     # endif
 
     branches = {branch.GetName() for branch in tree.GetListOfBranches()}
@@ -6585,6 +6607,11 @@ def main() -> int:
     # endif
 
     periods = selected_periods(args.period)
+    # Validate all periods before launching expensive fit workers.
+    for period in periods:
+        for path in (period.data_file, period.dvcs_mc_file, period.pi0_as_dvcs_mc_file,
+                     period.eppi0_data_file, period.eppi0_mc_file):
+            require_input_file(path)
     topologies = selected_topologies(args.topology)
     output_dir = Path(args.output_dir)
     all_rows: List[Dict[str, object]] = []

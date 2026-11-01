@@ -104,6 +104,8 @@ static bool load_paired_mc(const std::string& category,
         std::vector<fs::path> files;
         for (const auto& file : fs::directory_iterator(dir)) {
             if (!file.is_regular_file() || file.path().extension() != ".root") continue;
+            if (file.path().filename().string().find(".rec_only.root") != std::string::npos ||
+                file.path().filename().string().find(".partial") != std::string::npos) continue;
             // AAOgen nominal directories may also contain no-background runs.
             if (pi0 && file.path().filename().string().find("_" + current + "_") == std::string::npos) continue;
             files.push_back(file.path());
@@ -114,10 +116,22 @@ static bool load_paired_mc(const std::string& category,
             return false;
         }
         auto* generated = new TChain("MCEvents");
-        auto* reconstructed = new TChain("MCEvents");
+        auto* reconstructed = new TChain("PhysicsEvents");
         for (const auto& file : files) {
+            const fs::path compact = file.parent_path() / (file.stem().string() + ".rec_only.root");
+            TFile paired_check(file.string().c_str(), "READ");
+            TFile compact_check(compact.string().c_str(), "READ");
+            auto* pt = dynamic_cast<TTree*>(paired_check.Get("MCEvents"));
+            auto* rt = dynamic_cast<TTree*>(compact_check.Get("PhysicsEvents"));
+            if (paired_check.IsZombie() || compact_check.IsZombie() || !pt || !rt ||
+                !pt->GetBranch("gen_kinematics_valid") || !rt->GetBranch("Q2") ||
+                !rt->GetBranch("weight") || !rt->GetBranch("event_sequence") ||
+                (pi0 && !rt->GetBranch("detector_gamma1"))) {
+                std::cerr << "[loadTrees] FATAL: missing or invalid paired/compact MC input: " << file << " / " << compact << "\n";
+                delete generated; delete reconstructed; return false;
+            }
             if (generated->Add(file.string().c_str()) == 0 ||
-                reconstructed->Add(file.string().c_str()) == 0) {
+                reconstructed->Add(compact.string().c_str()) == 0) {
                 std::cerr << "[loadTrees] FATAL: failed to chain " << file << "\n";
                 delete generated;
                 delete reconstructed;
@@ -125,7 +139,7 @@ static bool load_paired_mc(const std::string& category,
             }
         }
         if (!generated->GetBranch("gen_kinematics_valid") ||
-            !reconstructed->GetBranch("rec_kinematics_valid")) {
+            !reconstructed->GetBranch("event_sequence")) {
             std::cerr << "[loadTrees] FATAL: paired MC validity branches missing in " << dir << "\n";
             delete generated;
             delete reconstructed;

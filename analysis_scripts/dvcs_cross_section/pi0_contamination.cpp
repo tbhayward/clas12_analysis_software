@@ -1162,6 +1162,7 @@ struct TreeDiagBranches {
         // read those values after GetEntry().
         const bool paired = tree->GetBranch("rec_kinematics_valid") != nullptr;
         auto branch_name = [&](const char* name) -> std::string {
+            if (!paired && direct_pi0_rec_mc && std::string(name) == "detector2" && tree->GetBranch("detector_gamma1")) return "detector_gamma1";
             if (!paired) return name;
             if (direct_pi0_rec_mc && std::string(name) == "detector2") {
                 return "rec_detector_gamma1";

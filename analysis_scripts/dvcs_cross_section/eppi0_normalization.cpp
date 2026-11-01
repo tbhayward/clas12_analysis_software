@@ -1038,6 +1038,7 @@ struct Branches {
         std::lock_guard<std::mutex> lock(g_bind_mutex);
         const bool paired = need_weight && t->GetBranch("rec_kinematics_valid");
         auto physical = [&](const char* name) -> std::string {
+            if (!paired && need_weight && std::string(name) == "detector2" && t->GetBranch("detector_gamma1")) return "detector_gamma1";
             if (!paired) return name;
             if (std::string(name) == "detector2") return "rec_detector_gamma1";
             if (std::string(name) == "runnum" && t->GetBranch("runnum")) return "runnum";

@@ -45,6 +45,9 @@
 
 // ROOT
 #include <TTree.h>
+#include <TChain.h>
+#include <TFile.h>
+#include <filesystem>
 #include <TCanvas.h>
 #include <TPad.h>
 #include <TGraphErrors.h>
@@ -1397,6 +1400,9 @@ struct BranchBinder {
         const bool paired_mc = work_cfg.sample_kind != SampleKind::DATA &&
                                t->GetBranch("gen_kinematics_valid") && t->GetBranch("rec_kinematics_valid");
         auto physical = [&](const char* name) -> std::string {
+            if (!paired_mc && work_cfg.sample_kind == SampleKind::MC_REC &&
+                work_cfg.channel_cfg.channel == Channel::EPPI0 && std::string(name) == "detector2" &&
+                t->GetBranch("detector_gamma1")) return "detector_gamma1";
             if (paired_mc && work_cfg.sample_kind == SampleKind::MC_REC &&
                 work_cfg.channel_cfg.channel == Channel::EPPI0 &&
                 std::string(name) == "detector2") {
@@ -2195,6 +2201,46 @@ static EventCurrentWeight event_current_weight(const CurrentResponseModel& model
     return out;
 }
 
+// Process-local only: generated counts depend on input identity and binning,
+// never the reconstructed cut variation. Store aggregates, not event arrays.
+static std::mutex generated_denominator_mutex;
+static std::map<std::string, WorkCounts> generated_denominator_cache;
+
+static std::string generated_denominator_key(TTree* tree,
+                                            const WorkConfig& cfg,
+                                            const PeriodTags& tags,
+                                            const std::vector<RowBin>& rows,
+                                            bool tprime) {
+    std::ostringstream key;
+    key << std::hexfloat << "unit-weight-generated-v1|" << tree << '|'
+        << tree->GetName() << '|' << tree->GetEntries() << '|'
+        << cfg.channel_cfg.csv_channel << '|' << tags.tree_key << '|'
+        << tags.period_display << '|' << tprime << '|' << rows.size();
+    auto append_file = [&](const char* filename) {
+        const std::filesystem::path path(filename);
+        std::error_code error;
+        const auto size = std::filesystem::file_size(path, error);
+        if (error) fatal("[total_counts] Cannot stat generated input: " + path.string());
+        const auto modified = std::filesystem::last_write_time(path, error);
+        if (error) fatal("[total_counts] Cannot timestamp generated input: " + path.string());
+        key << '|' << path.string().size() << ':' << path.string() << ':' << size
+            << ':' << std::chrono::duration_cast<std::chrono::nanoseconds>(modified.time_since_epoch()).count();
+    };
+    if (auto* chain = dynamic_cast<TChain*>(tree)) {
+        for (auto* file : *chain->GetListOfFiles()) append_file(file->GetTitle());
+    } else if (tree->GetCurrentFile()) {
+        append_file(tree->GetCurrentFile()->GetName());
+    } else {
+        // An in-memory tree can be edited without changing its entry count.
+        return {};
+    }
+    for (const auto& row : rows)
+        key << '|' << row.valid << ':' << row.xBmin << ':' << row.xBmax
+            << ':' << row.Q2min << ':' << row.Q2max << ':' << row.tmin
+            << ':' << row.tmax << ':' << row.pmin << ':' << row.pmax;
+    return key.str();
+}
+
 static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                                              const PeriodTags& tags,
                                              TTree* tree,
@@ -2211,6 +2257,20 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
 
     if (!tree) {
         return out;
+    }
+
+    const std::string denominator_key =
+        work_cfg.sample_kind == SampleKind::MC_GEN && !trace_matches
+        ? generated_denominator_key(tree, work_cfg, tags, rows, use_tprime_binning)
+        : std::string();
+    if (!denominator_key.empty()) {
+        std::lock_guard<std::mutex> lock(generated_denominator_mutex);
+        auto found = generated_denominator_cache.find(denominator_key);
+        if (found != generated_denominator_cache.end()) {
+            std::cout << "[total_counts] REUSE_GENERATED_DENOMINATOR "
+                      << tags.tree_key << " (same inputs and binning)" << std::endl;
+            return found->second;
+        }
     }
 
     BranchBinder b;
@@ -2517,6 +2577,13 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
                   << ss.str() << ". Raw yield-total bookkeeping is unchanged." << std::endl;
     }
 
+    if (!denominator_key.empty()) {
+        if (generated_denominator_key(tree, work_cfg, tags, rows, use_tprime_binning) != denominator_key)
+            fatal("[total_counts] Generated input changed during denominator scan");
+        std::lock_guard<std::mutex> lock(generated_denominator_mutex);
+        generated_denominator_cache.emplace(denominator_key, out);
+        std::cout << "[total_counts] STORE_GENERATED_DENOMINATOR " << tags.tree_key << std::endl;
+    }
     return out;
 }
 

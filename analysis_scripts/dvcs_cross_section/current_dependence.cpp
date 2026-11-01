@@ -1328,6 +1328,8 @@ struct Branches {
         // metadata (runnum and detector IDs) may remain unprefixed. Resolve
         // only those shared fields through the unprefixed fallback.
         auto branch_name = [&](const char* name) -> std::string {
+            if (direct_pi0_rec && mc_prefix.empty() && std::string(name) == "detector2" &&
+                t->GetBranch("detector_gamma1")) return "detector_gamma1";
             if (direct_pi0_rec && mc_prefix == "rec_" &&
                 std::string(name) == "detector2") {
                 if (!t->GetBranch("rec_detector_gamma1"))
@@ -1385,7 +1387,12 @@ struct Branches {
         ena("p2_phi");
 
         t->SetCacheSize(16LL * 1024LL * 1024LL);
-        t->AddBranchToCache("*", true);
+        t->DropBranchFromCache("*", true);
+        for (auto* object : *t->GetListOfBranches()) {
+            if (t->GetBranchStatus(object->GetName()))
+                t->AddBranchToCache(object->GetName(), true);
+        }
+        t->StopCacheLearningPhase();
 
         auto bI = [&](const char* name, int* addr, bool& flag) {
             const std::string physical = branch_name(name);
@@ -1783,7 +1790,17 @@ struct McAgg {
     long long n_rec = 0;
 };
 
+struct GeneratedCountSummary {
+    long long total = 0;
+    std::map<std::string, long long> regions;
+};
+static std::mutex generated_summary_mutex;
+static std::map<TTree*, GeneratedCountSummary> generated_summaries;
+static GeneratedCountSummary generated_count_summary(TTree* tree);
+
 static long long count_generated_tree(TTree* tree) {
+    if (tree && tree->GetBranch("gen_kinematics_valid"))
+        return generated_count_summary(tree).total;
     if (!tree) {
         return 0;
     }
@@ -1821,7 +1838,7 @@ static long long count_reconstructed_tree(const ChannelConfig& cfg,
     Branches b;
     const bool paired_rec = tree->GetBranch("rec_kinematics_valid") != nullptr;
     b.bind(tree, paired_rec ? "rec_" : "",
-           paired_rec && cfg.channel == Channel::EPPI0);
+           cfg.channel == Channel::EPPI0);
     if (!(b.has_detector1 && b.has_detector2 && b.has_x && b.has_Q2 && b.has_t1 && b.has_phi2))
         fatal("[current_dependence] Missing required reconstructed MC branches for current-response counting.");
     double rec_valid = 0.0;
@@ -5478,6 +5495,49 @@ using PhotonRegionDataAggMap = std::map<std::string, DataAgg>;
 using PhotonRegionMcCountMap = std::map<std::string, long long>;
 using PhotonRegionResults = std::map<std::string, std::vector<PeriodResult>>;
 
+// One generated pass supplies both total and photon-region counts. Cache only
+// aggregates, scoped to this invocation; no event arrays or persisted results.
+static GeneratedCountSummary generated_count_summary(TTree* tree) {
+    {
+        std::lock_guard<std::mutex> lock(generated_summary_mutex);
+        auto found = generated_summaries.find(tree);
+        if (found != generated_summaries.end()) return found->second;
+    }
+    GeneratedCountSummary summary;
+    for (const auto& region : PHOTON_REGION_ORDER) summary.regions[region.key] = 0;
+    Branches b;
+    const bool paired = tree->GetBranch("gen_kinematics_valid") != nullptr;
+    b.bind(tree, paired ? "gen_" : "");
+    tree->SetBranchStatus("*", 0);
+    const std::string prefix = paired ? "gen_" : "";
+    for (const auto& name : {"p2_theta", "p2_phi"})
+        tree->SetBranchStatus((prefix + name).c_str(), 1);
+    double valid = 1;
+    if (paired) {
+        tree->SetBranchStatus("gen_kinematics_valid", 1);
+        tree->SetBranchAddress("gen_kinematics_valid", &valid);
+    }
+    tree->DropBranchFromCache("*", true);
+    tree->AddBranchToCache((prefix + "p2_theta").c_str(), true);
+    tree->AddBranchToCache((prefix + "p2_phi").c_str(), true);
+    if (paired) tree->AddBranchToCache("gen_kinematics_valid", true);
+    tree->StopCacheLearningPhase();
+    const auto n = tree->GetEntries();
+    for (Long64_t i = 0; i < n; ++i) {
+        if (tree->GetEntry(i) <= 0) fatal("[current_dependence] Generated summary read failure");
+        if (paired && !(valid >= 0.5)) continue;
+        ++summary.total;
+        std::string region;
+        if (generated_photon_region(b, region)) ++summary.regions[region];
+    }
+    tree->ResetBranchAddresses();
+    {
+        std::lock_guard<std::mutex> lock(generated_summary_mutex);
+        generated_summaries[tree] = summary;
+    }
+    return summary;
+}
+
 static PhotonRegionDataAggMap process_data_tree_by_photon_region(
     const ChannelConfig& cfg,
     const std::string& key,
@@ -5581,6 +5641,7 @@ static PhotonRegionDataAggMap process_data_tree_by_photon_region(
 }
 
 static PhotonRegionMcCountMap count_generated_tree_by_photon_region(const std::string& key, TTree* tree) {
+    if (tree) return generated_count_summary(tree).regions;
     PhotonRegionMcCountMap counts;
     for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
         counts[spec.key] = 0;
@@ -5657,7 +5718,7 @@ static PhotonRegionMcCountMap count_reconstructed_tree_by_photon_region(
     Branches b;
     const bool paired_mc = tree->GetBranch("rec_kinematics_valid") != nullptr;
     b.bind(tree, paired_mc ? "rec_" : "",
-           paired_mc && cfg.channel == Channel::EPPI0);
+           cfg.channel == Channel::EPPI0);
     double paired_validity = 0.0;
     if (paired_mc) {
         tree->SetBranchStatus("rec_kinematics_valid", 1);
@@ -5832,6 +5893,33 @@ static RegionThetaMcAggMap process_generated_tree_region_theta(
     const auto progress_t0 = std::chrono::steady_clock::now();
     static std::mutex generated_region_theta_progress_mutex;
 
+    // Generated region/angle summaries need only photon direction and the
+    // configured histogram variables, not reconstructed/exclusivity fields.
+    tree->SetBranchStatus("*", 0);
+    const std::string gen_prefix = paired_mc ? "gen_" : "";
+    std::vector<std::string> required = {"p2_theta", "p2_phi"};
+    for (const auto& variable : vars) {
+        if (variable.key == "Q2") required.push_back("Q2");
+        else if (variable.key == "xB") required.push_back("x");
+        else if (variable.key == "t") required.push_back("t1");
+        else if (variable.key == "phi") required.push_back("phi2");
+        else if (variable.key == "e_theta") required.push_back("e_theta");
+        else if (variable.key == "p_theta") required.push_back("p1_theta");
+        else if (variable.key == "g_theta") required.push_back("p2_theta");
+        else fatal("[current_dependence] Unknown generated diagnostic variable: " + variable.key);
+    }
+    tree->DropBranchFromCache("*", true);
+    for (const auto& name : required) {
+        const auto physical = gen_prefix + name;
+        tree->SetBranchStatus(physical.c_str(), 1);
+        tree->AddBranchToCache(physical.c_str(), true);
+    }
+    if (paired_mc) {
+        tree->SetBranchStatus("gen_kinematics_valid", 1);
+        tree->AddBranchToCache("gen_kinematics_valid", true);
+    }
+    tree->StopCacheLearningPhase();
+
     PairedMcFastRead fast_rec(tree, "gen_kinematics_valid", &paired_validity);
     for (Long64_t i = 0; i < N; ++i) {
         if (paired_mc) {
@@ -5895,7 +5983,7 @@ static RegionThetaMcAggMap process_reconstructed_tree_region_theta(
     Branches b;
     const bool paired_mc = tree->GetBranch("rec_kinematics_valid") != nullptr;
     b.bind(tree, paired_mc ? "rec_" : "",
-           paired_mc && cfg.channel == Channel::EPPI0);
+           cfg.channel == Channel::EPPI0);
     double paired_validity = 0.0;
     if (paired_mc) {
         tree->SetBranchStatus("rec_kinematics_valid", 1);
@@ -11708,6 +11796,10 @@ bool update_current_dependence_factors_csv(
 
     try {
         ROOT::EnableThreadSafety();
+        {
+            std::lock_guard<std::mutex> lock(generated_summary_mutex);
+            generated_summaries.clear();
+        }
         TH1::AddDirectory(kFALSE);
         gStyle->SetOptStat(0);
 
