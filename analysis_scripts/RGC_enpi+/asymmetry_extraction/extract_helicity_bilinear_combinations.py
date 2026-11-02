@@ -149,24 +149,28 @@ def style_axis(axis, panel: int, limits: dict[int, tuple[float, float]]):
     axis.set_xlim(0.0, 1.20)
     axis.set_ylim(*limits[panel])
     axis.set_xlabel(r"$-t'\;(\mathrm{GeV}^{2})$", fontsize=12)
-    axis.set_ylabel(HELICITY_LABELS[name], fontsize=8.5, labelpad=8)
+    axis.set_ylabel(HELICITY_LABELS[name], fontsize=15, labelpad=14)
     axis.text(0.04, 0.91, f"({chr(97 + panel)})", transform=axis.transAxes,
               fontsize=14, fontweight="bold")
     axis.minorticks_on()
     axis.tick_params(direction="in", top=True, right=True, which="both")
 
 
-def plot_x_group(frame: pd.DataFrame, x_index: int, output_dir: Path) -> Path:
+def plot_x_group(
+    frame: pd.DataFrame,
+    x_index: int,
+    output_dir: Path,
+    global_limits: dict[int, tuple[float, float]],
+) -> Path:
     subset = frame.loc[frame["x_index"].astype(int) == x_index].sort_values("t_index")
     x = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
-    limits = standardized_limits(subset)
     color, marker = XB_STYLES[x_index]
     fig, axes = plt.subplots(4, 2, figsize=(18, 22), sharex=False)
     axes = axes.ravel()
     for panel, (axis, name) in enumerate(zip(axes, HELICITY_PARAMETERS)):
         y = subset[name].to_numpy(dtype=float)
         stat = subset[f"{name}_stat"].to_numpy(dtype=float)
-        style_axis(axis, panel, limits)
+        style_axis(axis, panel, global_limits)
         systematic_column = f"{name}_point_to_point_systematic_diagonal"
         if systematic_column in subset:
             systematic = subset[systematic_column].to_numpy(dtype=float)
@@ -331,8 +335,9 @@ def main() -> int:
 
     plot_paths = []
     if not args.skip_plots:
+        global_limits = standardized_limits(result)
         for x_index in range(4):
-            plot_paths.append(str(plot_x_group(result, x_index, plots)))
+            plot_paths.append(str(plot_x_group(result, x_index, plots, global_limits)))
         plot_paths.append(str(plot_all_x_groups(result, plots)))
 
     manifest = {

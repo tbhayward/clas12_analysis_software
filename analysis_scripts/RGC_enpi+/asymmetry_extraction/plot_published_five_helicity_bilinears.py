@@ -144,22 +144,25 @@ def style_axis(axis, panel: int, limits: dict[int, tuple[float, float]]):
     axis.set_xlim(0.0, 1.20)
     axis.set_ylim(*limits[panel])
     axis.set_xlabel(r"$-t'\;(\mathrm{GeV}^{2})$", fontsize=13)
-    axis.set_ylabel(PUBLISHED_FIVE_LABELS[PUBLISHED_FIVE_PARAMETERS[panel]], fontsize=9, labelpad=8)
+    axis.set_ylabel(PUBLISHED_FIVE_LABELS[PUBLISHED_FIVE_PARAMETERS[panel]], fontsize=15, labelpad=14)
     axis.text(.04, .91, f"({chr(97 + panel)})", transform=axis.transAxes,
               fontsize=15, fontweight="bold")
     axis.minorticks_on()
     axis.tick_params(direction="in", top=True, right=True, which="both")
 
 
-def draw_group(group_index: int, output_dir: Path) -> Path:
+def draw_group(
+    group_index: int,
+    output_dir: Path,
+    global_limits: dict[int, tuple[float, float]],
+) -> Path:
     x, values, stat, syst = unpack_group(NOTE_TABLES[group_index])
     low, high, color, marker = XB_GROUPS[group_index]
-    limits = standardized_limits([(values, stat, syst)])
     fig, axes = plt.subplots(2, 3, figsize=(20, 12), sharex=False)
     axes = axes.ravel()
     for panel, name in enumerate(PUBLISHED_FIVE_PARAMETERS):
         axis = axes[panel]
-        style_axis(axis, panel, limits)
+        style_axis(axis, panel, global_limits)
         draw_systematic_boxes(
             axis, x, values[:, panel], syst[:, panel], color,
             label="P-to-p syst. (diagonal propagation)",
@@ -264,7 +267,12 @@ def main() -> int:
     output = args.output_dir.expanduser().resolve()
     output.mkdir(parents=True, exist_ok=True)
     csv_path = write_csv(output)
-    plots = [draw_group(index, output) for index in range(4)]
+    all_datasets = []
+    for group in NOTE_TABLES:
+        _, values, stat, syst = unpack_group(group)
+        all_datasets.append((values, stat, syst))
+    global_limits = standardized_limits(all_datasets)
+    plots = [draw_group(index, output, global_limits) for index in range(4)]
     plots.append(draw_all_xb(output))
     print(f"Wrote {csv_path}")
     for path in plots:
