@@ -443,7 +443,9 @@ int main(int argc, char* argv[]) {
     exclusivity_opts.global_cuts_json = "output/jsons/global_cuts_config.json";
     exclusivity_opts.output_directory = "output/exclusivity_fit";
     exclusivity_opts.install_directory = "output/jsons";
-    exclusivity_opts.workers = 10;
+    // One independent process per run period; there are five period jobs.
+    // Requesting more workers cannot increase concurrency in this stage.
+    exclusivity_opts.workers = 5;
     exclusivity_opts.tight_containment = 0.90;
     exclusivity_opts.nominal_containment = 0.95;
     exclusivity_opts.loose_containment = 0.98;
