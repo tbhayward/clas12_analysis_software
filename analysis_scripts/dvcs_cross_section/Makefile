@@ -41,6 +41,11 @@ SYSTEMATICS_BIN = main_systematics
 # but are no longer rebuilt every time `make` is run.
 all: $(DVCS_BIN) $(SYSTEMATICS_BIN)
 
+# Standalone paired-MC migration diagnostic. This intentionally remains
+# separate from the production dvcs_analysis executable.
+migration-study:
+	python3 study_t_migration.py --workers 10
+
 $(DVCS_BIN): $(DVCS_OBJ) $(SYSTEMATICS_BIN)
 	$(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
 
@@ -63,3 +68,5 @@ clean:
 # translation units affected by a changed header, so `make clean` is normally unnecessary.
 DEPS = $(DVCS_OBJ:.o=.d) $(LEE_OBJ:.o=.d) $(NORM_SCENARIO_OBJ:.o=.d) $(SYSTEMATICS_OBJ:.o=.d)
 -include $(DEPS)
+
+.PHONY: all clean migration-study
