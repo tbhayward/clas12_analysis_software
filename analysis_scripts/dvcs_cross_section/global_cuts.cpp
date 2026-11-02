@@ -125,7 +125,41 @@ static void validate_cfg_or_fatal(const GlobalCutConfig& cfg) {
             cfg.auxiliary_ft_photon_p_min_GeV < 0.0) {
             fatal_global("invalid auxiliary FT-photon momentum threshold");
         }
+        if (!std::isfinite(cfg.auxiliary_cd_proton_p_min_GeV) ||
+            cfg.auxiliary_cd_proton_p_min_GeV < 0.0 ||
+            !std::isfinite(cfg.auxiliary_fd_proton_p_min_inb_GeV) ||
+            cfg.auxiliary_fd_proton_p_min_inb_GeV < 0.0 ||
+            !std::isfinite(cfg.auxiliary_fd_proton_p_min_out_GeV) ||
+            cfg.auxiliary_fd_proton_p_min_out_GeV < 0.0) {
+            fatal_global("invalid auxiliary proton momentum threshold");
+        }
     }
+}
+
+bool passes_proton_momentum_cut(int detector1,
+                                const std::string& period_label,
+                                double p1_p,
+                                const GlobalCutConfig& cfg) {
+    validate_cfg_or_fatal(cfg);
+    if (!cfg.enable_auxiliary_fiducial_cuts) return true;
+    if (!std::isfinite(p1_p)) return false;
+
+    if (detector1 == 2) {
+        return p1_p > cfg.auxiliary_cd_proton_p_min_GeV;
+    }
+    if (detector1 != 1) return false;
+
+    const bool inbending = period_label == "sp18_inb" ||
+                           period_label == "fa18_inb" ||
+                           period_label == "sp19_inb";
+    const bool outbending = period_label == "sp18_out" ||
+                            period_label == "fa18_out";
+    if (!inbending && !outbending) {
+        fatal_global("unknown period_label '" + period_label +
+                     "' while applying the FD-proton momentum cut");
+    }
+    return p1_p > (inbending ? cfg.auxiliary_fd_proton_p_min_inb_GeV
+                             : cfg.auxiliary_fd_proton_p_min_out_GeV);
 }
 
 std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg) {
@@ -638,6 +672,8 @@ void write_global_cuts_config_json(const std::string& out_json_dir,
         << "  \"auxiliary_e_theta_max_deg\": " << std::setprecision(6) << cfg.auxiliary_e_theta_max_deg << ",\n"
         << "  \"auxiliary_fd_proton_theta_min_deg\": " << std::setprecision(6) << cfg.auxiliary_fd_proton_theta_min_deg << ",\n"
         << "  \"auxiliary_fd_proton_theta_max_deg\": " << std::setprecision(6) << cfg.auxiliary_fd_proton_theta_max_deg << ",\n"
+        << "  \"auxiliary_fd_proton_p_min_inb_GeV\": " << std::setprecision(6) << cfg.auxiliary_fd_proton_p_min_inb_GeV << ",\n"
+        << "  \"auxiliary_fd_proton_p_min_out_GeV\": " << std::setprecision(6) << cfg.auxiliary_fd_proton_p_min_out_GeV << ",\n"
         << "  \"auxiliary_fd_photon_theta_min_deg\": " << std::setprecision(6) << cfg.auxiliary_fd_photon_theta_min_deg << ",\n"
         << "  \"auxiliary_fd_photon_theta_max_deg\": " << std::setprecision(6) << cfg.auxiliary_fd_photon_theta_max_deg << ",\n"
         << "  \"auxiliary_cd_proton_p_min_GeV\": " << std::setprecision(6) << cfg.auxiliary_cd_proton_p_min_GeV << ",\n"

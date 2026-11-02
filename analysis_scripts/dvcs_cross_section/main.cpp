@@ -186,9 +186,10 @@ int main(int argc, char* argv[]) {
     int electron_sector_cli = 0;
     int proton_fd_sector_cli = 0;
     int proton_cd_sector_cli = 0;
-    double proton_p_min_cli = 0.0;
-    // REBUILD baseline: legacy default was 64.23 degrees.
-    double proton_theta_max_cli = 180.0;
+    double proton_p_min_cli = 0.30;
+    double proton_theta_max_cli = 64.23;
+    bool proton_p_min_overridden = false;
+    bool proton_theta_max_overridden = false;
     for (int i = 1; i < argc; ++i) {
         if (std::string(argv[i]) == "--quick-xsec-only") {
             quick_xsec_only = true;
@@ -223,11 +224,13 @@ int main(int argc, char* argv[]) {
             try { proton_p_min_cli = std::stod(argv[++i]); }
             catch (...) { std::cerr << "Invalid --proton-p-min\n"; return 1; }
             if (!(std::isfinite(proton_p_min_cli) && proton_p_min_cli >= 0.0)) return 1;
+            proton_p_min_overridden = true;
         } else if (std::string(argv[i]) == "--proton-theta-max") {
             if (i + 1 >= argc) { std::cerr << "--proton-theta-max requires degree value\n"; return 1; }
             try { proton_theta_max_cli = std::stod(argv[++i]); }
             catch (...) { std::cerr << "Invalid --proton-theta-max\n"; return 1; }
             if (!(std::isfinite(proton_theta_max_cli) && proton_theta_max_cli > 40.0 && proton_theta_max_cli <= 180.0)) return 1;
+            proton_theta_max_overridden = true;
         } else if (std::string(argv[i]) == "--electron-sector") {
             if (i + 1 >= argc) { std::cerr << "[main] FATAL: --electron-sector requires an integer 1--6\n"; return 1; }
             try { electron_sector_cli = std::stoi(argv[++i]); }
@@ -386,17 +389,14 @@ int main(int argc, char* argv[]) {
     // Auxiliary fiducial cuts. Enable this single switch to apply the additional
     // FD-sector separation, particle-angle, and FT-photon momentum cuts
     // analysis-wide. The numerical values are defined in GlobalCutConfig.
-    // REBUILD BASELINE: disable the auxiliary fiducial block, which includes
-    // the legacy 64.23-degree CD proton angular boundary. The legacy setting
-    // was: global_cfg.enable_auxiliary_fiducial_cuts = true;
-    // NOTE: this also disables other auxiliary cuts; it is NOT yet a final
-    // independently factored proton-only selection implementation.
-    global_cfg.enable_auxiliary_fiducial_cuts = true; // REBUILD: retain electron/photon auxiliary cuts
-    global_cfg.auxiliary_cd_proton_p_min_GeV = 0.0; // REBUILD: no CD proton momentum threshold
-    global_cfg.auxiliary_cd_proton_theta_max_deg = 180.0; // REBUILD: remove legacy 64.23 degree ceiling
-    global_cfg.auxiliary_cd_proton_theta_min_deg = 0.0; // REBUILD: no CD proton theta floor
-    global_cfg.auxiliary_fd_proton_theta_min_deg = 0.0; // REBUILD: no FD proton theta floor
-    global_cfg.auxiliary_fd_proton_theta_max_deg = 180.0; // REBUILD: no FD proton theta ceiling
+    global_cfg.enable_auxiliary_fiducial_cuts = true;
+    global_cfg.auxiliary_cd_proton_p_min_GeV = proton_p_min_cli;
+    global_cfg.auxiliary_fd_proton_p_min_inb_GeV = 0.42;
+    global_cfg.auxiliary_fd_proton_p_min_out_GeV = 0.50;
+    global_cfg.auxiliary_cd_proton_theta_max_deg = proton_theta_max_cli;
+    global_cfg.auxiliary_cd_proton_theta_min_deg = 0.0;
+    global_cfg.auxiliary_fd_proton_theta_min_deg = 0.0;
+    global_cfg.auxiliary_fd_proton_theta_max_deg = proton_theta_max_cli;
 
     // Existing optional propagator/ycol mirror cut.
     global_cfg.enable_dvcsgen_ycol_cut = false;
@@ -413,6 +413,12 @@ int main(int argc, char* argv[]) {
               << std::endl;
     std::cout << "[main] Global cut analysis tag: "
               << global_cuts_analysis_tag(default_global_cuts()) << std::endl;
+    std::cout << "[main] Proton fiducial cuts: theta < "
+              << global_cfg.auxiliary_cd_proton_theta_max_deg
+              << " deg; p(CD) > " << global_cfg.auxiliary_cd_proton_p_min_GeV
+              << " GeV; p(FD inb) > " << global_cfg.auxiliary_fd_proton_p_min_inb_GeV
+              << " GeV; p(FD out) > " << global_cfg.auxiliary_fd_proton_p_min_out_GeV
+              << " GeV." << std::endl;
 
     // Record the exact global-cut configuration before the Python process is
     // launched. The Python exclusivity stage must apply the same minimally
@@ -421,7 +427,7 @@ int main(int argc, char* argv[]) {
     // restores them on normal completion and early return (not SIGKILL).
     const bool restricted_study = !topology_cli.empty() || electron_sector_cli != 0 ||
         proton_fd_sector_cli != 0 || proton_cd_sector_cli != 0 || photon_sector_cli != 0 ||
-        proton_p_min_cli > 0.0 || proton_theta_max_cli != 180.0;
+        proton_p_min_overridden || proton_theta_max_overridden;
     ScopedStudyConfigurationRestore restore_shared_study_json(restricted_study);
     write_global_cuts_config_json("output/jsons", global_cfg);
 
@@ -437,7 +443,7 @@ int main(int argc, char* argv[]) {
     exclusivity_opts.global_cuts_json = "output/jsons/global_cuts_config.json";
     exclusivity_opts.output_directory = "output/exclusivity_fit";
     exclusivity_opts.install_directory = "output/jsons";
-    exclusivity_opts.workers = 7;
+    exclusivity_opts.workers = 10;
     exclusivity_opts.tight_containment = 0.90;
     exclusivity_opts.nominal_containment = 0.95;
     exclusivity_opts.loose_containment = 0.98;
@@ -538,7 +544,7 @@ int main(int argc, char* argv[]) {
         norm_opts.write_accepted_mc_population = true;
         norm_opts.accepted_mc_population_csv_path =
             "output/data_mc_normalization/accepted_aao_population.csv";
-        norm_opts.max_workers = 7;
+        norm_opts.max_workers = 10;
 
         std::cout << "[main] Running "
                   << (eppi0_production_test ? "eppi0 PRODUCTION FIT TEST" : "eppi0 normalization DIAGNOSTIC")
@@ -596,7 +602,7 @@ int main(int argc, char* argv[]) {
         bin_mean_opts.make_note_outputs = true;
         bin_mean_opts.note_output_dir = "output/bin_means/analysis_note";
 
-        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/7, bin_mean_opts)) {
+        if (!update_bin_means_csv(csv_main, dataTrees, /*max_workers=*/10, bin_mean_opts)) {
             std::cerr << "[main] ERROR: update_bin_means_csv failed.\n";
             std::exit(EXIT_FAILURE);
         }
@@ -657,7 +663,7 @@ int main(int argc, char* argv[]) {
         current_opts.response_model_json = "output/dvcs_current_dependence/calibration/current_response_model.json";
         current_opts.apply_legacy_binned_current_corrections = false;
         current_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
-        current_opts.max_workers = 7;
+        current_opts.max_workers = 10;
 
         if (!update_current_dependence_factors_csv(csv_main,
                                                    dataTrees,
@@ -813,7 +819,7 @@ int main(int argc, char* argv[]) {
         norm_opts.write_normalized_yields = false;
         norm_opts.write_summary_csv = true;
         norm_opts.write_accepted_mc_population = true;
-        norm_opts.max_workers = 7;
+        norm_opts.max_workers = 10;
 
         if (!update_eppi0_normalization_csv(csv_main,
                                             dataTrees,
@@ -876,7 +882,7 @@ int main(int argc, char* argv[]) {
             eppi0BkgTrees,
             cuts_json,
             output_root,
-            /*max_workers=*/7,
+            /*max_workers=*/10,
             total_count_opts,
             currentStudyGenMcTrees,
             currentStudyRecMcTrees)) {
@@ -900,7 +906,7 @@ int main(int argc, char* argv[]) {
             std::cerr << "[main] WARNING: backup failed (" << e.what() << "). Continuing.\n";
         }
 
-        const int max_workers = 7;
+        const int max_workers = 10;
 
         Pi0ContaminationOptions pi0_contamination_opts;
         pi0_contamination_opts.use_epg_mc_current_factor_for_eppi0_bkg =
@@ -1013,7 +1019,7 @@ int main(int argc, char* argv[]) {
         bsa_opts.make_helicity_scrambling_study = false;
         bsa_opts.helicity_scramble_replicas = 100;
         bsa_opts.helicity_scramble_seed = 20260915ULL;
-        bsa_opts.max_workers = 7;
+        bsa_opts.max_workers = 10;
 
         if (!update_bsa_counts_csv(dataTrees, eppi0DataTrees, bsa_opts)) {
             std::cerr << "[main] ERROR: update_bsa_counts_csv failed.\n";
@@ -1126,7 +1132,7 @@ int main(int argc, char* argv[]) {
                 pass1_cut_opts.use_tprime_binning = true;
                 pass1_cut_opts.make_exclusivity_extraction_plots = false;
                 pass1_cut_opts.make_final_diagnostic_plots = false;
-                pass1_cut_opts.max_workers = 7;
+                pass1_cut_opts.max_workers = 10;
                 pass1_cut_opts.nominal_csv = pass1_csv;
                 pass1_cut_opts.output_dir =
                     pass1_root + "/cut_variation_systematics";
@@ -1242,7 +1248,7 @@ int main(int argc, char* argv[]) {
                 variation.use_tprime_binning = false;
                 variation.make_exclusivity_extraction_plots = false;
                 variation.make_final_diagnostic_plots = false;
-                variation.max_workers = 7;
+                variation.max_workers = 10;
                 variation.nominal_csv = seb_csv;
                 variation.output_dir = seb_root + "/cut_variation_systematics";
                 variation.use_eppi0_production_normalization =
@@ -1645,7 +1651,7 @@ int main(int argc, char* argv[]) {
         }
         cut_variation_opts.use_pass1_tight_instability_rule = true;
         cut_variation_opts.tight_relative_difference_threshold = 0.50;
-        cut_variation_opts.max_workers = 7;
+        cut_variation_opts.max_workers = 10;
         cut_variation_opts.nominal_csv = "output/csvs/dvcs_pass2_analysis.csv";
         cut_variation_opts.output_dir = "output/cut_variation_systematics";
         // Keep every cut variation on the same detector-normalization branch as

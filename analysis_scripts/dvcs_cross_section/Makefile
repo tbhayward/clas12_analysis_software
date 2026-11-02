@@ -1,5 +1,3 @@
-.RECIPEPREFIX := >
-
 # Compiler and flags
 CXX = g++
 CXXFLAGS = $(shell root-config --cflags) -O2 -std=c++17 -pthread -fopenmp -MMD -MP
@@ -44,22 +42,22 @@ SYSTEMATICS_BIN = main_systematics
 all: $(DVCS_BIN) $(SYSTEMATICS_BIN)
 
 $(DVCS_BIN): $(DVCS_OBJ) $(SYSTEMATICS_BIN)
->$(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
+	$(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
 
 $(LEE_BIN): $(LEE_OBJ)
->$(CXX) $(LEE_OBJ) -o $@ $(LDFLAGS)
+	$(CXX) $(LEE_OBJ) -o $@ $(LDFLAGS)
 
 $(NORM_SCENARIO_BIN): $(NORM_SCENARIO_OBJ)
->$(CXX) $(NORM_SCENARIO_OBJ) -o $@ $(LDFLAGS)
+	$(CXX) $(NORM_SCENARIO_OBJ) -o $@ $(LDFLAGS)
 
 $(SYSTEMATICS_BIN): $(SYSTEMATICS_OBJ)
->$(CXX) $(SYSTEMATICS_OBJ) -o $@ $(LDFLAGS)
+	$(CXX) $(SYSTEMATICS_OBJ) -o $@ $(LDFLAGS)
 
 %.o: %.cpp
->$(CXX) $(CXXFLAGS) -c $< -o $@
+	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
->rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN) $(SYSTEMATICS_OBJ) $(SYSTEMATICS_BIN) $(DEPS)
+	rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN) $(SYSTEMATICS_OBJ) $(SYSTEMATICS_BIN) $(DEPS)
 
 # Auto-generated header dependencies. This makes ordinary `make` rebuild only
 # translation units affected by a changed header, so `make clean` is normally unnecessary.

@@ -31,7 +31,7 @@
 //
 // Speed/stability notes:
 //   - Parallelized over independent ROOT trees/work items.
-//   - Hard cap of seven workers.
+//   - Hard cap of ten workers.
 //   - ROOT branch binding is mutex-protected.
 //   - Each worker writes to local storage only; results are merged after each tree.
 //   - Fast row lookup avoids scanning every CSV row for every event.
@@ -1429,7 +1429,7 @@ struct BranchBinder {
 
         // Use a modest per-tree read cache. Only explicitly enabled branches are
         // added below, so generated MC does not spend I/O on reconstructed-only
-        // quantities. With seven workers this remains bounded at about 112 MiB.
+        // quantities. With ten workers this remains bounded at about 160 MiB.
         static constexpr Long64_t kTreeCacheBytes = 16LL * 1024LL * 1024LL;
         t->SetCacheSize(kTreeCacheBytes);
 
@@ -1887,8 +1887,8 @@ static inline bool passes_global_cuts_dispatch(const BranchBinder& b,
                                                const std::string& period_label,
                                                const GlobalCutConfig* override_cfg = nullptr) {
     const GlobalCutConfig& cfg = override_cfg ? *override_cfg : default_global_cuts();
-    if (cfg.auxiliary_cd_proton_p_min_GeV > 0.0 && b.detector1 == 2 &&
-        (!b.has_p1_p || !std::isfinite(b.p1_p) || !(b.p1_p > cfg.auxiliary_cd_proton_p_min_GeV))) return false;
+    if (cfg.enable_auxiliary_fiducial_cuts &&
+        (!b.has_p1_p || !passes_proton_momentum_cut(b.detector1, period_label, b.p1_p, cfg))) return false;
 
 
     if (!(b.has_t1 && b.has_open_angle)) return false;
@@ -5169,11 +5169,11 @@ bool update_total_counts_csv(const std::string& csv_path,
 
         std::mutex merge_mutex;
 
-        int nth = std::max(1, std::min(7, max_workers));
+        int nth = std::max(1, std::min(10, max_workers));
         nth = std::min(nth, (int)work_items.size());
 
         std::cout << "[total_counts] Using " << nth
-                  << " worker thread(s), capped at 7." << std::endl;
+                  << " worker thread(s), capped at 10." << std::endl;
 
 #ifdef _OPENMP
 #pragma omp parallel for schedule(dynamic, 1) num_threads(nth)

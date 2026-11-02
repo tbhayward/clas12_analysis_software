@@ -46,12 +46,14 @@ struct GlobalCutConfig {
     double auxiliary_e_theta_max_deg = 25.0;  // applied only in CD-FD and FD-FD
 
     double auxiliary_fd_proton_theta_min_deg = 8.0;
-    double auxiliary_fd_proton_theta_max_deg = 40.0;
+    double auxiliary_fd_proton_theta_max_deg = 64.23;
+    double auxiliary_fd_proton_p_min_inb_GeV = 0.42;
+    double auxiliary_fd_proton_p_min_out_GeV = 0.50;
 
     double auxiliary_fd_photon_theta_min_deg = 8.0;  // applied only in FD-FD
     double auxiliary_fd_photon_theta_max_deg = 40.0; // applied to all FD photons
 
-    double auxiliary_cd_proton_p_min_GeV = 0.0; // optional diagnostic threshold
+    double auxiliary_cd_proton_p_min_GeV = 0.30;
     double auxiliary_cd_proton_theta_min_deg = 40.0;
     double auxiliary_cd_proton_theta_max_deg = 64.23;
 
@@ -102,6 +104,15 @@ void set_default_global_cuts(const GlobalCutConfig& cfg);
 bool global_cuts_require_sector_phi(const GlobalCutConfig& cfg = default_global_cuts());
 bool global_cuts_require_auxiliary_kinematics(const GlobalCutConfig& cfg = default_global_cuts());
 std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg = default_global_cuts());
+
+// Reconstruction-level proton momentum selection. period_label must be one of
+// the canonical global-cut labels (sp18_inb/out, fa18_inb/out, sp19_inb).
+// This is kept separate from generated-level cuts so acceptance denominators
+// remain inclusive of detector/reconstruction inefficiency.
+bool passes_proton_momentum_cut(int detector1,
+                                const std::string& period_label,
+                                double p1_p,
+                                const GlobalCutConfig& cfg = default_global_cuts());
 
 // Sector helpers. Input phi is in radians.
 int fd_sector_from_phi_rad(double phi_rad);

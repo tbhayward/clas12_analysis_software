@@ -128,6 +128,8 @@ class GlobalCutsConfig:
     auxiliary_e_theta_max_deg: float
     auxiliary_fd_proton_theta_min_deg: float
     auxiliary_fd_proton_theta_max_deg: float
+    auxiliary_fd_proton_p_min_inb_GeV: float
+    auxiliary_fd_proton_p_min_out_GeV: float
     auxiliary_fd_photon_theta_min_deg: float
     auxiliary_fd_photon_theta_max_deg: float
     auxiliary_cd_proton_p_min_GeV: float
@@ -500,10 +502,10 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--workers",
         type=int,
-        default=7,
+        default=10,
         help=(
             "Maximum number of worker processes. The value is hard-capped "
-            "at 7 (default: 7). Run-period parallelism can use at most the "
+            "at 10 (default: 10). Run-period parallelism can use at most the "
             "number of selected periods."
         ),
     )
@@ -875,6 +877,7 @@ def load_global_cuts_config(path: str) -> GlobalCutsConfig:
         "auxiliary_require_distinct_fd_sectors",
         "auxiliary_e_theta_min_deg", "auxiliary_e_theta_max_deg",
         "auxiliary_fd_proton_theta_min_deg", "auxiliary_fd_proton_theta_max_deg",
+        "auxiliary_fd_proton_p_min_inb_GeV", "auxiliary_fd_proton_p_min_out_GeV",
         "auxiliary_fd_photon_theta_min_deg", "auxiliary_fd_photon_theta_max_deg",
         "auxiliary_cd_proton_theta_min_deg", "auxiliary_cd_proton_theta_max_deg",
         "auxiliary_ft_photon_p_min_GeV", "enable_topology_filter",
@@ -903,6 +906,8 @@ def load_global_cuts_config(path: str) -> GlobalCutsConfig:
         auxiliary_e_theta_max_deg=float(raw["auxiliary_e_theta_max_deg"]),
         auxiliary_fd_proton_theta_min_deg=float(raw["auxiliary_fd_proton_theta_min_deg"]),
         auxiliary_fd_proton_theta_max_deg=float(raw["auxiliary_fd_proton_theta_max_deg"]),
+        auxiliary_fd_proton_p_min_inb_GeV=float(raw["auxiliary_fd_proton_p_min_inb_GeV"]),
+        auxiliary_fd_proton_p_min_out_GeV=float(raw["auxiliary_fd_proton_p_min_out_GeV"]),
         auxiliary_fd_photon_theta_min_deg=float(raw["auxiliary_fd_photon_theta_min_deg"]),
         auxiliary_fd_photon_theta_max_deg=float(raw["auxiliary_fd_photon_theta_max_deg"]),
         auxiliary_cd_proton_p_min_GeV=float(raw.get("auxiliary_cd_proton_p_min_GeV", 0.0)),
@@ -949,8 +954,7 @@ def global_cut_required_branches() -> List[str]:
     ]
     if cfg.enable_auxiliary_fiducial_cuts:
         branches.extend(["e_theta", "p1_theta", "p2_p", "p2_theta"])
-        if cfg.auxiliary_cd_proton_p_min_GeV > 0.0:
-            branches.append("p1_p")
+        branches.append("p1_p")
     return branches
 
 
@@ -1002,8 +1006,13 @@ def global_cut_mask_uproot(
     if cfg.enable_auxiliary_fiducial_cuts:
         e_theta_deg = np.degrees(np.asarray(arrays["e_theta"], dtype=np.float64))
         p1_theta_deg = np.degrees(np.asarray(arrays["p1_theta"], dtype=np.float64))
-        p1_p = (np.asarray(arrays["p1_p"], dtype=np.float64)
-                if cfg.auxiliary_cd_proton_p_min_GeV > 0.0 else np.full_like(p1_theta_deg, np.inf))
+        p1_p = np.asarray(arrays["p1_p"], dtype=np.float64)
+        if period_key.endswith("_inb"):
+            fd_p_min = cfg.auxiliary_fd_proton_p_min_inb_GeV
+        elif period_key.endswith("_out"):
+            fd_p_min = cfg.auxiliary_fd_proton_p_min_out_GeV
+        else:
+            raise ValueError(f"Unknown torus polarity in period key: {period_key}")
         p2_theta_deg = np.degrees(np.asarray(arrays["p2_theta"], dtype=np.float64))
         p2_p = np.asarray(arrays["p2_p"], dtype=np.float64)
         mask &= (
@@ -1014,6 +1023,7 @@ def global_cut_mask_uproot(
         mask &= (detector2 != 1) | (e_theta_deg < cfg.auxiliary_e_theta_max_deg)
         mask &= (
             ((detector1 == 1)
+             & (p1_p > fd_p_min)
              & (p1_theta_deg > cfg.auxiliary_fd_proton_theta_min_deg)
              & (p1_theta_deg < cfg.auxiliary_fd_proton_theta_max_deg))
             | ((detector1 == 2)
@@ -1081,8 +1091,13 @@ def event_passes_global_cuts(event: object, period_key: str) -> bool:
     if cfg.enable_auxiliary_fiducial_cuts:
         e_theta_deg = math.degrees(float(getattr(event, "e_theta")))
         p1_theta_deg = math.degrees(float(getattr(event, "p1_theta")))
-        p1_p = (float(getattr(event, "p1_p"))
-                if cfg.auxiliary_cd_proton_p_min_GeV > 0.0 else math.inf)
+        p1_p = float(getattr(event, "p1_p"))
+        if period_key.endswith("_inb"):
+            fd_p_min = cfg.auxiliary_fd_proton_p_min_inb_GeV
+        elif period_key.endswith("_out"):
+            fd_p_min = cfg.auxiliary_fd_proton_p_min_out_GeV
+        else:
+            raise ValueError(f"Unknown torus polarity in period key: {period_key}")
         p2_theta_deg = math.degrees(float(getattr(event, "p2_theta")))
         p2_p = float(getattr(event, "p2_p"))
         if not all(map(math.isfinite, (e_theta_deg, p1_theta_deg, p2_theta_deg, p2_p))):
@@ -1092,10 +1107,12 @@ def event_passes_global_cuts(event: object, period_key: str) -> bool:
         if detector2 == 1 and not (e_theta_deg < cfg.auxiliary_e_theta_max_deg):
             return False
         if detector1 == 1:
+            if not (math.isfinite(p1_p) and p1_p > fd_p_min):
+                return False
             if not (cfg.auxiliary_fd_proton_theta_min_deg < p1_theta_deg < cfg.auxiliary_fd_proton_theta_max_deg):
                 return False
         elif detector1 == 2:
-            if cfg.auxiliary_cd_proton_p_min_GeV > 0.0 and not (math.isfinite(p1_p) and p1_p > cfg.auxiliary_cd_proton_p_min_GeV):
+            if not (math.isfinite(p1_p) and p1_p > cfg.auxiliary_cd_proton_p_min_GeV):
                 return False
             if not (cfg.auxiliary_cd_proton_theta_min_deg < p1_theta_deg < cfg.auxiliary_cd_proton_theta_max_deg):
                 return False
@@ -6674,10 +6691,10 @@ def main() -> int:
         + f"; Emiss2 mean-order penalty={args.emiss2_mean_order_penalty:g}"
     )
 
-    worker_count = min(max(1, int(args.workers)), 7, len(periods))
+    worker_count = min(max(1, int(args.workers)), 10, len(periods))
     log(
         f"Processing {len(periods)} run period(s) with "
-        f"{worker_count} worker process(es); hard cap = 7"
+        f"{worker_count} worker process(es); hard cap = 10"
     )
 
     period_results: Dict[
