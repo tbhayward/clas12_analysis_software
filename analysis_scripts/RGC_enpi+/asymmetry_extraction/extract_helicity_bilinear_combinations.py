@@ -19,6 +19,7 @@ matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
+from matplotlib.patches import Rectangle
 
 from helicity_bilinear_transforms import (
     HELICITY_DESCRIPTIONS,
@@ -37,6 +38,15 @@ XB_LABELS = (
     r"$0.35<x_B<0.45$",
     r"$0.45<x_B<0.60$",
 )
+
+XB_STYLES = (
+    ("#0072B2", "o"),
+    ("#D55E00", "s"),
+    ("#009E73", "^"),
+    ("#CC79A7", "D"),
+)
+
+COMPARABLE_PANELS = ((0, 1), (2,), (3,), (4, 5), (6,))
 
 
 def parse_args() -> argparse.Namespace:
@@ -88,39 +98,90 @@ def propagated_diagonal_uncertainty(row: pd.Series, suffix: str) -> np.ndarray:
     return np.sqrt((TRANSFORM**2) @ (errors**2))
 
 
+def _nice_step(span: float) -> float:
+    if span <= 0.25:
+        return 0.05
+    if span <= 0.60:
+        return 0.10
+    if span <= 1.50:
+        return 0.20
+    return 0.50
+
+
+def standardized_limits(frame: pd.DataFrame) -> dict[int, tuple[float, float]]:
+    """Set common limits for like bilinears, using only this canvas's data."""
+    limits: dict[int, tuple[float, float]] = {}
+    for panel_group in COMPARABLE_PANELS:
+        lows, highs = [0.0], [0.0]
+        for panel in panel_group:
+            name = HELICITY_PARAMETERS[panel]
+            y = frame[name].to_numpy(dtype=float)
+            stat = frame[f"{name}_stat"].to_numpy(dtype=float)
+            systematic_name = f"{name}_point_to_point_systematic_diagonal"
+            syst = frame[systematic_name].to_numpy(dtype=float) if systematic_name in frame else np.zeros_like(y)
+            extent = np.maximum(stat, syst)
+            lows.extend((y - extent).tolist())
+            highs.extend((y + extent).tolist())
+        low, high = min(lows), max(highs)
+        padding = max(0.08 * (high - low), 0.02)
+        step = _nice_step(high - low + 2.0 * padding)
+        low = step * np.floor((low - padding) / step)
+        high = step * np.ceil((high + padding) / step)
+        for panel in panel_group:
+            limits[panel] = (low, high)
+    return limits
+
+
+def draw_systematic_boxes(axis, x, y, syst, color, width=.045, label=None):
+    for index, (x_value, y_value, error) in enumerate(zip(x, y, syst)):
+        axis.add_patch(
+            Rectangle(
+                (x_value - width / 2.0, y_value - error), width, 2.0 * error,
+                facecolor=color, edgecolor="none", alpha=.18,
+                label=label if index == 0 else None, zorder=1,
+            )
+        )
+
+
+def style_axis(axis, panel: int, limits: dict[int, tuple[float, float]]):
+    name = HELICITY_PARAMETERS[panel]
+    axis.axhline(0.0, color="0.55", ls="--", lw=1.4, zorder=0)
+    axis.set_xlim(0.0, 1.20)
+    axis.set_ylim(*limits[panel])
+    axis.set_xlabel(r"$-t'\;(\mathrm{GeV}^{2})$", fontsize=12)
+    axis.set_ylabel(HELICITY_LABELS[name], fontsize=8.5, labelpad=8)
+    axis.text(0.04, 0.91, f"({chr(97 + panel)})", transform=axis.transAxes,
+              fontsize=14, fontweight="bold")
+    axis.minorticks_on()
+    axis.tick_params(direction="in", top=True, right=True, which="both")
+
+
 def plot_x_group(frame: pd.DataFrame, x_index: int, output_dir: Path) -> Path:
     subset = frame.loc[frame["x_index"].astype(int) == x_index].sort_values("t_index")
     x = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
-    fig, axes = plt.subplots(4, 2, figsize=(17, 22), sharex=True)
+    limits = standardized_limits(subset)
+    color, marker = XB_STYLES[x_index]
+    fig, axes = plt.subplots(4, 2, figsize=(18, 22), sharex=False)
     axes = axes.ravel()
-    for panel, (axis, name) in enumerate(zip(axes, HELICITY_PARAMETERS), start=1):
+    for panel, (axis, name) in enumerate(zip(axes, HELICITY_PARAMETERS)):
         y = subset[name].to_numpy(dtype=float)
         stat = subset[f"{name}_stat"].to_numpy(dtype=float)
-        axis.axhline(0.0, color="0.55", ls="--", lw=1.4)
+        style_axis(axis, panel, limits)
         systematic_column = f"{name}_point_to_point_systematic_diagonal"
         if systematic_column in subset:
             systematic = subset[systematic_column].to_numpy(dtype=float)
-            width = 0.045
-            axis.bar(x, 2.0 * systematic, bottom=-systematic, width=width,
-                     color="#9ecae1", alpha=0.48, edgecolor="none",
-                     label="P-to-p syst. (diagonal propagation)")
-        axis.errorbar(x, y, yerr=stat, fmt="o", ms=7, mfc="white",
-                      mec="#0072B2", mew=2, ecolor="#0072B2", capsize=4,
-                      label="RGC transformed fit")
-        axis.set_title(HELICITY_LABELS[name], fontsize=11, pad=9)
-        axis.set_ylabel("normalized bilinear")
-        axis.text(0.04, 0.91, f"({chr(96 + panel)})", transform=axis.transAxes,
-                  fontsize=14, fontweight="bold")
-        axis.minorticks_on()
-        axis.tick_params(direction="in", top=True, right=True, which="both")
+            draw_systematic_boxes(
+                axis, x, y, systematic, color,
+                label="P-to-p syst. (diagonal propagation)",
+            )
+        axis.errorbar(x, y, yerr=stat, fmt=marker, ms=7, mfc="white",
+                      mec=color, mew=2, ecolor=color, capsize=4,
+                      label="RGC transformed amplitude combination", zorder=2)
     axes[-1].axis("off")
-    for axis in axes[-2:]:
-        if axis.axison:
-            axis.set_xlabel(r"$-t'\;(\mathrm{GeV}^{2})$")
     handles, labels = axes[0].get_legend_handles_labels()
     fig.legend(handles, labels, loc="lower right", bbox_to_anchor=(0.94, 0.045), frameon=False)
     fig.suptitle(
-        r"CLAS12 $ep\rightarrow e(n)\pi^+$ normalized helicity bilinears: " + XB_LABELS[x_index],
+        r"CLAS12 $ep\rightarrow e(n)\pi^+$ helicity-amplitude combinations: " + XB_LABELS[x_index],
         fontsize=20,
     )
     fig.text(
@@ -131,6 +192,52 @@ def plot_x_group(frame: pd.DataFrame, x_index: int, output_dir: Path) -> Path:
     )
     fig.tight_layout(rect=(0.03, 0.05, 0.98, 0.96))
     path = output_dir / f"xB_bin_{x_index + 1}_seven_helicity_bilinears.png"
+    fig.savefig(path, dpi=220)
+    plt.close(fig)
+    return path
+
+
+def plot_all_x_groups(frame: pd.DataFrame, output_dir: Path) -> Path:
+    limits = standardized_limits(frame)
+    fig, axes = plt.subplots(4, 2, figsize=(18, 22), sharex=False)
+    axes = axes.ravel()
+    for panel, (axis, name) in enumerate(zip(axes, HELICITY_PARAMETERS)):
+        style_axis(axis, panel, limits)
+        for x_index, (color, marker) in enumerate(XB_STYLES):
+            subset = frame.loc[frame["x_index"].astype(int) == x_index].sort_values("t_index")
+            x = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
+            y = subset[name].to_numpy(dtype=float)
+            stat = subset[f"{name}_stat"].to_numpy(dtype=float)
+            systematic_column = f"{name}_point_to_point_systematic_diagonal"
+            if systematic_column in subset:
+                syst = subset[systematic_column].to_numpy(dtype=float)
+                draw_systematic_boxes(axis, x, y, syst, color)
+            axis.errorbar(
+                x, y, yerr=stat, fmt=marker, ms=6.5, mfc="white", mec=color,
+                mew=1.9, ecolor=color, capsize=3, label=XB_LABELS[x_index], zorder=2,
+            )
+    axes[-1].axis("off")
+    handles, labels = axes[0].get_legend_handles_labels()
+    axes[-1].legend(handles, labels, loc="center", frameon=False, fontsize=12,
+                    title=r"$x_B$ bins", title_fontsize=13)
+    axes[-1].text(
+        .5, .20,
+        "Statistical error bars; colored rectangles are\n"
+        "point-to-point systematics (diagonal propagation)",
+        ha="center", va="center", transform=axes[-1].transAxes, fontsize=11,
+    )
+    fig.suptitle(
+        r"CLAS12 $ep\rightarrow e(n)\pi^+$ helicity-amplitude combinations: all $x_B$ bins",
+        fontsize=20,
+    )
+    fig.text(
+        0.5, 0.015,
+        r"$T_{\mu,\lambda}^{0\sigma}$: photon helicity $\mu$, initial-proton helicity $\lambda$, "
+        r"pion helicity 0, recoil-neutron helicity $\sigma$; sum is over $\sigma=\pm\frac{1}{2}$.",
+        ha="center", fontsize=11,
+    )
+    fig.tight_layout(rect=(0.03, 0.05, 0.98, 0.96))
+    path = output_dir / "all_xB_seven_helicity_bilinears.png"
     fig.savefig(path, dpi=220)
     plt.close(fig)
     return path
@@ -226,6 +333,7 @@ def main() -> int:
     if not args.skip_plots:
         for x_index in range(4):
             plot_paths.append(str(plot_x_group(result, x_index, plots)))
+        plot_paths.append(str(plot_all_x_groups(result, plots)))
 
     manifest = {
         "input_csv": str(args.input_csv.expanduser().resolve()),

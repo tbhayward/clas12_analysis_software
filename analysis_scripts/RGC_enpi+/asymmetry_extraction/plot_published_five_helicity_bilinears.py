@@ -19,6 +19,7 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from matplotlib.patches import Rectangle
 
 from helicity_bilinear_transforms import (
     PUBLISHED_FIVE_LABELS,
@@ -87,29 +88,86 @@ def unpack_group(group: tuple[tuple[float, ...], ...]):
     )
 
 
+COMPARABLE_PANELS = ((0, 1), (2,), (3,), (4,))
+
+
+def _nice_step(span: float) -> float:
+    """Return a readable tick-like rounding interval for an axis span."""
+    if span <= 0.25:
+        return 0.05
+    if span <= 0.60:
+        return 0.10
+    if span <= 1.50:
+        return 0.20
+    return 0.50
+
+
+def standardized_limits(datasets: list[tuple[np.ndarray, np.ndarray, np.ndarray]]) -> dict[int, tuple[float, float]]:
+    """Give physically comparable panels identical limits within one canvas."""
+    limits: dict[int, tuple[float, float]] = {}
+    for panel_group in COMPARABLE_PANELS:
+        lows, highs = [0.0], [0.0]
+        for values, stat, syst in datasets:
+            for panel in panel_group:
+                total = np.maximum(stat[:, panel], syst[:, panel])
+                lows.extend((values[:, panel] - total).tolist())
+                highs.extend((values[:, panel] + total).tolist())
+        low, high = min(lows), max(highs)
+        padding = max(0.08 * (high - low), 0.02)
+        step = _nice_step(high - low + 2.0 * padding)
+        low = step * np.floor((low - padding) / step)
+        high = step * np.ceil((high + padding) / step)
+        for panel in panel_group:
+            limits[panel] = (low, high)
+    return limits
+
+
+def draw_systematic_boxes(axis, x, y, syst, color, width=.045, label=None):
+    """Draw point-to-point systematic boxes centered on each measured value."""
+    for index, (x_value, y_value, error) in enumerate(zip(x, y, syst)):
+        axis.add_patch(
+            Rectangle(
+                (x_value - width / 2.0, y_value - error),
+                width,
+                2.0 * error,
+                facecolor=color,
+                edgecolor="none",
+                alpha=.18,
+                label=label if index == 0 else None,
+                zorder=1,
+            )
+        )
+
+
+def style_axis(axis, panel: int, limits: dict[int, tuple[float, float]]):
+    axis.axhline(0.0, color="0.55", ls="--", lw=1.4, zorder=0)
+    axis.set_xlim(0.0, 1.20)
+    axis.set_ylim(*limits[panel])
+    axis.set_xlabel(r"$-t'\;(\mathrm{GeV}^{2})$", fontsize=13)
+    axis.set_ylabel(PUBLISHED_FIVE_LABELS[PUBLISHED_FIVE_PARAMETERS[panel]], fontsize=9, labelpad=8)
+    axis.text(.04, .91, f"({chr(97 + panel)})", transform=axis.transAxes,
+              fontsize=15, fontweight="bold")
+    axis.minorticks_on()
+    axis.tick_params(direction="in", top=True, right=True, which="both")
+
+
 def draw_group(group_index: int, output_dir: Path) -> Path:
     x, values, stat, syst = unpack_group(NOTE_TABLES[group_index])
     low, high, color, marker = XB_GROUPS[group_index]
-    fig, axes = plt.subplots(2, 3, figsize=(20, 12), sharex=True)
+    limits = standardized_limits([(values, stat, syst)])
+    fig, axes = plt.subplots(2, 3, figsize=(20, 12), sharex=False)
     axes = axes.ravel()
     for panel, name in enumerate(PUBLISHED_FIVE_PARAMETERS):
         axis = axes[panel]
-        axis.axhline(0.0, color="0.55", ls="--", lw=1.4)
-        axis.bar(x, 2.0 * syst[:, panel], bottom=-syst[:, panel], width=.045,
-                 color=color, alpha=.16, edgecolor="none",
-                 label="P-to-p syst. (diagonal propagation)")
+        style_axis(axis, panel, limits)
+        draw_systematic_boxes(
+            axis, x, values[:, panel], syst[:, panel], color,
+            label="P-to-p syst. (diagonal propagation)",
+        )
         axis.errorbar(x, values[:, panel], yerr=stat[:, panel], fmt=marker,
                       ms=8, mfc="white", mec=color, mew=2.2, ecolor=color,
-                      capsize=4, label="Derived RGC bilinear (stat.)")
-        axis.set_title(PUBLISHED_FIVE_LABELS[name], fontsize=11, pad=9)
-        axis.set_ylabel("normalized bilinear")
-        axis.text(.04, .91, f"({chr(97 + panel)})", transform=axis.transAxes,
-                  fontsize=15, fontweight="bold")
-        axis.minorticks_on()
-        axis.tick_params(direction="in", top=True, right=True, which="both")
+                      capsize=4, label="Derived RGC amplitude combination (stat.)", zorder=2)
     axes[-1].axis("off")
-    for axis in axes[3:5]:
-        axis.set_xlabel(r"$-t'\;(\mathrm{GeV}^{2})$", fontsize=14)
     handles, labels = axes[0].get_legend_handles_labels()
     axes[-1].legend(handles, labels, loc="center", frameon=False, fontsize=12)
     axes[-1].text(
@@ -120,7 +178,7 @@ def draw_group(group_index: int, output_dir: Path) -> Path:
         ha="center", va="center", transform=axes[-1].transAxes, fontsize=12,
     )
     fig.suptitle(
-        rf"CLAS12 $ep\rightarrow e(n)\pi^+$ normalized helicity bilinears: ${low:.2f}<x_B<{high:.2f}$",
+        rf"CLAS12 $ep\rightarrow e(n)\pi^+$ helicity-amplitude combinations: ${low:.2f}<x_B<{high:.2f}$",
         fontsize=21,
     )
     fig.text(
@@ -131,6 +189,49 @@ def draw_group(group_index: int, output_dir: Path) -> Path:
     )
     fig.tight_layout(rect=(.03, .05, .98, .95))
     path = output_dir / f"published_five_helicity_bilinears_xB_{group_index + 1}.png"
+    fig.savefig(path, dpi=220)
+    plt.close(fig)
+    return path
+
+
+def draw_all_xb(output_dir: Path) -> Path:
+    unpacked = [unpack_group(group) for group in NOTE_TABLES]
+    limits = standardized_limits([(values, stat, syst) for _, values, stat, syst in unpacked])
+    fig, axes = plt.subplots(2, 3, figsize=(20, 12), sharex=False)
+    axes = axes.ravel()
+    for panel in range(len(PUBLISHED_FIVE_PARAMETERS)):
+        axis = axes[panel]
+        style_axis(axis, panel, limits)
+        for group_index, (x, values, stat, syst) in enumerate(unpacked):
+            low, high, color, marker = XB_GROUPS[group_index]
+            draw_systematic_boxes(axis, x, values[:, panel], syst[:, panel], color)
+            axis.errorbar(
+                x, values[:, panel], yerr=stat[:, panel], fmt=marker, ms=7,
+                mfc="white", mec=color, mew=2.0, ecolor=color, capsize=3,
+                label=rf"${low:.2f}<x_B<{high:.2f}$", zorder=2,
+            )
+    axes[-1].axis("off")
+    handles, labels = axes[0].get_legend_handles_labels()
+    axes[-1].legend(handles, labels, loc="center", frameon=False, fontsize=12,
+                    title=r"$x_B$ bins", title_fontsize=13)
+    axes[-1].text(
+        .5, .20,
+        "Statistical error bars; colored rectangles are\n"
+        "point-to-point systematics (diagonal propagation)",
+        ha="center", va="center", transform=axes[-1].transAxes, fontsize=11,
+    )
+    fig.suptitle(
+        r"CLAS12 $ep\rightarrow e(n)\pi^+$ helicity-amplitude combinations: all $x_B$ bins",
+        fontsize=21,
+    )
+    fig.text(
+        .5, .015,
+        r"$T_{\mu,\lambda}^{0\sigma}$: photon helicity $\mu$, initial-proton helicity $\lambda$, "
+        r"pion helicity 0, recoil-neutron helicity $\sigma$; sum over $\sigma=\pm\frac{1}{2}$.",
+        ha="center", fontsize=11,
+    )
+    fig.tight_layout(rect=(.03, .05, .98, .95))
+    path = output_dir / "published_five_helicity_bilinears_all_xB.png"
     fig.savefig(path, dpi=220)
     plt.close(fig)
     return path
@@ -164,6 +265,7 @@ def main() -> int:
     output.mkdir(parents=True, exist_ok=True)
     csv_path = write_csv(output)
     plots = [draw_group(index, output) for index in range(4)]
+    plots.append(draw_all_xb(output))
     print(f"Wrote {csv_path}")
     for path in plots:
         print(f"Wrote {path}")

@@ -30,8 +30,8 @@ python /path/to/extract_helicity_bilinear_combinations.py \
 ```
 
 The output contains a table, one exact statistical covariance and correlation
-matrix per bin, a machine-readable definition file, and four seven-panel
-figures.
+matrix per bin, a machine-readable definition file, four single-`x_B`
+seven-panel figures, and one all-`x_B` overlay figure.
 
 The production CSV stores assigned systematic magnitudes rather than complete
 signed systematic covariance matrices. Systematic columns produced here are
@@ -42,9 +42,10 @@ forming its assigned magnitude.
 ## 2. Quick publication-table plotter
 
 `plot_published_five_helicity_bilinears.py` hard-codes Tables 25, 28, 31, and
-34 of the supplied analysis note. It creates four figures containing the five
-bilinears available from the intended published observables alone. It does not
-use the unpolarized cos(phi) or cos(2phi) nuisance results.
+34 of the supplied analysis note. It creates four single-`x_B` figures and one
+all-`x_B` overlay containing the five combinations available from the intended
+published observables alone. It does not use the unpolarized cos(phi) or
+cos(2phi) nuisance results.
 
 ```bash
 python plot_published_five_helicity_bilinears.py
@@ -54,6 +55,12 @@ Because the analysis-note tables do not publish the observable covariance,
 the quick script propagates statistical and point-to-point systematic errors
 diagonally and labels them accordingly. The production companion should be
 used for final numerical work.
+
+Both plotters place the systematic rectangle around the central value, put the
+full amplitude expression on each y axis, start every `-t'` axis at zero, and
+use a common y range for physically paired panels within each canvas (the two
+initial-proton helicities for the same interference). The strength-difference
+panel and unlike interference types retain independent ranges.
 
 ## Amplitude-index convention
 
