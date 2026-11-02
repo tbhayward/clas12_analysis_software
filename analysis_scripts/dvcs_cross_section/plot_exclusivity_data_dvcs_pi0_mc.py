@@ -714,33 +714,6 @@ def input_files(path: str) -> List[str]:
     return files
 
 
-def require_input_file(path: str) -> None:
-    files = input_files(path)
-    # The rebuilt inputs contain many homogeneous part files. Opening every
-    # part here duplicated the real analysis I/O and could spend tens of
-    # minutes serially touching /volatile before period workers were launched.
-    # Inventory completeness is checked above; inspect one representative for
-    # an early tree/schema error and let normal streaming validate later parts
-    # when they are actually consumed.
-    filename = files[0]
-    if uproot is not None:
-        with uproot.open(filename) as root_file:
-            expected = tree_name_for(path)
-            if expected not in root_file:
-                raise KeyError(f"Tree '{expected}' not found in {filename}")
-            if ".rec_only.root" in path:
-                required = {"Q2", "x", "t1", "weight", "event_sequence"}
-                if "/pi0_mc/" in path:
-                    required.add("detector_gamma1")
-                missing = required - set(root_file[expected].keys())
-                if missing:
-                    raise KeyError(f"Missing compact MC branches {sorted(missing)} in {filename}")
-    log(
-        f"Validated input group with {len(files)} file(s); "
-        f"representative={os.path.basename(filename)}"
-    )
-
-
 def is_paired_mc(path: str) -> bool:
     return ("/mc/" in path and ("/dvcs_mc/" in path or "/pi0_mc/" in path)
             and ".rec_only.root" not in path)
@@ -1181,7 +1154,6 @@ def fill_histograms_uproot(
 ) -> Tuple[Dict[str, Dict[str, np.ndarray]], Dict[str, int]]:
     """Read one ROOT file once and fill all requested topology/variable histograms."""
 
-    require_input_file(path)
     resolved = resolve_variable_branches(path, variables)
 
     expressions = sorted(set(global_cut_required_branches() + list(resolved.values())))
@@ -1244,7 +1216,6 @@ def fill_histograms_pyroot(
         raise RuntimeError("Rebuilt ROOT parts require uproot for streaming and rec_* adaptation")
     del step_size  # PyROOT performs a direct TTree event loop.
 
-    require_input_file(path)
     resolved = resolve_variable_branches(path, variables)
     histograms = {topology.key: empty_histograms(variables) for topology in topologies}
     selected_events = {topology.key: 0 for topology in topologies}
@@ -3963,7 +3934,6 @@ def load_selected_arrays_uproot(
     variables: Sequence[VariableConfig],
 ) -> Dict[str, Dict[str, np.ndarray]]:
     """Load minimally selected fit-variable arrays once for iterative cuts."""
-    require_input_file(path)
     resolved = resolve_variable_branches(path, variables)
     expressions = sorted(set(global_cut_required_branches() + list(resolved.values())))
     pieces: Dict[str, Dict[str, List[np.ndarray]]] = {
@@ -4044,7 +4014,6 @@ def load_selected_arrays_pyroot(
     if is_paired_mc(path) or len(input_files(path)) != 1:
         raise RuntimeError("Rebuilt ROOT parts require uproot for streaming and rec_* adaptation")
     del step_size
-    require_input_file(path)
     resolved = resolve_variable_branches(path, variables)
     pieces: Dict[str, Dict[str, List[float]]] = {
         topology.key: {variable.branch: [] for variable in variables}
@@ -6638,11 +6607,6 @@ def main() -> int:
     # endif
 
     periods = selected_periods(args.period)
-    # Validate all periods before launching expensive fit workers.
-    for period in periods:
-        for path in (period.data_file, period.dvcs_mc_file, period.pi0_as_dvcs_mc_file,
-                     period.eppi0_data_file, period.eppi0_mc_file):
-            require_input_file(path)
     topologies = selected_topologies(args.topology)
     output_dir = Path(args.output_dir)
     all_rows: List[Dict[str, object]] = []
