@@ -715,19 +715,30 @@ def input_files(path: str) -> List[str]:
 
 
 def require_input_file(path: str) -> None:
-    for filename in input_files(path):
-        if uproot is not None:
-            with uproot.open(filename) as root_file:
-                expected = tree_name_for(path)
-                if expected not in root_file:
-                    raise KeyError(f"Tree '{expected}' not found in {filename}")
-                if ".rec_only.root" in path:
-                    required = {"Q2", "x", "t1", "weight", "event_sequence"}
-                    if "/pi0_mc/" in path:
-                        required.add("detector_gamma1")
-                    missing = required - set(root_file[expected].keys())
-                    if missing:
-                        raise KeyError(f"Missing compact MC branches {sorted(missing)} in {filename}")
+    files = input_files(path)
+    # The rebuilt inputs contain many homogeneous part files. Opening every
+    # part here duplicated the real analysis I/O and could spend tens of
+    # minutes serially touching /volatile before period workers were launched.
+    # Inventory completeness is checked above; inspect one representative for
+    # an early tree/schema error and let normal streaming validate later parts
+    # when they are actually consumed.
+    filename = files[0]
+    if uproot is not None:
+        with uproot.open(filename) as root_file:
+            expected = tree_name_for(path)
+            if expected not in root_file:
+                raise KeyError(f"Tree '{expected}' not found in {filename}")
+            if ".rec_only.root" in path:
+                required = {"Q2", "x", "t1", "weight", "event_sequence"}
+                if "/pi0_mc/" in path:
+                    required.add("detector_gamma1")
+                missing = required - set(root_file[expected].keys())
+                if missing:
+                    raise KeyError(f"Missing compact MC branches {sorted(missing)} in {filename}")
+    log(
+        f"Validated input group with {len(files)} file(s); "
+        f"representative={os.path.basename(filename)}"
+    )
 
 
 def is_paired_mc(path: str) -> bool:
