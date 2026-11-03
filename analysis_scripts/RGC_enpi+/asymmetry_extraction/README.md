@@ -127,3 +127,16 @@ A satisfactory fit means that helicity-flip amplitudes are not required by
 these seven ratios at the present precision. It does not demonstrate that the
 flip amplitudes do not exist. A poor fit rejects this restricted model, subject
 to the same frame, convention and covariance checks that apply to the inputs.
+
+The script also keeps the best one-sector prediction fixed and profiles a
+second incoherent recoil-helicity sector. At each tested denominator fraction
+`r_B`, it fits the four observable shape parameters of that added sector using
+
+```text
+f_total = (1-r_B) f_A + r_B f_B.
+```
+
+The added tables and plots report the minimum grid fraction that gives an
+acceptable fixed-fraction fit and the best profile point. This is conditional
+on the frozen first-sector solution. It is not a direct or model-independent
+measurement of a helicity-flip fraction.
