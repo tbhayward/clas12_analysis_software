@@ -119,6 +119,11 @@ class GlobalCutsConfig:
     analysis_tag: str
     t1_abs_max: float
     open_angle_min_deg: float
+    enable_reconstructed_electron_p_cut: bool
+    reconstructed_electron_p_min_GeV: float
+    enable_analysis_phase_space_cuts: bool
+    analysis_y_min: float
+    analysis_W_min_GeV: float
     enable_pTmiss_cut: bool
     pTmiss_max: float
     enable_dvcsgen_ycol_cut: bool
@@ -856,6 +861,9 @@ def load_global_cuts_config(path: str) -> GlobalCutsConfig:
         raw = json.load(stream)
     required = {
         "analysis_tag", "t1_abs_max", "open_angle_min_deg",
+        "enable_reconstructed_electron_p_cut",
+        "reconstructed_electron_p_min_GeV",
+        "enable_analysis_phase_space_cuts", "analysis_y_min", "analysis_W_min_GeV",
         "enable_pTmiss_cut", "pTmiss_max", "enable_dvcsgen_ycol_cut",
         "enable_auxiliary_fiducial_cuts",
         "auxiliary_require_distinct_fd_sectors",
@@ -881,6 +889,11 @@ def load_global_cuts_config(path: str) -> GlobalCutsConfig:
         analysis_tag=str(raw["analysis_tag"]),
         t1_abs_max=float(raw["t1_abs_max"]),
         open_angle_min_deg=float(raw["open_angle_min_deg"]),
+        enable_reconstructed_electron_p_cut=bool(raw["enable_reconstructed_electron_p_cut"]),
+        reconstructed_electron_p_min_GeV=float(raw["reconstructed_electron_p_min_GeV"]),
+        enable_analysis_phase_space_cuts=bool(raw["enable_analysis_phase_space_cuts"]),
+        analysis_y_min=float(raw["analysis_y_min"]),
+        analysis_W_min_GeV=float(raw["analysis_W_min_GeV"]),
         enable_pTmiss_cut=bool(raw["enable_pTmiss_cut"]),
         pTmiss_max=float(raw["pTmiss_max"]),
         enable_dvcsgen_ycol_cut=bool(raw["enable_dvcsgen_ycol_cut"]),
@@ -933,8 +946,8 @@ def global_cut_required_branches() -> List[str]:
     if cfg is None:
         raise RuntimeError("Global-cut configuration has not been loaded.")
     branches = [
-        "detector1", "detector2", "t1", "open_angle_ep2", "pTmiss",
-        "e_phi", "p1_phi", "p2_phi", "runnum",
+        "detector1", "detector2", "x", "Q2", "t1", "open_angle_ep2", "pTmiss",
+        "e_p", "e_phi", "p1_phi", "p2_phi", "runnum",
     ]
     if cfg.enable_auxiliary_fiducial_cuts:
         branches.extend(["e_theta", "p1_theta", "p2_p", "p2_theta"])
@@ -959,6 +972,26 @@ def global_cut_mask_uproot(
         & ((-t1) < cfg.t1_abs_max)
         & (opening > cfg.open_angle_min_deg)
     )
+    # Apply the cheapest high-rejection selection before sector geometry and
+    # auxiliary calculations. This mask is used only for reconstructed trees;
+    # generated acceptance denominators are handled separately in C++.
+    if cfg.enable_reconstructed_electron_p_cut:
+        e_p = np.asarray(arrays["e_p"], dtype=np.float64)
+        mask &= np.isfinite(e_p) & (e_p > cfg.reconstructed_electron_p_min_GeV)
+    if cfg.enable_analysis_phase_space_cuts:
+        x_b = np.asarray(arrays["x"], dtype=np.float64)
+        q2 = np.asarray(arrays["Q2"], dtype=np.float64)
+        beam = 10.1998 if "sp19" in period_key.lower() else (10.594 if "sp18" in period_key.lower() else 10.604)
+        mp = 0.9382720813
+        valid = np.isfinite(x_b) & np.isfinite(q2) & (x_b > 0.0) & (x_b < 1.0) & (q2 > 0.0)
+        with np.errstate(divide="ignore", invalid="ignore"):
+            y = q2 / (2.0 * mp * x_b * beam)
+            w2 = mp * mp + q2 * (1.0 / x_b - 1.0)
+            eps2 = 4.0 * mp * mp * x_b * x_b / q2
+            minus_t_min = q2 * (2.0 * (1.0 - x_b) * (1.0 - np.sqrt(1.0 + eps2)) + eps2) / (4.0 * x_b * (1.0 - x_b) + eps2)
+        mask &= valid & (y > cfg.analysis_y_min) & (y < 1.0)
+        mask &= w2 > cfg.analysis_W_min_GeV ** 2
+        mask &= np.abs(t1) >= minus_t_min
     if cfg.enable_pTmiss_cut:
         mask &= ptmiss <= cfg.pTmiss_max
     if cfg.excluded_runs:
@@ -1043,6 +1076,24 @@ def event_passes_global_cuts(event: object, period_key: str) -> bool:
         return False
     if (-t1) >= cfg.t1_abs_max or opening <= cfg.open_angle_min_deg:
         return False
+    if cfg.enable_reconstructed_electron_p_cut:
+        e_p = float(getattr(event, "e_p"))
+        if not (math.isfinite(e_p) and e_p > cfg.reconstructed_electron_p_min_GeV):
+            return False
+    if cfg.enable_analysis_phase_space_cuts:
+        x_b = float(getattr(event, "x"))
+        q2 = float(getattr(event, "Q2"))
+        beam = 10.1998 if "sp19" in period_key.lower() else (10.594 if "sp18" in period_key.lower() else 10.604)
+        mp = 0.9382720813
+        if not (math.isfinite(x_b) and 0.0 < x_b < 1.0 and math.isfinite(q2) and q2 > 0.0):
+            return False
+        y = q2 / (2.0 * mp * x_b * beam)
+        w2 = mp * mp + q2 * (1.0 / x_b - 1.0)
+        eps2 = 4.0 * mp * mp * x_b * x_b / q2
+        minus_t_min = q2 * (2.0 * (1.0 - x_b) * (1.0 - math.sqrt(1.0 + eps2)) + eps2) / (4.0 * x_b * (1.0 - x_b) + eps2)
+        if not (y > cfg.analysis_y_min and y < 1.0 and
+                w2 > cfg.analysis_W_min_GeV ** 2 and abs(t1) >= minus_t_min):
+            return False
     if cfg.enable_pTmiss_cut and ptmiss > cfg.pTmiss_max:
         return False
     if cfg.excluded_runs and int(getattr(event, "runnum")) in cfg.excluded_runs:

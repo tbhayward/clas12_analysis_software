@@ -346,6 +346,14 @@ int main(int argc, char* argv[]) {
     // -------------------------------------------------------------------------
     GlobalCutConfig global_cfg;
 
+    // Common generated/reconstructed physics phase space.  The legacy member
+    // names for p_e are preserved for configuration compatibility.
+    global_cfg.enable_reconstructed_electron_p_cut = true;
+    global_cfg.reconstructed_electron_p_min_GeV = 2.0;
+    global_cfg.enable_analysis_phase_space_cuts = true;
+    global_cfg.analysis_y_min = 0.19;
+    global_cfg.analysis_W_min_GeV = 2.0;
+
 
     // Optional single-topology study selected from the command line:
     //   --topology FD-FD
@@ -419,6 +427,11 @@ int main(int argc, char* argv[]) {
               << " GeV; p(FD inb) > " << global_cfg.auxiliary_fd_proton_p_min_inb_GeV
               << " GeV; p(FD out) > " << global_cfg.auxiliary_fd_proton_p_min_out_GeV
               << " GeV." << std::endl;
+    std::cout << "[main] Common generated/reconstructed phase space: p_e > "
+              << global_cfg.reconstructed_electron_p_min_GeV
+              << " GeV, y > " << global_cfg.analysis_y_min
+              << ", W > " << global_cfg.analysis_W_min_GeV
+              << " GeV, and |t| >= |t_min|." << std::endl;
 
     // Record the exact global-cut configuration before the Python process is
     // launched. The Python exclusivity stage must apply the same minimally

@@ -14,7 +14,7 @@
 //
 // where mask enforces:
 //   - t > t_min(xB, Q2) (DVCS kinematics, t is negative)
-//   - 0.19 < y < 0.8113919276, with y = Q2 / (2 Mp xB E_beam)
+//   - y > 0.19 and p_e = E_beam(1-y) > 2 GeV
 //   - W > 2.0, with W^2 = Mp^2 + Q2 (1/xB - 1)
 //
 // Volumes are computed via a deterministic 3D grid in (xB, Q2, t) and
@@ -29,6 +29,7 @@
 // energies. Phi-integrated rows (phi width ~360 deg) are skipped.
 
 #include "bin_volume.h"
+#include "global_cuts.h"
 
 #include <TCanvas.h>
 #include <TGraphAsymmErrors.h>
@@ -316,7 +317,6 @@ static double calculate_phase_space_allowed_fraction(double xB_min, double xB_ma
                                                      double E_beam)
 {
     constexpr int    n_steps = 10;
-    constexpr double Mp      = 0.938272; // Proton mass (GeV)
     int valid_count = 0;
 
     // Convert |t| edges to physical t<0 for the loop.
@@ -333,40 +333,13 @@ static double calculate_phase_space_allowed_fraction(double xB_min, double xB_ma
         for (int j = 0; j < n_steps; ++j) {
             const double Q2 = Q2_min + (j + 0.5) * dQ2;
 
-            // These quantities do not depend on t, so evaluate them once per
-            // (xB,Q2) grid point rather than once for all ten t samples.
-            const double y  = Q2 / (2.0 * Mp * xB * E_beam);
-            const double W2 = Mp * Mp + Q2 * (1.0 / xB - 1.0);
-            const double W  = (W2 > 0.0) ? std::sqrt(W2) : 0.0;
-            if (!(y > 0.19 && y < 0.8113919276 && W > 2.0)) {
-                continue;
-            }
-
-            // Standard DVCS t_min(xB,Q2), with t_min < 0.
-            //
-            // epsilon^2 = 4 M_p^2 x_B^2 / Q^2
-            //
-            // -t_min = Q^2 *
-            //   [2(1-x_B)(1-sqrt(1+epsilon^2)) + epsilon^2] /
-            //   [4 x_B(1-x_B) + epsilon^2]
-            //
-            // Since physical t is negative, the allowed DVCS region satisfies
-            // |t| >= |t_min|, equivalently t <= t_min.
-            const double epsilon2 =
-                (4.0 * Mp * Mp * xB * xB) / Q2;
-            const double sqrt_term =
-                std::sqrt(1.0 + epsilon2);
-
-            const double minus_t_min =
-                Q2 *
-                (2.0 * (1.0 - xB) * (1.0 - sqrt_term) + epsilon2) /
-                (4.0 * xB * (1.0 - xB) + epsilon2);
-
-            const double t_min_val = -minus_t_min;
+            constexpr double Mp = 0.9382720813;
+            const double y = Q2 / (2.0 * Mp * xB * E_beam);
+            const double e_p = E_beam * (1.0 - y);
 
             for (int k = 0; k < n_steps; ++k) {
                 const double t = t_phys_min + (k + 0.5) * dt;
-                if (t <= t_min_val) {
+                if (passes_analysis_phase_space_cuts(E_beam, xB, Q2, t, e_p)) {
                     ++valid_count;
                 }
             }

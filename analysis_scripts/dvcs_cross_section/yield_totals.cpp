@@ -1227,8 +1227,11 @@ struct Branches {
 static bool passes_global_cuts_for_event(const Branches& b,
                                          const PeriodTags& tags) {
     const GlobalCutConfig& cfg = default_global_cuts();
-    if (cfg.auxiliary_cd_proton_p_min_GeV > 0.0 && b.detector1 == 2 &&
-        (!b.has_p1_p || !std::isfinite(b.p1_p) || !(b.p1_p > cfg.auxiliary_cd_proton_p_min_GeV))) return false;
+    if (!b.has_e_p ||
+        !passes_analysis_phase_space_cuts(tags.period_label, b.x, b.Q2, b.t1, b.e_p, cfg)) return false;
+    if (cfg.enable_auxiliary_fiducial_cuts &&
+        (!b.has_p1_p ||
+         !passes_proton_momentum_cut(b.detector1, tags.period_label, b.p1_p, cfg))) return false;
 
 
     if (cfg.enable_pTmiss_cut && !b.has_pTmiss) return false;

@@ -1444,11 +1444,15 @@ struct BranchBinder {
         const bool is_gen = (work_cfg.sample_kind == SampleKind::MC_GEN);
         const bool is_data = (work_cfg.sample_kind == SampleKind::DATA);
 
-        // Every sample needs only these four branches for CSV-bin matching.
+        // Every sample needs these branches for CSV-bin matching and the
+        // common reconstructed/generated analysis phase-space definition.
         ena("x");
         ena("Q2");
         ena("t1");
         ena("phi2");
+        ena("e_p");
+        ena("detector1");
+        ena("p1_p");
         // Photon-derived t needs the measured e and photon four-vectors in
         // every sample, including generated MC used in count normalization.
         if (sebastian_use_tgamma_binning.load()) {
@@ -1576,7 +1580,7 @@ struct BranchBinder {
     }
 
     bool ready_for_generated_matching() const {
-        return has_x && has_Q2 && has_t1 && has_phi2;
+        return has_x && has_Q2 && has_t1 && has_phi2 && has_e_p;
     }
 
     bool ready_for_reconstructed_matching() const {
@@ -1887,6 +1891,10 @@ static inline bool passes_global_cuts_dispatch(const BranchBinder& b,
                                                const std::string& period_label,
                                                const GlobalCutConfig* override_cfg = nullptr) {
     const GlobalCutConfig& cfg = override_cfg ? *override_cfg : default_global_cuts();
+    // Cheap common phase-space rejection first. The same physics definition is
+    // used for the generated denominator below.
+    if (!(b.has_e_p && b.has_x && b.has_Q2 && b.has_t1) ||
+        !passes_analysis_phase_space_cuts(period_label, b.x, b.Q2, b.t1, b.e_p, cfg)) return false;
     if (cfg.enable_auxiliary_fiducial_cuts &&
         (!b.has_p1_p || !passes_proton_momentum_cut(b.detector1, period_label, b.p1_p, cfg))) return false;
 
@@ -1957,6 +1965,18 @@ static inline bool passes_global_cuts_dispatch(const BranchBinder& b,
     return passes_global_cuts(b.t1, b.open_angle_ep2, b.pTmiss,
                               b.detector1, b.detector2,
                               cfg);
+}
+
+static inline bool passes_generated_phase_space_dispatch(
+    const BranchBinder& b,
+    const std::string& period_label,
+    const GlobalCutConfig* override_cfg = nullptr) {
+    const GlobalCutConfig& cfg = override_cfg ? *override_cfg : default_global_cuts();
+    if (!b.ready_for_generated_matching()) return false;
+    if (!passes_analysis_phase_space_cuts(period_label, b.x, b.Q2, b.t1, b.e_p, cfg)) return false;
+    return !cfg.enable_auxiliary_fiducial_cuts ||
+           (b.has_detector1 && b.has_p1_p &&
+            passes_proton_momentum_cut(b.detector1, period_label, b.p1_p, cfg));
 }
 
 static inline void add_count(HelCounts& h, bool split_helicity, int helicity) {
@@ -2214,10 +2234,18 @@ static std::string generated_denominator_key(TTree* tree,
                                             const std::vector<RowBin>& rows,
                                             bool tprime) {
     std::ostringstream key;
-    key << std::hexfloat << "unit-weight-generated-v1|" << tree << '|'
+    const GlobalCutConfig& cuts = default_global_cuts();
+    key << std::hexfloat << "unit-weight-generated-v2|" << tree << '|'
         << tree->GetName() << '|' << tree->GetEntries() << '|'
         << cfg.channel_cfg.csv_channel << '|' << tags.tree_key << '|'
-        << tags.period_display << '|' << tprime << '|' << sebastian_use_tgamma_binning.load() << '|' << rows.size();
+        << tags.period_display << '|' << tprime << '|' << sebastian_use_tgamma_binning.load() << '|'
+        << cuts.enable_analysis_phase_space_cuts << '|' << cuts.analysis_y_min << '|'
+        << cuts.analysis_W_min_GeV << '|' << cuts.enable_reconstructed_electron_p_cut << '|'
+        << cuts.reconstructed_electron_p_min_GeV << '|'
+        << cuts.enable_auxiliary_fiducial_cuts << '|'
+        << cuts.auxiliary_cd_proton_p_min_GeV << '|'
+        << cuts.auxiliary_fd_proton_p_min_inb_GeV << '|'
+        << cuts.auxiliary_fd_proton_p_min_out_GeV << '|' << rows.size();
     auto append_file = [&](const char* filename) {
         const std::filesystem::path path(filename);
         std::error_code error;
@@ -2407,6 +2435,8 @@ static WorkCounts accumulate_counts_for_tree_legacy(const WorkConfig& work_cfg,
             ++n_sigma_pass;
             ++out.flow.sigma_pass;
             ++out.flow.topology_sigma_pass[topoDir];
+        } else if (!passes_generated_phase_space_dispatch(b, tags.period_label)) {
+            continue;
         }
 
         EventCurrentWeight current_weight;
@@ -2737,6 +2767,9 @@ static std::function<WorkCounts*(const BranchBinder*, Long64_t)> make_count_sink
             ++n_sigma_pass;
             ++out.flow.sigma_pass;
             ++out.flow.topology_sigma_pass[topoDir];
+        } else if (!passes_generated_phase_space_dispatch(b, tags.period_label,
+                                                           &global_config)) {
+            continue;
         }
 
         EventCurrentWeight current_weight;
@@ -5532,6 +5565,8 @@ static std::vector<ARWEvent> arw_collect(
             }
             if(!fill_sigma_cut_diagnostics_compiled(
                     sigma_plans[(size_t)ti],b,ti,dummy_diag)) continue;
+        } else if (!passes_generated_phase_space_dispatch(b, tags.period_label)) {
+            continue;
         }
 
         const int row=arw_find_row(b,rows,fast_bins);

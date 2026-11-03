@@ -1080,8 +1080,11 @@ static bool passesGlobalCutsForBinder(const BranchBinder& b,
 
     GlobalCutConfig gcfg = default_global_cuts();
     gcfg.enable_topology_filter = false;
-    if (gcfg.auxiliary_cd_proton_p_min_GeV > 0.0 && b.detector1 == 2 &&
-        (!b.has_p1_p || !std::isfinite(b.p1_p) || !(b.p1_p > gcfg.auxiliary_cd_proton_p_min_GeV))) return false;
+    if (!b.has_e_p ||
+        !passes_analysis_phase_space_cuts(period_label, b.x, b.Q2, b.t1, b.e_p, gcfg)) return false;
+    if (gcfg.enable_auxiliary_fiducial_cuts &&
+        (!b.has_p1_p ||
+         !passes_proton_momentum_cut(b.detector1, period_label, b.p1_p, gcfg))) return false;
 
 
     if (global_cuts_require_sector_phi(gcfg)) {

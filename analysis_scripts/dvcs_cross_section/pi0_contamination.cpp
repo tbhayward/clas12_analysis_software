@@ -1129,6 +1129,8 @@ struct TreeDiagBranches {
     double p2_phi = 0.0; bool has_p2_phi = false;
 
     double t1 = 0.0; bool has_t1 = false;
+    double x = 0.0; bool has_x = false;
+    double Q2 = 0.0; bool has_Q2 = false;
     double open_angle_ep2 = 0.0; bool has_open_angle_ep2 = false;
     double pTmiss = 0.0; bool has_pTmiss = false;
 
@@ -1196,6 +1198,8 @@ struct TreeDiagBranches {
         enable("p1_phi");
         enable("p2_phi");
         enable("t1");
+        enable("x");
+        enable("Q2");
         enable("open_angle_ep2");
         enable("pTmiss");
         enable("e_p");
@@ -1234,6 +1238,8 @@ struct TreeDiagBranches {
         bD("p1_phi", &p1_phi, has_p1_phi);
         bD("p2_phi", &p2_phi, has_p2_phi);
         bD("t1", &t1, has_t1);
+        bD("x", &x, has_x);
+        bD("Q2", &Q2, has_Q2);
         bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
         bD("pTmiss", &pTmiss, has_pTmiss);
         bD("e_p", &e_p, has_e_p);
@@ -1325,8 +1331,13 @@ struct TreeDiagBranches {
 
     bool passes_global_selection(const std::string& period, int d1, int d2) const {
         const GlobalCutConfig& cfg = default_global_cuts();
-    if (cfg.auxiliary_cd_proton_p_min_GeV > 0.0 && d1 == 2 &&
-        (!has_p1_p || !std::isfinite(p1_p) || !(p1_p > cfg.auxiliary_cd_proton_p_min_GeV))) return false;
+        if (!has_e_p ||
+            !has_x || !has_Q2 ||
+            !passes_analysis_phase_space_cuts(period_label_for_global_cuts(period),
+                                               x, Q2, t1, e_p, cfg)) return false;
+        if (cfg.enable_auxiliary_fiducial_cuts &&
+            (!has_p1_p ||
+             !passes_proton_momentum_cut(d1, period_label_for_global_cuts(period), p1_p, cfg))) return false;
 
 
         if (!(has_t1 && has_open_angle_ep2 && has_pTmiss)) return false;

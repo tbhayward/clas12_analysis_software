@@ -351,6 +351,11 @@ static GlobalCutConfig load_global_cut_config(const std::string& path) {
 
     require_number("t1_abs_max", cfg.t1_abs_max);
     require_number("open_angle_min_deg", cfg.open_angle_min_deg);
+    require_bool("enable_reconstructed_electron_p_cut", cfg.enable_reconstructed_electron_p_cut);
+    require_number("reconstructed_electron_p_min_GeV", cfg.reconstructed_electron_p_min_GeV);
+    require_bool("enable_analysis_phase_space_cuts", cfg.enable_analysis_phase_space_cuts);
+    require_number("analysis_y_min", cfg.analysis_y_min);
+    require_number("analysis_W_min_GeV", cfg.analysis_W_min_GeV);
     require_number("pTmiss_max", cfg.pTmiss_max);
 
     require_bool("enable_dvcsgen_ycol_cut", cfg.enable_dvcsgen_ycol_cut);
@@ -362,10 +367,13 @@ static GlobalCutConfig load_global_cut_config(const std::string& path) {
     if (auto it = j.find("auxiliary_e_theta_max_deg"); it != j.end()) cfg.auxiliary_e_theta_max_deg = it->get<double>();
     if (auto it = j.find("auxiliary_fd_proton_theta_min_deg"); it != j.end()) cfg.auxiliary_fd_proton_theta_min_deg = it->get<double>();
     if (auto it = j.find("auxiliary_fd_proton_theta_max_deg"); it != j.end()) cfg.auxiliary_fd_proton_theta_max_deg = it->get<double>();
+    if (auto it = j.find("auxiliary_fd_proton_p_min_inb_GeV"); it != j.end()) cfg.auxiliary_fd_proton_p_min_inb_GeV = it->get<double>();
+    if (auto it = j.find("auxiliary_fd_proton_p_min_out_GeV"); it != j.end()) cfg.auxiliary_fd_proton_p_min_out_GeV = it->get<double>();
     if (auto it = j.find("auxiliary_fd_photon_theta_min_deg"); it != j.end()) cfg.auxiliary_fd_photon_theta_min_deg = it->get<double>();
     if (auto it = j.find("auxiliary_fd_photon_theta_max_deg"); it != j.end()) cfg.auxiliary_fd_photon_theta_max_deg = it->get<double>();
     if (auto it = j.find("auxiliary_cd_proton_theta_min_deg"); it != j.end()) cfg.auxiliary_cd_proton_theta_min_deg = it->get<double>();
     if (auto it = j.find("auxiliary_cd_proton_theta_max_deg"); it != j.end()) cfg.auxiliary_cd_proton_theta_max_deg = it->get<double>();
+    if (auto it = j.find("auxiliary_cd_proton_p_min_GeV"); it != j.end()) cfg.auxiliary_cd_proton_p_min_GeV = it->get<double>();
     if (auto it = j.find("auxiliary_ft_photon_p_min_GeV"); it != j.end()) cfg.auxiliary_ft_photon_p_min_GeV = it->get<double>();
 
     require_bool("enable_topology_filter", cfg.enable_topology_filter);
@@ -655,6 +663,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     const char* br_e_theta = "e_theta";
     const char* br_e_phi = "e_phi";
     const char* br_p1_theta = "p1_theta";
+    const char* br_p1_p = "p1_p";
     const char* br_p1_phi = "p1_phi";
     const char* br_p2_p = "p2_p";
     const char* br_p2_theta = "p2_theta";
@@ -667,10 +676,11 @@ static double accumulate_counts_for_tree(const std::string& group_label,
         !tree->GetBranch(br_oa_ep2) ||
         !tree->GetBranch(br_pTmiss) ||
         !tree->GetBranch(br_det1) ||
-        !tree->GetBranch(br_det2)) {
+        !tree->GetBranch(br_det2) || !tree->GetBranch(br_e_p) ||
+        (global_cfg.enable_auxiliary_fiducial_cuts && !tree->GetBranch(br_p1_p))) {
         std::cerr << "[radcorr] FATAL: missing one or more branches in generated MC tree for "
                   << group_label << " (" << tree_label
-                  << ") (expected: x, Q2, t1, phi2, open_angle_ep2, pTmiss, detector1, detector2).\n";
+                  << ") (expected common phase-space and global-cut branches).\n";
         std::exit(EXIT_FAILURE);
     }
 
@@ -700,6 +710,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     double g_e_theta = 0.0;
     double g_e_phi = 0.0;
     double g_p1_theta = 0.0;
+    double g_p1_p = 0.0;
     double g_p1_phi = 0.0;
     double g_p2_p = 0.0;
     double g_p2_theta = 0.0;
@@ -717,6 +728,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     if (tree->GetBranch(br_e_theta)) tree->SetBranchAddress(br_e_theta, &g_e_theta);
     if (tree->GetBranch(br_e_phi)) tree->SetBranchAddress(br_e_phi, &g_e_phi);
     if (tree->GetBranch(br_p1_theta)) tree->SetBranchAddress(br_p1_theta, &g_p1_theta);
+    if (tree->GetBranch(br_p1_p)) tree->SetBranchAddress(br_p1_p, &g_p1_p);
     if (tree->GetBranch(br_p1_phi)) tree->SetBranchAddress(br_p1_phi, &g_p1_phi);
     if (tree->GetBranch(br_p2_p)) tree->SetBranchAddress(br_p2_p, &g_p2_p);
     if (tree->GetBranch(br_p2_theta)) tree->SetBranchAddress(br_p2_theta, &g_p2_theta);
@@ -728,6 +740,11 @@ static double accumulate_counts_for_tree(const std::string& group_label,
 
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
+
+        if (!passes_analysis_phase_space_cuts(period_label, g_x, g_Q2, g_t1,
+                                              g_e_p, global_cfg)) continue;
+        if (global_cfg.enable_auxiliary_fiducial_cuts &&
+            !passes_proton_momentum_cut((int)g_det1, period_label, g_p1_p, global_cfg)) continue;
 
         // Apply DVCS global kinematic cuts (requires GlobalCutConfig).
         // Use the detector-aware overload:

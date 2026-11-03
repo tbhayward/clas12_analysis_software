@@ -172,6 +172,8 @@ struct BranchBinder {
     double detector1 = 0;    bool has_detector1 = false;
     double detector2 = 0;    bool has_detector2 = false;
 
+    double x = 0.0;                 bool has_x = false;
+    double Q2 = 0.0;                bool has_Q2 = false;
     double t1 = 0.0;                bool has_t1 = false;
     double open_angle_ep2 = 0.0;    bool has_open_angle_ep2 = false;
     double Emiss2 = 0.0;            bool has_Emiss2 = false;
@@ -214,6 +216,8 @@ struct BranchBinder {
         ena("runnum");
         ena("detector1");
         ena("detector2");
+        ena("x");
+        ena("Q2");
         ena("t1");
         ena("open_angle_ep2");
         ena("Emiss2");
@@ -249,6 +253,8 @@ struct BranchBinder {
         bD("detector1", &detector1, has_detector1);
         bD("detector2", &detector2, has_detector2);
 
+        bD("x", &x, has_x);
+        bD("Q2", &Q2, has_Q2);
         bD("t1", &t1, has_t1);
         bD("open_angle_ep2", &open_angle_ep2, has_open_angle_ep2);
 
@@ -399,9 +405,11 @@ static GlobalCutConfig globalConfigForStageTopology(Topology topo) {
 static bool passesGlobalForStage(const BranchBinder& b,
                                  const std::string& period_label,
                                  const GlobalCutConfig& gcfg) {
+    if (!b.has_e_p ||
+        !passes_analysis_phase_space_cuts(period_label, b.x, b.Q2, b.t1, b.e_p, gcfg)) return false;
     if (!(b.has_t1 && b.has_open_angle_ep2)) return false;
-    if (gcfg.auxiliary_cd_proton_p_min_GeV > 0.0 && b.detector1 == 2 &&
-        (!b.has_p1_p || !std::isfinite(b.p1_p) || !(b.p1_p > gcfg.auxiliary_cd_proton_p_min_GeV))) return false;
+    if (gcfg.enable_auxiliary_fiducial_cuts &&
+        (!b.has_p1_p || !passes_proton_momentum_cut(b.detector1, period_label, b.p1_p, gcfg))) return false;
 
     if (gcfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
     if (!(b.has_detector1 && b.has_detector2)) return false;
@@ -1051,9 +1059,11 @@ static GlobalCutConfig globalConfigForTopo(Topology topo, bool bypassGlobalPTmis
 static bool passesGlobalWithConfig(const BranchBinder& b,
                                    const std::string& period_label,
                                    const GlobalCutConfig& gcfg) {
+    if (!b.has_e_p ||
+        !passes_analysis_phase_space_cuts(period_label, b.x, b.Q2, b.t1, b.e_p, gcfg)) return false;
     if (!(b.has_t1 && b.has_open_angle_ep2)) return false;
-    if (gcfg.auxiliary_cd_proton_p_min_GeV > 0.0 && b.detector1 == 2 &&
-        (!b.has_p1_p || !std::isfinite(b.p1_p) || !(b.p1_p > gcfg.auxiliary_cd_proton_p_min_GeV))) return false;
+    if (gcfg.enable_auxiliary_fiducial_cuts &&
+        (!b.has_p1_p || !passes_proton_momentum_cut(b.detector1, period_label, b.p1_p, gcfg))) return false;
 
     if (gcfg.enable_pTmiss_cut && !b.has_pTmiss) return false;
     if (!(b.has_detector1 && b.has_detector2)) return false;

@@ -5,6 +5,7 @@
 #include <fstream>
 #include <iomanip>
 #include <iostream>
+#include <limits>
 #include <sstream>
 #include <stdexcept>
 #include <unordered_set>
@@ -79,6 +80,16 @@ static void validate_cfg_or_fatal(const GlobalCutConfig& cfg) {
     auto ok_fd  = [](int s)->bool { return s >= 1 && s <= 6; };
     auto ok_cd  = [](int s)->bool { return s >= 1 && s <= 3; };
 
+    if (!std::isfinite(cfg.reconstructed_electron_p_min_GeV) ||
+        cfg.reconstructed_electron_p_min_GeV < 0.0) {
+        fatal_global("invalid reconstructed electron momentum threshold");
+    }
+    if (!std::isfinite(cfg.analysis_y_min) || cfg.analysis_y_min < 0.0 ||
+        cfg.analysis_y_min >= 1.0 ||
+        !std::isfinite(cfg.analysis_W_min_GeV) || cfg.analysis_W_min_GeV <= 0.0) {
+        fatal_global("invalid analysis phase-space threshold");
+    }
+
     if (cfg.enable_topology_filter) {
         if (!ok_det(cfg.required_detector1) || !ok_det(cfg.required_detector2)) {
             std::ostringstream ss;
@@ -136,6 +147,49 @@ static void validate_cfg_or_fatal(const GlobalCutConfig& cfg) {
     }
 }
 
+bool passes_reconstructed_electron_momentum_cut(
+    double e_p,
+    const GlobalCutConfig& cfg) {
+    validate_cfg_or_fatal(cfg);
+    if (!cfg.enable_reconstructed_electron_p_cut) return true;
+    return std::isfinite(e_p) &&
+           e_p > cfg.reconstructed_electron_p_min_GeV;
+}
+
+double dvcs_minus_t_min(double xB, double Q2) {
+    static constexpr double MP = 0.9382720813;
+    if (!(std::isfinite(xB) && std::isfinite(Q2) && xB > 0.0 && xB < 1.0 && Q2 > 0.0))
+        return std::numeric_limits<double>::quiet_NaN();
+    const double eps2 = 4.0 * MP * MP * xB * xB / Q2;
+    const double root = std::sqrt(1.0 + eps2);
+    const double denom = 4.0 * xB * (1.0 - xB) + eps2;
+    if (!(denom > 0.0)) return std::numeric_limits<double>::quiet_NaN();
+    return Q2 * (2.0 * (1.0 - xB) * (1.0 - root) + eps2) / denom;
+}
+
+bool passes_analysis_phase_space_cuts(double Ebeam,
+                                      double xB,
+                                      double Q2,
+                                      double t1,
+                                      double e_p,
+                                      const GlobalCutConfig& cfg) {
+    validate_cfg_or_fatal(cfg);
+    if (!(std::isfinite(Ebeam) && Ebeam > 0.0 &&
+          std::isfinite(xB) && xB > 0.0 && xB < 1.0 &&
+          std::isfinite(Q2) && Q2 > 0.0 && std::isfinite(t1))) return false;
+    if (!passes_reconstructed_electron_momentum_cut(e_p, cfg)) return false;
+    if (!cfg.enable_analysis_phase_space_cuts) return true;
+
+    static constexpr double MP = 0.9382720813;
+    const double y = Q2 / (2.0 * MP * xB * Ebeam);
+    const double W2 = MP * MP + Q2 * (1.0 / xB - 1.0);
+    const double minus_t_min = dvcs_minus_t_min(xB, Q2);
+    if (!(std::isfinite(y) && y > cfg.analysis_y_min && y < 1.0)) return false;
+    if (!(std::isfinite(W2) && W2 > cfg.analysis_W_min_GeV * cfg.analysis_W_min_GeV)) return false;
+    // Physical t is negative: t <= t_min is equivalent to |t| >= |t_min|.
+    return std::isfinite(minus_t_min) && std::abs(t1) >= minus_t_min;
+}
+
 bool passes_proton_momentum_cut(int detector1,
                                 const std::string& period_label,
                                 double p1_p,
@@ -175,6 +229,19 @@ std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg) {
             ss << "topo_det" << cfg.required_detector1 << "_det" << cfg.required_detector2;
             pieces.push_back(ss.str());
         }
+    }
+    if (cfg.enable_reconstructed_electron_p_cut) {
+        std::ostringstream ss;
+        ss << "epgt" << std::fixed << std::setprecision(1)
+           << cfg.reconstructed_electron_p_min_GeV;
+        pieces.push_back(ss.str());
+    }
+    if (cfg.enable_analysis_phase_space_cuts) {
+        std::ostringstream ss;
+        ss << "ygt" << std::fixed << std::setprecision(2) << cfg.analysis_y_min
+           << "_Wgt" << std::setprecision(1) << cfg.analysis_W_min_GeV
+           << "_tmin";
+        pieces.push_back(ss.str());
     }
     if (cfg.enable_electron_fd_sector_filter) pieces.push_back("eFDsec" + std::to_string(cfg.electron_fd_sector));
     if (cfg.enable_proton_fd_sector_filter)   pieces.push_back("pFDsec" + std::to_string(cfg.proton_fd_sector));
@@ -310,7 +377,7 @@ static bool passes_auxiliary_fiducial_cuts(int detector1,
     return true;
 }
 
-static double beam_energy_for_period_label(const std::string& period_label) {
+double beam_energy_for_period_label(const std::string& period_label) {
     if (period_label == "sp18_inb") return 10.594;
     if (period_label == "sp18_out") return 10.594;
     if (period_label == "fa18_inb") return 10.604;
@@ -322,6 +389,16 @@ static double beam_energy_for_period_label(const std::string& period_label) {
        << "sp18_inb, sp18_out, fa18_inb, fa18_out, sp19_inb.";
     fatal_global(ss.str());
     return -1.0;
+}
+
+bool passes_analysis_phase_space_cuts(const std::string& period_label,
+                                      double xB,
+                                      double Q2,
+                                      double t1,
+                                      double e_p,
+                                      const GlobalCutConfig& cfg) {
+    return passes_analysis_phase_space_cuts(beam_energy_for_period_label(period_label),
+                                            xB, Q2, t1, e_p, cfg);
 }
 
 static TLorentzVector make_beam_electron(double Ebeam_GeV) {
@@ -643,6 +720,10 @@ std::string global_cuts_tcut(const GlobalCutConfig& cfg) {
     std::ostringstream ss;
     ss << "(-t1) < " << std::fixed << std::setprecision(3) << cfg.t1_abs_max
        << " && open_angle_ep2 > " << std::fixed << std::setprecision(1) << cfg.open_angle_min_deg;
+    if (cfg.enable_reconstructed_electron_p_cut) {
+        ss << " && e_p > " << std::fixed << std::setprecision(3)
+           << cfg.reconstructed_electron_p_min_GeV;
+    }
     if (cfg.enable_pTmiss_cut) {
         ss << " && pTmiss <= " << std::fixed << std::setprecision(2) << cfg.pTmiss_max;
     }
@@ -662,6 +743,11 @@ void write_global_cuts_config_json(const std::string& out_json_dir,
         << "  \"analysis_tag\": \"" << global_cuts_analysis_tag(cfg) << "\",\n"
         << "  \"t1_abs_max\": " << std::setprecision(6) << cfg.t1_abs_max << ",\n"
         << "  \"open_angle_min_deg\": " << std::setprecision(6) << cfg.open_angle_min_deg << ",\n"
+        << "  \"enable_reconstructed_electron_p_cut\": " << (cfg.enable_reconstructed_electron_p_cut ? "true" : "false") << ",\n"
+        << "  \"reconstructed_electron_p_min_GeV\": " << std::setprecision(6) << cfg.reconstructed_electron_p_min_GeV << ",\n"
+        << "  \"enable_analysis_phase_space_cuts\": " << (cfg.enable_analysis_phase_space_cuts ? "true" : "false") << ",\n"
+        << "  \"analysis_y_min\": " << std::setprecision(6) << cfg.analysis_y_min << ",\n"
+        << "  \"analysis_W_min_GeV\": " << std::setprecision(6) << cfg.analysis_W_min_GeV << ",\n"
         << "  \"enable_pTmiss_cut\": " << (cfg.enable_pTmiss_cut ? "true" : "false") << ",\n"
         << "  \"pTmiss_max\": " << std::setprecision(6) << cfg.pTmiss_max << ",\n"
         << "  \"enable_dvcsgen_ycol_cut\": " << (cfg.enable_dvcsgen_ycol_cut ? "true" : "false") << ",\n"

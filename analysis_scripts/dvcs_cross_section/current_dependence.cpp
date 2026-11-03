@@ -1483,8 +1483,13 @@ static bool passes_cone_cut(const Branches& b) {
 static bool passes_global_dispatch(const Branches& b,
                                    const PeriodTags& tags) {
     const GlobalCutConfig& cfg = default_global_cuts();
-    if (cfg.auxiliary_cd_proton_p_min_GeV > 0.0 && b.detector1 == 2 &&
-        (!b.has_p1_p || !std::isfinite(b.p1_p) || !(b.p1_p > cfg.auxiliary_cd_proton_p_min_GeV))) return false;
+    // Apply the same physics phase space to DATA, REC MC, and generated MC
+    // response points before the more expensive global/exclusivity dispatch.
+    if (!b.has_e_p ||
+        !passes_analysis_phase_space_cuts(tags.period_label, b.x, b.Q2, b.t1, b.e_p, cfg)) return false;
+    if (cfg.enable_auxiliary_fiducial_cuts &&
+        (!b.has_p1_p ||
+         !passes_proton_momentum_cut(b.detector1, tags.period_label, b.p1_p, cfg))) return false;
 
 
     if (!(b.has_t1 && b.has_open_angle_ep2)) return false;
@@ -1795,34 +1800,11 @@ struct GeneratedCountSummary {
     std::map<std::string, long long> regions;
 };
 static std::mutex generated_summary_mutex;
-static std::map<TTree*, GeneratedCountSummary> generated_summaries;
-static GeneratedCountSummary generated_count_summary(TTree* tree);
+static std::map<std::pair<TTree*, std::string>, GeneratedCountSummary> generated_summaries;
+static GeneratedCountSummary generated_count_summary(TTree* tree, const std::string& period_label);
 
-static long long count_generated_tree(TTree* tree) {
-    if (tree && tree->GetBranch("gen_kinematics_valid"))
-        return generated_count_summary(tree).total;
-    if (!tree) {
-        return 0;
-    }
-
-    // REBUILT PAIRED MC: only generated-valid entries belong in N_gen.
-    // Legacy generated trees retain their original entry-count behavior.
-    if (!tree->GetBranch("gen_kinematics_valid")) {
-        return (long long)tree->GetEntries();
-    }
-    double valid = 0.0;
-    tree->SetBranchStatus("*", 0);
-    tree->SetBranchStatus("gen_kinematics_valid", 1);
-    if (tree->SetBranchAddress("gen_kinematics_valid", &valid) < 0) {
-        fatal("[current_dependence] Cannot bind gen_kinematics_valid.");
-    }
-    long long count = 0;
-    const Long64_t entries = tree->GetEntries();
-    for (Long64_t i = 0; i < entries; ++i) {
-        if (tree->GetEntry(i) > 0 && valid >= 0.5) ++count;
-    }
-    tree->ResetBranchAddresses();
-    return count;
+static long long count_generated_tree(TTree* tree, const std::string& period_label) {
+    return tree ? generated_count_summary(tree, period_label).total : 0;
 }
 
 static long long count_reconstructed_tree(const ChannelConfig& cfg,
@@ -5233,7 +5215,7 @@ static std::vector<PeriodResult> run_channel_study(
             McAgg& agg = mc_by_period_current[key.str()];
             agg.period = tags.display;
             agg.current_nA = current;
-            agg.n_gen += count_generated_tree(kv.second);
+            agg.n_gen += count_generated_tree(kv.second, tags.period_label);
         }
 
         std::vector<std::pair<std::string, TTree*>> rec_items;
@@ -5497,10 +5479,12 @@ using PhotonRegionResults = std::map<std::string, std::vector<PeriodResult>>;
 
 // One generated pass supplies both total and photon-region counts. Cache only
 // aggregates, scoped to this invocation; no event arrays or persisted results.
-static GeneratedCountSummary generated_count_summary(TTree* tree) {
+static GeneratedCountSummary generated_count_summary(TTree* tree,
+                                                     const std::string& period_label) {
+    const auto cache_key = std::make_pair(tree, period_label);
     {
         std::lock_guard<std::mutex> lock(generated_summary_mutex);
-        auto found = generated_summaries.find(tree);
+        auto found = generated_summaries.find(cache_key);
         if (found != generated_summaries.end()) return found->second;
     }
     GeneratedCountSummary summary;
@@ -5508,24 +5492,24 @@ static GeneratedCountSummary generated_count_summary(TTree* tree) {
     Branches b;
     const bool paired = tree->GetBranch("gen_kinematics_valid") != nullptr;
     b.bind(tree, paired ? "gen_" : "");
-    tree->SetBranchStatus("*", 0);
-    const std::string prefix = paired ? "gen_" : "";
-    for (const auto& name : {"p2_theta", "p2_phi"})
-        tree->SetBranchStatus((prefix + name).c_str(), 1);
+    const GlobalCutConfig& cfg = default_global_cuts();
+    if (!(b.has_x && b.has_Q2 && b.has_t1 && b.has_e_p && b.has_p2_theta && b.has_p2_phi) ||
+        (cfg.enable_auxiliary_fiducial_cuts && !(b.has_detector1 && b.has_p1_p))) {
+        fatal("[current_dependence] Generated phase-space count requires x, Q2, t1, e_p, p2_theta, p2_phi and, when proton cuts are enabled, detector1 and p1_p.");
+    }
     double valid = 1;
     if (paired) {
         tree->SetBranchStatus("gen_kinematics_valid", 1);
         tree->SetBranchAddress("gen_kinematics_valid", &valid);
     }
-    tree->DropBranchFromCache("*", true);
-    tree->AddBranchToCache((prefix + "p2_theta").c_str(), true);
-    tree->AddBranchToCache((prefix + "p2_phi").c_str(), true);
-    if (paired) tree->AddBranchToCache("gen_kinematics_valid", true);
-    tree->StopCacheLearningPhase();
     const auto n = tree->GetEntries();
     for (Long64_t i = 0; i < n; ++i) {
         if (tree->GetEntry(i) <= 0) fatal("[current_dependence] Generated summary read failure");
         if (paired && !(valid >= 0.5)) continue;
+        if (!passes_analysis_phase_space_cuts(period_label, b.x, b.Q2, b.t1, b.e_p, cfg)) continue;
+        if (cfg.enable_auxiliary_fiducial_cuts &&
+            (!b.has_detector1 || !b.has_p1_p ||
+             !passes_proton_momentum_cut(b.detector1, period_label, b.p1_p, cfg))) continue;
         ++summary.total;
         std::string region;
         if (generated_photon_region(b, region)) ++summary.regions[region];
@@ -5533,7 +5517,7 @@ static GeneratedCountSummary generated_count_summary(TTree* tree) {
     tree->ResetBranchAddresses();
     {
         std::lock_guard<std::mutex> lock(generated_summary_mutex);
-        generated_summaries[tree] = summary;
+        generated_summaries[cache_key] = summary;
     }
     return summary;
 }
@@ -5641,7 +5625,7 @@ static PhotonRegionDataAggMap process_data_tree_by_photon_region(
 }
 
 static PhotonRegionMcCountMap count_generated_tree_by_photon_region(const std::string& key, TTree* tree) {
-    if (tree) return generated_count_summary(tree).regions;
+    if (tree) return generated_count_summary(tree, parse_period_from_key(key).period_label).regions;
     PhotonRegionMcCountMap counts;
     for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
         counts[spec.key] = 0;

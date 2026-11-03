@@ -26,6 +26,14 @@ struct GlobalCutConfig {
     // Baseline global DVCS exclusivity-style cuts.
     double t1_abs_max         = 1.0;  // cut is (-t1) < t1_abs_max
     double open_angle_min_deg = 5.0;  // open_angle_ep2_deg > open_angle_min_deg
+    // Analysis phase-space cuts.  The legacy electron-cut member names are
+    // retained for source/config compatibility, but the cut is applied to both
+    // reconstructed and generated kinematics used by acceptance calculations.
+    bool   enable_reconstructed_electron_p_cut = true;
+    double reconstructed_electron_p_min_GeV    = 2.0;
+    bool   enable_analysis_phase_space_cuts     = true;
+    double analysis_y_min                       = 0.19;
+    double analysis_W_min_GeV                   = 2.0;
     // The old global pTmiss pre-cut is now disabled by default.
     // pTmiss is handled as a topology/period-dependent quantile exclusivity cut.
     bool   enable_pTmiss_cut = false;
@@ -105,14 +113,38 @@ bool global_cuts_require_sector_phi(const GlobalCutConfig& cfg = default_global_
 bool global_cuts_require_auxiliary_kinematics(const GlobalCutConfig& cfg = default_global_cuts());
 std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg = default_global_cuts());
 
-// Reconstruction-level proton momentum selection. period_label must be one of
+// Analysis-level proton momentum selection. period_label must be one of
 // the canonical global-cut labels (sp18_inb/out, fa18_inb/out, sp19_inb).
-// This is kept separate from generated-level cuts so acceptance denominators
-// remain inclusive of detector/reconstruction inefficiency.
+// Apply this to both reconstructed and generated protons. Detector angular
+// fiducials, PID, and exclusivity cuts remain reconstruction-only.
 bool passes_proton_momentum_cut(int detector1,
                                 const std::string& period_label,
                                 double p1_p,
                                 const GlobalCutConfig& cfg = default_global_cuts());
+
+// Legacy-named electron momentum helper, retained for interface compatibility.
+bool passes_reconstructed_electron_momentum_cut(
+    double e_p,
+    const GlobalCutConfig& cfg = default_global_cuts());
+
+// Beam-energy and common analysis-phase-space helpers.  t1 follows the tree
+// convention (negative physical t or positive |t| are both accepted).
+double beam_energy_for_period_label(const std::string& period_label);
+double dvcs_minus_t_min(double xB, double Q2);
+bool passes_analysis_phase_space_cuts(
+    double Ebeam,
+    double xB,
+    double Q2,
+    double t1,
+    double e_p,
+    const GlobalCutConfig& cfg = default_global_cuts());
+bool passes_analysis_phase_space_cuts(
+    const std::string& period_label,
+    double xB,
+    double Q2,
+    double t1,
+    double e_p,
+    const GlobalCutConfig& cfg = default_global_cuts());
 
 // Sector helpers. Input phi is in radians.
 int fd_sector_from_phi_rad(double phi_rad);
@@ -299,7 +331,8 @@ bool passes_global_cuts(double t1,
 // Run exclusion helper.
 bool is_excluded_run(int runnum, const GlobalCutConfig& cfg = default_global_cuts());
 
-// ROOT TCut helper. Only valid when all cuts are representable as a simple TCut.
+// Reconstruction-level ROOT TCut helper for the legacy simple cut subset.
+// The x-Q2-t phase-space mask requires the C++ helper above.
 std::string global_cuts_tcut(const GlobalCutConfig& cfg = default_global_cuts());
 
 // JSON writer for config echoing.
