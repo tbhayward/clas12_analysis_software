@@ -216,6 +216,22 @@ bool passes_proton_momentum_cut(int detector1,
                              : cfg.auxiliary_fd_proton_p_min_out_GeV);
 }
 
+int generated_proton_detector_region(double p1_theta_rad) {
+    if (!std::isfinite(p1_theta_rad)) return -1;
+    const double theta_deg = p1_theta_rad * RAD2DEG;
+    if (theta_deg >= 0.0 && theta_deg < 40.0) return 1;  // FD
+    if (theta_deg >= 40.0 && theta_deg <= 180.0) return 2; // CD-like threshold
+    return -1;
+}
+
+bool passes_generated_proton_momentum_cut(double p1_theta_rad,
+                                          const std::string& period_label,
+                                          double p1_p,
+                                          const GlobalCutConfig& cfg) {
+    return passes_proton_momentum_cut(generated_proton_detector_region(p1_theta_rad),
+                                      period_label, p1_p, cfg);
+}
+
 std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg) {
     validate_cfg_or_fatal(cfg);
 

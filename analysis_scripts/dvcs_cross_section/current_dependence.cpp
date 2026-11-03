@@ -5494,8 +5494,8 @@ static GeneratedCountSummary generated_count_summary(TTree* tree,
     b.bind(tree, paired ? "gen_" : "");
     const GlobalCutConfig& cfg = default_global_cuts();
     if (!(b.has_x && b.has_Q2 && b.has_t1 && b.has_e_p && b.has_p2_theta && b.has_p2_phi) ||
-        (cfg.enable_auxiliary_fiducial_cuts && !(b.has_detector1 && b.has_p1_p))) {
-        fatal("[current_dependence] Generated phase-space count requires x, Q2, t1, e_p, p2_theta, p2_phi and, when proton cuts are enabled, detector1 and p1_p.");
+        (cfg.enable_auxiliary_fiducial_cuts && !(b.has_p1_theta && b.has_p1_p))) {
+        fatal("[current_dependence] Generated phase-space count requires x, Q2, t1, e_p, p2_theta, p2_phi and, when proton cuts are enabled, p1_theta and p1_p.");
     }
     double valid = 1;
     if (paired) {
@@ -5508,8 +5508,8 @@ static GeneratedCountSummary generated_count_summary(TTree* tree,
         if (paired && !(valid >= 0.5)) continue;
         if (!passes_analysis_phase_space_cuts(period_label, b.x, b.Q2, b.t1, b.e_p, cfg)) continue;
         if (cfg.enable_auxiliary_fiducial_cuts &&
-            (!b.has_detector1 || !b.has_p1_p ||
-             !passes_proton_momentum_cut(b.detector1, period_label, b.p1_p, cfg))) continue;
+            (!b.has_p1_theta || !b.has_p1_p ||
+             !passes_generated_proton_momentum_cut(b.p1_theta, period_label, b.p1_p, cfg))) continue;
         ++summary.total;
         std::string region;
         if (generated_photon_region(b, region)) ++summary.regions[region];

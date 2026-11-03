@@ -677,7 +677,8 @@ static double accumulate_counts_for_tree(const std::string& group_label,
         !tree->GetBranch(br_pTmiss) ||
         !tree->GetBranch(br_det1) ||
         !tree->GetBranch(br_det2) || !tree->GetBranch(br_e_p) ||
-        (global_cfg.enable_auxiliary_fiducial_cuts && !tree->GetBranch(br_p1_p))) {
+        (global_cfg.enable_auxiliary_fiducial_cuts &&
+         (!tree->GetBranch(br_p1_p) || !tree->GetBranch(br_p1_theta)))) {
         std::cerr << "[radcorr] FATAL: missing one or more branches in generated MC tree for "
                   << group_label << " (" << tree_label
                   << ") (expected common phase-space and global-cut branches).\n";
@@ -744,7 +745,8 @@ static double accumulate_counts_for_tree(const std::string& group_label,
         if (!passes_analysis_phase_space_cuts(period_label, g_x, g_Q2, g_t1,
                                               g_e_p, global_cfg)) continue;
         if (global_cfg.enable_auxiliary_fiducial_cuts &&
-            !passes_proton_momentum_cut((int)g_det1, period_label, g_p1_p, global_cfg)) continue;
+            !passes_generated_proton_momentum_cut(g_p1_theta, period_label,
+                                                  g_p1_p, global_cfg)) continue;
 
         // Apply DVCS global kinematic cuts (requires GlobalCutConfig).
         // Use the detector-aware overload:

@@ -1451,8 +1451,8 @@ struct BranchBinder {
         ena("t1");
         ena("phi2");
         ena("e_p");
-        ena("detector1");
         ena("p1_p");
+        ena("p1_theta");
         // Photon-derived t needs the measured e and photon four-vectors in
         // every sample, including generated MC used in count normalization.
         if (sebastian_use_tgamma_binning.load()) {
@@ -1975,8 +1975,8 @@ static inline bool passes_generated_phase_space_dispatch(
     if (!b.ready_for_generated_matching()) return false;
     if (!passes_analysis_phase_space_cuts(period_label, b.x, b.Q2, b.t1, b.e_p, cfg)) return false;
     return !cfg.enable_auxiliary_fiducial_cuts ||
-           (b.has_detector1 && b.has_p1_p &&
-            passes_proton_momentum_cut(b.detector1, period_label, b.p1_p, cfg));
+           (b.has_p1_theta && b.has_p1_p &&
+            passes_generated_proton_momentum_cut(b.p1_theta, period_label, b.p1_p, cfg));
 }
 
 static inline void add_count(HelCounts& h, bool split_helicity, int helicity) {
@@ -2321,10 +2321,12 @@ static WorkCounts accumulate_counts_for_tree_legacy(const WorkConfig& work_cfg,
     const bool split_helicity = is_data;
 
     if (is_gen) {
-        if (!b.ready_for_generated_matching()) {
+        const GlobalCutConfig& cfg = default_global_cuts();
+        if (!b.ready_for_generated_matching() ||
+            (cfg.enable_auxiliary_fiducial_cuts && !(b.has_p1_p && b.has_p1_theta))) {
             std::ostringstream ss;
             ss << "[total_counts] FATAL: missing required generated-MC matching branches in tree for '"
-               << tags.tree_key << "'. Required: x, Q2, t1, phi2.";
+               << tags.tree_key << "'. Required: x, Q2, t1, phi2, e_p and, when proton cuts are enabled, p1_p and p1_theta.";
             fatal(ss.str());
         }
     } else {
@@ -2658,10 +2660,11 @@ static std::function<WorkCounts*(const BranchBinder*, Long64_t)> make_count_sink
     const bool split_helicity = is_data;
 
     if (is_gen) {
-        if (!b.ready_for_generated_matching()) {
+        if (!b.ready_for_generated_matching() ||
+            (global_config.enable_auxiliary_fiducial_cuts && !(b.has_p1_p && b.has_p1_theta))) {
             std::ostringstream ss;
             ss << "[total_counts] FATAL: missing required generated-MC matching branches in tree for '"
-               << tags.tree_key << "'. Required: x, Q2, t1, phi2.";
+               << tags.tree_key << "'. Required: x, Q2, t1, phi2, e_p and, when proton cuts are enabled, p1_p and p1_theta.";
             fatal(ss.str());
         }
     } else {

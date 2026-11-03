@@ -122,6 +122,16 @@ bool passes_proton_momentum_cut(int detector1,
                                 double p1_p,
                                 const GlobalCutConfig& cfg = default_global_cuts());
 
+// Generated trees do not have a truth detector ID. Classify the proton from
+// truth theta using the analysis FD/CD boundary (40 degrees), then apply the
+// same region- and polarity-dependent momentum threshold.
+int generated_proton_detector_region(double p1_theta_rad);
+bool passes_generated_proton_momentum_cut(
+    double p1_theta_rad,
+    const std::string& period_label,
+    double p1_p,
+    const GlobalCutConfig& cfg = default_global_cuts());
+
 // Legacy-named electron momentum helper, retained for interface compatibility.
 bool passes_reconstructed_electron_momentum_cut(
     double e_p,
