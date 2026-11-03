@@ -57,10 +57,11 @@ diagonally and labels them accordingly. The production companion should be
 used for final numerical work.
 
 Both plotters place the systematic rectangle around the central value, put the
-full amplitude expression on each y axis, start every `-t'` axis at zero, and
-use a common y range for physically paired panels within each canvas (the two
-initial-proton helicities for the same interference). The strength-difference
-panel and unlike interference types retain independent ranges.
+full amplitude expression on each y axis, and start every `-t'` axis at zero.
+The y ranges are calculated once from all `x_B` bins and then reused in every
+canvas. Physically paired panels also share a range (the two initial-proton
+helicities for the same interference), while the strength-difference panel and
+unlike interference types retain independent ranges.
 
 ## Amplitude-index convention
 
@@ -73,3 +74,56 @@ Every label uses the PDF convention `T_{mu,lambda}^{0 sigma}`:
 
 The plotted quantities are normalized bilinears, not individual complex
 helicity amplitudes.
+
+## 3. Restricted no-nucleon-flip amplitude test
+
+`fit_no_nucleon_flip_amplitudes.py` asks a different question from the two
+plotters above: can three parity-related nonflip complex amplitudes reproduce
+all seven ratios in each kinematic bin?
+
+The model keeps
+
+```text
+L = T_{0,+}^{0,+}
+P = T_{+1,+}^{0,+}
+M = T_{-1,+}^{0,+}
+```
+
+and sets amplitudes in which the recoil neutron has the opposite helicity to
+the initial proton to zero. Parity supplies the corresponding amplitudes for
+initial-proton helicity `-`. The common phase and common scale are unobservable
+in ratios, so the three complex amplitudes contain four fit parameters. The
+seven measured ratios therefore normally provide three goodness-of-fit degrees
+of freedom in each bin.
+
+The denominator used by the model is
+
+```text
+D = 0.5 (|P|^2 + |M|^2) + epsilon |L|^2,
+```
+
+which is `F_UU/C` in the restricted model. The common kinematic factor `C`
+cancels. By default the script uses the full seven-parameter statistical
+covariance from the production JSON. The optional diagonal-systematics mode is
+only an approximation because the production table does not contain a signed
+systematic covariance matrix.
+
+Run it beside the production extraction with
+
+```bash
+python /path/to/fit_no_nucleon_flip_amplitudes.py \
+  --input-csv output/asymmetry_extraction/nominal/tables/structure_function_ratios.csv \
+  --input-json output/asymmetry_extraction/nominal/json/structure_function_ratios.json \
+  --output-dir output/no_nucleon_flip_amplitude_test
+```
+
+It writes a per-bin fit summary, a long table of measured and predicted ratios,
+four measured-versus-model canvases, a goodness-of-fit figure, a residual-pull
+heatmap and a representative normalized amplitude solution. The last plot uses
+an arbitrary common phase and scale convention and must not be read as an
+absolute amplitude measurement.
+
+A satisfactory fit means that helicity-flip amplitudes are not required by
+these seven ratios at the present precision. It does not demonstrate that the
+flip amplitudes do not exist. A poor fit rejects this restricted model, subject
+to the same frame, convention and covariance checks that apply to the inputs.
