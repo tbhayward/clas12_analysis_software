@@ -339,8 +339,59 @@ def _style_axis(axis) -> None:
     axis.tick_params(direction="in", top=True, right=True, which="both")
 
 
+def _nice_tick_step(value: float) -> float:
+    """Return a readable axis step near ``value``."""
+    if not np.isfinite(value) or value <= 0.0:
+        return 0.1
+    power = 10.0 ** np.floor(np.log10(value))
+    fraction = value / power
+    for candidate in (1.0, 2.0, 2.5, 5.0, 10.0):
+        if fraction <= candidate:
+            return float(candidate * power)
+    return float(10.0 * power)
+
+
+def common_observable_y_limits(detail: pd.DataFrame) -> dict[str, tuple[float, float]]:
+    """Choose one y-axis range per observable for every x_B canvas.
+
+    The limits include every measured point with its displayed uncertainty,
+    every fitted prediction and zero.  Rounding to a readable step keeps the
+    canvases directly comparable without clipping an uncertainty bar.
+    """
+    limits: dict[str, tuple[float, float]] = {}
+    for name in SOURCE_PARAMETERS:
+        points = detail.loc[detail["observable"] == name]
+        measured = points["measured"].to_numpy(float)
+        uncertainty = points["fit_uncertainty"].to_numpy(float)
+        predicted = points["predicted"].to_numpy(float)
+        values = np.concatenate((
+            measured - uncertainty,
+            measured + uncertainty,
+            predicted,
+            np.asarray([0.0]),
+        ))
+        values = values[np.isfinite(values)]
+        if values.size == 0:
+            limits[name] = (-1.0, 1.0)
+            continue
+        low = float(np.min(values))
+        high = float(np.max(values))
+        span = max(high - low, 0.05)
+        low -= 0.08 * span
+        high += 0.08 * span
+        step = _nice_tick_step((high - low) / 6.0)
+        lower = float(np.floor(low / step) * step)
+        upper = float(np.ceil(high / step) * step)
+        if lower == upper:
+            lower -= step
+            upper += step
+        limits[name] = (lower, upper)
+    return limits
+
+
 def plot_measured_vs_model(detail: pd.DataFrame, output_dir: Path) -> list[Path]:
     paths = []
+    y_limits = common_observable_y_limits(detail)
     for x_index in sorted(detail["x_index"].unique()):
         subset = detail.loc[detail["x_index"] == x_index]
         color, marker = XB_STYLES[int(x_index)]
@@ -354,6 +405,7 @@ def plot_measured_vs_model(detail: pd.DataFrame, output_dir: Path) -> list[Path]
             error = points["fit_uncertainty"].to_numpy(float)
             model = points["predicted"].to_numpy(float)
             _style_axis(axis)
+            axis.set_ylim(*y_limits[name])
             axis.errorbar(
                 x, y, yerr=error, fmt=marker, mfc="white", mec=color, mew=2,
                 ecolor=color, capsize=3, label="Measured ratio", zorder=2,
