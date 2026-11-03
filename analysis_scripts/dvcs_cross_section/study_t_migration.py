@@ -1,10 +1,13 @@
 #!/usr/bin/env python3
-"""First-stage paired-MC |t| migration and response feasibility study.
+"""Paired-MC |t| migration, closure, and correction-method feasibility study.
 
 This diagnostic is deliberately separate from the production correction.  It
 uses the generated and reconstructed records in the same MCEvents entry,
-applies the production reconstructed-MC selection, and reports whether |t|
-migration is large enough to motivate matrix unfolding.
+applies the production reconstructed-MC selection, and compares ordinary and
+iteratively reweighted bin-by-bin acceptance with iterative Bayesian unfolding.
+Independent half-sample closure, spectrum stresses, toy uncertainties,
+correlations, topology response, and regularization scans are written as plots
+and machine-readable tables.
 """
 
 from __future__ import annotations
@@ -558,71 +561,234 @@ def iterative_bayes_unfold(response: np.ndarray, observed: np.ndarray,
     return unfolded
 
 
-def closure_scenarios(result: Mapping[str, np.ndarray]) -> Sequence[Tuple[str, np.ndarray, np.ndarray, np.ndarray]]:
-    """Return truth, bin-by-bin, and unfolded spectra for two closure stresses."""
-    # Limit closure to the six published bins. Feed-in from below 0.11 and
-    # above 1.0 is reported separately by the response diagnostics.
-    published = np.arange(4, 10)
-    train = result["train_matrix"].astype(float)
-    test = result["test_matrix"].astype(float)
-    train_truth = train[:, published].sum(axis=0)
-    train_reco = train[published, :][:, published].sum(axis=1)
+PUBLISHED = np.arange(4, 10)
+PUBLISHED_LABELS = T_LABELS[4:10]
+
+
+def default_reweight_scenarios() -> Dict[str, np.ndarray]:
+    return {
+        "nominal": np.ones(6),
+        "moderate_low_t_enhancement": np.asarray([1.30, 1.16, 1.07, 1.00, 0.94, 0.90]),
+        "strong_low_t_enhancement": np.asarray([1.80, 1.40, 1.10, 0.90, 0.75, 0.65]),
+        "moderate_low_t_suppression": np.asarray([0.72, 0.86, 0.95, 1.00, 1.05, 1.10]),
+    }
+
+
+def load_reweight_scenarios(path: Path | None) -> Dict[str, np.ndarray]:
+    scenarios = default_reweight_scenarios()
+    if path is None:
+        return scenarios
+    payload = json.loads(path.read_text())
+    if not isinstance(payload, dict):
+        raise ValueError("reweight JSON must be an object mapping scenario names to six weights")
+    for name, values in payload.items():
+        weights = np.asarray(values, dtype=float)
+        if weights.shape != (6,) or not np.all(np.isfinite(weights)) or np.any(weights <= 0.0):
+            raise ValueError(f"reweight scenario {name!r} must contain six finite positive weights")
+        scenarios[str(name)] = weights
+    return scenarios
+
+
+def closure_inputs(result: Mapping[str, np.ndarray]) -> Tuple[np.ndarray, np.ndarray]:
+    return (result["train_matrix"].astype(float), result["test_matrix"].astype(float))
+
+
+def response_from_train(train: np.ndarray) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    train_truth = train[:, PUBLISHED].sum(axis=0)
+    selected = train[PUBLISHED, :][:, PUBLISHED]
     response = np.divide(
-        train[published, :][:, published], train_truth[None, :],
-        out=np.zeros((published.size, published.size)), where=train_truth[None, :] > 0,
+        selected, train_truth[None, :], out=np.zeros((6, 6)), where=train_truth[None, :] > 0,
     )
-    bin_by_bin_acceptance = np.divide(
-        train_reco, train_truth, out=np.zeros_like(train_truth), where=train_truth > 0,
+    return train_truth, selected, response
+
+
+def bin_by_bin_correct(train: np.ndarray, observed: np.ndarray,
+                       reconstructed_reweight_iterations: int = 0) -> Tuple[np.ndarray, np.ndarray]:
+    """Correct reco counts; optional weights are inferred only from reco-level ratios."""
+    train_truth, selected, _ = response_from_train(train)
+    weights = np.ones(6)
+    for _ in range(reconstructed_reweight_iterations):
+        predicted = selected @ weights
+        scale = np.divide(predicted.sum(), observed.sum(), out=np.asarray(1.0), where=observed.sum() > 0)
+        ratio = np.divide(observed * scale, predicted, out=np.ones_like(observed), where=predicted > 0)
+        # Damping prevents an alternating-bin correction from overshooting.
+        weights *= np.clip(ratio, 0.25, 4.0) ** 0.7
+        weights /= np.exp(np.mean(np.log(weights)))
+    weighted_reco = selected @ weights
+    weighted_truth = train_truth * weights
+    acceptance = np.divide(weighted_reco, weighted_truth, out=np.zeros_like(weighted_truth),
+                           where=weighted_truth > 0)
+    corrected = np.divide(observed, acceptance, out=np.zeros_like(observed), where=acceptance > 0)
+    return corrected, weights
+
+
+def evaluate_closure(train: np.ndarray, test: np.ndarray, weights: np.ndarray,
+                     bayes_iterations: int = 4, prior: np.ndarray | None = None,
+                     acceptance_reweight_iterations: int = 3) -> Dict[str, np.ndarray]:
+    train_truth, _, response = response_from_train(train)
+    weighted_test = test[PUBLISHED, :][:, PUBLISHED] * weights[None, :]
+    truth = test[:, PUBLISHED].sum(axis=0) * weights
+    observed = weighted_test.sum(axis=1)
+    baseline, _ = bin_by_bin_correct(train, observed, 0)
+    reweighted, inferred_weights = bin_by_bin_correct(
+        train, observed, acceptance_reweight_iterations,
     )
-    scenarios = (
-        ("nominal", np.ones(published.size)),
-        # Deliberately unlike the training prior: enhance the first bins and
-        # progressively suppress the high-|t| tail.
-        ("low_t_enhanced_stress", np.asarray([1.80, 1.40, 1.10, 0.90, 0.75, 0.65])),
+    unfolded = iterative_bayes_unfold(
+        response, observed, train_truth if prior is None else prior, iterations=bayes_iterations,
     )
-    output = []
-    for name, weights in scenarios:
-        weighted_test = test[published, :][:, published] * weights[None, :]
-        truth = test[:, published].sum(axis=0) * weights
-        observed = weighted_test.sum(axis=1)
-        corrected = np.divide(
-            observed, bin_by_bin_acceptance, out=np.zeros_like(observed),
-            where=bin_by_bin_acceptance > 0,
+    return {
+        "truth": truth, "observed": observed, "bin_by_bin": baseline,
+        "reweighted_acceptance": reweighted, "unfolded": unfolded,
+        "inferred_weights": inferred_weights,
+    }
+
+
+def ratio_to_truth(values: np.ndarray, truth: np.ndarray) -> np.ndarray:
+    return np.divide(values, truth, out=np.zeros_like(values), where=truth > 0)
+
+
+def closure_toys(train: np.ndarray, test: np.ndarray, weights: np.ndarray, toys: int,
+                 seed: int) -> Tuple[Dict[str, np.ndarray], Dict[str, np.ndarray]]:
+    samples = {name: [] for name in ("bin_by_bin", "reweighted_acceptance", "unfolded")}
+    if toys <= 1:
+        zeros = {name: np.zeros(6) for name in samples}
+        covariances = {name: np.zeros((6, 6)) for name in samples}
+        return zeros, covariances
+    rng = np.random.default_rng(seed)
+    for _ in range(toys):
+        toy_train = rng.poisson(train).astype(float)
+        toy_test = rng.poisson(test).astype(float)
+        evaluated = evaluate_closure(toy_train, toy_test, weights)
+        for name in samples:
+            samples[name].append(ratio_to_truth(evaluated[name], evaluated["truth"]))
+    arrays = {name: np.asarray(values) for name, values in samples.items()}
+    errors = {name: values.std(axis=0, ddof=1) for name, values in arrays.items()}
+    covariances = {name: np.cov(values, rowvar=False, ddof=1) for name, values in arrays.items()}
+    return errors, covariances
+
+
+def save_closure(outdir: Path, title: str, result: Mapping[str, np.ndarray], dpi: int,
+                 scenarios: Mapping[str, np.ndarray], toys: int, seed: int) -> None:
+    train, test = closure_inputs(result)
+    evaluated = {name: evaluate_closure(train, test, weights)
+                 for name, weights in scenarios.items()}
+    uncertainties = {}
+    covariances = {}
+    for index, (name, weights) in enumerate(scenarios.items()):
+        uncertainties[name], covariances[name] = closure_toys(
+            train, test, weights, toys, seed + 1009 * index,
         )
-        unfolded = iterative_bayes_unfold(response, observed, train_truth, iterations=4)
-        output.append((name, truth, corrected, unfolded))
-    return output
 
-
-def save_closure(outdir: Path, title: str, result: Mapping[str, np.ndarray], dpi: int) -> None:
-    published_labels = T_LABELS[4:10]
-    scenarios = closure_scenarios(result)
+    method_names = ("bin_by_bin", "reweighted_acceptance", "unfolded")
     with (outdir / "closure_metrics.csv").open("w", newline="") as stream:
         writer = csv.writer(stream)
-        writer.writerow(["period", "scenario", "truth_bin", "truth", "bin_by_bin_corrected",
-                         "iterative_bayes_unfolded", "bin_by_bin_over_truth", "unfolded_over_truth"])
-        for scenario, truth, corrected, unfolded in scenarios:
-            corrected_ratio = np.divide(corrected, truth, out=np.zeros_like(truth), where=truth > 0)
-            unfolded_ratio = np.divide(unfolded, truth, out=np.zeros_like(truth), where=truth > 0)
-            for i, bin_label in enumerate(published_labels):
-                writer.writerow([title, scenario, bin_label, truth[i], corrected[i], unfolded[i],
-                                 corrected_ratio[i], unfolded_ratio[i]])
+        writer.writerow(["period", "scenario", "truth_bin", "truth", "observed",
+                         "method", "corrected", "corrected_over_truth", "toy_ratio_uncertainty"])
+        for scenario, values in evaluated.items():
+            for method in method_names:
+                ratios = ratio_to_truth(values[method], values["truth"])
+                for i, bin_label in enumerate(PUBLISHED_LABELS):
+                    writer.writerow([title, scenario, bin_label, values["truth"][i],
+                                     values["observed"][i], method, values[method][i], ratios[i],
+                                     uncertainties[scenario][method][i]])
 
-    fig, axes = plt.subplots(1, len(scenarios), figsize=(14.0, 5.5), sharey=True)
-    x = np.arange(len(published_labels))
-    for ax, (scenario, truth, corrected, unfolded) in zip(np.atleast_1d(axes), scenarios):
-        corrected_ratio = np.divide(corrected, truth, out=np.zeros_like(truth), where=truth > 0)
-        unfolded_ratio = np.divide(unfolded, truth, out=np.zeros_like(truth), where=truth > 0)
+    x = np.arange(6)
+    fig, axes = plt.subplots(2, 2, figsize=(15.0, 10.5), sharex=True, sharey=True)
+    styles = {
+        "bin_by_bin": ("o-", "bin-by-bin acceptance"),
+        "reweighted_acceptance": ("^-", "reweighted acceptance (3 iter.)"),
+        "unfolded": ("s-", "Bayes unfolding (4 iter.)"),
+    }
+    for ax, (scenario, values) in zip(axes.ravel(), evaluated.items()):
         ax.axhline(1.0, color="black", lw=1.0)
-        ax.plot(x, corrected_ratio, "o-", label="bin-by-bin acceptance")
-        ax.plot(x, unfolded_ratio, "s-", label="Bayes unfolding (4 iter.)")
-        ax.set_xticks(x, published_labels, rotation=45, ha="right")
-        ax.set_ylim(0.75, 1.25); ax.grid(alpha=0.3)
+        for method in method_names:
+            style, label = styles[method]
+            ax.errorbar(x, ratio_to_truth(values[method], values["truth"]),
+                        yerr=uncertainties[scenario][method], fmt=style, capsize=2, label=label)
         ax.set_title(scenario.replace("_", " "))
-    axes[0].set_ylabel("corrected / known test truth")
-    axes[0].legend(frameon=False)
-    fig.suptitle(f"{title}: independent half-sample closure")
+        ax.grid(alpha=0.3); ax.set_ylim(0.94, 1.06)
+        ax.set_xticks(x, PUBLISHED_LABELS, rotation=45, ha="right")
+    axes[0, 0].set_ylabel("corrected / known truth")
+    axes[1, 0].set_ylabel("corrected / known truth")
+    axes[0, 0].legend(frameon=False, fontsize=9)
+    fig.suptitle(f"{title}: independent half-sample closure with toy uncertainties")
     fig.tight_layout(); fig.savefig(outdir / "closure_comparison.png", dpi=dpi); plt.close(fig)
+
+    fig, ax = plt.subplots(figsize=(10.5, 5.8))
+    for name, weights in scenarios.items():
+        ax.plot(x, weights, marker="o", label=name.replace("_", " "))
+    ax.axhline(1.0, color="black", lw=1.0); ax.grid(alpha=0.3)
+    ax.set_xticks(x, PUBLISHED_LABELS, rotation=45, ha="right")
+    ax.set_ylabel("truth-spectrum weight"); ax.set_title(f"{title}: closure spectra being tested")
+    ax.legend(frameon=False, fontsize=9)
+    fig.tight_layout(); fig.savefig(outdir / "closure_tested_spectra.png", dpi=dpi); plt.close(fig)
+
+    stress_name = "strong_low_t_enhancement"
+    if stress_name not in scenarios:
+        stress_name = next(reversed(scenarios))
+    stress_weights = scenarios[stress_name]
+    bayes_iterations = (1, 2, 3, 4, 6, 8, 10)
+    acceptance_iterations = tuple(range(0, 7))
+    bayes_bias = []
+    for count in bayes_iterations:
+        values = evaluate_closure(train, test, stress_weights, bayes_iterations=count)
+        bayes_bias.append(100.0 * (ratio_to_truth(values["unfolded"], values["truth"]) - 1.0))
+    acceptance_bias = []
+    for count in acceptance_iterations:
+        values = evaluate_closure(train, test, stress_weights,
+                                  acceptance_reweight_iterations=count)
+        acceptance_bias.append(100.0 * (ratio_to_truth(values["reweighted_acceptance"], values["truth"]) - 1.0))
+    bayes_bias = np.asarray(bayes_bias)
+    acceptance_bias = np.asarray(acceptance_bias)
+    fig, axes = plt.subplots(1, 2, figsize=(14.0, 5.5))
+    axes[0].plot(bayes_iterations, bayes_bias[:, 0], "o-", label="first-bin bias")
+    axes[0].plot(bayes_iterations, np.max(np.abs(bayes_bias), axis=1), "s-", label="largest |bias|")
+    axes[0].set_xlabel("Bayesian unfolding iterations")
+    axes[1].plot(acceptance_iterations, acceptance_bias[:, 0], "o-", label="first-bin bias")
+    axes[1].plot(acceptance_iterations, np.max(np.abs(acceptance_bias), axis=1), "s-", label="largest |bias|")
+    axes[1].set_xlabel("reconstructed-ratio reweighting iterations")
+    for ax in axes:
+        ax.axhline(0.0, color="black", lw=1.0); ax.set_ylabel("closure bias [%]")
+        ax.grid(alpha=0.3); ax.legend(frameon=False)
+    fig.suptitle(f"{title}: regularization/convergence scan ({stress_name.replace('_', ' ')})")
+    fig.tight_layout(); fig.savefig(outdir / "closure_iteration_scan.png", dpi=dpi); plt.close(fig)
+
+    train_truth, _, _ = response_from_train(train)
+    priors = {
+        "MC prior": train_truth,
+        "flat prior": np.ones(6),
+        "low-t enhanced prior": train_truth * np.asarray([1.8, 1.4, 1.1, .9, .75, .65]),
+        "low-t suppressed prior": train_truth * np.asarray([.7, .85, .95, 1., 1.05, 1.1]),
+    }
+    fig, ax = plt.subplots(figsize=(10.5, 6.0))
+    for prior_name, prior in priors.items():
+        first_bin_bias = []
+        for count in bayes_iterations:
+            values = evaluate_closure(train, test, stress_weights, bayes_iterations=count, prior=prior)
+            first_bin_bias.append(100.0 * (values["unfolded"][0] / values["truth"][0] - 1.0))
+        ax.plot(bayes_iterations, first_bin_bias, marker="o", label=prior_name)
+    ax.axhline(0.0, color="black", lw=1.0); ax.grid(alpha=0.3)
+    ax.set_xlabel("Bayesian unfolding iterations"); ax.set_ylabel("first-bin closure bias [%]")
+    ax.set_title(f"{title}: unfolding prior dependence under strong spectrum stress")
+    ax.legend(frameon=False)
+    fig.tight_layout(); fig.savefig(outdir / "closure_prior_scan.png", dpi=dpi); plt.close(fig)
+
+    for method in method_names:
+        covariance = covariances[stress_name][method]
+        sigma = np.sqrt(np.clip(np.diag(covariance), 0.0, None))
+        correlation = np.divide(covariance, sigma[:, None] * sigma[None, :],
+                                out=np.zeros_like(covariance),
+                                where=(sigma[:, None] * sigma[None, :]) > 0)
+        fig, ax = plt.subplots(figsize=(7.2, 6.2))
+        image = ax.imshow(correlation, origin="lower", cmap="coolwarm", vmin=-1.0, vmax=1.0)
+        for iy in range(6):
+            for ix in range(6):
+                ax.text(ix, iy, f"{correlation[iy, ix]:.2f}", ha="center", va="center", fontsize=8)
+        ax.set_xticks(range(6), PUBLISHED_LABELS, rotation=45, ha="right")
+        ax.set_yticks(range(6), PUBLISHED_LABELS)
+        ax.set_title(f"{title}: {method.replace('_', ' ')} toy correlation")
+        fig.colorbar(image, ax=ax, label="correlation")
+        fig.tight_layout(); fig.savefig(outdir / f"closure_correlation_{method}.png", dpi=dpi); plt.close(fig)
 
 
 def period_comparison(outdir: Path, results: Mapping[str, Mapping[str, np.ndarray]], dpi: int) -> None:
@@ -662,60 +828,155 @@ def write_root(path: Path, results: Mapping[str, Mapping[str, np.ndarray]]) -> N
             }
 
 
+def write_plot_guide(path: Path) -> None:
+    path.write_text(
+        """PAIRED-MC |t| MIGRATION STUDY: PLOT GUIDE
+
+Decision plots
+--------------
+closure_tested_spectra.png
+  Shows the exact truth-spectrum distortions used in closure. These are tests,
+  not fitted statements about the data.
+
+closure_comparison.png
+  Corrected result divided by known independent test truth. One is perfect.
+  Error bars are the spread of Poisson response/test toys. Compare ordinary
+  acceptance, reconstructed-ratio reweighted acceptance, and Bayes unfolding.
+
+closure_iteration_scan.png
+  First-bin and worst-bin bias versus unfolding/reweighting iteration count.
+  Prefer the smallest iteration count on the stable bias plateau; continued
+  movement or growth indicates prior dependence or over-iteration.
+
+closure_prior_scan.png
+  First-bin unfolding bias for deliberately different starting priors. Curves
+  should converge before statistical fluctuations become excessive.
+
+closure_correlation_*.png
+  Toy correlation of corrected/truth ratios. Off-diagonal structure is the
+  statistical coupling introduced by each correction method.
+
+Response and topology plots
+---------------------------
+conditional_response_probability.png
+  Migration among selected events only; columns sum to one. This isolates
+  resolution from inefficiency.
+
+response_probability.png
+  Full response including miss/not-selected. This shows absolute efficiency,
+  but the selected diagonal is visually compressed by the large miss fraction.
+
+reco_origin_composition.png
+  For each reconstructed bin, where its events were generated (purity view).
+
+topology_conditional_response.png / topology_migration_metrics.png
+  Selected-event migration separated into FD_FD, CD_FD, and CD_FT. Empty or
+  tiny topology bins must not be interpreted as precise measurements.
+
+low_t_feed_in_origins.png
+  Direct test of whether events generated below the published boundary feed
+  the first two reconstructed bins.
+
+Machine-readable outputs
+------------------------
+closure_metrics.csv contains method values, corrected/truth ratios, and toy
+uncertainties. metrics.csv separates efficiency, conditional stability,
+diagonal efficiency, purity, and miss fraction.
+"""
+    )
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--input-root", type=Path, default=Path("/volatile/clas12/thayward/dvcs_pass2_full_rebuild"))
     parser.add_argument("--global-cuts", type=Path, default=Path("output/jsons/global_cuts_config.json"))
     parser.add_argument("--exclusivity-cuts", type=Path, default=Path("output/jsons/combined_cuts.json"))
     parser.add_argument("--output", type=Path, default=Path("output/migration_study/t_response"))
+    parser.add_argument("--reuse-response-dir", type=Path,
+                        help="Reuse per-period response_arrays.npz files; skip all ROOT event processing")
     parser.add_argument("--workers", type=int, default=10)
     parser.add_argument("--step-size", default="200 MB")
     parser.add_argument("--max-files-per-period", type=int, default=0,
                         help="Development/test limit; zero processes all files")
+    parser.add_argument("--reweight-json", type=Path,
+                        help="Optional JSON object adding named six-bin truth-weight scenarios")
+    parser.add_argument("--closure-toys", type=int, default=300,
+                        help="Poisson toys used for closure uncertainties/correlations; zero disables")
+    parser.add_argument("--closure-seed", type=int, default=20261102)
     parser.add_argument("--dpi", type=int, default=180)
     args = parser.parse_args()
-    if uproot is None:
+    if uproot is None and args.reuse_response_dir is None:
         parser.error(
             "uproot is required for paired-file streaming. Run in the same "
             "Python environment used by plot_exclusivity_data_dvcs_pi0_mc.py."
         )
     if not 1 <= args.workers <= 10:
         parser.error("--workers must be in [1,10]")
-    cfg = json.loads(args.global_cuts.read_text())
-    cuts = json.loads(args.exclusivity_cuts.read_text())
-    files = inventory(args.input_root, args.max_files_per_period)
-    tasks = [(period, str(path), args.step_size, cfg, cuts, "")
-             for period, paths in files.items() for path in paths]
-    print(f"Processing {len(tasks)} paired files with up to {args.workers} workers", flush=True)
-    results = {period: empty_result() for period in PERIODS}
-    with futures.ProcessPoolExecutor(max_workers=min(args.workers, len(tasks))) as pool:
-        pending = {pool.submit(process_file, task): task for task in tasks}
-        completed = 0
-        for future in futures.as_completed(pending):
-            period, result = future.result()
-            add_result(results[period], result)
-            completed += 1
-            print(f"[{completed}/{len(tasks)}] {period}: {Path(pending[future][1]).name}", flush=True)
-    combined = empty_result()
-    for result in results.values():
-        add_result(combined, result)
+    if args.closure_toys < 0:
+        parser.error("--closure-toys must be non-negative")
+    scenarios = load_reweight_scenarios(args.reweight_json)
+    files: Dict[str, Sequence[Path]] = {}
+    if args.reuse_response_dir is not None:
+        results = {}
+        for period in PERIODS:
+            source = args.reuse_response_dir / period / "response_arrays.npz"
+            if not source.is_file():
+                parser.error(f"missing reusable response array: {source}")
+            with np.load(source) as payload:
+                result = {key: payload[key] for key in payload.files}
+            required = set(empty_result())
+            missing = sorted(required - set(result))
+            if missing:
+                parser.error(f"{source} predates required arrays: {missing}; rerun event processing once")
+            results[period] = result
+        combined = empty_result()
+        for result in results.values():
+            add_result(combined, result)
+        print(f"Reusing response arrays from {args.reuse_response_dir}; no ROOT files will be read", flush=True)
+    else:
+        cfg = json.loads(args.global_cuts.read_text())
+        cuts = json.loads(args.exclusivity_cuts.read_text())
+        files = inventory(args.input_root, args.max_files_per_period)
+        tasks = [(period, str(path), args.step_size, cfg, cuts, "")
+                 for period, paths in files.items() for path in paths]
+        print(f"Processing {len(tasks)} paired files with up to {args.workers} workers", flush=True)
+        results = {period: empty_result() for period in PERIODS}
+        with futures.ProcessPoolExecutor(max_workers=min(args.workers, len(tasks))) as pool:
+            pending = {pool.submit(process_file, task): task for task in tasks}
+            completed = 0
+            for future in futures.as_completed(pending):
+                period, result = future.result()
+                add_result(results[period], result)
+                completed += 1
+                print(f"[{completed}/{len(tasks)}] {period}: {Path(pending[future][1]).name}", flush=True)
+        combined = empty_result()
+        for result in results.values():
+            add_result(combined, result)
     all_results = dict(results)
     all_results["combined"] = combined
     args.output.mkdir(parents=True, exist_ok=True)
-    for period, result in all_results.items():
+    for result_index, (period, result) in enumerate(all_results.items()):
         label = "All periods combined" if period == "combined" else PERIODS[period][0]
         destination = args.output / period
         save_csvs(destination, label, result)
         plot_result(destination, label, result, args.dpi)
-        save_closure(destination, label, result, args.dpi)
+        save_closure(destination, label, result, args.dpi, scenarios,
+                     args.closure_toys, args.closure_seed + 7919 * result_index)
         np.savez_compressed(destination / "response_arrays.npz", **result)
     period_comparison(args.output, results, args.dpi)
-    write_root(args.output / "migration_response.root", all_results)
+    if uproot is not None:
+        write_root(args.output / "migration_response.root", all_results)
+    else:
+        print("uproot unavailable in reuse mode; skipped migration_response.root", flush=True)
+    write_plot_guide(args.output / "PLOT_GUIDE.txt")
     manifest = {
-        "study": "paired-MC |t| response feasibility, milestone 1",
+        "study": "paired-MC |t| response, reweighting, and unfolding closure",
         "input_root": str(args.input_root), "global_cuts": str(args.global_cuts),
         "exclusivity_cuts": str(args.exclusivity_cuts), "workers": args.workers,
         "step_size": args.step_size, "t_edges_GeV2": T_EDGES.tolist(),
+        "closure_toys": args.closure_toys, "closure_seed": args.closure_seed,
+        "reweight_scenarios": {name: weights.tolist() for name, weights in scenarios.items()},
+        "reused_response_dir": str(args.reuse_response_dir) if args.reuse_response_dir else None,
         "files": {period: [str(path) for path in paths] for period, paths in files.items()},
     }
     (args.output / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
