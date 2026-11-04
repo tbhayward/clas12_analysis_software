@@ -48,7 +48,9 @@ Outputs:
   * topology-combined optimization summaries averaged over the selected periods
   * main-suite-compatible combined_cuts JSON files for 90%, 95% and 98%
 
-The five run periods are processed in parallel with at most five worker processes. Dependencies: Python 3, numpy, matplotlib, scipy and either uproot or PyROOT.
+Run periods are processed in parallel, with independent topology fits sharing
+each period's once-loaded arrays.  The combined concurrency is capped at ten.
+Dependencies: Python 3, numpy, matplotlib, scipy and either uproot or PyROOT.
 """
 
 import argparse
@@ -59,6 +61,7 @@ import json
 import math
 import os
 import sys
+import threading
 import time
 import warnings
 from dataclasses import dataclass
@@ -70,6 +73,19 @@ from typing import Dict, Iterable, List, Mapping, Optional, Sequence, Tuple
 os.environ.setdefault("MPLBACKEND", "Agg")
 os.environ.setdefault("MPLCONFIGDIR", f"/tmp/matplotlib-{os.getuid()}")
 os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
+
+# The explicit period x topology scheduler owns the complete CPU budget.
+# Prevent NumPy/SciPy backends from silently adding native worker pools on top
+# of the hard ten-task farm limit.
+for _native_thread_variable in (
+    "OMP_NUM_THREADS",
+    "OPENBLAS_NUM_THREADS",
+    "MKL_NUM_THREADS",
+    "NUMEXPR_NUM_THREADS",
+    "VECLIB_MAXIMUM_THREADS",
+):
+    os.environ[_native_thread_variable] = "1"
+# endfor
 
 import matplotlib
 matplotlib.use("Agg", force=True)
@@ -108,6 +124,7 @@ REBUILT_NOMINAL_CURRENT = {"sp18_inb": "50nA", "sp18_out": "45nA", "fa18_inb": "
 DEFAULT_OUTPUT_DIR = "output/exclusivity_data_dvcs_pi0_mc"
 DEFAULT_STEP_SIZE = "250 MB"
 WRITE_DETAILED_PLOTS = False
+PLOT_LOCK = threading.Lock()
 
 T1_ABS_MAX = 1.0
 OPEN_ANGLE_MIN_DEG = 5.0
@@ -472,6 +489,12 @@ def log(message: str) -> None:
     print(f"[{now}] {message}", flush=True)
 
 
+def draw_serialized(draw_function, *args, **kwargs):
+    """Run one Matplotlib-producing call at a time inside each process."""
+    with PLOT_LOCK:
+        return draw_function(*args, **kwargs)
+
+
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description=(
@@ -510,9 +533,8 @@ def parse_args() -> argparse.Namespace:
         type=int,
         default=10,
         help=(
-            "Maximum number of worker processes. The value is hard-capped "
-            "at 10 (default: 10). Run-period parallelism can use at most the "
-            "number of selected periods."
+            "Maximum combined number of period/topology compute workers. "
+            "The value is hard-capped at 10 (default: 10)."
         ),
     )
     parser.add_argument(
@@ -3326,7 +3348,7 @@ def process_pi0_period(
         selected = {"data": data_counts[topology.key], "mc": mc_counts[topology.key]}
         if WRITE_DETAILED_PLOTS:
             shape_path = output_dir / "pi0_channel" / "shape_comparisons" / f"eppi0_shapes_{period.key}_{topology.key.lower()}.png"
-            draw_pi0_shape_canvas(shape_path, period, topology, data_hists[topology.key], mc_hists[topology.key], selected, log_y, dpi)
+            draw_serialized(draw_pi0_shape_canvas, shape_path, period, topology, data_hists[topology.key], mc_hists[topology.key], selected, log_y, dpi)
             log(f"Wrote {shape_path}")
         # endif
 
@@ -3385,7 +3407,7 @@ def process_pi0_period(
 
         if WRITE_DETAILED_PLOTS:
             fit_path = output_dir / "pi0_channel" / "template_fits" / f"eppi0_template_fit_{period.key}_{topology.key.lower()}.png"
-            draw_pi0_fit_canvas(fit_path, period, topology, data_hists[topology.key], mc_hists[topology.key], selected, fit_results, log_y, dpi)
+            draw_serialized(draw_pi0_fit_canvas, fit_path, period, topology, data_hists[topology.key], mc_hists[topology.key], selected, fit_results, log_y, dpi)
             log(f"Wrote {fit_path}")
         # endif
     # endfor
@@ -3465,7 +3487,8 @@ def process_period(
                 output_dir / "dvcs_channel" / "shape_comparisons" /
                 f"exclusivity_shapes_{period.key}_{topology.key.lower()}.png"
             )
-            draw_shape_canvas(
+            draw_serialized(
+                draw_shape_canvas,
                 shape_path, period, topology, data_hists[topology.key],
                 dvcs_hists[topology.key], pi0_hists[topology.key],
                 selected, log_y, dpi, "minimal preselection",
@@ -3735,7 +3758,8 @@ def process_period(
                 output_dir / "dvcs_channel" / "template_fits" /
                 f"exclusivity_template_fit_{period.key}_{topology.key.lower()}.png"
             )
-            draw_fit_canvas(
+            draw_serialized(
+                draw_fit_canvas,
                 fit_path, period, topology, data_hists[topology.key],
                 dvcs_hists[topology.key], pi0_hists[topology.key],
                 selected, fit_results, shared_summary, log_y, dpi,
@@ -6293,7 +6317,8 @@ def develop_iterative_cuts_for_period(
             / f"plateau_recommendation_{period.key}_{topology.key.lower()}.txt"
         )
         if WRITE_DETAILED_PLOTS:
-            draw_optimization_history(
+            draw_serialized(
+                draw_optimization_history,
                 history_path,
                 period,
                 topology,
@@ -6301,7 +6326,8 @@ def develop_iterative_cuts_for_period(
                 recommendation,
                 dpi,
             )
-            draw_marginal_gain_history(
+            draw_serialized(
+                draw_marginal_gain_history,
                 marginal_path,
                 period,
                 topology,
@@ -6370,7 +6396,8 @@ def develop_iterative_cuts_for_period(
                 else pi0_final_histograms
             )
             if WRITE_DETAILED_PLOTS:
-                draw_iterative_cut_canvas(
+                draw_serialized(
+                    draw_iterative_cut_canvas,
                     development_path,
                     period,
                     topology,
@@ -6379,7 +6406,8 @@ def develop_iterative_cuts_for_period(
                     False,
                     dpi,
                 )
-                draw_iterative_cut_canvas(
+                draw_serialized(
+                    draw_iterative_cut_canvas,
                     summary_path,
                     period,
                     topology,
@@ -6468,6 +6496,7 @@ def process_period_worker(
     outside_overshoot_penalty_weight: float,
     emiss2_mean_order_penalty_weight: float,
     run_iterative_cuts: bool,
+    topology_workers: int,
     global_cuts_json: str,
     detailed_plots: bool,
 ) -> Tuple[
@@ -6523,55 +6552,33 @@ def process_period_worker(
         for sample, values in direct_pi0_shape_arrays.items()
     }
 
-    pi0_rows, pi0_calibrations = process_pi0_period(
-        period,
-        topologies,
-        output_dir,
-        step_size,
-        max_shift_bins,
-        max_smear_bins,
-        fit_min_counts,
-        shift_prior_bins,
-        smear_prior_bins,
-        use_nuisance_penalties,
-        pi0_core_containment,
-        log_y,
-        dpi,
-        direct_pi0_shape_arrays,
-    )
-
-    dvcs_rows = process_period(
-        period,
-        topologies,
-        output_dir,
-        step_size,
-        max_shift_bins,
-        max_smear_bins,
-        fit_min_counts,
-        fraction_variables,
-        shift_prior_bins,
-        smear_prior_bins,
-        use_nuisance_penalties,
-        dvcs_core_containment,
-        dvcs_fraction_containment,
-        dvcs_pi0_core_containment,
-        dvcs_pi0_fraction_containment,
-        outside_overshoot_penalty_weight,
-        emiss2_mean_order_penalty_weight,
-        log_y,
-        dpi,
-        pi0_calibrations,
-        fraction_population_arrays,
-    )
-
-    iterative_blocks: Dict[str, Dict[str, object]] = {
-        "nominal": {}, "loose": {}, "tight": {}
-    }
-    iterative_rows: List[Dict[str, object]] = []
-    if run_iterative_cuts:
-        iterative_blocks, iterative_rows = develop_iterative_cuts_for_period(
+    # Once-loaded arrays are read-only from here onward.  Each topology has an
+    # independent dependency chain: direct-pi0 calibration -> DVCS fit -> DVCS
+    # iterative cuts -> direct-pi0 iterative cuts.  Running singleton topology
+    # calls preserves all established fit code while allowing those three
+    # chains to proceed concurrently without another ROOT read or array copy.
+    def process_one_topology(topology: TopologyConfig):
+        singleton = (topology,)
+        pi0_rows_local, pi0_calibrations_local = process_pi0_period(
             period,
-            topologies,
+            singleton,
+            output_dir,
+            step_size,
+            max_shift_bins,
+            max_smear_bins,
+            fit_min_counts,
+            shift_prior_bins,
+            smear_prior_bins,
+            use_nuisance_penalties,
+            pi0_core_containment,
+            log_y,
+            dpi,
+            direct_pi0_shape_arrays,
+        )
+
+        dvcs_rows_local = process_period(
+            period,
+            singleton,
             output_dir,
             step_size,
             max_shift_bins,
@@ -6585,18 +6592,112 @@ def process_period_worker(
             dvcs_fraction_containment,
             dvcs_pi0_core_containment,
             dvcs_pi0_fraction_containment,
-            pi0_core_containment,
-            pi0_calibrations,
-            cut_nominal_containment,
-            cut_loose_containment,
-            cut_tight_containment,
             outside_overshoot_penalty_weight,
             emiss2_mean_order_penalty_weight,
+            log_y,
             dpi,
+            pi0_calibrations_local,
             fraction_population_arrays,
-            direct_pi0_iterative_arrays,
         )
+
+        blocks_local: Dict[str, Dict[str, object]] = {
+            "nominal": {}, "loose": {}, "tight": {}
+        }
+        iterative_rows_local: List[Dict[str, object]] = []
+        if run_iterative_cuts:
+            blocks_local, iterative_rows_local = develop_iterative_cuts_for_period(
+                period,
+                singleton,
+                output_dir,
+                step_size,
+                max_shift_bins,
+                max_smear_bins,
+                fit_min_counts,
+                fraction_variables,
+                shift_prior_bins,
+                smear_prior_bins,
+                use_nuisance_penalties,
+                dvcs_core_containment,
+                dvcs_fraction_containment,
+                dvcs_pi0_core_containment,
+                dvcs_pi0_fraction_containment,
+                pi0_core_containment,
+                pi0_calibrations_local,
+                cut_nominal_containment,
+                cut_loose_containment,
+                cut_tight_containment,
+                outside_overshoot_penalty_weight,
+                emiss2_mean_order_penalty_weight,
+                dpi,
+                fraction_population_arrays,
+                direct_pi0_iterative_arrays,
+            )
+        # endif
+        return (
+            topology.key,
+            dvcs_rows_local,
+            pi0_rows_local,
+            blocks_local,
+            iterative_rows_local,
+        )
+
+    topology_worker_count = min(
+        max(1, int(topology_workers)),
+        max(1, len(topologies)),
+    )
+    log(
+        f"[worker {os.getpid()}] {period.label}: processing "
+        f"{len(topologies)} topology chain(s) with "
+        f"{topology_worker_count} compute worker(s)"
+    )
+    results_by_topology = {}
+    if topology_worker_count == 1:
+        for topology in topologies:
+            result = process_one_topology(topology)
+            results_by_topology[result[0]] = result[1:]
+        # endfor
+    else:
+        with concurrent.futures.ThreadPoolExecutor(
+            max_workers=topology_worker_count
+        ) as executor:
+            future_to_topology = {
+                executor.submit(process_one_topology, topology): topology
+                for topology in topologies
+            }
+            for future in concurrent.futures.as_completed(future_to_topology):
+                topology = future_to_topology[future]
+                try:
+                    result = future.result()
+                except Exception as exc:
+                    raise RuntimeError(
+                        f"Topology worker failed for {period.label} "
+                        f"{topology.label}: {exc}"
+                    ) from exc
+                # endtry
+                results_by_topology[result[0]] = result[1:]
+            # endfor
+        # endwith
     # endif
+
+    # Restore configured topology order in every combined product, independent
+    # of completion order in the dynamic worker queue.
+    dvcs_rows: List[Dict[str, object]] = []
+    pi0_rows: List[Dict[str, object]] = []
+    iterative_blocks: Dict[str, Dict[str, object]] = {
+        "nominal": {}, "loose": {}, "tight": {}
+    }
+    iterative_rows: List[Dict[str, object]] = []
+    for topology in topologies:
+        dvcs_local, pi0_local, blocks_local, iterative_local = (
+            results_by_topology[topology.key]
+        )
+        dvcs_rows.extend(dvcs_local)
+        pi0_rows.extend(pi0_local)
+        iterative_rows.extend(iterative_local)
+        for name in iterative_blocks:
+            iterative_blocks[name].update(blocks_local.get(name, {}))
+        # endfor
+    # endfor
 
     log(f"[worker {os.getpid()}] Finished {period.label}")
     return period.key, dvcs_rows, pi0_rows, iterative_blocks, iterative_rows
@@ -6723,10 +6824,45 @@ def main() -> int:
         + f"; Emiss2 mean-order penalty={args.emiss2_mean_order_penalty:g}"
     )
 
-    worker_count = min(max(1, int(args.workers)), 10, len(periods))
+    worker_budget = min(max(1, int(args.workers)), 10)
+    # Choose a rectangular period x topology allocation whose active compute
+    # tasks never exceed the requested budget. Prefer more period processes
+    # when two allocations expose the same number of concurrent tasks, because
+    # that also overlaps the once-per-period ROOT loading stage.
+    allocation_candidates = []
+    for candidate_period_workers in range(
+        1, min(len(periods), worker_budget) + 1
+    ):
+        candidate_topology_workers = min(
+            len(topologies),
+            max(1, worker_budget // candidate_period_workers),
+        )
+        allocation_candidates.append(
+            (
+                candidate_period_workers * candidate_topology_workers,
+                candidate_period_workers,
+                candidate_topology_workers,
+            )
+        )
+    # endfor
+    _, period_worker_count, topology_worker_count = max(allocation_candidates)
+    if os.environ.get("DVCS_SERIAL_TOPOLOGY_FITS", "0") == "1":
+        period_worker_count = min(len(periods), worker_budget)
+        topology_worker_count = 1
+        log(
+            "DVCS_SERIAL_TOPOLOGY_FITS=1: retaining serial topology chains "
+            "for comparison."
+        )
+    # endif
+    active_compute_capacity = period_worker_count * topology_worker_count
+    if active_compute_capacity > worker_budget or active_compute_capacity > 10:
+        raise RuntimeError("Internal worker allocation exceeded the hard cap of 10.")
+    # endif
     log(
-        f"Processing {len(periods)} run period(s) with "
-        f"{worker_count} worker process(es); hard cap = 10"
+        f"Processing {len(periods)} run period(s) with a global worker budget "
+        f"of {worker_budget}: {period_worker_count} period process(es) x "
+        f"{topology_worker_count} topology worker(s) = "
+        f"{active_compute_capacity} active compute task(s); hard cap = 10"
     )
 
     period_results: Dict[
@@ -6739,7 +6875,7 @@ def main() -> int:
         ],
     ] = {}
 
-    if worker_count == 1:
+    if period_worker_count == 1:
         for period in periods:
             period_key, dvcs_rows, pi0_rows, cut_blocks, cut_rows = process_period_worker(
                 period,
@@ -6766,6 +6902,7 @@ def main() -> int:
                 args.outside_overshoot_penalty,
                 args.emiss2_mean_order_penalty,
                 not args.skip_iterative_cuts,
+                topology_worker_count,
                 args.global_cuts_json,
                 args.detailed_plots,
             )
@@ -6774,7 +6911,7 @@ def main() -> int:
     else:
         spawn_context = multiprocessing.get_context("spawn")
         with concurrent.futures.ProcessPoolExecutor(
-            max_workers=worker_count,
+            max_workers=period_worker_count,
             mp_context=spawn_context,
         ) as executor:
             future_to_period = {
@@ -6804,6 +6941,7 @@ def main() -> int:
                     args.outside_overshoot_penalty,
                     args.emiss2_mean_order_penalty,
                     not args.skip_iterative_cuts,
+                    topology_worker_count,
                     args.global_cuts_json,
                     args.detailed_plots,
                 ): period
