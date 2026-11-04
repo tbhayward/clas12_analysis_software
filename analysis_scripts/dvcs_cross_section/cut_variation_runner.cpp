@@ -18,12 +18,14 @@
 #include <cmath>
 #include <cctype>
 #include <filesystem>
+#include <future>
 #include <chrono>
 #include <iomanip>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <mutex>
 #include <sstream>
 #include <stdexcept>
 #include <string>
@@ -34,6 +36,16 @@
 namespace fs = std::filesystem;
 
 namespace {
+
+// Fiducial-loose and fiducial-tight Python refits may run concurrently, but
+// the process-wide default cut configuration is shared C++ state.  Serialize
+// only its installation; each refit writes and consumes its own explicit JSON.
+static std::mutex variation_global_cuts_mutex;
+
+static void install_variation_global_cuts(const GlobalCutConfig& cfg) {
+    std::lock_guard<std::mutex> lock(variation_global_cuts_mutex);
+    set_default_global_cuts(cfg);
+}
 
 struct CsvTable {
     std::vector<std::string> header;
@@ -455,7 +467,7 @@ std::string prepare_exclusivity_json(
     const fs::path& base,
     const fs::path& json_dir) {
 
-    set_default_global_cuts(cfg);
+    install_variation_global_cuts(cfg);
     write_global_cuts_config_json(json_dir.string(), cfg);
 
     if (spec.exclusivity_mode ==
@@ -565,7 +577,7 @@ bool produce_variation(
     std::string cuts_json = (json_dir / "combined_cuts.json").string();
     std::string variation_eppi0_summary = options.use_eppi0_production_normalization
         ? (base / "eppi0_normalization/eppi0_normalization_summary.csv").string() : "";
-    set_default_global_cuts(cfg);
+    install_variation_global_cuts(cfg);
     if (!prepared) {
     fs::copy_file(options.nominal_csv, csv_path, fs::copy_options::overwrite_existing);
 
@@ -645,6 +657,11 @@ bool produce_variation(
 
     Pi0ContaminationOptions pi0_opts;
     pi0_opts.use_epg_mc_current_factor_for_eppi0_bkg = use_epg_mc_current_factor_for_eppi0_bkg;
+    // These overlays are validation-only and do not enter the contamination,
+    // BSA, acceptance, or cross-section calculation.  The nominal production
+    // pass still creates them; avoid four additional full-tree diagnostic scans
+    // for the internal cut variations.
+    pi0_opts.make_exclusivity_diagnostics = false;
     const auto pi0_t0 = stage_start("pi0 contamination");
     if (!compute_pi0_contamination_overall(dataTrees, eppi0DataTrees, eppi0RecMcTrees,
                                            eppi0BkgTrees, cuts_json, csv_path.string(),
@@ -759,24 +776,97 @@ bool run_automatic_cut_variation_systematics(
              ExclusivityCutMode::RefitNominal95}
         };
 
-        // Opt-out retains the original independent scans for comparison.
+        // Share each ROOT event read across all four cut variations by default.
+        // This changes only the scan schedule: every variation keeps its own
+        // cuts, weights, and accumulators.  Set DVCS_SHARED_VARIATION_COUNTS=0
+        // to retain the original independent scans for comparison/debugging.
         const char* shared_env = std::getenv("DVCS_SHARED_VARIATION_COUNTS");
-        const bool shared = shared_env && std::string(shared_env) == "1";
+        const bool shared = !shared_env || std::string(shared_env) != "0";
         struct SharedCountsGuard {
             ~SharedCountsGuard() { end_total_counts_variations(); }
         } shared_guard;
         if (shared) {
-            std::vector<TotalCountsVariation> definitions;
-            for (const auto& v : variations) {
-                if (!produce_variation(v, options, nominal_global_cuts,
+            auto prepare_variation = [&](std::size_t index) {
+                const auto& v = variations.at(index);
+                std::cout << "[cut-variation-runner] Preparing variation "
+                          << v.name << "." << std::endl;
+                return produce_variation(v, options, nominal_global_cuts,
                         dataTrees, genMcTrees, recMcTrees, eppi0DataTrees,
                         eppi0GenMcTrees, eppi0RecMcTrees, eppi0BkgTrees,
                         currentStudyGenMcTrees, currentStudyRecMcTrees,
                         use_nobkg_dvcs_mc_for_acceptance,
-                        use_epg_mc_current_factor_for_eppi0_bkg, true, false)) {
+                        use_epg_mc_current_factor_for_eppi0_bkg, true, false);
+            };
+
+            // The production 98%/90% variations only copy already-derived
+            // JSONs and are prepared serially.  The fiducial-loose and
+            // fiducial-tight variations each launch an independent five-period
+            // Python refit in disjoint output directories, so run those two
+            // subprocesses together (ten period workers total).  Optional
+            // eppi0 normalization touches shared ROOT trees and therefore
+            // retains the original serial preparation path.
+            if (!prepare_variation(0) || !prepare_variation(1)) {
+                set_default_global_cuts(nominal_global_cuts);
+                return false;
+            }
+
+            const char* serial_refits_env =
+                std::getenv("DVCS_SERIAL_FIDUCIAL_REFITS");
+            const bool parallel_fiducial_refits =
+                !options.use_eppi0_production_normalization &&
+                !(serial_refits_env && std::string(serial_refits_env) == "1");
+
+            if (parallel_fiducial_refits) {
+                std::cout
+                    << "[cut-variation-runner] Launching fiducial-loose and "
+                    << "fiducial-tight exclusivity refits concurrently "
+                    << "(five period workers each)." << std::endl;
+                const auto parallel_refits_t0 = std::chrono::steady_clock::now();
+                auto loose_future = std::async(
+                    std::launch::async, [&]() { return prepare_variation(2); });
+                auto tight_future = std::async(
+                    std::launch::async, [&]() { return prepare_variation(3); });
+
+                // Always join both subprocesses before handling failure so no
+                // background refit can continue writing after this stage exits.
+                bool loose_ok = false;
+                bool tight_ok = false;
+                std::exception_ptr loose_error;
+                std::exception_ptr tight_error;
+                try { loose_ok = loose_future.get(); }
+                catch (...) { loose_error = std::current_exception(); }
+                try { tight_ok = tight_future.get(); }
+                catch (...) { tight_error = std::current_exception(); }
+                if (loose_error) std::rethrow_exception(loose_error);
+                if (tight_error) std::rethrow_exception(tight_error);
+                if (!loose_ok || !tight_ok) {
                     set_default_global_cuts(nominal_global_cuts);
                     return false;
                 }
+                const double parallel_refits_seconds =
+                    std::chrono::duration<double>(
+                        std::chrono::steady_clock::now() - parallel_refits_t0).count();
+                std::cout
+                    << "[cut-variation-runner] Both fiducial exclusivity refits "
+                    << "completed in " << std::fixed << std::setprecision(1)
+                    << parallel_refits_seconds << " s wall time."
+                    << std::defaultfloat << std::setprecision(6) << std::endl;
+            } else {
+                std::cout
+                    << "[cut-variation-runner] Preparing fiducial exclusivity "
+                    << "refits serially"
+                    << (options.use_eppi0_production_normalization
+                            ? " because eppi0 normalization uses shared ROOT trees."
+                            : " because DVCS_SERIAL_FIDUCIAL_REFITS=1.")
+                    << std::endl;
+                if (!prepare_variation(2) || !prepare_variation(3)) {
+                    set_default_global_cuts(nominal_global_cuts);
+                    return false;
+                }
+            }
+
+            std::vector<TotalCountsVariation> definitions;
+            for (const auto& v : variations) {
                 const fs::path base = fs::path(options.output_dir) / "variations" / v.name;
                 TotalCountsVariation definition;
                 definition.name = v.name;

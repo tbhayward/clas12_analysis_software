@@ -26,12 +26,12 @@ struct GlobalCutConfig {
     // Baseline global DVCS exclusivity-style cuts.
     double t1_abs_max         = 1.0;  // cut is (-t1) < t1_abs_max
     double open_angle_min_deg = 5.0;  // open_angle_ep2_deg > open_angle_min_deg
-    // Analysis phase-space cuts.  The legacy electron-cut member names are
-    // retained for source/config compatibility, but the cut is applied to both
-    // reconstructed and generated kinematics used by acceptance calculations.
+    // Reconstruction-level electron threshold. It is intentionally not part
+    // of the generated denominator or the kinematic bin volume.
     bool   enable_reconstructed_electron_p_cut = true;
     double reconstructed_electron_p_min_GeV    = 2.0;
     bool   enable_analysis_phase_space_cuts     = true;
+    bool   enable_analysis_y_min_cut             = false;
     double analysis_y_min                       = 0.19;
     double analysis_W_min_GeV                   = 2.0;
     // The old global pTmiss pre-cut is now disabled by default.
@@ -113,32 +113,21 @@ bool global_cuts_require_sector_phi(const GlobalCutConfig& cfg = default_global_
 bool global_cuts_require_auxiliary_kinematics(const GlobalCutConfig& cfg = default_global_cuts());
 std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg = default_global_cuts());
 
-// Analysis-level proton momentum selection. period_label must be one of
+// Reconstruction-level proton momentum selection. period_label must be one of
 // the canonical global-cut labels (sp18_inb/out, fa18_inb/out, sp19_inb).
-// Apply this to both reconstructed and generated protons. Detector angular
-// fiducials, PID, and exclusivity cuts remain reconstruction-only.
+// Generated denominators intentionally do not use this detector threshold.
 bool passes_proton_momentum_cut(int detector1,
                                 const std::string& period_label,
                                 double p1_p,
                                 const GlobalCutConfig& cfg = default_global_cuts());
-
-// Generated trees do not have a truth detector ID. Classify the proton from
-// truth theta using the analysis FD/CD boundary (40 degrees), then apply the
-// same region- and polarity-dependent momentum threshold.
-int generated_proton_detector_region(double p1_theta_rad);
-bool passes_generated_proton_momentum_cut(
-    double p1_theta_rad,
-    const std::string& period_label,
-    double p1_p,
-    const GlobalCutConfig& cfg = default_global_cuts());
 
 // Legacy-named electron momentum helper, retained for interface compatibility.
 bool passes_reconstructed_electron_momentum_cut(
     double e_p,
     const GlobalCutConfig& cfg = default_global_cuts());
 
-// Beam-energy and common analysis-phase-space helpers.  t1 follows the tree
-// convention (negative physical t or positive |t| are both accepted).
+// Reconstructed phase-space helpers. t1 follows the analysis-tree convention
+// and must be negative physical t.
 double beam_energy_for_period_label(const std::string& period_label);
 double dvcs_minus_t_min(double xB, double Q2);
 bool passes_analysis_phase_space_cuts(
@@ -147,6 +136,22 @@ bool passes_analysis_phase_space_cuts(
     double Q2,
     double t1,
     double e_p,
+    const GlobalCutConfig& cfg = default_global_cuts());
+
+// Generated acceptance denominators retain every event in the requested 4D
+// bin and apply only the published channel boundary W > W_min.
+bool passes_generated_channel_cuts(
+    double xB,
+    double Q2,
+    const GlobalCutConfig& cfg = default_global_cuts());
+
+// Purely kinematic volume mask: 0 < y < 1, W > W_min, and the physical
+// t_min boundary. Detector thresholds and generator-coverage y cuts are excluded.
+bool passes_bin_volume_phase_space_cuts(
+    double Ebeam,
+    double xB,
+    double Q2,
+    double t1,
     const GlobalCutConfig& cfg = default_global_cuts());
 bool passes_analysis_phase_space_cuts(
     const std::string& period_label,

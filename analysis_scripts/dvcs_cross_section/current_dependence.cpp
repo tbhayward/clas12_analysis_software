@@ -1676,6 +1676,26 @@ struct DataAgg {
     long long kinematic_value_count = 0;
 };
 
+// Production current-response diagnostics consume several different aggregate
+// views of the same selected events.  The fused scan fills those views together
+// and these invocation-scoped caches let the existing fit/plot code consume the
+// exact same aggregate types without rereading the ROOT trees.
+using FusedCurrentTreeKey = std::pair<TTree*, std::string>;
+static bool g_fused_current_scan_active = false;
+static std::mutex g_fused_current_cache_mutex;
+static std::map<FusedCurrentTreeKey, DataAgg> g_fused_integrated_data;
+static std::map<FusedCurrentTreeKey, long long> g_fused_integrated_rec;
+static std::map<TTree*, std::unordered_set<int>> g_fused_run_numbers;
+
+struct FusedTransferShapeCounts {
+    std::array<long long, 9> photon_region{}; // 7 bins + under/overflow
+    std::array<long long, 19> electron_theta{}; // 17 bins + under/overflow
+    std::array<long long, 34> proton_theta{}; // 32 bins + under/overflow
+    std::array<long long, 21> photon_theta{}; // 19 bins + under/overflow
+    long long accepted = 0;
+};
+static std::map<FusedCurrentTreeKey, FusedTransferShapeCounts> g_fused_transfer_shapes;
+
 struct ResolvedRunInfo {
     bool valid = false;
     int current = 0;
@@ -1730,6 +1750,12 @@ static DataAgg process_data_tree(
 
     if (!tree) {
         return out;
+    }
+
+    if (g_fused_current_scan_active) {
+        std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+        const auto it = g_fused_integrated_data.find({tree, cfg.csv_channel});
+        if (it != g_fused_integrated_data.end()) return it->second;
     }
 
     Branches b;
@@ -1815,6 +1841,12 @@ static long long count_reconstructed_tree(const ChannelConfig& cfg,
 
     if (!tree) {
         return 0;
+    }
+
+    if (g_fused_current_scan_active) {
+        std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+        const auto it = g_fused_integrated_rec.find({tree, cfg.csv_channel});
+        if (it != g_fused_integrated_rec.end()) return it->second;
     }
 
     Branches b;
@@ -5476,6 +5508,8 @@ static bool generated_photon_region(const Branches& b,
 using PhotonRegionDataAggMap = std::map<std::string, DataAgg>;
 using PhotonRegionMcCountMap = std::map<std::string, long long>;
 using PhotonRegionResults = std::map<std::string, std::vector<PeriodResult>>;
+static std::map<FusedCurrentTreeKey, PhotonRegionDataAggMap> g_fused_region_data;
+static std::map<FusedCurrentTreeKey, PhotonRegionMcCountMap> g_fused_region_rec;
 
 // One generated pass supplies both total and photon-region counts. Cache only
 // aggregates, scoped to this invocation; no event arrays or persisted results.
@@ -5493,9 +5527,8 @@ static GeneratedCountSummary generated_count_summary(TTree* tree,
     const bool paired = tree->GetBranch("gen_kinematics_valid") != nullptr;
     b.bind(tree, paired ? "gen_" : "");
     const GlobalCutConfig& cfg = default_global_cuts();
-    if (!(b.has_x && b.has_Q2 && b.has_t1 && b.has_e_p && b.has_p2_theta && b.has_p2_phi) ||
-        (cfg.enable_auxiliary_fiducial_cuts && !(b.has_p1_theta && b.has_p1_p))) {
-        fatal("[current_dependence] Generated phase-space count requires x, Q2, t1, e_p, p2_theta, p2_phi and, when proton cuts are enabled, p1_theta and p1_p.");
+    if (!(b.has_x && b.has_Q2 && b.has_p2_theta && b.has_p2_phi)) {
+        fatal("[current_dependence] Generated channel count requires x, Q2, p2_theta, and p2_phi.");
     }
     double valid = 1;
     if (paired) {
@@ -5506,10 +5539,7 @@ static GeneratedCountSummary generated_count_summary(TTree* tree,
     for (Long64_t i = 0; i < n; ++i) {
         if (tree->GetEntry(i) <= 0) fatal("[current_dependence] Generated summary read failure");
         if (paired && !(valid >= 0.5)) continue;
-        if (!passes_analysis_phase_space_cuts(period_label, b.x, b.Q2, b.t1, b.e_p, cfg)) continue;
-        if (cfg.enable_auxiliary_fiducial_cuts &&
-            (!b.has_p1_theta || !b.has_p1_p ||
-             !passes_generated_proton_momentum_cut(b.p1_theta, period_label, b.p1_p, cfg))) continue;
+        if (!passes_generated_channel_cuts(b.x, b.Q2, cfg)) continue;
         ++summary.total;
         std::string region;
         if (generated_photon_region(b, region)) ++summary.regions[region];
@@ -5541,6 +5571,12 @@ static PhotonRegionDataAggMap process_data_tree_by_photon_region(
 
     if (!tree) {
         return out;
+    }
+
+    if (g_fused_current_scan_active) {
+        std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+        const auto it = g_fused_region_data.find({tree, cfg.csv_channel});
+        if (it != g_fused_region_data.end()) return it->second;
     }
 
     Branches b;
@@ -5698,6 +5734,12 @@ static PhotonRegionMcCountMap count_reconstructed_tree_by_photon_region(
         return counts;
     }
 
+    if (g_fused_current_scan_active) {
+        std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+        const auto it = g_fused_region_rec.find({tree, cfg.csv_channel});
+        if (it != g_fused_region_rec.end()) return it->second;
+    }
+
     const PeriodTags tags = parse_period_from_key(key);
     Branches b;
     const bool paired_mc = tree->GetBranch("rec_kinematics_valid") != nullptr;
@@ -5759,6 +5801,7 @@ static PhotonRegionMcCountMap count_reconstructed_tree_by_photon_region(
 
 using RegionThetaAggMap = std::map<std::string, std::map<std::string, std::vector<DataAgg>>>;
 using PeriodRegionThetaAggMap = std::map<std::string, RegionThetaAggMap>;
+static std::map<FusedCurrentTreeKey, RegionThetaAggMap> g_fused_theta_data;
 
 static RegionThetaAggMap process_data_tree_region_theta(
     const ChannelConfig& cfg,
@@ -5781,6 +5824,12 @@ static RegionThetaAggMap process_data_tree_region_theta(
         }
     }
     if (!tree || tags.display == "Fa18 Inb Supp") return out;
+
+    if (g_fused_current_scan_active) {
+        std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+        const auto it = g_fused_theta_data.find({tree, cfg.csv_channel});
+        if (it != g_fused_theta_data.end()) return it->second;
+    }
 
     Branches b;
     b.bind(tree);
@@ -5843,6 +5892,8 @@ static RegionThetaAggMap process_data_tree_region_theta(
 
 using RegionThetaMcAggMap = std::map<std::string, KinematicMcAggMap>;
 using PeriodRegionThetaMcAggMap = std::map<std::string, RegionThetaMcAggMap>;
+static std::map<FusedCurrentTreeKey, RegionThetaMcAggMap> g_fused_theta_gen;
+static std::map<FusedCurrentTreeKey, RegionThetaMcAggMap> g_fused_theta_rec;
 
 static RegionThetaMcAggMap process_generated_tree_region_theta(
     const std::string& key,
@@ -5863,6 +5914,12 @@ static RegionThetaMcAggMap process_generated_tree_region_theta(
 
     if (!tree || tags.display == "Fa18 Inb Supp") return out;
 
+    if (g_fused_current_scan_active) {
+        std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+        const auto it = g_fused_theta_gen.find({tree, "ep->epg"});
+        if (it != g_fused_theta_gen.end()) return it->second;
+    }
+
     Branches b;
     const bool paired_mc = tree->GetBranch("gen_kinematics_valid") != nullptr;
     b.bind(tree, paired_mc ? "gen_" : "");
@@ -5877,11 +5934,14 @@ static RegionThetaMcAggMap process_generated_tree_region_theta(
     const auto progress_t0 = std::chrono::steady_clock::now();
     static std::mutex generated_region_theta_progress_mutex;
 
-    // Generated region/angle summaries need only photon direction and the
-    // configured histogram variables, not reconstructed/exclusivity fields.
+    // Generated region/angle summaries need the channel-boundary variables,
+    // photon direction, and configured histogram variables, but no
+    // reconstructed/exclusivity fields.
     tree->SetBranchStatus("*", 0);
     const std::string gen_prefix = paired_mc ? "gen_" : "";
-    std::vector<std::string> required = {"p2_theta", "p2_phi"};
+    // The generated angle diagnostic uses the same published channel boundary
+    // as the integrated/regional generated current-response counts.
+    std::vector<std::string> required = {"x", "Q2", "p2_theta", "p2_phi"};
     for (const auto& variable : vars) {
         if (variable.key == "Q2") required.push_back("Q2");
         else if (variable.key == "xB") required.push_back("x");
@@ -5921,6 +5981,8 @@ static RegionThetaMcAggMap process_generated_tree_region_theta(
                       << "%) elapsed=" << sec << " s"
                       << std::defaultfloat << std::setprecision(6) << std::endl;
         }
+
+        if (!passes_generated_channel_cuts(b.x, b.Q2, default_global_cuts())) continue;
 
         std::string region;
         if (!generated_photon_region(b, region)) continue;
@@ -5963,6 +6025,12 @@ static RegionThetaMcAggMap process_reconstructed_tree_region_theta(
     }
 
     if (!tree || tags.display == "Fa18 Inb Supp") return out;
+
+    if (g_fused_current_scan_active) {
+        std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+        const auto it = g_fused_theta_rec.find({tree, cfg.csv_channel});
+        if (it != g_fused_theta_rec.end()) return it->second;
+    }
 
     Branches b;
     const bool paired_mc = tree->GetBranch("rec_kinematics_valid") != nullptr;
@@ -6036,6 +6104,584 @@ static void merge_region_theta_mc(PeriodRegionThetaMcAggMap& merged,
             for (size_t ib = 0; ib < n; ++ib) merge_mc_kinematic_bin(dst[ib], src[ib]);
         }
     }
+}
+
+struct FusedDataTreeProducts {
+    DataAgg integrated;
+    PhotonRegionDataAggMap regions;
+    RegionThetaAggMap theta;
+    std::unordered_set<int> run_numbers;
+    FusedTransferShapeCounts transfer;
+};
+
+struct FusedRecTreeProducts {
+    long long integrated = 0;
+    PhotonRegionMcCountMap regions;
+    RegionThetaMcAggMap theta;
+};
+
+struct FusedGenTreeProducts {
+    GeneratedCountSummary summary;
+    RegionThetaMcAggMap theta;
+};
+
+static int uniform_root_bin(double value, int nbins, double xmin, double xmax) {
+    if (value < xmin) return 0;
+    if (!(value < xmax)) return nbins + 1;
+    const int bin = static_cast<int>((value - xmin) * nbins / (xmax - xmin)) + 1;
+    return std::max(1, std::min(nbins, bin));
+}
+
+static void fill_fused_transfer_shape(FusedTransferShapeCounts& out,
+                                      const Branches& b) {
+    std::string region;
+    if (!reconstructed_photon_region(b, region)) return;
+    const int ridx = photon_region_index_from_key(region);
+    if (ridx < 0 || ridx >= 7) return;
+    ++out.photon_region[static_cast<size_t>(ridx + 1)];
+    if (b.has_e_theta && std::isfinite(b.e_theta))
+        ++out.electron_theta[static_cast<size_t>(uniform_root_bin(
+            b.e_theta * RAD2DEG, 17, 8.0, 25.0))];
+    if (b.has_p1_theta && std::isfinite(b.p1_theta))
+        ++out.proton_theta[static_cast<size_t>(uniform_root_bin(
+            b.p1_theta * RAD2DEG, 32, 8.0, 72.0))];
+    if (b.has_p2_theta && std::isfinite(b.p2_theta))
+        ++out.photon_theta[static_cast<size_t>(uniform_root_bin(
+            b.p2_theta * RAD2DEG, 19, 2.0, 40.0))];
+    ++out.accepted;
+}
+
+static bool equal_data_agg(const DataAgg& a, const DataAgg& b) {
+    return a.period == b.period &&
+           a.counts_by_run == b.counts_by_run &&
+           a.current_by_run == b.current_by_run &&
+           a.charge_by_run == b.charge_by_run &&
+           a.kinematic_value_sum == b.kinematic_value_sum &&
+           a.kinematic_value_count == b.kinematic_value_count;
+}
+
+static bool equal_region_data(const PhotonRegionDataAggMap& a,
+                              const PhotonRegionDataAggMap& b) {
+    if (a.size() != b.size()) return false;
+    for (const auto& kv : a) {
+        const auto it = b.find(kv.first);
+        if (it == b.end() || !equal_data_agg(kv.second, it->second)) return false;
+    }
+    return true;
+}
+
+static bool equal_theta_data(const RegionThetaAggMap& a,
+                             const RegionThetaAggMap& b) {
+    if (a.size() != b.size()) return false;
+    for (const auto& region : a) {
+        const auto ir = b.find(region.first);
+        if (ir == b.end() || region.second.size() != ir->second.size()) return false;
+        for (const auto& variable : region.second) {
+            const auto iv = ir->second.find(variable.first);
+            if (iv == ir->second.end() || variable.second.size() != iv->second.size()) return false;
+            for (size_t i = 0; i < variable.second.size(); ++i)
+                if (!equal_data_agg(variable.second[i], iv->second[i])) return false;
+        }
+    }
+    return true;
+}
+
+static bool equal_mc_agg(const McAgg& a, const McAgg& b) {
+    return a.period == b.period && a.current_nA == b.current_nA &&
+           a.n_gen == b.n_gen && a.n_rec == b.n_rec;
+}
+
+static bool equal_mc_bin(const McKinematicBinAgg& a,
+                         const McKinematicBinAgg& b) {
+    if (a.period != b.period || a.by_current.size() != b.by_current.size() ||
+        a.generated_kinematic_value_sum != b.generated_kinematic_value_sum ||
+        a.generated_kinematic_value_count != b.generated_kinematic_value_count ||
+        a.reconstructed_kinematic_value_sum != b.reconstructed_kinematic_value_sum ||
+        a.reconstructed_kinematic_value_count != b.reconstructed_kinematic_value_count)
+        return false;
+    for (const auto& kv : a.by_current) {
+        const auto it = b.by_current.find(kv.first);
+        if (it == b.by_current.end() || !equal_mc_agg(kv.second, it->second)) return false;
+    }
+    return true;
+}
+
+static bool equal_theta_mc(const RegionThetaMcAggMap& a,
+                           const RegionThetaMcAggMap& b) {
+    if (a.size() != b.size()) return false;
+    for (const auto& region : a) {
+        const auto ir = b.find(region.first);
+        if (ir == b.end() || region.second.size() != ir->second.size()) return false;
+        for (const auto& variable : region.second) {
+            const auto iv = ir->second.find(variable.first);
+            if (iv == ir->second.end() || variable.second.size() != iv->second.size()) return false;
+            for (size_t i = 0; i < variable.second.size(); ++i)
+                if (!equal_mc_bin(variable.second[i], iv->second[i])) return false;
+        }
+    }
+    return true;
+}
+
+static void initialize_data_region_products(
+    FusedDataTreeProducts& out,
+    const std::string& period,
+    const std::vector<KinematicVarConfig>& theta_vars,
+    bool fill_theta) {
+    out.integrated.period = period;
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+        out.regions[spec.key].period = period;
+        if (!fill_theta) continue;
+        for (const KinematicVarConfig& v : theta_vars) {
+            auto& bins = out.theta[spec.key][v.key];
+            bins.resize(v.edges.size() - 1);
+            for (DataAgg& a : bins) a.period = period;
+        }
+    }
+}
+
+static void initialize_mc_region_products(
+    PhotonRegionMcCountMap& regions,
+    RegionThetaMcAggMap& theta,
+    const std::string& period,
+    const std::vector<KinematicVarConfig>& theta_vars) {
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+        regions[spec.key] = 0;
+        for (const KinematicVarConfig& v : theta_vars) {
+            auto& bins = theta[spec.key][v.key];
+            bins.resize(v.edges.size() - 1);
+            for (McKinematicBinAgg& a : bins) a.period = period;
+        }
+    }
+}
+
+static FusedDataTreeProducts scan_current_data_tree_once(
+    const ChannelConfig& cfg,
+    const std::string& key,
+    TTree* tree,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    const TopoCutMap& data_cuts,
+    const std::vector<KinematicVarConfig>& theta_vars,
+    bool fill_theta,
+    bool use_second_column_charge_for_all_unpolarized,
+    bool use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+    double columns_3_to_5_charge_sum_scale) {
+
+    FusedDataTreeProducts out;
+    const PeriodTags tags = parse_period_from_key(key);
+    initialize_data_region_products(out, tags.display, theta_vars, fill_theta);
+    if (!tree || tags.display == "Fa18 Inb Supp") return out;
+
+    Branches b;
+    b.bind(tree);
+    if (!b.has_runnum)
+        fatal("[current_dependence] FATAL: fused DATA scan requires runnum.");
+
+    std::unordered_map<int, ResolvedRunInfo> run_cache;
+    run_cache.reserve(256);
+    const Long64_t n = tree->GetEntries();
+    for (Long64_t i = 0; i < n; ++i) {
+        if (tree->GetEntry(i) <= 0)
+            fatal("[current_dependence] FATAL: fused DATA scan read failure.");
+        out.run_numbers.insert(static_cast<int>(b.runnum));
+        if (!passes_cone_cut(b)) continue;
+
+        auto ri = run_cache.find(static_cast<int>(b.runnum));
+        const bool new_run = ri == run_cache.end();
+        if (new_run) {
+            ri = run_cache.emplace(
+                static_cast<int>(b.runnum),
+                resolve_run_info_cached(
+                    tags, static_cast<int>(b.runnum), charge_map,
+                    use_second_column_charge_for_all_unpolarized,
+                    use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                    columns_3_to_5_charge_sum_scale)).first;
+        }
+        const ResolvedRunInfo& run_info = ri->second;
+
+        if (new_run && run_info.valid) {
+            for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER) {
+                DataAgg& regional = out.regions[spec.key];
+                regional.counts_by_run[static_cast<int>(b.runnum)] += 0;
+                regional.current_by_run[static_cast<int>(b.runnum)] = run_info.current;
+                regional.charge_by_run[static_cast<int>(b.runnum)] = run_info.charge;
+                if (!fill_theta) continue;
+                for (const KinematicVarConfig& v : theta_vars) {
+                    for (DataAgg& a : out.theta[spec.key][v.key]) {
+                        a.counts_by_run[static_cast<int>(b.runnum)] += 0;
+                        a.current_by_run[static_cast<int>(b.runnum)] = run_info.current;
+                        a.charge_by_run[static_cast<int>(b.runnum)] = run_info.charge;
+                    }
+                }
+            }
+        }
+
+        if (!passes_global_dispatch(b, tags)) continue;
+        if (!passes_sigma_dispatch(cfg, tags, data_cuts, b)) continue;
+
+        // The Fa18/Sp19 transfer diagnostic historically requires only a
+        // resolvable 50 nA run, not a usable charge entry.  Keep that population
+        // independent from the charge-normalized current-response aggregates.
+        if (cfg.channel == Channel::DVCS) {
+            int transfer_current = 0;
+            if (resolve_current(tags.internal, static_cast<int>(b.runnum), transfer_current) &&
+                transfer_current == 50)
+                fill_fused_transfer_shape(out.transfer, b);
+        }
+
+        if (!run_info.valid) continue;
+
+        const int run = static_cast<int>(b.runnum);
+        out.integrated.counts_by_run[run] += 1;
+        out.integrated.current_by_run[run] = run_info.current;
+        out.integrated.charge_by_run[run] = run_info.charge;
+
+        std::string region;
+        if (!reconstructed_photon_region(b, region)) continue;
+        out.regions[region].counts_by_run[run] += 1;
+
+        if (!fill_theta) continue;
+        for (const KinematicVarConfig& v : theta_vars) {
+            double value = std::numeric_limits<double>::quiet_NaN();
+            if (!kinematic_value_for_config(b, v, value)) continue;
+            const int ib = find_bin_index(v.edges, value);
+            if (ib < 0) continue;
+            DataAgg& a = out.theta[region][v.key][ib];
+            a.counts_by_run[run] += 1;
+            a.kinematic_value_sum += value;
+            a.kinematic_value_count += 1;
+        }
+    }
+    tree->ResetBranchAddresses();
+    return out;
+}
+
+static FusedRecTreeProducts scan_current_rec_tree_once(
+    const ChannelConfig& cfg,
+    const std::string& key,
+    TTree* tree,
+    const TopoCutMap& mc_cuts,
+    const std::vector<KinematicVarConfig>& theta_vars) {
+
+    FusedRecTreeProducts out;
+    const PeriodTags tags = parse_period_from_key(key);
+    const int current = parse_current_from_key(key);
+    initialize_mc_region_products(out.regions, out.theta, tags.display, theta_vars);
+    if (!tree || tags.display == "Fa18 Inb Supp") return out;
+
+    Branches b;
+    const bool paired = tree->GetBranch("rec_kinematics_valid") != nullptr;
+    b.bind(tree, paired ? "rec_" : "", cfg.channel == Channel::EPPI0);
+    if (!(b.has_detector1 && b.has_detector2 && b.has_x && b.has_Q2 &&
+          b.has_t1 && b.has_phi2))
+        fatal("[current_dependence] FATAL: fused REC scan is missing required matching branches.");
+    double validity = 0.0;
+    if (paired) {
+        tree->SetBranchStatus("rec_kinematics_valid", 1);
+        if (tree->SetBranchAddress("rec_kinematics_valid", &validity) < 0)
+            fatal("[current_dependence] FATAL: fused REC scan cannot bind rec_kinematics_valid.");
+    }
+
+    const Long64_t n = tree->GetEntries();
+    PairedMcFastRead fast(tree, "rec_kinematics_valid", &validity);
+    for (Long64_t i = 0; i < n; ++i) {
+        if (paired) {
+            if (!fast.read(i)) continue;
+        } else if (tree->GetEntry(i) <= 0) {
+            fatal("[current_dependence] FATAL: fused REC scan read failure.");
+        }
+        if (!passes_cone_cut(b)) continue;
+        if (!passes_global_dispatch(b, tags)) continue;
+        if (!passes_sigma_dispatch(cfg, tags, mc_cuts, b)) continue;
+        ++out.integrated;
+
+        std::string region;
+        if (!reconstructed_photon_region(b, region)) continue;
+        ++out.regions[region];
+        for (const KinematicVarConfig& v : theta_vars) {
+            double value = std::numeric_limits<double>::quiet_NaN();
+            if (!kinematic_value_for_config(b, v, value)) continue;
+            const int ib = find_bin_index(v.edges, value);
+            if (ib < 0) continue;
+            McKinematicBinAgg& bin = out.theta[region][v.key][ib];
+            McAgg& a = bin.by_current[current];
+            a.period = tags.display;
+            a.current_nA = current;
+            a.n_rec += 1;
+            bin.reconstructed_kinematic_value_sum += value;
+            bin.reconstructed_kinematic_value_count += 1;
+        }
+    }
+    tree->ResetBranchAddresses();
+    return out;
+}
+
+static FusedGenTreeProducts scan_current_gen_tree_once(
+    const std::string& key,
+    TTree* tree,
+    const std::vector<KinematicVarConfig>& theta_vars) {
+
+    FusedGenTreeProducts out;
+    const PeriodTags tags = parse_period_from_key(key);
+    const int current = parse_current_from_key(key);
+    PhotonRegionMcCountMap unused_regions;
+    initialize_mc_region_products(unused_regions, out.theta, tags.display, theta_vars);
+    for (const PhotonRegionSpec& spec : PHOTON_REGION_ORDER)
+        out.summary.regions[spec.key] = 0;
+    if (!tree || tags.display == "Fa18 Inb Supp") return out;
+
+    Branches b;
+    const bool paired = tree->GetBranch("gen_kinematics_valid") != nullptr;
+    b.bind(tree, paired ? "gen_" : "");
+    if (!(b.has_x && b.has_Q2 && b.has_p2_theta && b.has_p2_phi))
+        fatal("[current_dependence] FATAL: fused GEN scan is missing required channel/region branches.");
+    double validity = 0.0;
+    if (paired) {
+        tree->SetBranchStatus("gen_kinematics_valid", 1);
+        if (tree->SetBranchAddress("gen_kinematics_valid", &validity) < 0)
+            fatal("[current_dependence] FATAL: fused GEN scan cannot bind gen_kinematics_valid.");
+    }
+
+    const GlobalCutConfig& global_cfg = default_global_cuts();
+    const Long64_t n = tree->GetEntries();
+    PairedMcFastRead fast(tree, "gen_kinematics_valid", &validity);
+    for (Long64_t i = 0; i < n; ++i) {
+        if (paired) {
+            if (!fast.read(i)) continue;
+        } else if (tree->GetEntry(i) <= 0) {
+            fatal("[current_dependence] FATAL: fused GEN scan read failure.");
+        }
+
+        std::string region;
+        const bool has_region = generated_photon_region(b, region);
+
+        const bool in_generated_channel =
+            passes_generated_channel_cuts(b.x, b.Q2, global_cfg);
+        if (in_generated_channel) {
+            ++out.summary.total;
+            if (has_region) ++out.summary.regions[region];
+        }
+        if (!in_generated_channel || !has_region) continue;
+
+        for (const KinematicVarConfig& v : theta_vars) {
+            double value = std::numeric_limits<double>::quiet_NaN();
+            if (!kinematic_value_for_config(b, v, value)) continue;
+            const int ib = find_bin_index(v.edges, value);
+            if (ib < 0) continue;
+            McKinematicBinAgg& bin = out.theta[region][v.key][ib];
+            McAgg& a = bin.by_current[current];
+            a.period = tags.display;
+            a.current_nA = current;
+            a.n_gen += 1;
+            bin.generated_kinematic_value_sum += value;
+            bin.generated_kinematic_value_count += 1;
+        }
+    }
+    tree->ResetBranchAddresses();
+    return out;
+}
+
+static void prepare_fused_current_scans(
+    const ChannelConfig& dvcs,
+    const ChannelConfig& eppi0,
+    const std::map<std::string, TTree*>& dvcs_data,
+    const std::map<std::string, TTree*>& eppi0_data,
+    const std::map<std::string, TTree*>& dvcs_gen,
+    const std::map<std::string, TTree*>& dvcs_rec,
+    const std::unordered_map<int, ChargeEntry>& charge_map,
+    const TopoCutMap& data_cuts,
+    const TopoCutMap& mc_cuts,
+    const CurrentDependenceOptions& options) {
+
+    const char* legacy_env = std::getenv("DVCS_LEGACY_CURRENT_SCANS");
+    if (legacy_env && std::string(legacy_env) == "1") {
+        std::cout << "[current_dependence] Fused scans disabled by DVCS_LEGACY_CURRENT_SCANS=1."
+                  << std::endl;
+        return;
+    }
+
+    std::vector<KinematicVarConfig> theta_vars;
+    for (const KinematicVarConfig& v : kinematic_current_var_configs())
+        if (is_polar_angle_model_variable(v.key)) theta_vars.push_back(v);
+
+    auto scan_data_map = [&](const ChannelConfig& cfg,
+                             const std::map<std::string, TTree*>& trees,
+                             bool fill_theta) {
+        std::vector<std::pair<std::string, TTree*>> items;
+        for (const auto& kv : trees)
+            if (parse_period_from_key(kv.first).display != "Fa18 Inb Supp") items.push_back(kv);
+        const int nth = std::min(7, std::min(std::max(1, options.max_workers),
+                                 std::max(1, static_cast<int>(items.size()))));
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
+#endif
+        for (int i = 0; i < static_cast<int>(items.size()); ++i) {
+            const auto result = scan_current_data_tree_once(
+                cfg, items[i].first, items[i].second, charge_map, data_cuts,
+                theta_vars, fill_theta,
+                options.use_second_column_charge_for_all_unpolarized,
+                options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                options.columns_3_to_5_charge_sum_scale);
+            std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+            const FusedCurrentTreeKey cache_key{items[i].second, cfg.csv_channel};
+            g_fused_integrated_data[cache_key] = result.integrated;
+            g_fused_region_data[cache_key] = result.regions;
+            if (fill_theta) g_fused_theta_data[cache_key] = result.theta;
+            g_fused_run_numbers[items[i].second] = result.run_numbers;
+            if (cfg.channel == Channel::DVCS)
+                g_fused_transfer_shapes[cache_key] = result.transfer;
+        }
+    };
+
+    const auto t0 = std::chrono::steady_clock::now();
+    scan_data_map(dvcs, dvcs_data, true);
+    scan_data_map(eppi0, eppi0_data, false);
+
+    std::vector<std::pair<std::string, TTree*>> gen_items;
+    for (const auto& kv : dvcs_gen)
+        if (parse_period_from_key(kv.first).display != "Fa18 Inb Supp") gen_items.push_back(kv);
+    int nth = std::min(7, std::min(std::max(1, options.max_workers),
+                       std::max(1, static_cast<int>(gen_items.size()))));
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
+#endif
+    for (int i = 0; i < static_cast<int>(gen_items.size()); ++i) {
+        const auto result = scan_current_gen_tree_once(gen_items[i].first, gen_items[i].second, theta_vars);
+        const PeriodTags tags = parse_period_from_key(gen_items[i].first);
+        {
+            std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+            g_fused_theta_gen[{gen_items[i].second, dvcs.csv_channel}] = result.theta;
+        }
+        {
+            std::lock_guard<std::mutex> lock(generated_summary_mutex);
+            generated_summaries[{gen_items[i].second, tags.period_label}] = result.summary;
+        }
+    }
+
+    std::vector<std::pair<std::string, TTree*>> rec_items;
+    for (const auto& kv : dvcs_rec)
+        if (parse_period_from_key(kv.first).display != "Fa18 Inb Supp") rec_items.push_back(kv);
+    nth = std::min(7, std::min(std::max(1, options.max_workers),
+                   std::max(1, static_cast<int>(rec_items.size()))));
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(nth)
+#endif
+    for (int i = 0; i < static_cast<int>(rec_items.size()); ++i) {
+        const auto result = scan_current_rec_tree_once(
+            dvcs, rec_items[i].first, rec_items[i].second, mc_cuts, theta_vars);
+        std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+        const FusedCurrentTreeKey cache_key{rec_items[i].second, dvcs.csv_channel};
+        g_fused_integrated_rec[cache_key] = result.integrated;
+        g_fused_region_rec[cache_key] = result.regions;
+        g_fused_theta_rec[cache_key] = result.theta;
+    }
+
+    const char* verify_env = std::getenv("DVCS_VERIFY_FUSED_CURRENT_SCANS");
+    if (verify_env && std::string(verify_env) == "1") {
+        std::cout << "[current_dependence] Verifying fused aggregates against legacy scans."
+                  << std::endl;
+
+        auto verify_data_map = [&](const ChannelConfig& cfg,
+                                   const std::map<std::string, TTree*>& trees,
+                                   bool verify_theta) {
+            for (const auto& item : trees) {
+                if (!item.second || parse_period_from_key(item.first).display == "Fa18 Inb Supp") continue;
+                const FusedCurrentTreeKey cache_key{item.second, cfg.csv_channel};
+                DataAgg integrated;
+                PhotonRegionDataAggMap regions;
+                RegionThetaAggMap theta;
+                {
+                    std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+                    integrated = g_fused_integrated_data.at(cache_key);
+                    regions = g_fused_region_data.at(cache_key);
+                    if (verify_theta) theta = g_fused_theta_data.at(cache_key);
+                }
+                const DataAgg legacy_integrated = process_data_tree(
+                    cfg, item.first, item.second, charge_map, data_cuts,
+                    options.use_second_column_charge_for_all_unpolarized,
+                    options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                    options.columns_3_to_5_charge_sum_scale);
+                const PhotonRegionDataAggMap legacy_regions = process_data_tree_by_photon_region(
+                    cfg, item.first, item.second, charge_map, data_cuts,
+                    options.use_second_column_charge_for_all_unpolarized,
+                    options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                    options.columns_3_to_5_charge_sum_scale);
+                if (!equal_data_agg(integrated, legacy_integrated) ||
+                    !equal_region_data(regions, legacy_regions))
+                    fatal("[current_dependence] FATAL: fused DATA verification failed for " + item.first);
+                if (verify_theta) {
+                    const RegionThetaAggMap legacy_theta = process_data_tree_region_theta(
+                        cfg, item.first, item.second, charge_map, data_cuts, theta_vars,
+                        options.use_second_column_charge_for_all_unpolarized,
+                        options.use_columns_3_to_5_charge_sum_scaled_for_fa18_sp19_unpolarized,
+                        options.columns_3_to_5_charge_sum_scale);
+                    if (!equal_theta_data(theta, legacy_theta))
+                        fatal("[current_dependence] FATAL: fused DATA theta verification failed for " + item.first);
+                }
+                std::cout << "[current_dependence] FUSED_VERIFY_PASS DATA " << item.first << std::endl;
+            }
+        };
+        verify_data_map(dvcs, dvcs_data, true);
+        verify_data_map(eppi0, eppi0_data, false);
+
+        for (const auto& item : rec_items) {
+            const FusedCurrentTreeKey cache_key{item.second, dvcs.csv_channel};
+            long long integrated = 0;
+            PhotonRegionMcCountMap regions;
+            RegionThetaMcAggMap theta;
+            {
+                std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+                integrated = g_fused_integrated_rec.at(cache_key);
+                regions = g_fused_region_rec.at(cache_key);
+                theta = g_fused_theta_rec.at(cache_key);
+            }
+            const long long legacy_integrated = count_reconstructed_tree(
+                dvcs, item.first, item.second, mc_cuts);
+            const PhotonRegionMcCountMap legacy_regions = count_reconstructed_tree_by_photon_region(
+                dvcs, item.first, item.second, mc_cuts);
+            const RegionThetaMcAggMap legacy_theta = process_reconstructed_tree_region_theta(
+                dvcs, item.first, item.second, mc_cuts, theta_vars);
+            if (integrated != legacy_integrated || regions != legacy_regions ||
+                !equal_theta_mc(theta, legacy_theta))
+                fatal("[current_dependence] FATAL: fused REC verification failed for " + item.first);
+            std::cout << "[current_dependence] FUSED_VERIFY_PASS REC " << item.first << std::endl;
+        }
+
+        for (const auto& item : gen_items) {
+            const PeriodTags tags = parse_period_from_key(item.first);
+            GeneratedCountSummary summary;
+            RegionThetaMcAggMap theta;
+            {
+                std::lock_guard<std::mutex> lock(generated_summary_mutex);
+                summary = generated_summaries.at({item.second, tags.period_label});
+                generated_summaries.erase({item.second, tags.period_label});
+            }
+            {
+                std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+                theta = g_fused_theta_gen.at({item.second, dvcs.csv_channel});
+            }
+            const GeneratedCountSummary legacy_summary =
+                generated_count_summary(item.second, tags.period_label);
+            const RegionThetaMcAggMap legacy_theta =
+                process_generated_tree_region_theta(item.first, item.second, theta_vars);
+            if (summary.total != legacy_summary.total ||
+                summary.regions != legacy_summary.regions ||
+                !equal_theta_mc(theta, legacy_theta))
+                fatal("[current_dependence] FATAL: fused GEN verification failed for " + item.first);
+            {
+                std::lock_guard<std::mutex> lock(generated_summary_mutex);
+                generated_summaries[{item.second, tags.period_label}] = summary;
+            }
+            std::cout << "[current_dependence] FUSED_VERIFY_PASS GEN " << item.first << std::endl;
+        }
+    }
+
+    g_fused_current_scan_active = true;
+    const double seconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - t0).count();
+    std::cout << "[current_dependence] Fused aggregate scans complete in "
+              << std::fixed << std::setprecision(1) << seconds
+              << " s; downstream diagnostics will reuse them without ROOT rescans."
+              << std::defaultfloat << std::setprecision(6) << std::endl;
 }
 
 struct RelativeSlopePoint {
@@ -9791,21 +10437,34 @@ static void collect_run_current_map_from_data_trees(
         if (tags.display == "Fa18 Inb Supp") continue;
 
         TTree* tree = kv.second;
-        double runnum = 0;
-        if (!tree->GetBranch("runnum")) continue;
-
-        {
-            std::lock_guard<std::mutex> lock(g_bind_mutex);
-            tree->SetBranchStatus("*", 0);
-            tree->SetBranchStatus("runnum", 1);
-            tree->SetBranchAddress("runnum", &runnum);
+        std::unordered_set<int> seen;
+        bool have_fused_runs = false;
+        if (g_fused_current_scan_active) {
+            std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+            const auto it = g_fused_run_numbers.find(tree);
+            if (it != g_fused_run_numbers.end()) {
+                seen = it->second;
+                have_fused_runs = true;
+            }
+        }
+        if (!have_fused_runs) {
+            double runnum = 0;
+            if (!tree->GetBranch("runnum")) continue;
+            {
+                std::lock_guard<std::mutex> lock(g_bind_mutex);
+                tree->SetBranchStatus("*", 0);
+                tree->SetBranchStatus("runnum", 1);
+                tree->SetBranchAddress("runnum", &runnum);
+            }
+            const Long64_t n = tree->GetEntries();
+            for (Long64_t i = 0; i < n; ++i) {
+                tree->GetEntry(i);
+                seen.insert(static_cast<int>(runnum));
+            }
+            tree->ResetBranchAddresses();
         }
 
-        const Long64_t N = tree->GetEntries();
-        std::unordered_set<int> seen;
-        for (Long64_t i = 0; i < N; ++i) {
-            tree->GetEntry(i);
-            if (!seen.insert(runnum).second) continue;
+        for (const int runnum : seen) {
 
             // Runs with an explicitly present but unusable normalization
             // charge (most commonly a QADB-rejected/zero-charge run) must not
@@ -11524,6 +12183,31 @@ static bool fill_transfer_shape_set(
         found_period = true;
 
         TTree* tree = kv.second;
+        if (g_fused_current_scan_active) {
+            FusedTransferShapeCounts cached;
+            bool found_cached = false;
+            {
+                std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+                const auto it = g_fused_transfer_shapes.find({tree, cfg.csv_channel});
+                if (it != g_fused_transfer_shapes.end()) {
+                    cached = it->second;
+                    found_cached = true;
+                }
+            }
+            if (found_cached) {
+                for (int bin = 0; bin <= out.photon_region.GetNbinsX() + 1; ++bin)
+                    out.photon_region.AddBinContent(bin, cached.photon_region[static_cast<size_t>(bin)]);
+                for (int bin = 0; bin <= out.electron_theta.GetNbinsX() + 1; ++bin)
+                    out.electron_theta.AddBinContent(bin, cached.electron_theta[static_cast<size_t>(bin)]);
+                for (int bin = 0; bin <= out.proton_theta.GetNbinsX() + 1; ++bin)
+                    out.proton_theta.AddBinContent(bin, cached.proton_theta[static_cast<size_t>(bin)]);
+                for (int bin = 0; bin <= out.photon_theta.GetNbinsX() + 1; ++bin)
+                    out.photon_theta.AddBinContent(bin, cached.photon_theta[static_cast<size_t>(bin)]);
+                out.accepted += cached.accepted;
+                continue;
+            }
+        }
+
         Branches b;
         b.bind(tree);
 
@@ -11784,6 +12468,19 @@ bool update_current_dependence_factors_csv(
             std::lock_guard<std::mutex> lock(generated_summary_mutex);
             generated_summaries.clear();
         }
+        {
+            std::lock_guard<std::mutex> lock(g_fused_current_cache_mutex);
+            g_fused_current_scan_active = false;
+            g_fused_integrated_data.clear();
+            g_fused_integrated_rec.clear();
+            g_fused_run_numbers.clear();
+            g_fused_transfer_shapes.clear();
+            g_fused_region_data.clear();
+            g_fused_region_rec.clear();
+            g_fused_theta_data.clear();
+            g_fused_theta_gen.clear();
+            g_fused_theta_rec.clear();
+        }
         TH1::AddDirectory(kFALSE);
         gStyle->SetOptStat(0);
 
@@ -11897,6 +12594,16 @@ bool update_current_dependence_factors_csv(
 
         const TopoCutMap mc_cuts =
             load_sigma_cuts(options.combined_cuts_json, "mc");
+
+        // The integrated, photon-region, and region-angle studies use the same
+        // selected events.  Build all of their aggregate views in one ROOT pass
+        // per tree; the existing study functions below then consume the cached
+        // aggregates and retain their established fitting/output interfaces.
+        prepare_fused_current_scans(
+            dvcs, eppi0,
+            dvcsDataTrees, eppi0DataTrees,
+            dvcsGenMcTrees, dvcsRecMcTrees,
+            charge_map, data_cuts, mc_cuts, options);
 
         std::vector<PeriodResult> dvcs_results =
             run_channel_study(dvcs,

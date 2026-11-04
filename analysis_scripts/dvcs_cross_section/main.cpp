@@ -351,6 +351,7 @@ int main(int argc, char* argv[]) {
     global_cfg.enable_reconstructed_electron_p_cut = true;
     global_cfg.reconstructed_electron_p_min_GeV = 2.0;
     global_cfg.enable_analysis_phase_space_cuts = true;
+    global_cfg.enable_analysis_y_min_cut = false;
     global_cfg.analysis_y_min = 0.19;
     global_cfg.analysis_W_min_GeV = 2.0;
 
@@ -427,11 +428,11 @@ int main(int argc, char* argv[]) {
               << " GeV; p(FD inb) > " << global_cfg.auxiliary_fd_proton_p_min_inb_GeV
               << " GeV; p(FD out) > " << global_cfg.auxiliary_fd_proton_p_min_out_GeV
               << " GeV." << std::endl;
-    std::cout << "[main] Common generated/reconstructed phase space: p_e > "
+    std::cout << "[main] Reconstructed selection: p_e > "
               << global_cfg.reconstructed_electron_p_min_GeV
-              << " GeV, y > " << global_cfg.analysis_y_min
-              << ", W > " << global_cfg.analysis_W_min_GeV
-              << " GeV, and |t| >= |t_min|." << std::endl;
+              << " GeV. Published channel boundary: W > "
+              << global_cfg.analysis_W_min_GeV << " GeV. Generated denominators do not use p_e, p_p, theta, y, or t_min cuts."
+              << std::endl;
 
     // Record the exact global-cut configuration before the Python process is
     // launched. The Python exclusivity stage must apply the same minimally
@@ -1104,6 +1105,9 @@ int main(int argc, char* argv[]) {
             Pi0ContaminationOptions pass1_pi0_opts;
             pass1_pi0_opts.use_epg_mc_current_factor_for_eppi0_bkg =
                 use_epg_mc_current_factor_for_eppi0_bkg;
+            // The exclusivity-variable overlays do not depend on the analysis
+            // binning and were already produced by the nominal pass.
+            pass1_pi0_opts.make_exclusivity_diagnostics = false;
             if (!compute_pi0_contamination_overall(
                     dataTrees, eppi0DataTrees, eppi0RecMcTrees, eppi0BkgTrees,
                     cuts_json, pass1_csv, pass1_root, 7, pass1_pi0_opts)) {
@@ -1230,6 +1234,9 @@ int main(int argc, char* argv[]) {
             Pi0ContaminationOptions pi0;
             pi0.use_epg_mc_current_factor_for_eppi0_bkg =
                 use_epg_mc_current_factor_for_eppi0_bkg;
+            // Sebastian's alternate output binning does not change the event
+            // selection used by these diagnostic-only overlays.
+            pi0.make_exclusivity_diagnostics = false;
             if (!compute_pi0_contamination_overall(
                     dataTrees, eppi0DataTrees, eppi0RecMcTrees, eppi0BkgTrees,
                     cuts_json, seb_csv, seb_root, 7, pi0)) {

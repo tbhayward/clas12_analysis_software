@@ -38,20 +38,24 @@
 #include <TAxis.h>
 #include <TBranch.h>
 #include <TObjArray.h>
+#include <TROOT.h>
 
 #include <nlohmann/json.hpp>
 
 #include <algorithm>
 #include <array>
+#include <chrono>
 #include <cmath>
 #include <cctype>
 #include <cstdio>
 #include <cstdlib>
+#include <exception>
 #include <fstream>
 #include <iomanip>
 #include <iostream>
 #include <limits>
 #include <map>
+#include <mutex>
 #include <set>
 #include <sstream>
 #include <stdexcept>
@@ -1491,6 +1495,7 @@ static DiagnosticSampleResult fill_all_diagnostic_hists_from_trees(
     }
 
     static std::set<std::string> warned_missing;
+    static std::mutex warned_missing_mutex;
 
     for (const auto& kv : trees) {
         if (!kv.second) continue;
@@ -1502,6 +1507,7 @@ static DiagnosticSampleResult fill_all_diagnostic_hists_from_trees(
                 const std::string warn_key =
                     kv.first + "|" + varcfgs[ivar].name + "|" +
                     (eppi0_exclusive_sample ? "pi0" : "dvcs");
+                std::lock_guard<std::mutex> warning_lock(warned_missing_mutex);
                 if (warned_missing.insert(warn_key).second) {
                     std::cout << "[pi0_contamination] diagnostic: skipping tree key='"
                               << kv.first << "' for variable " << varcfgs[ivar].name
@@ -1782,7 +1788,8 @@ static void make_exclusivity_variable_diagnostics(
     const std::map<std::string, TTree*>& eppi0BkgTrees,
     const DiagnosticTopoCutMap& data_cuts,
     const DiagnosticTopoCutMap& mc_cuts,
-    const std::string& output_root_dir) {
+    const std::string& output_root_dir,
+    int max_workers) {
 
     (void)csv;
     (void)bins;
@@ -1791,14 +1798,38 @@ static void make_exclusivity_variable_diagnostics(
                                            "exclusivity_variable_diagnostics");
     mkdir_p(diag_dir);
 
-    std::vector<DiagnosticBinRow> all_rows;
-
-    for (const std::string& period : kPeriods) {
+    struct PeriodDiagnosticResult {
+        std::string period;
         std::vector<DiagnosticVar> varcfgs;
-        varcfgs.reserve(kDiagnosticVars.size());
+        DiagnosticSampleResult dvcs;
+        DiagnosticSampleResult pi0_data;
+        DiagnosticSampleResult pi0_rec;
+        DiagnosticSampleResult mis;
+    };
+
+    // Only the ROOT-tree reads and plain-vector histogram filling run in
+    // parallel.  Canvas creation, plotting, logging, and CSV assembly remain
+    // serial below because ROOT graphics use process-global state.
+    std::vector<PeriodDiagnosticResult> period_results(kPeriods.size());
+    std::vector<std::exception_ptr> errors(kPeriods.size());
+    const int nthreads = std::max(1, std::min(max_workers, static_cast<int>(kPeriods.size())));
+
+    std::cout << "[pi0_contamination] Exclusivity diagnostics: scanning "
+              << kPeriods.size() << " periods with " << nthreads
+              << " worker(s)." << std::endl;
+    const auto scan_started = std::chrono::steady_clock::now();
+
+#ifdef _OPENMP
+#pragma omp parallel for schedule(dynamic, 1) num_threads(nthreads)
+#endif
+    for (int iperiod = 0; iperiod < static_cast<int>(kPeriods.size()); ++iperiod) {
+      try {
+        PeriodDiagnosticResult local;
+        local.period = kPeriods[static_cast<size_t>(iperiod)];
+        local.varcfgs.reserve(kDiagnosticVars.size());
         for (const DiagnosticVar& base_varcfg : kDiagnosticVars) {
-            varcfgs.push_back(
-                diagnostic_var_with_data_cut_range(base_varcfg, period, data_cuts));
+            local.varcfgs.push_back(
+                diagnostic_var_with_data_cut_range(base_varcfg, local.period, data_cuts));
         }
 
         std::array<const DiagnosticCutMap*, 3> dvcs_data_cuts{};
@@ -1809,31 +1840,55 @@ static void make_exclusivity_variable_diagnostics(
         for (size_t itopo = 0; itopo < kTopologies.size(); ++itopo) {
             const std::string& topo = kTopologies[itopo];
             dvcs_data_cuts[itopo] =
-                find_diagnostic_cut_map(data_cuts, "DVCS", period, topo);
+                find_diagnostic_cut_map(data_cuts, "DVCS", local.period, topo);
             eppi0_data_cuts[itopo] =
-                find_diagnostic_cut_map(data_cuts, "eppi0", period, topo);
+                find_diagnostic_cut_map(data_cuts, "eppi0", local.period, topo);
             dvcs_mc_cuts[itopo] =
-                find_diagnostic_cut_map(mc_cuts, "DVCS", period, topo);
+                find_diagnostic_cut_map(mc_cuts, "DVCS", local.period, topo);
             eppi0_mc_cuts[itopo] =
-                find_diagnostic_cut_map(mc_cuts, "eppi0", period, topo);
+                find_diagnostic_cut_map(mc_cuts, "eppi0", local.period, topo);
         }
 
         // Each sample is scanned exactly once for this period. During that one
         // pass, all three topologies and all eight diagnostic variables are
         // filled. The previous implementation rescanned the same trees once for
         // every topology-variable combination.
-        const DiagnosticSampleResult dvcs_result =
+        local.dvcs =
             fill_all_diagnostic_hists_from_trees(
-                dvcsDataTrees, period, varcfgs, false, dvcs_data_cuts);
-        const DiagnosticSampleResult pi0_data_result =
+                dvcsDataTrees, local.period, local.varcfgs, false, dvcs_data_cuts);
+        local.pi0_data =
             fill_all_diagnostic_hists_from_trees(
-                eppi0DataTrees, period, varcfgs, true, eppi0_data_cuts);
-        const DiagnosticSampleResult pi0_rec_result =
+                eppi0DataTrees, local.period, local.varcfgs, true, eppi0_data_cuts);
+        local.pi0_rec =
             fill_all_diagnostic_hists_from_trees(
-                eppi0RecMcTrees, period, varcfgs, true, eppi0_mc_cuts, true);
-        const DiagnosticSampleResult mis_result =
+                eppi0RecMcTrees, local.period, local.varcfgs, true, eppi0_mc_cuts, true);
+        local.mis =
             fill_all_diagnostic_hists_from_trees(
-                eppi0BkgTrees, period, varcfgs, false, dvcs_mc_cuts);
+                eppi0BkgTrees, local.period, local.varcfgs, false, dvcs_mc_cuts);
+
+        period_results[static_cast<size_t>(iperiod)] = std::move(local);
+      } catch (...) {
+        errors[static_cast<size_t>(iperiod)] = std::current_exception();
+      }
+    }
+
+    for (const std::exception_ptr& error : errors) {
+        if (error) std::rethrow_exception(error);
+    }
+    const double scan_seconds = std::chrono::duration<double>(
+        std::chrono::steady_clock::now() - scan_started).count();
+    std::cout << "[pi0_contamination] Parallel exclusivity diagnostic scans completed in "
+              << std::fixed << std::setprecision(1) << scan_seconds << " s."
+              << std::defaultfloat << std::setprecision(6) << std::endl;
+
+    std::vector<DiagnosticBinRow> all_rows;
+    for (const PeriodDiagnosticResult& result : period_results) {
+        const std::string& period = result.period;
+        const std::vector<DiagnosticVar>& varcfgs = result.varcfgs;
+        const DiagnosticSampleResult& dvcs_result = result.dvcs;
+        const DiagnosticSampleResult& pi0_data_result = result.pi0_data;
+        const DiagnosticSampleResult& pi0_rec_result = result.pi0_rec;
+        const DiagnosticSampleResult& mis_result = result.mis;
 
         const bool have_all_trees =
             dvcs_result.trees_used > 0 &&
@@ -2440,9 +2495,8 @@ bool compute_pi0_contamination_overall(
     const std::string &output_root_dir,
     int max_workers,
     const Pi0ContaminationOptions& options) {
-    (void)max_workers;
-
     try {
+        ROOT::EnableThreadSafety();
         TH1::AddDirectory(kFALSE);
         gStyle->SetOptStat(0);
 
@@ -2464,20 +2518,26 @@ bool compute_pi0_contamination_overall(
             compute_period(csv, bins, period, output_root_dir, options);
         }
 
-        const DiagnosticTopoCutMap diagnostic_data_cuts =
-            load_diagnostic_combined_cuts(combined_cuts_json, "data");
-        const DiagnosticTopoCutMap diagnostic_mc_cuts =
-            load_diagnostic_combined_cuts(combined_cuts_json, "mc");
+        if (options.make_exclusivity_diagnostics) {
+            const DiagnosticTopoCutMap diagnostic_data_cuts =
+                load_diagnostic_combined_cuts(combined_cuts_json, "data");
+            const DiagnosticTopoCutMap diagnostic_mc_cuts =
+                load_diagnostic_combined_cuts(combined_cuts_json, "mc");
 
-        make_exclusivity_variable_diagnostics(csv,
-                                              bins,
-                                              dvcsDataTrees,
-                                              eppi0DataTrees,
-                                              eppi0RecMcTrees,
-                                              eppi0BkgTrees,
-                                              diagnostic_data_cuts,
-                                              diagnostic_mc_cuts,
-                                              output_root_dir);
+            make_exclusivity_variable_diagnostics(csv,
+                                                  bins,
+                                                  dvcsDataTrees,
+                                                  eppi0DataTrees,
+                                                  eppi0RecMcTrees,
+                                                  eppi0BkgTrees,
+                                                  diagnostic_data_cuts,
+                                                  diagnostic_mc_cuts,
+                                                  output_root_dir,
+                                                  max_workers);
+        } else {
+            std::cout << "[pi0_contamination] Skipping diagnostic-only exclusivity-variable "
+                         "tree scans for this internal analysis pass." << std::endl;
+        }
 
         write_analysis_note_outputs(csv, bins, output_root_dir);
 

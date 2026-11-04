@@ -354,6 +354,7 @@ static GlobalCutConfig load_global_cut_config(const std::string& path) {
     require_bool("enable_reconstructed_electron_p_cut", cfg.enable_reconstructed_electron_p_cut);
     require_number("reconstructed_electron_p_min_GeV", cfg.reconstructed_electron_p_min_GeV);
     require_bool("enable_analysis_phase_space_cuts", cfg.enable_analysis_phase_space_cuts);
+    require_bool("enable_analysis_y_min_cut", cfg.enable_analysis_y_min_cut);
     require_number("analysis_y_min", cfg.analysis_y_min);
     require_number("analysis_W_min_GeV", cfg.analysis_W_min_GeV);
     require_number("pTmiss_max", cfg.pTmiss_max);
@@ -623,10 +624,9 @@ static int find_row_for_event(double xB,
     return -1;
 }
 
-// Accumulate MC counts with DVCS global cuts + Emiss2 3-sigma cut.
+// Accumulate generated MC counts with the published channel boundary only.
 // Returns N_accepted = number of entries that:
-//   - pass passes_global_cuts(...),
-//   - pass the Emiss2 3-sigma band, and
+//   - pass W > W_min, and
 //   - fall into any DVCS analysis bin.
 // The 'counts' vector must be pre-sized to NR by the caller.
 static double accumulate_counts_for_tree(const std::string& group_label,
@@ -672,31 +672,11 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     if (!tree->GetBranch(br_x) ||
         !tree->GetBranch(br_Q2) ||
         !tree->GetBranch(br_t1) ||
-        !tree->GetBranch(br_phi2) ||
-        !tree->GetBranch(br_oa_ep2) ||
-        !tree->GetBranch(br_pTmiss) ||
-        !tree->GetBranch(br_det1) ||
-        !tree->GetBranch(br_det2) || !tree->GetBranch(br_e_p) ||
-        (global_cfg.enable_auxiliary_fiducial_cuts &&
-         (!tree->GetBranch(br_p1_p) || !tree->GetBranch(br_p1_theta)))) {
+        !tree->GetBranch(br_phi2)) {
         std::cerr << "[radcorr] FATAL: missing one or more branches in generated MC tree for "
                   << group_label << " (" << tree_label
                   << ") (expected common phase-space and global-cut branches).\n";
         std::exit(EXIT_FAILURE);
-    }
-
-    if (global_cuts_require_auxiliary_kinematics(global_cfg) || global_cfg.enable_dvcsgen_ycol_cut ||
-        global_cuts_require_sector_phi(global_cfg)) {
-        if (!tree->GetBranch(br_e_phi) || !tree->GetBranch(br_p1_phi) || !tree->GetBranch(br_p2_phi) ||
-            ((global_cuts_require_auxiliary_kinematics(global_cfg) || global_cfg.enable_dvcsgen_ycol_cut) &&
-             (!tree->GetBranch(br_e_theta) ||
-            !tree->GetBranch(br_p1_theta) || !tree->GetBranch(br_p1_phi) ||
-            !tree->GetBranch(br_p2_p) || !tree->GetBranch(br_p2_theta) || !tree->GetBranch(br_p2_phi) ||
-              (global_cfg.enable_dvcsgen_ycol_cut && !tree->GetBranch(br_e_p))))) {
-            std::cerr << "[radcorr] FATAL: active sector/auxiliary/ycol global cuts require the corresponding phi/kinematic branches in generated MC tree for "
-                      << group_label << " (" << tree_label << ").\n";
-            std::exit(EXIT_FAILURE);
-        }
     }
 
     double g_x = 0.0;
@@ -742,36 +722,7 @@ static double accumulate_counts_for_tree(const std::string& group_label,
     for (Long64_t i = 0; i < N; ++i) {
         tree->GetEntry(i);
 
-        if (!passes_analysis_phase_space_cuts(period_label, g_x, g_Q2, g_t1,
-                                              g_e_p, global_cfg)) continue;
-        if (global_cfg.enable_auxiliary_fiducial_cuts &&
-            !passes_generated_proton_momentum_cut(g_p1_theta, period_label,
-                                                  g_p1_p, global_cfg)) continue;
-
-        // Apply DVCS global kinematic cuts (requires GlobalCutConfig).
-        // Use the detector-aware overload:
-        //   passes_global_cuts(t1, open_angle_ep2_deg, pTmiss, det1, det2, cfg)
-        //
-        // NOTE: user confirmed open_angle_ep2 is already in degrees.
-        bool pass_global = false;
-        if (global_cuts_require_auxiliary_kinematics(global_cfg) || global_cfg.enable_dvcsgen_ycol_cut) {
-            pass_global = passes_global_cuts(g_t1, g_open_angle, g_pTmiss,
-                                             g_det1, g_det2,
-                                             period_label,
-                                             g_e_p, g_e_theta, g_e_phi,
-                                             g_p1_theta, g_p1_phi,
-                                             g_p2_p, g_p2_theta, g_p2_phi,
-                                             global_cfg);
-        } else if (global_cuts_require_sector_phi(global_cfg)) {
-            pass_global = passes_global_cuts(g_t1, g_open_angle, g_pTmiss,
-                                             g_det1, g_det2,
-                                             period_label,
-                                             g_e_phi, g_p1_phi, g_p2_phi,
-                                             global_cfg);
-        } else {
-            pass_global = passes_global_cuts(g_t1, g_open_angle, g_pTmiss, g_det1, g_det2, global_cfg);
-        }
-        if (!pass_global) {
+        if (!passes_generated_channel_cuts(g_x, g_Q2, global_cfg)) {
             if (N > 0 && next_pct <= 100) {
                 double pct = 100.0 * (double)(i + 1) / (double)N;
                 while (pct >= (double)next_pct && next_pct <= 100) {

@@ -7,6 +7,12 @@
 class TTree;
 
 struct Pi0ContaminationOptions {
+    // The exclusivity-variable overlays are diagnostic-only: they do not feed
+    // the contamination ratios or any downstream physics quantity. Keep them
+    // for the nominal production pass, but allow internal systematic passes to
+    // skip the otherwise expensive ROOT-tree scans.
+    bool make_exclusivity_diagnostics = true;
+
     // Current correction convention for N_mis = ep->eppi0->epg MC.
     //
     // true  -> default: correct the misidentified-background MC with the
@@ -18,9 +24,9 @@ struct Pi0ContaminationOptions {
 };
 
 // Computes the pi0 contamination ratio using only quantities already stored in
-// dvcs_pass2_analysis.csv. The TTree maps are retained in the signature for
-// compatibility with the existing main.cpp call, but this implementation does
-// not loop over ROOT trees.
+// dvcs_pass2_analysis.csv. The TTree maps are used only by the optional
+// exclusivity-variable validation diagnostics; they do not enter the
+// contamination ratio itself.
 //
 // For each CSV row and period:
 //

@@ -84,8 +84,9 @@ static void validate_cfg_or_fatal(const GlobalCutConfig& cfg) {
         cfg.reconstructed_electron_p_min_GeV < 0.0) {
         fatal_global("invalid reconstructed electron momentum threshold");
     }
-    if (!std::isfinite(cfg.analysis_y_min) || cfg.analysis_y_min < 0.0 ||
-        cfg.analysis_y_min >= 1.0 ||
+    if ((cfg.enable_analysis_y_min_cut &&
+         (!std::isfinite(cfg.analysis_y_min) || cfg.analysis_y_min < 0.0 ||
+          cfg.analysis_y_min >= 1.0)) ||
         !std::isfinite(cfg.analysis_W_min_GeV) || cfg.analysis_W_min_GeV <= 0.0) {
         fatal_global("invalid analysis phase-space threshold");
     }
@@ -184,10 +185,41 @@ bool passes_analysis_phase_space_cuts(double Ebeam,
     const double y = Q2 / (2.0 * MP * xB * Ebeam);
     const double W2 = MP * MP + Q2 * (1.0 / xB - 1.0);
     const double minus_t_min = dvcs_minus_t_min(xB, Q2);
-    if (!(std::isfinite(y) && y > cfg.analysis_y_min && y < 1.0)) return false;
+    if (cfg.enable_analysis_y_min_cut &&
+        !(std::isfinite(y) && y > cfg.analysis_y_min && y < 1.0)) return false;
     if (!(std::isfinite(W2) && W2 > cfg.analysis_W_min_GeV * cfg.analysis_W_min_GeV)) return false;
-    // Physical t is negative: t <= t_min is equivalent to |t| >= |t_min|.
-    return std::isfinite(minus_t_min) && std::abs(t1) >= minus_t_min;
+    // The analysis-tree convention is physical t1 < 0. Reject a malformed
+    // positive-t entry instead of allowing it through an absolute value.
+    // In this convention t <= t_min is equivalent to -t >= -t_min.
+    return std::isfinite(minus_t_min) && t1 < 0.0 && (-t1) >= minus_t_min;
+}
+
+bool passes_generated_channel_cuts(double xB,
+                                   double Q2,
+                                   const GlobalCutConfig& cfg) {
+    validate_cfg_or_fatal(cfg);
+    if (!(std::isfinite(xB) && xB > 0.0 && xB < 1.0 &&
+          std::isfinite(Q2) && Q2 > 0.0)) return false;
+    if (!cfg.enable_analysis_phase_space_cuts) return true;
+    static constexpr double MP = 0.9382720813;
+    const double W2 = MP * MP + Q2 * (1.0 / xB - 1.0);
+    return std::isfinite(W2) &&
+           W2 > cfg.analysis_W_min_GeV * cfg.analysis_W_min_GeV;
+}
+
+bool passes_bin_volume_phase_space_cuts(double Ebeam,
+                                        double xB,
+                                        double Q2,
+                                        double t1,
+                                        const GlobalCutConfig& cfg) {
+    if (!(std::isfinite(Ebeam) && Ebeam > 0.0) ||
+        !passes_generated_channel_cuts(xB, Q2, cfg) ||
+        !std::isfinite(t1) || !(t1 < 0.0)) return false;
+    static constexpr double MP = 0.9382720813;
+    const double y = Q2 / (2.0 * MP * xB * Ebeam);
+    if (!(std::isfinite(y) && y > 0.0 && y < 1.0)) return false;
+    const double minus_t_min = dvcs_minus_t_min(xB, Q2);
+    return std::isfinite(minus_t_min) && (-t1) >= minus_t_min;
 }
 
 bool passes_proton_momentum_cut(int detector1,
@@ -216,22 +248,6 @@ bool passes_proton_momentum_cut(int detector1,
                              : cfg.auxiliary_fd_proton_p_min_out_GeV);
 }
 
-int generated_proton_detector_region(double p1_theta_rad) {
-    if (!std::isfinite(p1_theta_rad)) return -1;
-    const double theta_deg = p1_theta_rad * RAD2DEG;
-    if (theta_deg >= 0.0 && theta_deg < 40.0) return 1;  // FD
-    if (theta_deg >= 40.0 && theta_deg <= 180.0) return 2; // CD-like threshold
-    return -1;
-}
-
-bool passes_generated_proton_momentum_cut(double p1_theta_rad,
-                                          const std::string& period_label,
-                                          double p1_p,
-                                          const GlobalCutConfig& cfg) {
-    return passes_proton_momentum_cut(generated_proton_detector_region(p1_theta_rad),
-                                      period_label, p1_p, cfg);
-}
-
 std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg) {
     validate_cfg_or_fatal(cfg);
 
@@ -254,8 +270,9 @@ std::string global_cuts_analysis_tag(const GlobalCutConfig& cfg) {
     }
     if (cfg.enable_analysis_phase_space_cuts) {
         std::ostringstream ss;
-        ss << "ygt" << std::fixed << std::setprecision(2) << cfg.analysis_y_min
-           << "_Wgt" << std::setprecision(1) << cfg.analysis_W_min_GeV
+        if (cfg.enable_analysis_y_min_cut)
+            ss << "ygt" << std::fixed << std::setprecision(2) << cfg.analysis_y_min << "_";
+        ss << "Wgt" << std::fixed << std::setprecision(1) << cfg.analysis_W_min_GeV
            << "_tmin";
         pieces.push_back(ss.str());
     }
@@ -762,6 +779,7 @@ void write_global_cuts_config_json(const std::string& out_json_dir,
         << "  \"enable_reconstructed_electron_p_cut\": " << (cfg.enable_reconstructed_electron_p_cut ? "true" : "false") << ",\n"
         << "  \"reconstructed_electron_p_min_GeV\": " << std::setprecision(6) << cfg.reconstructed_electron_p_min_GeV << ",\n"
         << "  \"enable_analysis_phase_space_cuts\": " << (cfg.enable_analysis_phase_space_cuts ? "true" : "false") << ",\n"
+        << "  \"enable_analysis_y_min_cut\": " << (cfg.enable_analysis_y_min_cut ? "true" : "false") << ",\n"
         << "  \"analysis_y_min\": " << std::setprecision(6) << cfg.analysis_y_min << ",\n"
         << "  \"analysis_W_min_GeV\": " << std::setprecision(6) << cfg.analysis_W_min_GeV << ",\n"
         << "  \"enable_pTmiss_cut\": " << (cfg.enable_pTmiss_cut ? "true" : "false") << ",\n"

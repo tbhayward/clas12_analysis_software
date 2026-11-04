@@ -122,6 +122,7 @@ class GlobalCutsConfig:
     enable_reconstructed_electron_p_cut: bool
     reconstructed_electron_p_min_GeV: float
     enable_analysis_phase_space_cuts: bool
+    enable_analysis_y_min_cut: bool
     analysis_y_min: float
     analysis_W_min_GeV: float
     enable_pTmiss_cut: bool
@@ -863,7 +864,8 @@ def load_global_cuts_config(path: str) -> GlobalCutsConfig:
         "analysis_tag", "t1_abs_max", "open_angle_min_deg",
         "enable_reconstructed_electron_p_cut",
         "reconstructed_electron_p_min_GeV",
-        "enable_analysis_phase_space_cuts", "analysis_y_min", "analysis_W_min_GeV",
+        "enable_analysis_phase_space_cuts", "enable_analysis_y_min_cut",
+        "analysis_y_min", "analysis_W_min_GeV",
         "enable_pTmiss_cut", "pTmiss_max", "enable_dvcsgen_ycol_cut",
         "enable_auxiliary_fiducial_cuts",
         "auxiliary_require_distinct_fd_sectors",
@@ -892,6 +894,7 @@ def load_global_cuts_config(path: str) -> GlobalCutsConfig:
         enable_reconstructed_electron_p_cut=bool(raw["enable_reconstructed_electron_p_cut"]),
         reconstructed_electron_p_min_GeV=float(raw["reconstructed_electron_p_min_GeV"]),
         enable_analysis_phase_space_cuts=bool(raw["enable_analysis_phase_space_cuts"]),
+        enable_analysis_y_min_cut=bool(raw["enable_analysis_y_min_cut"]),
         analysis_y_min=float(raw["analysis_y_min"]),
         analysis_W_min_GeV=float(raw["analysis_W_min_GeV"]),
         enable_pTmiss_cut=bool(raw["enable_pTmiss_cut"]),
@@ -989,9 +992,11 @@ def global_cut_mask_uproot(
             w2 = mp * mp + q2 * (1.0 / x_b - 1.0)
             eps2 = 4.0 * mp * mp * x_b * x_b / q2
             minus_t_min = q2 * (2.0 * (1.0 - x_b) * (1.0 - np.sqrt(1.0 + eps2)) + eps2) / (4.0 * x_b * (1.0 - x_b) + eps2)
-        mask &= valid & (y > cfg.analysis_y_min) & (y < 1.0)
+        mask &= valid
+        if cfg.enable_analysis_y_min_cut:
+            mask &= (y > cfg.analysis_y_min) & (y < 1.0)
         mask &= w2 > cfg.analysis_W_min_GeV ** 2
-        mask &= np.abs(t1) >= minus_t_min
+        mask &= (t1 < 0.0) & ((-t1) >= minus_t_min)
     if cfg.enable_pTmiss_cut:
         mask &= ptmiss <= cfg.pTmiss_max
     if cfg.excluded_runs:
@@ -1091,8 +1096,9 @@ def event_passes_global_cuts(event: object, period_key: str) -> bool:
         w2 = mp * mp + q2 * (1.0 / x_b - 1.0)
         eps2 = 4.0 * mp * mp * x_b * x_b / q2
         minus_t_min = q2 * (2.0 * (1.0 - x_b) * (1.0 - math.sqrt(1.0 + eps2)) + eps2) / (4.0 * x_b * (1.0 - x_b) + eps2)
-        if not (y > cfg.analysis_y_min and y < 1.0 and
-                w2 > cfg.analysis_W_min_GeV ** 2 and abs(t1) >= minus_t_min):
+        if cfg.enable_analysis_y_min_cut and not (y > cfg.analysis_y_min and y < 1.0):
+            return False
+        if not (w2 > cfg.analysis_W_min_GeV ** 2 and t1 < 0.0 and (-t1) >= minus_t_min):
             return False
     if cfg.enable_pTmiss_cut and ptmiss > cfg.pTmiss_max:
         return False

@@ -14,8 +14,10 @@
 //
 // where mask enforces:
 //   - t > t_min(xB, Q2) (DVCS kinematics, t is negative)
-//   - y > 0.19 and p_e = E_beam(1-y) > 2 GeV
+//   - 0 < y < 1 (beam-energy kinematic accessibility)
 //   - W > 2.0, with W^2 = Mp^2 + Q2 (1/xB - 1)
+// Detector thresholds and generator-coverage cuts such as y>0.19 or p_e>2
+// are not part of the volume.
 //
 // Volumes are computed via a deterministic 3D grid in (xB, Q2, t) and
 // scaled by the geometric extent in phi.
@@ -333,13 +335,9 @@ static double calculate_phase_space_allowed_fraction(double xB_min, double xB_ma
         for (int j = 0; j < n_steps; ++j) {
             const double Q2 = Q2_min + (j + 0.5) * dQ2;
 
-            constexpr double Mp = 0.9382720813;
-            const double y = Q2 / (2.0 * Mp * xB * E_beam);
-            const double e_p = E_beam * (1.0 - y);
-
             for (int k = 0; k < n_steps; ++k) {
                 const double t = t_phys_min + (k + 0.5) * dt;
-                if (passes_analysis_phase_space_cuts(E_beam, xB, Q2, t, e_p)) {
+                if (passes_bin_volume_phase_space_cuts(E_beam, xB, Q2, t)) {
                     ++valid_count;
                 }
             }
