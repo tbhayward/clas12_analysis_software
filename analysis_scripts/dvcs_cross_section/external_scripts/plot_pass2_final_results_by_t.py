@@ -1,13 +1,15 @@
 #!/usr/bin/env python3
-"""Pass-2 DVCS final-results canvases grouped by |t| and gridded in Q2/xB.
+"""Pass-2 DVCS final-results comparisons and kinematic diagnostics.
 
 The script writes separate 10.2/10.6-GeV and BSA/cross-section trees.  For
 each observable it produces the original Pass-2 value canvases, Pass-2 pulls
-relative to KM15, and Gaussian pull summaries for every |t| canvas and for the
-full energy/observable sample.  When published Pass-1 inputs are available it
-also writes parallel value canvases with Pass-1 overlaid and Pass-2-minus-
-Pass-1 pull canvases and summaries.  BH and KM15 curves remain on all value
-canvases.
+relative to KM15, and pull summaries grouped by |t|, Q2, and xB.  When
+published Pass-1 inputs are available it also writes parallel value and pull
+canvases, direct percentage-difference canvases and distributions, and marks
+the published Pass-1 correlated-normalization band separately from the
+point-to-point errors.  CSV-level kinematic and correction profiles are
+written on the same |t|-grouped Q2/xB layout.  BH and KM15 curves remain on
+all value canvases.
 
 Place this file alongside plot_pass2_vs_pass1_model_comparison.py.  Published
 Pass-1 inputs are auto-discovered in common import/imports directories or may
@@ -39,10 +41,32 @@ import numpy as np
 
 # Avoid rewriting tracked .pyc files on the ifarm when importing local helpers.
 sys.dont_write_bytecode = True
-import plot_pass2_vs_pass1_model_comparison as base
+try:
+    import plot_pass2_vs_pass1_model_comparison as base
+except ModuleNotFoundError:
+    helper_dir = Path(__file__).resolve().parent / "external_scripts"
+    if not helper_dir.is_dir():
+        raise
+    sys.path.insert(0, str(helper_dir))
+    import plot_pass2_vs_pass1_model_comparison as base
 
 
 PASS1_NORMALIZATION_FRACTION = 0.31
+
+# These are bin-level means/corrections already stored in the final CSV.  They
+# are profiles, not substitutes for event-level distributions from the ROOT
+# trees.  Keeping the list here makes the diagnostic output self-documenting.
+DIAGNOSTIC_SPECS = (
+    ("xBavg", r"Mean $x_B$", "mean_xB"),
+    ("Q2avg", r"Mean $Q^2$ (GeV$^2$)", "mean_Q2"),
+    ("t_abs_avg", r"Mean $|t|$ (GeV$^2$)", "mean_t"),
+    ("e_theta", r"Mean $\theta_e$ (deg)", "mean_e_theta"),
+    ("p_theta", r"Mean $\theta_p$ (deg)", "mean_p_theta"),
+    ("g_theta", r"Mean $\theta_\gamma$ (deg)", "mean_g_theta"),
+    ("Frad", r"$F_{\rm rad}$", "Frad"),
+    ("Fbin", r"$F_{\rm bin}$", "Fbin"),
+    ("phase_space_fraction", r"Physical / rectangular bin volume", "phase_space_fraction"),
+)
 
 
 def finite(value):
@@ -246,10 +270,10 @@ def angular_distance(a, b):
     return abs((a - b + 180.0) % 360.0 - 180.0)
 
 
-def pass1_pulls(pass2_data, pass1_data, tolerance):
-    """One-to-one nearest-phi pulls with both datasets' errors in quadrature."""
+def nearest_phi_pairs(pass2_data, pass1_data, tolerance):
+    """Return one-to-one nearest-phi Pass-2/Pass-1 point pairs."""
     available = list(range(len(pass1_data)))
-    pulls = []
+    pairs = []
     for phi2, value2, error2 in sorted(pass2_data):
         if not available:
             break
@@ -257,11 +281,76 @@ def pass1_pulls(pass2_data, pass1_data, tolerance):
         phi1, value1, error1 = pass1_data[index]
         if angular_distance(phi2, phi1) > tolerance:
             continue
+        pairs.append((phi2, value2, error2, phi1, value1, error1))
+        available.remove(index)
+    return pairs
+
+
+def pass1_pulls(pass2_data, pass1_data, tolerance):
+    """One-to-one nearest-phi pulls with point-to-point errors in quadrature."""
+    pulls = []
+    for phi2, value2, error2, _, value1, error1 in nearest_phi_pairs(
+        pass2_data, pass1_data, tolerance
+    ):
         denominator = math.hypot(error2, error1)
         if finite(denominator) and denominator > 0:
             pulls.append((phi2, (value2 - value1) / denominator))
-            available.remove(index)
     return pulls
+
+
+def pass1_percentage_differences(pass2_data, pass1_data, tolerance):
+    """Return 100*(Pass-2/Pass-1 - 1) with point-to-point uncertainty.
+
+    The published Pass-1 correlated normalization is deliberately excluded
+    from each error bar and is displayed as a common shaded band instead.
+    """
+    differences = []
+    for phi2, value2, error2, _, value1, error1 in nearest_phi_pairs(
+        pass2_data, pass1_data, tolerance
+    ):
+        if not all(finite(v) for v in (value1, value2, error1, error2)) or value1 <= 0:
+            continue
+        ratio = value2 / value1
+        relative_variance = 0.0
+        if value2 != 0:
+            relative_variance += (error2 / value2) ** 2
+        relative_variance += (error1 / value1) ** 2
+        error = 100.0 * abs(ratio) * math.sqrt(relative_variance)
+        difference = 100.0 * (ratio - 1.0)
+        if finite(difference) and finite(error):
+            differences.append((phi2, difference, error))
+    return differences
+
+
+def key_range(key, axis):
+    if axis == "t":
+        return key.t_min, key.t_max
+    if axis == "q2":
+        return key.q2_min, key.q2_max
+    if axis == "xb":
+        return key.xb_min, key.xb_max
+    raise ValueError(f"Unknown grouping axis: {axis}")
+
+
+def group_values_by_axis(per_key, axis):
+    grouped = {}
+    for key, values in per_key.items():
+        grouped.setdefault(key_range(key, axis), []).extend(values)
+    return grouped
+
+
+def axis_title(axis, limits):
+    lo, hi = limits
+    if axis == "t":
+        return rf"$|t|=[{lo:.3f},{hi:.3f}]\ \mathrm{{GeV}}^2$"
+    if axis == "q2":
+        return rf"$Q^2=[{lo:.3f},{hi:.3f}]\ \mathrm{{GeV}}^2$"
+    return rf"$x_B=[{lo:.3f},{hi:.3f}]$"
+
+
+def axis_stem(axis, index, limits):
+    lo, hi = limits
+    return f"{axis}bin_{index:02d}_{lo:.3f}_{hi:.3f}"
 
 
 def layout_for_group(keys, panels, kind):
@@ -274,7 +363,11 @@ def layout_for_group(keys, panels, kind):
         if any(
             (k.xb_min, k.xb_max) == xb
             and (k.q2_min, k.q2_max) == qb
-            and panels[k][kind]
+            and (
+                panels[k].get(kind, [])
+                if kind in ("xs", "bsa")
+                else panels[k].get("diagnostics", {}).get(kind, [])
+            )
             for k in keys
         )
     }
@@ -506,6 +599,133 @@ def draw_pull_canvas(keys, trange, kind, energy, panels, cache, args, output,
     return finite_pulls
 
 
+def draw_percentage_canvas(keys, trange, kind, energy, panels, pass1, args, output):
+    """Draw direct Pass-2/Pass-1 percentage differences for one |t| canvas."""
+    xbins, qbins, occupied, bottom_by_col, left_by_row = layout_for_group(
+        keys, panels, kind
+    )
+    fig, axs = plt.subplots(
+        len(qbins), len(xbins), figsize=(4.0 * len(xbins), 2.85 * len(qbins)),
+        squeeze=False, sharex=True, sharey=True,
+    )
+    fig.subplots_adjust(
+        left=0.075, right=0.985, bottom=0.10, top=0.87, hspace=0.0, wspace=0.0
+    )
+    fig.suptitle(
+        r"CLAS12 $100\,(\mathrm{Pass\!\!-\!2}/\mathrm{Pass\!\!-\!1}-1)$ — "
+        + ("cross section" if kind == "xs" else "beam-spin asymmetry") + "\n"
+        + rf"$|t|\in[{trange[0]:.3f},\,{trange[1]:.3f}]\ \mathrm{{GeV}}^2$, "
+        + rf"$E_{{beam}}={energy:g}$ GeV",
+        fontsize=15, y=0.985,
+    )
+    per_key = {
+        key: pass1_percentage_differences(
+            panels[key][kind], pass1.get(key, []), args.pass1_phi_tolerance
+        )
+        for key in keys
+    }
+    all_values = [value for values in per_key.values() for _, value, _ in values]
+    all_extents = [abs(value) + error for values in per_key.values() for _, value, error in values]
+    ylimit = max(
+        40.0,
+        100.0 * PASS1_NORMALIZATION_FRACTION * 1.25,
+        1.08 * max(all_extents, default=35.0),
+    )
+    for iq, qb in enumerate(qbins):
+        for ix, xb in enumerate(xbins):
+            row = len(qbins) - 1 - iq
+            ax = axs[row, ix]
+            key = panel_key(keys, xb, qb)
+            if key is None or not panels[key][kind]:
+                ax.axis("off")
+                continue
+            values = per_key.get(key, [])
+            ax.axhspan(
+                -100.0 * PASS1_NORMALIZATION_FRACTION,
+                +100.0 * PASS1_NORMALIZATION_FRACTION,
+                color="#2ca02c", alpha=0.12, zorder=0,
+            )
+            if values:
+                phi, differences, errors = np.asarray(values).T
+                ax.errorbar(
+                    phi, differences, yerr=errors, fmt="o", ms=3.6, lw=0.8,
+                    capsize=1.4, color="#8c2d04", zorder=3,
+                )
+            ax.axhline(0.0, color="black", lw=1.0, alpha=0.75)
+            ax.set_ylim(-ylimit, ylimit)
+            show_x = row == bottom_by_col.get(ix)
+            show_y = ix == left_by_row.get(row)
+            format_canvas_axes(ax, xb, qb, show_x, show_y, kind)
+            if show_y:
+                ax.set_ylabel(r"$100\,(\mathrm{P2}/\mathrm{P1}-1)$ (%)")
+            ax.text(
+                0.96, 0.06, f"N={len(values)}", transform=ax.transAxes,
+                ha="right", va="bottom", fontsize=8,
+            )
+    finish_endpoint_ticks(axs, bottom_by_col, left_by_row)
+    fig.legend(
+        handles=[
+            Line2D([], [], color="#8c2d04", marker="o", ls="none", markersize=5,
+                   label="Pass-2 / Pass-1 (point-to-point errors)"),
+            Line2D([], [], color="#2ca02c", lw=8, alpha=0.20,
+                   label="Pass-1 ±31% correlated normalization"),
+        ],
+        loc="upper center", bbox_to_anchor=(0.5, 0.914), ncol=2, frameon=False,
+    )
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=args.dpi)
+    plt.close(fig)
+    print(f"[write] {output}", flush=True)
+    return [value for value in all_values if finite(value)]
+
+
+def draw_diagnostic_canvas(keys, trange, energy, panels, spec, args, output):
+    """Draw a stored CSV bin-mean/correction profile on the standard layout."""
+    name, ylabel, _ = spec
+    xbins, qbins, occupied, bottom_by_col, left_by_row = layout_for_group(
+        keys, panels, name
+    )
+    if not occupied:
+        return
+    fig, axs = plt.subplots(
+        len(qbins), len(xbins), figsize=(4.0 * len(xbins), 2.85 * len(qbins)),
+        squeeze=False, sharex=True, sharey=True,
+    )
+    fig.subplots_adjust(
+        left=0.075, right=0.985, bottom=0.10, top=0.87, hspace=0.0, wspace=0.0
+    )
+    fig.suptitle(
+        f"CLAS12 Pass-2 CSV profile — {ylabel}\n"
+        + rf"$|t|\in[{trange[0]:.3f},\,{trange[1]:.3f}]\ \mathrm{{GeV}}^2$, "
+        + rf"$E_{{beam}}={energy:g}$ GeV",
+        fontsize=15, y=0.985,
+    )
+    for iq, qb in enumerate(qbins):
+        for ix, xb in enumerate(xbins):
+            row = len(qbins) - 1 - iq
+            ax = axs[row, ix]
+            key = panel_key(keys, xb, qb)
+            values = (
+                panels.get(key, {}).get("diagnostics", {}).get(name, [])
+                if key is not None else []
+            )
+            if not values:
+                ax.axis("off")
+                continue
+            phi, profile = np.asarray(sorted(values)).T
+            ax.plot(phi, profile, "o-", ms=3.2, lw=0.9, color="#1b9e77")
+            show_x = row == bottom_by_col.get(ix)
+            show_y = ix == left_by_row.get(row)
+            format_canvas_axes(ax, xb, qb, show_x, show_y, "xs")
+            if show_y:
+                ax.set_ylabel(ylabel)
+    finish_endpoint_ticks(axs, bottom_by_col, left_by_row)
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=args.dpi)
+    plt.close(fig)
+    print(f"[write] {output}", flush=True)
+
+
 def draw_pull_histogram(pulls, title, output, dpi):
     values = np.asarray([v for v in pulls if finite(v)], dtype=float)
     fig, ax = plt.subplots(figsize=(7.2, 5.0))
@@ -540,6 +760,83 @@ def draw_pull_histogram(pulls, title, output, dpi):
     fig.savefig(output, dpi=dpi)
     plt.close(fig)
     print(f"[write] {output}", flush=True)
+
+
+def draw_percentage_histogram(differences, title, output, dpi):
+    """Summarize direct percentage differences without imposing a Gaussian."""
+    values = np.asarray([v for v in differences if finite(v)], dtype=float)
+    fig, ax = plt.subplots(figsize=(7.2, 5.0))
+    normalization = 100.0 * PASS1_NORMALIZATION_FRACTION
+    ax.axvspan(-normalization, normalization, color="#2ca02c", alpha=0.13,
+               label="Pass-1 ±31% correlated normalization")
+    if values.size:
+        spread = max(50.0, float(np.max(np.abs(values))) * 1.08)
+        bins = np.linspace(
+            -spread, spread,
+            max(13, min(41, int(math.sqrt(values.size) * 3) + 1)),
+        )
+        ax.hist(values, bins=bins, color="#8c2d04", alpha=0.72,
+                edgecolor="white", label="Matched points")
+        median = float(np.median(values))
+        low, high = (float(v) for v in np.percentile(values, [16.0, 84.0]))
+        within = float(np.mean(np.abs(values) <= normalization))
+        ax.axvline(median, color="#d95f02", lw=2.0, label="Median")
+        ax.text(
+            0.97, 0.95,
+            rf"$N={values.size}$" + "\n"
+            + rf"median $={median:+.1f}\%$" + "\n"
+            + rf"16–84% $=[{low:+.1f},{high:+.1f}]\%$" + "\n"
+            + rf"within ±31% $={100.0 * within:.1f}\%$",
+            transform=ax.transAxes, ha="right", va="top",
+            bbox={"facecolor": "white", "alpha": 0.88, "edgecolor": "0.75"},
+        )
+    else:
+        ax.text(0.5, 0.5, "No matched points", transform=ax.transAxes,
+                ha="center", va="center")
+    ax.axvline(0.0, color="black", lw=1.0, alpha=0.75)
+    ax.set_xlabel(r"$100\,(\mathrm{Pass\!\!-\!2}/\mathrm{Pass\!\!-\!1}-1)$ (%)")
+    ax.set_ylabel("Entries")
+    ax.set_title(title)
+    ax.grid(axis="y", alpha=0.18)
+    if values.size:
+        ax.legend(frameon=False)
+    fig.tight_layout()
+    output.parent.mkdir(parents=True, exist_ok=True)
+    fig.savefig(output, dpi=dpi)
+    plt.close(fig)
+    print(f"[write] {output}", flush=True)
+
+
+def csv_numeric_value(row, column):
+    """Read either a scalar CSV cell or the central value of a tuple cell."""
+    if column is None:
+        return float("nan")
+    raw = row.get(column, "")
+    parsed = base.parse_tuple_cell(raw)
+    if parsed.ok and finite(parsed.value):
+        return parsed.value
+    return base.to_float(raw, default=float("nan"))
+
+
+def diagnostic_columns(fields, energy):
+    suffix = "10.6 GeV" if math.isclose(energy, 10.6) else "Sp19 Inb"
+    energy_label = "10.6 GeV" if math.isclose(energy, 10.6) else "10.2 GeV"
+    columns = {}
+    for name, _, _ in DIAGNOSTIC_SPECS:
+        if name == "phase_space_fraction":
+            columns[name] = (
+                base.find_column(fields, [f"bin_volume, {energy_label}"], required=False),
+                base.find_column(fields, [f"cubic bin_volume, {energy_label}"], required=False),
+            )
+        elif name in ("Frad", "Fbin"):
+            columns[name] = base.find_column(
+                fields, [f"{name}, {energy_label}"], required=False
+            )
+        else:
+            columns[name] = base.find_column(
+                fields, [f"{name}, {suffix}"], required=False
+            )
+    return columns
 
 
 def parse_pass2(args):
@@ -593,6 +890,9 @@ def parse_pass2(args):
             energy: {} for energy in (10.2, 10.6)
             if args.e_beam is None or args.e_beam == energy
         }
+        diagnostics_by_energy = {
+            energy: diagnostic_columns(fields, energy) for energy in panels_by_energy
+        }
         for row in reader:
             if not base.row_is_valid(row, cols["valid"]):
                 continue
@@ -601,7 +901,25 @@ def parse_pass2(args):
             if not finite(phi):
                 continue
             for energy, panels in panels_by_energy.items():
-                item = panels.setdefault(key, {"xs": [], "bsa": []})
+                item = panels.setdefault(
+                    key, {"xs": [], "bsa": [], "diagnostics": {}}
+                )
+                for name, _, _ in DIAGNOSTIC_SPECS:
+                    column = diagnostics_by_energy[energy].get(name)
+                    if name == "phase_space_fraction":
+                        physical = csv_numeric_value(row, column[0]) if column else float("nan")
+                        rectangular = csv_numeric_value(row, column[1]) if column else float("nan")
+                        diagnostic = (
+                            physical / rectangular
+                            if finite(physical) and finite(rectangular) and rectangular > 0
+                            else float("nan")
+                        )
+                    else:
+                        diagnostic = csv_numeric_value(row, column)
+                    if finite(diagnostic):
+                        item["diagnostics"].setdefault(name, []).append(
+                            (phi % 360.0, diagnostic)
+                        )
                 selected_xs = xs_col if energy == 10.6 else xs_10p2
                 selected_bsa = bsa_col if energy == 10.6 else bsa_10p2
                 rowspecs = [
@@ -743,12 +1061,50 @@ def main():
         if pass1_bsa_path is not None:
             pass1_by_kind["bsa"] = load_pass1_bsa(pass1_bsa_path, keys, energy)
 
+        # These profiles expose where each phi-bin population sits inside the
+        # nominal 4D bin and how the model/phase-space corrections vary.  They
+        # use only values already stored in the final CSV.
+        for it, (trange, group_keys) in enumerate(sorted(groups.items()), 1):
+            stem = f"tbin_{it:02d}_{trange[0]:.3f}_{trange[1]:.3f}"
+            for spec in DIAGNOSTIC_SPECS:
+                name, _, file_tag = spec
+                if not any(
+                    panels[key].get("diagnostics", {}).get(name)
+                    for key in group_keys
+                ):
+                    continue
+                draw_diagnostic_canvas(
+                    group_keys, trange, energy, panels, spec, args,
+                    energy_dir / "kinematic_profiles" / "by_t" / file_tag
+                    / f"{file_tag}_{energy:g}GeV_{stem}.png",
+                )
+
         for kind in ("xs", "bsa"):
             if not any(panels[key][kind] for key in panels):
                 continue
             root = energy_dir / observable_tag(kind)
             km15_overall = []
             pass1_overall = []
+            percentage_overall = []
+            km15_by_key = {
+                key: [pull for _, pull in km15_pulls(
+                    panels[key][kind], cache[model_cache_key(key, args, kind)]
+                )]
+                for key in panels if panels[key][kind]
+            }
+            p1 = pass1_by_kind[kind]
+            pass1_by_key = {
+                key: [pull for _, pull in pass1_pulls(
+                    panels[key][kind], p1.get(key, []), args.pass1_phi_tolerance
+                )]
+                for key in panels if panels[key][kind]
+            } if p1 else {}
+            percentage_by_key = {
+                key: [difference for _, difference, _ in pass1_percentage_differences(
+                    panels[key][kind], p1.get(key, []), args.pass1_phi_tolerance
+                )]
+                for key in panels if panels[key][kind]
+            } if p1 else {}
             for it, (trange, group_keys) in enumerate(sorted(groups.items()), 1):
                 group_keys = [key for key in group_keys if panels[key][kind]]
                 if not group_keys:
@@ -773,7 +1129,6 @@ def main():
                     args.dpi,
                 )
 
-                p1 = pass1_by_kind[kind]
                 if p1 and any(p1.get(key) for key in group_keys):
                     pass1_root = root / "pass2_vs_pass1"
                     draw_value_canvas(
@@ -793,6 +1148,61 @@ def main():
                         pass1_root / "pull_distributions" / f"pull_distribution_{stem}.png",
                         args.dpi,
                     )
+                    percentage_values = draw_percentage_canvas(
+                        group_keys, trange, kind, energy, panels, p1, args,
+                        pass1_root / "percentage_differences" / "canvases_by_t"
+                        / f"pass2_over_pass1_percent_{energy:g}GeV_{kind}_{stem}.png",
+                    )
+                    percentage_overall.extend(percentage_values)
+                    draw_percentage_histogram(
+                        percentage_values,
+                        f"Pass-2 / Pass-1 percentage differences — {energy:g} GeV "
+                        f"{observable_tag(kind)}, "
+                        + rf"$|t|=[{trange[0]:.3f},{trange[1]:.3f}]$",
+                        pass1_root / "percentage_differences" / "distributions" / "by_t"
+                        / f"percentage_difference_{stem}.png",
+                        args.dpi,
+                    )
+
+            # The original summaries were organized only by |t|.  Add the
+            # orthogonal Q2 and xB groupings without changing the legacy paths.
+            for axis in ("q2", "xb"):
+                for index, (limits, values) in enumerate(
+                    sorted(group_values_by_axis(km15_by_key, axis).items()), 1
+                ):
+                    draw_pull_histogram(
+                        values,
+                        f"Pass-2 vs KM15 pulls — {energy:g} GeV {observable_tag(kind)}, "
+                        + axis_title(axis, limits),
+                        root / "pass2_vs_KM15" / "pull_distributions" / f"by_{axis}"
+                        / f"pull_distribution_{axis_stem(axis, index, limits)}.png",
+                        args.dpi,
+                    )
+                if pass1_by_key:
+                    for index, (limits, values) in enumerate(
+                        sorted(group_values_by_axis(pass1_by_key, axis).items()), 1
+                    ):
+                        draw_pull_histogram(
+                            values,
+                            f"Pass-2 vs Pass-1 pulls — {energy:g} GeV {observable_tag(kind)}, "
+                            + axis_title(axis, limits),
+                            root / "pass2_vs_pass1" / "pull_distributions" / f"by_{axis}"
+                            / f"pull_distribution_{axis_stem(axis, index, limits)}.png",
+                            args.dpi,
+                        )
+                if percentage_by_key:
+                    for index, (limits, values) in enumerate(
+                        sorted(group_values_by_axis(percentage_by_key, axis).items()), 1
+                    ):
+                        draw_percentage_histogram(
+                            values,
+                            f"Pass-2 / Pass-1 percentage differences — {energy:g} GeV "
+                            f"{observable_tag(kind)}, " + axis_title(axis, limits),
+                            root / "pass2_vs_pass1" / "percentage_differences"
+                            / "distributions" / f"by_{axis}"
+                            / f"percentage_difference_{axis_stem(axis, index, limits)}.png",
+                            args.dpi,
+                        )
             draw_pull_histogram(
                 km15_overall,
                 f"Overall Pass-2 vs KM15 pulls — {energy:g} GeV {observable_tag(kind)}",
@@ -804,6 +1214,14 @@ def main():
                     pass1_overall,
                     f"Overall Pass-2 vs Pass-1 pulls — {energy:g} GeV {observable_tag(kind)}",
                     root / "pass2_vs_pass1" / "pull_distributions" / "pull_distribution_overall.png",
+                    args.dpi,
+                )
+                draw_percentage_histogram(
+                    percentage_overall,
+                    f"Overall Pass-2 / Pass-1 percentage differences — {energy:g} GeV "
+                    f"{observable_tag(kind)}",
+                    root / "pass2_vs_pass1" / "percentage_differences"
+                    / "distributions" / "percentage_difference_overall.png",
                     args.dpi,
                 )
             elif pass1_by_kind[kind]:
