@@ -16,7 +16,7 @@
     {
       "period": "sp18_inb",
       "mode": "data",
-      "input": "/cache/clas12/rg-a/production/recon/spring2018/10.59gev/torus-1/pass1/train/nSidis/",
+      "input": "/cache/clas12/rg-a/production/recon/spring2018/10.59gev/torus-1/pass1/dst/train/nSidis/",
       "energy": 10.594
     },
     {
