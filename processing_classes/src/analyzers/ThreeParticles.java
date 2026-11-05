@@ -83,9 +83,8 @@ public class ThreeParticles {
     protected double gN_angle_p1_p2, gN_angle_p1_X, gN_angle_p2_X;
 
     public static boolean channel_test(ThreeParticles variables) {
-//        if (variables.helicity == 0 && variables.runnum != 11) {
-//            return false;
-//        }
+        // Keep events with unassigned (zero) helicity. Helicity is not part of the
+        // channel definition, and this policy must match FourParticles.channel_test.
         if (variables.Q2() < 1.00) {
             return false;
         } 

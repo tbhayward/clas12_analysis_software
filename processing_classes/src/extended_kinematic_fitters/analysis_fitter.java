@@ -85,32 +85,21 @@ public class analysis_fitter extends GenericKinematicFitter {
 
         generic_tests generic_tests = new generic_tests();
         fiducial_cuts fiducial_cuts = new fiducial_cuts();
-        pid_cuts pid_cuts = new pid_cuts();
-
-        float px = rec_Bank.getFloat("px", particle_Index);
-        float py = rec_Bank.getFloat("py", particle_Index);
-        float pz = rec_Bank.getFloat("pz", particle_Index);
-        double p = Math.sqrt(Math.pow(px, 2) + Math.pow(py, 2) + Math.pow(pz, 2));
         boolean passesForwardDetector = generic_tests.forward_detector_cut(particle_Index, rec_Bank);
         boolean passesCentralDetector = generic_tests.central_detector_cut(particle_Index, rec_Bank);
 
         return true
-                //                                && p > 1.20
-                //                            && p < 5.00 
-                && pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
-                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank) //                                && (passesForwardDetector // dedicated PID cuts for forward
-                //                                        //                        ? pid_cuts.charged_hadron_pass2_chi2pid_cut(particle_Index, rec_Bank)
-                //                                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-                //                                        : true)
-                //                                && (passesCentralDetector // generic |chi2pid| < 3.5 for cd
-                //                                        ? pid_cuts.charged_hadron_chi2pid_cut(particle_Index, rec_Bank, run_Bank)
-                //                                        : true) //                
-//                                && (passesForwardDetector
-//                                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank)
-//                                        : true)
-//                                && (passesCentralDetector
-//                                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank, 1)
-//                                        : true)
+                // REC::Particle PID is the Event Builder pion assignment.  This
+                // exclusive analysis deliberately does not add the historical
+                // SIDIS pass-2 chi2pid prescription on top of that assignment.
+                && (passesForwardDetector || passesCentralDetector)
+                && generic_tests.vertex_cut(particle_Index, rec_Bank, run_Bank)
+                && (passesForwardDetector
+                        ? fiducial_cuts.dc_fiducial_cut(particle_Index, rec_Bank, traj_Bank, run_Bank)
+                        : true)
+                && (passesCentralDetector
+                        ? fiducial_cuts.cvt_fiducial_cut(particle_Index, rec_Bank, traj_Bank, 1)
+                        : true)
                 ;
     }
 
