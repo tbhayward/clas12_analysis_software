@@ -91,7 +91,10 @@ def main():
             missing_inputs.append(str(input_dir) + " (no HIPO files)")
             continue
         if args.pilot:
-            files = files[:1]
+            # Avoid systematically sampling run-start files, whose first event
+            # slices can be wholly rejected by QADB. Use a deterministic
+            # interior file while retaining exactly one HIPO per group.
+            files = [files[len(files) // 2]]
         key = (group["period"], group["mode"])
         group_file_counts[key] = len(files)
         for hipo in files:

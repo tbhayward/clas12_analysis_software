@@ -11,6 +11,7 @@ import math
 import pathlib
 import re
 import sys
+from collections import Counter
 
 try:
     import ROOT
@@ -137,7 +138,7 @@ def validate_part(root_path, period, mode, errors, warnings):
     tag_ids = set()
     sum_eb = 0
     sum_selected = 0
-    bad_tag_values = 0
+    bad_tag_reasons = Counter()
     truth_matches = 0
     truth_ep_gt_2 = 0
     missing_theta_min = math.inf
@@ -150,12 +151,22 @@ def validate_part(root_path, period, mode, errors, warnings):
         tag_ids.add(tag_id)
         sum_eb += int(round(entry.n_proton_eb))
         sum_selected += int(round(entry.n_proton_selected))
-        if not (entry.rec_e_p_gt_2 == 1 and entry.e_p > 2.0 and entry.Q2 >= 1.0 and
-                entry.W >= 2.0 and 0.19 <= entry.y <= 0.85 and
-                finite_and_range(entry.missing_theta, 0.0, 180.0) and
-                finite_and_range(entry.missing_phi, 0.0, 360.0) and
-                math.isfinite(entry.missing_p)):
-            bad_tag_values += 1
+        if entry.rec_e_p_gt_2 != 1:
+            bad_tag_reasons["rec_e_p_gt_2 != 1"] += 1
+        if not math.isfinite(entry.e_p) or entry.e_p <= 2.0:
+            bad_tag_reasons["e_p <= 2 or nonfinite"] += 1
+        if not math.isfinite(entry.Q2) or entry.Q2 < 1.0:
+            bad_tag_reasons["Q2 < 1 or nonfinite"] += 1
+        if not math.isfinite(entry.W) or entry.W < 2.0:
+            bad_tag_reasons["W < 2 or nonfinite"] += 1
+        if not math.isfinite(entry.y) or not 0.19 <= entry.y <= 0.85:
+            bad_tag_reasons["y outside [0.19,0.85] or nonfinite"] += 1
+        if not finite_and_range(entry.missing_theta, 0.0, 180.0):
+            bad_tag_reasons["missing_theta invalid"] += 1
+        if not finite_and_range(entry.missing_phi, 0.0, 360.0):
+            bad_tag_reasons["missing_phi invalid"] += 1
+        if not math.isfinite(entry.missing_p):
+            bad_tag_reasons["missing_p nonfinite"] += 1
         missing_theta_min = min(missing_theta_min, float(entry.missing_theta))
         missing_theta_max = max(missing_theta_max, float(entry.missing_theta))
         if entry.truth_tag_match_valid == 1:
@@ -163,13 +174,14 @@ def validate_part(root_path, period, mode, errors, warnings):
             if entry.truth_e_p_gt_2 == 1:
                 truth_ep_gt_2 += 1
         elif mode == "data" and entry.truth_tag_match_valid != 0:
-            bad_tag_values += 1
-    if bad_tag_values:
-        errors.append(f"{period}/{mode}: {bad_tag_values} Tags violate required kinematic/schema invariants")
+            bad_tag_reasons["data truth_tag_match_valid != 0"] += 1
+    if bad_tag_reasons:
+        detail = ", ".join(f"{reason}: {count}" for reason, count in sorted(bad_tag_reasons.items()))
+        errors.append(f"{period}/{mode}: Tag invariant failures: {detail}")
 
     linked_protons = 0
     selected_protons = 0
-    bad_proton_values = 0
+    bad_proton_reasons = Counter()
     proton_theta_min = math.inf
     proton_theta_max = -math.inf
     for entry in protons:
@@ -177,12 +189,22 @@ def validate_part(root_path, period, mode, errors, warnings):
             linked_protons += 1
         if entry.selected == 1:
             selected_protons += 1
-        if entry.selected not in (0, 1) or entry.vertex_pass not in (0, 1) or \
-           entry.fiducial_pass not in (0, 1) or entry.momentum_pass not in (0, 1) or \
-           not finite_and_range(entry.theta, 0.0, 180.0) or \
-           not finite_and_range(entry.phi, 0.0, 360.0) or \
-           not finite_and_range(entry.match_angle, 0.0, 180.0) or not math.isfinite(entry.p):
-            bad_proton_values += 1
+        if entry.selected not in (0, 1):
+            bad_proton_reasons["selected not boolean"] += 1
+        if entry.vertex_pass not in (0, 1):
+            bad_proton_reasons["vertex_pass not boolean"] += 1
+        if entry.fiducial_pass not in (0, 1):
+            bad_proton_reasons["fiducial_pass not boolean"] += 1
+        if entry.momentum_pass not in (0, 1):
+            bad_proton_reasons["momentum_pass not boolean"] += 1
+        if not finite_and_range(entry.theta, 0.0, 180.0):
+            bad_proton_reasons["theta invalid"] += 1
+        if not finite_and_range(entry.phi, 0.0, 360.0):
+            bad_proton_reasons["phi invalid"] += 1
+        if not finite_and_range(entry.match_angle, 0.0, 180.0):
+            bad_proton_reasons["match_angle invalid"] += 1
+        if not math.isfinite(entry.p):
+            bad_proton_reasons["p nonfinite"] += 1
         proton_theta_min = min(proton_theta_min, float(entry.theta))
         proton_theta_max = max(proton_theta_max, float(entry.theta))
     if linked_protons != n_protons:
@@ -191,8 +213,9 @@ def validate_part(root_path, period, mode, errors, warnings):
         errors.append(f"{period}/{mode}: sum(n_proton_eb)={sum_eb}, Protons rows={n_protons}")
     if sum_selected != selected_protons:
         errors.append(f"{period}/{mode}: selected summary={sum_selected}, candidate rows={selected_protons}")
-    if bad_proton_values:
-        errors.append(f"{period}/{mode}: {bad_proton_values} Protons violate required invariants")
+    if bad_proton_reasons:
+        detail = ", ".join(f"{reason}: {count}" for reason, count in sorted(bad_proton_reasons.items()))
+        errors.append(f"{period}/{mode}: Proton invariant failures: {detail}")
 
     truth_fraction = truth_matches / n_tags if n_tags else float("nan")
     truth_ep_fraction = truth_ep_gt_2 / truth_matches if truth_matches else float("nan")
@@ -256,8 +279,8 @@ def main():
                   f"{group_tags:9d} "
                   f"{sum(result['protons'] for result in group):10d} "
                   f"{sum(result['selected_protons'] for result in group):8d} "
-                  f"{fmt_fraction(group_truth_matches/group_tags if group_tags else float('nan')):>11} "
-                  f"{fmt_fraction(group_truth_ep_gt_2/group_truth_matches if group_truth_matches else float('nan')):>9}")
+                  f"{fmt_fraction(group_truth_matches/group_tags if mode == 'mc' and group_tags else float('nan')):>11} "
+                  f"{fmt_fraction(group_truth_ep_gt_2/group_truth_matches if mode == 'mc' and group_truth_matches else float('nan')):>9}")
 
     for warning in warnings:
         print("[WARNING]", warning)
