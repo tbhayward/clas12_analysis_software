@@ -13,11 +13,12 @@
 //           ∫_{|t|min}^{|t|max} ∫_{phi_min}^{phi_max} mask(xB,Q2,t;E) dxB dQ2 d|t| dphi
 //
 // where mask enforces:
-//   - t > t_min(xB, Q2) (DVCS kinematics, t is negative)
-//   - 0 < y < 1 (beam-energy kinematic accessibility)
+//   - |t| >= |t_min(xB, Q2)| (DVCS kinematics, t is negative)
+//   - 0.19 < y < 0.85, matching the generated phase-space support at each
+//     beam energy
 //   - W > 2.0, with W^2 = Mp^2 + Q2 (1/xB - 1)
-// Detector thresholds and generator-coverage cuts such as y>0.19 or p_e>2
-// are not part of the volume.
+// Reconstructed detector thresholds such as electron/proton momentum and
+// angular cuts are not part of the volume.
 //
 // Volumes are computed via a deterministic 3D grid in (xB, Q2, t) and
 // scaled by the geometric extent in phi.
@@ -1501,7 +1502,7 @@ bool update_bin_volume_csv(const std::string& csv_path,
     g10p2.binvol_col       = "bin_volume, 10.2 GeV";
     g10p2.cubic_binvol_col = "cubic bin_volume, 10.2 GeV";
     g10p2.energy_dir       = "10.2";
-    g10p2.Ebeam      = 10.20;
+    g10p2.Ebeam      = 10.1998;
 
     // Compute bin volumes for all phi-binned rows for both energies.
     // Do not gate this on xBavg/data availability: cross_sections.cpp needs

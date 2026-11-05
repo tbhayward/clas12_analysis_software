@@ -145,8 +145,9 @@ bool passes_generated_channel_cuts(
     double Q2,
     const GlobalCutConfig& cfg = default_global_cuts());
 
-// Purely kinematic volume mask: 0 < y < 1, W > W_min, and the physical
-// t_min boundary. Detector thresholds and generator-coverage y cuts are excluded.
+// Bin-volume mask over the generated phase-space support: 0.19 < y < 0.85,
+// W > W_min, and the physical t_min boundary. Reconstructed detector thresholds
+// such as electron/proton momentum and angular cuts are excluded.
 bool passes_bin_volume_phase_space_cuts(
     double Ebeam,
     double xB,

@@ -216,8 +216,11 @@ bool passes_bin_volume_phase_space_cuts(double Ebeam,
         !passes_generated_channel_cuts(xB, Q2, cfg) ||
         !std::isfinite(t1) || !(t1 < 0.0)) return false;
     static constexpr double MP = 0.9382720813;
+    static constexpr double GENERATED_Y_MIN = 0.19;
+    static constexpr double GENERATED_Y_MAX = 0.85;
     const double y = Q2 / (2.0 * MP * xB * Ebeam);
-    if (!(std::isfinite(y) && y > 0.0 && y < 1.0)) return false;
+    if (!(std::isfinite(y) &&
+          y > GENERATED_Y_MIN && y < GENERATED_Y_MAX)) return false;
     const double minus_t_min = dvcs_minus_t_min(xB, Q2);
     return std::isfinite(minus_t_min) && (-t1) >= minus_t_min;
 }
