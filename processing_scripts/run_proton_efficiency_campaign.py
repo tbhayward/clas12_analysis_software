@@ -17,6 +17,7 @@ import re
 import shlex
 import subprocess
 import threading
+import time
 
 P = pathlib.Path
 SCRIPTS = {
@@ -47,6 +48,8 @@ def main():
                         help="Replace incomplete outputs only; valid marked outputs are retained")
     parser.add_argument("--converter-timeout", type=int, default=300,
                         help="Seconds to wait for the ROOT converter after Groovy exits")
+    parser.add_argument("--report-seconds", type=int, default=900,
+                        help="Interval between percentage progress reports")
     args = parser.parse_args()
     if not 1 <= args.workers <= 10:
         parser.error("--workers must be between 1 and the farm-node cap of 10")
@@ -54,6 +57,8 @@ def main():
         parser.error("--max-events must be nonnegative")
     if args.converter_timeout < 1:
         parser.error("--converter-timeout must be positive")
+    if args.report_seconds < 5:
+        parser.error("--report-seconds must be at least 5")
     max_events = args.max_events if args.max_events is not None else (100000 if args.pilot else 0)
 
     root = P.cwd()
@@ -117,9 +122,82 @@ def main():
         raise SystemExit("Missing executable ROOT stream converter: " + str(converter) +
                          "\nCompile it before executing the campaign.")
 
-    counts = {"done": 0, "skipped": 0, "failed": 0}
+    total_bytes = sum(hipo.stat().st_size for _, hipo, _ in jobs)
+    group_total_bytes = {}
+    group_total_files = {}
+    for group, hipo, _ in jobs:
+        key = f"{group['period']}/{group['mode']}"
+        group_total_bytes[key] = group_total_bytes.get(key, 0) + hipo.stat().st_size
+        group_total_files[key] = group_total_files.get(key, 0) + 1
+    counts = {"done": 0, "skipped": 0, "failed": 0, "bytes": 0,
+              "events": 0, "active": {},
+              "group_bytes": {key: 0 for key in group_total_bytes},
+              "group_files": {key: 0 for key in group_total_files}}
     failures = []
     lock = threading.Lock()
+    started = time.monotonic()
+
+    def active_progress(item):
+        processed = 0
+        expected = None
+        try:
+            text = item["log"].read_text(errors="replace")
+            progress = re.findall(r"\[HIPO_PROGRESS\].*?events_processed=(\d+)", text)
+            totals = re.findall(r"number of\s+events\s*:\s*(\d+)", text)
+            if progress:
+                processed = int(progress[-1])
+            if totals:
+                expected = int(totals[-1])
+                if max_events:
+                    expected = min(expected, max_events)
+        except OSError:
+            pass
+        fraction = min(1.0, processed / expected) if expected else 0.0
+        return processed, expected, fraction
+
+    stop_reporter = threading.Event()
+
+    def reporter():
+        while not stop_reporter.wait(args.report_seconds):
+            with lock:
+                done = counts["done"]
+                skipped = counts["skipped"]
+                failed = counts["failed"]
+                completed_bytes = counts["bytes"]
+                completed_events = counts["events"]
+                active = list(counts["active"].values())
+                group_bytes = dict(counts["group_bytes"])
+                group_files = dict(counts["group_files"])
+            active_details = []
+            observed_events = completed_events
+            estimated_bytes = float(completed_bytes)
+            active_group_bytes = {key: 0.0 for key in group_total_bytes}
+            for item in active:
+                processed, expected, fraction = active_progress(item)
+                observed_events += processed
+                contribution = item["bytes"] * fraction
+                estimated_bytes += contribution
+                active_group_bytes[item["group"]] += contribution
+                percent = 100.0 * fraction
+                active_details.append(f"{item['label']}={percent:.1f}% ({processed}/{expected or '?'})")
+            elapsed = time.monotonic() - started
+            work_fraction = estimated_bytes / total_bytes if total_bytes else 1.0
+            work_percent = 100.0 * min(1.0, work_fraction)
+            file_percent = 100.0 * done / len(jobs) if jobs else 100.0
+            rate = observed_events / elapsed if elapsed > 0 else 0.0
+            eta_seconds = elapsed * (1.0 / work_fraction - 1.0) if work_fraction > 0 else None
+            eta = "n/a" if eta_seconds is None else f"{eta_seconds/60.0:.1f} min"
+            group_details = []
+            for key in sorted(group_total_bytes):
+                numerator = group_bytes[key] + active_group_bytes[key]
+                percent = 100.0 * numerator / group_total_bytes[key] if group_total_bytes[key] else 100.0
+                group_details.append(f"{key}={percent:.1f}%[{group_files[key]}/{group_total_files[key]}]")
+            print(f"[PROGRESS] work={work_percent:.2f}% files={done}/{len(jobs)}({file_percent:.2f}%) "
+                  f"active={len(active)} skipped={skipped} failed={failed} rate={rate:.1f} events/s "
+                  f"elapsed={elapsed/60.0:.1f} min eta={eta}", flush=True)
+            print("[GROUP_PROGRESS] " + " ".join(group_details), flush=True)
+            if active_details:
+                print("[ACTIVE] " + " | ".join(active_details), flush=True)
 
     def run(job):
         group, hipo, prefix = job
@@ -157,6 +235,11 @@ def main():
             with lock:
                 counts["done"] += 1
                 counts["skipped"] += 1
+                counts["bytes"] += hipo.stat().st_size
+                counts["events"] += int(marker.get("processed_events", 0))
+                key = f"{group['period']}/{group['mode']}"
+                counts["group_bytes"][key] += hipo.stat().st_size
+                counts["group_files"][key] += 1
             print("[SKIP_VALID]", group["period"], group["mode"], hipo.name, flush=True)
             return
 
@@ -194,6 +277,15 @@ def main():
         )
         converted = None
         accepted = False
+        group_key = f"{group['period']}/{group['mode']}"
+        active_key = str(prefix)
+        with lock:
+            counts["active"][active_key] = {
+                "label": f"{group_key}:{hipo.name}", "group": group_key,
+                "bytes": hipo.stat().st_size, "log": log_path,
+            }
+        print("[START]", group["period"], group["mode"], hipo.name,
+              f"size_gb={hipo.stat().st_size/1e9:.2f}", flush=True)
         try:
             with converter_log.open("w") as conversion_log:
                 converted = subprocess.Popen([str(converter), str(tag_fifo), str(proton_fifo),
@@ -240,6 +332,8 @@ def main():
                                                "proton_rows": root_protons}, sort_keys=True) + "\n")
             accepted = True
         finally:
+            with lock:
+                counts["active"].pop(active_key, None)
             if converted is not None and converted.poll() is None:
                 converted.kill()
                 converted.wait()
@@ -251,19 +345,31 @@ def main():
                 temporary_root.unlink()
         with lock:
             counts["done"] += 1
+            counts["bytes"] += hipo.stat().st_size
+            counts["events"] += events
+            counts["group_bytes"][group_key] += hipo.stat().st_size
+            counts["group_files"][group_key] += 1
+            completed_now = counts["done"]
         print("[DONE]", group["period"], group["mode"], hipo.name,
-              f"events={events}", f"tags={tags}", f"protons={root_protons}", flush=True)
+              f"events={events}", f"tags={tags}", f"protons={root_protons}",
+              f"files={completed_now}/{len(jobs)} ({100.0*completed_now/len(jobs):.2f}%)", flush=True)
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = [pool.submit(run, job) for job in jobs]
-        for future in concurrent.futures.as_completed(futures):
-            try:
-                future.result()
-            except Exception as error:
-                with lock:
-                    counts["failed"] += 1
-                failures.append(str(error))
-                print("[FAILED]", error, flush=True)
+    reporter_thread = threading.Thread(target=reporter, daemon=True)
+    reporter_thread.start()
+    try:
+        with concurrent.futures.ThreadPoolExecutor(max_workers=args.workers) as pool:
+            futures = [pool.submit(run, job) for job in jobs]
+            for future in concurrent.futures.as_completed(futures):
+                try:
+                    future.result()
+                except Exception as error:
+                    with lock:
+                        counts["failed"] += 1
+                    failures.append(str(error))
+                    print("[FAILED]", error, flush=True)
+    finally:
+        stop_reporter.set()
+        reporter_thread.join(timeout=2)
 
     summary = {
         "groups": {f"{period}/{mode}": count

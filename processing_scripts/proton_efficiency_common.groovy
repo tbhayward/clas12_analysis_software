@@ -73,10 +73,9 @@ class ProtonEfficiencyProcessor {
         return missing
     }
 
-    static List<Map> protonCandidates(HipoDataBank recBank, HipoDataBank calBank,
-                                      HipoDataBank trajBank, HipoDataBank runBank,
-                                      analysis_fitter fitter, double electronVz,
-                                      LorentzVector missing) {
+    static List<Map> protonCandidateBases(HipoDataBank recBank, HipoDataBank calBank,
+                                          HipoDataBank trajBank, HipoDataBank runBank,
+                                          analysis_fitter fitter, double electronVz) {
         generic_tests tests = new generic_tests()
         fiducial_cuts fiducials = new fiducial_cuts()
         List<Map> candidates = []
@@ -109,11 +108,22 @@ class ProtonEfficiencyProcessor {
                 theta:theta(px, py, pz), phi:phi(px, py),
                 vz:recBank.getFloat('vz', row),
                 beta:recBank.getFloat('beta', row),
-                chi2pid:recBank.getFloat('chi2pid', row),
-                match_angle:openingAngle(missing.px(), missing.py(), missing.pz(), px, py, pz),
-                delta_p:p - missing.p(),
-                relative_delta_p:(missing.p() > 0.0d ? (p-missing.p())/missing.p() : Double.NaN)
+                chi2pid:recBank.getFloat('chi2pid', row)
             ]
+        }
+        return candidates
+    }
+
+    static List<Map> protonCandidates(List<Map> bases, LorentzVector missing) {
+        List<Map> candidates = []
+        double missingP = missing.p()
+        for (Map base : bases) {
+            Map candidate = new LinkedHashMap(base)
+            candidate.match_angle = openingAngle(missing.px(), missing.py(), missing.pz(),
+                                                 (double)base.px, (double)base.py, (double)base.pz)
+            candidate.delta_p = (double)base.p - missingP
+            candidate.relative_delta_p = missingP > 0.0d ? candidate.delta_p/missingP : Double.NaN
+            candidates << candidate
         }
         return candidates
     }
@@ -298,6 +308,9 @@ class ProtonEfficiencyProcessor {
                 if (maxEvents > 0L && eventSequence >= maxEvents) { stop = true; break }
                 HipoDataEvent event = reader.getNextEvent()
                 eventSequence++
+                if (eventSequence % 100000L == 0L) {
+                    println("[HIPO_PROGRESS] file=${files[fileIndex].name} events_processed=${eventSequence} selected_tags=${selectedTags}")
+                }
                 if (!event.hasBank('RUN::config') || !event.hasBank('REC::Particle')) continue
                 bankEvents++
                 HipoDataBank runBank = (HipoDataBank)event.getBank('RUN::config')
@@ -305,17 +318,20 @@ class ProtonEfficiencyProcessor {
                 int physicalRun = runBank.getInt('run', 0)
                 int run = runOverride != 0 ? runOverride : physicalRun
                 int eventNumber = runBank.getInt('event', 0)
-                if (!mcMode && !qadbOverride && !qa.pass(run, eventNumber)) continue
-                if (!mcMode && (run == 5247 || run == 5345)) continue
-                qaEvents++
                 boolean rawE = false, rawPip = false, rawPim = false
                 for (int row = 0; row < recBank.rows(); row++) {
                     int rawPid = recBank.getInt('pid', row)
                     if (rawPid == 11) rawE = true
                     if (rawPid == 211) rawPip = true
                     if (rawPid == -211) rawPim = true
+                    if (rawE && rawPip && rawPim) break
                 }
                 if (rawE && rawPip && rawPim) rawTopologyEvents++
+                else continue // fitter cannot create a missing charged-particle PID
+                // QADB lookup is needed only for events capable of forming the tag.
+                if (!mcMode && !qadbOverride && !qa.pass(run, eventNumber)) continue
+                if (!mcMode && (run == 5247 || run == 5345)) continue
+                qaEvents++
 
                 PhysicsEvent physicsEvent = fitter.getPhysicsEvent(event)
                 int nElectron = physicsEvent.countByPid(11)
@@ -329,6 +345,7 @@ class ProtonEfficiencyProcessor {
                 HipoDataBank trajBank = (HipoDataBank)event.getBank('REC::Traj')
                 BeamEnergy beam = new BeamEnergy(physicsEvent, run, false)
                 double beamEnergy = mcMode || physicalRun == 11 ? configuredBeam : beam.Eb()
+                List<Map> protonBases = null
 
                 for (int pipIndex = 0; pipIndex < nPip; pipIndex++) {
                     for (int pimIndex = 0; pimIndex < nPim; pimIndex++) {
@@ -350,7 +367,10 @@ class ProtonEfficiencyProcessor {
                         tagSequence++
                         selectedTags++
                         LorentzVector missing = missingProton(physicsEvent, pipIndex, pimIndex, beamEnergy)
-                        List<Map> candidates = protonCandidates(recBank, calBank, trajBank, runBank, fitter, k.vz_e(), missing)
+                        if (protonBases == null) {
+                            protonBases = protonCandidateBases(recBank, calBank, trajBank, runBank, fitter, k.vz_e())
+                        }
+                        List<Map> candidates = protonCandidates(protonBases, missing)
                         Map bestEb = closest(candidates)
                         Map bestSelected = closest(candidates.findAll { it.selected == 1 })
                         int eRec = fitter.getLastRecIndexForPidOccurrence(11, 0)
@@ -381,7 +401,6 @@ class ProtonEfficiencyProcessor {
                         if (selectedTags % 10000L == 0L) { tags.flush(); protons.flush() }
                     }
                 }
-                if (eventSequence % 100000L == 0L) println("processed=${eventSequence}, selected_tags=${selectedTags}")
             }
             reader.close()
         }
