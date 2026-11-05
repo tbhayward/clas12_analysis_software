@@ -283,6 +283,9 @@ class ProtonEfficiencyProcessor {
         EventFilter tagFilter = new EventFilter('11:211:-211:X+:X-:Xn')
         QADB qa = mcMode ? null : makeQa()
         long eventSequence = 0L, tagSequence = 0L, selectedTags = 0L
+        long bankEvents = 0L, qaEvents = 0L, rawTopologyEvents = 0L
+        long fittedElectronEvents = 0L, fittedPipEvents = 0L, fittedPimEvents = 0L, fittedTopologyEvents = 0L
+        long combinations = 0L, q2Pass = 0L, wPass = 0L, yUpperPass = 0L, yLowerPass = 0L
         boolean stop = false
 
         for (int fileIndex = 0; fileIndex < nFiles && !stop; fileIndex++) {
@@ -296,25 +299,49 @@ class ProtonEfficiencyProcessor {
                 HipoDataEvent event = reader.getNextEvent()
                 eventSequence++
                 if (!event.hasBank('RUN::config') || !event.hasBank('REC::Particle')) continue
+                bankEvents++
                 HipoDataBank runBank = (HipoDataBank)event.getBank('RUN::config')
+                HipoDataBank recBank = (HipoDataBank)event.getBank('REC::Particle')
                 int physicalRun = runBank.getInt('run', 0)
                 int run = runOverride != 0 ? runOverride : physicalRun
                 int eventNumber = runBank.getInt('event', 0)
                 if (!mcMode && !qadbOverride && !qa.pass(run, eventNumber)) continue
                 if (!mcMode && (run == 5247 || run == 5345)) continue
+                qaEvents++
+                boolean rawE = false, rawPip = false, rawPim = false
+                for (int row = 0; row < recBank.rows(); row++) {
+                    int rawPid = recBank.getInt('pid', row)
+                    if (rawPid == 11) rawE = true
+                    if (rawPid == 211) rawPip = true
+                    if (rawPid == -211) rawPim = true
+                }
+                if (rawE && rawPip && rawPim) rawTopologyEvents++
 
                 PhysicsEvent physicsEvent = fitter.getPhysicsEvent(event)
+                int nElectron = physicsEvent.countByPid(11)
+                int nPip = physicsEvent.countByPid(211), nPim = physicsEvent.countByPid(-211)
+                if (nElectron > 0) fittedElectronEvents++
+                if (nPip > 0) fittedPipEvents++
+                if (nPim > 0) fittedPimEvents++
                 if (!tagFilter.isValid(physicsEvent)) continue
-                HipoDataBank recBank = (HipoDataBank)event.getBank('REC::Particle')
+                fittedTopologyEvents++
                 HipoDataBank calBank = (HipoDataBank)event.getBank('REC::Calorimeter')
                 HipoDataBank trajBank = (HipoDataBank)event.getBank('REC::Traj')
-                int nPip = physicsEvent.countByPid(211), nPim = physicsEvent.countByPid(-211)
                 BeamEnergy beam = new BeamEnergy(physicsEvent, run, false)
                 double beamEnergy = mcMode || physicalRun == 11 ? configuredBeam : beam.Eb()
 
                 for (int pipIndex = 0; pipIndex < nPip; pipIndex++) {
                     for (int pimIndex = 0; pimIndex < nPim; pimIndex++) {
                         ThreeParticles k = new ThreeParticles(event, physicsEvent, 211, pipIndex, -211, pimIndex, beamEnergy)
+                        combinations++
+                        if (k.Q2() < 1.00d) continue
+                        q2Pass++
+                        if (k.W() < 2.00d) continue
+                        wPass++
+                        if (k.y() > 0.85d) continue
+                        yUpperPass++
+                        if (k.y() < 0.19d) continue
+                        yLowerPass++
                         if (!ThreeParticles.channel_test(k)) continue
                         tagSequence++
                         selectedTags++
@@ -356,6 +383,10 @@ class ProtonEfficiencyProcessor {
         }
         tags.close()
         protons.close()
+        println("[TAG_CUTFLOW] events=${eventSequence} banks=${bankEvents} qa=${qaEvents} raw_epi+pi-=${rawTopologyEvents} " +
+                "fitted_e=${fittedElectronEvents} fitted_pi+=${fittedPipEvents} fitted_pi-=${fittedPimEvents} " +
+                "fitted_epi+pi-=${fittedTopologyEvents} combinations=${combinations} q2=${q2Pass} w=${wPass} " +
+                "y_upper=${yUpperPass} y_lower=${yLowerPass} tags=${selectedTags}")
         println("Complete: events=${eventSequence}, tags=${selectedTags}, tag_file=${tagFile}, proton_file=${protonFile}")
     }
 }

@@ -48,6 +48,9 @@ struct StreamTree {
             columns = fields;
             values.assign(columns.size(), 0.0);
             tree = std::make_unique<TTree>(tree_name.c_str(), tree_name.c_str());
+            // The StreamTree owns this object. Detach it from the current TFile
+            // so closing the file cannot delete it a second time.
+            tree->SetDirectory(nullptr);
             for (std::size_t i = 0; i < columns.size(); ++i) {
                 const std::string leaf = columns[i] + "/D";
                 tree->Branch(columns[i].c_str(), &values[i], leaf.c_str());
