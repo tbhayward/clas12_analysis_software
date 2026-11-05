@@ -35,7 +35,7 @@ PROTON_BRANCHES = {
 }
 CUTFLOW_KEYS = (
     "events", "banks", "qa", "raw_epi+pi-", "fitted_e", "fitted_pi+",
-    "fitted_pi-", "fitted_epi+pi-", "combinations", "q2", "w",
+    "fitted_pi-", "fitted_epi+pi-", "combinations", "e_p", "q2", "w",
     "y_upper", "y_lower", "tags",
 )
 
@@ -67,6 +67,7 @@ def first_zero_transition(cutflow):
         ("raw e pi+ pi- topology", "raw_epi+pi-"),
         ("fitted e pi+ pi- topology", "fitted_epi+pi-"),
         ("particle combinations", "combinations"),
+        ("reconstructed e_p > 2", "e_p"),
         ("Q2 > 1", "q2"),
         ("W > 2", "w"),
         ("y < 0.85", "y_upper"),

@@ -285,7 +285,7 @@ class ProtonEfficiencyProcessor {
         long eventSequence = 0L, tagSequence = 0L, selectedTags = 0L
         long bankEvents = 0L, qaEvents = 0L, rawTopologyEvents = 0L
         long fittedElectronEvents = 0L, fittedPipEvents = 0L, fittedPimEvents = 0L, fittedTopologyEvents = 0L
-        long combinations = 0L, q2Pass = 0L, wPass = 0L, yUpperPass = 0L, yLowerPass = 0L
+        long combinations = 0L, electronMomentumPass = 0L, q2Pass = 0L, wPass = 0L, yUpperPass = 0L, yLowerPass = 0L
         boolean stop = false
 
         for (int fileIndex = 0; fileIndex < nFiles && !stop; fileIndex++) {
@@ -334,6 +334,10 @@ class ProtonEfficiencyProcessor {
                     for (int pimIndex = 0; pimIndex < nPim; pimIndex++) {
                         ThreeParticles k = new ThreeParticles(event, physicsEvent, 211, pipIndex, -211, pimIndex, beamEnergy)
                         combinations++
+                        // This is a reconstructed-tag requirement. Generated e_p
+                        // remains uncut and is retained through truth_e_p_gt_2.
+                        if (!Double.isFinite(k.e_p()) || k.e_p() <= 2.0d) continue
+                        electronMomentumPass++
                         if (k.Q2() < 1.00d) continue
                         q2Pass++
                         if (k.W() < 2.00d) continue
@@ -385,7 +389,7 @@ class ProtonEfficiencyProcessor {
         protons.close()
         println("[TAG_CUTFLOW] events=${eventSequence} banks=${bankEvents} qa=${qaEvents} raw_epi+pi-=${rawTopologyEvents} " +
                 "fitted_e=${fittedElectronEvents} fitted_pi+=${fittedPipEvents} fitted_pi-=${fittedPimEvents} " +
-                "fitted_epi+pi-=${fittedTopologyEvents} combinations=${combinations} q2=${q2Pass} w=${wPass} " +
+                "fitted_epi+pi-=${fittedTopologyEvents} combinations=${combinations} e_p=${electronMomentumPass} q2=${q2Pass} w=${wPass} " +
                 "y_upper=${yUpperPass} y_lower=${yLowerPass} tags=${selectedTags}")
         println("Complete: events=${eventSequence}, tags=${selectedTags}, tag_file=${tagFile}, proton_file=${protonFile}")
     }
