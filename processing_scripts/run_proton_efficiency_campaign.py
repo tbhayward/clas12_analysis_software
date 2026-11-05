@@ -63,7 +63,7 @@ def main():
     common = root / "processing_scripts/proton_efficiency_common.groovy"
     wrappers = [root / "processing_scripts" / name for name in SCRIPTS.values()]
     converter_source = root / "processing_scripts/convert_proton_efficiency_stream.cpp"
-    converter = root / "processing_scripts/convert_proton_efficiency_stream"
+    converter = root / "processing_scripts/.build/convert_proton_efficiency_stream"
     jar = root / "processing_classes/dist/processing_classes.jar"
     required = [common, config_path, converter_source, *wrappers, jar]
     missing_code = [str(path) for path in required if not path.is_file()]
