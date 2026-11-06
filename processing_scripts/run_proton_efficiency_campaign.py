@@ -107,7 +107,10 @@ def main():
         if not input_dir.is_dir():
             missing_inputs.append(str(input_dir))
             continue
-        files = sorted(input_dir.rglob("*.hipo"))
+        # Campaign inputs are the production files directly in each configured
+        # directory. Subdirectories may contain supplemental or alternate MC
+        # productions and must not be included implicitly.
+        files = sorted(input_dir.glob("*.hipo"))
         if not files:
             missing_inputs.append(str(input_dir) + " (no HIPO files)")
             continue
