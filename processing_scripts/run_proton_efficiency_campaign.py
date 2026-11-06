@@ -50,6 +50,12 @@ def main():
                         help="Seconds to wait for the ROOT converter after Groovy exits")
     parser.add_argument("--report-seconds", type=int, default=900,
                         help="Interval between percentage progress reports")
+    parser.add_argument("--only-mode", choices=("data", "mc"),
+                        help="Process only data or MC jobs from the complete campaign config")
+    parser.add_argument("--contiguous-part",
+                        help="Process one contiguous file-range part, as INDEX/TOTAL (1-based)")
+    parser.add_argument("--reverse-order", action="store_true",
+                        help="Run selected groups and files in reverse order")
     args = parser.parse_args()
     if not 1 <= args.workers <= 10:
         parser.error("--workers must be between 1 and the farm-node cap of 10")
@@ -59,6 +65,14 @@ def main():
         parser.error("--converter-timeout must be positive")
     if args.report_seconds < 5:
         parser.error("--report-seconds must be at least 5")
+    part_index, part_total = 1, 1
+    if args.contiguous_part:
+        match = re.fullmatch(r"(\d+)/(\d+)", args.contiguous_part)
+        if not match:
+            parser.error("--contiguous-part must have the form INDEX/TOTAL")
+        part_index, part_total = map(int, match.groups())
+        if part_total < 1 or not 1 <= part_index <= part_total:
+            parser.error("--contiguous-part requires 1 <= INDEX <= TOTAL")
     max_events = args.max_events if args.max_events is not None else (100000 if args.pilot else 0)
 
     root = P.cwd()
@@ -87,6 +101,8 @@ def main():
     missing_inputs = []
     group_file_counts = {}
     for group in config["jobs"]:
+        if args.only_mode and group["mode"] != args.only_mode:
+            continue
         input_dir = P(group["input"])
         if not input_dir.is_dir():
             missing_inputs.append(str(input_dir))
@@ -100,6 +116,15 @@ def main():
             # slices can be wholly rejected by QADB. Use a deterministic
             # interior file while retaining exactly one HIPO per group.
             files = [files[len(files) // 2]]
+        elif part_total > 1:
+            # Contiguous ranges let an additional node start at the far end of
+            # a group while the original full-campaign node advances from the
+            # beginning. Integer boundaries cover every file exactly once.
+            begin = len(files) * (part_index - 1) // part_total
+            end = len(files) * part_index // part_total
+            files = files[begin:end]
+        if not files:
+            continue
         key = (group["period"], group["mode"])
         group_file_counts[key] = len(files)
         for hipo in files:
@@ -107,8 +132,12 @@ def main():
             prefix = output_root / group["period"] / group["mode"] / "parts" / f"{hipo.stem}_{suffix}"
             jobs.append((group, hipo, prefix))
 
+    if args.reverse_order:
+        jobs.reverse()
+    selection = (f"mode={args.only_mode or 'all'} part={part_index}/{part_total} "
+                 f"reverse={args.reverse_order}")
     print(f"[PLAN] groups={len(group_file_counts)}/8 files={len(jobs)} workers={args.workers} "
-          f"pilot={args.pilot} max_events={max_events} execute={args.execute}", flush=True)
+          f"pilot={args.pilot} max_events={max_events} {selection} execute={args.execute}", flush=True)
     for key in sorted(group_file_counts):
         print(f"[GROUP] {key[0]} {key[1]} files={group_file_counts[key]}", flush=True)
     if missing_inputs:
@@ -383,7 +412,14 @@ def main():
         "source_id": source_id,
     }
     output_root.mkdir(parents=True, exist_ok=True)
-    (output_root / "campaign_summary.json").write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
+    summary["only_mode"] = args.only_mode
+    summary["contiguous_part"] = f"{part_index}/{part_total}"
+    summary["reverse_order"] = args.reverse_order
+    if args.only_mode or part_total > 1:
+        summary_name = f"campaign_summary_{args.only_mode or 'all'}_part{part_index}of{part_total}.json"
+    else:
+        summary_name = "campaign_summary.json"
+    (output_root / summary_name).write_text(json.dumps(summary, indent=2, sort_keys=True) + "\n")
     print(f"[FINAL] completed={counts['done']}/{len(jobs)} skipped={counts['skipped']} "
           f"failed={counts['failed']}", flush=True)
     if failures:
