@@ -15,7 +15,6 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
-import uproot
 
 FIELDS = ("missing_M2", "missing_theta", "missing_p", "best_selected_rec_index",
           "best_selected_match_angle", "best_selected_relative_delta_p")
@@ -44,32 +43,54 @@ def empty_result():
 
 def process_file(task):
     filename, lo, hi, max_angle, max_rel_dp, chunk_size, entry_stop = task
+    import ROOT
+
+    ROOT.TH1.AddDirectory(False)
     result = empty_result()
     started = time.perf_counter()
-    with uproot.open(filename) as source:
-        opened = time.perf_counter()
-        tree = source["Tags"]
+    source = ROOT.TFile.Open(filename, "READ")
+    if not source or source.IsZombie():
+        raise RuntimeError(f"Cannot open ROOT file: {filename}")
+    opened = time.perf_counter()
+    try:
+        tree = source.Get("Tags")
+        if not tree:
+            raise RuntimeError(f"Missing Tags tree: {filename}")
+        missing = set(FIELDS) - {branch.GetName() for branch in tree.GetListOfBranches()}
+        if missing:
+            raise RuntimeError(f"{filename}: missing Tags branches {sorted(missing)}")
         tree_ready = time.perf_counter()
-        for arrays in tree.iterate(FIELDS, step_size=chunk_size, entry_stop=entry_stop,
-                                   library="np"):
-            mass = arrays["missing_M2"]
-            window = np.isfinite(mass) & (mass >= lo) & (mass <= hi)
-            selected = window & (arrays["best_selected_rec_index"] >= 0)
-            angle = arrays["best_selected_match_angle"]
-            rel_dp = arrays["best_selected_relative_delta_p"]
-            matched = selected & np.isfinite(angle) & (angle < max_angle)
-            if max_rel_dp is not None:
-                matched &= np.isfinite(rel_dp) & (np.abs(rel_dp) < max_rel_dp)
-            result["all"] += len(mass)
-            result["window"] += int(window.sum())
-            result["selected"] += int(selected.sum())
-            result["matched"] += int(matched.sum())
-            for name, edges in EDGES.items():
-                values = arrays[name]
-                finite = np.isfinite(values)
-                for stage, mask in (("all", finite), ("window", finite & window),
-                                    ("matched", finite & matched)):
-                    result["hist"][name][stage] += np.histogram(values[mask], edges)[0]
+        frame = ROOT.RDataFrame(tree)
+        if entry_stop is not None:
+            frame = frame.Range(0, min(entry_stop, int(tree.GetEntries())))
+        window = frame.Filter(f"std::isfinite(missing_M2) && missing_M2 >= {lo:.17g} "
+                              f"&& missing_M2 <= {hi:.17g}")
+        selected = window.Filter("best_selected_rec_index >= 0")
+        match_cut = ("std::isfinite(best_selected_match_angle) && "
+                     f"best_selected_match_angle < {max_angle:.17g}")
+        if max_rel_dp is not None:
+            match_cut += (" && std::isfinite(best_selected_relative_delta_p) && "
+                          f"std::abs(best_selected_relative_delta_p) < {max_rel_dp:.17g}")
+        matched = selected.Filter(match_cut)
+        stages = {"all": frame, "window": window, "matched": matched}
+        counts = {"all": frame.Count(), "window": window.Count(),
+                  "selected": selected.Count(), "matched": matched.Count()}
+        histograms = {}
+        for name, edges in EDGES.items():
+            for stage, node in stages.items():
+                model = (f"h_{name}_{stage}", "", len(edges) - 1,
+                         float(edges[0]), float(edges[-1]))
+                histograms[name, stage] = node.Filter(f"std::isfinite({name})").Histo1D(model, name)
+        ROOT.RDF.RunGraphs(list(counts.values()) + list(histograms.values()))
+        for stage, handle in counts.items():
+            result[stage] = int(handle.GetValue())
+        for (name, stage), handle in histograms.items():
+            hist = handle.GetValue()
+            result["hist"][name][stage] = np.fromiter(
+                (int(hist.GetBinContent(i)) for i in range(1, hist.GetNbinsX() + 1)),
+                dtype=np.int64, count=hist.GetNbinsX())
+    finally:
+        source.Close()
     finished = time.perf_counter()
     result["timing"] = {"open_s": opened - started,
                         "tree_lookup_s": tree_ready - opened,
@@ -138,7 +159,8 @@ def main():
     parser.add_argument("--match-angle", type=float, default=10.0)
     parser.add_argument("--max-relative-dp", type=float, default=None,
                         help="Optional absolute relative momentum difference cut")
-    parser.add_argument("--chunk-size", type=int, default=100000)
+    parser.add_argument("--chunk-size", type=int, default=100000,
+                        help="Legacy option; native ROOT scans each file in one pass")
     parser.add_argument("--fast-mode", action="store_true",
                         help="Preview the first 10000 tags from one completed file per mode")
     args = parser.parse_args()
