@@ -163,6 +163,8 @@ def main():
                         help="Legacy option; native ROOT scans each file in one pass")
     parser.add_argument("--fast-mode", action="store_true",
                         help="Preview the first 10000 tags from one completed file per mode")
+    parser.add_argument("--max-tags-per-mode", type=int, default=0,
+                        help="Read at most this many Tags rows each for data and MC; 0 means all")
     args = parser.parse_args()
     if not 1 <= args.workers <= 10 or args.chunk_size < 1:
         parser.error("workers must be 1..10 and chunk-size must be positive")
@@ -170,9 +172,15 @@ def main():
         parser.error("mass-half-width and match-angle must be positive")
     if args.max_relative_dp is not None and args.max_relative_dp <= 0:
         parser.error("max-relative-dp must be positive")
+    if args.max_tags_per_mode < 0:
+        parser.error("max-tags-per-mode must be nonnegative")
+    if args.fast_mode and args.max_tags_per_mode:
+        parser.error("--fast-mode and --max-tags-per-mode cannot be combined")
     center = 0.9382720813 ** 2
     lo, hi = center - args.mass_half_width, center + args.mass_half_width
-    output = args.output_root / args.period / ("fast_preview" if args.fast_mode else "integrated")
+    study_name = ("fast_preview" if args.fast_mode else
+                  f"limited_{args.max_tags_per_mode}" if args.max_tags_per_mode else "integrated")
+    output = args.output_root / args.period / study_name
     output.mkdir(parents=True, exist_ok=True)
     results = {}
     files_by_mode = {}
@@ -193,10 +201,31 @@ def main():
             files = [chosen]
             print(f"[{mode}] FAST PREVIEW: reading first 10000 tags from {files[0].name}",
                   flush=True)
-        files_by_mode[mode] = len(files)
-        tasks = [(str(path), lo, hi, args.match_angle, args.max_relative_dp,
-                  args.chunk_size, 10000 if args.fast_mode else None)
-                 for path in files]
+        planned = []
+        remaining = args.max_tags_per_mode
+        for path in files:
+            if args.fast_mode:
+                entry_stop = 10000
+            elif args.max_tags_per_mode:
+                available = int(json.loads(Path(str(path)[:-5] + ".ok.json").read_text())
+                                .get("selected_tags", 0))
+                if available <= 0:
+                    continue
+                entry_stop = min(available, remaining)
+                remaining -= entry_stop
+            else:
+                entry_stop = None
+            planned.append((str(path), lo, hi, args.match_angle, args.max_relative_dp,
+                            args.chunk_size, entry_stop))
+            if args.fast_mode or (args.max_tags_per_mode and remaining == 0):
+                break
+        if args.max_tags_per_mode and remaining:
+            raise SystemExit(f"{args.period}/{mode} has fewer than "
+                             f"{args.max_tags_per_mode} completed tags; short by {remaining}")
+        tasks = planned
+        files_by_mode[mode] = len(tasks)
+        print(f"[{mode}] planned {len(tasks)} files for "
+              f"{args.max_tags_per_mode or 'all available'} tags", flush=True)
         total = empty_result()
         if args.fast_mode:
             print(f"[{mode}] opening and reading {files[0].name}", flush=True)
@@ -238,6 +267,7 @@ def main():
     print(f"[comparison] plotted in {time.perf_counter() - comparison_start:.1f}s", flush=True)
     summary = {"period": args.period, "input_root": str(args.input_root),
                "fast_mode": args.fast_mode,
+               "max_tags_per_mode": args.max_tags_per_mode,
                "files": files_by_mode, "mass_window_GeV2": [lo, hi],
                "match_angle_deg": args.match_angle, "max_relative_dp": args.max_relative_dp,
                "counts": {mode: {key: result[key] for key in ("all", "window", "selected", "matched")}
