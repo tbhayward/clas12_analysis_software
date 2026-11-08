@@ -10,6 +10,7 @@ from array import array
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import csv
 import json
+import math
 from pathlib import Path
 import time
 
@@ -20,10 +21,12 @@ import numpy as np
 
 FIELDS = ("missing_M2", "missing_theta", "missing_p", "best_selected_rec_index",
           "best_selected_match_angle", "best_selected_relative_delta_p")
+PROTON_MASS_GEV = 0.9382720813
+P_MAX_GEV = math.sqrt(1.0 + 1.0 / (4.0 * PROTON_MASS_GEV**2))
 EDGES = {
     "missing_M2": np.linspace(-1.0, 3.0, 161),
     "missing_theta": np.linspace(0.0, 130.0, 131),
-    "missing_p": np.linspace(0.0, 1.5, 121),
+    "missing_p": np.linspace(0.0, P_MAX_GEV, 115),
     "best_selected_match_angle": np.linspace(0.0, 30.0, 121),
     "best_selected_relative_delta_p": np.linspace(-1.0, 1.0, 121),
 }
@@ -34,14 +37,14 @@ LABELS = {
     "best_selected_match_angle": "Best selected proton opening angle [degrees]",
     "best_selected_relative_delta_p": r"$(p_{rec}-p_{miss})/p_{miss}$",
 }
-THETA_BINS = np.array([0, 10, 20, 30, 40, 50, 60, 80, 100, 130, 180], dtype=float)
-MOMENTUM_BINS = np.array([0, .4, .6, .8, 1., 1.2, 1.5, 2., 3., 6., 20.], dtype=float)
+THETA_BINS = np.array([0, 10, 20, 30, 40, 50, 60, 70, 180], dtype=float)
+MOMENTUM_BINS = np.array([0, .2, .4, .6, .8, 1., P_MAX_GEV], dtype=float)
 GRID_STAGES = ("window", "matched", "peak", "peak_matched", "side_left",
                "side_left_matched", "side_right", "side_right_matched")
 
 
 def empty_result():
-    return {"all": 0, "window": 0, "selected": 0, "matched": 0,
+    return {"input": 0, "all": 0, "window": 0, "selected": 0, "matched": 0,
             "grid": {stage: np.zeros((len(THETA_BINS) - 1, len(MOMENTUM_BINS) - 1),
                                     dtype=np.int64) for stage in GRID_STAGES},
             "hist": {name: {stage: np.zeros(len(edges) - 1, dtype=np.int64)
@@ -69,9 +72,11 @@ def process_file(task):
         if missing:
             raise RuntimeError(f"{filename}: missing Tags branches {sorted(missing)}")
         tree_ready = time.perf_counter()
-        frame = ROOT.RDataFrame(tree)
+        input_frame = ROOT.RDataFrame(tree)
         if entry_stop is not None:
-            frame = frame.Range(0, min(entry_stop, int(tree.GetEntries())))
+            input_frame = input_frame.Range(0, min(entry_stop, int(tree.GetEntries())))
+        frame = input_frame.Filter(f"std::isfinite(missing_p) && missing_p >= 0.0 "
+                                   f"&& missing_p < {P_MAX_GEV:.17g}")
         window = frame.Filter(f"std::isfinite(missing_M2) && missing_M2 >= {lo:.17g} "
                               f"&& missing_M2 <= {hi:.17g}")
         selected = window.Filter("best_selected_rec_index >= 0")
@@ -95,7 +100,7 @@ def process_file(task):
                                   f"&& missing_M2 < {high:.17g}")
             stages[name] = region
             stages[name + "_matched"] = region.Filter("best_selected_rec_index >= 0").Filter(match_cut)
-        counts = {"all": frame.Count(), "window": window.Count(),
+        counts = {"input": input_frame.Count(), "all": frame.Count(), "window": window.Count(),
                   "selected": selected.Count(), "matched": matched.Count()}
         histograms = {}
         for name, edges in EDGES.items():
@@ -140,7 +145,7 @@ def process_file(task):
 
 
 def add_result(total, part):
-    for key in ("all", "window", "selected", "matched"):
+    for key in ("input", "all", "window", "selected", "matched"):
         total[key] += part[key]
     for name in EDGES:
         for stage in total["hist"][name]:
@@ -184,6 +189,7 @@ def plot_ratio(path, name, data, mc, title):
                     label=label)
     ax.set(xlabel=LABELS[name], ylabel="Matched / missing-mass-window tags", title=title)
     ax.set_ylim(0, 1.05)
+    ax.set_xlim((0.2, P_MAX_GEV) if name == "missing_p" else (0, 70))
     ax.grid(alpha=0.25)
     ax.legend()
     fig.tight_layout()
@@ -199,7 +205,7 @@ def plot_mass_overview(path, results):
                                 ("All tags", "Matched protons")):
         for mode in ("data", "mc"):
             values = results[mode]["hist"]["missing_M2"][stage]
-            ax.step(centers, values * 1e6 / results[mode]["all"], where="mid",
+            ax.step(centers, values * 1e6 / results[mode]["input"], where="mid",
                     label=mode.upper())
         ax.axvspan(0.9382720813**2 - .15, 0.9382720813**2 + .15,
                    color="gray", alpha=.2, label="Peak" if stage == "all" else None)
@@ -217,6 +223,24 @@ def plot_mass_overview(path, results):
     plt.close(fig)
 
 
+def plot_match_angle_scan(path, results, chosen_angle):
+    edges = EDGES["best_selected_match_angle"]
+    fig, ax = plt.subplots(figsize=(9, 6))
+    for mode in ("data", "mc"):
+        selected = results[mode]["selected"]
+        histogram = results[mode]["hist"]["best_selected_match_angle"]["window"]
+        survival = np.cumsum(histogram) / selected if selected else np.zeros(len(histogram))
+        ax.step(edges[1:], survival, where="post", label=mode.upper())
+    ax.axvline(chosen_angle, color="black", linestyle="--", label=f"Current {chosen_angle:g}° cut")
+    ax.set(xlim=(0, 30), ylim=(0, 1), xlabel="Best selected proton opening angle cut [degrees]",
+           ylabel="Fraction of selected protons retained", title="Opening-angle cut scan in mass window")
+    ax.grid(alpha=.25)
+    ax.legend()
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
 def save_grid(path, values, title, color_label, vmin=None, vmax=None, log=False):
     from matplotlib.colors import LogNorm
 
@@ -227,8 +251,8 @@ def save_grid(path, values, title, color_label, vmin=None, vmax=None, log=False)
                          vmin=None if log else vmin, vmax=None if log else vmax)
     fig.colorbar(image, ax=ax, label=color_label)
     ax.set(xlabel=LABELS["missing_theta"], ylabel=LABELS["missing_p"], title=title)
-    ax.set_xlim(0, 100)
-    ax.set_ylim(0, 2)
+    ax.set_xlim(0, 70)
+    ax.set_ylim(0.2, P_MAX_GEV)
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)
@@ -258,7 +282,7 @@ def save_grid_products(output, period, results):
     raw_scale = np.divide(rates["data"], rates["mc"],
                           out=np.full_like(rates["data"], np.nan),
                           where=valid & (rates["mc"] > 0))
-    save_grid(output / "4_raw_theta_p_data_mc.png", raw_scale,
+    save_grid(output / "5_raw_theta_p_data_mc.png", raw_scale,
               f"{period}: raw window data / MC rate",
               "Data / MC", vmin=0.5, vmax=2.0)
     corrected_valid = (valid &
@@ -272,10 +296,10 @@ def save_grid_products(output, period, results):
                                 out=np.full_like(raw_scale, np.nan),
                                 where=corrected_valid & np.isfinite(corrected["mc"]["rate"]) &
                                       (corrected["mc"]["rate"] > 0))
-    save_grid(output / "5_sideband_theta_p_data_mc.png", corrected_scale,
+    save_grid(output / "6_sideband_theta_p_data_mc.png", corrected_scale,
               f"{period}: sideband-subtracted data / MC rate", "Data / MC",
               vmin=0.5, vmax=2.0)
-    with (output / "6_theta_p_cells.csv").open("w", newline="") as stream:
+    with (output / "7_theta_p_cells.csv").open("w", newline="") as stream:
         writer = csv.writer(stream)
         writer.writerow(("theta_low_deg", "theta_high_deg", "p_low_GeV", "p_high_GeV",
                          "data_window", "data_matched", "data_rate", "mc_window",
@@ -338,7 +362,7 @@ def main():
     lo, hi = center - args.mass_half_width, center + args.mass_half_width
     study_name = (("fast_preview" if args.fast_mode else
                    f"limited_{args.max_tags_per_mode}" if args.max_tags_per_mode else "integrated")
-                  + "_sideband_v1")
+                  + "_sideband_v2_dvcs")
     output = args.output_root / args.period / study_name
     output.mkdir(parents=True, exist_ok=True)
     results = {}
@@ -408,25 +432,29 @@ def main():
                               f"tree_lookup={part['timing']['tree_lookup_s']:.1f}s "
                               f"read+hist={part['timing']['read_and_hist_s']:.1f}s", flush=True)
         results[mode] = total
-        print(f"[{mode}] tags={total['all']} window={total['window']} "
+        print(f"[{mode}] input_tags={total['input']} DVCS_momentum_tags={total['all']} "
+              f"window={total['window']} "
               f"selected={total['selected']} matched={total['matched']}", flush=True)
     comparison_start = time.perf_counter()
     plot_mass_overview(output / "1_missing_mass_regions.png", results)
-    plot_ratio(output / "2_momentum_rate.png", "missing_p",
+    plot_match_angle_scan(output / "2_match_angle_scan.png", results, args.match_angle)
+    plot_ratio(output / "3_momentum_rate.png", "missing_p",
                results["data"], results["mc"], f"{args.period}: raw window rate by momentum")
-    plot_ratio(output / "3_theta_rate.png", "missing_theta",
+    plot_ratio(output / "4_theta_rate.png", "missing_theta",
                results["data"], results["mc"], f"{args.period}: raw window rate by angle")
     save_grid_products(output, args.period, results)
     print(f"[comparison] plotted in {time.perf_counter() - comparison_start:.1f}s", flush=True)
     summary = {"period": args.period, "input_root": str(args.input_root),
                "fast_mode": args.fast_mode,
+               "predicted_proton_p_max_GeV": P_MAX_GEV,
+               "p_max_definition": "exclusive proton recoil at |t|=1 GeV^2",
                "sideband_peak_M2_GeV2": [0.9382720813**2 - .15, 0.9382720813**2 + .15],
                "sideband_left_M2_GeV2": [0.9382720813**2 - .45, 0.9382720813**2 - .15],
                "sideband_right_M2_GeV2": [0.9382720813**2 + .15, 0.9382720813**2 + .45],
                "max_tags_per_mode": args.max_tags_per_mode,
                "files": files_by_mode, "mass_window_GeV2": [lo, hi],
                "match_angle_deg": args.match_angle, "max_relative_dp": args.max_relative_dp,
-               "counts": {mode: {key: result[key] for key in ("all", "window", "selected", "matched")}
+               "counts": {mode: {key: result[key] for key in ("input", "all", "window", "selected", "matched")}
                           for mode, result in results.items()}}
     for mode in ("data", "mc"):
         n, d = results[mode]["matched"], results[mode]["window"]
@@ -444,7 +472,7 @@ def main():
         summary["sideband_integrated"][mode] = {
             "signal_denominator": denominator, "signal_numerator": numerator,
             "provisional_rate": numerator / denominator if denominator > 0 else None}
-    (output / "7_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    (output / "8_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(f"[OUTPUT] {output}", flush=True)
 
 
