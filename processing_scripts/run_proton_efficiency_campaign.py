@@ -56,6 +56,8 @@ def main():
                         help="Process one contiguous file-range part, as INDEX/TOTAL (1-based)")
     parser.add_argument("--reverse-order", action="store_true",
                         help="Run selected groups and files in reverse order")
+    parser.add_argument("--accept-source-id",
+                        help="Also resume validated parts with this exact prior source_id")
     args = parser.parse_args()
     if not 1 <= args.workers <= 10:
         parser.error("--workers must be between 1 and the farm-node cap of 10")
@@ -252,7 +254,11 @@ def main():
         if marker_path.is_file() and root_output.is_file() and root_output.stat().st_size > 0:
             try:
                 marker = json.loads(marker_path.read_text())
-                valid = all(marker.get(key) == value for key, value in required_marker.items())
+                valid = all(marker.get(key) == value for key, value in required_marker.items()
+                            if key != "source_id")
+                valid = valid and (marker.get("source_id") == source_id or
+                                   (args.accept_source_id is not None and
+                                    marker.get("source_id") == args.accept_source_id))
             except (OSError, ValueError):
                 valid = False
             if valid:
