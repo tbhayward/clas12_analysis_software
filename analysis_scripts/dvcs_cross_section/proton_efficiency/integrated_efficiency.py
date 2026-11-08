@@ -36,14 +36,17 @@ LABELS = {
 }
 THETA_BINS = np.array([0, 10, 20, 30, 40, 50, 60, 80, 100, 130, 180], dtype=float)
 MOMENTUM_BINS = np.array([0, .4, .6, .8, 1., 1.2, 1.5, 2., 3., 6., 20.], dtype=float)
+GRID_STAGES = ("window", "matched", "peak", "peak_matched", "side_left",
+               "side_left_matched", "side_right", "side_right_matched")
 
 
 def empty_result():
     return {"all": 0, "window": 0, "selected": 0, "matched": 0,
             "grid": {stage: np.zeros((len(THETA_BINS) - 1, len(MOMENTUM_BINS) - 1),
-                                    dtype=np.int64) for stage in ("window", "matched")},
+                                    dtype=np.int64) for stage in GRID_STAGES},
             "hist": {name: {stage: np.zeros(len(edges) - 1, dtype=np.int64)
-                            for stage in ("all", "window", "matched")}
+                            for stage in (("all", "window", "matched", "matched_all")
+                                          if name == "missing_M2" else ("all", "window", "matched"))}
                      for name, edges in EDGES.items()}}
 
 
@@ -79,18 +82,34 @@ def process_file(task):
                           f"std::abs(best_selected_relative_delta_p) < {max_rel_dp:.17g}")
         matched = selected.Filter(match_cut)
         stages = {"all": frame, "window": window, "matched": matched}
+        stages["matched_all"] = frame.Filter("best_selected_rec_index >= 0").Filter(match_cut)
+        peak_half_width = 0.15
+        peak_center = 0.9382720813 ** 2
+        regions = {"peak": (peak_center - peak_half_width, peak_center + peak_half_width),
+                   "side_left": (peak_center - 3 * peak_half_width,
+                                 peak_center - peak_half_width),
+                   "side_right": (peak_center + peak_half_width,
+                                  peak_center + 3 * peak_half_width)}
+        for name, (low, high) in regions.items():
+            region = frame.Filter(f"std::isfinite(missing_M2) && missing_M2 >= {low:.17g} "
+                                  f"&& missing_M2 < {high:.17g}")
+            stages[name] = region
+            stages[name + "_matched"] = region.Filter("best_selected_rec_index >= 0").Filter(match_cut)
         counts = {"all": frame.Count(), "window": window.Count(),
                   "selected": selected.Count(), "matched": matched.Count()}
         histograms = {}
         for name, edges in EDGES.items():
-            for stage, node in stages.items():
+            histogram_stages = (("all", "window", "matched", "matched_all")
+                                if name == "missing_M2" else ("all", "window", "matched"))
+            for stage in histogram_stages:
+                node = stages[stage]
                 model = (f"h_{name}_{stage}", "", len(edges) - 1,
                          float(edges[0]), float(edges[-1]))
                 histograms[name, stage] = node.Filter(f"std::isfinite({name})").Histo1D(model, name)
         x_bins = array("d", THETA_BINS)
         y_bins = array("d", MOMENTUM_BINS)
         grid_histograms = {}
-        for stage in ("window", "matched"):
+        for stage in GRID_STAGES:
             model = ROOT.RDF.TH2DModel(f"grid_{stage}", "", len(x_bins) - 1, x_bins,
                                        len(y_bins) - 1, y_bins)
             grid_histograms[stage] = stages[stage].Filter(
@@ -124,9 +143,9 @@ def add_result(total, part):
     for key in ("all", "window", "selected", "matched"):
         total[key] += part[key]
     for name in EDGES:
-        for stage in ("all", "window", "matched"):
+        for stage in total["hist"][name]:
             total["hist"][name][stage] += part["hist"][name][stage]
-    for stage in ("window", "matched"):
+    for stage in GRID_STAGES:
         total["grid"][stage] += part["grid"][stage]
 
 
@@ -172,6 +191,32 @@ def plot_ratio(path, name, data, mc, title):
     plt.close(fig)
 
 
+def plot_mass_overview(path, results):
+    edges = EDGES["missing_M2"]
+    centers = (edges[1:] + edges[:-1]) / 2
+    fig, axes = plt.subplots(1, 2, figsize=(12, 5), sharex=True)
+    for ax, stage, title in zip(axes, ("all", "matched_all"),
+                                ("All tags", "Matched protons")):
+        for mode in ("data", "mc"):
+            values = results[mode]["hist"]["missing_M2"][stage]
+            ax.step(centers, values * 1e6 / results[mode]["all"], where="mid",
+                    label=mode.upper())
+        ax.axvspan(0.9382720813**2 - .15, 0.9382720813**2 + .15,
+                   color="gray", alpha=.2, label="Peak" if stage == "all" else None)
+        ax.axvspan(0.9382720813**2 - .45, 0.9382720813**2 - .15,
+                   color="orange", alpha=.12)
+        ax.axvspan(0.9382720813**2 + .15, 0.9382720813**2 + .45,
+                   color="orange", alpha=.12)
+        ax.set(xlim=(0.3, 1.5), xlabel=LABELS["missing_M2"],
+               ylabel="Tags per million input tags / bin", title=title)
+        ax.grid(alpha=.2)
+        ax.legend()
+    fig.suptitle("Peak (gray) and equal-total-width sidebands (orange)")
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
 def save_grid(path, values, title, color_label, vmin=None, vmax=None, log=False):
     from matplotlib.colors import LogNorm
 
@@ -191,31 +236,56 @@ def save_grid(path, values, title, color_label, vmin=None, vmax=None, log=False)
 
 def save_grid_products(output, period, results):
     rates = {}
+    corrected = {}
     for mode in ("data", "mc"):
         grid = results[mode]["grid"]
         rates[mode], _ = ratio(grid["matched"], grid["window"])
-        save_grid(output / f"{mode}_theta_p_denominator.png", grid["window"],
-                  f"{period} {mode}: tags in missing-mass window", "Tags per cell", log=True)
-        save_grid(output / f"{mode}_theta_p_matched.png", grid["matched"],
-                  f"{period} {mode}: matched proton tags", "Tags per cell", log=True)
-        rate_display = np.where(grid["window"] >= 50, rates[mode], np.nan)
-        save_grid(output / f"{mode}_theta_p_rate.png", rate_display,
-                  f"{period} {mode}: matched / window tags (N≥50)", "Provisional rate",
-                  vmin=0, vmax=1)
+        corrected[mode] = {
+            "denominator": grid["peak"].astype(float) -
+            0.5 * (grid["side_left"] + grid["side_right"]),
+            "numerator": grid["peak_matched"].astype(float) -
+            0.5 * (grid["side_left_matched"] + grid["side_right_matched"]),
+        }
+        corrected[mode]["rate"], _ = ratio(corrected[mode]["numerator"],
+                                           corrected[mode]["denominator"])
+        corrected[mode]["rate"] = np.where(
+            (corrected[mode]["numerator"] > 0) &
+            (corrected[mode]["numerator"] <= corrected[mode]["denominator"]),
+            corrected[mode]["rate"], np.nan)
     data, mc = results["data"]["grid"], results["mc"]["grid"]
     valid = ((data["window"] >= 100) & (mc["window"] >= 100) &
              (data["matched"] >= 20) & (mc["matched"] >= 20))
-    scale = np.divide(rates["data"], rates["mc"],
-                      out=np.full_like(rates["data"], np.nan),
-                      where=valid & (rates["mc"] > 0))
-    save_grid(output / "data_mc_theta_p_rate_ratio.png", scale,
-              f"{period}: provisional data / MC rate (well-populated cells)",
+    raw_scale = np.divide(rates["data"], rates["mc"],
+                          out=np.full_like(rates["data"], np.nan),
+                          where=valid & (rates["mc"] > 0))
+    save_grid(output / "4_raw_theta_p_data_mc.png", raw_scale,
+              f"{period}: raw window data / MC rate",
               "Data / MC", vmin=0.5, vmax=2.0)
-    with (output / "theta_p_cells.csv").open("w", newline="") as stream:
+    corrected_valid = (valid &
+                       (corrected["data"]["denominator"] >= 100) &
+                       (corrected["mc"]["denominator"] >= 100) &
+                       (corrected["data"]["numerator"] >= 20) &
+                       (corrected["mc"]["numerator"] >= 20) &
+                       np.isfinite(corrected["data"]["rate"]) &
+                       np.isfinite(corrected["mc"]["rate"]))
+    corrected_scale = np.divide(corrected["data"]["rate"], corrected["mc"]["rate"],
+                                out=np.full_like(raw_scale, np.nan),
+                                where=corrected_valid & np.isfinite(corrected["mc"]["rate"]) &
+                                      (corrected["mc"]["rate"] > 0))
+    save_grid(output / "5_sideband_theta_p_data_mc.png", corrected_scale,
+              f"{period}: sideband-subtracted data / MC rate", "Data / MC",
+              vmin=0.5, vmax=2.0)
+    with (output / "6_theta_p_cells.csv").open("w", newline="") as stream:
         writer = csv.writer(stream)
         writer.writerow(("theta_low_deg", "theta_high_deg", "p_low_GeV", "p_high_GeV",
                          "data_window", "data_matched", "data_rate", "mc_window",
-                         "mc_matched", "mc_rate", "data_mc_rate_ratio", "plot_quality"))
+                         "mc_matched", "mc_rate", "raw_data_mc_ratio", "raw_plot_quality",
+                         "data_peak", "data_left", "data_right", "data_peak_matched",
+                         "data_left_matched", "data_right_matched", "data_signal_denominator",
+                         "data_signal_numerator", "data_sideband_rate", "mc_peak", "mc_left",
+                         "mc_right", "mc_peak_matched", "mc_left_matched", "mc_right_matched",
+                         "mc_signal_denominator", "mc_signal_numerator", "mc_sideband_rate",
+                         "sideband_data_mc_ratio", "sideband_plot_quality"))
         for i in range(len(THETA_BINS) - 1):
             for j in range(len(MOMENTUM_BINS) - 1):
                 writer.writerow((THETA_BINS[i], THETA_BINS[i + 1],
@@ -223,7 +293,18 @@ def save_grid_products(output, period, results):
                                  data["window"][i, j], data["matched"][i, j],
                                  rates["data"][i, j], mc["window"][i, j],
                                  mc["matched"][i, j], rates["mc"][i, j],
-                                 scale[i, j], int(valid[i, j])))
+                                 raw_scale[i, j], int(valid[i, j]),
+                                 *(data[key][i, j] for key in ("peak", "side_left", "side_right",
+                                   "peak_matched", "side_left_matched", "side_right_matched")),
+                                 corrected["data"]["denominator"][i, j],
+                                 corrected["data"]["numerator"][i, j],
+                                 corrected["data"]["rate"][i, j],
+                                 *(mc[key][i, j] for key in ("peak", "side_left", "side_right",
+                                   "peak_matched", "side_left_matched", "side_right_matched")),
+                                 corrected["mc"]["denominator"][i, j],
+                                 corrected["mc"]["numerator"][i, j],
+                                 corrected["mc"]["rate"][i, j],
+                                 corrected_scale[i, j], int(corrected_valid[i, j])))
 
 
 def main():
@@ -255,8 +336,9 @@ def main():
         parser.error("--fast-mode and --max-tags-per-mode cannot be combined")
     center = 0.9382720813 ** 2
     lo, hi = center - args.mass_half_width, center + args.mass_half_width
-    study_name = ("fast_preview" if args.fast_mode else
-                  f"limited_{args.max_tags_per_mode}" if args.max_tags_per_mode else "integrated")
+    study_name = (("fast_preview" if args.fast_mode else
+                   f"limited_{args.max_tags_per_mode}" if args.max_tags_per_mode else "integrated")
+                  + "_sideband_v1")
     output = args.output_root / args.period / study_name
     output.mkdir(parents=True, exist_ok=True)
     results = {}
@@ -328,23 +410,19 @@ def main():
         results[mode] = total
         print(f"[{mode}] tags={total['all']} window={total['window']} "
               f"selected={total['selected']} matched={total['matched']}", flush=True)
-        plot_start = time.perf_counter()
-        for name in EDGES:
-            plot_counts(output / f"{mode}_{name}.png", name,
-                        [("All tags", total["hist"][name]["all"]),
-                         ("Mass window", total["hist"][name]["window"]),
-                         ("Matched", total["hist"][name]["matched"])],
-                        logy=True, title=f"{args.period} {mode}: {name}")
-        print(f"[{mode}] plotted {len(EDGES)} diagnostics in "
-              f"{time.perf_counter() - plot_start:.1f}s", flush=True)
     comparison_start = time.perf_counter()
-    for name in ("missing_theta", "missing_p"):
-        plot_ratio(output / f"data_vs_mc_{name}_rate.png", name,
-                   results["data"], results["mc"], f"{args.period}: provisional tag-and-probe rate")
+    plot_mass_overview(output / "1_missing_mass_regions.png", results)
+    plot_ratio(output / "2_momentum_rate.png", "missing_p",
+               results["data"], results["mc"], f"{args.period}: raw window rate by momentum")
+    plot_ratio(output / "3_theta_rate.png", "missing_theta",
+               results["data"], results["mc"], f"{args.period}: raw window rate by angle")
     save_grid_products(output, args.period, results)
     print(f"[comparison] plotted in {time.perf_counter() - comparison_start:.1f}s", flush=True)
     summary = {"period": args.period, "input_root": str(args.input_root),
                "fast_mode": args.fast_mode,
+               "sideband_peak_M2_GeV2": [0.9382720813**2 - .15, 0.9382720813**2 + .15],
+               "sideband_left_M2_GeV2": [0.9382720813**2 - .45, 0.9382720813**2 - .15],
+               "sideband_right_M2_GeV2": [0.9382720813**2 + .15, 0.9382720813**2 + .45],
                "max_tags_per_mode": args.max_tags_per_mode,
                "files": files_by_mode, "mass_window_GeV2": [lo, hi],
                "match_angle_deg": args.match_angle, "max_relative_dp": args.max_relative_dp,
@@ -356,7 +434,17 @@ def main():
     a = summary["counts"]["data"]["provisional_rate"]
     b = summary["counts"]["mc"]["provisional_rate"]
     summary["provisional_data_mc_ratio"] = a / b if a is not None and b else None
-    (output / "summary.json").write_text(json.dumps(summary, indent=2) + "\n")
+    summary["sideband_integrated"] = {}
+    for mode, result in results.items():
+        grid = result["grid"]
+        denominator = int(grid["peak"].sum()) - 0.5 * int(
+            (grid["side_left"] + grid["side_right"]).sum())
+        numerator = int(grid["peak_matched"].sum()) - 0.5 * int(
+            (grid["side_left_matched"] + grid["side_right_matched"]).sum())
+        summary["sideband_integrated"][mode] = {
+            "signal_denominator": denominator, "signal_numerator": numerator,
+            "provisional_rate": numerator / denominator if denominator > 0 else None}
+    (output / "7_summary.json").write_text(json.dumps(summary, indent=2) + "\n")
     print(f"[OUTPUT] {output}", flush=True)
 
 
