@@ -9,6 +9,7 @@ import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 import json
 from pathlib import Path
+import time
 
 import matplotlib
 matplotlib.use("Agg")
@@ -44,11 +45,14 @@ def empty_result():
 def process_file(task):
     filename, lo, hi, max_angle, max_rel_dp, chunk_size, entry_stop = task
     result = empty_result()
+    started = time.perf_counter()
     with uproot.open(filename) as source:
+        opened = time.perf_counter()
         tree = source["Tags"]
         missing = set(FIELDS) - set(tree.keys())
         if missing:
             raise RuntimeError(f"{filename}: missing Tags branches {sorted(missing)}")
+        metadata_ready = time.perf_counter()
         for arrays in tree.iterate(FIELDS, step_size=chunk_size, entry_stop=entry_stop,
                                    library="np"):
             mass = arrays["missing_M2"]
@@ -69,6 +73,11 @@ def process_file(task):
                 for stage, mask in (("all", finite), ("window", finite & window),
                                     ("matched", finite & matched)):
                     result["hist"][name][stage] += np.histogram(values[mask], edges)[0]
+    finished = time.perf_counter()
+    result["timing"] = {"open_s": opened - started,
+                        "metadata_s": metadata_ready - opened,
+                        "read_and_hist_s": finished - metadata_ready,
+                        "total_s": finished - started}
     return result
 
 
@@ -149,11 +158,14 @@ def main():
     results = {}
     files_by_mode = {}
     for mode in ("data", "mc"):
+        discover_start = time.perf_counter()
         directory = args.input_root / args.period / mode / "parts"
         files = sorted(path for path in directory.glob("*.root")
                        if Path(str(path)[:-5] + ".ok.json").is_file())
         if not files:
             raise SystemExit(f"No completed ROOT parts for {args.period}/{mode} in {directory}")
+        print(f"[{mode}] discovered {len(files)} completed files in "
+              f"{time.perf_counter() - discover_start:.1f}s", flush=True)
         if args.fast_mode:
             chosen = next((path for path in files if json.loads(
                 Path(str(path)[:-5] + ".ok.json").read_text()).get("selected_tags", 0) >= 10000), None)
@@ -167,27 +179,44 @@ def main():
                   args.chunk_size, 10000 if args.fast_mode else None)
                  for path in files]
         total = empty_result()
-        with ProcessPoolExecutor(max_workers=min(args.workers, len(tasks))) as pool:
-            futures = {pool.submit(process_file, task): task[0] for task in tasks}
-            for index, future in enumerate(as_completed(futures), 1):
-                try:
-                    add_result(total, future.result())
-                except Exception as error:
-                    raise RuntimeError(f"Failed reading {futures[future]}: {error}") from error
-                if args.fast_mode or index % 10 == 0 or index == len(tasks):
-                    print(f"[{mode}] {index}/{len(tasks)} files ({100 * index / len(tasks):.1f}%)", flush=True)
+        if args.fast_mode:
+            print(f"[{mode}] opening and reading {files[0].name}", flush=True)
+            part = process_file(tasks[0])
+            add_result(total, part)
+            print(f"[{mode}] timing: open={part['timing']['open_s']:.1f}s "
+                  f"metadata={part['timing']['metadata_s']:.1f}s "
+                  f"read+hist={part['timing']['read_and_hist_s']:.1f}s", flush=True)
+        else:
+            with ProcessPoolExecutor(max_workers=min(args.workers, len(tasks))) as pool:
+                futures = {pool.submit(process_file, task): task[0] for task in tasks}
+                for index, future in enumerate(as_completed(futures), 1):
+                    try:
+                        part = future.result()
+                        add_result(total, part)
+                    except Exception as error:
+                        raise RuntimeError(f"Failed reading {futures[future]}: {error}") from error
+                    if index % 10 == 0 or index == len(tasks):
+                        print(f"[{mode}] {index}/{len(tasks)} files ({100 * index / len(tasks):.1f}%) "
+                              f"latest open={part['timing']['open_s']:.1f}s "
+                              f"metadata={part['timing']['metadata_s']:.1f}s "
+                              f"read+hist={part['timing']['read_and_hist_s']:.1f}s", flush=True)
         results[mode] = total
         print(f"[{mode}] tags={total['all']} window={total['window']} "
               f"selected={total['selected']} matched={total['matched']}", flush=True)
+        plot_start = time.perf_counter()
         for name in EDGES:
             plot_counts(output / f"{mode}_{name}.png", name,
                         [("All tags", total["hist"][name]["all"]),
                          ("Mass window", total["hist"][name]["window"]),
                          ("Matched", total["hist"][name]["matched"])],
                         logy=True, title=f"{args.period} {mode}: {name}")
+        print(f"[{mode}] plotted {len(EDGES)} diagnostics in "
+              f"{time.perf_counter() - plot_start:.1f}s", flush=True)
+    comparison_start = time.perf_counter()
     for name in ("missing_theta", "missing_p"):
         plot_ratio(output / f"data_vs_mc_{name}_rate.png", name,
                    results["data"], results["mc"], f"{args.period}: provisional tag-and-probe rate")
+    print(f"[comparison] plotted in {time.perf_counter() - comparison_start:.1f}s", flush=True)
     summary = {"period": args.period, "input_root": str(args.input_root),
                "fast_mode": args.fast_mode,
                "files": files_by_mode, "mass_window_GeV2": [lo, hi],
