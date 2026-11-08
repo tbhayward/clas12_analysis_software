@@ -134,7 +134,7 @@ def main():
                         help="Optional absolute relative momentum difference cut")
     parser.add_argument("--chunk-size", type=int, default=100000)
     parser.add_argument("--fast-mode", action="store_true",
-                        help="Preview 1000 tags from each of 10 spread-out files per mode")
+                        help="Preview the first 10000 tags from one completed file per mode")
     args = parser.parse_args()
     if not 1 <= args.workers <= 10 or args.chunk_size < 1:
         parser.error("workers must be 1..10 and chunk-size must be positive")
@@ -155,13 +155,16 @@ def main():
         if not files:
             raise SystemExit(f"No completed ROOT parts for {args.period}/{mode} in {directory}")
         if args.fast_mode:
-            indices = np.linspace(0, len(files) - 1, min(10, len(files)), dtype=int)
-            files = [files[int(index)] for index in indices]
-            print(f"[{mode}] FAST PREVIEW: first 1000 tags from each of {len(files)} "
-                  "spread-out files; diagnostic only", flush=True)
+            chosen = next((path for path in files if json.loads(
+                Path(str(path)[:-5] + ".ok.json").read_text()).get("selected_tags", 0) >= 10000), None)
+            if chosen is None:
+                raise SystemExit(f"No completed {args.period}/{mode} part has 10000 tags")
+            files = [chosen]
+            print(f"[{mode}] FAST PREVIEW: reading first 10000 tags from {files[0].name}",
+                  flush=True)
         files_by_mode[mode] = len(files)
         tasks = [(str(path), lo, hi, args.match_angle, args.max_relative_dp,
-                  args.chunk_size, 1000 if args.fast_mode else None)
+                  args.chunk_size, 10000 if args.fast_mode else None)
                  for path in files]
         total = empty_result()
         with ProcessPoolExecutor(max_workers=min(args.workers, len(tasks))) as pool:
@@ -171,7 +174,7 @@ def main():
                     add_result(total, future.result())
                 except Exception as error:
                     raise RuntimeError(f"Failed reading {futures[future]}: {error}") from error
-                if index % 10 == 0 or index == len(tasks):
+                if args.fast_mode or index % 10 == 0 or index == len(tasks):
                     print(f"[{mode}] {index}/{len(tasks)} files ({100 * index / len(tasks):.1f}%)", flush=True)
         results[mode] = total
         print(f"[{mode}] tags={total['all']} window={total['window']} "
