@@ -6,7 +6,9 @@ The window and matching thresholds are exploratory, not calibrated selections.
 """
 
 import argparse
+from array import array
 from concurrent.futures import ProcessPoolExecutor, as_completed
+import csv
 import json
 from pathlib import Path
 import time
@@ -32,10 +34,14 @@ LABELS = {
     "best_selected_match_angle": "Best selected proton opening angle [degrees]",
     "best_selected_relative_delta_p": r"$(p_{rec}-p_{miss})/p_{miss}$",
 }
+THETA_BINS = np.array([0, 10, 20, 30, 40, 50, 60, 80, 100, 130, 180], dtype=float)
+MOMENTUM_BINS = np.array([0, .4, .6, .8, 1., 1.2, 1.5, 2., 3., 6., 20.], dtype=float)
 
 
 def empty_result():
     return {"all": 0, "window": 0, "selected": 0, "matched": 0,
+            "grid": {stage: np.zeros((len(THETA_BINS) - 1, len(MOMENTUM_BINS) - 1),
+                                    dtype=np.int64) for stage in ("window", "matched")},
             "hist": {name: {stage: np.zeros(len(edges) - 1, dtype=np.int64)
                             for stage in ("all", "window", "matched")}
                      for name, edges in EDGES.items()}}
@@ -81,7 +87,17 @@ def process_file(task):
                 model = (f"h_{name}_{stage}", "", len(edges) - 1,
                          float(edges[0]), float(edges[-1]))
                 histograms[name, stage] = node.Filter(f"std::isfinite({name})").Histo1D(model, name)
-        ROOT.RDF.RunGraphs(list(counts.values()) + list(histograms.values()))
+        x_bins = array("d", THETA_BINS)
+        y_bins = array("d", MOMENTUM_BINS)
+        grid_histograms = {}
+        for stage in ("window", "matched"):
+            model = ROOT.RDF.TH2DModel(f"grid_{stage}", "", len(x_bins) - 1, x_bins,
+                                       len(y_bins) - 1, y_bins)
+            grid_histograms[stage] = stages[stage].Filter(
+                "std::isfinite(missing_theta) && std::isfinite(missing_p)").Histo2D(
+                    model, "missing_theta", "missing_p")
+        ROOT.RDF.RunGraphs(list(counts.values()) + list(histograms.values()) +
+                           list(grid_histograms.values()))
         for stage, handle in counts.items():
             result[stage] = int(handle.GetValue())
         for (name, stage), handle in histograms.items():
@@ -89,6 +105,11 @@ def process_file(task):
             result["hist"][name][stage] = np.fromiter(
                 (int(hist.GetBinContent(i)) for i in range(1, hist.GetNbinsX() + 1)),
                 dtype=np.int64, count=hist.GetNbinsX())
+        for stage, handle in grid_histograms.items():
+            hist = handle.GetValue()
+            result["grid"][stage] = np.array(
+                [[int(hist.GetBinContent(i + 1, j + 1)) for j in range(len(y_bins) - 1)]
+                 for i in range(len(x_bins) - 1)], dtype=np.int64)
     finally:
         source.Close()
     finished = time.perf_counter()
@@ -105,6 +126,8 @@ def add_result(total, part):
     for name in EDGES:
         for stage in ("all", "window", "matched"):
             total["hist"][name][stage] += part["hist"][name][stage]
+    for stage in ("window", "matched"):
+        total["grid"][stage] += part["grid"][stage]
 
 
 def plot_counts(path, name, histograms, logy=False, title=None):
@@ -147,6 +170,60 @@ def plot_ratio(path, name, data, mc, title):
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)
+
+
+def save_grid(path, values, title, color_label, vmin=None, vmax=None, log=False):
+    from matplotlib.colors import LogNorm
+
+    fig, ax = plt.subplots(figsize=(11, 7))
+    image = ax.pcolormesh(THETA_BINS, MOMENTUM_BINS, values.T,
+                         cmap="viridis", shading="flat",
+                         norm=LogNorm(vmin=1) if log else None,
+                         vmin=None if log else vmin, vmax=None if log else vmax)
+    fig.colorbar(image, ax=ax, label=color_label)
+    ax.set(xlabel=LABELS["missing_theta"], ylabel=LABELS["missing_p"], title=title)
+    ax.set_xlim(0, 100)
+    ax.set_ylim(0, 2)
+    fig.tight_layout()
+    fig.savefig(path, dpi=160)
+    plt.close(fig)
+
+
+def save_grid_products(output, period, results):
+    rates = {}
+    for mode in ("data", "mc"):
+        grid = results[mode]["grid"]
+        rates[mode], _ = ratio(grid["matched"], grid["window"])
+        save_grid(output / f"{mode}_theta_p_denominator.png", grid["window"],
+                  f"{period} {mode}: tags in missing-mass window", "Tags per cell", log=True)
+        save_grid(output / f"{mode}_theta_p_matched.png", grid["matched"],
+                  f"{period} {mode}: matched proton tags", "Tags per cell", log=True)
+        rate_display = np.where(grid["window"] >= 50, rates[mode], np.nan)
+        save_grid(output / f"{mode}_theta_p_rate.png", rate_display,
+                  f"{period} {mode}: matched / window tags (N≥50)", "Provisional rate",
+                  vmin=0, vmax=1)
+    data, mc = results["data"]["grid"], results["mc"]["grid"]
+    valid = ((data["window"] >= 100) & (mc["window"] >= 100) &
+             (data["matched"] >= 20) & (mc["matched"] >= 20))
+    scale = np.divide(rates["data"], rates["mc"],
+                      out=np.full_like(rates["data"], np.nan),
+                      where=valid & (rates["mc"] > 0))
+    save_grid(output / "data_mc_theta_p_rate_ratio.png", scale,
+              f"{period}: provisional data / MC rate (well-populated cells)",
+              "Data / MC", vmin=0.5, vmax=2.0)
+    with (output / "theta_p_cells.csv").open("w", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(("theta_low_deg", "theta_high_deg", "p_low_GeV", "p_high_GeV",
+                         "data_window", "data_matched", "data_rate", "mc_window",
+                         "mc_matched", "mc_rate", "data_mc_rate_ratio", "plot_quality"))
+        for i in range(len(THETA_BINS) - 1):
+            for j in range(len(MOMENTUM_BINS) - 1):
+                writer.writerow((THETA_BINS[i], THETA_BINS[i + 1],
+                                 MOMENTUM_BINS[j], MOMENTUM_BINS[j + 1],
+                                 data["window"][i, j], data["matched"][i, j],
+                                 rates["data"][i, j], mc["window"][i, j],
+                                 mc["matched"][i, j], rates["mc"][i, j],
+                                 scale[i, j], int(valid[i, j])))
 
 
 def main():
@@ -264,6 +341,7 @@ def main():
     for name in ("missing_theta", "missing_p"):
         plot_ratio(output / f"data_vs_mc_{name}_rate.png", name,
                    results["data"], results["mc"], f"{args.period}: provisional tag-and-probe rate")
+    save_grid_products(output, args.period, results)
     print(f"[comparison] plotted in {time.perf_counter() - comparison_start:.1f}s", flush=True)
     summary = {"period": args.period, "input_root": str(args.input_root),
                "fast_mode": args.fast_mode,
