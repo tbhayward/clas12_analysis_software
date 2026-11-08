@@ -18,6 +18,8 @@ import matplotlib
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import numpy as np
+from scipy.optimize import least_squares
+from scipy.special import ndtr
 
 FIELDS = ("missing_M2", "missing_theta", "missing_p", "best_selected_rec_index",
           "best_selected_match_angle", "best_selected_relative_delta_p")
@@ -41,12 +43,24 @@ THETA_BINS = np.array([0, 10, 20, 30, 40, 50, 60, 70, 180], dtype=float)
 MOMENTUM_BINS = np.array([0, .2, .4, .6, .8, 1., P_MAX_GEV], dtype=float)
 GRID_STAGES = ("window", "matched", "peak", "peak_matched", "side_left",
                "side_left_matched", "side_right", "side_right_matched")
+FIT_EDGES = np.linspace(0.43, 1.33, 91)
+# The broad regions are diagnostics; no fit result is used as a production weight.
+FIT_REGIONS = (
+    ("visible", 0.0, 70.0, 0.2, P_MAX_GEV),
+    ("forward_0_40", 0.0, 40.0, 0.2, P_MAX_GEV),
+    ("cd_40_70_low_p", 40.0, 70.0, 0.2, 0.7),
+    ("cd_40_70_high_p", 40.0, 70.0, 0.7, P_MAX_GEV),
+    ("high_angle_50_70", 50.0, 70.0, 0.2, P_MAX_GEV),
+)
 
 
 def empty_result():
     return {"input": 0, "all": 0, "window": 0, "selected": 0, "matched": 0,
             "grid": {stage: np.zeros((len(THETA_BINS) - 1, len(MOMENTUM_BINS) - 1),
                                     dtype=np.int64) for stage in GRID_STAGES},
+            "fit_hist": {region[0]: {stage: np.zeros(len(FIT_EDGES) - 1, dtype=np.int64)
+                                     for stage in ("all", "matched")}
+                         for region in FIT_REGIONS},
             "hist": {name: {stage: np.zeros(len(edges) - 1, dtype=np.int64)
                             for stage in (("all", "window", "matched", "matched_all")
                                           if name == "missing_M2" else ("all", "window", "matched"))}
@@ -120,8 +134,18 @@ def process_file(task):
             grid_histograms[stage] = stages[stage].Filter(
                 "std::isfinite(missing_theta) && std::isfinite(missing_p)").Histo2D(
                     model, "missing_theta", "missing_p")
+        fit_histograms = {}
+        for region_name, theta_low, theta_high, p_low, p_high in FIT_REGIONS:
+            region_cut = (f"std::isfinite(missing_theta) && missing_theta >= {theta_low:.17g} "
+                          f"&& missing_theta < {theta_high:.17g} && missing_p >= {p_low:.17g} "
+                          f"&& missing_p < {p_high:.17g} && std::isfinite(missing_M2)")
+            for stage in ("all", "matched"):
+                model = (f"fit_{region_name}_{stage}", "", len(FIT_EDGES) - 1,
+                         float(FIT_EDGES[0]), float(FIT_EDGES[-1]))
+                fit_histograms[region_name, stage] = stages[stage].Filter(region_cut).Histo1D(
+                    model, "missing_M2")
         ROOT.RDF.RunGraphs(list(counts.values()) + list(histograms.values()) +
-                           list(grid_histograms.values()))
+                           list(grid_histograms.values()) + list(fit_histograms.values()))
         for stage, handle in counts.items():
             result[stage] = int(handle.GetValue())
         for (name, stage), handle in histograms.items():
@@ -134,6 +158,11 @@ def process_file(task):
             result["grid"][stage] = np.array(
                 [[int(hist.GetBinContent(i + 1, j + 1)) for j in range(len(y_bins) - 1)]
                  for i in range(len(x_bins) - 1)], dtype=np.int64)
+        for (region_name, stage), handle in fit_histograms.items():
+            hist = handle.GetValue()
+            result["fit_hist"][region_name][stage] = np.fromiter(
+                (int(hist.GetBinContent(i)) for i in range(1, hist.GetNbinsX() + 1)),
+                dtype=np.int64, count=hist.GetNbinsX())
     finally:
         source.Close()
     finished = time.perf_counter()
@@ -152,6 +181,9 @@ def add_result(total, part):
             total["hist"][name][stage] += part["hist"][name][stage]
     for stage in GRID_STAGES:
         total["grid"][stage] += part["grid"][stage]
+    for region_name, _, _, _, _ in FIT_REGIONS:
+        for stage in ("all", "matched"):
+            total["fit_hist"][region_name][stage] += part["fit_hist"][region_name][stage]
 
 
 def plot_counts(path, name, histograms, logy=False, title=None):
@@ -174,8 +206,10 @@ def plot_counts(path, name, histograms, logy=False, title=None):
 def ratio(numerator, denominator):
     value = np.divide(numerator, denominator, out=np.full_like(numerator, np.nan, dtype=float),
                       where=denominator > 0)
-    error = np.sqrt(np.divide(value * (1 - value), denominator,
-                              out=np.full_like(value, np.nan), where=denominator > 0))
+    binomial = (denominator > 0) & (value >= 0) & (value <= 1)
+    variance = np.divide(value * (1 - value), denominator,
+                         out=np.full_like(value, np.nan), where=binomial)
+    error = np.sqrt(variance)
     return value, error
 
 
@@ -239,6 +273,150 @@ def plot_match_angle_scan(path, results, chosen_angle):
     fig.tight_layout()
     fig.savefig(path, dpi=160)
     plt.close(fig)
+
+
+def fit_mass_peak(counts):
+    """Exploratory Gaussian signal plus positive quadratic Bernstein background."""
+    observed = counts.astype(float)
+    centers = (FIT_EDGES[:-1] + FIT_EDGES[1:]) / 2
+    coordinate = (centers - FIT_EDGES[0]) / (FIT_EDGES[-1] - FIT_EDGES[0])
+    background_basis = np.stack(((1 - coordinate)**2,
+                                 2 * coordinate * (1 - coordinate), coordinate**2))
+    total = float(observed.sum())
+    if total < 200:
+        return {"status": "insufficient_counts", "entries": int(total)}
+    scale = max(total / len(observed), 1.0)
+    weights = np.sqrt(np.maximum(observed, 1.0))
+
+    def components(parameters):
+        yield_scaled, mean, width, *background_scaled = parameters
+        signal_shape = np.diff(ndtr((FIT_EDGES - mean) / width))
+        signal_shape /= signal_shape.sum()
+        signal = scale * yield_scaled * signal_shape
+        background = scale * np.asarray(background_scaled) @ background_basis
+        return signal, background
+
+    edge_left = float(np.median(observed[:10])) / scale
+    edge_right = float(np.median(observed[-10:])) / scale
+    peak_mean = float(np.clip(centers[np.argmax(observed)], .825, .955))
+    initial_yield = max((total - (edge_left + edge_right) * scale * len(observed) / 2) / scale,
+                        1.0)
+    lower = [0.0, .82, .025, 0.0, 0.0, 0.0]
+    upper = [2.0 * total / scale, .96, .18, 5.0 * observed.max() / scale,
+             5.0 * observed.max() / scale, 5.0 * observed.max() / scale]
+    solutions = []
+    for start_width in (.045, .075, .115):
+        initial = [initial_yield, peak_mean, start_width, edge_left,
+                   (edge_left + edge_right) / 2, edge_right]
+        solution = least_squares(
+            lambda parameters: (sum(components(parameters)) - observed) / weights,
+            initial, bounds=(lower, upper), x_scale="jac", max_nfev=1500)
+        if solution.success and np.all(np.isfinite(solution.x)):
+            solutions.append(solution)
+    if not solutions:
+        return {"status": "optimizer_failed", "entries": int(total)}
+    best = min(solutions, key=lambda solution: float(np.dot(solution.fun, solution.fun)))
+    signal, background = components(best.x)
+    yield_value = float(signal.sum())
+    chi2 = float(np.dot(best.fun, best.fun))
+    ndf = len(observed) - len(best.x)
+    chi2_ndf = chi2 / ndf
+    quality = ("review_shape" if chi2_ndf > 3.0 else
+               "weak_signal" if yield_value < max(100.0, 5.0 * math.sqrt(total)) else "ok")
+    return {"status": quality, "entries": int(total), "signal_yield": yield_value,
+            "mean_GeV2": float(best.x[1]), "width_GeV2": float(best.x[2]),
+            "chi2": chi2, "ndf": ndf, "chi2_ndf": chi2_ndf,
+            "signal_curve": signal.tolist(), "background_curve": background.tolist(),
+            "total_curve": (signal + background).tolist()}
+
+
+def plot_fit_region(path, region, results, fitted):
+    name, theta_low, theta_high, p_low, p_high = region
+    centers = (FIT_EDGES[:-1] + FIT_EDGES[1:]) / 2
+    fig, axes = plt.subplots(4, 2, figsize=(13, 11), sharex=True,
+                             gridspec_kw={"height_ratios": [3, 1, 3, 1]})
+    for column, mode in enumerate(("data", "mc")):
+        for stage, row in (("all", 0), ("matched", 2)):
+            observed = results[mode]["fit_hist"][name][stage]
+            fit = fitted[mode][stage]
+            main, residual = axes[row, column], axes[row + 1, column]
+            main.errorbar(centers, observed, yerr=np.sqrt(observed), fmt=".",
+                          markersize=3, color="black", label="Observed")
+            if "total_curve" in fit:
+                model = np.asarray(fit["total_curve"])
+                main.plot(centers, model, color="tab:blue", label="Signal + background")
+                main.plot(centers, fit["background_curve"], color="tab:orange",
+                          linestyle="--", label="Background")
+                residual.plot(centers, (observed - model) / np.sqrt(np.maximum(observed, 1)),
+                              ".", markersize=3, color="black")
+                detail = (f"S={fit['signal_yield']:.0f}, σ={fit['width_GeV2']:.3f}, "
+                          f"χ²/ndf={fit['chi2_ndf']:.1f}; {fit['status']}")
+            else:
+                detail = fit["status"]
+            main.set_title(f"{mode.upper()} {stage}: {detail}", fontsize=10)
+            main.set_ylabel("Tags / bin")
+            main.grid(alpha=.2)
+            residual.axhline(0, color="tab:blue", linewidth=1)
+            residual.set_ylabel("Pull")
+            residual.grid(alpha=.2)
+            if row == 0 and column == 0:
+                main.legend(fontsize=8)
+        axes[3, column].set_xlabel(LABELS["missing_M2"])
+        axes[3, column].set_xlim(FIT_EDGES[0], FIT_EDGES[-1])
+    fig.suptitle(f"{name}: {theta_low:g}–{theta_high:g}°; {p_low:.2f}–{p_high:.2f} GeV")
+    fig.tight_layout()
+    fig.savefig(path, dpi=150)
+    plt.close(fig)
+
+
+def save_fit_products(output, period, results):
+    rows = []
+    details = {"period": period, "model": "Gaussian + positive quadratic Bernstein background",
+               "fit_M2_GeV2": [float(FIT_EDGES[0]), float(FIT_EDGES[-1])],
+               "notes": "Independent all/matched fits; exploratory ratios have no fit uncertainty yet.",
+               "regions": {}}
+    for index, region in enumerate(FIT_REGIONS, 9):
+        name, theta_low, theta_high, p_low, p_high = region
+        fitted = {mode: {stage: fit_mass_peak(results[mode]["fit_hist"][name][stage])
+                         for stage in ("all", "matched")} for mode in ("data", "mc")}
+        plot_fit_region(output / f"{index}_fit_{name}.png", region, results, fitted)
+        rates = {}
+        for mode in ("data", "mc"):
+            all_fit, matched_fit = fitted[mode]["all"], fitted[mode]["matched"]
+            if "signal_yield" in all_fit and "signal_yield" in matched_fit and \
+                    all_fit["signal_yield"] > 0 and \
+                    0 <= matched_fit["signal_yield"] <= all_fit["signal_yield"]:
+                rates[mode] = matched_fit["signal_yield"] / all_fit["signal_yield"]
+            else:
+                rates[mode] = None
+        scale = (rates["data"] / rates["mc"]
+                 if rates["data"] is not None and rates["mc"] else None)
+        quality = all(fitted[mode][stage]["status"] == "ok"
+                      for mode in ("data", "mc") for stage in ("all", "matched"))
+        details["regions"][name] = {
+            "theta_deg": [theta_low, theta_high], "predicted_p_GeV": [p_low, p_high],
+            "fits": {mode: {stage: {key: value for key, value in fitted[mode][stage].items()
+                                    if not key.endswith("_curve")}
+                            for stage in ("all", "matched")} for mode in ("data", "mc")},
+            "rate": rates, "data_mc_ratio": scale, "all_four_fits_ok": quality}
+        rows.append((name, theta_low, theta_high, p_low, p_high,
+                     rates["data"], rates["mc"], scale, int(quality),
+                     *(fitted[mode][stage].get("signal_yield")
+                       for mode in ("data", "mc") for stage in ("all", "matched")),
+                     *(fitted[mode][stage].get("chi2_ndf")
+                       for mode in ("data", "mc") for stage in ("all", "matched"))))
+        print(f"[fit] {name}: data/MC={scale if scale is not None else 'unavailable'} "
+              f"all_four_fits_ok={quality}", flush=True)
+    with (output / "14_fit_regions.csv").open("w", newline="") as stream:
+        writer = csv.writer(stream)
+        writer.writerow(("region", "theta_low_deg", "theta_high_deg", "p_low_GeV", "p_high_GeV",
+                         "data_rate", "mc_rate", "data_mc_ratio", "all_four_fits_ok",
+                         "data_all_signal", "data_matched_signal", "mc_all_signal",
+                         "mc_matched_signal", "data_all_chi2_ndf", "data_matched_chi2_ndf",
+                         "mc_all_chi2_ndf", "mc_matched_chi2_ndf"))
+        writer.writerows(rows)
+    (output / "15_fit_regions.json").write_text(json.dumps(details, indent=2) + "\n")
+    return details
 
 
 def save_grid(path, values, title, color_label, vmin=None, vmax=None, log=False):
@@ -362,7 +540,7 @@ def main():
     lo, hi = center - args.mass_half_width, center + args.mass_half_width
     study_name = (("fast_preview" if args.fast_mode else
                    f"limited_{args.max_tags_per_mode}" if args.max_tags_per_mode else "integrated")
-                  + "_sideband_v2_dvcs")
+                  + "_fit_v1_dvcs")
     output = args.output_root / args.period / study_name
     output.mkdir(parents=True, exist_ok=True)
     results = {}
@@ -443,6 +621,7 @@ def main():
     plot_ratio(output / "4_theta_rate.png", "missing_theta",
                results["data"], results["mc"], f"{args.period}: raw window rate by angle")
     save_grid_products(output, args.period, results)
+    fit_details = save_fit_products(output, args.period, results)
     print(f"[comparison] plotted in {time.perf_counter() - comparison_start:.1f}s", flush=True)
     summary = {"period": args.period, "input_root": str(args.input_root),
                "fast_mode": args.fast_mode,
@@ -452,6 +631,8 @@ def main():
                "sideband_left_M2_GeV2": [0.9382720813**2 - .45, 0.9382720813**2 - .15],
                "sideband_right_M2_GeV2": [0.9382720813**2 + .15, 0.9382720813**2 + .45],
                "max_tags_per_mode": args.max_tags_per_mode,
+               "fit_model": fit_details["model"],
+               "fit_region_summary": "15_fit_regions.json",
                "files": files_by_mode, "mass_window_GeV2": [lo, hi],
                "match_angle_deg": args.match_angle, "max_relative_dp": args.max_relative_dp,
                "counts": {mode: {key: result[key] for key in ("input", "all", "window", "selected", "matched")}
