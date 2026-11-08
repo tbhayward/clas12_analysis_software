@@ -49,10 +49,7 @@ def process_file(task):
     with uproot.open(filename) as source:
         opened = time.perf_counter()
         tree = source["Tags"]
-        missing = set(FIELDS) - set(tree.keys())
-        if missing:
-            raise RuntimeError(f"{filename}: missing Tags branches {sorted(missing)}")
-        metadata_ready = time.perf_counter()
+        tree_ready = time.perf_counter()
         for arrays in tree.iterate(FIELDS, step_size=chunk_size, entry_stop=entry_stop,
                                    library="np"):
             mass = arrays["missing_M2"]
@@ -75,8 +72,8 @@ def process_file(task):
                     result["hist"][name][stage] += np.histogram(values[mask], edges)[0]
     finished = time.perf_counter()
     result["timing"] = {"open_s": opened - started,
-                        "metadata_s": metadata_ready - opened,
-                        "read_and_hist_s": finished - metadata_ready,
+                        "tree_lookup_s": tree_ready - opened,
+                        "read_and_hist_s": finished - tree_ready,
                         "total_s": finished - started}
     return result
 
@@ -184,7 +181,7 @@ def main():
             part = process_file(tasks[0])
             add_result(total, part)
             print(f"[{mode}] timing: open={part['timing']['open_s']:.1f}s "
-                  f"metadata={part['timing']['metadata_s']:.1f}s "
+                  f"tree_lookup={part['timing']['tree_lookup_s']:.1f}s "
                   f"read+hist={part['timing']['read_and_hist_s']:.1f}s", flush=True)
         else:
             with ProcessPoolExecutor(max_workers=min(args.workers, len(tasks))) as pool:
@@ -198,7 +195,7 @@ def main():
                     if index % 10 == 0 or index == len(tasks):
                         print(f"[{mode}] {index}/{len(tasks)} files ({100 * index / len(tasks):.1f}%) "
                               f"latest open={part['timing']['open_s']:.1f}s "
-                              f"metadata={part['timing']['metadata_s']:.1f}s "
+                              f"tree_lookup={part['timing']['tree_lookup_s']:.1f}s "
                               f"read+hist={part['timing']['read_and_hist_s']:.1f}s", flush=True)
         results[mode] = total
         print(f"[{mode}] tags={total['all']} window={total['window']} "
