@@ -34,7 +34,10 @@ struct StreamTree {
     long long rows = 0;
     bool eof = false;
 
-    explicit StreamTree(std::string name) : tree_name(std::move(name)) {}
+    explicit StreamTree(std::string name, TFile &output)
+        : tree_name(std::move(name)), output_file(output) {}
+
+    TFile &output_file;
 
     void process_line(const std::string &raw_line) {
         std::string line = raw_line;
@@ -48,9 +51,9 @@ struct StreamTree {
             columns = fields;
             values.assign(columns.size(), 0.0);
             tree = std::make_unique<TTree>(tree_name.c_str(), tree_name.c_str());
-            // The StreamTree owns this object. Detach it from the current TFile
-            // so closing the file cannot delete it a second time.
-            tree->SetDirectory(nullptr);
+            // Keep baskets backed by the file during Fill(), rather than
+            // accumulating them in memory until the final tree Write().
+            tree->SetDirectory(&output_file);
             for (std::size_t i = 0; i < columns.size(); ++i) {
                 const std::string leaf = columns[i] + "/D";
                 tree->Branch(columns[i].c_str(), &values[i], leaf.c_str());
@@ -164,7 +167,7 @@ int main(int argc, char **argv) {
 
         TFile output(argv[3], "RECREATE");
         if (output.IsZombie()) throw std::runtime_error("cannot create ROOT output");
-        StreamTree tags("Tags"), protons("Protons");
+        StreamTree tags("Tags", output), protons("Protons", output);
         while (!tags.eof || !protons.eof) {
             pollfd descriptors[2] = {
                 {tags.eof ? -1 : tag_fd, POLLIN, 0},
@@ -181,6 +184,10 @@ int main(int argc, char **argv) {
         output.cd();
         tags.tree->Write();
         protons.tree->Write();
+        // StreamTree's unique_ptr owns the trees. Release file ownership
+        // before closing the TFile to avoid a second deletion.
+        tags.tree->SetDirectory(nullptr);
+        protons.tree->SetDirectory(nullptr);
         output.Close();
         close(tag_fd);
         close(proton_fd);
