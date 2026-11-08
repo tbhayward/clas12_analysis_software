@@ -42,14 +42,15 @@ def empty_result():
 
 
 def process_file(task):
-    filename, lo, hi, max_angle, max_rel_dp, chunk_size = task
+    filename, lo, hi, max_angle, max_rel_dp, chunk_size, entry_stop = task
     result = empty_result()
     with uproot.open(filename) as source:
         tree = source["Tags"]
         missing = set(FIELDS) - set(tree.keys())
         if missing:
             raise RuntimeError(f"{filename}: missing Tags branches {sorted(missing)}")
-        for arrays in tree.iterate(FIELDS, step_size=chunk_size, library="np"):
+        for arrays in tree.iterate(FIELDS, step_size=chunk_size, entry_stop=entry_stop,
+                                   library="np"):
             mass = arrays["missing_M2"]
             window = np.isfinite(mass) & (mass >= lo) & (mass <= hi)
             selected = window & (arrays["best_selected_rec_index"] >= 0)
@@ -132,6 +133,8 @@ def main():
     parser.add_argument("--max-relative-dp", type=float, default=None,
                         help="Optional absolute relative momentum difference cut")
     parser.add_argument("--chunk-size", type=int, default=100000)
+    parser.add_argument("--fast-mode", action="store_true",
+                        help="Preview 1000 tags from each of 10 spread-out files per mode")
     args = parser.parse_args()
     if not 1 <= args.workers <= 10 or args.chunk_size < 1:
         parser.error("workers must be 1..10 and chunk-size must be positive")
@@ -141,7 +144,7 @@ def main():
         parser.error("max-relative-dp must be positive")
     center = 0.9382720813 ** 2
     lo, hi = center - args.mass_half_width, center + args.mass_half_width
-    output = args.output_root / args.period / "integrated"
+    output = args.output_root / args.period / ("fast_preview" if args.fast_mode else "integrated")
     output.mkdir(parents=True, exist_ok=True)
     results = {}
     files_by_mode = {}
@@ -151,8 +154,14 @@ def main():
                        if Path(str(path)[:-5] + ".ok.json").is_file())
         if not files:
             raise SystemExit(f"No completed ROOT parts for {args.period}/{mode} in {directory}")
+        if args.fast_mode:
+            indices = np.linspace(0, len(files) - 1, min(10, len(files)), dtype=int)
+            files = [files[int(index)] for index in indices]
+            print(f"[{mode}] FAST PREVIEW: first 1000 tags from each of {len(files)} "
+                  "spread-out files; diagnostic only", flush=True)
         files_by_mode[mode] = len(files)
-        tasks = [(str(path), lo, hi, args.match_angle, args.max_relative_dp, args.chunk_size)
+        tasks = [(str(path), lo, hi, args.match_angle, args.max_relative_dp,
+                  args.chunk_size, 1000 if args.fast_mode else None)
                  for path in files]
         total = empty_result()
         with ProcessPoolExecutor(max_workers=min(args.workers, len(tasks))) as pool:
@@ -177,6 +186,7 @@ def main():
         plot_ratio(output / f"data_vs_mc_{name}_rate.png", name,
                    results["data"], results["mc"], f"{args.period}: provisional tag-and-probe rate")
     summary = {"period": args.period, "input_root": str(args.input_root),
+               "fast_mode": args.fast_mode,
                "files": files_by_mode, "mass_window_GeV2": [lo, hi],
                "match_angle_deg": args.match_angle, "max_relative_dp": args.max_relative_dp,
                "counts": {mode: {key: result[key] for key in ("all", "window", "selected", "matched")}
