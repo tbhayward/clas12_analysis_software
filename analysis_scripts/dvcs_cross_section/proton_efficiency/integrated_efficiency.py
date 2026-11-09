@@ -142,7 +142,10 @@ def process_file(task):
             for stage in ("all", "matched"):
                 model = (f"fit_{region_name}_{stage}", "", len(FIT_EDGES) - 1,
                          float(FIT_EDGES[0]), float(FIT_EDGES[-1]))
-                fit_histograms[region_name, stage] = stages[stage].Filter(region_cut).Histo1D(
+                # The displayed matched-rate histogram is mass-window selected;
+                # a mass-spectrum fit must instead use matched tags before that cut.
+                fit_source = stages["matched_all"] if stage == "matched" else stages["all"]
+                fit_histograms[region_name, stage] = fit_source.Filter(region_cut).Histo1D(
                     model, "missing_M2")
         ROOT.RDF.RunGraphs(list(counts.values()) + list(histograms.values()) +
                            list(grid_histograms.values()) + list(fit_histograms.values()))
@@ -540,7 +543,7 @@ def main():
     lo, hi = center - args.mass_half_width, center + args.mass_half_width
     study_name = (("fast_preview" if args.fast_mode else
                    f"limited_{args.max_tags_per_mode}" if args.max_tags_per_mode else "integrated")
-                  + "_fit_v1_dvcs")
+                  + "_fit_v2_dvcs")
     output = args.output_root / args.period / study_name
     output.mkdir(parents=True, exist_ok=True)
     results = {}
