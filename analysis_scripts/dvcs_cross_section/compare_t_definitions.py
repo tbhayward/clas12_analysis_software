@@ -63,6 +63,43 @@ def exclusivity_expression(path, period, branches):
         print(f"[EXCLUSIVITY] {key}: {', '.join(block)}")
     return " || ".join(expressions)
 
+def plot_summary(proton, photon, migration, target, period, candidates):
+    ratio = np.divide(photon, proton, out=np.full(6,np.nan), where=proton>0)
+    rows = migration[2:8,:].astype(float)
+    row_sum = rows.sum(axis=1,keepdims=True)
+    percent = np.divide(rows, row_sum, out=np.zeros_like(rows), where=row_sum>0)*100
+    fig,(ax1,ax2)=plt.subplots(1,2,figsize=(14,5.3),
+                               gridspec_kw={"width_ratios":[.85,1.4]},
+                               constrained_layout=True)
+    xx=np.arange(6)
+    ax1.bar(xx,ratio,color="#2673a8")
+    ax1.axhline(1,color="#b42318",linestyle="--",linewidth=1.2)
+    for x,value in zip(xx,ratio):
+        if np.isfinite(value):
+            ax1.text(x,value+.035,f"{value:.2f}",ha="center",fontsize=9)
+    ax1.set(xticks=xx,xticklabels=LABELS,ylim=(0,max(1.55,np.nanmax(ratio)*1.15)),
+            xlabel="|t| bin (GeV²)",ylabel="Photon-defined / proton-defined count",
+            title="Candidate-count ratio")
+    ax1.tick_params(axis="x",rotation=30)
+    image=ax2.imshow(percent,origin="lower",aspect="auto",cmap="Blues",vmin=0,vmax=100)
+    ax2.set(xticks=np.arange(9),yticks=np.arange(6),
+            xticklabels=MIGRATION_LABELS,yticklabels=LABELS,
+            xlabel="Photon-defined |t| bin (GeV²)",
+            ylabel="Proton-defined |t| bin (GeV²)",
+            title="Destination of each proton-defined bin (row sums to 100%)")
+    ax2.tick_params(axis="x",rotation=35)
+    for i in range(6):
+        for j in range(9):
+            if percent[i,j]>=5:
+                ax2.text(j,i,f"{percent[i,j]:.0f}%",ha="center",va="center",
+                         fontsize=8,color="white" if percent[i,j]>=45 else "#162b45")
+    fig.colorbar(image,ax=ax2,label="Percent of proton-defined bin")
+    fig.suptitle(f"{period}: {candidates:,} diagnostic candidates; two reconstructed |t| definitions")
+    target.parent.mkdir(parents=True,exist_ok=True)
+    fig.savefig(target,dpi=170)
+    plt.close(fig)
+    print(f"[PLOT] {target}")
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--input-root", type=Path,
@@ -79,7 +116,21 @@ def main():
     ap.add_argument("--cuts-json", type=Path,
                     default=Path(__file__).resolve().parent/"output/jsons/combined_cuts.json",
                     help="Saved production exclusivity windows")
+    ap.add_argument("--plot-only",action="store_true",
+                    help="Replot existing counts.csv and migration.csv without reading ROOT")
     args = ap.parse_args()
+    out = args.output_dir/args.period
+    if args.plot_only:
+        with (out/"counts.csv").open() as f:
+            rows=list(csv.DictReader(f))
+        proton=np.array([int(row["proton_count"]) for row in rows])
+        photon=np.array([int(row["photon_count"]) for row in rows])
+        with (out/"migration.csv").open() as f:
+            matrix=list(csv.reader(f))[1:]
+        migration=np.array([[int(value) for value in row[1:]] for row in matrix])
+        plot_summary(proton,photon,migration,out/"t_definition_counts.png",
+                     args.period,int(migration.sum()))
+        return
     import ROOT
     paths = sorted((args.input_root/"data"/args.period/"dvcs_data"/"parts").glob("*.root"))
     if not paths:
@@ -163,23 +214,8 @@ def main():
         w.writerow(["proton_bin / photon_bin",*MIGRATION_LABELS])
         for label,row in zip(MIGRATION_LABELS,migration):
             w.writerow([label,*row])
-    fig,(ax1,ax2)=plt.subplots(1,2,figsize=(12,4.7),constrained_layout=True)
-    xx=np.arange(6)
-    ax1.bar(xx-.19,a,width=.38,label="Proton definition")
-    ax1.bar(xx+.19,b,width=.38,label="Photon definition")
-    ax1.set(xticks=xx,xticklabels=LABELS,xlabel="|t| bin (GeV²)",
-            ylabel="Candidate count",title="Same events; different |t| assignment")
-    ax1.tick_params(axis="x",rotation=30)
-    ax1.legend()
-    image=ax2.imshow(migration,origin="lower",aspect="auto",cmap="Blues")
-    mx=np.arange(9)
-    ax2.set(xticks=mx,yticks=mx,xticklabels=MIGRATION_LABELS,yticklabels=MIGRATION_LABELS,
-            xlabel="Photon |t| bin (GeV²)",ylabel="Proton |t| bin (GeV²)",
-            title="Bin migration")
-    ax2.tick_params(axis="x",rotation=30)
-    fig.colorbar(image,ax=ax2,label="Candidates")
-    fig.suptitle(f"{args.period}: {len(paths)} file(s), {int(count.GetValue()):,} baseline candidates")
-    fig.savefig(out/"t_definition_counts.png",dpi=160)
+    plot_summary(a,b,migration,out/"t_definition_counts.png",
+                 args.period,int(count.GetValue()))
     print(f"[SELECTION] baseline Q²>1, W>2, electron p>2, proton |t|<1; saved data exclusivity cuts")
     print(f"[FILES] {len(paths)} [CANDIDATES] {int(count.GetValue()):,}")
     print(f"[PHOTON T] unphysical signed t_gamma >= 0: {int(nonphysical.GetValue()):,}")
