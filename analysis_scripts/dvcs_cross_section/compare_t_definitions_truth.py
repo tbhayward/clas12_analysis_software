@@ -59,9 +59,7 @@ def main():
     for path in paths:
         chain.Add(str(path))
     branches={b.GetName() for b in chain.GetListOfBranches()}
-    gen_required={"gen_kinematics_valid","gen_t1","gen_x","gen_Q2",
-                  "gen_e_p","gen_e_theta","gen_e_phi",
-                  "gen_p2_p","gen_p2_theta","gen_p2_phi"}
+    gen_required={"gen_kinematics_valid","gen_t1","gen_x","gen_Q2"}
     rec_required={"rec_kinematics_valid","rec_t1","rec_Q2","rec_x",
                   "rec_e_p","rec_e_theta","rec_e_phi","rec_p2_p",
                   "rec_p2_theta","rec_p2_phi","rec_detector1","rec_detector2"}
@@ -82,16 +80,6 @@ def main():
     truth_edges=array("d",EDGES)
     outcome_edges=array("d",MIGRATION_EDGES)
     ngen=generated.Histo1D(ROOT.RDF.TH1DModel("ngen","",6,truth_edges),"truth_t")
-    gen_closure=(generated.Filter(
-        "std::isfinite(gen_e_p) && gen_e_p>0 && std::isfinite(gen_e_theta) && "
-        "std::isfinite(gen_e_phi) && std::isfinite(gen_p2_p) && gen_p2_p>0 && "
-        "std::isfinite(gen_p2_theta) && std::isfinite(gen_p2_phi)")
-        .Define("gen_tgamma_signed",
-                f"truth_study_tgamma(gen_e_p,gen_e_theta,gen_e_phi,"
-                f"gen_p2_p,gen_p2_theta,gen_p2_phi,{beam:.17g})")
-        .Define("gen_delta_t","-gen_tgamma_signed-truth_t"))
-    hclosure=gen_closure.Histo1D(ROOT.RDF.TH1DModel(
-        "hclosure","",200,-.5,.5),"gen_delta_t")
     selected=generated.Filter("rec_kinematics_valid>0.5")
     needed_aliases={"t1","Q2","x","e_p","e_theta","e_phi","p2_p",
                     "p2_theta","p2_phi","detector1","detector2",
@@ -111,20 +99,57 @@ def main():
         f"truth_study_tgamma(e_p,e_theta,e_phi,p2_p,p2_theta,p2_phi,{beam:.17g})")
     selected=selected.Filter("std::isfinite(rec_tgamma_signed)")
     selected=selected.Define("rec_tg","-rec_tgamma_signed")
+    selected=selected.Define("proton_error","rec_tp-truth_t")
+    selected=selected.Define("photon_error","rec_tg-truth_t")
+    selected=selected.Define("proton_abs_error","std::abs(proton_error)")
+    selected=selected.Define("photon_abs_error","std::abs(photon_error)")
     proton=selected.Histo2D(ROOT.RDF.TH2DModel(
         "hproton","",6,truth_edges,9,outcome_edges),"truth_t","rec_tp")
     photon=selected.Histo2D(ROOT.RDF.TH2DModel(
         "hphoton","",6,truth_edges,9,outcome_edges),"truth_t","rec_tg")
     recp=selected.Histo1D(ROOT.RDF.TH1DModel("hrecp","",6,truth_edges),"rec_tp")
     recg=selected.Histo1D(ROOT.RDF.TH1DModel("hrecg","",6,truth_edges),"rec_tg")
+    selected_truth=selected.Histo1D(ROOT.RDF.TH1DModel(
+        "hselected_truth","",6,truth_edges),"truth_t")
+    abs_p=selected.Histo1D(ROOT.RDF.TH1DModel(
+        "habs_p","",6,truth_edges),"truth_t","proton_abs_error")
+    abs_g=selected.Histo1D(ROOT.RDF.TH1DModel(
+        "habs_g","",6,truth_edges),"truth_t","photon_abs_error")
+    bias_p=selected.Histo1D(ROOT.RDF.TH1DModel(
+        "hbias_p","",6,truth_edges),"truth_t","proton_error")
+    bias_g=selected.Histo1D(ROOT.RDF.TH1DModel(
+        "hbias_g","",6,truth_edges),"truth_t","photon_error")
+    near_p=selected.Filter("proton_abs_error<0.05").Histo1D(ROOT.RDF.TH1DModel(
+        "hnear_p","",6,truth_edges),"truth_t")
+    near_g=selected.Filter("photon_abs_error<0.05").Histo1D(ROOT.RDF.TH1DModel(
+        "hnear_g","",6,truth_edges),"truth_t")
+    residual_edges=np.linspace(-2.0,5.0,351)
+    residual_bins=array("d",residual_edges)
+    residual_p=selected.Histo2D(ROOT.RDF.TH2DModel(
+        "hresidual_p","",6,truth_edges,350,residual_bins),"truth_t","proton_error")
+    residual_g=selected.Histo2D(ROOT.RDF.TH2DModel(
+        "hresidual_g","",6,truth_edges,350,residual_bins),"truth_t","photon_error")
     nselected=selected.Count()
-    ROOT.RDF.RunGraphs([ngen,hclosure,proton,photon,recp,recg,nselected])
+    ROOT.RDF.RunGraphs([ngen,proton,photon,recp,recg,nselected,
+                        selected_truth,abs_p,abs_g,bias_p,bias_g,near_p,near_g,
+                        residual_p,residual_g])
     gen=np.array([ngen.GetValue().GetBinContent(i+1) for i in range(6)],dtype=np.int64)
     pmat=matrix(proton,6,9)
     gmat=matrix(photon,6,9)
     rp=np.array([recp.GetValue().GetBinContent(i+1) for i in range(6)],dtype=np.int64)
     rg=np.array([recg.GetValue().GetBinContent(i+1) for i in range(6)],dtype=np.int64)
-    closure=np.array([hclosure.GetValue().GetBinContent(i+1) for i in range(200)])
+    def bins(handle):
+        h=handle.GetValue()
+        return np.array([h.GetBinContent(i+1) for i in range(6)],dtype=float)
+    selected_n=bins(selected_truth)
+    mae_p=np.divide(bins(abs_p),selected_n,out=np.zeros(6),where=selected_n>0)
+    mae_g=np.divide(bins(abs_g),selected_n,out=np.zeros(6),where=selected_n>0)
+    mean_p=np.divide(bins(bias_p),selected_n,out=np.zeros(6),where=selected_n>0)
+    mean_g=np.divide(bins(bias_g),selected_n,out=np.zeros(6),where=selected_n>0)
+    close_p=np.divide(bins(near_p),selected_n,out=np.zeros(6),where=selected_n>0)
+    close_g=np.divide(bins(near_g),selected_n,out=np.zeros(6),where=selected_n>0)
+    residual_counts_p=matrix(residual_p,6,350)
+    residual_counts_g=matrix(residual_g,6,350)
     out=args.output_dir/args.period
     out.mkdir(parents=True,exist_ok=True)
     with (out/"truth_response.csv").open("w",newline="") as f:
@@ -141,6 +166,23 @@ def main():
             w.writerow([EDGES[i],EDGES[i+1],gen[i],rp[i],rg[i],
                         rp[i]/gen[i] if gen[i] else "",rg[i]/gen[i] if gen[i] else "",
                         rg[i]/rp[i] if rp[i] else ""])
+    with (out/"truth_resolution.csv").open("w",newline="") as f:
+        w=csv.writer(f)
+        w.writerow(["t_min_GeV2","t_max_GeV2","selected_matched",
+                    "mean_error_proton_GeV2","mean_error_photon_GeV2",
+                    "mean_absolute_error_proton_GeV2","mean_absolute_error_photon_GeV2",
+                    "fraction_within_0p05_proton","fraction_within_0p05_photon"])
+        for i in range(6):
+            w.writerow([EDGES[i],EDGES[i+1],int(selected_n[i]),
+                        mean_p[i],mean_g[i],mae_p[i],mae_g[i],close_p[i],close_g[i]])
+    with (out/"truth_residual_hist.csv").open("w",newline="") as f:
+        w=csv.writer(f)
+        w.writerow(["residual_min_GeV2","residual_max_GeV2",
+                    *[f"proton_truth_bin_{i+1}" for i in range(6)],
+                    *[f"photon_truth_bin_{i+1}" for i in range(6)]])
+        for j in range(350):
+            w.writerow([residual_edges[j],residual_edges[j+1],
+                        *residual_counts_p[:,j],*residual_counts_g[:,j]])
     fig,axes=plt.subplots(2,2,figsize=(13,10),constrained_layout=True)
     for ax,counts,title in ((axes[0,0],pmat,"Reconstructed proton |t|"),
                             (axes[0,1],gmat,"Reconstructed photon |t|")):
@@ -161,18 +203,45 @@ def main():
     axes[1,0].tick_params(axis="x",rotation=30)
     axes[1,0].legend()
     axes[1,0].grid(alpha=.2)
-    axes[1,1].stairs(closure/closure.sum() if closure.sum() else closure,
-                     np.linspace(-.5,.5,201),color="#2673a8")
-    axes[1,1].axvline(0,color="#b42318",linestyle="--")
-    axes[1,1].set(xlabel="Generated photon |t| − generated proton |t| (GeV²)",
-                  ylabel="Fraction per 0.005 GeV²",title="Generator four-vector closure")
+    axes[1,1].plot(xx,mae_p,"o-",label="Proton definition")
+    axes[1,1].plot(xx,mae_g,"s-",label="Photon definition")
+    axes[1,1].set(xticks=xx,xticklabels=LABELS,xlabel="Generated |t| bin (GeV²)",
+                  ylabel="Mean |reconstructed − generated| (GeV²)",
+                  title="Which reconstruction is closer to truth? Lower is better")
+    axes[1,1].tick_params(axis="x",rotation=30)
+    axes[1,1].legend()
     axes[1,1].grid(alpha=.2)
     fig.suptitle(f"{args.period}: paired MC truth comparison; {len(paths)} files")
     target=out/"truth_diagnostics.png"
     fig.savefig(target,dpi=160)
     plt.close(fig)
+    fig,axes=plt.subplots(2,3,figsize=(15,8.5),sharex=True,sharey=True,
+                          constrained_layout=True)
+    for i,ax in enumerate(axes.flat):
+        for counts,color,label in ((residual_counts_p[i],"#2673a8","Proton reconstruction"),
+                                   (residual_counts_g[i],"#d97706","Photon reconstruction")):
+            total=counts.sum()
+            if total:
+                ax.stairs(counts/total,residual_edges,color=color,label=label,
+                          linewidth=1.7)
+        ax.axvline(0,color="black",linestyle="--",linewidth=.8)
+        ax.set(xlim=(-.5,1.0),title=f"Truth |t| = {LABELS[i]} GeV²; N={int(selected_n[i]):,}",
+               xlabel="Reconstructed |t| − generated |t| (GeV²)",
+               ylabel="Fraction per 0.02 GeV²")
+        ax.text(.97,.94,
+                f"Mean absolute error: p={mae_p[i]:.3f}, γ={mae_g[i]:.3f} GeV²\n"
+                f"Within 0.05 GeV²: p={close_p[i]:.0%}, γ={close_g[i]:.0%}",
+                transform=ax.transAxes,ha="right",va="top",fontsize=8,
+                bbox=dict(facecolor="white",alpha=.88,edgecolor="none"))
+        ax.grid(alpha=.15)
+    axes[0,0].legend(fontsize=8,loc="upper left")
+    fig.suptitle(f"{args.period}: reconstructed proton versus photon |t| errors, same selected MC events")
+    residual_target=out/"truth_reconstruction_errors.png"
+    fig.savefig(residual_target,dpi=160)
+    plt.close(fig)
     print(f"[TRUTH] files={len(paths)} selected={int(nselected.GetValue()):,}")
     print(f"[OUTPUT] {target}")
+    print(f"[OUTPUT] {residual_target}")
 
 if __name__=="__main__":
     main()

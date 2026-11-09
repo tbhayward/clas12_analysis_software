@@ -35,6 +35,7 @@ def main():
         print(f"[STAGE {index}/3] {name}: done in {(time.monotonic()-start)/60:.1f} min",flush=True)
     print(f"[OUTPUT] {args.output_dir/args.period}/t_definition_counts.png",flush=True)
     print(f"[OUTPUT] {args.output_dir/args.period}/truth_diagnostics.png",flush=True)
+    print(f"[OUTPUT] {args.output_dir/args.period}/truth_reconstruction_errors.png",flush=True)
 
 if __name__=="__main__":
     main()
