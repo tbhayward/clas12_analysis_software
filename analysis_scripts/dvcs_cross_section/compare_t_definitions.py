@@ -77,7 +77,7 @@ def main():
     ap.add_argument("--extra-cut", default="1",
                     help="Optional additional ROOT selection expression")
     ap.add_argument("--cuts-json", type=Path,
-                    default=Path("output/jsons/combined_cuts.json"),
+                    default=Path(__file__).resolve().parent/"output/jsons/combined_cuts.json",
                     help="Saved production exclusivity windows")
     args = ap.parse_args()
     import ROOT
