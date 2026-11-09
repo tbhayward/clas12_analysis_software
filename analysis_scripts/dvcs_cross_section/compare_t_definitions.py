@@ -22,6 +22,16 @@ BEAM = {"fa18_inb":10.604,"fa18_out":10.604,
 MC_CURRENT = {"fa18_inb":"50nA","fa18_out":"50nA",
               "sp18_inb":"50nA","sp18_out":"45nA","sp19_inb":"50nA"}
 
+def binning(merge_low_t=False):
+    edges = (0.11, 0.25, 0.40, 0.60, 0.80, 1.00) if merge_low_t else EDGES
+    labels = [f"{a:.2f}–{b:.2f}" for a,b in zip(edges[:-1],edges[1:])]
+    migration_edges = (-1.0e9, 0.0, *edges, 1.0e9)
+    migration_labels = ("unphysical", "<0.11", *labels, ">=1.00")
+    return edges, labels, migration_edges, migration_labels
+
+def output_path(root,period,merge_low_t=False):
+    return root/period/("merged_low_t" if merge_low_t else "")
+
 def exclusivity_expression(path, period, branches, sample):
     """Use the data or MC windows and topology keys read by total_counts.cpp."""
     if not path.is_file():
@@ -67,6 +77,8 @@ def exclusivity_expression(path, period, branches, sample):
     return " || ".join(expressions)
 
 def plot_summary(data, mc, target, period):
+    n = len(LABELS)
+    nm = len(MIGRATION_LABELS)
     samples=[("Data",data)] + ([("Reconstructed MC",mc)] if mc is not None else [])
     fig,axes=plt.subplots(len(samples),3,figsize=(19,5.5*len(samples)),
                           squeeze=False,gridspec_kw={"width_ratios":[.85,1.4,1.1]},
@@ -74,16 +86,16 @@ def plot_summary(data, mc, target, period):
     for row,(sample,values) in enumerate(samples):
         proton,photon,migration,delta_counts,candidates=values
         ax1,ax2,ax3=axes[row]
-        ratio=np.divide(photon,proton,out=np.full(6,np.nan),where=proton>0)
-        matrix=migration[2:8,:].astype(float)
+        ratio=np.divide(photon,proton,out=np.full(n,np.nan),where=proton>0)
+        matrix=migration[2:2+n,:].astype(float)
         row_sum=matrix.sum(axis=1,keepdims=True)
         percent=np.divide(matrix,row_sum,out=np.zeros_like(matrix),where=row_sum>0)*100
         displayed=np.round(percent,1)
-        for i in range(6):
+        for i in range(n):
             if row_sum[i,0]>0:
                 largest=int(np.argmax(percent[i]))
                 displayed[i,largest]+=np.round(100.0-displayed[i].sum(),1)
-        xx=np.arange(6)
+        xx=np.arange(n)
         ax1.bar(xx,ratio,color="#2673a8")
         ax1.axhline(1,color="#b42318",linestyle="--",linewidth=1.2)
         for x,value in zip(xx,ratio):
@@ -96,14 +108,14 @@ def plot_summary(data, mc, target, period):
                 title=f"{sample}: count ratio (N={candidates:,})")
         ax1.tick_params(axis="x",rotation=30)
         image=ax2.imshow(percent,origin="lower",aspect="auto",cmap="Blues",vmin=0,vmax=100)
-        ax2.set(xticks=np.arange(9),yticks=np.arange(6),
+        ax2.set(xticks=np.arange(nm),yticks=np.arange(n),
                 xticklabels=MIGRATION_LABELS,yticklabels=LABELS,
                 xlabel="Photon-defined |t| bin (GeV²)",
                 ylabel="Proton-defined |t| bin (GeV²)",
                 title=f"{sample}: destination (each row = 100.0%)")
         ax2.tick_params(axis="x",rotation=35)
-        for i in range(6):
-            for j in range(9):
+        for i in range(n):
+            for j in range(nm):
                 if displayed[i,j]>=0.1:
                     ax2.text(j,i,f"{displayed[i,j]:.1f}%",ha="center",va="center",
                              fontsize=7.5,color="white" if percent[i,j]>=45 else "#162b45")
@@ -150,7 +162,7 @@ def read_result(out,sample):
         with delta_path.open() as f:
             delta_rows=list(csv.DictReader(f))
         delta_counts=np.array([[int(row[f"proton_bin_{i+1}"])
-                                for row in delta_rows] for i in range(6)])
+                                for row in delta_rows] for i in range(len(LABELS))])
     return proton,photon,migration,delta_counts,int(migration.sum())
 
 def plot_available(out,period):
@@ -161,13 +173,14 @@ def plot_available(out,period):
         return
     plot_summary(data,mc,out/"t_definition_counts.png",period)
     if mc is not None:
-        d=np.divide(data[1],data[0],out=np.full(6,np.nan),where=data[0]>0)
-        r=np.divide(mc[1],mc[0],out=np.full(6,np.nan),where=mc[0]>0)
+        d=np.divide(data[1],data[0],out=np.full(len(LABELS),np.nan),where=data[0]>0)
+        r=np.divide(mc[1],mc[0],out=np.full(len(LABELS),np.nan),where=mc[0]>0)
         print("[DIAGNOSTIC] data-ratio / MC-ratio by |t| bin (candidate counts, not cross sections)")
         for label,dr,mr in zip(LABELS,d,r):
             print(f"  {label}: data={dr:.3f} MC={mr:.3f} double_ratio={dr/mr:.3f}")
 
 def main():
+    global EDGES, LABELS, MIGRATION_EDGES, MIGRATION_LABELS
     ap = argparse.ArgumentParser(description=__doc__)
     ap.add_argument("--input-root", type=Path,
         default=Path("/volatile/clas12/thayward/dvcs_pass2_full_rebuild"))
@@ -189,8 +202,11 @@ def main():
                     help="Sample to scan; plot includes both rows once both CSVs exist")
     ap.add_argument("--workers",type=int,default=10,
                     help="ROOT processing threads; maximum 10")
+    ap.add_argument("--merge-low-t",action="store_true",
+                    help="Combine 0.11–0.15 and 0.15–0.25 into 0.11–0.25 for this run")
     args = ap.parse_args()
-    out = args.output_dir/args.period
+    EDGES, LABELS, MIGRATION_EDGES, MIGRATION_LABELS = binning(args.merge_low_t)
+    out = output_path(args.output_dir,args.period,args.merge_low_t)
     if args.plot_only:
         plot_available(out,args.period)
         return
@@ -260,10 +276,12 @@ def main():
     df = df.Define("tg", "-t_gamma_signed")
     df = df.Define("delta_t", "tg-tp")
     edges = array("d",EDGES)
-    hp = df.Histo1D(ROOT.RDF.TH1DModel("hp","",6,edges),"tp")
-    hg = df.Histo1D(ROOT.RDF.TH1DModel("hg","",6,edges),"tg")
+    n = len(LABELS)
+    nm = len(MIGRATION_LABELS)
+    hp = df.Histo1D(ROOT.RDF.TH1DModel("hp","",n,edges),"tp")
+    hg = df.Histo1D(ROOT.RDF.TH1DModel("hg","",n,edges),"tg")
     medges = array("d",MIGRATION_EDGES)
-    hm = df.Histo2D(ROOT.RDF.TH2DModel("hm","",9,medges,9,medges),"tp","tg")
+    hm = df.Histo2D(ROOT.RDF.TH2DModel("hm","",nm,medges,nm,medges),"tp","tg")
     delta_handles=[]
     delta_edges=array("d",DELTA_EDGES)
     for i,(low,high) in enumerate(zip(EDGES[:-1],EDGES[1:])):
@@ -277,20 +295,19 @@ def main():
     print("[INPUT]", *[str(p) for p in paths], sep="\n  ")
     for name, handle in cutflow:
         print(f"[CUTFLOW] {name}: {int(handle.GetValue()):,}")
-    a = np.array([hp.GetValue().GetBinContent(i+1) for i in range(6)],dtype=int)
-    b = np.array([hg.GetValue().GetBinContent(i+1) for i in range(6)],dtype=int)
+    a = np.array([hp.GetValue().GetBinContent(i+1) for i in range(n)],dtype=int)
+    b = np.array([hg.GetValue().GetBinContent(i+1) for i in range(n)],dtype=int)
     migration = np.array([[hm.GetValue().GetBinContent(i+1,j+1)
-                           for j in range(9)] for i in range(9)],dtype=int)
+                           for j in range(nm)] for i in range(nm)],dtype=int)
     delta_counts=np.array([[handle.GetValue().GetBinContent(j+1)
                             for j in range(len(DELTA_EDGES)-1)]
                            for handle in delta_handles],dtype=int)
-    out = args.output_dir/args.period
     out.mkdir(parents=True,exist_ok=True)
     with result_path(out,args.sample,"counts.csv").open("w",newline="") as f:
         w=csv.writer(f)
         w.writerow(["t_min_GeV2","t_max_GeV2","proton_count","photon_count",
                     "photon_over_proton"])
-        for i in range(6):
+        for i in range(n):
             w.writerow([EDGES[i],EDGES[i+1],a[i],b[i],b[i]/a[i] if a[i] else ""])
     with result_path(out,args.sample,"migration.csv").open("w",newline="") as f:
         w=csv.writer(f)
@@ -300,7 +317,7 @@ def main():
     with result_path(out,args.sample,"delta_t_hist.csv").open("w",newline="") as f:
         w=csv.writer(f)
         w.writerow(["delta_t_min_GeV2","delta_t_max_GeV2",
-                    *[f"proton_bin_{i+1}" for i in range(6)]])
+                    *[f"proton_bin_{i+1}" for i in range(n)]])
         for j in range(len(DELTA_EDGES)-1):
             w.writerow([DELTA_EDGES[j],DELTA_EDGES[j+1],
                         *delta_counts[:,j]])
