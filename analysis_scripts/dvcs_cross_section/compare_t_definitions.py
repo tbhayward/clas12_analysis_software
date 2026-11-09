@@ -68,6 +68,11 @@ def plot_summary(proton, photon, migration, target, period, candidates):
     rows = migration[2:8,:].astype(float)
     row_sum = rows.sum(axis=1,keepdims=True)
     percent = np.divide(rows, row_sum, out=np.zeros_like(rows), where=row_sum>0)*100
+    displayed = np.round(percent,1)
+    for i in range(6):
+        if row_sum[i,0]>0:
+            largest = int(np.argmax(percent[i]))
+            displayed[i,largest] += np.round(100.0-displayed[i].sum(),1)
     fig,(ax1,ax2)=plt.subplots(1,2,figsize=(14,5.3),
                                gridspec_kw={"width_ratios":[.85,1.4]},
                                constrained_layout=True)
@@ -86,13 +91,13 @@ def plot_summary(proton, photon, migration, target, period, candidates):
             xticklabels=MIGRATION_LABELS,yticklabels=LABELS,
             xlabel="Photon-defined |t| bin (GeV²)",
             ylabel="Proton-defined |t| bin (GeV²)",
-            title="Destination of each proton-defined bin (row sums to 100%)")
+            title="Destination of each proton-defined bin (displayed row = 100.0%)")
     ax2.tick_params(axis="x",rotation=35)
     for i in range(6):
         for j in range(9):
-            if percent[i,j]>=5:
-                ax2.text(j,i,f"{percent[i,j]:.0f}%",ha="center",va="center",
-                         fontsize=8,color="white" if percent[i,j]>=45 else "#162b45")
+            if displayed[i,j]>=0.1:
+                ax2.text(j,i,f"{displayed[i,j]:.1f}%",ha="center",va="center",
+                         fontsize=7.5,color="white" if percent[i,j]>=45 else "#162b45")
     fig.colorbar(image,ax=ax2,label="Percent of proton-defined bin")
     fig.suptitle(f"{period}: {candidates:,} diagnostic candidates; two reconstructed |t| definitions")
     target.parent.mkdir(parents=True,exist_ok=True)
