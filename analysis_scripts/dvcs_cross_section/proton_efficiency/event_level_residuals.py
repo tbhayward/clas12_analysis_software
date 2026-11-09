@@ -274,9 +274,9 @@ def plot_summary(total, output):
                             color="white" if abs(mean)>.45 else "black")
         image = ax.pcolormesh(P_EDGES, THETA_EDGES, values, cmap="coolwarm",
                               vmin=-.8, vmax=.8, shading="flat")
-        ax.set(title=title, xlabel="Predicted proton p [GeV]",
-               ylabel="Predicted proton θ [degrees]")
-        fig.colorbar(image, ax=ax, label="Mean ΔM² [GeV²]")
+        ax.set(title=title, xlabel="Predicted proton p (GeV)",
+               ylabel="Predicted proton θ (degrees)")
+        fig.colorbar(image, ax=ax, label="Mean ΔM² (GeV²)")
     fig.suptitle("Truth-near, generated-proton-aligned MC; means of in-range residuals")
     fig.tight_layout()
     fig.savefig(output / "0_track_contribution_summary.png", dpi=150)
@@ -304,7 +304,7 @@ def plot_slices(total, output, theta_index, proton=False):
         ax.axvline(0, color="gray", linestyle=":")
         ax.set_title(f"Predicted p = {P_EDGES[k]:.2f}–{P_EDGES[k+1]:.2f} GeV")
         ax.set_ylabel("Fraction per bin")
-        ax.set_xlabel("Momentum residual [GeV]" if proton else "M² contribution [GeV²]")
+        ax.set_xlabel("Momentum residual (GeV)" if proton else "M² contribution (GeV²)")
         ax.grid(alpha=.2)
         ax.legend(fontsize=7)
     lo, hi = THETA_EDGES[theta_index:theta_index+2]

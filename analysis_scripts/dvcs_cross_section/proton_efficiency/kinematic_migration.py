@@ -239,16 +239,16 @@ def heatmap(ax, values, title, cmap="viridis", vmin=None, vmax=None, fmt=".2f"):
             if np.isfinite(values[j,k]):
                 ax.text((P[k]+P[k+1])/2,(THETA[j]+THETA[j+1])/2,
                         format(values[j,k],fmt),ha="center",va="center",fontsize=8)
-    ax.set(title=title,xlabel="Predicted proton p [GeV]",
-           ylabel="Predicted proton θ [degrees]")
+    ax.set(title=title,xlabel="Predicted proton p (GeV)",
+           ylabel="Predicted proton θ (degrees)")
     return image
 
 
 def plot_kinematics(total, output):
-    panels = (("rec_e_p","Reconstructed electron p [GeV]"),
-              ("rec_nu","Virtual-photon energy ν = Ebeam − p_e [GeV]"),
-              ("electron_delta_p","Reconstructed − truth electron p [GeV]"),
-              ("rec_q2","Reconstructed Q² [GeV²]"))
+    panels = (("rec_e_p","Reconstructed electron p (GeV)"),
+              ("rec_nu","Virtual-photon energy ν = Ebeam − p_e (GeV)"),
+              ("electron_delta_p","Reconstructed − truth electron p (GeV)"),
+              ("rec_q2","Reconstructed Q² (GeV²)"))
     fig, axes = plt.subplots(2,2,figsize=(13,9),sharex=True,sharey=True)
     for ax,(key,title) in zip(axes.flat,panels):
         values = np.full((len(THETA)-1,len(P)-1),np.nan)
@@ -274,8 +274,8 @@ def plot_migration(total, output):
         ax.plot([0,70],[0,70],color="white",linestyle="--",linewidth=1)
         ax.set_ylim(0,90)
         ax.set(title=f"Predicted p={P[k]:.2f}–{P[k+1]:.2f} GeV; N={counts.sum():,}",
-               xlabel="Reconstructed predicted proton θ [degrees]",
-               ylabel="Truth missing-proton θ [degrees]")
+               xlabel="Reconstructed predicted proton θ (degrees)",
+               ylabel="Truth missing-proton θ (degrees)")
         fig.colorbar(image,ax=ax,label="Tags / bin")
     fig.suptitle("Truth versus reconstructed predicted proton angle")
     fig.tight_layout()
@@ -294,7 +294,7 @@ def plot_electron_spectra(total, output):
                 ax.stairs(counts/n, EDGES[key], color=color,
                           label=f"{label} (N={n:,})")
         ax.set(title=f"Predicted proton θ={THETA[j]:g}–{THETA[j+1]:g}°",
-               xlabel="Electron momentum [GeV]", ylabel="Fraction / momentum bin")
+               xlabel="Electron momentum (GeV)", ylabel="Fraction / momentum bin")
         ax.set_xlim(0, 10.6)
         ax.grid(alpha=.2)
         ax.legend(fontsize=8)
@@ -313,8 +313,8 @@ def plot_electron_mass(total,output):
         ax.axhline(0,color="white",linewidth=.7)
         ax.axvline(0,color="white",linewidth=.7)
         ax.set(title=f"Predicted θ={THETA[j]:g}–{THETA[j+1]:g}°; N={counts.sum():,}",
-               xlabel="Electron p_rec − p_truth [GeV]",
-               ylabel="Missing M²_rec − M²_truth [GeV²]")
+               xlabel="Electron p_rec − p_truth (GeV)",
+               ylabel="Missing M²_rec − M²_truth (GeV²)")
         fig.colorbar(image,ax=ax,label="Tags / bin")
     fig.suptitle("Electron momentum residual versus missing-mass shift")
     fig.tight_layout()

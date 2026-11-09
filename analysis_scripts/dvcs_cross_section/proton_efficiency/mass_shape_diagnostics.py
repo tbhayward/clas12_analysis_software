@@ -247,7 +247,7 @@ def plot_high_angle(output, results, stage, number):
             ax.grid(alpha=.2)
             ax.legend(fontsize=8)
     for ax in axes[-1]:
-        ax.set_xlabel(r"$M_X^2(e\pi^+\pi^-)$ [GeV$^2$]")
+        ax.set_xlabel(r"$M_X^2(e\pi^+\pi^-)$ (GeV$^2$)")
         ax.set_xlim(M2_EDGES[0], M2_EDGES[-1])
     fig.suptitle(f"{stage.replace('_', ' ')} tags: data and MC mass shapes", fontsize=15)
     fig.tight_layout()
@@ -268,10 +268,10 @@ def plot_mass_angle_maps(output, results, p_index, number):
                                   cmap="viridis", norm=LogNorm(vmin=1e-4, vmax=1e-1),
                                   shading="flat")
             ax.set_title(f"{mode.upper()} {stage.replace('_', ' ')}; N={int(totals.sum()):,}")
-            ax.set_ylabel("Predicted proton θ [degrees]")
+            ax.set_ylabel("Predicted proton θ (degrees)")
             fig.colorbar(image, ax=ax, label="Fraction / mass bin")
     for ax in axes[-1]:
-        ax.set_xlabel(r"$M_X^2(e\pi^+\pi^-)$ [GeV$^2$]")
+        ax.set_xlabel(r"$M_X^2(e\pi^+\pi^-)$ (GeV$^2$)")
         ax.set_xlim(M2_EDGES[0], M2_EDGES[-1])
     fig.suptitle(f"p={P_EDGES[p_index]:.2f}–{P_EDGES[p_index+1]:.2f} GeV; "
                  "white angle rows have fewer than 100 tags")
@@ -308,7 +308,7 @@ def plot_truth_high_angle(output, results):
             ax.set_ylabel("Fraction of all MC tags / bin")
             ax.grid(alpha=.2)
     for ax in axes[-1]:
-        ax.set_xlabel(r"Reconstructed $M_X^2(e\pi^+\pi^-)$ [GeV$^2$]")
+        ax.set_xlabel(r"Reconstructed $M_X^2(e\pi^+\pi^-)$ (GeV$^2$)")
         ax.set_xlim(M2_EDGES[0], M2_EDGES[-1])
     handles, legend_labels = axes[0, 0].get_legend_handles_labels()
     fig.legend(handles, legend_labels, loc="lower center", ncol=3, fontsize=9)

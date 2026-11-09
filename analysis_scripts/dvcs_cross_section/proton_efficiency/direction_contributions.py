@@ -306,9 +306,9 @@ def main():
         ax.set_xticks(x,[f"{P[j]:.2f}–{P[j+1]:.2f}" for j in range(len(n))],
                       rotation=35,ha="right")
         ax.set_title(f"Predicted θ {THETA[i]:.0f}–{THETA[i+1]:.0f}°")
-        ax.set_xlabel("Predicted proton p [GeV]")
+        ax.set_xlabel("Predicted proton p (GeV)")
         ax.grid(axis="y",alpha=.25)
-    axes[0].set_ylabel("Mean contribution to θ_rec − θ_truth [degrees]")
+    axes[0].set_ylabel("Mean contribution to θ_rec − θ_truth (degrees)")
     axes[-1].legend(frameon=False)
     fig.suptitle("Fa18 Inb: exact per-track decomposition of missing-proton polar-angle shift")
     fig.savefig(output/"2_direction_contributions.png",dpi=170)
@@ -319,8 +319,8 @@ def main():
                           norm=LogNorm(vmin=1,vmax=max(10,int(h.max()))),
                           cmap="viridis",shading="auto")
     ax.plot([40,70],[40,70],"w--",linewidth=1.3)
-    ax.set(xlabel="Reconstructed predicted proton θ [degrees]",
-           ylabel="Generated proton θ [degrees]",xlim=(40,70),ylim=(0,90),
+    ax.set(xlabel="Reconstructed predicted proton θ (degrees)",
+           ylabel="Generated proton θ (degrees)",xlim=(40,70),ylim=(0,90),
            title="Generated proton angle versus reconstructed prediction")
     fig.colorbar(image,ax=ax,label="Truth-near tags / 1° × 10° cell")
     fig.savefig(output/"3_generated_proton_migration.png",dpi=170)

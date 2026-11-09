@@ -33,10 +33,10 @@ EDGES = {
     "best_selected_relative_delta_p": np.linspace(-1.0, 1.0, 121),
 }
 LABELS = {
-    "missing_M2": r"$M_X^2(e\pi^+\pi^-)$ [GeV$^2$]",
-    "missing_theta": r"Predicted proton $\theta$ [degrees]",
-    "missing_p": r"Predicted proton momentum [GeV]",
-    "best_selected_match_angle": "Best selected proton opening angle [degrees]",
+    "missing_M2": r"$M_X^2(e\pi^+\pi^-)$ (GeV$^2$)",
+    "missing_theta": r"Predicted proton $\theta$ (degrees)",
+    "missing_p": r"Predicted proton momentum (GeV)",
+    "best_selected_match_angle": "Best selected proton opening angle (degrees)",
     "best_selected_relative_delta_p": r"$(p_{rec}-p_{miss})/p_{miss}$",
 }
 THETA_BINS = np.array([0, 10, 20, 30, 40, 50, 60, 70, 180], dtype=float)
@@ -269,7 +269,7 @@ def plot_match_angle_scan(path, results, chosen_angle):
         survival = np.cumsum(histogram) / selected if selected else np.zeros(len(histogram))
         ax.step(edges[1:], survival, where="post", label=mode.upper())
     ax.axvline(chosen_angle, color="black", linestyle="--", label=f"Current {chosen_angle:g}° cut")
-    ax.set(xlim=(0, 30), ylim=(0, 1), xlabel="Best selected proton opening angle cut [degrees]",
+    ax.set(xlim=(0, 30), ylim=(0, 1), xlabel="Best selected proton opening angle cut (degrees)",
            ylabel="Fraction of selected protons retained", title="Opening-angle cut scan in mass window")
     ax.grid(alpha=.25)
     ax.legend()
