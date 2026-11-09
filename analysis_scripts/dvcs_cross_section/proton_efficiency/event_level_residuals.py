@@ -60,20 +60,25 @@ namespace proton_tag_residual {
 struct P4 { double e, x, y, z; };
 P4 operator-(P4 a, P4 b) { return {a.e-b.e,a.x-b.x,a.y-b.y,a.z-b.z}; }
 double dot(P4 a, P4 b) { return a.e*b.e-a.x*b.x-a.y*b.y-a.z*b.z; }
-P4 particle(double p, double theta, double phi, double mass) {
+P4 particle_rad(double p, double theta, double phi, double mass) {
+  double s=std::sin(theta);
+  return {std::hypot(p,mass),p*s*std::cos(phi),
+          p*s*std::sin(phi),p*std::cos(theta)};
+}
+P4 particle_deg(double p, double theta, double phi, double mass) {
   constexpr double rad=3.14159265358979323846/180.0;
-  double s=std::sin(theta*rad);
-  return {std::hypot(p,mass),p*s*std::cos(phi*rad),
-          p*s*std::sin(phi*rad),p*std::cos(theta*rad)};
+  return particle_rad(p,theta*rad,phi*rad,mass);
 }
 ROOT::VecOps::RVec<double> split_m2(
     double ep,double et,double ef,double tep,double tet,double tef,
     double pp,double pt,double pf,double tpp,double tpt,double tpf,
     double mp,double mt,double mf,double tmp,double tmt,double tmf,
     double me,double mx,double my,double mz) {
-  P4 e=particle(ep,et,ef,0.0005109989461)-particle(tep,tet,tef,0.0005109989461);
-  P4 pip=particle(pp,pt,pf,0.13957039)-particle(tpp,tpt,tpf,0.13957039);
-  P4 pim=particle(mp,mt,mf,0.13957039)-particle(tmp,tmt,tmf,0.13957039);
+  // ThreeParticles stores reconstructed angles in radians; the processing
+  // script's truth-angle helper converts MC::Particle angles to degrees.
+  P4 e=particle_rad(ep,et,ef,0.0005109989461)-particle_deg(tep,tet,tef,0.0005109989461);
+  P4 pip=particle_rad(pp,pt,pf,0.13957039)-particle_deg(tpp,tpt,tpf,0.13957039);
+  P4 pim=particle_rad(mp,mt,mf,0.13957039)-particle_deg(tmp,tmt,tmf,0.13957039);
   P4 missing{me,mx,my,mz};
   double ce=-2*dot(missing,e)+dot(e,e)+dot(e,pip)+dot(e,pim);
   double cp=-2*dot(missing,pip)+dot(pip,pip)+dot(pip,e)+dot(pip,pim);
@@ -330,9 +335,14 @@ def main():
     tasks = completed_tasks(args.input_root, args.period, args.max_tags, args.match_angle)
     started = time.perf_counter()
     total = scan(tasks, args.workers)
+    if total["closure_bad"] > max(10, .01 * total["selected"]):
+        raise RuntimeError(
+            f"[VALIDATION_FAILED] M² decomposition does not close for "
+            f"{total['closure_bad']:,}/{total['selected']:,} truth-near tags; "
+            "no plots are valid")
     if total["closure_bad"]:
-        print(f"[WARNING] decomposition closure failed for {total['closure_bad']:,} "
-              "truth-near tags; check 8_residual_cells.csv before interpretation", flush=True)
+        print(f"[WARNING] decomposition closure >0.005 GeV² for "
+              f"{total['closure_bad']:,}/{total['selected']:,} tags", flush=True)
     np.savez_compressed(output / "7_residual_histograms.npz",
                         theta_edges=THETA_EDGES, p_edges=P_EDGES,
                         **{f"{name}_edges": edges for name, edges in HISTOGRAMS.items()},
