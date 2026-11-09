@@ -19,9 +19,11 @@ MIGRATION_LABELS = ("unphysical", "<0.11", *LABELS, ">=1.00")
 DELTA_EDGES = np.linspace(-1.0, 3.0, 201)
 BEAM = {"fa18_inb":10.604,"fa18_out":10.604,
         "sp18_inb":10.594,"sp18_out":10.594,"sp19_inb":10.2}
+MC_CURRENT = {"fa18_inb":"50nA","fa18_out":"50nA",
+              "sp18_inb":"50nA","sp18_out":"45nA","sp19_inb":"50nA"}
 
-def exclusivity_expression(path, period, branches):
-    """Use the data windows and topology keys read by total_counts.cpp."""
+def exclusivity_expression(path, period, branches, sample):
+    """Use the data or MC windows and topology keys read by total_counts.cpp."""
     if not path.is_file():
         raise FileNotFoundError(f"Production exclusivity cuts not found: {path}")
     document = json.loads(path.read_text())
@@ -32,9 +34,9 @@ def exclusivity_expression(path, period, branches):
     expressions = []
     for detector1,detector2,topology in topologies:
         key = f"DVCS_{period_name}_{bend_name}_{topology}"
-        if key not in document or "data" not in document[key]:
-            raise ValueError(f"Missing data exclusivity cuts for {key}")
-        block = document[key]["data"]
+        if key not in document or sample not in document[key]:
+            raise ValueError(f"Missing {sample} exclusivity cuts for {key}")
+        block = document[key][sample]
         if "Mx2" not in block or not set(block).issubset(allowed):
             raise ValueError(f"Invalid production cut variables for {key}: {sorted(block)}")
         conditions = [f"detector1=={detector1}",f"detector2=={detector2}"]
@@ -61,69 +63,109 @@ def exclusivity_expression(path, period, branches):
                                f"{value}>={float(low):.17g}",
                                f"{value}<={float(high):.17g}"]
         expressions.append("("+" && ".join(conditions)+")")
-        print(f"[EXCLUSIVITY] {key}: {', '.join(block)}")
+        print(f"[EXCLUSIVITY] {sample} {key}: {', '.join(block)}")
     return " || ".join(expressions)
 
-def plot_summary(proton, photon, migration, target, period, candidates,
-                 delta_counts=None):
-    ratio = np.divide(photon, proton, out=np.full(6,np.nan), where=proton>0)
-    rows = migration[2:8,:].astype(float)
-    row_sum = rows.sum(axis=1,keepdims=True)
-    percent = np.divide(rows, row_sum, out=np.zeros_like(rows), where=row_sum>0)*100
-    displayed = np.round(percent,1)
-    for i in range(6):
-        if row_sum[i,0]>0:
-            largest = int(np.argmax(percent[i]))
-            displayed[i,largest] += np.round(100.0-displayed[i].sum(),1)
-    if delta_counts is None:
-        fig,(ax1,ax2)=plt.subplots(1,2,figsize=(14,5.3),
-                                   gridspec_kw={"width_ratios":[.85,1.4]},
-                                   constrained_layout=True)
-        ax3 = None
-    else:
-        fig,(ax1,ax2,ax3)=plt.subplots(1,3,figsize=(19,5.5),
-                                       gridspec_kw={"width_ratios":[.85,1.4,1.1]},
-                                       constrained_layout=True)
-    xx=np.arange(6)
-    ax1.bar(xx,ratio,color="#2673a8")
-    ax1.axhline(1,color="#b42318",linestyle="--",linewidth=1.2)
-    for x,value in zip(xx,ratio):
-        if np.isfinite(value):
-            ax1.text(x,value+.035,f"{value:.2f}",ha="center",fontsize=9)
-    ax1.set(xticks=xx,xticklabels=LABELS,ylim=(0,max(1.55,np.nanmax(ratio)*1.15)),
-            xlabel="|t| bin (GeV²)",ylabel="Photon-defined / proton-defined count",
-            title="Candidate-count ratio")
-    ax1.tick_params(axis="x",rotation=30)
-    image=ax2.imshow(percent,origin="lower",aspect="auto",cmap="Blues",vmin=0,vmax=100)
-    ax2.set(xticks=np.arange(9),yticks=np.arange(6),
-            xticklabels=MIGRATION_LABELS,yticklabels=LABELS,
-            xlabel="Photon-defined |t| bin (GeV²)",
-            ylabel="Proton-defined |t| bin (GeV²)",
-            title="Destination of each proton-defined bin (displayed row = 100.0%)")
-    ax2.tick_params(axis="x",rotation=35)
-    for i in range(6):
-        for j in range(9):
-            if displayed[i,j]>=0.1:
-                ax2.text(j,i,f"{displayed[i,j]:.1f}%",ha="center",va="center",
-                         fontsize=7.5,color="white" if percent[i,j]>=45 else "#162b45")
-    fig.colorbar(image,ax=ax2,label="Percent of proton-defined bin")
-    if ax3 is not None:
-        colors=plt.cm.viridis(np.linspace(.08,.9,6))
-        for i,(label,values,color) in enumerate(zip(LABELS,delta_counts,colors)):
-            total=values.sum()
-            if total:
-                ax3.stairs(values/total,DELTA_EDGES,label=label,color=color,linewidth=1.6)
-        ax3.axvline(0,color="#b42318",linestyle="--",linewidth=1.1)
+def plot_summary(data, mc, target, period):
+    samples=[("Data",data)] + ([("Reconstructed MC",mc)] if mc is not None else [])
+    fig,axes=plt.subplots(len(samples),3,figsize=(19,5.5*len(samples)),
+                          squeeze=False,gridspec_kw={"width_ratios":[.85,1.4,1.1]},
+                          constrained_layout=True)
+    for row,(sample,values) in enumerate(samples):
+        proton,photon,migration,delta_counts,candidates=values
+        ax1,ax2,ax3=axes[row]
+        ratio=np.divide(photon,proton,out=np.full(6,np.nan),where=proton>0)
+        matrix=migration[2:8,:].astype(float)
+        row_sum=matrix.sum(axis=1,keepdims=True)
+        percent=np.divide(matrix,row_sum,out=np.zeros_like(matrix),where=row_sum>0)*100
+        displayed=np.round(percent,1)
+        for i in range(6):
+            if row_sum[i,0]>0:
+                largest=int(np.argmax(percent[i]))
+                displayed[i,largest]+=np.round(100.0-displayed[i].sum(),1)
+        xx=np.arange(6)
+        ax1.bar(xx,ratio,color="#2673a8")
+        ax1.axhline(1,color="#b42318",linestyle="--",linewidth=1.2)
+        for x,value in zip(xx,ratio):
+            if np.isfinite(value):
+                ax1.text(x,value+.035,f"{value:.2f}",ha="center",fontsize=9)
+        finite=ratio[np.isfinite(ratio)]
+        ymax=max(1.55,float(finite.max())*1.15) if len(finite) else 1.55
+        ax1.set(xticks=xx,xticklabels=LABELS,ylim=(0,ymax),
+                xlabel="|t| bin (GeV²)",ylabel="Photon / proton count",
+                title=f"{sample}: count ratio (N={candidates:,})")
+        ax1.tick_params(axis="x",rotation=30)
+        image=ax2.imshow(percent,origin="lower",aspect="auto",cmap="Blues",vmin=0,vmax=100)
+        ax2.set(xticks=np.arange(9),yticks=np.arange(6),
+                xticklabels=MIGRATION_LABELS,yticklabels=LABELS,
+                xlabel="Photon-defined |t| bin (GeV²)",
+                ylabel="Proton-defined |t| bin (GeV²)",
+                title=f"{sample}: destination (each row = 100.0%)")
+        ax2.tick_params(axis="x",rotation=35)
+        for i in range(6):
+            for j in range(9):
+                if displayed[i,j]>=0.1:
+                    ax2.text(j,i,f"{displayed[i,j]:.1f}%",ha="center",va="center",
+                             fontsize=7.5,color="white" if percent[i,j]>=45 else "#162b45")
+        fig.colorbar(image,ax=ax2,label="Percent of proton-defined bin")
+        if delta_counts is not None:
+            colors=plt.cm.viridis(np.linspace(.08,.9,6))
+            for label,counts,color in zip(LABELS,delta_counts,colors):
+                total=counts.sum()
+                if total:
+                    ax3.stairs(counts/total,DELTA_EDGES,label=label,color=color,linewidth=1.6)
+            ax3.axvline(0,color="#b42318",linestyle="--",linewidth=1.1)
+            ax3.legend(title="Proton |t| (GeV²)",fontsize=7,title_fontsize=8,
+                       loc="upper right",frameon=True)
+        else:
+            ax3.text(.5,.5,"Run event scan to populate Δ|t|",ha="center",va="center",
+                     transform=ax3.transAxes)
         ax3.set(xlim=(-.6,1.0),xlabel="Δ|t| = |t| photon − |t| proton (GeV²)",
-                ylabel="Fraction per 0.02 GeV²",title="Event-level shift by proton-defined bin")
-        ax3.legend(title="Proton |t| (GeV²)",fontsize=7,title_fontsize=8,
-                   loc="upper right",frameon=True)
+                ylabel="Fraction per 0.02 GeV²",title=f"{sample}: event-level shift")
         ax3.grid(alpha=.15)
-    fig.suptitle(f"{period}: {candidates:,} diagnostic candidates; two reconstructed |t| definitions")
+    fig.suptitle(f"{period}: proton and photon reconstructed |t| comparison")
     target.parent.mkdir(parents=True,exist_ok=True)
     fig.savefig(target,dpi=170)
     plt.close(fig)
     print(f"[PLOT] {target}")
+
+def result_path(out,sample,name):
+    return out/(name if sample=="data" else "mc_"+name)
+
+def read_result(out,sample):
+    counts_path=result_path(out,sample,"counts.csv")
+    migration_path=result_path(out,sample,"migration.csv")
+    if not counts_path.is_file() or not migration_path.is_file():
+        return None
+    with counts_path.open() as f:
+        rows=list(csv.DictReader(f))
+    proton=np.array([int(row["proton_count"]) for row in rows])
+    photon=np.array([int(row["photon_count"]) for row in rows])
+    with migration_path.open() as f:
+        matrix=list(csv.reader(f))[1:]
+    migration=np.array([[int(value) for value in row[1:]] for row in matrix])
+    delta_counts=None
+    delta_path=result_path(out,sample,"delta_t_hist.csv")
+    if delta_path.is_file():
+        with delta_path.open() as f:
+            delta_rows=list(csv.DictReader(f))
+        delta_counts=np.array([[int(row[f"proton_bin_{i+1}"])
+                                for row in delta_rows] for i in range(6)])
+    return proton,photon,migration,delta_counts,int(migration.sum())
+
+def plot_available(out,period):
+    data=read_result(out,"data")
+    mc=read_result(out,"mc")
+    if data is None:
+        print(f"[PLOT] waiting for data CSVs in {out}")
+        return
+    plot_summary(data,mc,out/"t_definition_counts.png",period)
+    if mc is not None:
+        d=np.divide(data[1],data[0],out=np.full(6,np.nan),where=data[0]>0)
+        r=np.divide(mc[1],mc[0],out=np.full(6,np.nan),where=mc[0]>0)
+        print("[DIAGNOSTIC] data-ratio / MC-ratio by |t| bin (candidate counts, not cross sections)")
+        for label,dr,mr in zip(LABELS,d,r):
+            print(f"  {label}: data={dr:.3f} MC={mr:.3f} double_ratio={dr/mr:.3f}")
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__)
@@ -143,29 +185,27 @@ def main():
                     help="Saved production exclusivity windows")
     ap.add_argument("--plot-only",action="store_true",
                     help="Replot existing counts.csv and migration.csv without reading ROOT")
+    ap.add_argument("--sample",choices=("data","mc"),default="data",
+                    help="Sample to scan; plot includes both rows once both CSVs exist")
+    ap.add_argument("--workers",type=int,default=10,
+                    help="ROOT processing threads; maximum 10")
     args = ap.parse_args()
     out = args.output_dir/args.period
     if args.plot_only:
-        with (out/"counts.csv").open() as f:
-            rows=list(csv.DictReader(f))
-        proton=np.array([int(row["proton_count"]) for row in rows])
-        photon=np.array([int(row["photon_count"]) for row in rows])
-        with (out/"migration.csv").open() as f:
-            matrix=list(csv.reader(f))[1:]
-        migration=np.array([[int(value) for value in row[1:]] for row in matrix])
-        delta_counts = None
-        if (out/"delta_t_hist.csv").is_file():
-            with (out/"delta_t_hist.csv").open() as f:
-                delta_rows=list(csv.DictReader(f))
-            delta_counts=np.array([[int(row[f"proton_bin_{i+1}"])
-                                    for row in delta_rows] for i in range(6)])
-        plot_summary(proton,photon,migration,out/"t_definition_counts.png",
-                     args.period,int(migration.sum()),delta_counts)
+        plot_available(out,args.period)
         return
+    if not 1<=args.workers<=10:
+        ap.error("--workers must be between 1 and 10")
     import ROOT
-    paths = sorted((args.input_root/"data"/args.period/"dvcs_data"/"parts").glob("*.root"))
+    ROOT.EnableImplicitMT(args.workers)
+    if args.sample=="data":
+        parts=args.input_root/"data"/args.period/"dvcs_data"/"parts"
+        paths=sorted(parts.glob("*.root"))
+    else:
+        parts=args.input_root/"mc"/args.period/"dvcs_mc"/MC_CURRENT[args.period]/"parts"
+        paths=sorted(parts.glob("*.rec_only.root"))
     if not paths:
-        ap.error("No DVCS data parts found")
+        ap.error(f"No {args.sample} PhysicsEvents parts found in {parts}")
     paths = paths[args.skip_files:]
     if args.max_files > 0:
         paths = paths[:args.max_files]
@@ -181,7 +221,7 @@ def main():
     if missing:
         ap.error(f"Missing branches: {sorted(missing)}")
     try:
-        exclusive = exclusivity_expression(args.cuts_json,args.period,branches)
+        exclusive = exclusivity_expression(args.cuts_json,args.period,branches,args.sample)
     except (FileNotFoundError, ValueError) as exc:
         ap.error(str(exc))
     ROOT.gInterpreter.Declare(r'''
@@ -246,28 +286,27 @@ def main():
                            for handle in delta_handles],dtype=int)
     out = args.output_dir/args.period
     out.mkdir(parents=True,exist_ok=True)
-    with (out/"counts.csv").open("w",newline="") as f:
+    with result_path(out,args.sample,"counts.csv").open("w",newline="") as f:
         w=csv.writer(f)
         w.writerow(["t_min_GeV2","t_max_GeV2","proton_count","photon_count",
                     "photon_over_proton"])
         for i in range(6):
             w.writerow([EDGES[i],EDGES[i+1],a[i],b[i],b[i]/a[i] if a[i] else ""])
-    with (out/"migration.csv").open("w",newline="") as f:
+    with result_path(out,args.sample,"migration.csv").open("w",newline="") as f:
         w=csv.writer(f)
         w.writerow(["proton_bin / photon_bin",*MIGRATION_LABELS])
         for label,row in zip(MIGRATION_LABELS,migration):
             w.writerow([label,*row])
-    with (out/"delta_t_hist.csv").open("w",newline="") as f:
+    with result_path(out,args.sample,"delta_t_hist.csv").open("w",newline="") as f:
         w=csv.writer(f)
         w.writerow(["delta_t_min_GeV2","delta_t_max_GeV2",
                     *[f"proton_bin_{i+1}" for i in range(6)]])
         for j in range(len(DELTA_EDGES)-1):
             w.writerow([DELTA_EDGES[j],DELTA_EDGES[j+1],
                         *delta_counts[:,j]])
-    plot_summary(a,b,migration,out/"t_definition_counts.png",
-                 args.period,int(count.GetValue()),delta_counts)
-    print(f"[SELECTION] baseline Q²>1, W>2, electron p>2, proton |t|<1; saved data exclusivity cuts")
-    print(f"[FILES] {len(paths)} [CANDIDATES] {int(count.GetValue()):,}")
+    plot_available(out,args.period)
+    print(f"[SELECTION] baseline Q²>1, W>2, electron p>2, proton |t|<1; saved {args.sample} exclusivity cuts")
+    print(f"[SAMPLE] {args.sample} [FILES] {len(paths)} [CANDIDATES] {int(count.GetValue()):,}")
     print(f"[PHOTON T] unphysical signed t_gamma >= 0: {int(nonphysical.GetValue()):,}")
     for label, n1, n2 in zip(LABELS,a,b):
         print(f"|t| {label}: proton={n1:,} photon={n2:,} ratio={n2/n1:.3f}" if n1 else
