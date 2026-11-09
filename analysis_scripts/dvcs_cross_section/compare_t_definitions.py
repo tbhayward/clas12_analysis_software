@@ -16,6 +16,7 @@ EDGES = (0.11, 0.15, 0.25, 0.40, 0.60, 0.80, 1.00)
 LABELS = [f"{a:.2f}–{b:.2f}" for a,b in zip(EDGES[:-1], EDGES[1:])]
 MIGRATION_EDGES = (-1.0e9, 0.0, *EDGES, 1.0e9)
 MIGRATION_LABELS = ("unphysical", "<0.11", *LABELS, ">=1.00")
+DELTA_EDGES = np.linspace(-1.0, 3.0, 201)
 BEAM = {"fa18_inb":10.604,"fa18_out":10.604,
         "sp18_inb":10.594,"sp18_out":10.594,"sp19_inb":10.2}
 
@@ -63,7 +64,8 @@ def exclusivity_expression(path, period, branches):
         print(f"[EXCLUSIVITY] {key}: {', '.join(block)}")
     return " || ".join(expressions)
 
-def plot_summary(proton, photon, migration, target, period, candidates):
+def plot_summary(proton, photon, migration, target, period, candidates,
+                 delta_counts=None):
     ratio = np.divide(photon, proton, out=np.full(6,np.nan), where=proton>0)
     rows = migration[2:8,:].astype(float)
     row_sum = rows.sum(axis=1,keepdims=True)
@@ -73,9 +75,15 @@ def plot_summary(proton, photon, migration, target, period, candidates):
         if row_sum[i,0]>0:
             largest = int(np.argmax(percent[i]))
             displayed[i,largest] += np.round(100.0-displayed[i].sum(),1)
-    fig,(ax1,ax2)=plt.subplots(1,2,figsize=(14,5.3),
-                               gridspec_kw={"width_ratios":[.85,1.4]},
-                               constrained_layout=True)
+    if delta_counts is None:
+        fig,(ax1,ax2)=plt.subplots(1,2,figsize=(14,5.3),
+                                   gridspec_kw={"width_ratios":[.85,1.4]},
+                                   constrained_layout=True)
+        ax3 = None
+    else:
+        fig,(ax1,ax2,ax3)=plt.subplots(1,3,figsize=(19,5.5),
+                                       gridspec_kw={"width_ratios":[.85,1.4,1.1]},
+                                       constrained_layout=True)
     xx=np.arange(6)
     ax1.bar(xx,ratio,color="#2673a8")
     ax1.axhline(1,color="#b42318",linestyle="--",linewidth=1.2)
@@ -99,6 +107,18 @@ def plot_summary(proton, photon, migration, target, period, candidates):
                 ax2.text(j,i,f"{displayed[i,j]:.1f}%",ha="center",va="center",
                          fontsize=7.5,color="white" if percent[i,j]>=45 else "#162b45")
     fig.colorbar(image,ax=ax2,label="Percent of proton-defined bin")
+    if ax3 is not None:
+        colors=plt.cm.viridis(np.linspace(.08,.9,6))
+        for i,(label,values,color) in enumerate(zip(LABELS,delta_counts,colors)):
+            total=values.sum()
+            if total:
+                ax3.stairs(values/total,DELTA_EDGES,label=label,color=color,linewidth=1.6)
+        ax3.axvline(0,color="#b42318",linestyle="--",linewidth=1.1)
+        ax3.set(xlim=(-.6,1.0),xlabel="Δ|t| = |t| photon − |t| proton (GeV²)",
+                ylabel="Fraction per 0.02 GeV²",title="Event-level shift by proton-defined bin")
+        ax3.legend(title="Proton |t| (GeV²)",fontsize=7,title_fontsize=8,
+                   loc="upper right",frameon=True)
+        ax3.grid(alpha=.15)
     fig.suptitle(f"{period}: {candidates:,} diagnostic candidates; two reconstructed |t| definitions")
     target.parent.mkdir(parents=True,exist_ok=True)
     fig.savefig(target,dpi=170)
@@ -133,8 +153,14 @@ def main():
         with (out/"migration.csv").open() as f:
             matrix=list(csv.reader(f))[1:]
         migration=np.array([[int(value) for value in row[1:]] for row in matrix])
+        delta_counts = None
+        if (out/"delta_t_hist.csv").is_file():
+            with (out/"delta_t_hist.csv").open() as f:
+                delta_rows=list(csv.DictReader(f))
+            delta_counts=np.array([[int(row[f"proton_bin_{i+1}"])
+                                    for row in delta_rows] for i in range(6)])
         plot_summary(proton,photon,migration,out/"t_definition_counts.png",
-                     args.period,int(migration.sum()))
+                     args.period,int(migration.sum()),delta_counts)
         return
     import ROOT
     paths = sorted((args.input_root/"data"/args.period/"dvcs_data"/"parts").glob("*.root"))
@@ -192,13 +218,22 @@ def main():
     df = df.Filter("std::isfinite(t_gamma_signed)")
     nonphysical = df.Filter("t_gamma_signed>=0").Count()
     df = df.Define("tg", "-t_gamma_signed")
+    df = df.Define("delta_t", "tg-tp")
     edges = array("d",EDGES)
     hp = df.Histo1D(ROOT.RDF.TH1DModel("hp","",6,edges),"tp")
     hg = df.Histo1D(ROOT.RDF.TH1DModel("hg","",6,edges),"tg")
     medges = array("d",MIGRATION_EDGES)
     hm = df.Histo2D(ROOT.RDF.TH2DModel("hm","",9,medges,9,medges),"tp","tg")
+    delta_handles=[]
+    delta_edges=array("d",DELTA_EDGES)
+    for i,(low,high) in enumerate(zip(EDGES[:-1],EDGES[1:])):
+        cell=df.Filter(f"tp>={low:.17g} && tp<{high:.17g} && tg>0")
+        delta_handles.append(cell.Histo1D(
+            ROOT.RDF.TH1DModel(f"hdelta_{i}","",len(DELTA_EDGES)-1,delta_edges),
+            "delta_t"))
     count = df.Count()
-    ROOT.RDF.RunGraphs([hp,hg,hm,count,nonphysical,*[handle for _,handle in cutflow]])
+    ROOT.RDF.RunGraphs([hp,hg,hm,count,nonphysical,*delta_handles,
+                        *[handle for _,handle in cutflow]])
     print("[INPUT]", *[str(p) for p in paths], sep="\n  ")
     for name, handle in cutflow:
         print(f"[CUTFLOW] {name}: {int(handle.GetValue()):,}")
@@ -206,6 +241,9 @@ def main():
     b = np.array([hg.GetValue().GetBinContent(i+1) for i in range(6)],dtype=int)
     migration = np.array([[hm.GetValue().GetBinContent(i+1,j+1)
                            for j in range(9)] for i in range(9)],dtype=int)
+    delta_counts=np.array([[handle.GetValue().GetBinContent(j+1)
+                            for j in range(len(DELTA_EDGES)-1)]
+                           for handle in delta_handles],dtype=int)
     out = args.output_dir/args.period
     out.mkdir(parents=True,exist_ok=True)
     with (out/"counts.csv").open("w",newline="") as f:
@@ -219,8 +257,15 @@ def main():
         w.writerow(["proton_bin / photon_bin",*MIGRATION_LABELS])
         for label,row in zip(MIGRATION_LABELS,migration):
             w.writerow([label,*row])
+    with (out/"delta_t_hist.csv").open("w",newline="") as f:
+        w=csv.writer(f)
+        w.writerow(["delta_t_min_GeV2","delta_t_max_GeV2",
+                    *[f"proton_bin_{i+1}" for i in range(6)]])
+        for j in range(len(DELTA_EDGES)-1):
+            w.writerow([DELTA_EDGES[j],DELTA_EDGES[j+1],
+                        *delta_counts[:,j]])
     plot_summary(a,b,migration,out/"t_definition_counts.png",
-                 args.period,int(count.GetValue()))
+                 args.period,int(count.GetValue()),delta_counts)
     print(f"[SELECTION] baseline Q²>1, W>2, electron p>2, proton |t|<1; saved data exclusivity cuts")
     print(f"[FILES] {len(paths)} [CANDIDATES] {int(count.GetValue()):,}")
     print(f"[PHOTON T] unphysical signed t_gamma >= 0: {int(nonphysical.GetValue()):,}")
