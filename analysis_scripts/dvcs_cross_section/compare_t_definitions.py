@@ -24,6 +24,8 @@ def main():
     ap.add_argument("--period", choices=BEAM, default="fa18_inb")
     ap.add_argument("--max-files", type=int, default=1,
                     help="Use 0 for all parts")
+    ap.add_argument("--skip-files", type=int, default=0,
+                    help="Skip this many sorted parts before selecting files")
     ap.add_argument("--output-dir", type=Path,
                     default=Path("output/t_definition_quick_test"))
     ap.add_argument("--extra-cut", default="1",
@@ -33,8 +35,11 @@ def main():
     paths = sorted((args.input_root/"data"/args.period/"dvcs_data"/"parts").glob("*.root"))
     if not paths:
         ap.error("No DVCS data parts found")
+    paths = paths[args.skip_files:]
     if args.max_files > 0:
         paths = paths[:args.max_files]
+    if not paths:
+        ap.error("No parts left after --skip-files")
     chain = ROOT.TChain("PhysicsEvents")
     for path in paths:
         chain.Add(str(path))
@@ -54,14 +59,23 @@ def main():
       return std::abs(q0*q0-qx*qx-qy*qy-qz);
     }''')
     # Hold the proton-defined global |t| range fixed, then switch only bin assignment.
-    base = ("std::isfinite(t1) && t1<0 && -t1<1.0 && "
-            "std::isfinite(Q2) && Q2>1 && std::isfinite(x) && x>0 && x<1 && "
-            "0.9382720813*0.9382720813+Q2*(1/x-1)>4 && "
-            "std::isfinite(e_p) && e_p>2 && "
-            "std::isfinite(p2_p) && p2_p>0 && "
-            "(detector1==1 || detector1==2) && "
-            "(detector2==0 || detector2==1)")
-    df = ROOT.RDataFrame(chain).Filter(base).Filter(args.extra_cut)
+    stages = (
+        ("all entries", "1"),
+        ("physical proton t", "std::isfinite(t1) && t1<0"),
+        ("proton |t| < 1", "-t1<1.0"),
+        ("Q2 > 1", "std::isfinite(Q2) && Q2>1"),
+        ("valid x", "std::isfinite(x) && x>0 && x<1"),
+        ("W > 2", "0.9382720813*0.9382720813+Q2*(1/x-1)>4"),
+        ("electron p > 2", "std::isfinite(e_p) && e_p>2"),
+        ("photon p > 0", "std::isfinite(p2_p) && p2_p>0"),
+        ("DVCS topology", "(detector1==1 || detector1==2) && (detector2==0 || detector2==1)"),
+        ("extra cut", args.extra_cut),
+    )
+    df = ROOT.RDataFrame(chain)
+    cutflow = []
+    for name, condition in stages:
+        df = df.Filter(condition)
+        cutflow.append((name, df.Count()))
     df = df.Define("tp", "-t1").Define(
         "tg",f"quick_tgamma(e_p,e_theta,e_phi,p2_p,p2_theta,p2_phi,{BEAM[args.period]:.17g})")
     df = df.Filter("std::isfinite(tg)")
@@ -71,7 +85,10 @@ def main():
     medges = array("d",MIGRATION_EDGES)
     hm = df.Histo2D(ROOT.RDF.TH2DModel("hm","",8,medges,8,medges),"tp","tg")
     count = df.Count()
-    ROOT.RDF.RunGraphs([hp,hg,hm,count])
+    ROOT.RDF.RunGraphs([hp,hg,hm,count,*[handle for _,handle in cutflow]])
+    print("[INPUT]", *[str(p) for p in paths], sep="\n  ")
+    for name, handle in cutflow:
+        print(f"[CUTFLOW] {name}: {int(handle.GetValue()):,}")
     a = np.array([hp.GetValue().GetBinContent(i+1) for i in range(6)],dtype=int)
     b = np.array([hg.GetValue().GetBinContent(i+1) for i in range(6)],dtype=int)
     migration = np.array([[hm.GetValue().GetBinContent(i+1,j+1)
