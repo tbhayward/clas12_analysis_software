@@ -1052,6 +1052,43 @@ def km15_xs(xb: float, q2: float, t_abs: float, phi_deg: float, cfg: ModelConfig
     return to_float(out, default=0.0)
 
 
+def km15_xs_many(points, cfg):
+    """Evaluate scalar-equivalent requests with one Python/model startup.
+
+    Points are (xB, Q2, |t|, phi_degrees, helicity). Custom older CLIs
+    transparently retain their scalar path. No persistent numerical cache.
+    """
+    points = list(points)
+    if not points:
+        return []
+    if os.environ.get("DVCS_KM15_SCALAR"):
+        return [km15_xs(*p[:4], cfg, helicity=p[4]) for p in points]
+    requests = [[*(f"{v:.12g}" for v in p[:4]), f"{cfg.e_beam:.12g}",
+                 str(int(p[4])), "XS"] for p in points]
+    env = os.environ.copy()
+    env.pop("PYTHONPATH", None)
+    completed = subprocess.run(
+        [cfg.py_km15 or sys.executable, cfg.km15_cli, "--batch"],
+        input=json.dumps(requests), stdout=subprocess.PIPE,
+        stderr=subprocess.PIPE, text=True, env=env, check=False,
+    )
+    try:
+        payload = json.loads(completed.stdout)
+        if (completed.returncode != 0 or not isinstance(payload, dict)
+                or payload.get("protocol") != "km15-batch-v1"
+                or len(payload.get("values", [])) != len(points)):
+            raise ValueError("CLI does not support the batch protocol")
+        values = [to_float(v, default=0.0) for v in payload["values"]]
+    except (ValueError, TypeError):
+        return [km15_xs(*p[:4], cfg, helicity=p[4]) for p in points]
+    if os.environ.get("DVCS_VERIFY_KM15_BATCH"):
+        reference = [km15_xs(*p[:4], cfg, helicity=p[4]) for p in points]
+        if any(a != b and not (math.isnan(a) and math.isnan(b))
+               for a, b in zip(values, reference)):
+            raise RuntimeError("Batch/scalar KM15 predictions differ")
+    return values
+
+
 def model_cache_key(key: BinKey, cfg: ModelConfig) -> str:
     return (
         f"XS|E={cfg.e_beam:.8g}|nphi={cfg.phi_dense}|"
@@ -1129,7 +1166,7 @@ def compute_model_curves_without_cache(key: BinKey, cfg: ModelConfig) -> ModelCu
     phi_grid = [360.0 * i / (cfg.phi_dense - 1) for i in range(cfg.phi_dense)] if cfg.phi_dense > 1 else [0.0]
 
     bh_values: List[float] = []
-    km15_values: List[float] = []
+    km15_values = km15_xs_many([(xb,q2,t_abs,phi,0) for phi in phi_grid], cfg)
 
     for i_phi, phi in enumerate(phi_grid, start=1):
         if cfg.verbose_worker_models and (i_phi == 1 or i_phi == len(phi_grid) or i_phi % 25 == 0):
@@ -1140,7 +1177,6 @@ def compute_model_curves_without_cache(key: BinKey, cfg: ModelConfig) -> ModelCu
                 flush=True,
             )
         bh_values.append(bh_xs(xb, q2, t_abs, phi, cfg))
-        km15_values.append(km15_xs(xb, q2, t_abs, phi, cfg, helicity=0))
 
     return ModelCurves(phi=phi_grid, bh=bh_values, km15=km15_values)
 
@@ -1163,6 +1199,8 @@ def compute_bsa_km15_curve_without_cache(key: BinKey, target_label: str, cfg: Mo
     phi_grid = [360.0 * i / (local_cfg.phi_dense - 1) for i in range(local_cfg.phi_dense)] if local_cfg.phi_dense > 1 else [0.0]
 
     bsa_values: List[float] = []
+    predictions = iter(km15_xs_many(
+        [(xb,q2,t_abs,phi,h) for phi in phi_grid for h in (+1,-1)], local_cfg))
     for i_phi, phi in enumerate(phi_grid, start=1):
         if local_cfg.verbose_worker_models and (i_phi == 1 or i_phi == len(phi_grid) or i_phi % 25 == 0):
             print(
@@ -1172,8 +1210,8 @@ def compute_bsa_km15_curve_without_cache(key: BinKey, target_label: str, cfg: Mo
                 flush=True,
             )
 
-        sigma_plus = km15_xs(xb, q2, t_abs, phi, local_cfg, helicity=+1)
-        sigma_minus = km15_xs(xb, q2, t_abs, phi, local_cfg, helicity=-1)
+        sigma_plus = next(predictions)
+        sigma_minus = next(predictions)
         denom = sigma_plus + sigma_minus
         if not math.isfinite(denom) or abs(denom) <= 0.0:
             bsa_values.append(float("nan"))

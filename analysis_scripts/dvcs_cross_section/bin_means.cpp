@@ -420,8 +420,18 @@ struct BranchBinder {
         enable("Q2");
         enable("phi2"); // radians
 
-        // Keep ROOT's tree cache off here to avoid oddities across multiple threads/files.
-        t->SetCacheSize(0);
+        // Bound read-ahead per worker and prefetch only this scan's branches.
+        // No event order, branch values or accumulation order changes.
+        const bool uncached = std::getenv("DVCS_BIN_MEANS_NO_CACHE") != nullptr;
+        t->SetCacheSize(uncached ? 0 : 16LL * 1024LL * 1024LL);
+        if (!uncached) {
+            t->DropBranchFromCache("*", true);
+            for (auto* object : *t->GetListOfBranches()) {
+                if (t->GetBranchStatus(object->GetName()))
+                    t->AddBranchToCache(object->GetName(), true);
+            }
+            t->StopCacheLearningPhase();
+        }
 
         auto bindD = [&](const char* n, double* a, bool& f){
             if (t->GetBranch(n)) { t->SetBranchAddress(n, a); f = true; }

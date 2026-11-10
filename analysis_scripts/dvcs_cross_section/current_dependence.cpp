@@ -1118,6 +1118,39 @@ struct SigmaStats {
 using CutVarMap = std::unordered_map<std::string, SigmaStats>;
 using TopoCutMap = std::unordered_map<std::string, CutVarMap>;
 
+// Immutable window lookup prepared lazily once per topology and tree scan.
+struct PreparedSigmaWindow {
+    bool enabled = false, upper = false, unbounded = false;
+    double lo = 0.0, hi = 0.0;
+    bool accepts(double value) const {
+        if (!enabled) return true;
+        if (!std::isfinite(value)) return false;
+        if (unbounded) return true;
+        return upper ? value <= hi : (value >= lo && value <= hi);
+    }
+};
+static PreparedSigmaWindow prepare_sigma_window(const SigmaStats& s) {
+    PreparedSigmaWindow w;
+    w.enabled = true;
+    w.upper = s.mode == "upper_quantile";
+    w.lo = s.cut_low; w.hi = s.cut_high;
+    if (w.upper) w.unbounded = !std::isfinite(w.hi);
+    else if (!(std::isfinite(w.lo) && std::isfinite(w.hi)) || w.hi <= w.lo) {
+        w.unbounded = !std::isfinite(s.mean) || !std::isfinite(s.std) || s.std <= 0.0;
+        if (!w.unbounded) {
+            w.lo = s.mean - 3.0 * s.std;
+            w.hi = s.mean + 3.0 * s.std;
+        }
+    }
+    return w;
+}
+struct SigmaDispatchCache {
+    const TopoCutMap* source = nullptr;
+    std::string prefix, period;
+    std::array<bool,3> ready{};
+    std::array<std::array<PreparedSigmaWindow,7>,3> windows{};
+};
+
 static TopoCutMap load_sigma_cuts(const std::string& path,
                                   const std::string& sample_key) {
     std::ifstream fin(path);
@@ -1283,6 +1316,7 @@ static std::mutex g_bind_mutex;
 static std::mutex g_progress_output_mutex;
 
 struct Branches {
+    mutable SigmaDispatchCache sigma_cache;
     double runnum = 0; bool has_runnum = false;
     double detector1 = 0; bool has_detector1 = false;
     double detector2 = 0; bool has_detector2 = false;
@@ -1321,6 +1355,7 @@ struct Branches {
         // REBUILT PAIRED MC: bind physical gen_/rec_ branches directly.
         // Empty prefix preserves original PhysicsEvents binding.
         std::lock_guard<std::mutex> lock(g_bind_mutex);
+        sigma_cache = {};
 
         t->SetBranchStatus("*", 0);
 
@@ -1558,7 +1593,7 @@ static bool passes_global_dispatch(const Branches& b,
                               cfg);
 }
 
-static bool passes_sigma_dispatch(const ChannelConfig& cfg,
+static bool passes_sigma_dispatch_legacy(const ChannelConfig& cfg,
                                   const PeriodTags& tags,
                                   const TopoCutMap& cuts,
                                   const Branches& b) {
@@ -1635,6 +1670,61 @@ static bool passes_sigma_dispatch(const ChannelConfig& cfg,
     }
 
     return true;
+}
+
+static bool passes_sigma_dispatch(const ChannelConfig& cfg,
+                                  const PeriodTags& tags,
+                                  const TopoCutMap& cuts,
+                                  const Branches& b) {
+    if (!(b.has_detector1 && b.has_detector2)) return false;
+    // Keep the legacy conversion of Double_t detector codes to int.
+    const int d1 = b.detector1, d2 = b.detector2;
+    const int topo = d1 == 1 && d2 == 1 ? 0 :
+                     d1 == 2 && d2 == 1 ? 1 : d1 == 2 && d2 == 0 ? 2 : -1;
+    if (topo < 0) return false;
+    static const std::array<const char*,7> names{{
+        "Delta_phi", "theta", "theta_gamma_gamma", "pTmiss", "Emiss2", "Mx2", "Mx2_2"}};
+    auto& cache = b.sigma_cache;
+    if (cache.source != &cuts || cache.prefix != cfg.cut_prefix || cache.period != tags.period_code) {
+        cache = {};
+        cache.source = &cuts; cache.prefix = cfg.cut_prefix; cache.period = tags.period_code;
+    }
+    if (!cache.ready[topo]) {
+        const std::string key = cfg.cut_prefix + "_" + tags.period_code + "_" + topo_dir(d1,d2);
+        const auto found = cuts.find(key);
+        if (found == cuts.end()) fatal("[current_dependence] FATAL: missing sigma-cut key: " + key);
+        for (size_t i=0; i<names.size(); ++i) {
+            const auto w = found->second.find(names[i]);
+            if (w != found->second.end()) cache.windows[topo][i] = prepare_sigma_window(w->second);
+        }
+        cache.ready[topo] = true;
+    }
+    bool has_delta_phi = false;
+    const double delta_phi = b.delta_phi_value(has_delta_phi);
+    const bool pi0 = cfg.channel == Channel::EPPI0;
+    const std::array<bool,7> present{{has_delta_phi, b.has_theta,
+        pi0 ? b.has_theta_pi0_pi0 : b.has_theta_gamma_gamma,
+        b.has_pTmiss, b.has_Emiss2, b.has_Mx2, b.has_Mx2_2}};
+    const std::array<double,7> values{{delta_phi, b.theta,
+        pi0 ? b.theta_pi0_pi0 : b.theta_gamma_gamma,
+        b.pTmiss, b.Emiss2, b.Mx2, b.Mx2_2}};
+    bool pass = true;
+    for (size_t i=0; i<names.size(); ++i) {
+        const auto& w = cache.windows[topo][i];
+        if (!w.enabled) continue;
+        if (!present[i]) {
+            std::ostringstream ss;
+            ss << "[current_dependence] FATAL: production exclusivity cut requires "
+               << "a missing ROOT branch for logical variable '" << names[i] << "'.";
+            if (i == 2) ss << " Direct ep->eppi0 samples require physical branch 'theta_pi0_pi0'.";
+            fatal(ss.str());
+        }
+        if (!w.accepts(values[i])) { pass = false; break; }
+    }
+    static const bool verify = std::getenv("DVCS_VERIFY_CURRENT_CUTS") != nullptr;
+    if (verify && pass != passes_sigma_dispatch_legacy(cfg,tags,cuts,b))
+        fatal("[current_dependence] Prepared/legacy sigma-cut mismatch");
+    return pass;
 }
 
 // -----------------------------------------------------------------------------

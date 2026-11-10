@@ -32,8 +32,8 @@ try:
     from gepard.fits import th_KM15
 except Exception:
     # If KM15 is not available, just return 0.0 so the caller can fall back.
-    print("0.0")
-    sys.exit(0)
+    g = None
+    th_KM15 = None
 
 
 def km15_value(xB, Q2, t_pos, phi_deg, Ebeam, helicity):
@@ -83,25 +83,29 @@ def km15_value(xB, Q2, t_pos, phi_deg, Ebeam, helicity):
 #enddef
 
 
-def main():
-    if len(sys.argv) < 7:
+def main(arguments=None):
+    arguments = sys.argv if arguments is None else arguments
+    if g is None:
+        print("0.0")
+        return
+    if len(arguments) < 7:
         print("0.0")
         return
 
     try:
-        xB      = float(sys.argv[1])
-        Q2      = float(sys.argv[2])
-        t_pos   = float(sys.argv[3])
-        phi_deg = float(sys.argv[4])
-        Ebeam   = float(sys.argv[5])
-        helicity= int(sys.argv[6])   # -1, 0, +1
+        xB      = float(arguments[1])
+        Q2      = float(arguments[2])
+        t_pos   = float(arguments[3])
+        phi_deg = float(arguments[4])
+        Ebeam   = float(arguments[5])
+        helicity= int(arguments[6])   # -1, 0, +1
     except Exception:
         print("0.0")
         return
 
     mode = "XS"
-    if len(sys.argv) >= 8 and sys.argv[7]:
-        mode = str(sys.argv[7]).upper()
+    if len(arguments) >= 8 and arguments[7]:
+        mode = str(arguments[7]).upper()
 
     try:
         if mode == "XSD":
@@ -125,5 +129,23 @@ def main():
 #enddef
 
 
+def batch_main():
+    """Same scalar evaluator and text rounding, with one model import per batch."""
+    import contextlib
+    import io
+    import json
+    requests = json.load(sys.stdin)
+    values = []
+    for request in requests:
+        output = io.StringIO()
+        with contextlib.redirect_stdout(output):
+            main([sys.argv[0], *request])
+        values.append(output.getvalue().strip())
+    print(json.dumps({"protocol": "km15-batch-v1", "values": values}))
+
+
 if __name__ == "__main__":
-    main()
+    if sys.argv[1:] == ["--batch"]:
+        batch_main()
+    else:
+        main()

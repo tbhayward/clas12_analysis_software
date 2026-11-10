@@ -17,7 +17,7 @@ be supplied explicitly with --pass1-xs and --pass1-bsa-text.
 
 Example:
   python3 plot_pass2_final_results_by_t.py imports/dvcs_pass2_analysis.csv \
-    --output-dir output/final_results_by_t --phi-dense 73
+    --output-dir output/final_results_by_t --phi-dense 24
 
 Requires the existing dvcsgen and km15_cli.py installations used by the
 comparison code.  A persistent JSON model cache avoids repeated evaluation.
@@ -102,15 +102,19 @@ def compute_cell_models(job):
         result["xs"] = {"phi": phi, "km15": [], "bh": []}
     if "bsa" in kinds:
         result["bsa"] = {"phi": phi, "km15": [], "bh": [0.0] * len(phi)}
+    requests = [(xb,q2,t,angle,h) for angle in phi
+                for h in (([0] if "xs" in kinds else []) +
+                          ([+1,-1] if "bsa" in kinds else []))]
+    predictions = iter(base.km15_xs_many(requests, cfg))
     for angle in phi:
         if "xs" in kinds:
             result["xs"]["bh"].append(base.bh_xs(xb, q2, t, angle, cfg))
             result["xs"]["km15"].append(
-                base.km15_xs(xb, q2, t, angle, cfg, helicity=0)
+                next(predictions)
             )
         if "bsa" in kinds:
-            plus = base.km15_xs(xb, q2, t, angle, cfg, helicity=+1)
-            minus = base.km15_xs(xb, q2, t, angle, cfg, helicity=-1)
+            plus = next(predictions)
+            minus = next(predictions)
             denominator = plus + minus
             result["bsa"]["km15"].append(
                 (plus - minus) / denominator
@@ -954,7 +958,7 @@ def make_parser():
     parser.add_argument("--pass1-bsa-text", type=Path, default=None, help="Published seven-column RGA Pass-1 BSA table")
     parser.add_argument("--no-pass1", action="store_true", help="Do not auto-detect or plot any Pass-1 data")
     parser.add_argument("--pass1-phi-tolerance", type=float, default=2.0, help="Maximum circular phi separation in degrees for Pass-2/Pass-1 pulls (default: 2)")
-    parser.add_argument("--phi-dense", type=int, default=73)
+    parser.add_argument("--phi-dense", type=int, default=24, help="Phi points per model curve (default: 24)")
     parser.add_argument("--e-beam", type=float, choices=(10.2, 10.6), default=None, help="Restrict to one beam energy (default: both)")
     parser.add_argument("--xs-column-10p2", default=None, help="Override the Sp19 10.2-GeV cross-section column")
     parser.add_argument("--dvcsgen-dir", default=base.DEFAULT_DVCSGEN_DIR)
