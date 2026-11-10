@@ -1387,6 +1387,7 @@ struct BranchBinder {
     double p2_theta = 0.0;  bool has_p2_theta = false;
     double p2_phi = 0.0;    bool has_p2_phi = false;
 
+    double bin_beam_energy = 10.604;
     double paired_validity = 1.0;
     bool has_paired_validity = false;
     void bind(TTree* t, const WorkConfig& work_cfg, const GlobalCutConfig* binding_cfg = nullptr) {
@@ -1451,7 +1452,7 @@ struct BranchBinder {
         ena("phi2");
         // Photon-derived t needs the measured e and photon four-vectors in
         // every sample, including generated MC used in count normalization.
-        if (sebastian_use_tgamma_binning.load()) {
+        if (analysis_uses_photon_t()) {
             for (const char* branch : {"e_p", "e_theta", "e_phi",
                                        "p2_p", "p2_theta", "p2_phi"}) ena(branch);
         }
@@ -1575,6 +1576,9 @@ struct BranchBinder {
         bD("p2_p",     &p2_p,     has_p2_p);
         bD("p2_theta", &p2_theta, has_p2_theta);
         bD("p2_phi",   &p2_phi,   has_p2_phi);
+        if (analysis_uses_photon_t() && !(has_e_p && has_e_theta && has_e_phi &&
+                has_p2_p && has_p2_theta && has_p2_phi))
+            fatal("[total_counts] Photon t requires electron and photon momentum branches");
     }
 
     bool ready_for_generated_matching() const {
@@ -1590,7 +1594,7 @@ struct BranchBinder {
     }
 
     double t_abs() const {
-        return sebastian_bin_t(t1,e_p,e_theta,e_phi,p2_p,p2_theta,p2_phi);
+        return analysis_bin_t(t1,e_p,e_theta,e_phi,p2_p,p2_theta,p2_phi,bin_beam_energy);
     }
 
     double delta_phi_value(bool& has_val) const {
@@ -2233,7 +2237,7 @@ static std::string generated_denominator_key(TTree* tree,
     key << std::hexfloat << "unit-weight-generated-v3-channel-only|" << tree << '|'
         << tree->GetName() << '|' << tree->GetEntries() << '|'
         << cfg.channel_cfg.csv_channel << '|' << tags.tree_key << '|'
-        << tags.period_display << '|' << tprime << '|' << sebastian_use_tgamma_binning.load() << '|'
+        << tags.period_display << '|' << tprime << '|' << sebastian_use_tgamma_binning.load() << '|' << analysis_photon_t << '|'
         << cuts.enable_analysis_phase_space_cuts << '|'
         << cuts.analysis_W_min_GeV << '|' << rows.size();
     auto append_file = [&](const char* filename) {
@@ -2305,6 +2309,7 @@ static WorkCounts accumulate_counts_for_tree_legacy(const WorkConfig& work_cfg,
 
     BranchBinder b;
     b.bind(tree, work_cfg);
+    b.bin_beam_energy = beam_energy_for_period_label(tags.period_label);
 
     const bool is_gen = (work_cfg.sample_kind == SampleKind::MC_GEN);
     const bool is_data = (work_cfg.sample_kind == SampleKind::DATA);
@@ -3032,6 +3037,7 @@ static WorkCounts accumulate_counts_for_tree(const WorkConfig& work_cfg,
         binding_cfg.enable_photon_fd_sector_filter |= context.spec.global_cuts.enable_photon_fd_sector_filter;
     }
     reader.bind(tree, work_cfg, &binding_cfg);
+    reader.bin_beam_energy = beam_energy_for_period_label(tags.period_label);
     SharedCountKinematics common;
     std::vector<std::function<WorkCounts*(const BranchBinder*, Long64_t)>> sinks;
     for (const auto& context : shared_count_contexts) {
@@ -5507,6 +5513,7 @@ static std::vector<ARWEvent> arw_collect(
 
     BranchBinder b;
     b.bind(tree,work_cfg);
+    b.bin_beam_energy = beam_energy_for_period_label(tags.period_label);
 
     std::array<std::string,3> sigma_keys;
     std::array<CompiledSigmaPlan,3> sigma_plans;

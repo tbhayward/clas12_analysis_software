@@ -3,6 +3,8 @@
 #include <atomic>
 #include <limits>
 // Diagnostic-only Sebastian Table II bin assignment. Never changes exclusivity cuts.
+inline bool analysis_merge_low_t = false;
+inline bool analysis_photon_t = false;
 inline std::atomic<bool> sebastian_use_tgamma_binning{false};
 inline double sebastian_tgamma_abs(double ep, double eth, double eph,
                                    double gp, double gth, double gph,
@@ -23,4 +25,14 @@ inline double sebastian_bin_t(double proton_t, double ep, double eth, double eph
                                double gp, double gth, double gph) {
     return sebastian_use_tgamma_binning.load(std::memory_order_relaxed)
         ? sebastian_tgamma_abs(ep,eth,eph,gp,gth,gph) : std::fabs(proton_t);
+}
+
+// Production override is independent of the optional Sebastian diagnostics.
+inline bool analysis_uses_photon_t() {
+    return analysis_photon_t || sebastian_use_tgamma_binning.load(std::memory_order_relaxed);
+}
+inline double analysis_bin_t(double proton_t, double ep, double eth, double eph,
+                             double gp, double gth, double gph, double energy) {
+    return analysis_photon_t ? sebastian_tgamma_abs(ep,eth,eph,gp,gth,gph,energy)
+                            : sebastian_bin_t(proton_t,ep,eth,eph,gp,gth,gph);
 }

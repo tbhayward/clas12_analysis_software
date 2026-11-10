@@ -1,3 +1,4 @@
+#include "sebastian_tgamma_binning.h"
 // yield_totals.cpp
 // -----------------------------------------------------------------------------
 // Current-binned totals for the final normalized DATA yields.
@@ -1067,6 +1068,7 @@ struct Branches {
 
     double x = 0.0; bool has_x = false;
     double Q2 = 0.0; bool has_Q2 = false;
+    double bin_beam_energy = 10.604;
     double t1 = 0.0; bool has_t1 = false;
     double phi2 = 0.0; bool has_phi2 = false;
 
@@ -1197,7 +1199,7 @@ struct Branches {
     }
 
     double t_abs() const {
-        return std::fabs(t1);
+        return analysis_photon_t ? sebastian_tgamma_abs(e_p,e_theta,e_phi,p2_p,p2_theta,p2_phi,bin_beam_energy) : std::fabs(t1);
     }
 
     double p1_theta_deg() const {
@@ -1384,6 +1386,9 @@ static TreeTotals process_one_tree(const TreeTask& task,
 
     Branches b;
     b.bind(task.tree);
+    b.bin_beam_energy = beam_energy_for_period_label(result.tags.period_label);
+    if (analysis_photon_t && !(b.has_e_p && b.has_e_theta && b.has_e_phi && b.has_p2_p && b.has_p2_theta && b.has_p2_phi))
+        fatal("Photon t requires electron and photon momentum branches");
     result.entries = task.tree->GetEntries();
 
     std::unordered_map<int, int> current_cache;

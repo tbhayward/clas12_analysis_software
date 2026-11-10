@@ -191,7 +191,11 @@ int main(int argc, char* argv[]) {
     bool proton_p_min_overridden = false;
     bool proton_theta_max_overridden = false;
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--quick-xsec-only") {
+        if (std::string(argv[i]) == "--merge-low-t") {
+            analysis_merge_low_t = true;
+        } else if (std::string(argv[i]) == "--photon-t") {
+            analysis_photon_t = true;
+        } else if (std::string(argv[i]) == "--quick-xsec-only") {
             quick_xsec_only = true;
         } else if (std::string(argv[i]) == "--pass1-bsa-binning") {
             run_pass1_bsa_binning = true;
@@ -309,6 +313,23 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    if (analysis_merge_low_t || analysis_photon_t) {
+        if ((analysis_merge_low_t && analysis_photon_t) || quick_xsec_only ||
+            run_pass1_bsa_binning || run_sebastian_bsa_binning || run_sebastian_tgamma_binning ||
+            acceptance_reweighting_only || topology_acceptance_study ||
+            eppi0_normalization_only || eppi0_production_test ||
+            systematic_selection.cuts || systematic_selection.current ||
+            systematic_selection.acceptance || systematic_selection.csv_only) {
+            std::cerr << "[main] FATAL: t tests require --skip-systematics, one t override, "
+                         "and a full extraction without other study modes.\n";
+            return 1;
+        }
+        if (!std::filesystem::exists(".dvcs_t_test_run")) {
+            std::cerr << "[main] FATAL: launch t tests with run_t_override.py to isolate outputs.\n";
+            return 1;
+        }
+        std::cout << "[main] TEST: " << (analysis_merge_low_t ? "merged 0.11-0.25" : "photon |t|") << "\n";
+    }
     std::cout << "Starting DVCS analysis..." << std::endl;
     std::cout << "[main] Systematics selection:"
               << " cuts=" << systematic_selection.cuts

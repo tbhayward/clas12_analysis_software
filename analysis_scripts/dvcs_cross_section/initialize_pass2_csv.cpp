@@ -1,3 +1,6 @@
+#include "sebastian_tgamma_binning.h"
+#include <map>
+#include <array>
 // initialize_pass2_csv.cpp
 
 #include "initialize_pass2_csv.h"
@@ -913,7 +916,51 @@ bool initialize_pass2_csv(const std::string& lee_csv_path,
 
     std::string line;
 
-    while (std::getline(fin, line)) {
+    // Select a union of valid low-t cells, preferring each upper-bin row.
+    // This preserves lower-only phi cells instead of silently dropping them.
+    std::vector<std::string> input_lines;
+    while (std::getline(fin, line)) input_lines.push_back(line);
+    if (analysis_merge_low_t) {
+        using Key = std::array<double, 6>;
+        std::map<Key, std::string> merged;
+        std::map<Key, bool> upper;
+        std::vector<std::string> other;
+        auto value = [&](const std::vector<std::string>& c, const char* n) {
+            return std::stod(get_col(c, lee_index, n));
+        };
+        for (const auto& l : input_lines) {
+            if (l.empty()) continue;
+            auto c = split_csv_line(l);
+            if (ToInteger(get_col(c, lee_index, "valid bin")) != 1) continue;
+            const double lo = value(c, "t_abs_min"), hi = value(c, "t_abs_max");
+            const bool low = std::abs(lo-.11)<1e-9 && std::abs(hi-.15)<1e-9;
+            const bool high = std::abs(lo-.15)<1e-9 && std::abs(hi-.25)<1e-9;
+            if (!low && !high) { other.push_back(l); continue; }
+            Key key{{value(c,"xBmin"),value(c,"xBmax"),value(c,"Q2min"),
+                     value(c,"Q2max"),value(c,"phimin"),value(c,"phimax")}};
+            if (!merged.count(key) || high) {
+                c.at(lee_index.at("t_abs_min")) = "0.11";
+                c.at(lee_index.at("t_abs_max")) = "0.25";
+                merged[key] = join_csv_row(c);
+                upper[key] = high;
+            }
+        }
+        if (merged.empty()) {
+            std::cerr << "[init] FATAL: no low-t cells found for merge\n";
+            return false;
+        }
+        int fallback = 0;
+        for (const auto& entry : merged) {
+            other.push_back(entry.second);
+            if (!upper.at(entry.first)) ++fallback;
+        }
+        input_lines.swap(other);
+        std::cout << "[init] Merged low-t cells: " << merged.size()
+                  << "; upper-bin correction donors: " << merged.size()-fallback
+                  << "; lower-only correction fallbacks: " << fallback << "\n";
+    }
+    for (const auto& input_line : input_lines) {
+        line = input_line;
         ++input_rows;
 
         if (line.empty()) {

@@ -362,6 +362,7 @@ struct BranchBinder {
 
     double p2_p = 0.0;           bool has_p2_p = false;
     double p2_theta = 0.0;       bool has_p2_theta = false; // radians (also used for bin means: photon theta)
+    double bin_beam_energy = 10.604;
     double p2_phi = 0.0;         bool has_p2_phi = false;
 
     // proton theta/phi (branch names p1_theta/p1_phi, radians)
@@ -756,10 +757,7 @@ static double bin_means_dvcs_tprime(double xB, double Q2, double t_abs) {
 static bool row_accepts_kin(const BranchBinder& b,
                             double xBmin, double xBmax,
                             double Q2min, double Q2max,
-                            double tmin, double tmax, bool use_tprime_binning) {
-    const double tabs = use_tprime_binning
-        ? bin_means_dvcs_tprime(b.x, b.Q2, std::abs(b.t1))
-        : sebastian_bin_t(b.t1,b.e_p,b.e_theta,b.e_phi,b.p2_p,b.p2_theta,b.p2_phi);
+                            double tmin, double tmax, double tabs) {
     if (!in_range(b.x,  xBmin, xBmax)) return false;
     if (!in_range(b.Q2, Q2min, Q2max)) return false;
     if (!in_range(tabs, tmin, tmax))   return false;
@@ -846,6 +844,9 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
     PeriodKeyMap tags = period_key_to_tags(period_key);
     BranchBinder b; b.bind(tree);
+    b.bin_beam_energy = beam_energy_for_period_label(tags.period_label);
+    if (analysis_photon_t && !(b.has_e_p && b.has_e_theta && b.has_e_phi && b.has_p2_p && b.has_p2_theta && b.has_p2_phi))
+        throw std::runtime_error("Photon t requires electron and photon momentum branches");
 
     if (!b.readyForCuts() || !b.readyForAverages()) {
         std::cerr << "[bin_means] FATAL: Tree for '" << period_key
@@ -919,7 +920,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
 
         const double tabs = use_tprime_binning
             ? bin_means_dvcs_tprime(b.x, b.Q2, std::abs(b.t1))
-            : sebastian_bin_t(b.t1,b.e_p,b.e_theta,b.e_phi,b.p2_p,b.p2_theta,b.p2_phi);
+            : analysis_bin_t(b.t1,b.e_p,b.e_theta,b.e_phi,b.p2_p,b.p2_theta,b.p2_phi,b.bin_beam_energy);
         bool used_any_row = false;
 
         auto test_rows = [&](const std::vector<int>& candidate_rows) {
@@ -927,7 +928,7 @@ static PeriodResult process_period(const std::string& period_key, TTree* tree, c
                 const RowWin& w = lookup.rows[static_cast<std::size_t>(r)];
                 if (!row_accepts_kin(b, w.xBmin, w.xBmax,
                                      w.Q2min, w.Q2max,
-                                     w.tmin, w.tmax, use_tprime_binning)) continue;
+                                     w.tmin, w.tmax, tabs)) continue;
                 if (!row_accepts_phi(phi_deg, w.pmin, w.pmax)) continue;
                 R.per_row[r].add(b.x, b.Q2, tabs, phi_deg,
                                  e_theta_deg, p_theta_deg, p_phi_deg, g_theta_deg);
