@@ -850,16 +850,15 @@ def draw_pull_histogram(pulls, title, output, dpi):
 def draw_percentage_histogram(differences, title, output, dpi):
     """Summarize direct percentage differences without imposing a Gaussian."""
     values = np.asarray([v for v in differences if finite(v)], dtype=float)
-    fig, ax = plt.subplots(figsize=(7.2, 5.0))
+    fig, ax = plt.subplots(figsize=(8.4, 5.4))
     normalization = 100.0 * PASS1_NORMALIZATION_FRACTION
     ax.axvspan(-normalization, normalization, color="#2ca02c", alpha=0.13,
                label="Pass-1 ±31% correlated normalization")
     if values.size:
-        spread = max(50.0, float(np.max(np.abs(values))) * 1.08)
-        bins = np.linspace(
-            -spread, spread,
-            max(13, min(41, int(math.sqrt(values.size) * 3) + 1)),
-        )
+        # Display the central distribution with 2-percentage-point bins.
+        # Quantiles and normalization coverage below retain all finite entries.
+        bins = np.linspace(-100.0, 100.0, 101)
+        outside = int(np.count_nonzero(np.abs(values) > 100.0))
         ax.hist(values, bins=bins, color="#8c2d04", alpha=0.72,
                 edgecolor="white", label="Matched points")
         median = float(np.median(values))
@@ -871,7 +870,8 @@ def draw_percentage_histogram(differences, title, output, dpi):
             rf"$N={values.size}$" + "\n"
             + rf"median $={median:+.1f}\%$" + "\n"
             + rf"16–84% $=[{low:+.1f},{high:+.1f}]\%$" + "\n"
-            + rf"within ±31% $={100.0 * within:.1f}\%$",
+            + rf"within ±31% $={100.0 * within:.1f}\%$" + "\n"
+            + rf"outside ±100% $={outside}$",
             transform=ax.transAxes, ha="right", va="top",
             bbox={"facecolor": "white", "alpha": 0.88, "edgecolor": "0.75"},
         )
@@ -881,10 +881,12 @@ def draw_percentage_histogram(differences, title, output, dpi):
     ax.axvline(0.0, color="black", lw=1.0, alpha=0.75)
     ax.set_xlabel(r"$100\,(\mathrm{Pass\!\!-\!2}/\mathrm{Pass\!\!-\!1}-1)$ (%)")
     ax.set_ylabel("Entries")
+    ax.set_xlim(-100.0, 100.0)
+    ax.set_xticks(np.arange(-100, 101, 25))
     ax.set_title(title)
     ax.grid(axis="y", alpha=0.18)
     if values.size:
-        ax.legend(frameon=False)
+        ax.legend(loc="upper left", frameon=False, fontsize=9)
     fig.tight_layout()
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=dpi)
