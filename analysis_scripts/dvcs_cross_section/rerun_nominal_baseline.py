@@ -65,7 +65,7 @@ def main(argv=None):
         result=subprocess.run([str(nominal/'dvcs_analysis'),'--skip-systematics'],cwd=nominal,env=env)
         if result.returncode:return result.returncode
         if args.plot:
-            return subprocess.run([sys.executable,str(nominal/'external_scripts/plot_pass2_final_results_by_t.py'),str(nominal/'output/csvs/dvcs_pass2_analysis.csv'),'--output-dir',str(nominal/'output/final_results_by_t'),'--workers','10','--no-pass1'],cwd=nominal,env=env).returncode
+            return subprocess.run([sys.executable,str(nominal/'external_scripts/plot_pass2_final_results_by_t.py'),str(nominal/'output/csvs/dvcs_pass2_analysis.csv'),'--output-dir',str(nominal/'output/final_results_by_t'),'--workers','10'],cwd=nominal,env=env).returncode
         return 0
     finally:
         lock.rmdir()

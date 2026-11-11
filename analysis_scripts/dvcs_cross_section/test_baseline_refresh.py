@@ -38,7 +38,7 @@ def main():
         for name in ('external_scripts','external_pi0_normalization','imports'):(src/name).mkdir()
         (src/'dvcs_analysis').write_text('#!/usr/bin/env python3\nimport json,sys\nfrom pathlib import Path\nPath("invoked.json").write_text(json.dumps(sys.argv[1:]))\n')
         (src/'dvcs_analysis').chmod(0o755);(src/'main_systematics').write_text('unused')
-        (src/'external_scripts/plot_pass2_final_results_by_t.py').write_text('from pathlib import Path\nPath("plotted").touch()\n')
+        (src/'external_scripts/plot_pass2_final_results_by_t.py').write_text('from pathlib import Path\nimport json,sys\nPath("plotted").write_text(json.dumps(sys.argv[1:]))\n')
         for name in runner.RUN_NAMES:
             p=runs/name/'output/final_results_by_t/10.6_GeV';p.mkdir(parents=True)
             (p/'model_curves_cache_10.6GeV.json').write_text(json.dumps({name:{'cached':True}}))
@@ -49,6 +49,7 @@ def main():
         nominal=runs/'proton_t_default_001'
         assert json.loads((nominal/'invoked.json').read_text())==['--skip-systematics']
         assert (nominal/'plotted').exists()
+        assert '--no-pass1' not in json.loads((nominal/'plotted').read_text())
         assert not (nominal/'obsolete.csv').exists()
         assert not (runs/'merged_t_001').exists() and not (runs/'photon_t_001').exists()
         cache=json.loads((nominal/'output/final_results_by_t/10.6_GeV/model_curves_cache_10.6GeV.json').read_text())
@@ -61,6 +62,7 @@ def main():
         except SystemExit:pass
         else:raise AssertionError('Existing run overwritten')
         assert (nominal/'plotted').exists()
+        assert '--no-pass1' not in json.loads((nominal/'plotted').read_text())
     runner.SOURCE=saved_source
     print('PASS: bounded display, original pull values, nominal flags, cache preservation, exact reset scope, overwrite refusal')
 
