@@ -63,7 +63,9 @@ not overwritten. Existing Sebastian diagnostics retain their separate flag.
 ## Final comparisons
 
 `--plot` runs `external_scripts/plot_pass2_final_results_by_t.py` with ten
-model workers, statistical errors, and `--no-pass1` to focus on BH/KM15.
+model workers, statistical errors, `--no-pass1` to focus on BH/KM15, and
+explicit `--reference-kinematics means` for these approximate override studies.
+Nominal production plots instead default to the imported Fbin reference.
 Systematic columns are optional unless total-point-to-point errors are
 requested. Models are cached within each run's output directory. The script
 still requires the farm's usual dvcsgen/KM15 installations.
@@ -71,7 +73,7 @@ still requires the farm's usual dvcsgen/KM15 installations.
 To plot later, from the private run directory:
 
 ```sh
-python3 external_scripts/plot_pass2_final_results_by_t.py output/csvs/dvcs_pass2_analysis.csv --output-dir output/final_results_by_t --workers 10 --no-pass1
+python3 external_scripts/plot_pass2_final_results_by_t.py output/csvs/dvcs_pass2_analysis.csv --output-dir output/final_results_by_t --workers 10 --no-pass1 --reference-kinematics means
 ```
 
 Omit `--xs-total-ptp` and `--bsa-total-ptp` for these runs. Comparison curves

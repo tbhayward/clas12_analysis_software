@@ -60,7 +60,7 @@ def main():
             sys.executable, str(run / 'external_scripts/plot_pass2_final_results_by_t.py'),
             str(run / 'output/csvs/dvcs_pass2_analysis.csv'),
             '--output-dir', str(run / 'output/final_results_by_t'),
-            '--workers', '10', '--no-pass1',
+            '--workers', '10', '--no-pass1', '--reference-kinematics', 'means',
         ], cwd=run, env=env).returncode
     return 0
 

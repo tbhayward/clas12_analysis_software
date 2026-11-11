@@ -77,7 +77,7 @@ def main():
     assert legacy['cross sections, ep->epg, exp, 10.6 GeV, unpol']=='(8,2,0)'
     # Import plotting dependencies only for the actual reference-coordinate check.
     plot=importlib.import_module('plot_pass2_final_results_by_t');base=plot.base
-    assert plot.make_parser().parse_args(['input.csv']).reference_kinematics=='means'
+    assert plot.make_parser().parse_args(['input.csv']).reference_kinematics=='imported'
     assert plot.make_parser().parse_args(['input.csv','--reference-kinematics','midpoints']).reference_kinematics=='midpoints'
     config=base.ModelConfig(10.6,'unused','unused',sys.executable,24,False,False,False)
     refs={'xs':((.2,2.,.15,7.,10.6),(.25,2.2,.17,23.,10.6)),

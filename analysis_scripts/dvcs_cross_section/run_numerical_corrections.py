@@ -47,7 +47,7 @@ def main():
         (out/'numerical_corrections.json').write_text(json.dumps(dict(input=str(source),input_sha256=hashlib.sha256(original_bytes).hexdigest(),input_correction_convention=input_convention,output_correction_convention='pass1-divide',mode='convention-only',normalization='held fixed',systematics='not reevaluated'),indent=2)+'\n')
         if args.plot:
             script=Path(__file__).resolve().parent/'external_scripts/plot_pass2_final_results_by_t.py'
-            subprocess.run([sys.executable,str(script),str(out/'convention_fixed.csv'),'--output-dir',str(out/'plots_convention_fixed'),'--workers',str(args.workers),'--no-pass1'],check=True)
+            subprocess.run([sys.executable,str(script),str(out/'convention_fixed.csv'),'--output-dir',str(out/'plots_convention_fixed'),'--workers',str(args.workers),'--no-pass1','--reference-kinematics','means'],check=True)
         if source.read_bytes()!=original_bytes:raise SystemExit('Input CSV changed during calculation')
         print(f'Saved convention-only repair in {out}',flush=True)
         return 0

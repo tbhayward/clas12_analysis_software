@@ -76,18 +76,35 @@ complete replacement for production results.
 
 ## Reference coordinates in plots
 
-The final-by-t plotter now supports
+The final-by-t plotter supports:
 
-    --reference-kinematics midpoints
+    --reference-kinematics imported
     --reference-kinematics means
+    --reference-kinematics midpoints
 
-The default is now `means`; select `midpoints` explicitly for a legacy comparison. In `means`
-mode, data use measured mean phi and theory is evaluated at each row's exact
-measured xB/Q²/|t|/phi means. Theory values at measured means are connected in phi order for readability.
-The connecting lines are visual guides between row-dependent reference kinematics. Pulls use those exact
-predictions; no interpolation across uncomputed mean points is substituted.
-Cache keys include the actual reference coordinates and mode, so old midpoint
-curves cannot be reused for this comparison accidentally.
+The default is `imported`, matching the nominal extraction's imported Fbin.
+Cross sections use the donor table's common xB/Q²/|t| means and each phi bin's
+reference phi for both point positions and exact BH/KM15 comparisons. Dense
+curves keep those common xB/Q²/|t| coordinates fixed while sampling phi.
+The table is discovered near the input run as `imports/all_bin_v3.csv`, or can
+be supplied using `--centering-reference-csv`. Matching uses the same bin index
+as the production importer, with geometry and Fbin consistency checks. Missing
+or inconsistent donors are errors; there is no silent nearest-bin fallback.
+A merged test whose donor rows do not share a common reference needs an
+explicit `--reference-kinematics means` approximate comparison.
+
+BSA does not receive the cross-section Fbin correction and retains its measured
+means in the default mode. `means` explicitly selects the earlier per-phi
+measured-mean diagnostic for both observables, including independently
+mean-centered CSVs; `midpoints` retains the legacy geometric-center comparison.
+The measured-kinematics diagnostic profiles continue to show the actual data
+means rather than imported coordinates.
+
+The plotter writes `theory_reference_points.csv` alongside its figures so every
+reference coordinate and mode can be inspected. Cache keys include the actual
+coordinates and mode. Imported-reference XS predictions cannot be confused
+with earlier measured-mean predictions; compatible BSA predictions are reused.
+Exact reference-point pulls are independent of display interpolation.
 
 All numerical rerunner comparisons now use measured means, including the
 convention-only baseline and the volume-only control. Pass-1 used xB/Q²/|t|
@@ -104,7 +121,7 @@ make -j10 dvcs_analysis && python3 test_numerical_corrections.py --real-km15
 
 The tests compile the standalone C++ volume routine, compare Python and C++,
 check allowed quadrature points, constant/nonconstant-model centering, denominator
-correction/volume scaling, legacy conversion and idempotence, default mean references, missing-factor handling, and exact reference-point
+correction/volume scaling, legacy conversion and idempotence, default imported XS references and explicit mean references, missing-factor handling, and exact reference-point
 model routing. The optional real-model check requires gepard in that Python.
 The modified ROOT-dependent C++ units also passed local syntax checks; full
 farm linking remains part of the build above.
@@ -194,8 +211,8 @@ a lock rejects another reset launcher. A non-reset invocation refuses an
 existing nominal destination. No previous cross sections are rescaled.
 
 The nominal analysis retains imported pass-1 Frad and Fbin and divides by
-both, uses the improved volumes, and defaults to measured-mean theory
-comparisons. It does not select the exploratory new centering prescription.
+both, uses the improved volumes, and defaults to imported-reference
+cross-section theory comparisons (measured means for BSA). It does not select the exploratory new centering prescription.
 The final output is in `test_runs/proton_t_default_001/output`.
 
 Pull panels now default to [-10,10], configurable by `--pull-limit 10`.
@@ -213,7 +230,9 @@ line, joining the cached reference-point predictions without changing pulls.
 
 `--phi-dense 24` controls the number of uniformly spaced model evaluations
 used to draw KM15 and BH, including both 0 and 360 degrees. This applies to
-both midpoint mode and the default measured-means mode. In means mode,
+all reference modes. In the default imported mode, XS curves use the common
+coordinates from the Fbin donor table. In explicit means mode (also the BSA
+reference in default mode),
 displayed curves hold xB, Q² and |t| fixed at the cell's raw-count-weighted
 measured means across phi. Weights sum ep->epg unpolarized raw yields over
 the three detector topologies and the appropriate energy's run periods.
@@ -229,3 +248,8 @@ batched and deduplicated within each cell. No ROOT extraction is needed.
 
 `python3 test_dense_theory_curves.py` checks the sample count, fixed reference,
 exact pull predictions, cache reuse, and changes in display sampling density.
+
+`python3 test_imported_theory_references.py` checks donor matching, unchanged
+cross-section values/errors, imported phi positions, XS/BSA reference separation,
+exact pulls, dense curves, cache isolation/reuse and invalid-input rejection.
+No C++ rebuild or ROOT extraction is needed for this plotting change.

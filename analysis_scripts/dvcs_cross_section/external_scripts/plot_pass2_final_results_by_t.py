@@ -21,6 +21,9 @@ Example:
 
 Requires the existing dvcsgen and km15_cli.py installations used by the
 comparison code.  A persistent JSON model cache avoids repeated evaluation.
+
+Cross sections default to the reporting coordinates accompanying their imported
+Fbin factors (imports/all_bin_v3.csv). BSA retains measured-mean references.
 """
 
 import argparse
@@ -81,15 +84,28 @@ def observable_tag(kind):
     return "sigma" if kind == "xs" else "BSA"
 
 
+def reference_mode(args, kind):
+    mode = getattr(args, "reference_kinematics", "imported")
+    # Fbin centers cross sections, not the count-based beam-spin asymmetry.
+    return "means" if mode == "imported" and kind == "bsa" else mode
+
+
+def curve_reference(args, energy, key, kind):
+    references = args._curve_references
+    return references[(energy, key, kind)] if (energy, key, kind) in references else references[(energy, key)]
+
+
 def model_cache_key(k, args, kind):
     energy = args.e_beam if args.e_beam is not None else args._active_energy
+    mode = reference_mode(args, kind)
     parts = [
         k.xb_min, k.xb_max, k.q2_min, k.q2_max, k.t_min, k.t_max,
-        energy, (24 if getattr(args,"reference_kinematics","means")=="means" else args.phi_dense), args.dvcsgen_dir, args.km15_cli,
+        energy, (24 if mode != "midpoints" else args.phi_dense), args.dvcsgen_dir, args.km15_cli,
         args.python_km15, kind,
     ]
-    if getattr(args, "reference_kinematics", "means") == "means":
-        parts += ["measured-means-v1", args._model_references[(energy,k,kind)]]
+    if mode != "midpoints":
+        marker = "imported-centering-reference-v1" if mode == "imported" else "measured-means-v1"
+        parts += [marker, args._model_references[(energy,k,kind)]]
     return json.dumps(parts)
 
 
@@ -109,39 +125,45 @@ def compute_cell_models(job):
         k, cfg, kinds, references = job
         result = {}
         cached = references.get("__cached__", {})
-        anchor = references.get("__display__")
-        if anchor is None:
-            # Standalone callers without CSV count weights retain a finite
-            # reference from their supplied measured means.
-            anchor = tuple(np.mean([p[:3] for kind in kinds for p in references[kind]],axis=0))
-        dense = [(float(anchor[0]),float(anchor[1]),float(anchor[2]),360.*i/(cfg.phi_dense-1),cfg.e_beam)
-                 for i in range(cfg.phi_dense)]
-        requests=[]
+        supplied_anchor = references.get("__display__")
+        anchors = {}
+        dense_by_kind = {}
+        requests = []
         for kind in kinds:
+            anchor = supplied_anchor.get(kind) if isinstance(supplied_anchor, dict) else supplied_anchor
+            if anchor is None:
+                anchor = tuple(np.mean([p[:3] for p in references[kind]], axis=0))
+            anchors[kind] = anchor
+            dense = [(float(anchor[0]), float(anchor[1]), float(anchor[2]),
+                      360.*i/(cfg.phi_dense-1), cfg.e_beam) for i in range(cfg.phi_dense)]
+            dense_by_kind[kind] = dense
             for point in (([] if kind in cached else list(references[kind])) + dense):
-                x,q,t,phi,e=point
-                for h in ([0] if kind=="xs" else [+1,-1]):requests.append((x,q,t,phi,h))
+                x,q,t,phi,e = point
+                for h in ([0] if kind == "xs" else [+1,-1]):
+                    requests.append((x,q,t,phi,h))
         # One startup and one evaluation per distinct request within this cell.
-        requests=list(dict.fromkeys(requests))
-        predicted=dict(zip(requests,base.km15_xs_many(requests,cfg)))
-        def evaluate(points,kind):
-            values=[];bh=[]
+        requests = list(dict.fromkeys(requests))
+        predicted = dict(zip(requests, base.km15_xs_many(requests,cfg)))
+        def evaluate(points, kind):
+            values = []; bh = []
             for x,q,t,phi,e in points:
-                if kind=="xs":
+                if kind == "xs":
                     values.append(predicted[(x,q,t,phi,0)])
                     bh.append(base.bh_xs(x,q,t,phi,cfg))
                 else:
-                    plus=predicted[(x,q,t,phi,+1)];minus=predicted[(x,q,t,phi,-1)];den=plus+minus
-                    values.append((plus-minus)/den if finite(den) and den!=0 else float("nan"));bh.append(0.)
-            return dict(phi=[p[3] for p in points],km15=values,bh=bh)
+                    plus = predicted[(x,q,t,phi,+1)]; minus = predicted[(x,q,t,phi,-1)]; den = plus+minus
+                    values.append((plus-minus)/den if finite(den) and den != 0 else float("nan")); bh.append(0.)
+            return dict(phi=[p[3] for p in points], km15=values, bh=bh)
         for kind in kinds:
-            if kind in cached:curve=dict(cached[kind])
+            if kind in cached:
+                curve = dict(cached[kind])
             else:
-                curve=evaluate(references[kind],kind);curve["reference"]="measured_means"
-            curve["display"]=evaluate(dense,kind)
-            curve["display_key"]=display_cache_key(anchor,cfg.phi_dense)
-            curve["display_kinematics"]=[float(v) for v in anchor]
-            result[kind]=curve
+                curve = evaluate(references[kind],kind)
+                curve["reference"] = references.get("__modes__", {}).get(kind, "measured_means")
+            curve["display"] = evaluate(dense_by_kind[kind],kind)
+            curve["display_key"] = display_cache_key(anchors[kind], cfg.phi_dense)
+            curve["display_kinematics"] = [float(v) for v in anchors[kind]]
+            result[kind] = curve
         return k,result
     k, cfg, kinds = job
     phi = [360.0 * i / (cfg.phi_dense - 1) for i in range(cfg.phi_dense)]
@@ -307,7 +329,7 @@ def interpolate_model(curves, model, phi):
     valid = np.isfinite(xx) & np.isfinite(yy)
     exact = valid & np.isclose(xx, phi % 360.0, rtol=0., atol=1e-9)
     if np.any(exact):return float(yy[np.flatnonzero(exact)[0]])
-    if curves.get("reference") == "measured_means" or np.count_nonzero(valid) < 2:
+    if curves.get("reference") in ("measured_means", "imported_centering") or np.count_nonzero(valid) < 2:
         return float("nan")
     xx, yy = xx[valid], yy[valid]
     order = np.argsort(xx)
@@ -533,7 +555,7 @@ def draw_value_canvas(keys, trange, kind, energy, panels, pass1, cache, args, ou
         + ("cross section" if kind == "xs" else "beam-spin asymmetry") + "\n"
         + rf"$|t|\in[{trange[0]:.3f},\,{trange[1]:.3f}]\ \mathrm{{GeV}}^2$, "
         + rf"$E_{{beam}}={energy:g}$ GeV"
-        + ("\nTheory curves at count-weighted cell means; pulls at row means" if getattr(args,"reference_kinematics","means")=="means" else "\nTheory at bin midpoints"),
+        + ("\nTheory and cross-section points at imported Fbin reference coordinates" if reference_mode(args,kind)=="imported" else "\nTheory curves at count-weighted cell means; pulls at row means" if reference_mode(args,kind)=="means" else "\nTheory at bin midpoints"),
         fontsize=13.5, y=1.0-.04/figure_height,
     )
     for iq, qb in enumerate(qbins):
@@ -565,8 +587,8 @@ def draw_value_canvas(keys, trange, kind, energy, panels, pass1, cache, args, ou
                 valid = np.isfinite(yy) & np.isfinite(xx)
                 if np.any(valid):
                     order = np.argsort(xx[valid])
-                    # Connect exact reference-point predictions for readability.
-                    # Pulls still use the original model values at each mean.
+                    # Connect the sampled display curve. Pulls use the separate
+                    # exact predictions at each reporting coordinate.
                     ax.plot(xx[valid][order], yy[valid][order], linestyle,
                             lw=1.65, marker="." if valid.sum()==1 else None,
                             color=color, label=name, zorder=2)
@@ -589,8 +611,8 @@ def draw_value_canvas(keys, trange, kind, energy, panels, pass1, cache, args, ou
     if pass1 is not None:
         handles.append(Line2D([], [], color="#2ca02c", marker="s", mfc="white", ls="none", markersize=5, label="CLAS12 published Pass-1"))
     handles.extend([
-        Line2D([], [], color="#1f77b4", lw=2, ls="-", label="KM15 at cell means" if args.reference_kinematics=="means" else "KM15"),
-        Line2D([], [], color="#ff7f0e", lw=2, ls="--", label="BH at cell means" if args.reference_kinematics=="means" else "BH"),
+        Line2D([], [], color="#1f77b4", lw=2, ls="-", label="KM15 at Fbin reference" if reference_mode(args,kind)=="imported" else "KM15 at cell means" if reference_mode(args,kind)=="means" else "KM15"),
+        Line2D([], [], color="#ff7f0e", lw=2, ls="--", label="BH at Fbin reference" if reference_mode(args,kind)=="imported" else "BH at cell means" if reference_mode(args,kind)=="means" else "BH"),
     ])
     fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 1.0-.80/figure_height), ncol=len(handles), frameon=False)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -926,7 +948,77 @@ def diagnostic_columns(fields, energy):
     return columns
 
 
+def load_centering_references(args):
+    """Read the same donor table used by the production Fbin importer."""
+    explicit = getattr(args, "centering_reference_csv", None)
+    roots = list(args.csv.resolve().parents)[:4]
+    script = Path(__file__).resolve().parent
+    roots.extend((script, script.parent))
+    candidates = [Path(explicit)] if explicit is not None else [
+        root / folder / "all_bin_v3.csv" for root in roots for folder in ("imports", "import")
+    ]
+    path = next((p.expanduser().resolve() for p in candidates if p.expanduser().is_file()), None)
+    if path is None:
+        raise FileNotFoundError(
+            "Imported-Fbin reference table not found. Supply --centering-reference-csv "
+            "/path/to/imports/all_bin_v3.csv, or explicitly select --reference-kinematics means "
+            "for a measured-mean diagnostic."
+        )
+    result = {}
+    with path.open(newline="") as handle:
+        reader = csv.DictReader(handle)
+        fields = reader.fieldnames or []
+        index_column = "bin index" if "bin index" in fields else "" if "" in fields else None
+        required = ("xBavg", "Q2avg", "t_abs_avg", "phiavg", "Fbin",
+                    "xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max", "phimin", "phimax")
+        if index_column is None or any(c not in fields for c in required):
+            raise ValueError(f"Missing donor IDs/reference coordinates in {path}")
+        for row in reader:
+            ident = row[index_column].strip()
+            if ident in result:
+                raise ValueError(f"Duplicate donor bin index {ident} in {path}")
+            result[ident] = row
+    args._centering_reference_path = path
+    print(f"[references] Cross sections use imported Fbin coordinates from {path}; BSA uses measured means", flush=True)
+    return result
+
+
+def imported_reference(row, cols, key, energy, donors):
+    ident = row.get(cols["bin_index"], "").strip()
+    donor = donors.get(ident)
+    if donor is None:
+        raise ValueError(f"No imported Fbin reference for bin index {ident!r}")
+    # Match by the importer's donor ID, never by nearest kinematics. Verify the
+    # geometry as well, allowing only the existing low-t merged donor convention.
+    actual = (key.xb_min, key.xb_max, key.q2_min, key.q2_max)
+    expected = tuple(csv_numeric_value(donor,c) for c in ("xBmin","xBmax","Q2min","Q2max"))
+    same_t = np.allclose((key.t_min,key.t_max),
+                        [csv_numeric_value(donor,c) for c in ("t_abs_min","t_abs_max")], rtol=0, atol=1e-9)
+    merged_t = (math.isclose(key.t_min,.11,abs_tol=1e-9) and math.isclose(key.t_max,.25,abs_tol=1e-9)
+                and any(np.allclose([csv_numeric_value(donor,c) for c in ("t_abs_min","t_abs_max")], t, rtol=0, atol=1e-9)
+                        for t in ((.11,.15),(.15,.25))))
+    if not np.allclose(actual,expected,rtol=0,atol=1e-9) or not (same_t or merged_t):
+        raise ValueError(f"Imported donor geometry does not match bin index {ident}")
+    for axis in ("phi_min","phi_max"):
+        if axis in cols:
+            c = "phimin" if axis == "phi_min" else "phimax"
+            if not math.isclose(csv_numeric_value(row,cols[axis]),csv_numeric_value(donor,c),rel_tol=0,abs_tol=1e-9):
+                raise ValueError(f"Imported donor phi interval does not match bin index {ident}")
+    factor = csv_numeric_value(row,f"Fbin, {energy:.1f} GeV")
+    imported_factor = csv_numeric_value(donor,"Fbin")
+    if not (finite(factor) and factor > 0 and finite(imported_factor) and imported_factor > 0
+            and math.isclose(factor,imported_factor,rel_tol=1e-7,abs_tol=1e-10)):
+        raise ValueError(f"Fbin for bin {ident}, {energy:g} GeV does not match its imported donor. "
+                         "Use --reference-kinematics means for independently mean-centered results.")
+    coordinates = tuple(csv_numeric_value(donor,c) for c in ("xBavg","Q2avg","t_abs_avg","phiavg"))
+    if not all(finite(v) for v in coordinates):
+        raise ValueError(f"Missing imported reference coordinates for bin {ident}")
+    return (*coordinates[:3],coordinates[3] % 360.,10.6 if energy == 10.6 else 10.1998)
+
+
 def parse_pass2(args):
+    donors = None
+    args._reference_records = []
     with args.csv.open(newline="") as handle:
         reader = csv.DictReader(handle)
         fields = reader.fieldnames or []
@@ -991,14 +1083,12 @@ def parse_pass2(args):
                 item = panels.setdefault(
                     key, {"xs": [], "bsa": [], "diagnostics": {}, "references": {"xs": [], "bsa": []}, "curve_sum": np.zeros(4)}
                 )
-                plot_phi = phi
-                reference = None
-                if getattr(args,"reference_kinematics","means") == "means":
+                measured_reference = None
+                if getattr(args,"reference_kinematics","imported") != "midpoints":
                     label = "10.6 GeV" if energy == 10.6 else "Sp19 Inb"
-                    coordinates = tuple(base.to_float(row.get(p+", "+label,""),default=float("nan")) for p in ("xBavg","Q2avg","t_abs_avg","phiavg"))
-                    reference = (*coordinates[:3],coordinates[3] % 360.,10.6 if energy==10.6 else 10.1998)
-                    plot_phi = coordinates[3]
-                    if all(finite(v) for v in reference):
+                    coordinates = tuple(csv_numeric_value(row,p+", "+label) for p in ("xBavg","Q2avg","t_abs_avg","phiavg"))
+                    measured_reference = (*coordinates[:3],coordinates[3] % 360.,10.6 if energy==10.6 else 10.1998)
+                    if all(finite(v) for v in measured_reference):
                         periods=("Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out") if energy==10.6 else ("Sp19 Inb",)
                         count=0.
                         for period in periods:
@@ -1042,9 +1132,17 @@ def parse_pass2(args):
                         systematic = base.to_float(row.get(systematics_column, ""), default=0.0)
                         if finite(systematic):
                             error = math.hypot(error, systematic)
+                    mode = reference_mode(args,observable)
+                    reference = measured_reference if mode == "means" else None
+                    if mode == "imported":
+                        if donors is None:
+                            donors = load_centering_references(args)
+                        reference = imported_reference(row,cols,key,energy,donors)
+                    plot_phi = reference[3] if reference is not None else phi
                     if reference is not None:
-                        if not all(finite(v) for v in reference):raise ValueError(f"Missing measured means for {key}, {energy:g} GeV")
+                        if not all(finite(v) for v in reference):raise ValueError(f"Missing {mode} coordinates for {key}, {energy:g} GeV")
                         item["references"][observable].append(reference)
+                        args._reference_records.append((energy,observable,row.get(cols["bin_index"],""),mode,*reference))
                     item[observable].append((plot_phi % 360.0, value.value, error))
     selected = {
         energy: {k: v for k, v in panels.items() if v["xs"] or v["bsa"]}
@@ -1058,11 +1156,24 @@ def parse_pass2(args):
             total=item["curve_sum"]
             if total[3]>0:anchor=tuple(float(v) for v in total[:3]/total[3])
             else:
-                points=item["references"]["xs"] or item["references"]["bsa"]
+                if getattr(args,"reference_kinematics","imported") == "imported":
+                    points = item["references"]["bsa"] or item["references"]["xs"]
+                else:
+                    points = item["references"]["xs"] or item["references"]["bsa"]
                 if not points:continue
                 anchor=tuple(float(v) for v in np.mean([p[:3] for p in points],axis=0))
                 print(f"[models] No raw count weights for {e:g} GeV {k}; display uses unweighted row means",flush=True)
-            args._curve_references[(e,k)]=anchor
+            for kind in ("xs","bsa"):
+                points = item["references"][kind]
+                if not points:
+                    continue
+                selected_anchor = anchor
+                if reference_mode(args,kind) == "imported":
+                    selected_anchor = tuple(points[0][:3])
+                    if not all(np.allclose(p[:3],selected_anchor,rtol=1e-10,atol=1e-12) for p in points):
+                        raise ValueError(f"Imported Fbin donors do not share a common x/Q2/t reference in {k}. "
+                                         "Use --reference-kinematics means for an approximate merged-bin diagnostic.")
+                args._curve_references[(e,k,kind)] = selected_anchor
     return selected
 
 
@@ -1074,10 +1185,12 @@ def make_parser():
     parser.add_argument("--pass1-bsa-text", type=Path, default=None, help="Published seven-column RGA Pass-1 BSA table")
     parser.add_argument("--no-pass1", action="store_true", help="Do not auto-detect or plot any Pass-1 data")
     parser.add_argument("--pass1-phi-tolerance", type=float, default=2.0, help="Maximum circular phi separation in degrees for Pass-2/Pass-1 pulls (default: 2)")
-    parser.add_argument("--reference-kinematics",choices=("midpoints","means"),default="means",
-                        help="Theory/data reference: measured row means (default, exact model points) or legacy bin midpoints")
+    parser.add_argument("--reference-kinematics",choices=("imported","midpoints","means"),default="imported",
+                        help="Cross-section reference: imported Fbin coordinates (default), measured row means, or legacy midpoints; BSA retains measured means in imported mode")
+    parser.add_argument("--centering-reference-csv", type=Path, default=None,
+                        help="Table supplying imported Fbin and reporting coordinates (default: auto-discover imports/all_bin_v3.csv near the input run)")
     parser.add_argument("--pull-limit",type=positive_finite,default=10.0,help="Symmetric pull-panel range (default: 10); outliers marked at boundary; statistics unchanged")
-    parser.add_argument("--phi-dense", type=int, default=24, help="Uniform phi samples per displayed theory curve, including 0 and 360 degrees (default: 24); exact row-mean pull evaluations are additional")
+    parser.add_argument("--phi-dense", type=int, default=24, help="Uniform phi samples per displayed theory curve, including 0 and 360 degrees (default: 24); exact reporting-point pull evaluations are additional")
     parser.add_argument("--e-beam", type=float, choices=(10.2, 10.6), default=None, help="Restrict to one beam energy (default: both)")
     parser.add_argument("--xs-column-10p2", default=None, help="Override the Sp19 10.2-GeV cross-section column")
     parser.add_argument("--dvcsgen-dir", default=base.DEFAULT_DVCSGEN_DIR)
@@ -1109,6 +1222,11 @@ def main():
     panels_by_energy = parse_pass2(args)
     if not any(panels_by_energy.values()):
         raise RuntimeError("No valid Pass-2 results found in CSV")
+    with (args.output_dir / "theory_reference_points.csv").open("w", newline="") as handle:
+        writer = csv.writer(handle)
+        writer.writerow(("energy", "observable", "bin_index", "reference_mode",
+                         "xB", "Q2", "t_abs", "phi_deg", "model_beam_energy"))
+        writer.writerows(args._reference_records)
 
     script_dir = Path(__file__).resolve().parent
     search_roots = [script_dir, script_dir.parent, args.csv.parent, args.csv.parent.parent]
@@ -1133,7 +1251,7 @@ def main():
         energy_dir = args.output_dir / energy_tag(energy)
         energy_dir.mkdir(parents=True, exist_ok=True)
         cfg = base.ModelConfig(
-            e_beam=(10.1998 if energy==10.2 and args.reference_kinematics=="means" else energy), dvcsgen_dir=args.dvcsgen_dir,
+            e_beam=(10.1998 if energy==10.2 and args.reference_kinematics!="midpoints" else energy), dvcsgen_dir=args.dvcsgen_dir,
             km15_cli=args.km15_cli, py_km15=args.python_km15,
             phi_dense=args.phi_dense, use_cache=True,
             allow_missing_models=False, verbose_worker_models=False,
@@ -1156,12 +1274,13 @@ def main():
                 kind for kind in ("xs", "bsa")
                 if panels[key][kind] and (
                     model_cache_key(key,args,kind) not in cache or
-                    (args.reference_kinematics=="means" and cache[model_cache_key(key,args,kind)].get("display_key") != display_cache_key(args._curve_references[(energy,key)],args.phi_dense)))
+                    (args.reference_kinematics!="midpoints" and cache[model_cache_key(key,args,kind)].get("display_key") != display_cache_key(curve_reference(args,energy,key,kind),args.phi_dense)))
             )
             if kinds:
-                if args.reference_kinematics == "means":
+                if args.reference_kinematics != "midpoints":
                     references={kind:args._model_references[(energy,key,kind)] for kind in kinds}
-                    references["__display__"]=args._curve_references[(energy,key)]
+                    references["__display__"]={kind:curve_reference(args,energy,key,kind) for kind in kinds}
+                    references["__modes__"]={kind:("imported_centering" if reference_mode(args,kind)=="imported" else "measured_means") for kind in kinds}
                     references["__cached__"]={kind:cache[model_cache_key(key,args,kind)] for kind in kinds if model_cache_key(key,args,kind) in cache}
                     jobs.append((key,cfg,kinds,references))
                 else:
