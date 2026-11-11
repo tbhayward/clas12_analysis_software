@@ -633,7 +633,7 @@ bool update_bin_centering_corrections_csv(
               << "pass-2 mean kinematics.\n"
               << "[bincenter] Model: KM15\n"
               << "[bincenter] Integration: " << n_steps
-              << "-point Gauss-Legendre quadrature in each of xB,Q2,|t|,phi\n"
+              << "-point starting quadrature; boundary-aware domain and automatic convergence refinement\n"
               << "[bincenter] KM15 is initialized only once per worker; no per-point "
               << "Python subprocesses are used.\n"
               << "[bincenter] workers=" << workers << "\n";

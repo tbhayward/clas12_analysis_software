@@ -83,15 +83,39 @@ def observable_tag(kind):
 
 def model_cache_key(k, args, kind):
     energy = args.e_beam if args.e_beam is not None else args._active_energy
-    return json.dumps([
+    parts = [
         k.xb_min, k.xb_max, k.q2_min, k.q2_max, k.t_min, k.t_max,
         energy, args.phi_dense, args.dvcsgen_dir, args.km15_cli,
         args.python_km15, kind,
-    ])
+    ]
+    if getattr(args, "reference_kinematics", "midpoints") == "means":
+        parts += ["measured-means-v1", args._model_references[(energy,k,kind)]]
+    return json.dumps(parts)
 
 
 def compute_cell_models(job):
     """Compute the missing model observables for one kinematic cell."""
+    if len(job) == 4:
+        k, cfg, kinds, references = job
+        result = {}
+        requests = []
+        for kind in kinds:
+            for x,q,t,phi,e in references[kind]:
+                for h in ([0] if kind == "xs" else [+1,-1]):requests.append((x,q,t,phi,h))
+        predictions = iter(base.km15_xs_many(requests,cfg))
+        for kind in kinds:
+            points = references[kind]
+            curve = {"phi": [p[3] for p in points], "km15": [], "bh": [], "reference": "measured_means"}
+            for x,q,t,phi,e in points:
+                if kind == "xs":
+                    curve["km15"].append(next(predictions))
+                    curve["bh"].append(base.bh_xs(x,q,t,phi,cfg))
+                else:
+                    plus,minus=next(predictions),next(predictions);denominator=plus+minus
+                    curve["km15"].append((plus-minus)/denominator if finite(denominator) and denominator!=0 else float("nan"))
+                    curve["bh"].append(0.)
+            result[kind]=curve
+        return k,result
     k, cfg, kinds = job
     phi = [360.0 * i / (cfg.phi_dense - 1) for i in range(cfg.phi_dense)]
     xb = 0.5 * (k.xb_min + k.xb_max)
@@ -254,7 +278,9 @@ def interpolate_model(curves, model, phi):
     xx = np.asarray(curves["phi"], dtype=float)
     yy = np.asarray(curves[model], dtype=float)
     valid = np.isfinite(xx) & np.isfinite(yy)
-    if np.count_nonzero(valid) < 2:
+    exact = valid & np.isclose(xx, phi % 360.0, rtol=0., atol=1e-9)
+    if np.any(exact):return float(yy[np.flatnonzero(exact)[0]])
+    if curves.get("reference") == "measured_means" or np.count_nonzero(valid) < 2:
         return float("nan")
     xx, yy = xx[valid], yy[valid]
     order = np.argsort(xx)
@@ -467,18 +493,21 @@ def set_cross_section_row_limits(axs, keys, panels, cache, args, kind,
 
 def draw_value_canvas(keys, trange, kind, energy, panels, pass1, cache, args, output):
     xbins, qbins, occupied, bottom_by_col, left_by_row = layout_for_group(keys, panels, kind)
+    figure_width=max(8.0,4.0*len(xbins))
+    figure_height=max(4.8,2.85*len(qbins))
     fig, axs = plt.subplots(
-        len(qbins), len(xbins), figsize=(4.0 * len(xbins), 2.85 * len(qbins)),
+        len(qbins), len(xbins), figsize=(figure_width,figure_height),
         squeeze=False, sharex=True, sharey=(kind == "bsa"),
     )
-    fig.subplots_adjust(left=0.075, right=0.985, bottom=0.10, top=0.87, hspace=0.0, wspace=0.0)
+    fig.subplots_adjust(left=0.075, right=0.985, bottom=0.10, top=1.0-1.15/figure_height, hspace=0.0, wspace=0.0)
     data_label = "Pass-2 + published Pass-1" if pass1 is not None else "Pass-2"
     fig.suptitle(
         rf"CLAS12 {data_label} $ep\to ep\gamma$ — "
         + ("cross section" if kind == "xs" else "beam-spin asymmetry") + "\n"
         + rf"$|t|\in[{trange[0]:.3f},\,{trange[1]:.3f}]\ \mathrm{{GeV}}^2$, "
-        + rf"$E_{{beam}}={energy:g}$ GeV",
-        fontsize=15, y=0.985,
+        + rf"$E_{{beam}}={energy:g}$ GeV"
+        + ("\nTheory and data at measured mean kinematics" if getattr(args,"reference_kinematics","midpoints")=="means" else "\nTheory at bin midpoints"),
+        fontsize=13.5, y=1.0-.04/figure_height,
     )
     for iq, qb in enumerate(qbins):
         for ix, xb in enumerate(xbins):
@@ -509,7 +538,10 @@ def draw_value_canvas(keys, trange, kind, energy, panels, pass1, cache, args, ou
                 xx = np.asarray(curves["phi"], dtype=float)
                 valid = np.isfinite(yy) & np.isfinite(xx)
                 if np.any(valid):
-                    ax.plot(xx[valid], yy[valid], linestyle, lw=1.65, color=color, label=name, zorder=2)
+                    if curves.get("reference") == "measured_means":
+                        ax.plot(xx[valid],yy[valid],ls="none",marker="x",ms=5,color=color,label=name+" at means",zorder=5)
+                    else:
+                        ax.plot(xx[valid], yy[valid], linestyle, lw=1.65, color=color, label=name, zorder=2)
             show_x = row == bottom_by_col.get(ix)
             show_y = ix == left_by_row.get(row)
             format_canvas_axes(ax, xb, qb, show_x, show_y, kind)
@@ -529,10 +561,10 @@ def draw_value_canvas(keys, trange, kind, energy, panels, pass1, cache, args, ou
     if pass1 is not None:
         handles.append(Line2D([], [], color="#2ca02c", marker="s", mfc="white", ls="none", markersize=5, label="CLAS12 published Pass-1"))
     handles.extend([
-        Line2D([], [], color="#1f77b4", lw=2, ls="-", label="KM15"),
-        Line2D([], [], color="#ff7f0e", lw=2, ls="--", label="BH"),
+        Line2D([], [], color="#1f77b4", lw=2, ls="none" if args.reference_kinematics=="means" else "-", marker="x" if args.reference_kinematics=="means" else None, label="KM15 at means" if args.reference_kinematics=="means" else "KM15"),
+        Line2D([], [], color="#ff7f0e", lw=2, ls="none" if args.reference_kinematics=="means" else "--", marker="x" if args.reference_kinematics=="means" else None, label="BH at means" if args.reference_kinematics=="means" else "BH"),
     ])
-    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 0.914), ncol=len(handles), frameon=False)
+    fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 1.0-.80/figure_height), ncol=len(handles), frameon=False)
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=args.dpi)
     plt.close(fig)
@@ -906,8 +938,16 @@ def parse_pass2(args):
                 continue
             for energy, panels in panels_by_energy.items():
                 item = panels.setdefault(
-                    key, {"xs": [], "bsa": [], "diagnostics": {}}
+                    key, {"xs": [], "bsa": [], "diagnostics": {}, "references": {"xs": [], "bsa": []}}
                 )
+                plot_phi = phi
+                reference = None
+                if getattr(args,"reference_kinematics","midpoints") == "means":
+                    label = "10.6 GeV" if energy == 10.6 else "Sp19 Inb"
+                    coordinates = tuple(base.to_float(row.get(p+", "+label,""),default=float("nan")) for p in ("xBavg","Q2avg","t_abs_avg","phiavg"))
+                    reference = (*coordinates[:3],coordinates[3] % 360.,10.6 if energy==10.6 else 10.1998)
+                    plot_phi = coordinates[3]
+
                 for name, _, _ in DIAGNOSTIC_SPECS:
                     column = diagnostics_by_energy[energy].get(name)
                     if name == "phase_space_fraction":
@@ -943,11 +983,17 @@ def parse_pass2(args):
                         systematic = base.to_float(row.get(systematics_column, ""), default=0.0)
                         if finite(systematic):
                             error = math.hypot(error, systematic)
-                    item[observable].append((phi % 360.0, value.value, error))
-    return {
+                    if reference is not None:
+                        if not all(finite(v) for v in reference):raise ValueError(f"Missing measured means for {key}, {energy:g} GeV")
+                        item["references"][observable].append(reference)
+                    item[observable].append((plot_phi % 360.0, value.value, error))
+    selected = {
         energy: {k: v for k, v in panels.items() if v["xs"] or v["bsa"]}
         for energy, panels in panels_by_energy.items()
     }
+    args._model_references = {(e,k,kind): tuple(sorted(v["references"][kind],key=lambda p:p[3]))
+        for e,panels in selected.items() for k,v in panels.items() for kind in ("xs","bsa")}
+    return selected
 
 
 def make_parser():
@@ -958,6 +1004,8 @@ def make_parser():
     parser.add_argument("--pass1-bsa-text", type=Path, default=None, help="Published seven-column RGA Pass-1 BSA table")
     parser.add_argument("--no-pass1", action="store_true", help="Do not auto-detect or plot any Pass-1 data")
     parser.add_argument("--pass1-phi-tolerance", type=float, default=2.0, help="Maximum circular phi separation in degrees for Pass-2/Pass-1 pulls (default: 2)")
+    parser.add_argument("--reference-kinematics",choices=("midpoints","means"),default="midpoints",
+                        help="Theory/data reference: legacy bin midpoints or measured row means (exact model points)")
     parser.add_argument("--phi-dense", type=int, default=24, help="Phi points per model curve (default: 24)")
     parser.add_argument("--e-beam", type=float, choices=(10.2, 10.6), default=None, help="Restrict to one beam energy (default: both)")
     parser.add_argument("--xs-column-10p2", default=None, help="Override the Sp19 10.2-GeV cross-section column")
@@ -1014,7 +1062,7 @@ def main():
         energy_dir = args.output_dir / energy_tag(energy)
         energy_dir.mkdir(parents=True, exist_ok=True)
         cfg = base.ModelConfig(
-            e_beam=energy, dvcsgen_dir=args.dvcsgen_dir,
+            e_beam=(10.1998 if energy==10.2 and args.reference_kinematics=="means" else energy), dvcsgen_dir=args.dvcsgen_dir,
             km15_cli=args.km15_cli, py_km15=args.python_km15,
             phi_dense=args.phi_dense, use_cache=True,
             allow_missing_models=False, verbose_worker_models=False,
@@ -1038,7 +1086,10 @@ def main():
                 if panels[key][kind] and model_cache_key(key, args, kind) not in cache
             )
             if kinds:
-                jobs.append((key, cfg, kinds))
+                if args.reference_kinematics == "means":
+                    jobs.append((key,cfg,kinds,{kind:args._model_references[(energy,key,kind)] for kind in kinds}))
+                else:
+                    jobs.append((key, cfg, kinds))
         if jobs:
             print(f"[models] Computing {len(jobs)} cells with up to {args.workers} workers", flush=True)
             with ProcessPoolExecutor(max_workers=min(args.workers, len(jobs))) as pool:

@@ -1,4 +1,5 @@
 #include "global_cuts.h"
+#include "kinematic_bin_integration.h"
 
 #include <algorithm>
 #include <cmath>
@@ -216,8 +217,8 @@ bool passes_bin_volume_phase_space_cuts(double Ebeam,
         !passes_generated_channel_cuts(xB, Q2, cfg) ||
         !std::isfinite(t1) || !(t1 < 0.0)) return false;
     static constexpr double MP = 0.9382720813;
-    static constexpr double GENERATED_Y_MIN = 0.19;
-    static constexpr double GENERATED_Y_MAX = 0.85;
+    static constexpr double GENERATED_Y_MIN = dvcs_phase_space::generated_y_min;
+    static constexpr double GENERATED_Y_MAX = dvcs_phase_space::generated_y_max;
     const double y = Q2 / (2.0 * MP * xB * Ebeam);
     if (!(std::isfinite(y) &&
           y > GENERATED_Y_MIN && y < GENERATED_Y_MAX)) return false;
@@ -785,6 +786,8 @@ void write_global_cuts_config_json(const std::string& out_json_dir,
         << "  \"enable_analysis_y_min_cut\": " << (cfg.enable_analysis_y_min_cut ? "true" : "false") << ",\n"
         << "  \"analysis_y_min\": " << std::setprecision(6) << cfg.analysis_y_min << ",\n"
         << "  \"analysis_W_min_GeV\": " << std::setprecision(6) << cfg.analysis_W_min_GeV << ",\n"
+        << "  \"generated_y_min\": " << dvcs_phase_space::generated_y_min << ",\n"
+        << "  \"generated_y_max\": " << dvcs_phase_space::generated_y_max << ",\n"
         << "  \"enable_pTmiss_cut\": " << (cfg.enable_pTmiss_cut ? "true" : "false") << ",\n"
         << "  \"pTmiss_max\": " << std::setprecision(6) << cfg.pTmiss_max << ",\n"
         << "  \"enable_dvcsgen_ycol_cut\": " << (cfg.enable_dvcsgen_ycol_cut ? "true" : "false") << ",\n"

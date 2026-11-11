@@ -18,8 +18,10 @@ enum class ModelChoice {
 //
 // Inputs:
 //   csv_path      : dvcs_pass2_analysis.csv (absolute or relative path)
-//   n_steps       : sub-binning per dimension (>=2). Total model calls
-//                   per row per model is n_steps^4.
+//   n_steps       : starting quadrature order per dimension (>=2); refined
+//                   automatically to convergence on the allowed domain.
+//   The Python stage also updates physical bin volumes. Recompute/rescale cross
+//   sections explicitly after this call; it does not silently update those columns.
 //   paths         : ModelPaths (dvcsgen dir, km15_cli path); empty -> env/defaults.
 //   vgg_globalfit : whether to pass --globalfit flag to vgg_xs.
 //   model_choice  : Both, VGGOnly, or KM15Only.

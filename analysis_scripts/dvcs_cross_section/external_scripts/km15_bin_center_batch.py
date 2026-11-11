@@ -1,260 +1,217 @@
 #!/usr/bin/env python3
-"""Fast KM15 bin-centering evaluator for the pass-2 DVCS analysis.
-
-The expensive part of KM15 evaluation is importing/initializing Gepard.  This
-script therefore processes the complete pass-2 CSV in one Python invocation
-instead of spawning one Python process for every quadrature point.
-
-The CSV convention used by the C++ extraction is the *multiplicative* bin-
-centering correction
-
-    C_bin = sigma_KM15(<xB>,<Q2>,<|t|>,<phi>) / <sigma_KM15>_bin,
-
-so the bin-averaged measured cross section is multiplied by C_bin to report it
-at the measured mean kinematics.  This is the inverse of the F_bin definition
-(avg/center) sometimes used in prose in the pass-1 note, but is exactly the
-factor needed by cross_sections.cpp, which multiplies the stored CSV value.
+"""Converged KM15 centering on the same allowed domain as bin volumes.
+Stored Fbin is multiplicative: model(mean) / model average over allowed bin.
+Use --output to preserve the input; without it the requested CSV is updated atomically.
 """
-
-import argparse
-import csv
-import math
 import os
-import sys
-import tempfile
-import warnings
+for _name in ('OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','OMP_NUM_THREADS'):
+    os.environ[_name]='1'
+import argparse,csv,hashlib,json,math,sys,tempfile,warnings
+sys.dont_write_bytecode=True
+os.environ["PYTHONDONTWRITEBYTECODE"]="1"
 from multiprocessing import get_context
 from pathlib import Path
-
 import numpy as np
+from kinematic_domain import Domain,box_from_row,energy_for_label,find_config
+warnings.filterwarnings('ignore',category=RuntimeWarning)
+_G=_TH=None
+VERSION='allowed-domain-v2'
 
-warnings.filterwarnings("ignore", category=RuntimeWarning)
+def install_cff_cache(model):
+    """Reuse fixed-KM15 CFF scalars at identical invariants, independently of phi.
 
-_G = None
-_TH = None
-
+    Initial reuses at a different phi are checked against the original method.
+    The cached Fourier coefficients are phi independent by construction; the
+    actual trigonometric and propagator factors are still evaluated per point.
+    This optimizes repeated dispersion integrals, not model/grid interpolation.
+    The model parameters remain fixed for the lifetime of a worker.
+    """
+    from collections import OrderedDict
+    for name in ('ReH','ImH','ReE','ImE','ReHt','ImHt','ReEt','ImEt',
+                 'cBH0unp','cBH1unp','cBH2unp','cINT0unp','cINT1unp','cINT2unp','cINT3unp',
+                 'sINT1unp','sINT2unp','sINT3unp','cDVCS0unp','cDVCS1unp','sDVCS1unp'):
+        original=getattr(model,name,None)
+        if original is None:continue
+        cache=OrderedDict();checks=[0]
+        def cached(pt,*args,_original=original,_cache=cache,_checks=checks,**kwargs):
+            try:
+                key=(float(pt.xB),float(pt.Q2),float(pt.t),float(pt.xi),
+                     pt.get('in2particle','p'),float(pt.in1energy),pt.get('in1charge',-1),pt.get('in1polarization',0),args,tuple(sorted(kwargs.items())))
+                phi=float(pt.phi);hash(key)
+            except (AttributeError,KeyError,TypeError):return _original(pt,*args,**kwargs)
+            if key in _cache:
+                value,first_phi,checked=_cache[key]
+                if not checked and phi!=first_phi and _checks[0]<4:
+                    reference=_original(pt,*args,**kwargs)
+                    if float(reference)!=float(value):
+                        raise ArithmeticError('KM15 CFF changed with phi; refusing cached evaluation')
+                    _cache[key]=(value,first_phi,True);_checks[0]+=1
+                _cache.move_to_end(key)
+                return value
+            value=_original(pt,*args,**kwargs);_cache[key]=(value,phi,False)
+            if len(_cache)>4096:_cache.popitem(last=False)
+            return value
+        setattr(model,name,cached)
+    return model
 
 def _init_worker():
-    global _G, _TH
+    global _G,_TH
     import gepard as g
     from gepard.fits import th_KM15
-    _G = g
-    _TH = th_KM15
-
+    import copy
+    _G,_TH=g,copy.copy(th_KM15)
+    # Boundary-aware nodes introduce many distinct Q² scales. Bound the
+    # model's pure Wilson-kernel cache rather than growing it across all rows.
+    from collections import OrderedDict
+    class KernelCache(OrderedDict):
+        def __getitem__(self,key):
+            value=super().__getitem__(key);self.move_to_end(key);return value
+        def __setitem__(self,key,value):
+            super().__setitem__(key,value);self.move_to_end(key)
+            if len(self)>256:self.popitem(last=False)
+    kernels=KernelCache()
+    for key,value in getattr(_TH,'wce',{}).items():kernels[key]=value
+    _TH.wce=kernels
+    if not os.environ.get('KM15_DISABLE_CFF_CACHE'):install_cff_cache(_TH)
 
 def _km15(point):
-    xB, Q2, t_abs, phi_deg, ebeam = point
+    x,q,t,phi,e=point
+    pt=_G.DataPoint(xB=x,t=-abs(t),Q2=q,phi=math.pi-math.radians(phi),observable='XS',
+        frame='trento',process='ep2epgamma',exptype='fixed target',in1energy=e,
+        in1charge=-1,in1polarization=0)
+    pt.prepare();value=float(_TH.predict(pt))
+    if not math.isfinite(value) or value<=0:raise ArithmeticError('Invalid KM15 value inside allowed domain')
+    return value
+
+def triple(s):
     try:
-        if not (0.0 < xB < 1.0 and Q2 > 0.0 and t_abs > 0.0):
-            return 0.0
-        pt = _G.DataPoint(
-            xB=xB,
-            t=-abs(t_abs),
-            Q2=Q2,
-            phi=math.pi - math.radians(phi_deg),
-            observable="XS",
-            frame="trento",
-            process="ep2epgamma",
-            exptype="fixed target",
-            in1energy=ebeam,
-            in1charge=-1,
-            in1polarization=0,
-        )
-        pt.prepare()
-        val = float(_TH.predict(pt))
-        return val if math.isfinite(val) and val > 0.0 else 0.0
-    except Exception:
-        return 0.0
-#enddef
+        p=[float(v.strip()) for v in str(s).strip().strip('"').strip('()').split(',')]
+        return p[0],p[1] if len(p)>1 else 0.,p[2] if len(p)>2 else 0.
+    except (ValueError,TypeError):return math.nan,math.nan,math.nan
 
+def fmt(v,s=0.,y=0.):return f'({v:.12g}, {s:.12g}, {y:.12g})'
 
-def _as_float(row, key):
+def integrate_task(job):
+    i,label,center,box,phi,e,order,max_order,rtol,domain,volume=job
+    last={}
     try:
-        s = row.get(key, "")
-        if s is None or str(s).strip() == "":
-            return math.nan
-        return float(s)
-    except Exception:
-        return math.nan
-#enddef
+        if not domain.contains(center):raise ArithmeticError('Measured mean is outside generated phase space')
+        central=_km15(center);previous=None;cache={};last={}
+        orders=sorted(set([order,order+1,*range(order+3,max_order+1,2),max_order]))
+        for n in orders:
+            points,weights=domain.quadrature(box,phi,e,n)
+            if not len(points):raise ArithmeticError('No allowed quadrature points')
+            vals=[]
+            for point in points:
+                if point not in cache:cache[point]=_km15(point)
+                vals.append(cache[point])
+            approximate_volume=float(weights.sum())
+            average=float(np.dot(weights,np.asarray(vals))/approximate_volume)
+            factor=central/average
+            change=abs(factor/previous-1) if previous is not None else math.inf
+            volume_error=abs(approximate_volume/volume-1)
+            last=dict(row=i,label=label,order=n,factor=factor,model_at_mean=central,
+                model_bin_average=average,relative_change=change,quadrature_volume_relative_error=volume_error,
+                evaluations=len(cache),status='unconverged')
+            if previous is not None and change<=rtol and volume_error<=rtol:
+                last['status']='converged';return last
+            previous=factor
+        return last
+    except Exception as exc:
+        return dict(row=i,label=label,status='invalid',error=str(exc),**{k:v for k,v in last.items() if k not in ('row','label','status')})
 
+def atomic_csv(path,rows):
+    path=Path(path);path.parent.mkdir(parents=True,exist_ok=True)
+    fd,name=tempfile.mkstemp(prefix=path.name+'.',suffix='.tmp',dir=str(path.parent));os.close(fd)
+    try:
+        with open(name,'w',newline='') as f:
+            w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
+        os.replace(name,path)
+    finally:
+        if os.path.exists(name):os.unlink(name)
 
-def _fmt_triple(value, stat=0.0, syst=0.0):
-    return f"({value:.8f}, {stat:.8f}, {syst:.8f})"
-#enddef
+def recalculate(rows,domain,workers=10,order=3,max_order=11,rtol=.002,fbin=True):
+    if not 1<=workers<=10:raise ValueError('workers must be 1–10')
+    if not 2<=order<max_order<=15:raise ValueError('Require 2 <= order < max-order <= 15')
+    if not 0<rtol<.1:raise ValueError('rtol must be positive and below 0.1')
+    updated=[dict(r) for r in rows];jobs=[];diagnostics=[]
+    for i,r in enumerate(rows):
+        box=box_from_row(r);phi=(float(r['phimin']),float(r['phimax']))
+        if phi[1]-phi[0]>=359:continue
+        for label,means_label in [('10.6 GeV','10.6 GeV'),('10.2 GeV','Sp19 Inb')]:
+            e=energy_for_label(float(label.split()[0]));volume,cubic=domain.volume(box,phi,e)
+            updated[i]['bin_volume, '+label]=fmt(volume);updated[i]['cubic bin_volume, '+label]=fmt(cubic)
+            diagnostics.append(dict(row=i,label=label,volume=volume,cubic_volume=cubic,allowed_fraction=volume/cubic,status='volume'))
+            if not fbin:continue
+            center=tuple(triple(r.get(p+', '+means_label,''))[0] for p in ('xBavg','Q2avg','t_abs_avg','phiavg'))+(e,)
+            if not all(math.isfinite(v) for v in center):continue
+            if volume<=0:raise ArithmeticError(f'Populated row {i} has zero allowed volume')
+            jobs.append((i,label,center,box,phi,e,order,max_order,rtol,domain,volume))
+    if jobs:
+        print(f'[bincenter] {len(jobs)} populated energy-rows; {workers} workers; tolerance={rtol:g}',flush=True)
+        if workers==1:
+            _init_worker();results=map(integrate_task,jobs)
+            for result in results:diagnostics.append(result)
+        else:
+            with get_context('spawn').Pool(workers,initializer=_init_worker) as pool:
+                for count,result in enumerate(pool.imap_unordered(integrate_task,jobs,chunksize=1),1):
+                    diagnostics.append(result)
+                    if count%20==0 or count==len(jobs):print(f'[bincenter] {count}/{len(jobs)} energy-rows complete',flush=True)
+        for d in diagnostics:
+            if d['status']=='converged':updated[d['row']]['Fbin, '+d['label']]=fmt(d['factor'])
+    return updated,diagnostics
 
+def rescale_cross_sections(original,updated):
+    """Exact frozen-calibration update: sigma_new/sigma_old = Fnew/Fold * Vold/Vnew."""
+    for a,b in zip(original,updated):
+        for col in a:
+            if not ((col.startswith('cross sections,') or col.startswith('normed cross sections,')) and ', exp,' in col and col.endswith(('unpol','pos','neg'))):continue
+            value,stat,syst=triple(a[col])
+            if not math.isfinite(value):continue
+            label='10.2 GeV' if 'Sp19 Inb' in col or '10.2 GeV' in col else '10.6 GeV'
+            if b['Fbin, '+label]=='':
+                b[col]=''
+                continue
+            oldf=triple(a['Fbin, '+label])[0];newf=triple(b['Fbin, '+label])[0]
+            oldv=triple(a['bin_volume, '+label])[0];newv=triple(b['bin_volume, '+label])[0]
+            if not all(math.isfinite(v) and v>0 for v in (oldf,newf,oldv,newv)):
+                raise ArithmeticError(f'Cannot rescale populated cross section: {col}')
+            ratio=newf/oldf*oldv/newv;b[col]=fmt(value*ratio,stat*abs(ratio),syst*abs(ratio))
 
-def _quadrature_points(row, ebeam, mean_cols, order):
-    xb = _as_float(row, mean_cols[0])
-    q2 = _as_float(row, mean_cols[1])
-    tt = _as_float(row, mean_cols[2])
-    ph = _as_float(row, mean_cols[3])
-    center = (xb, q2, tt, ph, ebeam)
-
-    edges = [
-        (_as_float(row, "xBmin"), _as_float(row, "xBmax")),
-        (_as_float(row, "Q2min"), _as_float(row, "Q2max")),
-        (_as_float(row, "t_abs_min"), _as_float(row, "t_abs_max")),
-        (_as_float(row, "phimin"), _as_float(row, "phimax")),
-    ]
-    if not all(math.isfinite(v) for v in center):
-        return None
-    if not all(math.isfinite(lo) and math.isfinite(hi) and hi > lo for lo, hi in edges):
-        return None
-
-    nodes, weights = np.polynomial.legendre.leggauss(order)
-    vals = []
-    wts = []
-    for ix, nx in enumerate(nodes):
-        x = 0.5 * ((edges[0][1] - edges[0][0]) * nx + edges[0][1] + edges[0][0])
-        for iq, nq in enumerate(nodes):
-            q = 0.5 * ((edges[1][1] - edges[1][0]) * nq + edges[1][1] + edges[1][0])
-            for it, nt in enumerate(nodes):
-                t = 0.5 * ((edges[2][1] - edges[2][0]) * nt + edges[2][1] + edges[2][0])
-                for ip, np_ in enumerate(nodes):
-                    p = 0.5 * ((edges[3][1] - edges[3][0]) * np_ + edges[3][1] + edges[3][0])
-                    vals.append((x, q, t, p, ebeam))
-                    wts.append(weights[ix] * weights[iq] * weights[it] * weights[ip])
-                #endfor
-            #endfor
-        #endfor
-    #endfor
-    return center, vals, np.asarray(wts, dtype=float)
-#enddef
-
-
-def _evaluate_jobs(jobs, workers):
-    # Deduplicate points globally.  Repeated center/grid points arise when a
-    # kinematic bin is represented by several bookkeeping rows.
-    unique = {}
-    ordered = []
-    for point in jobs:
-        key = tuple(round(float(x), 12) for x in point)
-        if key not in unique:
-            unique[key] = len(ordered)
-            ordered.append(point)
-        #endif
-    #endfor
-
-    if workers <= 1:
-        _init_worker()
-        values = [_km15(p) for p in ordered]
-    else:
-        ctx = get_context("spawn")
-        chunksize = max(8, len(ordered) // max(1, workers * 32))
-        with ctx.Pool(processes=workers, initializer=_init_worker) as pool:
-            values = list(pool.imap(_km15, ordered, chunksize=chunksize))
-        #endwith
-    #endif
-    return unique, np.asarray(values, dtype=float)
-#enddef
-
+def write_diagnostics(path,diagnostics):
+    fields=list(dict.fromkeys(k for d in diagnostics for k in d))
+    with Path(path).open('w',newline='') as f:
+        w=csv.DictWriter(f,fieldnames=fields);w.writeheader();w.writerows(diagnostics)
 
 def main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("csv_path")
-    ap.add_argument("--order", type=int, default=3,
-                    help="Gauss-Legendre order per dimension (default: 3 => 81 points/bin)")
-    ap.add_argument("--workers", type=int, default=min(8, os.cpu_count() or 1))
-    args = ap.parse_args()
+    ap=argparse.ArgumentParser(description=__doc__);ap.add_argument('csv_path',type=Path)
+    ap.add_argument('--output',type=Path);ap.add_argument('--cuts-json',type=Path)
+    ap.add_argument('--workers',type=int,default=10);ap.add_argument('--order',type=int,default=3)
+    ap.add_argument('--max-order',type=int,default=11);ap.add_argument('--rtol',type=float,default=.002)
+    ap.add_argument('--on-unconverged',choices=('error','omit'),default='error',help='error: preserve output on failure; omit: leave failed Fbin/XS energy-rows blank for a preview')
+    ap.add_argument('--volumes-only',action='store_true');ap.add_argument('--update-cross-sections',action='store_true')
+    args=ap.parse_args();source=args.csv_path.resolve();target=(args.output or source).resolve()
+    original_bytes=source.read_bytes()
+    import io
+    rows=list(csv.DictReader(io.StringIO(original_bytes.decode('utf-8-sig'))))
+    if not rows:raise SystemExit('CSV has no data rows')
+    config=find_config(source,args.cuts_json);domain=Domain.from_json(config)
+    print(f'[bincenter] Domain configuration: {config}',flush=True)
+    updated,diagnostics=recalculate(rows,domain,args.workers,args.order,args.max_order,args.rtol,not args.volumes_only)
+    target.parent.mkdir(parents=True,exist_ok=True);diagpath=Path(str(target)+'.numerical_diagnostics.csv');write_diagnostics(diagpath,diagnostics)
+    failed=[d for d in diagnostics if d['status'] not in ('converged','volume')]
+    if failed and args.on_unconverged=='error':raise SystemExit(f'{len(failed)} energy-rows failed convergence/model checks; CSV not replaced. Inspect {diagpath}')
+    for d in failed:updated[d['row']]['Fbin, '+d['label']]=''
+    if failed:print(f'[bincenter] Omitting {len(failed)} unresolved Fbin/XS energy-rows from this preview.',flush=True)
+    if args.update_cross_sections:rescale_cross_sections(rows,updated)
+    meta=dict(version=VERSION,input=str(source),input_sha256=hashlib.sha256(original_bytes).hexdigest(),
+        config=str(config),order=args.order,max_order=args.max_order,rtol=args.rtol,
+        reference='imported' if args.volumes_only else 'measured_means',cross_sections_updated=args.update_cross_sections,
+        normalization='held fixed',systematics='not reevaluated',on_unconverged=args.on_unconverged,omitted_energy_rows=[dict(row=d['row'],bin_index=rows[d['row']].get('bin index',''),label=d['label'],status=d['status']) for d in failed])
+    if source.read_bytes()!=original_bytes:raise SystemExit('Input CSV changed during calculation; output not replaced')
+    atomic_csv(target,updated);Path(str(target)+'.numerical.json').write_text(json.dumps(meta,indent=2)+'\n')
+    print(f'[bincenter] Saved {target}; original preserved: {source!=target}',flush=True)
+    if not args.update_cross_sections:
+        print('[bincenter] Cross-section columns unchanged; use --update-cross-sections or run_numerical_corrections.py for updated results.',flush=True)
 
-    if args.order < 2 or args.order > 6:
-        raise SystemExit("--order must be in [2,6]")
-
-    path = Path(args.csv_path)
-    with path.open(newline="") as f:
-        reader = csv.DictReader(f)
-        fieldnames = list(reader.fieldnames or [])
-        rows = list(reader)
-    #endwith
-
-    required = {
-        "xBmin", "xBmax", "Q2min", "Q2max", "t_abs_min", "t_abs_max",
-        "phimin", "phimax", "xBavg, 10.6 GeV", "Q2avg, 10.6 GeV",
-        "t_abs_avg, 10.6 GeV", "phiavg, 10.6 GeV", "xBavg, Sp19 Inb",
-        "Q2avg, Sp19 Inb", "t_abs_avg, Sp19 Inb", "phiavg, Sp19 Inb",
-        "Fbin, 10.6 GeV", "Fbin, 10.2 GeV",
-    }
-    missing = sorted(required.difference(fieldnames))
-    if missing:
-        raise SystemExit("Missing CSV columns: " + ", ".join(missing))
-
-    groups = [
-        (10.6,
-         ("xBavg, 10.6 GeV", "Q2avg, 10.6 GeV", "t_abs_avg, 10.6 GeV", "phiavg, 10.6 GeV"),
-         "Fbin, 10.6 GeV"),
-        (10.2,
-         ("xBavg, Sp19 Inb", "Q2avg, Sp19 Inb", "t_abs_avg, Sp19 Inb", "phiavg, Sp19 Inb"),
-         "Fbin, 10.2 GeV"),
-    ]
-
-    descriptors = []
-    all_points = []
-    for ir, row in enumerate(rows):
-        for ebeam, means, outcol in groups:
-            desc = _quadrature_points(row, ebeam, means, args.order)
-            if desc is None:
-                continue
-            center, grid, weights = desc
-            descriptors.append((ir, outcol, center, grid, weights))
-            all_points.append(center)
-            all_points.extend(grid)
-        #endfor
-    #endfor
-
-    print(f"[bincenter-batch] rows={len(rows)}, populated energy-rows={len(descriptors)}, "
-          f"quadrature order={args.order}, raw evaluations={len(all_points)}, workers={args.workers}",
-          flush=True)
-
-    lookup, values = _evaluate_jobs(all_points, max(1, args.workers))
-    print(f"[bincenter-batch] unique KM15 evaluations={len(values)}", flush=True)
-
-    def value_for(point):
-        key = tuple(round(float(x), 12) for x in point)
-        return float(values[lookup[key]])
-    #enddef
-
-    written = {"Fbin, 10.6 GeV": 0, "Fbin, 10.2 GeV": 0}
-    invalid = 0
-    for ir, outcol, center, grid, weights in descriptors:
-        cval = value_for(center)
-        gvals = np.asarray([value_for(p) for p in grid], dtype=float)
-        good = np.isfinite(gvals) & (gvals > 0.0) & np.isfinite(weights) & (weights > 0.0)
-        if not (math.isfinite(cval) and cval > 0.0 and np.any(good)):
-            rows[ir][outcol] = ""
-            invalid += 1
-            continue
-        #endif
-        avg = float(np.sum(weights[good] * gvals[good]) / np.sum(weights[good]))
-        if not (math.isfinite(avg) and avg > 0.0):
-            rows[ir][outcol] = ""
-            invalid += 1
-            continue
-        #endif
-        correction = cval / avg
-        rows[ir][outcol] = _fmt_triple(correction, 0.0, 0.0)
-        written[outcol] += 1
-    #endfor
-
-    fd, tmpname = tempfile.mkstemp(prefix=path.name + ".bincenter.", suffix=".tmp", dir=str(path.parent))
-    os.close(fd)
-    try:
-        with open(tmpname, "w", newline="") as f:
-            writer = csv.DictWriter(f, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(rows)
-        #endwith
-        os.replace(tmpname, path)
-    finally:
-        if os.path.exists(tmpname):
-            os.unlink(tmpname)
-        #endif
-    #endtry
-
-    print(f"[bincenter-batch] wrote 10.6={written['Fbin, 10.6 GeV']}, "
-          f"10.2={written['Fbin, 10.2 GeV']}, invalid={invalid}", flush=True)
-#enddef
-
-
-if __name__ == "__main__":
-    main()
+if __name__=='__main__':main()

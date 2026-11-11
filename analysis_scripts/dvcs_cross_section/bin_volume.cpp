@@ -20,7 +20,7 @@
 // Reconstructed detector thresholds such as electron/proton momentum and
 // angular cuts are not part of the volume.
 //
-// Volumes are computed via a deterministic 3D grid in (xB, Q2, t) and
+// Volumes use exact allowed t lengths and converged adaptive (xB,Q2) integration,
 // scaled by the geometric extent in phi.
 
 //
@@ -33,6 +33,7 @@
 
 #include "bin_volume.h"
 #include "global_cuts.h"
+#include "kinematic_bin_integration.h"
 
 #include <TCanvas.h>
 #include <TGraphAsymmErrors.h>
@@ -240,9 +241,9 @@ static std::string format_triple(double v, double s_stat, double s_sys) {
     std::ostringstream oss;
     oss.setf(std::ios::fixed);
     oss << "("
-        << std::setprecision(8) << v << ", "
-        << std::setprecision(8) << s_stat << ", "
-        << std::setprecision(8) << s_sys
+        << std::setprecision(12) << v << ", "
+        << std::setprecision(12) << s_stat << ", "
+        << std::setprecision(12) << s_sys
         << ")";
     return oss.str();
 }
@@ -319,34 +320,10 @@ static double calculate_phase_space_allowed_fraction(double xB_min, double xB_ma
                                                      double t_abs_min, double t_abs_max,
                                                      double E_beam)
 {
-    constexpr int    n_steps = 10;
-    int valid_count = 0;
-
-    // Convert |t| edges to physical t<0 for the loop.
-    const double t_phys_min = -t_abs_max;
-    const double t_phys_max = -t_abs_min;
-
-    const double dxB = (xB_max - xB_min) / n_steps;
-    const double dQ2 = (Q2_max - Q2_min) / n_steps;
-    const double dt  = (t_phys_max - t_phys_min) / n_steps;
-
-    for (int i = 0; i < n_steps; ++i) {
-        const double xB = xB_min + (i + 0.5) * dxB;
-
-        for (int j = 0; j < n_steps; ++j) {
-            const double Q2 = Q2_min + (j + 0.5) * dQ2;
-
-            for (int k = 0; k < n_steps; ++k) {
-                const double t = t_phys_min + (k + 0.5) * dt;
-                if (passes_bin_volume_phase_space_cuts(E_beam, xB, Q2, t)) {
-                    ++valid_count;
-                }
-            }
-        }
-    }
-
-    return static_cast<double>(valid_count) /
-           static_cast<double>(n_steps * n_steps * n_steps);
+    const auto& cfg=default_global_cuts();
+    return dvcs_phase_space::allowed_fraction(
+        {xB_min,xB_max,Q2_min,Q2_max,t_abs_min,t_abs_max}, E_beam,
+        cfg.enable_analysis_phase_space_cuts,cfg.analysis_W_min_GeV);
 }
 
 
@@ -1491,7 +1468,7 @@ bool update_bin_volume_csv(const std::string& csv_path,
     g10p6.binvol_col       = "bin_volume, 10.6 GeV";
     g10p6.cubic_binvol_col = "cubic bin_volume, 10.6 GeV";
     g10p6.energy_dir       = "10.60";
-    g10p6.Ebeam      = 10.60;
+    g10p6.Ebeam      = dvcs_phase_space::energy_10p6;
 
     VolumeGroup g10p2;
     g10p2.label      = "10.2 GeV";
@@ -1502,7 +1479,7 @@ bool update_bin_volume_csv(const std::string& csv_path,
     g10p2.binvol_col       = "bin_volume, 10.2 GeV";
     g10p2.cubic_binvol_col = "cubic bin_volume, 10.2 GeV";
     g10p2.energy_dir       = "10.2";
-    g10p2.Ebeam      = 10.1998;
+    g10p2.Ebeam      = dvcs_phase_space::energy_10p2;
 
     // Compute bin volumes for all phi-binned rows for both energies.
     // Do not gate this on xBavg/data availability: cross_sections.cpp needs
