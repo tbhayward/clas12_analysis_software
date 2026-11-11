@@ -208,3 +208,24 @@ reset/cache workflow on disposable fixtures without ROOT inputs.
 Percent-difference canvases use fixed y limits of -100% to +100%. Full values
 remain in their summaries. KM15 is drawn as a solid line and BH as a dashed
 line, joining the cached reference-point predictions without changing pulls.
+
+## Dense displayed theory curves
+
+`--phi-dense 24` controls the number of uniformly spaced model evaluations
+used to draw KM15 and BH, including both 0 and 360 degrees. This applies to
+both midpoint mode and the default measured-means mode. In means mode,
+displayed curves hold xB, Q² and |t| fixed at the cell's raw-count-weighted
+measured means across phi. Weights sum ep->epg unpolarized raw yields over
+the three detector topologies and the appropriate energy's run periods.
+These are visual reference curves; exact row means are retained separately
+for every pull. If count weights are absent, the plotter reports an explicit
+fallback to the unweighted average of available row means.
+
+The displayed arrays have separate cache metadata including their reference
+kinematics and sampling count. Existing exact row predictions are preserved
+when adding display arrays. Changing `--phi-dense` recomputes the display
+samples while retaining cached exact row predictions. Distinct requests are
+batched and deduplicated within each cell. No ROOT extraction is needed.
+
+`python3 test_dense_theory_curves.py` checks the sample count, fixed reference,
+exact pull predictions, cache reuse, and changes in display sampling density.
