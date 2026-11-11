@@ -83,8 +83,8 @@ The final-by-t plotter now supports
 
 The default is now `means`; select `midpoints` explicitly for a legacy comparison. In `means`
 mode, data use measured mean phi and theory is evaluated at each row's exact
-measured xB/Q²/|t|/phi means. Theory is drawn as model points, because the
-reference kinematics vary from one phi row to another. Pulls use those exact
+measured xB/Q²/|t|/phi means. Theory values at measured means are connected in phi order for readability.
+The connecting lines are visual guides between row-dependent reference kinematics. Pulls use those exact
 predictions; no interpolation across uncomputed mean points is substituted.
 Cache keys include the actual reference coordinates and mode, so old midpoint
 curves cannot be reused for this comparison accidentally.
@@ -204,3 +204,7 @@ absolute pull annotated. Raw pull values, distributions and statistics
 are retained without clipping. Single-cell canvases reserve enough title
 space. `python3 test_baseline_refresh.py` verifies this and checks the
 reset/cache workflow on disposable fixtures without ROOT inputs.
+
+Percent-difference canvases use fixed y limits of -100% to +100%. Full values
+remain in their summaries. KM15 is drawn as a solid line and BH as a dashed
+line, joining the cached reference-point predictions without changing pulls.

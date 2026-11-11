@@ -538,10 +538,12 @@ def draw_value_canvas(keys, trange, kind, energy, panels, pass1, cache, args, ou
                 xx = np.asarray(curves["phi"], dtype=float)
                 valid = np.isfinite(yy) & np.isfinite(xx)
                 if np.any(valid):
-                    if curves.get("reference") == "measured_means":
-                        ax.plot(xx[valid],yy[valid],ls="none",marker="x",ms=5,color=color,label=name+" at means",zorder=5)
-                    else:
-                        ax.plot(xx[valid], yy[valid], linestyle, lw=1.65, color=color, label=name, zorder=2)
+                    order = np.argsort(xx[valid])
+                    # Connect exact reference-point predictions for readability.
+                    # Pulls still use the original model values at each mean.
+                    ax.plot(xx[valid][order], yy[valid][order], linestyle,
+                            lw=1.65, marker="." if valid.sum()==1 else None,
+                            color=color, label=name, zorder=2)
             show_x = row == bottom_by_col.get(ix)
             show_y = ix == left_by_row.get(row)
             format_canvas_axes(ax, xb, qb, show_x, show_y, kind)
@@ -561,8 +563,8 @@ def draw_value_canvas(keys, trange, kind, energy, panels, pass1, cache, args, ou
     if pass1 is not None:
         handles.append(Line2D([], [], color="#2ca02c", marker="s", mfc="white", ls="none", markersize=5, label="CLAS12 published Pass-1"))
     handles.extend([
-        Line2D([], [], color="#1f77b4", lw=2, ls="none" if args.reference_kinematics=="means" else "-", marker="x" if args.reference_kinematics=="means" else None, label="KM15 at means" if args.reference_kinematics=="means" else "KM15"),
-        Line2D([], [], color="#ff7f0e", lw=2, ls="none" if args.reference_kinematics=="means" else "--", marker="x" if args.reference_kinematics=="means" else None, label="BH at means" if args.reference_kinematics=="means" else "BH"),
+        Line2D([], [], color="#1f77b4", lw=2, ls="-", label="KM15 at means" if args.reference_kinematics=="means" else "KM15"),
+        Line2D([], [], color="#ff7f0e", lw=2, ls="--", label="BH at means" if args.reference_kinematics=="means" else "BH"),
     ])
     fig.legend(handles=handles, loc="upper center", bbox_to_anchor=(0.5, 1.0-.80/figure_height), ncol=len(handles), frameon=False)
     output.parent.mkdir(parents=True, exist_ok=True)
@@ -664,19 +666,20 @@ def draw_percentage_canvas(keys, trange, kind, energy, panels, pass1, args, outp
     xbins, qbins, occupied, bottom_by_col, left_by_row = layout_for_group(
         keys, panels, kind
     )
+    figure_height=max(4.8,2.85*len(qbins))
     fig, axs = plt.subplots(
-        len(qbins), len(xbins), figsize=(4.0 * len(xbins), 2.85 * len(qbins)),
+        len(qbins), len(xbins), figsize=(max(8.,4.*len(xbins)),figure_height),
         squeeze=False, sharex=True, sharey=True,
     )
     fig.subplots_adjust(
-        left=0.075, right=0.985, bottom=0.10, top=0.87, hspace=0.0, wspace=0.0
+        left=max(.075,.95/max(8.,4.*len(xbins))), right=0.985, bottom=0.10, top=1.-1.05/figure_height, hspace=0.0, wspace=0.0
     )
     fig.suptitle(
         r"CLAS12 $100\,(\mathrm{Pass\!\!-\!2}/\mathrm{Pass\!\!-\!1}-1)$ — "
         + ("cross section" if kind == "xs" else "beam-spin asymmetry") + "\n"
         + rf"$|t|\in[{trange[0]:.3f},\,{trange[1]:.3f}]\ \mathrm{{GeV}}^2$, "
         + rf"$E_{{beam}}={energy:g}$ GeV",
-        fontsize=15, y=0.985,
+        fontsize=13.5, y=1.-.04/figure_height,
     )
     per_key = {
         key: pass1_percentage_differences(
@@ -685,12 +688,8 @@ def draw_percentage_canvas(keys, trange, kind, energy, panels, pass1, args, outp
         for key in keys
     }
     all_values = [value for values in per_key.values() for _, value, _ in values]
-    all_extents = [abs(value) + error for values in per_key.values() for _, value, error in values]
-    ylimit = max(
-        40.0,
-        100.0 * PASS1_NORMALIZATION_FRACTION * 1.25,
-        1.08 * max(all_extents, default=35.0),
-    )
+    # Fixed display range; full values remain in percentage summaries.
+    ylimit = 100.0
     for iq, qb in enumerate(qbins):
         for ix, xb in enumerate(xbins):
             row = len(qbins) - 1 - iq
@@ -730,7 +729,7 @@ def draw_percentage_canvas(keys, trange, kind, energy, panels, pass1, args, outp
             Line2D([], [], color="#2ca02c", lw=8, alpha=0.20,
                    label="Pass-1 ±31% correlated normalization"),
         ],
-        loc="upper center", bbox_to_anchor=(0.5, 0.914), ncol=2, frameon=False,
+        loc="upper center", bbox_to_anchor=(0.5, 1.-.63/figure_height), ncol=2, frameon=False,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=args.dpi)
