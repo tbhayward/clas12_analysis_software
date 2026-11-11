@@ -373,15 +373,13 @@ static int parse_current_from_key(const std::string& key) {
         return 0;
     }
 
-    PeriodTags tags = parse_period_from_key(key);
-
-    // Current-study MC convention:
-    //   - nobkg or explicit 0nA files are the 0 nA reference.
-    //   - Sp18 Out nonzero-current MC is the 45 nA production-current sample.
-    //   - all other nonzero-current MC samples are treated as 50 nA.
-    //
-    // Do not scan all integers with substring matching. That misidentifies
-    // 45nA and 50nA as 5nA.
+    // Rebuilt current scans contain several nonzero settings (e.g. 35,
+    // 40, 45, 50, 55 nA). Preserve their explicit labels before applying
+    // the historical nominal-current fallback for unlabelled tree keys.
+    for (int current = 1; current <= 200; ++current) {
+        if (has_exact_current_token(s, current)) return current;
+    }
+    const PeriodTags tags = parse_period_from_key(key);
     return reference_current_nA(tags.display);
 }
 
@@ -1738,6 +1736,16 @@ struct CurrentPoint {
     double counts = 0.0;
     double charge = 0.0;
 };
+
+static bool has_zero_and_nonzero_current_points(const std::vector<CurrentPoint>& points) {
+    bool zero = false, nonzero = false;
+    for (const auto& point : points) {
+        if (!std::isfinite(point.y) || !std::isfinite(point.sy) || point.sy <= 0.0) continue;
+        zero = zero || point.current_nA == 0;
+        nonzero = nonzero || point.current_nA > 0;
+    }
+    return zero && nonzero;
+}
 
 struct PeriodResult {
     std::string period;
@@ -11086,10 +11094,23 @@ static void write_current_response_model_json(
                 double mf = r.mc_factor;
                 double me = r.mc_factor_err;
                 std::string mc_source = "regional";
+                const std::vector<CurrentPoint>* used_mc_points = &r.mc_points;
+                const bool require_zero_reference = channel == "ep->epg" && !use_nobkg_dvcs_mc_counts;
+                if (require_zero_reference && !has_zero_and_nonzero_current_points(r.mc_points)) {
+                    if (!ri || !has_zero_and_nonzero_current_points(ri->mc_points)) {
+                        fatal("[current_dependence] FATAL: DVCS MC current correction requires usable zero- and nonzero-current points for " + r.period + " " + spec.key);
+                    }
+                    mf = ri->mc_factor; me = ri->mc_factor_err;
+                    mc_source = "integrated_fallback"; used_mc_points = &ri->mc_points;
+                }
                 if (channel == "ep->epg" && use_nobkg_dvcs_mc_counts) {
                     mf = 1.0; me = 0.0; mc_source = "nobkg_unity";
                 } else if (!(std::isfinite(mf) && mf > 0.0 && std::isfinite(me) && me >= 0.0) && ri) {
+                    if (require_zero_reference && !has_zero_and_nonzero_current_points(ri->mc_points)) {
+                        fatal("[current_dependence] FATAL: unconstrained integrated DVCS MC current fallback for " + r.period);
+                    }
                     mf = ri->mc_factor; me = ri->mc_factor_err; mc_source = "integrated_fallback";
+                    used_mc_points = &ri->mc_points;
                 }
                 if (!(std::isfinite(mf) && mf > 0.0 && std::isfinite(me) && me >= 0.0)) {
                     fatal("[current_dependence] FATAL: no valid MC current response for " + channel + " " + r.period + " " + spec.key);
@@ -11098,6 +11119,20 @@ static void write_current_response_model_json(
                 m["reference_current_nA"] = reference_current_nA(r.period);
                 m["reference_factor"] = mf;
                 m["reference_factor_stat"] = me;
+                std::set<int> scan_currents;
+                for (const auto& point : *used_mc_points) scan_currents.insert(point.current_nA);
+                m["scan_currents_nA"] = std::vector<int>(scan_currents.begin(),scan_currents.end());
+                m["n_current_points"] = used_mc_points->size();
+                m["current_response_constrained"] = require_zero_reference
+                    ? has_zero_and_nonzero_current_points(*used_mc_points)
+                    : scan_currents.size() >= 2;
+                if (scan_currents.size() < 2 && mc_source == "regional") {
+                    mc_source = "single_current_unconstrained_unity";
+                    std::cerr << "[current_dependence] WARNING: " << channel << " "
+                              << r.period << " " << spec.key
+                              << " has fewer than two MC current settings; its unity "
+                              << "factor does not measure a current response.\n";
+                }
                 m["source"] = mc_source;
             }
         }

@@ -728,18 +728,19 @@ bool loadTrees(std::map<std::string, TTree*>& dataTrees,
     }, eppi0BkgTrees)) return false;
 
     // REBUILD: current-study MC comes from the same paired MCEvents format.
-    // Keep nominal samples separate from other current configurations.
+    // Include the no-background reference at 0 nA in every current scan.
+    // Keep nominal acceptance samples separate from calibration samples.
     const std::map<std::string, std::string> period_tags = {
         {"Sp18_inb", "sp18_inb"}, {"Sp18_out", "sp18_out"},
         {"Fa18_inb", "fa18_inb"}, {"Fa18_out", "fa18_out"},
         {"Sp19_inb", "sp19_inb"}
     };
     const std::map<std::string, std::vector<std::string>> current_configs = {
-        {"sp18_inb", {"35nA", "50nA"}},
-        {"sp18_out", {"45nA"}},
-        {"fa18_inb", {"45nA", "50nA", "55nA"}},
-        {"fa18_out", {"40nA", "50nA"}},
-        {"sp19_inb", {"50nA"}}
+        {"sp18_inb", {"no_bkg", "35nA", "50nA"}},
+        {"sp18_out", {"no_bkg", "45nA"}},
+        {"fa18_inb", {"no_bkg", "45nA", "50nA", "55nA"}},
+        {"fa18_out", {"no_bkg", "40nA", "50nA"}},
+        {"sp19_inb", {"no_bkg", "50nA"}}
     };
     for (const auto& period : period_tags) {
         for (const auto& current : current_configs.at(period.second)) {
@@ -749,7 +750,8 @@ bool loadTrees(std::map<std::string, TTree*>& dataTrees,
                 return false;
             const std::string old_gen = "DVCS_" + period.first + "_gen";
             const std::string old_rec = "DVCS_" + period.first + "_rec";
-            const std::string stem = "DVCS_" + period.first + "_" + current + "_";
+            const std::string current_label = current == "no_bkg" ? "0nA" : current;
+            const std::string stem = "DVCS_" + period.first + "_" + current_label + "_";
             currentStudyGenMcTrees[stem + "gen_current"] = gen_tmp.at(old_gen);
             currentStudyRecMcTrees[stem + "rec_current"] = rec_tmp.at(old_rec);
         }
