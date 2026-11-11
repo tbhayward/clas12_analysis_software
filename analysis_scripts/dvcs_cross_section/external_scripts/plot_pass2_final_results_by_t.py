@@ -88,7 +88,7 @@ def model_cache_key(k, args, kind):
         energy, args.phi_dense, args.dvcsgen_dir, args.km15_cli,
         args.python_km15, kind,
     ]
-    if getattr(args, "reference_kinematics", "midpoints") == "means":
+    if getattr(args, "reference_kinematics", "means") == "means":
         parts += ["measured-means-v1", args._model_references[(energy,k,kind)]]
     return json.dumps(parts)
 
@@ -506,7 +506,7 @@ def draw_value_canvas(keys, trange, kind, energy, panels, pass1, cache, args, ou
         + ("cross section" if kind == "xs" else "beam-spin asymmetry") + "\n"
         + rf"$|t|\in[{trange[0]:.3f},\,{trange[1]:.3f}]\ \mathrm{{GeV}}^2$, "
         + rf"$E_{{beam}}={energy:g}$ GeV"
-        + ("\nTheory and data at measured mean kinematics" if getattr(args,"reference_kinematics","midpoints")=="means" else "\nTheory at bin midpoints"),
+        + ("\nTheory and data at measured mean kinematics" if getattr(args,"reference_kinematics","means")=="means" else "\nTheory at bin midpoints"),
         fontsize=13.5, y=1.0-.04/figure_height,
     )
     for iq, qb in enumerate(qbins):
@@ -571,21 +571,37 @@ def draw_value_canvas(keys, trange, kind, energy, panels, pass1, cache, args, ou
     print(f"[write] {output}", flush=True)
 
 
+def positive_finite(value):
+    number=float(value)
+    if not finite(number) or number<=0:
+        raise argparse.ArgumentTypeError("must be a positive finite number")
+    return number
+
+
+def pull_display_points(pulls, limit):
+    """Clip display only; preserve full pulls for summaries and distributions."""
+    values=np.asarray(pulls,dtype=float)
+    outside=np.abs(values)>limit
+    display=np.where(outside,np.sign(values)*limit*.97,values)
+    return display,outside
+
+
 def draw_pull_canvas(keys, trange, kind, energy, panels, cache, args, output,
                      comparison, pass1=None):
     xbins, qbins, occupied, bottom_by_col, left_by_row = layout_for_group(keys, panels, kind)
+    figure_height=max(4.8,2.85*len(qbins))
     fig, axs = plt.subplots(
-        len(qbins), len(xbins), figsize=(4.0 * len(xbins), 2.85 * len(qbins)),
+        len(qbins), len(xbins), figsize=(max(8.,4.*len(xbins)),figure_height),
         squeeze=False, sharex=True, sharey=True,
     )
-    fig.subplots_adjust(left=0.075, right=0.985, bottom=0.10, top=0.87, hspace=0.0, wspace=0.0)
+    fig.subplots_adjust(left=0.075, right=0.985, bottom=0.10, top=1.-1.05/figure_height, hspace=0.0, wspace=0.0)
     reference = "KM15" if comparison == "km15" else "published Pass-1"
     fig.suptitle(
         rf"CLAS12 Pass-2 pulls relative to {reference} — "
         + ("cross section" if kind == "xs" else "beam-spin asymmetry") + "\n"
         + rf"$|t|\in[{trange[0]:.3f},\,{trange[1]:.3f}]\ \mathrm{{GeV}}^2$, "
         + rf"$E_{{beam}}={energy:g}$ GeV",
-        fontsize=15, y=0.985,
+        fontsize=13.5, y=1.-.04/figure_height,
     )
     all_pulls = []
     per_key = {}
@@ -599,7 +615,7 @@ def draw_pull_canvas(keys, trange, kind, energy, panels, cache, args, output,
         per_key[key] = values
         all_pulls.extend(pull for _, pull in values)
     finite_pulls = [p for p in all_pulls if finite(p)]
-    ylimit = max(3.0, 1.15 * max((abs(p) for p in finite_pulls), default=2.5))
+    ylimit = getattr(args,"pull_limit",10.0)
     for iq, qb in enumerate(qbins):
         for ix, xb in enumerate(xbins):
             row = len(qbins) - 1 - iq
@@ -611,7 +627,15 @@ def draw_pull_canvas(keys, trange, kind, energy, panels, cache, args, output,
             values = per_key.get(key, [])
             if values:
                 phi, pulls = np.asarray(values).T
-                ax.plot(phi, pulls, "o", ms=3.8, color="#7f3c8d", zorder=3)
+                display,outside=pull_display_points(pulls,ylimit)
+                ax.plot(phi[~outside],display[~outside],"o",ms=3.8,color="#7f3c8d",zorder=3)
+                for sign,marker in ((1,"^"),(-1,"v")):
+                    mask=outside & (np.sign(pulls)==sign)
+                    ax.plot(phi[mask],display[mask],marker,ms=5,color="#c44e52",zorder=4)
+                if outside.any():
+                    ax.text(.96,.94,f"{outside.sum()} outside ±{ylimit:g}\nmax |pull|={max(abs(pulls)):g}",
+                            transform=ax.transAxes,ha="right",va="top",fontsize=7,color="#a03030",
+                            bbox=dict(facecolor="white",edgecolor="none",alpha=.9,pad=1))
             ax.axhline(0.0, color="black", lw=1.0, alpha=0.7)
             ax.axhline(+1.0, color="0.5", lw=0.8, ls="--", alpha=0.55)
             ax.axhline(-1.0, color="0.5", lw=0.8, ls="--", alpha=0.55)
@@ -626,7 +650,7 @@ def draw_pull_canvas(keys, trange, kind, energy, panels, cache, args, output,
     finish_endpoint_ticks(axs, bottom_by_col, left_by_row)
     fig.legend(
         handles=[Line2D([], [], color="#7f3c8d", marker="o", ls="none", markersize=5, label=f"(Pass-2 − {reference}) / combined uncertainty" if comparison == "pass1" else "(Pass-2 − KM15) / Pass-2 uncertainty")],
-        loc="upper center", bbox_to_anchor=(0.5, 0.914), frameon=False,
+        loc="upper center", bbox_to_anchor=(0.5, 1.-.63/figure_height), frameon=False,
     )
     output.parent.mkdir(parents=True, exist_ok=True)
     fig.savefig(output, dpi=args.dpi)
@@ -942,7 +966,7 @@ def parse_pass2(args):
                 )
                 plot_phi = phi
                 reference = None
-                if getattr(args,"reference_kinematics","midpoints") == "means":
+                if getattr(args,"reference_kinematics","means") == "means":
                     label = "10.6 GeV" if energy == 10.6 else "Sp19 Inb"
                     coordinates = tuple(base.to_float(row.get(p+", "+label,""),default=float("nan")) for p in ("xBavg","Q2avg","t_abs_avg","phiavg"))
                     reference = (*coordinates[:3],coordinates[3] % 360.,10.6 if energy==10.6 else 10.1998)
@@ -1004,8 +1028,9 @@ def make_parser():
     parser.add_argument("--pass1-bsa-text", type=Path, default=None, help="Published seven-column RGA Pass-1 BSA table")
     parser.add_argument("--no-pass1", action="store_true", help="Do not auto-detect or plot any Pass-1 data")
     parser.add_argument("--pass1-phi-tolerance", type=float, default=2.0, help="Maximum circular phi separation in degrees for Pass-2/Pass-1 pulls (default: 2)")
-    parser.add_argument("--reference-kinematics",choices=("midpoints","means"),default="midpoints",
-                        help="Theory/data reference: legacy bin midpoints or measured row means (exact model points)")
+    parser.add_argument("--reference-kinematics",choices=("midpoints","means"),default="means",
+                        help="Theory/data reference: measured row means (default, exact model points) or legacy bin midpoints")
+    parser.add_argument("--pull-limit",type=positive_finite,default=10.0,help="Symmetric pull-panel range (default: 10); outliers marked at boundary; statistics unchanged")
     parser.add_argument("--phi-dense", type=int, default=24, help="Phi points per model curve (default: 24)")
     parser.add_argument("--e-beam", type=float, choices=(10.2, 10.6), default=None, help="Restrict to one beam energy (default: both)")
     parser.add_argument("--xs-column-10p2", default=None, help="Override the Sp19 10.2-GeV cross-section column")

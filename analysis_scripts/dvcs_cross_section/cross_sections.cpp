@@ -33,7 +33,7 @@
 //
 //   - It computes the physical four-fold cross section in nb/(GeV^4 deg):
 //       L_int[nb^-1] = Q[nC] * 1.316875 nb^-1/nC
-//       sigma = Y_unfolded * Frad * Fbin / (L_int * bin_volume)
+//       sigma = Y_unfolded / (L_int * bin_volume * Frad * Fbin)
 //
 //   - It writes:
 //       acceptance corrected yield, ep->epg, exp, <combined label>, <helicity>
@@ -47,6 +47,7 @@
 // -----------------------------------------------------------------------------
 
 #include "cross_sections.h"
+#include "correction_convention.h"
 #include "model_predictions.h"
 
 #include <algorithm>
@@ -1531,9 +1532,16 @@ bool compute_cross_sections(const std::string &csv_main,
             return true;
         };
 
+    // Record the formula so standalone repairs cannot silently apply it twice.
+    const size_t input_columns = header.size();
+    int c_convention = find_col_optional(header, "cross section correction convention");
+    if (c_convention < 0) {
+        c_convention = static_cast<int>(header.size());
+        header.push_back("cross section correction convention");
+    }
     std::vector<std::string> out_lines;
     out_lines.reserve(lines.size());
-    out_lines.push_back(lines[0]);
+    out_lines.push_back(join_csv_line(header));
 
     std::cout << "[cross_sections] compute_cross_sections: data rows = "
               << n_data_rows << "\n";
@@ -1552,7 +1560,7 @@ bool compute_cross_sections(const std::string &csv_main,
               << "inside cross_sections.cpp from valid member periods only.\n";
 
     std::cout << "[cross_sections] NOTE: Frad and Fbin are imported by bin index from Lee's CSV and written to both beam-energy columns; "
-              << "bin_volume is read from the pass-2 CSV phase-space columns filled by bin_volume.cpp.\n";
+              << "sigma = Y / (L * V * Frad * Fbin); phase-space volumes come from bin_volume.cpp.\n";
 
     int next_pct = 10;
 
@@ -1574,13 +1582,14 @@ bool compute_cross_sections(const std::string &csv_main,
 
         std::vector<std::string> fields = split_csv_line(lines[row]);
 
-        if (fields.size() != header.size()) {
+        if (fields.size() != input_columns) {
             std::cerr << "[cross_sections] WARNING: row " << row
                       << " has " << fields.size() << " fields; expected "
-                      << header.size() << ". Copying unchanged.\n";
-            out_lines.push_back(lines[row]);
-            continue;
+                      << input_columns << ". Refusing malformed input.\n";
+            return false;
         }
+        fields.resize(header.size());
+        fields[c_convention] = "pass1-divide";
 
         const LeeCorrections *lee_row = nullptr;
 
@@ -1597,6 +1606,8 @@ bool compute_cross_sections(const std::string &csv_main,
         const Triple frad = lee_row->frad;
         const Triple fbin = lee_row->fbin;
 
+        // Lee defines both factors as denominators (note Sec. 5.4, paper Eq. 10).
+        // Preserve the raw imported values; do not invert their CSV representation.
         // Restore the pass-1 correction prescription: Frad and Fbin are both
         // inherited by bin index from Lee's imports/all_bin_v3.csv.  As in the
         // previous production workflow, the same imported factor is used for
@@ -1702,7 +1713,8 @@ bool compute_cross_sections(const std::string &csv_main,
 
                 if (denom <= 0.0 || !std::isfinite(denom)) continue;
 
-                const double sigma = Y.value * Frad.value * Fbin.value / denom;
+                const double sigma = dvcs_corrections::cross_section(
+                    Y.value, denom, Frad.value, Fbin.value);
 
                 if (!std::isfinite(sigma) || sigma <= 0.0) continue;
 
@@ -2320,13 +2332,13 @@ bool write_cross_section_analysis_note_outputs(
             ? r.vbin.stat/r.vbin.value : 0.0;
 
         p.after_frad =
-            p.acceptance * r.frad.value;
+            p.acceptance / r.frad.value;
         p.after_frad_err =
             p.after_frad *
             std::sqrt(rel_acc*rel_acc + rel_rad*rel_rad);
 
         p.after_fbin =
-            p.after_frad * r.fbin.value;
+            p.after_frad / r.fbin.value;
         p.after_fbin_err =
             p.after_fbin *
             std::sqrt(

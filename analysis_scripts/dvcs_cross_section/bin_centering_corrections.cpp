@@ -421,13 +421,13 @@ static FbinResult compute_fbin_for_row(
     if (need_km15 && cnt_km15 > 0) {
         const double avg_km15 = sum_km15 / double(cnt_km15);
         if (finite_pos(avg_km15)) {
-            f_km15 = center_km15 / avg_km15;
+            f_km15 = avg_km15 / center_km15;
         }
     }
     if (need_vgg && cnt_vgg > 0) {
         const double avg_vgg = sum_vgg / double(cnt_vgg);
         if (finite_pos(avg_vgg)) {
-            f_vgg = center_vgg / avg_vgg;
+            f_vgg = avg_vgg / center_vgg;
         }
     }
 

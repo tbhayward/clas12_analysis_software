@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Converged KM15 centering on the same allowed domain as bin volumes.
-Stored Fbin is multiplicative: model(mean) / model average over allowed bin.
+Stored Fbin is a denominator: model average over allowed bin / model(mean).
 Use --output to preserve the input; without it the requested CSV is updated atomically.
 """
 import os
@@ -15,7 +15,7 @@ import numpy as np
 from kinematic_domain import Domain,box_from_row,energy_for_label,find_config
 warnings.filterwarnings('ignore',category=RuntimeWarning)
 _G=_TH=None
-VERSION='allowed-domain-v2'
+VERSION='allowed-domain-v3-pass1-divide'
 
 def install_cff_cache(model):
     """Reuse fixed-KM15 CFF scalars at identical invariants, independently of phi.
@@ -107,7 +107,7 @@ def integrate_task(job):
                 vals.append(cache[point])
             approximate_volume=float(weights.sum())
             average=float(np.dot(weights,np.asarray(vals))/approximate_volume)
-            factor=central/average
+            factor=average/central
             change=abs(factor/previous-1) if previous is not None else math.inf
             volume_error=abs(approximate_volume/volume-1)
             last=dict(row=i,label=label,order=n,factor=factor,model_at_mean=central,
@@ -162,7 +162,7 @@ def recalculate(rows,domain,workers=10,order=3,max_order=11,rtol=.002,fbin=True)
     return updated,diagnostics
 
 def rescale_cross_sections(original,updated):
-    """Exact frozen-calibration update: sigma_new/sigma_old = Fnew/Fold * Vold/Vnew."""
+    """Exact frozen-calibration update: sigma_new/sigma_old = Fold/Fnew * Vold/Vnew."""
     for a,b in zip(original,updated):
         for col in a:
             if not ((col.startswith('cross sections,') or col.startswith('normed cross sections,')) and ', exp,' in col and col.endswith(('unpol','pos','neg'))):continue
@@ -176,7 +176,33 @@ def rescale_cross_sections(original,updated):
             oldv=triple(a['bin_volume, '+label])[0];newv=triple(b['bin_volume, '+label])[0]
             if not all(math.isfinite(v) and v>0 for v in (oldf,newf,oldv,newv)):
                 raise ArithmeticError(f'Cannot rescale populated cross section: {col}')
-            ratio=newf/oldf*oldv/newv;b[col]=fmt(value*ratio,stat*abs(ratio),syst*abs(ratio))
+            ratio=oldf/newf*oldv/newv;b[col]=fmt(value*ratio,stat*abs(ratio),syst*abs(ratio))
+
+CONVENTION_COLUMN='cross section correction convention'
+
+def convert_input_convention(rows,requested=None):
+    """Return a copy using Lee denominators; refuse to guess an unmarked CSV."""
+    recorded={r.get(CONVENTION_COLUMN,'') for r in rows}
+    if requested is not None and recorded != {''} and recorded != {requested}:
+        raise ValueError('Requested correction convention conflicts with CSV markers')
+    convention=requested or (next(iter(recorded)) if len(recorded)==1 else None)
+    if convention not in ('legacy-multiply','pass1-divide'):
+        raise ValueError('Unmarked/ambiguous CSV: specify --input-correction-convention legacy-multiply or pass1-divide')
+    updated=[dict(r) for r in rows]
+    for a,b in zip(rows,updated):
+        if convention=='legacy-multiply':
+            for col in a:
+                if not ((col.startswith('cross sections,') or col.startswith('normed cross sections,')) and ', exp,' in col and col.endswith(('unpol','pos','neg'))):continue
+                value,stat,syst=triple(a[col])
+                if not math.isfinite(value):continue
+                label='10.2 GeV' if 'Sp19 Inb' in col or '10.2 GeV' in col else '10.6 GeV'
+                frad=triple(a['Frad, '+label])[0];fbin=triple(a['Fbin, '+label])[0]
+                if not all(math.isfinite(v) and v>0 for v in (frad,fbin)):
+                    raise ValueError(f'Invalid imported correction for {col}')
+                ratio=1/(frad*fbin)**2
+                b[col]=fmt(value*ratio,stat*ratio,syst*ratio)
+        b[CONVENTION_COLUMN]='pass1-divide'
+    return updated,convention
 
 def write_diagnostics(path,diagnostics):
     fields=list(dict.fromkeys(k for d in diagnostics for k in d))
@@ -189,12 +215,16 @@ def main():
     ap.add_argument('--workers',type=int,default=10);ap.add_argument('--order',type=int,default=3)
     ap.add_argument('--max-order',type=int,default=11);ap.add_argument('--rtol',type=float,default=.002)
     ap.add_argument('--on-unconverged',choices=('error','omit'),default='error',help='error: preserve output on failure; omit: leave failed Fbin/XS energy-rows blank for a preview')
+    ap.add_argument('--input-correction-convention',choices=('legacy-multiply','pass1-divide'))
     ap.add_argument('--volumes-only',action='store_true');ap.add_argument('--update-cross-sections',action='store_true')
     args=ap.parse_args();source=args.csv_path.resolve();target=(args.output or source).resolve()
     original_bytes=source.read_bytes()
     import io
     rows=list(csv.DictReader(io.StringIO(original_bytes.decode('utf-8-sig'))))
     if not rows:raise SystemExit('CSV has no data rows')
+    if args.update_cross_sections:
+        try:rows,input_convention=convert_input_convention(rows,args.input_correction_convention)
+        except ValueError as e:ap.error(str(e))
     config=find_config(source,args.cuts_json);domain=Domain.from_json(config)
     print(f'[bincenter] Domain configuration: {config}',flush=True)
     updated,diagnostics=recalculate(rows,domain,args.workers,args.order,args.max_order,args.rtol,not args.volumes_only)

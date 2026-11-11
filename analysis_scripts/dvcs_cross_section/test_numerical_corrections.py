@@ -41,18 +41,44 @@ def main():
     task=(0,'10.2 GeV',center,boundary,(345.,360.),10.1998,3,11,.002,domain,v)
     result=bc.integrate_task(task);assert result['status']=='converged';assert abs(result['factor']-1)<1e-12
     bc._km15=saved
-    # Multiplication and volume denominator: 0.9/0.8 * 2/1.8 = 1.25.
+    # Lee denominator convention: 0.8/0.9 * 2/1.8 = 80/81.
     original={'Fbin, 10.6 GeV':'(.8,0,0)','bin_volume, 10.6 GeV':'(2,0,0)',
               'cross sections, ep->epg, exp, 10.6 GeV, unpol':'(10,2,0)'}
     updated=dict(original);updated['Fbin, 10.6 GeV']='(.9,0,0)';updated['bin_volume, 10.6 GeV']='(1.8,0,0)'
     bc.rescale_cross_sections([original],[updated]);value,stat,_=bc.triple(updated['cross sections, ep->epg, exp, 10.6 GeV, unpol'])
-    assert abs(value-12.5)<1e-12 and abs(stat-2.5)<1e-12
+    assert abs(value-10*80/81)<1e-10 and abs(stat-2*80/81)<1e-10
     assert original['cross sections, ep->epg, exp, 10.6 GeV, unpol']=='(10,2,0)'
     missing=dict(updated);missing['Fbin, 10.6 GeV']=''
     bc.rescale_cross_sections([original],[missing])
     assert missing['cross sections, ep->epg, exp, 10.6 GeV, unpol']==''
+    # Nonconstant model catches a reciprocal factor error; constant F=1 cannot.
+    bc._km15=lambda p: 1.+p[3]/360.
+    asymmetric=(.18,2.,.13,3.,10.6)
+    box=(.155,.204,1.912,2.510,.11,.15)
+    vol=domain.volume(box,(0.,30.),10.6)[0]
+    result=bc.integrate_task((0,'10.6 GeV',asymmetric,box,(0.,30.),10.6,3,11,.002,domain,vol))
+    assert result['status']=='converged',result
+    assert abs(result['factor']-(1+15/360)/(1+3/360))<1e-10
+    bc._km15=saved
+    # Check the exact arithmetic used by the production C++ calculation.
+    with tempfile.TemporaryDirectory() as tmp:
+        t=Path(tmp);cpp=t/'factor.cpp';exe=t/'factor'
+        cpp.write_text('#include "correction_convention.h"\n#include <cassert>\n#include <cmath>\nint main(){assert(std::abs(dvcs_corrections::cross_section(80.,10.,.8,.5)-20.)<1e-12);}')
+        subprocess.run(['c++','-std=c++17','-I'+str(SOURCE),str(cpp),'-o',str(exe)],check=True)
+        subprocess.run([str(exe)],check=True)
+    legacy={'Frad, 10.6 GeV':'(.8,0,0)','Fbin, 10.6 GeV':'(.5,0,0)',
+            'cross sections, ep->epg, exp, 10.6 GeV, unpol':'(8,2,0)'}
+    try:bc.convert_input_convention([legacy])
+    except ValueError:pass
+    else:raise AssertionError('Unmarked CSV accepted without a declared convention')
+    fixed,convention=bc.convert_input_convention([legacy],'legacy-multiply')
+    assert abs(bc.triple(fixed[0]['cross sections, ep->epg, exp, 10.6 GeV, unpol'])[0]-50)<1e-12
+    again,_=bc.convert_input_convention(fixed);assert again==fixed
+    assert legacy['cross sections, ep->epg, exp, 10.6 GeV, unpol']=='(8,2,0)'
     # Import plotting dependencies only for the actual reference-coordinate check.
     plot=importlib.import_module('plot_pass2_final_results_by_t');base=plot.base
+    assert plot.make_parser().parse_args(['input.csv']).reference_kinematics=='means'
+    assert plot.make_parser().parse_args(['input.csv','--reference-kinematics','midpoints']).reference_kinematics=='midpoints'
     config=base.ModelConfig(10.6,'unused','unused',sys.executable,24,False,False,False)
     refs={'xs':((.2,2.,.15,7.,10.6),(.25,2.2,.17,23.,10.6)),
           'bsa':((.2,2.,.15,7.,10.6),)}
@@ -86,7 +112,7 @@ def main():
         record=dict(zip(('xBmin','xBmax','Q2min','Q2max','t_abs_min','t_abs_max'),map(str,boundary)))
         record.update({'bin index':'1','phimin':'0','phimax':'15'})
         for label in ('10.6 GeV','10.2 GeV'):
-            record['Fbin, '+label]='(.8,0,0)';record['bin_volume, '+label]='(2,0,0)'
+            record['Frad, '+label]='(.9,0,0)';record['Fbin, '+label]='(.8,0,0)';record['bin_volume, '+label]='(2,0,0)'
             record['cubic bin_volume, '+label]='(2,0,0)'
         for label in ('10.6 GeV','Sp19 Inb'):
             for prefix,value in zip(('xBavg','Q2avg','t_abs_avg','phiavg'),(.14,2.,.13,7.)):
@@ -99,7 +125,7 @@ def main():
         for policy in ('error','omit'):
             destination=t/policy
             sys.argv=['runner','--input-csv',str(input_path),'--output-dir',str(destination),
-                      '--cuts-json',str(config_path),'--on-unconverged',policy]
+                      '--cuts-json',str(config_path),'--on-unconverged',policy,'--input-correction-convention','legacy-multiply']
             try:runner.main()
             except SystemExit:
                 assert policy=='error'
@@ -112,6 +138,15 @@ def main():
                 assert row['cross sections, ep->epg, exp, Sp19 Inb, unpol']==''
                 assert row['cross sections, ep->epg, exp, 10.6 GeV, unpol']!=''
         assert input_path.read_bytes()==before
+        # Fast mode must not call the numerical integrator, even once.
+        bc.recalculate=lambda *a,**k: (_ for _ in ()).throw(AssertionError('Unexpected integration'))
+        sys.argv=['runner','--input-csv',str(input_path),'--output-dir',str(t/'fast'),
+                  '--cuts-json',str(config_path),'--input-correction-convention','legacy-multiply','--convention-only']
+        assert runner.main()==0
+        assert (t/'fast'/'original.csv').read_bytes()==before
+        repaired=next(csv.DictReader((t/'fast'/'convention_fixed.csv').open()))
+        assert repaired['cross section correction convention']=='pass1-divide'
+        assert abs(bc.triple(repaired['cross sections, ep->epg, exp, 10.6 GeV, unpol'])[0]-10/(.9*.8)**2)<1e-9
     bc.recalculate=saved_recalculate;sys.argv=saved_argv
     print('PASS: allowed nodes, constant-model normalization, C++/Python volumes, reciprocal convention, frozen-input rescaling, exact mean-reference predictions')
 

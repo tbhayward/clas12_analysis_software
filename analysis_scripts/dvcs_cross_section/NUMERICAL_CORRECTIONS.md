@@ -5,14 +5,32 @@ files are read by the numerical rerunner.
 
 ## Convention
 
-The extraction currently uses
+Sangbaek Lee's final April 2025 pass-1 note, Section 5.4 (printed p.126),
+and the embedded paper Eq. (10) (PDF p.166) define both imported factors
+as denominators:
 
-    sigma = corrected_yield * Frad * Fbin / (luminosity * bin_volume)
-    stored Fbin = model(at measured means) / model average over allowed bin
+    Frad = average radiative / average Born
+    Fbin = average Born / Born(reference)
+    sigma = corrected_yield / (luminosity * bin_volume * Frad * Fbin)
 
-A paper may instead define the reciprocal and divide by it. The code retains
-its existing multiplicative convention. Changing the integration does not
-silently invert either imported or recomputed factors.
+The former production formula multiplied the unchanged imported values. That
+was a convention error. The extraction now divides by both and writes a
+`cross section correction convention` column (`pass1-divide`). Imported
+numbers remain unchanged. Recomputed Fbin uses the same average/reference
+convention. Relative factor uncertainties still enter in quadrature.
+
+For a fixed yield, volume and normalization, correcting an OLD multiplication
+result changes sigma by `1/(Frad*Fbin)^2`. Replacing Fbin in an already correct
+division result changes sigma by `Fbin_old/Fbin_new`. These are distinct steps.
+Previous new-factor previews used reciprocal Fbin values and must be regenerated
+from the original extraction; do not feed those previews into the repair.
+
+The numerical rerunner refuses to guess the convention for unmarked CSVs.
+Declare `--input-correction-convention legacy-multiply` for the original saved
+nominal test. Newly generated CSVs carry a marker and are detected automatically.
+A conflicting explicit convention is rejected, preventing accidental double repair.
+All standalone results hold calibration and normalization fixed; a future full
+run recomputes downstream stages in the normal way.
 
 ## Numerical changes
 
@@ -63,7 +81,7 @@ The final-by-t plotter now supports
     --reference-kinematics midpoints
     --reference-kinematics means
 
-The legacy default stays `midpoints` for existing comparisons. In `means`
+The default is now `means`; select `midpoints` explicitly for a legacy comparison. In `means`
 mode, data use measured mean phi and theory is evaluated at each row's exact
 measured xB/Q²/|t|/phi means. Theory is drawn as model points, because the
 reference kinematics vary from one phi row to another. Pulls use those exact
@@ -71,9 +89,10 @@ predictions; no interpolation across uncomputed mean points is substituted.
 Cache keys include the actual reference coordinates and mode, so old midpoint
 curves cannot be reused for this comparison accidentally.
 
-The numerical rerunner uses midpoint comparisons for the volume-only control,
-which retains the imported factors, and measured-mean comparisons for the newly
-centered result. Published Pass-1 overlays are disabled in these diagnostic plots.
+All numerical rerunner comparisons now use measured means, including the
+convention-only baseline and the volume-only control. Pass-1 used xB/Q²/|t|
+means integrated over phi; this helper uses each individual row's measured
+means, so importing pass-1 factors still does not exactly recenter to pass-2 means. Published Pass-1 overlays are disabled in these diagnostic plots.
 
 ## Build and validate
 
@@ -84,8 +103,8 @@ make -j10 dvcs_analysis && python3 test_numerical_corrections.py --real-km15
 ```
 
 The tests compile the standalone C++ volume routine, compare Python and C++,
-check allowed quadrature points, constant-model centering, multiplicative
-correction/volume scaling, missing-factor handling, and exact reference-point
+check allowed quadrature points, constant/nonconstant-model centering, denominator
+correction/volume scaling, legacy conversion and idempotence, default mean references, missing-factor handling, and exact reference-point
 model routing. The optional real-model check requires gepard in that Python.
 The modified ROOT-dependent C++ units also passed local syntax checks; full
 farm linking remains part of the build above.
@@ -96,7 +115,7 @@ This one-line preview command creates a NEW directory, produces both numerical
 controls and runs final-by-t plotting. Existing directories are refused.
 
 ```sh
-python3 run_numerical_corrections.py --input-csv test_runs/proton_t_default_001/output/csvs/dvcs_pass2_analysis.csv --output-dir test_runs/proton_t_default_001/numerical_corrections_001 --workers 10 --on-unconverged omit --plot
+python3 run_numerical_corrections.py --input-csv test_runs/proton_t_default_001/output/csvs/dvcs_pass2_analysis.csv --output-dir test_runs/proton_t_default_001/numerical_corrections_002 --workers 10 --input-correction-convention legacy-multiply --on-unconverged omit --plot
 ```
 
 Omit `--on-unconverged omit` if all requested rows must converge before the
@@ -106,7 +125,8 @@ without model plotting.
 Outputs:
 
 - `original.csv`: byte-for-byte snapshot of the input.
-- `volumes_only.csv`: improved volumes with imported Fbin retained.
+- `convention_fixed.csv`: division by imported factors, original volumes retained.
+- `volumes_only.csv`: division by imported factors and improved volumes.
 - `new_fbin_and_volumes.csv`: improved volumes and converged new factors;
   optional preview omissions are explicit blanks.
 - `comparison.csv`: old/new factors, volumes and resulting cross-section ratios.
@@ -114,11 +134,11 @@ Outputs:
   differences, model-at-mean and model-bin-average values.
 - `numerical_corrections.json`: input hash, settings and omitted-row list.
 - `numerical_comparison.png`: factor and volume-change distributions.
-- `plots_volumes_only/` and `plots_new_fbin_and_volumes/`: final-by-t plots.
+- `plots_convention_fixed/`, `plots_volumes_only/` and `plots_new_fbin_and_volumes/`: final-by-t plots.
 
-The frozen-input cross-section update is exactly
+After repairing the input convention, the frozen-input cross-section update is exactly
 
-    sigma_new / sigma_old = (Fbin_new / Fbin_old) * (V_old / V_new)
+    sigma_new / sigma_old = (Fbin_old / Fbin_new) * (V_old / V_new)
 
 Values and statistical errors are rescaled together. Raw/MC/signal yields,
 acceptance, luminosities, Frad, BSA and normalization settings are preserved.
@@ -133,3 +153,54 @@ restores the pass-1 factors.
 
 The rerunner rejects overlapping phi input partitions, including the earlier
 unrepaired merged test. Numerical corrections cannot repair its event binning.
+
+For the fastest correction-only check, without new KM15 integrations:
+
+```sh
+python3 run_numerical_corrections.py --input-csv test_runs/proton_t_default_001/output/csvs/dvcs_pass2_analysis.csv --output-dir test_runs/proton_t_default_001/convention_fix_001 --input-correction-convention legacy-multiply --convention-only --workers 10 --plot
+```
+
+This preserves source bytes, yields, volumes, factors and normalization. It
+rescales experimental central values and their saved errors, including normed
+columns, using the denominator convention. Systematic budgets are not rederived.
+The comparison-table ratios refer to the convention-fixed baseline. `--plot`
+is the only part of this fast command that needs model evaluation.
+
+## Independent pass-1 convention check and fresh baseline
+
+The main note also explicitly divides in Eq. (3.54), printed page 50 (PDF
+page 51); Eqs. (3.56)-(3.58) define the ratios. Fig. 5.21 (printed p.127,
+PDF p.128) has an incorrect inset kinematic label: the caption and bin
+number 88 identify xB=.204-.268, Q²=1.912-2.510, |t|=.25-.40. All 57
+central vector marker values (19 each for Frad, Fbin, and Frad*Fbin) match
+the raw imported CSV columns within 2.9e-10, whereas reciprocals do not.
+Production uses the two individual factor columns, not the combined column.
+
+To rebuild, preserve available final-by-t model caches, delete the three
+named test directories, run a fresh nominal proton-t extraction without
+systematics, and plot it:
+
+```sh
+make -j10 dvcs_analysis && python3 rerun_nominal_baseline.py --reset-test-runs --plot
+```
+
+This explicitly deletes `test_runs/merged_t_001`, `test_runs/photon_t_001`,
+and `test_runs/proton_t_default_001` (all contents). It preserves all found
+model cache entries in `test_runs/theory_cache_preserved` first, then seeds
+the fresh nominal plotting cache. Only matching existing cache keys are
+reused; midpoint curves cannot replace mean-reference predictions.
+Unrelated directories are retained. Do not run two reset jobs concurrently;
+a lock rejects another reset launcher. A non-reset invocation refuses an
+existing nominal destination. No previous cross sections are rescaled.
+
+The nominal analysis retains imported pass-1 Frad and Fbin and divides by
+both, uses the improved volumes, and defaults to measured-mean theory
+comparisons. It does not select the exploratory new centering prescription.
+The final output is in `test_runs/proton_t_default_001/output`.
+
+Pull panels now default to [-10,10], configurable by `--pull-limit 10`.
+Outliers are shown as red boundary triangles, with count and maximum
+absolute pull annotated. Raw pull values, distributions and statistics
+are retained without clipping. Single-cell canvases reserve enough title
+space. `python3 test_baseline_refresh.py` verifies this and checks the
+reset/cache workflow on disposable fixtures without ROOT inputs.
