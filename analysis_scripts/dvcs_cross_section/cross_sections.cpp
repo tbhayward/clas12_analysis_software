@@ -265,6 +265,15 @@ static std::string join_csv_line(const std::vector<std::string> &fields) {
     return oss.str();
 }
 
+// split_csv_line retains CSV encoding. Decode each header field once before
+// reserializing; quoting an already encoded name adds literal quote characters.
+static std::string serialize_csv_header(const std::vector<std::string> &encoded) {
+    std::vector<std::string> decoded;
+    decoded.reserve(encoded.size());
+    for (const auto &name : encoded) decoded.push_back(unquote(trim(name)));
+    return join_csv_line(decoded);
+}
+
 static int find_col(const std::vector<std::string> &header,
                     const std::string &target) {
     for (size_t i = 0; i < header.size(); ++i) {
@@ -1541,7 +1550,7 @@ bool compute_cross_sections(const std::string &csv_main,
     }
     std::vector<std::string> out_lines;
     out_lines.reserve(lines.size());
-    out_lines.push_back(join_csv_line(header));
+    out_lines.push_back(serialize_csv_header(header));
 
     std::cout << "[cross_sections] compute_cross_sections: data rows = "
               << n_data_rows << "\n";
