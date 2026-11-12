@@ -24,7 +24,7 @@ import threading
 import numpy as np
 
 SOURCE=Path(__file__).resolve().parent
-VERSION='exclusivity-resolution-v1'
+VERSION='exclusivity-resolution-v2'
 PERIODS={'fa18_inb':('Fa18_Inb','50nA'),'fa18_out':('Fa18_Out','50nA'),
          'sp18_inb':('Sp18_Inb','50nA'),'sp18_out':('Sp18_Out','45nA'),'sp19_inb':('Sp19_Inb','50nA')}
 TOPOLOGIES=['FD_FD','CD_FD','CD_FT']
@@ -109,7 +109,7 @@ def build_spec(run,periods,config=None):
                 for stats in block.values():saved_window(stats)
     return spec,paths
 
-def inventory(root,periods,limit):
+def inventory(root,periods,limit,background_aware=False):
     result={}
     for p in periods:
         for sample in ('data','mc'):
@@ -119,6 +119,24 @@ def inventory(root,periods,limit):
             if limit:files=files[:limit]
             if not files:raise FileNotFoundError(f'No {sample} reconstructed parts matching {directory/pattern}')
             result[p,sample]=files
+    if background_aware:
+        if limit:raise ValueError('Background normalization requires complete samples; omit --max-files-per-sample')
+        for p in periods:
+            current=PERIODS[p][1]
+            locations={'pi0_data':(root/'data'/p/'pi0_data/parts','*.root'),
+                'pi0_mc':(root/'mc'/p/'pi0_mc/nominal/parts','*.rec_only.root'),
+                'background':(root/'leakage'/p/'pi0_as_dvcs/parts','*.root')}
+            for sample,(directory,pattern) in locations.items():
+                files=sorted(f.resolve() for f in directory.glob(pattern) if '.partial' not in f.name)
+                if sample=='pi0_mc':files=[f for f in files if '_'+current+'_' in f.name]
+                if sample=='background':
+                    # Leakage exports may be period-only; reject mixed-current exports.
+                    labelled=[f for f in files if any('_'+c+'_' in f.name for c in ('0nA','35nA','40nA','45nA','50nA','55nA'))]
+                    if labelled:
+                        if len(labelled)!=len(files):raise ValueError('Mixed labelled/unlabelled leakage inputs')
+                        files=[f for f in files if '_'+current+'_' in f.name]
+                if not files:raise FileNotFoundError(f'No {sample} files at {directory}')
+                result[p,sample]=files
     return result
 
 def make_jobs(files,workers):
@@ -141,9 +159,9 @@ def compile_worker(output,paths):
     subprocess.run([os.environ.get('CXX','c++'),*flags,'-O3','-std=c++17','-I'+str(build),str(build/'exclusivity_resolution_worker.cpp'),str(build/'global_cuts.cpp'),'-o',str(worker),*libs],check=True)
     return worker
 
-def scan(output,spec,paths,files,workers):
+def scan(output,spec,paths,files,workers,seed_data=None):
     print('[build] Compiling diagnostic with saved production global cuts',flush=True)
-    worker=compile_worker(output,paths);jobs=make_jobs(files,workers)
+    worker=compile_worker(output,paths);jobs=make_jobs({k:v for k,v in files.items() if not(seed_data and k[1]=='data')},workers)
     for name in ('global_cpp','global_header','domain_header'):
         if digest(output/'backend'/paths[name].name)!=spec['input_hashes'][name]:
             raise RuntimeError('Saved production sources changed while the study was starting')
@@ -156,6 +174,26 @@ def scan(output,spec,paths,files,workers):
         arrays[key]=np.zeros((3,ng,7,maxbins),dtype=np.uint64)
         arrays[key+'__stats']=np.zeros((3,ng,7,2),dtype=np.uint64)
         flows[key]=dict(entries=0,global_pass=[0]*3,selected=[0]*3)
+    if seed_data:
+        old=json.loads((seed_data/'manifest.json').read_text())
+        if digest(seed_data/'histograms.npz')!=old['histogram_sha256']:raise ValueError('Seed histogram checksum mismatch')
+        for field in ('variables','strata','global_cuts','exclusivity'):
+            if old['spec'][field]!=spec[field]:raise ValueError('Seed DATA selection/config mismatch: '+field)
+        if old['spec']['input_hashes']!=spec['input_hashes']:raise ValueError('Seed production sources differ')
+        old_inventory={(r['period'],r['sample'],r['path']):(r['size'],r['mtime_ns']) for r in old['inventory']}
+        for r in initial_inventory:
+            if r['sample']=='data' and old_inventory.get((r['period'],'data',r['path']))!=(r['size'],r['mtime_ns']):
+                raise ValueError('Seed DATA files do not match requested input inventory')
+        with np.load(seed_data/'histograms.npz',allow_pickle=False) as cache:
+            for p in spec['periods']:
+                key=p+'__data'
+                if {r['path'] for r in old['inventory'] if r['period']==p and r['sample']=='data'}!={str(f) for f in files[p,'data']}:raise ValueError('Seed DATA coverage differs')
+                arrays[key]=cache[key].copy();arrays[key+'__stats']=cache[key+'__stats'].copy()
+                flows[key]=old['flows'][key]
+        file_records.extend(r for r in old['files'] if r['sample']=='data' and r['period'] in spec['periods'])
+        spec['reused_data_manifest_sha256']=digest(seed_data/'manifest.json')
+        write_json(output/'spec.json',spec)
+        print('[reuse] Existing DATA histograms verified; no DATA ROOT events will be reread',flush=True)
     active=set();lock=threading.Lock();cancel=threading.Event()
     def launch(item):
         i,job=item;jp=temp/f'{i}.json';out=temp/f'{i}.result.json';log=temp/f'{i}.log'
@@ -214,12 +252,12 @@ def quantile(counts,edges,probability):
     return float(edges[i]+(edges[i+1]-edges[i])*(target-prev)/counts[i])
 
 def shape_metrics(counts,edges,nonfinite,passed):
-    n=int(np.sum(counts));inside=int(np.sum(counts[1:-1]));finite_fraction=inside/n if n else 0.
+    n=float(np.sum(counts));inside=float(np.sum(counts[1:-1]));finite_fraction=inside/n if n else 0.
     qs=[quantile(counts[1:-1],edges,q) for q in (.025,.16,.5,.84,.975)]
     smooth=np.convolve(counts[1:-1].astype(float),[1,2,1],mode='same')
     peak=float((edges[np.argmax(smooth)]+edges[np.argmax(smooth)+1])/2) if inside else float('nan')
     return dict(n_finite=n,n_nonfinite=int(nonfinite),in_range_fraction=finite_fraction,
-        underflow=int(counts[0]),overflow=int(counts[-1]),q025=qs[0],q16=qs[1],median=qs[2],q84=qs[3],q975=qs[4],
+        underflow=float(counts[0]),overflow=float(counts[-1]),q025=qs[0],q16=qs[1],median=qs[2],q84=qs[3],q975=qs[4],
         core_spread=(qs[3]-qs[1])/2,peak=peak,pass_own_cut_fraction=passed/(n+nonfinite) if n+nonfinite else float('nan'))
 
 def outside_fraction(counts,edges,lo,hi):
@@ -256,7 +294,37 @@ def comparisons(arrays,spec,min_entries):
                     detail[f'{p}|{topology}|{g}|{vi}']=dict(data=hist[0].tolist(),mc=hist[1].tolist(),summary=row)
     return rows,detail
 
+def background_predictions(arrays,manifest):
+    spec=manifest['spec'];predicted={};normalizations=[]
+    ratio=float(spec.get('control_to_leakage_exposure_ratio',1.))
+    for p in spec['periods']:
+        flow=manifest['flows']
+        nd=sum(flow[p+'__pi0_data']['selected']);nm=sum(flow[p+'__pi0_mc']['selected'])
+        if nd<=0 or nm<=0:raise ValueError(f'{p}: empty two-photon control normalization')
+        alpha=nd/nm*ratio
+        alpha_stat=alpha*math.sqrt(1/nd+1/nm)
+        for t,top in enumerate(TOPOLOGIES):
+            d=flow[p+'__data']['selected'][t];b=flow[p+'__background']['selected'][t];m=flow[p+'__mc']['selected'][t]
+            residual=d-alpha*b
+            status='ok' if m>0 and residual>0 else 'invalid: nonpositive residual signal or empty signal MC'
+            beta=residual/m if status=='ok' else float('nan')
+            normalizations.append(dict(period=p,topology=top,control_data=nd,control_mc=nm,
+                exposure_ratio=ratio,background_scale=alpha,background_scale_stat=alpha_stat,
+                selected_data=d,selected_background_mc=b,predicted_background=alpha*b,
+                predicted_background_scale_stat=alpha_stat*b,selected_signal_mc=m,signal_scale=beta,status=status))
+        signal=arrays[p+'__mc'].astype(float).copy();background=arrays[p+'__background'].astype(float)*alpha
+        signal_stats=arrays[p+'__mc__stats'].astype(float).copy();background_stats=arrays[p+'__background__stats'].astype(float)*alpha
+        for t,row in enumerate(normalizations[-3:]):
+            beta=row['signal_scale'];signal[t]*=beta;signal_stats[t]*=beta
+        predicted[p+'__signal']=signal;predicted[p+'__background']=background
+        predicted[p+'__mc']=signal+background
+        predicted[p+'__mc__stats']=signal_stats+background_stats
+        predicted[p+'__data']=arrays[p+'__data'];predicted[p+'__data__stats']=arrays[p+'__data__stats']
+    return predicted,normalizations
+
+
 def effective_window(spec,p,t,sample,var):
+    if spec.get('background_aware') and sample=='mc':sample='data'
     block=spec['exclusivity'][f'DVCS_{spec["period_codes"][p]}_{t}'][sample]
     bounds=saved_window(block[var]) if var in block else [None,None]
     cfg=spec['global_cuts']
@@ -286,7 +354,12 @@ def plot_overviews(output,arrays,spec,rows,dpi):
                 for sample,color in (('data','#205cab'),('mc','#d45c18')):
                     h=arrays[f'{p}__{sample}'][ti,0,vi,:v['bins']+2];hist.append(h)
                     total=float(h.sum())
-                    ax.stairs(h[1:-1]/total if total else h[1:-1],edges,color=color,label=f'{sample.upper()} N={int(total):,}')
+                    denom=float(arrays[f'{p}__data'][ti,0,vi,:v['bins']+2].sum()) if spec.get('background_aware') else total
+                    ax.stairs(h[1:-1]/denom if denom else h[1:-1],edges,color=color,label=f'{sample.upper()} N={int(total):,}')
+                    if sample=='mc' and spec.get('background_aware'):
+                        for component,c in [('signal','#22946b'),('background','#a45ab5')]:
+                            z=arrays[p+'__'+component][ti,0,vi,:v['bins']+2]
+                            ax.stairs(z[1:-1]/denom if denom else z[1:-1],edges,color=c,label=component)
                     for bound in effective_window(spec,p,t,sample,v['name']):
                         if bound is not None:ax.axvline(bound,color=color,ls='--',alpha=.65,lw=1)
                 r=index[p,t,'inclusive','Inclusive',v['name']]
@@ -295,7 +368,7 @@ def plot_overviews(output,arrays,spec,rows,dpi):
                 ax.legend(fontsize=8);ax.grid(alpha=.15)
                 if r['status']!='usable shape comparison':ax.text(.02,.96,r['status'],va='top',transform=ax.transAxes,fontsize=7,color='#a52a2a',wrap=True)
             for ax in axs.flat[7:]:ax.axis('off')
-            axs.flat[7].text(0,.95,'Each panel leaves its own cut out.\nOther saved DATA/MC cuts remain.\nDashed lines: omitted cut boundaries.\nUnit-weighted candidates; no subtraction.\nWidths are conditional shape diagnostics.\nMetrics use full histogram; tails outside\nits range are recorded and flagged.',va='top',fontsize=11)
+            axs.flat[7].text(0,.95,'Each panel leaves its own cut out.\nOther saved selection cuts remain.\nDashed lines: omitted cut boundaries.\nUnit-weighted candidates; no subtraction.\nWidths are conditional shape diagnostics.\nMetrics use full histogram; tails outside\nits range are recorded and flagged.',va='top',fontsize=11)
             fig.suptitle(f'{p} · {t.replace("_","–")} · inclusive exclusivity shapes')
             fig.savefig(destination/'inclusive_shapes.png',dpi=dpi);plt.close(fig)
             ng=len(spec['strata']);values=np.full((3,7,ng-1),np.nan)
@@ -327,6 +400,22 @@ def clean_json(value):
 
 def render(output,arrays,manifest,min_entries,dpi):
     spec=manifest['spec'];rows,detail=comparisons(arrays,spec,min_entries)
+    if spec.get('background_aware'):
+        combined,norm=background_predictions(arrays,manifest)
+        with (output/'normalizations.csv').open('w',newline='') as f:
+            w=csv.DictWriter(f,fieldnames=list(norm[0]));w.writeheader();w.writerows(norm)
+        if any(r['status']!='ok' for r in norm):
+            raise ValueError('Invalid mixture normalization; see normalizations.csv (no clipping or invented scale applied)')
+        with (output/'signal_only_summary.csv').open('w',newline='') as f:
+            w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
+        rows,detail=comparisons(combined,spec,min_entries)
+        for key,entry in detail.items():
+            p,t,g,v=key.split('|');ti=TOPOLOGIES.index(t);g=int(g);v=int(v);n=spec['variables'][v]['bins']+2
+            entry['signal']=combined[p+'__signal'][ti,g,v,:n].tolist()
+            entry['background']=combined[p+'__background'][ti,g,v,:n].tolist()
+            entry['normalization']=norm[spec['periods'].index(p)*3+ti]
+        # Overview overlays keep fixed component scales relative to DATA.
+        arrays={**combined}
     with (output/'summary.csv').open('w',newline='') as f:
         w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
     plot_overviews(output,arrays,spec,rows,dpi)
@@ -386,6 +475,30 @@ this script neither changes events nor changes the production analysis.
 | Sample | Entries | FD_FD after all cuts | CD_FD after all cuts | CD_FT after all cuts |
 |---|---:|---:|---:|---:|
 '''+ '\n'.join(flowlines)+'\n'
+    if spec.get('background_aware'):
+        report="""# Background-aware comparison
+
+The reference MC in summary.csv/heatmaps is SIGNAL + PI0 BACKGROUND.
+Signal-only width comparisons are preserved in signal_only_summary.csv.
+normalizations.csv records every control count, scale and selected yield.
+For each period alpha = two-photon DATA / two-photon MC × exposure ratio.
+Controls pool topologies to avoid identifying a lost-photon topology with a
+particular two-photon topology. Each signal topology has beta =
+(selected DATA − alpha × selected leakage MC) / selected signal MC.
+These scales are fixed for every omitted-cut plot and kinematic slice.
+Both one-photon templates use DATA cut boundaries. Two-photon controls retain
+their saved eppi0 DATA/MC boundaries. Comparisons are raw-candidate diagnostics,
+not current-corrected cross sections. No production correction is modified.
+Exposure ratio means generated exposure(control MC)/generated exposure(leakage
+MC); unity follows production's common-exposure convention. Complete samples
+are required. A different exposure must be supplied explicitly. Filenames and
+current filtering do not themselves prove matched generated exposures.
+The background scale error is counting-only sqrt(1/Ndata+1/Nmc); it excludes
+transfer-model, control purity and detector-response systematics. Shape summary
+flags refer to scaled yields, not effective MC sample sizes; no significance
+should be inferred. Components are never refit to the plotted variable.
+
+"""+report
     (output/'REPORT.md').write_text(report)
     print(f'[done] Open {output/"REPORT.html"}',flush=True)
 
@@ -398,6 +511,9 @@ def main(argv=None):
     parser.add_argument('--max-files-per-sample',type=int,default=0,help='0: all; positive: first N sorted parts per period/sample')
     parser.add_argument('--output',required=True,type=Path)
     parser.add_argument('--reuse-histograms',type=Path,help='Existing completed study; no ROOT or production inputs needed')
+    parser.add_argument('--reuse-data-from',type=Path,help='Reuse verified DATA histograms from the earlier signal-only study')
+    parser.add_argument('--signal-only',action='store_true',help='Legacy signal-only comparison without pi0 controls')
+    parser.add_argument('--aaogen-exposure-ratio',type=float,default=1.,help='Generated exposure of pi0 control MC / leakage MC; production convention is 1')
     parser.add_argument('--config',type=Path,help='Optional JSON histogram ranges/bins and particle-axis edges')
     parser.add_argument('--min-entries',type=int,default=300)
     parser.add_argument('--dpi',type=int,default=120)
@@ -407,7 +523,7 @@ def main(argv=None):
     output=args.output.resolve()
     if output.exists():parser.error(f'Output already exists: {output}; choose a new directory')
     if args.reuse_histograms:
-        if args.config or args.production_run:parser.error('Reuse uses its saved cuts, source provenance, ranges and strata; omit --config/--production-run')
+        if args.config or args.production_run or args.reuse_data_from:parser.error('Reuse uses its saved cuts, source provenance, ranges and strata; omit --config/--production-run')
         previous=args.reuse_histograms.resolve();manifest=json.loads((previous/'manifest.json').read_text())
         if manifest['spec']['version']!=VERSION:parser.error('Incompatible saved histogram version')
         if digest(previous/'histograms.npz')!=manifest['histogram_sha256']:parser.error('Histogram checksum mismatch')
@@ -419,9 +535,12 @@ def main(argv=None):
     else:
         if not args.production_run:parser.error('--production-run is required unless --reuse-histograms is supplied')
         spec,paths=build_spec(args.production_run,args.periods,args.config)
-        files=inventory(args.input_root.resolve(),args.periods,args.max_files_per_sample)
+        if not math.isfinite(args.aaogen_exposure_ratio) or args.aaogen_exposure_ratio<=0:parser.error('Exposure ratio must be finite and positive')
+        spec['background_aware']=not args.signal_only
+        spec['control_to_leakage_exposure_ratio']=args.aaogen_exposure_ratio
+        files=inventory(args.input_root.resolve(),args.periods,args.max_files_per_sample,not args.signal_only)
         output.mkdir(parents=True)
-        arrays,manifest=scan(output,spec,paths,files,args.workers)
+        arrays,manifest=scan(output,spec,paths,files,args.workers,args.reuse_data_from.resolve() if args.reuse_data_from else None)
     render(output,arrays,manifest,args.min_entries,args.dpi)
 
 if __name__=='__main__':main()

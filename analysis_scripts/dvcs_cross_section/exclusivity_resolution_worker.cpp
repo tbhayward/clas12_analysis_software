@@ -86,10 +86,15 @@ static void run(const json& spec,const json& job,const std::string& output) {
     auto no_pt=cfg;no_pt.enable_pTmiss_cut=false;
     std::string period=job.at("period"),sample=job.at("sample");
     std::string code=spec.at("period_codes").at(period);
+    bool control=sample=="pi0_data"||sample=="pi0_mc";
+    bool data=sample=="data"||sample=="pi0_data";
+    bool mixture=spec.value("background_aware",false);
+    std::string channel=control?"eppi0_":"DVCS_";
+    std::string cut_sample=data?"data":(!control&&mixture?"data":"mc");
     std::array<std::array<Window,NV>,3> cuts;
     std::array<std::string,3> names={"FD_FD","CD_FD","CD_FT"};
     for(int t=0;t<3;++t) {
-        const auto& block=spec.at("exclusivity").at("DVCS_"+code+"_"+names[t]).at(sample);
+        const auto& block=spec.at("exclusivity").at(channel+code+"_"+names[t]).at(cut_sample);
         if(!block.contains("Mx2")) throw std::runtime_error("Missing mandatory Mx2 cut");
         for(auto it=block.begin();it!=block.end();++it) {
             auto found=std::find(VARIABLES.begin(),VARIABLES.end(),it.key());
@@ -103,7 +108,7 @@ static void run(const json& spec,const json& job,const std::string& output) {
     auto axis_index=spec.at("strata_axis_index").get<std::vector<int>>();
     std::vector<int> groups;groups.reserve(7);
     std::vector<Histogram> hist;
-    for(int t=0;t<3;++t) for(int g=0;g<ng;++g) for(const auto& v:spec.at("variables"))
+    if(!control) for(int t=0;t<3;++t) for(int g=0;g<ng;++g) for(const auto& v:spec.at("variables"))
         hist.emplace_back(v.at("bins"),v.at("low"),v.at("high"));
     std::array<uint64_t,3> global_count{},selected{};
     uint64_t entries=0;
@@ -118,13 +123,17 @@ static void run(const json& spec,const json& job,const std::string& output) {
         bool runnum=b.bind("runnum",b.reconstructed,true);
         if(!runnum && !cfg.excluded_runs.empty()) throw std::runtime_error("Cannot enforce run blacklist without runnum");
         bool direct_delta=b.bind("Delta_phi",b.reconstructed,true);
-        for(const auto& name:VARIABLES) if(name!="Delta_phi" && name!="pTmiss") b.bind(name,b.reconstructed);
+        for(const auto& name:VARIABLES) if(name!="Delta_phi" && name!="pTmiss") {
+            if(control && name=="theta_gamma_gamma") {
+                if(!b.bind("theta_pi0_pi0",b.reconstructed,true)) b.bind(name,b.reconstructed);
+            } else b.bind(name,b.reconstructed);
+        }
         tree->StopCacheLearningPhase();
         // Store stable pointers outside the event loop; no per-event map lookups.
         std::vector<const double*> p;
         for(auto n:{"x","Q2","t1","detector1","detector2","e_p","e_theta","e_phi","p1_p","p1_theta","p1_phi","p2_p","p2_theta","p2_phi","open_angle_ep2","pTmiss"}) p.push_back(&b.v.at(n));
         std::array<const double*,NV> vp;
-        for(size_t v=0;v<NV;++v) vp[v]=(v==0&&!direct_delta)?nullptr:&b.v.at(VARIABLES[v]);
+        for(size_t v=0;v<NV;++v) vp[v]=(v==0&&!direct_delta)?nullptr:&b.v.at(control&&v==2&&b.v.count("theta_pi0_pi0")?"theta_pi0_pi0":VARIABLES[v]);
         const double* rp=runnum?&b.v.at("runnum"):nullptr;
         auto global=[&](const GlobalCutConfig& c) {
             return passes_analysis_phase_space_cuts(period,*p[0],*p[1],*p[2],*p[5],c) &&
@@ -147,6 +156,7 @@ static void run(const json& spec,const json& job,const std::string& output) {
             for(size_t v=0;v<NV;++v) values[v]=vp[v]?*vp[v]:std::abs(std::remainder(*p[10]-*p[13],2*3.14159265358979323846));
             unsigned mask=failures(values,cuts[t]);
             if(gp && !mask) ++selected[t];
+            if(control) continue;
             std::array<double,6> axes={*p[5],*p[6]*DEG,*p[8],*p[9]*DEG,*p[11],*p[12]*DEG};
             groups.clear();groups.push_back(0);
             // Strata are ordered by six axes in the specification.

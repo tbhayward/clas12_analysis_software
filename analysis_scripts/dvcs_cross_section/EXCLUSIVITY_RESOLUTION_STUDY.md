@@ -129,3 +129,43 @@ That test writes tiny synthetic PhysicsEvents trees and checks both samples,
 both periods, all topologies, native production global cuts, leave-one-out
 behavior, optional global pT cut omission, blacklist, overflow and phi fallback.
 It uses temporary files and does not read farm production ROOT data.
+
+## Background-aware update (default)
+
+The default now also reads two-photon pi0 data, nominal-current AAOgen two-photon
+MC and pi0-as-DVCS leakage MC. Controls are pooled across topologies per period;
+losing a photon can change topology. The ratio control DATA/control MC scales
+the leakage sample. The residual fully selected DVCS-candidate yield fixes the
+signal scale separately by topology. These scales remain fixed in every slice
+and omitted-cut distribution; no fit to the displayed variable is performed.
+Signal and leakage templates use the DATA exclusivity windows for a common
+one-photon selection. Two-photon controls use their saved eppi0 DATA/MC windows.
+
+This is a raw-candidate mixture diagnostic; it does not import current-corrected
+yields or apply cross-section weights to raw histograms. A single period-wide
+AAOgen scale is a first approximation, not a local generator reweighting.
+`--aaogen-exposure-ratio` is generated exposure(control MC)/exposure(leakage MC),
+default 1 following production's common-exposure convention. Different generated
+exposures require the corresponding ratio; a filename filter cannot establish
+that equality. Complete samples are required; file limits are supported only
+with `--signal-only`. Controls must be signal-dominated for this normalization.
+
+`normalizations.csv` records control counts, background scales, their counting-
+only errors, selected background yields and signal scales. Invalid residual
+signal yields stop the report rather than clipping the background. MC in the
+main summary/heatmaps now means the SUM of signal and background; the original
+signal-only comparisons are saved separately in `signal_only_summary.csv`.
+The HTML and inclusive PNG overlays show DATA, signal, background and total.
+All components share the DATA denominator so predicted integrals are preserved.
+
+Avoid rereading the existing DATA events:
+
+```sh
+python3 study_exclusivity_resolution.py --production-run "$PWD/test_runs/current_mc_fixed_001/proton_t_default_001" --reuse-data-from "$PWD/test_runs/exclusivity_resolution_fa18_001" --periods fa18_inb fa18_out --workers 10 --output "$PWD/test_runs/exclusivity_resolution_fa18_pi0_001"
+```
+
+The seed DATA histograms are used only after checking cuts, source hashes,
+strata, ranges, checksum and exact input-file inventory. Signal MC is reread
+because its selection changes to DATA windows. Existing results are preserved.
+Use `--signal-only` for the earlier no-background diagnostic. Version-1 studies
+can seed DATA, but cannot be used as complete version-2 histogram replays.

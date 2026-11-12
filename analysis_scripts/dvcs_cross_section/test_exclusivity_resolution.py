@@ -60,6 +60,27 @@ def numerical_tests():
     assert variables[2]['label'].endswith('(deg)') and variables[4]['label'].endswith('(GeV)')
 
 
+
+def mixture_test():
+    arrays={};p='fa18_inb'
+    for sample,n in [('data',500),('mc',200),('background',80)]:
+        arrays[p+'__'+sample]=np.full((3,2,7,5),n,dtype=np.uint64)
+        arrays[p+'__'+sample+'__stats']=np.zeros((3,2,7,2),dtype=np.uint64)
+    flow={p+'__'+sample:dict(selected=counts) for sample,counts in
+          [('pi0_data',[1000,0,0]),('pi0_mc',[2000,0,0]),('data',[2500]*3),('background',[1000]*3),('mc',[1000]*3)]}
+    manifest=dict(spec=dict(periods=[p],control_to_leakage_exposure_ratio=1),flows=flow)
+    pred,norm=s.background_predictions(arrays,manifest)
+    assert all(r['background_scale']==.5 and r['signal_scale']==2 for r in norm)
+    assert np.all(pred[p+'__mc']==440) # fixed scales, not refitted to DATA's 500
+    assert np.all(pred[p+'__signal']==400) and np.all(pred[p+'__background']==40)
+    manifest['spec']['control_to_leakage_exposure_ratio']=2
+    _,norm=s.background_predictions(arrays,manifest)
+    assert norm[0]['background_scale']==1 and norm[0]['signal_scale']==1.5
+    flow[p+'__data']['selected']=[10]*3
+    _,norm=s.background_predictions(arrays,manifest)
+    assert all(r['status']!='ok' for r in norm) # never clip over-subtraction
+
+
 def synthetic_report(tmp):
     variables,axes,strata,index=s.configuration()
     spec=dict(version=s.VERSION,periods=['fa18_inb'],period_codes={'fa18_inb':'Fa18_Inb'},
@@ -93,6 +114,18 @@ def synthetic_report(tmp):
             try:s.main(args)
             except SystemExit as e:assert e.code!=0
             else:raise AssertionError('Overwrite/reuse guard failed')
+    mix_arrays={k:v.copy() for k,v in arrays.items()}
+    mix_arrays['fa18_inb__background']=arrays['fa18_inb__mc']//10
+    mix_arrays['fa18_inb__background__stats']=arrays['fa18_inb__mc__stats'].copy()
+    mix_manifest=copy.deepcopy(manifest);mix_manifest['spec']['background_aware']=True
+    mix_manifest['flows']['fa18_inb__background']=dict(entries=10,selected=[1,2,3])
+    for sample in ('pi0_data','pi0_mc'):mix_manifest['flows']['fa18_inb__'+sample]=dict(entries=100,selected=[100,100,100])
+    mixout=tmp/'mixture_report';mixout.mkdir()
+    s.render(mixout,mix_arrays,mix_manifest,300,60)
+    assert (mixout/'normalizations.csv').exists() and (mixout/'signal_only_summary.csv').exists()
+    mixpage=(mixout/'REPORT.html').read_text()
+    mixpayload=json.loads(mixpage.split('<script id="payload" type="application/json">')[1].split('</script>')[0])
+    assert 'signal' in mixpayload['detail']['fa18_inb|FD_FD|0|0']
     (output/'histograms.npz').write_bytes(b'broken')
     with contextlib.redirect_stderr(io.StringIO()):
         try:s.main(['--reuse-histograms',str(output),'--output',str(tmp/'bad_hash')])
@@ -106,7 +139,7 @@ def driver_test(tmp):
     paths={name:tmp/file for name,file in [('global_cpp','global_cuts.cpp'),('global_header','global_cuts.h'),('domain_header','kinematic_bin_integration.h')]}
     for path in paths.values():path.write_text('// test source snapshot\n')
     spec=dict(version=s.VERSION,periods=['fa18_inb','fa18_out'],variables=variables,strata=strata,
-              input_hashes={k:s.digest(v) for k,v in paths.items()})
+              global_cuts={},exclusivity={},input_hashes={k:s.digest(v) for k,v in paths.items()})
     files={}
     for period in spec['periods']:
         for sample in ('data','mc'):
@@ -134,6 +167,9 @@ json.dump(dict(histograms=h,entries=n*10,global_pass=[n]*3,selected=[n]*3,files=
     for key in manifest['flows']:
         assert manifest['flows'][key]['entries']==30
         assert np.all(arrays[key][:,:,:,1]==3)
+    seeded=tmp/'seeded';seeded.mkdir()
+    with patch.object(s,'compile_worker',fake_compile):reused,reused_manifest=s.scan(seeded,spec,paths,files,2,out)
+    for p in spec['periods']:assert np.array_equal(reused[p+'__data'],arrays[p+'__data'])
     bad=tmp/'bad.root';bad.write_bytes(b'bad');failed=tmp/'failed';failed.mkdir()
     with patch.object(s,'compile_worker',fake_compile):
         try:s.scan(failed,spec,paths,{('fa18_inb','data'):[bad],('fa18_out','mc'):files['fa18_out','mc']},1)
@@ -192,6 +228,18 @@ t.Write();}
                 assert sum(hist(1)['counts'])==(1 if sample=='mc' else 2)
                 assert sum(hist(0)['counts'])==(1 if sample=='mc' else 2) # Delta_phi fallback
             assert all(f['delta_phi_fallback'] for f in payload['files'])
+    spec['background_aware']=True
+    for period in spec['periods']:
+        for t in s.TOPOLOGIES:
+            spec['exclusivity']['eppi0_'+spec['period_codes'][period]+'_'+t]=spec['exclusivity']['DVCS_'+spec['period_codes'][period]+'_'+t]
+    s.write_json(out/'spec.json',spec)
+    for sample,expected in [('background',2),('mc',2),('pi0_data',2),('pi0_mc',1)]:
+        s.write_json(out/'job.json',dict(period='fa18_inb',sample=sample,files=[str(root)]))
+        subprocess.run([str(worker),str(out/'spec.json'),str(out/'job.json'),str(out/'result.json')],check=True)
+        payload=json.loads((out/'result.json').read_text())
+        assert payload['selected']==[expected]*3
+        if sample.startswith('pi0'):assert payload['histograms']==[]
+    print('PASS: background/MC common DATA windows and independent two-photon controls')
     print('PASS: native ROOT I/O, both periods/samples, all topologies, global/own cut omission, blacklist, overflow and phi fallback')
 
 
@@ -202,7 +250,7 @@ def main():
     args=parser.parse_args()
     if args.root_smoke and not args.production_run:parser.error('--root-smoke requires --production-run')
     with tempfile.TemporaryDirectory() as name:
-        tmp=Path(name);core_test(tmp);numerical_tests();driver_test(tmp);synthetic_report(tmp)
+        tmp=Path(name);core_test(tmp);numerical_tests();mixture_test();driver_test(tmp);synthetic_report(tmp)
         print('PASS: native leave-one-out/cut/histogram logic, widths/shifts/tails, empty/range flags, reports, worker orchestration/failure handling, replay and overwrite/checksum guards')
         if args.root_smoke:root_smoke(tmp,args.production_run)
     return 0
