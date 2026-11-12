@@ -308,3 +308,47 @@ Transfer the run output directory for review; backend build files may be omitted
 Existing legacy duplicate directories are left intact. Recovery recognizes the
 original model reports and adds relative links to cut outputs without copying
 them, including for old root reports that redirect into `results/`.
+
+
+## Training-observable sensitivity study
+
+`study_particle_training_variables.py` compares the completed with-bias response
+with two locally refined alternatives: add pTmiss, then add pTmiss plus photon
+opening angle. The saved starting response is retained as a fixed reference. All three
+training choices start from the same saved parameters and receive the same
+local refinement budget; this separates training effects from extra optimization. Each
+alternative uses those parameters and uses the same verified
+MC caches, DATA histograms, bounds, normalization and background prior. No
+ROOT events are reread and the broadening-only model is not run. The original
+response fitter's defaults remain unchanged.
+
+All periods/polarities remain independent, with shared particle/detector laws
+across topologies in a period. One global ten-process Budget spans all fits.
+The search evaluates adjacent grid points and midpoints around the current
+candidate, retaining the current point at every update; it repeats for two
+rounds by default. This is local refinement, not a repeated global scan.
+Missing mass squared e-gamma (Mx2_2) is reserved in every configuration. The
+CM angle theta is plotted but is not a training observable. Reserved checks
+share events and correlated kinematics with training and do not constitute
+independent DATA validation. No cut redetermination or production installation
+is done in this study; selection windows stay frozen to isolate training choices.
+
+Observable weights default to one, with weighted means across observables and
+topologies. Use repeated `--observable-weight pTmiss=0.5` style arguments for
+explicit alternatives; only positive finite weights are accepted. Weights and
+observable memberships are recorded in the study manifest and candidate files.
+The reserved scores never select parameters or the background multiplier. Do
+not compare training totals between configurations with different variable sets.
+`configuration_comparison.csv` supplies a common all-six-observable score and
+reserved Mx2_2 scores; `observable_comparison.csv` shows individual regressions
+and improvements against the fixed starting response. `parameter_stability.csv`
+reports shifts in percentage points and angular changes in mrad. The existing
+MC-half validation is retained, with no claim of an independent DATA split.
+
+Open the run-root REPORT.html. Overlaid shapes compare DATA, the starting fit,
+the equally refined original objective, and the two alternatives; observable_improvements.png summarizes per-observable
+score changes relative to the equally refined original objective. No duplicate report packages are created. Large working files
+and the compiled backend stay in the unique scratch folder. Completed fits save
+compact curves and checked metadata; rerun the same command with `--resume` to
+reuse completed period/configuration fits and retry only unfinished fits. Inputs,
+weights and fit settings must match the original manifest.
