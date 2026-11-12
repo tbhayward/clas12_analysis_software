@@ -229,8 +229,10 @@ def recovery_test(tmp):
         assert not list(final.glob('*.bin'))
         _,again=s.recover_reports(run,reference,engine.data,engine.norm);assert again==[]
     (run/'REPORT.html').write_text('index');s.dump(run/'manifest.json',{});(run/'reconstruction_audit.csv').write_text('audit')
-    s.compact_results(run,['fa18_inb']);s.compact_results(run,['fa18_inb'])
-    assert (run/'results/fa18_inb/REPORT.html').exists()
+    args=SimpleNamespace()
+    s.publish_results(run,engine.spec,args,reference);s.publish_results(run,engine.spec,args,reference)
+    assert (run/'fa18_inb/REPORT.html').exists() and not (run/'results').exists()
+    assert 'fa18_inb/REPORT.html' in (run/'REPORT.html').read_text()
     print('PASS: saved-trial report recovery without refitting, completion markers, cleanup and repeated publication')
 
 
@@ -255,8 +257,8 @@ def joint_model_tests(tmp):
         coordinate_rounds=0,refinement_rounds=0,min_mc=10,background_transfer_uncertainty=.1,fit_topologies=s.TOPS,reuse_cache=tmp/'old_cache')
     output=tmp/'comparison';commands=[]
     def fake_run(cmd,check):
-        commands.append(cmd);dest=Path(cmd[cmd.index('--output')+1]);dest.mkdir(parents=True);(dest/'results').mkdir()
-        (dest/'results/REPORT.html').write_text('report');s.dump(dest/'manifest.json',{})
+        commands.append(cmd);dest=Path(cmd[cmd.index('--output')+1]);dest.mkdir(parents=True)
+        (dest/'REPORT.html').write_text('report');s.dump(dest/'manifest.json',{})
         folder=dest/p;folder.mkdir()
         s.table(folder/'final_scores.csv',[dict(scenario='nominal',train=10,validation_mc=10,heldout_observables=10),dict(scenario='candidate',train=5,validation_mc=6,heldout_observables=7)])
         s.dump(folder/'candidate_parameters.json',dict(boundary_parameters=[]))
@@ -267,7 +269,10 @@ def joint_model_tests(tmp):
     assert commands[1][commands[1].index('--bias-mode')+1]=='fit'
     assert commands[1][commands[1].index('--reuse-cache')+1]==str(output/'broadening_only')
     assert '--initial-parameters-from' in commands[1]
-    assert (output/'results/model_comparison.csv').exists()
+    assert (output/'model_comparison.csv').exists() and not list(output.rglob('results'))
+    args.finish_reports=True
+    with patch.object(s.subprocess,'run',side_effect=AssertionError('Completed fits must not rerun')):s.compare_models(args,reference,output)
+    assert 'with_bias/REPORT.html' in (output/'REPORT.html').read_text()
     print('PASS: shared detector laws, no period pooling, broadening-only controls, constrained background profiling and paired cached-model orchestration')
 
 

@@ -13,6 +13,7 @@ from concurrent.futures import ThreadPoolExecutor,as_completed
 import copy
 import csv
 import hashlib
+from html import escape
 import json
 from pathlib import Path
 import shlex
@@ -411,24 +412,25 @@ def scratch_directory(root,output):
     return Path(tempfile.mkdtemp(prefix=Path(output).name+'-',dir=root))
 
 
-def compact_results(output,periods):
-    destination=output/'results';destination.mkdir(exist_ok=True)
-    for period in periods:
-        target=destination/period;target.mkdir(exist_ok=True)
-        for path in (output/period).iterdir():
-            if path.is_file() and path.suffix in ('.csv','.json','.md','.html','.png'):shutil.copy2(path,target/path.name)
-        shutil.copytree(output/period/'plots',target/'plots',dirs_exist_ok=True)
-    if (output/'control_photon_reconstruction.csv').exists():shutil.copy2(output/'control_photon_reconstruction.csv',destination/'control_photon_reconstruction.csv')
-    for name in ('REPORT.html','manifest.json','cache_manifest.json','reconstruction_audit.csv','scratch_location.json'):shutil.copy2(output/name,destination/name)
-    return destination
+def add_report_link(report,target,label):
+    """Link to canonical output files instead of making report-package copies."""
+    relative=Path(os.path.relpath(target,report.parent)).as_posix()
+    href='href="'+escape(relative,quote=True)+'"'
+    content=report.read_text()
+    if href not in content:report.write_text(content+'<p><a '+href+'>'+escape(label)+'</a></p>')
+
+def link_completed_cut_reports(output):
+    for report in sorted(output.glob('*/REPORT.html')):
+        if (report.parent/'relative_acceptance.csv').is_file():
+            add_report_link(output/'REPORT.html',report,'Redetermined DATA/MC cuts, relative acceptance and two-photon controls ('+report.parent.name+')')
 
 
 def publish_results(output,spec,args,reference):
     links=''.join(f'<li><a href="{p}/REPORT.html">{p}: independent response test</a></li>' for p in spec['periods'])
     (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Independent period response tests</title><style>body{font:18px system-ui;max-width:1000px;margin:40px auto}li{padding:10px}</style><h1>Independent particle-response tests</h1><p>Every period and polarity has its own fitted response parameters. No Spring/Fall or inbending/outbending parameters are pooled. Each fit is checked with an independent MC subset and held-out observables from the same sample.</p><ul>'+links+'</ul>')
     dump(output/'manifest.json',dict(version=VERSION,reference_manifest_sha256=digest(reference/'manifest.json'),arguments={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},source_hashes={n:digest(SOURCE/n) for n in ('study_particle_response.py','particle_response_worker.cpp','particle_response_core.h','particle_control_core.h','particle_control_worker.h','particle_response_cut_arrays.h')},independent_periods=spec['periods']))
-    compact=compact_results(output,spec['periods'])
-    print('[done] Open '+str(compact/'REPORT.html')+'; transfer the results directory only, retain the MC cache on the farm',flush=True)
+    link_completed_cut_reports(output)
+    print('[done] Open '+str(output/'REPORT.html')+'; reports are stored once under this output directory; retain the MC cache on the farm',flush=True)
 
 
 def recover_reports(output,reference,data,norm):
@@ -487,7 +489,7 @@ def compare_models(args,reference,output):
     reference_meta=json.loads((reference/'manifest.json').read_text());periods=reference_meta['spec']['periods']
     for label,mode in [('broadening_only','zero'),('with_bias','fit')]:
         target=output/label
-        if (target/'manifest.json').is_file() and (target/'results/REPORT.html').is_file():
+        if (target/'manifest.json').is_file() and (target/'REPORT.html').is_file():
             if not args.finish_reports:raise ValueError('Existing comparison model output')
             print('[comparison] Retaining completed '+label,flush=True);continue
         cmd=[sys.executable,str(SOURCE/'study_particle_response.py'),'--reference-study',str(reference),'--output',str(target),
@@ -507,9 +509,8 @@ def compare_models(args,reference,output):
                 if (start/'broadening_only').is_dir():start=start/'broadening_only'
                 cmd.extend(['--initial-parameters-from',str(start)])
         print('[comparison] '+label+'; all periods remain independent',flush=True);subprocess.run(cmd,check=True)
-    result=output/'results';result.mkdir(exist_ok=True);rows=[]
+    result=output;rows=[]
     for label in ('broadening_only','with_bias'):
-        shutil.copytree(output/label/'results',result/label,dirs_exist_ok=True)
         for period in periods:
             folder=output/label/period
             with (folder/'final_scores.csv').open() as f:scores={r['scenario']:r for r in csv.DictReader(f)}
@@ -525,10 +526,10 @@ def compare_models(args,reference,output):
             rows.append(row)
     table(result/'model_comparison.csv',rows)
     content='<!doctype html><meta charset="utf-8"><title>Joint-topology response models</title><style>body{font:18px system-ui;max-width:1100px;margin:40px auto}li{padding:12px}</style><h1>Joint-topology effective-response comparison</h1><p>Each period/polarity has independent parameters. Within it, detector-specific particle responses are shared across all three topologies, for signal and pi0 leakage. Compare held-out shapes and selection yields before interpreting parameter values.</p><ul><li><a href="broadening_only/REPORT.html">Broadening only: momentum biases fixed to zero</a></li><li><a href="with_bias/REPORT.html">Broadening plus momentum biases</a></li></ul><p><a href="model_comparison.csv">Side-by-side period/model scores and yield changes</a></p><p>The pi0 transfer nuisance is shared across topologies within a period. Its configured extra uncertainty is an exploratory assumption, not a measured systematic. Production acceptance and Frad are unchanged.</p>'
-    (result/'REPORT.html').write_text(content);(output/'REPORT.html').write_text('<!doctype html><meta http-equiv="refresh" content="0; url=results/REPORT.html"><a href="results/REPORT.html">Open results</a>')
+    (output/'REPORT.html').write_text(content)
+    link_completed_cut_reports(output)
     dump(output/'comparison_config.json',dict(reference_sha256=digest(reference/'manifest.json'),periods=periods,fit_topologies=args.fit_topologies,background_transfer_uncertainty=args.background_transfer_uncertainty,scan_range=getattr(args,'scan_range','standard'),expected_cache_events=args.expected_cache_events))
-    shutil.copy2(output/'comparison_config.json',result/'comparison_config.json')
-    print('[done] '+str(result/'REPORT.html')+'; transfer the results directory only',flush=True)
+    print('[done] '+str(result/'REPORT.html')+'; reports are stored once under this output directory',flush=True)
 
 
 def run_cut_redetermination(args,reference,output):

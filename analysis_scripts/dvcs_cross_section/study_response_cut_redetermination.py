@@ -30,16 +30,12 @@ def load_candidate_parameters(path):
     return values
 
 def publish_results(run,output):
-    """Make standalone cut-stage recovery visible from the existing response report."""
-    report=run/'results/REPORT.html'
+    """Link the original cut output, including when recovering a legacy run."""
+    report=run/'REPORT.html'
+    if report.is_file() and 'url=results/REPORT.html' in report.read_text() and (run/'results/REPORT.html').is_file():
+        report=run/'results/REPORT.html'  # Follow existing legacy navigation; copy nothing.
     if not report.is_file():return
-    destination=run/'results'/output.name
-    if destination.resolve()!=output.resolve():
-        if destination.exists():raise ValueError('Published cut results already exist: '+str(destination))
-        shutil.copytree(output,destination,ignore=shutil.ignore_patterns('backend'))
-    link='<p><a href="'+output.name+'/REPORT.html">Redetermined DATA/MC cuts, relative acceptance and two-photon controls</a></p>'
-    content=report.read_text()
-    if link not in content:report.write_text(content+link)
+    response.add_report_link(report,output/'REPORT.html','Redetermined DATA/MC cuts, relative acceptance and two-photon controls ('+output.name+')')
 
 
 def window_mask(rows,block,kind):

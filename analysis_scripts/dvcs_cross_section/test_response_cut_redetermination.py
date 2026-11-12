@@ -35,12 +35,24 @@ def recovery(tmp):
         try:c.load_candidate_parameters(path)
         except ValueError as error:assert 'Missing fitted parameter' in str(error)
         else:raise AssertionError('Missing fitted parameter was silently replaced')
-    run=tmp/'run';(run/'results').mkdir(parents=True);(run/'results/REPORT.html').write_text('Completed response fits')
+    run=tmp/'run';run.mkdir();(run/'REPORT.html').write_text('Completed response fits')
     output=run/'cut_redetermination_002';output.mkdir();(output/'REPORT.html').write_text('Recovered cuts')
-    c.publish_results(run,output)
-    assert (run/'results/cut_redetermination_002/REPORT.html').read_text()=='Recovered cuts'
-    assert 'Completed response fits' in (run/'results/REPORT.html').read_text()
-    assert 'cut_redetermination_002/REPORT.html' in (run/'results/REPORT.html').read_text()
+    (output/'relative_acceptance.csv').write_text('acceptance')
+    c.publish_results(run,output);c.publish_results(run,output)
+    assert not (run/'results').exists()
+    assert 'Completed response fits' in (run/'REPORT.html').read_text()
+    assert (run/'REPORT.html').read_text().count('href="cut_redetermination_002/REPORT.html"')==1
+    # Rebuilding the main report rediscovers completed cut reports without copies.
+    (run/'REPORT.html').write_text('Rebuilt report');s.link_completed_cut_reports(run)
+    assert 'cut_redetermination_002/REPORT.html' in (run/'REPORT.html').read_text()
+    # Old runs remain navigable without creating another copy or changing their layout.
+    legacy=tmp/'legacy';(legacy/'results').mkdir(parents=True)
+    (legacy/'REPORT.html').write_text('<meta http-equiv="refresh" content="0; url=results/REPORT.html">')
+    (legacy/'results/REPORT.html').write_text('Legacy completed response fits')
+    target=legacy/'cut_redetermination_002';target.mkdir();(target/'REPORT.html').write_text('Cuts')
+    c.publish_results(legacy,target)
+    assert '../cut_redetermination_002/REPORT.html' in (legacy/'results/REPORT.html').read_text()
+    assert not (legacy/'results/cut_redetermination_002').exists()
     print('PASS: omitted fixed biases expand to zero, missing fitted parameters fail, standalone cut recovery preserves and links completed response reports')
 
 

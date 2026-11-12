@@ -65,7 +65,7 @@ errors, radiation, background-transfer mismodelling or reconstruction losses.
 
 ## Outputs
 
-Open results/REPORT.html. Transfer only the results directory for review; keep
+Open REPORT.html at the run root. Transfer the output directory for review; keep
 the larger event cache and evaluation files on the farm. Click one period, then CD_FT for the before/after overlays.
 Each period directory contains:
 
@@ -127,7 +127,7 @@ Large event caches and native evaluation binaries now live under
 `/scratch/thayward/dvcs_particle_response` by default. Every run gets a unique
 subdirectory, allowing independent runs without collisions. `--scratch-root`
 overrides the parent. `scratch_location.json` records the actual directory.
-Reports, CSVs and the compact results directory stay under --output.
+Reports and CSVs are stored once under --output; no compact-copy results directory is created.
 
 Intermediate evaluation binaries are unmapped and deleted immediately after
 their scores/sensitivities are recorded; final binaries are removed after plots
@@ -149,7 +149,7 @@ python3 study_particle_response.py --finish-reports --reference-study "$PWD/test
 It validates the reference identity, final parameter agreement and binary sizes.
 Completed report markers permit retries after some periods were already
 rendered and their trial binaries deleted. Final binaries are removed only
-after the corresponding period report is complete. Existing compact results
+after the corresponding period report is complete. Existing reports
 can be refreshed safely. CSV normalization values are explicitly converted
 to numbers before reporting selected yields.
 
@@ -200,7 +200,7 @@ Recommended command:
 python3 study_particle_response.py --reference-study "$PWD/test_runs/exclusivity_resolution_all_periods_joint_001" --reuse-cache "$PWD/test_runs/particle_response_all_periods_001" --compare-models --workers 10 --scratch-root /scratch/thayward/dvcs_particle_response --output "$PWD/test_runs/particle_response_joint_topologies_001"
 ```
 
-Open results/REPORT.html and compare the two models. model_comparison.csv lists
+Open REPORT.html at the run root and compare the two models. model_comparison.csv lists
 per-period training/held-out scores, nuisance multipliers, boundary counts and
 separate signal/mixture yield changes. Transfer only results for assessment;
 large event/trial files stay on scratch. Existing studies remain unchanged.
@@ -291,7 +291,20 @@ The upstream two-photon mass-window limitation remains unchanged.
 
 Two-photon control figures now show DATA, nominal MC and candidate MC before
 exclusivity cuts, with the newly fitted DATA/MC boundaries overlaid. They are
-linked from `results/cut_redetermination/REPORT.html`; the same folder contains
+linked from `cut_redetermination/REPORT.html`; the same folder contains
 per-topology production cut-development plots and trial cut JSONs. Nothing is
 installed into production output/jsons. `DVCS_EXCLUSIVITY_ARRAY_ONLY=1` lets this
 array-only caller import the production fitter without starting PyROOT.
+
+
+## Single report tree
+
+Each period/model and cut stage owns one canonical set of plots and tables.
+The run-root `REPORT.html` links directly to those originals; paired-model
+`model_comparison.csv` and `comparison_config.json` also live at the run root.
+No nested `results/` packages, report copies, symlinks or hard links are created.
+Large MC caches and exported event arrays remain in scratch as before.
+Transfer the run output directory for review; backend build files may be omitted.
+Existing legacy duplicate directories are left intact. Recovery recognizes the
+original model reports and adds relative links to cut outputs without copying
+them, including for old root reports that redirect into `results/`.
