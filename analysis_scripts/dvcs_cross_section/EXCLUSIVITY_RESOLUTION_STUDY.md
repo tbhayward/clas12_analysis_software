@@ -169,3 +169,13 @@ strata, ranges, checksum and exact input-file inventory. Signal MC is reread
 because its selection changes to DATA windows. Existing results are preserved.
 Use `--signal-only` for the earlier no-background diagnostic. Version-1 studies
 can seed DATA, but cannot be used as complete version-2 histogram replays.
+
+### Recover an empty two-photon MC control (composite detector flag)
+
+Direct pi0 MC uses `detector_gamma1` for topology assignment, matching
+`total_counts.cpp`; its composite `detector2` can be -1. The ROOT smoke fixture
+explicitly tests this representation. To recover a completed scan made before
+this correction, use `--repair-controls-from OLD_STUDY` with a new `--output`.
+This verifies/reuses DATA, DVCS MC and leakage histograms, rereading only the
+two-photon DATA/MC controls. Do not use complete `--reuse-histograms` for that
+repair: it would retain the original zero control counts.

@@ -142,7 +142,7 @@ def driver_test(tmp):
               global_cuts={},exclusivity={},input_hashes={k:s.digest(v) for k,v in paths.items()})
     files={}
     for period in spec['periods']:
-        for sample in ('data','mc'):
+        for sample in ('data','mc','background'):
             files[period,sample]=[]
             for i in range(3):
                 path=tmp/f'{period}_{sample}_{i}.root';path.write_bytes(b'fixture')
@@ -170,6 +170,9 @@ json.dump(dict(histograms=h,entries=n*10,global_pass=[n]*3,selected=[n]*3,files=
     seeded=tmp/'seeded';seeded.mkdir()
     with patch.object(s,'compile_worker',fake_compile):reused,reused_manifest=s.scan(seeded,spec,paths,files,2,out)
     for p in spec['periods']:assert np.array_equal(reused[p+'__data'],arrays[p+'__data'])
+    repaired=tmp/'repaired';repaired.mkdir()
+    with patch.object(s,'compile_worker',fake_compile):repair_arrays,_=s.scan(repaired,spec,paths,files,2,out,('data','mc','background'))
+    for key in arrays:assert np.array_equal(repair_arrays[key],arrays[key])
     bad=tmp/'bad.root';bad.write_bytes(b'bad');failed=tmp/'failed';failed.mkdir()
     with patch.object(s,'compile_worker',fake_compile):
         try:s.scan(failed,spec,paths,{('fa18_inb','data'):[bad],('fa18_out','mc'):files['fa18_out','mc']},1)
@@ -198,9 +201,9 @@ def root_smoke(tmp,production):
 #include <map>
 #include <string>
 int main(int argc,char**argv){TFile f(argv[1],"RECREATE");TTree t("PhysicsEvents","");std::map<std::string,double>v;
-for(auto n:{"x","Q2","t1","detector1","detector2","e_p","e_theta","e_phi","p1_p","p1_theta","p1_phi","p2_p","p2_theta","p2_phi","open_angle_ep2","pTmiss","theta","theta_gamma_gamma","Emiss2","Mx2","Mx2_2","runnum"}){v[n]=0;t.Branch(n,&v[n],(std::string(n)+"/D").c_str());}
+for(auto n:{"x","Q2","t1","detector1","detector2","e_p","e_theta","e_phi","p1_p","p1_theta","p1_phi","p2_p","p2_theta","p2_phi","open_angle_ep2","pTmiss","theta","theta_gamma_gamma","Emiss2","Mx2","Mx2_2","runnum","detector_gamma1"}){v[n]=0;t.Branch(n,&v[n],(std::string(n)+"/D").c_str());}
 v["x"]=.2;v["Q2"]=2;v["t1"]=-.13;v["e_p"]=5;v["e_theta"]=.25;v["p1_p"]=.6;v["p1_theta"]=.8;v["p1_phi"]=3.141592653589793;v["p2_p"]=4;v["p2_theta"]=.2;v["open_angle_ep2"]=10;v["theta"]=3;v["theta_gamma_gamma"]=1;v["Mx2_2"]=.88;
-for(int top=0;top<3;++top){v["detector1"]=top==0?1:2;v["detector2"]=top==2?0:1;
+for(int top=0;top<3;++top){v["detector1"]=top==0?1:2;v["detector2"]=(argc>2)?-1:(top==2?0:1);v["detector_gamma1"]=top==2?0:1;
 for(int i=0;i<7;++i){v["runnum"]=i==6?999:100;v["pTmiss"]=(i==1||i==3)?.18:(i==5?.12:.05);v["Mx2"]=(i==2||i==3)?.04:(i==4?-.13:0);t.Fill();}}
 t.Write();}
 ''')
@@ -233,8 +236,9 @@ t.Write();}
         for t in s.TOPOLOGIES:
             spec['exclusivity']['eppi0_'+spec['period_codes'][period]+'_'+t]=spec['exclusivity']['DVCS_'+spec['period_codes'][period]+'_'+t]
     s.write_json(out/'spec.json',spec)
+    pi0root=tmp/'pi0_fixture.root';subprocess.run([str(exe),str(pi0root),'pi0'],check=True)
     for sample,expected in [('background',2),('mc',2),('pi0_data',2),('pi0_mc',1)]:
-        s.write_json(out/'job.json',dict(period='fa18_inb',sample=sample,files=[str(root)]))
+        s.write_json(out/'job.json',dict(period='fa18_inb',sample=sample,files=[str(pi0root if sample=='pi0_mc' else root)]))
         subprocess.run([str(worker),str(out/'spec.json'),str(out/'job.json'),str(out/'result.json')],check=True)
         payload=json.loads((out/'result.json').read_text())
         assert payload['selected']==[expected]*3

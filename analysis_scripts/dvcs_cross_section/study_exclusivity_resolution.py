@@ -159,9 +159,9 @@ def compile_worker(output,paths):
     subprocess.run([os.environ.get('CXX','c++'),*flags,'-O3','-std=c++17','-I'+str(build),str(build/'exclusivity_resolution_worker.cpp'),str(build/'global_cuts.cpp'),'-o',str(worker),*libs],check=True)
     return worker
 
-def scan(output,spec,paths,files,workers,seed_data=None):
+def scan(output,spec,paths,files,workers,seed_data=None,seed_samples=('data',)):
     print('[build] Compiling diagnostic with saved production global cuts',flush=True)
-    worker=compile_worker(output,paths);jobs=make_jobs({k:v for k,v in files.items() if not(seed_data and k[1]=='data')},workers)
+    worker=compile_worker(output,paths);jobs=make_jobs({k:v for k,v in files.items() if not(seed_data and k[1] in seed_samples)},workers)
     for name in ('global_cpp','global_header','domain_header'):
         if digest(output/'backend'/paths[name].name)!=spec['input_hashes'][name]:
             raise RuntimeError('Saved production sources changed while the study was starting')
@@ -182,18 +182,19 @@ def scan(output,spec,paths,files,workers,seed_data=None):
         if old['spec']['input_hashes']!=spec['input_hashes']:raise ValueError('Seed production sources differ')
         old_inventory={(r['period'],r['sample'],r['path']):(r['size'],r['mtime_ns']) for r in old['inventory']}
         for r in initial_inventory:
-            if r['sample']=='data' and old_inventory.get((r['period'],'data',r['path']))!=(r['size'],r['mtime_ns']):
+            if r['sample'] in seed_samples and old_inventory.get((r['period'],r['sample'],r['path']))!=(r['size'],r['mtime_ns']):
                 raise ValueError('Seed DATA files do not match requested input inventory')
         with np.load(seed_data/'histograms.npz',allow_pickle=False) as cache:
             for p in spec['periods']:
-                key=p+'__data'
-                if {r['path'] for r in old['inventory'] if r['period']==p and r['sample']=='data'}!={str(f) for f in files[p,'data']}:raise ValueError('Seed DATA coverage differs')
-                arrays[key]=cache[key].copy();arrays[key+'__stats']=cache[key+'__stats'].copy()
-                flows[key]=old['flows'][key]
-        file_records.extend(r for r in old['files'] if r['sample']=='data' and r['period'] in spec['periods'])
+                for sample in seed_samples:
+                    key=p+'__'+sample
+                    if {r['path'] for r in old['inventory'] if r['period']==p and r['sample']==sample}!={str(f) for f in files[p,sample]}:raise ValueError('Seed coverage differs: '+key)
+                    arrays[key]=cache[key].copy();arrays[key+'__stats']=cache[key+'__stats'].copy()
+                    flows[key]=old['flows'][key]
+        file_records.extend(r for r in old['files'] if r['sample'] in seed_samples and r['period'] in spec['periods'])
         spec['reused_data_manifest_sha256']=digest(seed_data/'manifest.json')
         write_json(output/'spec.json',spec)
-        print('[reuse] Existing DATA histograms verified; no DATA ROOT events will be reread',flush=True)
+        print('[reuse] Verified saved histograms; no ROOT rereads for '+', '.join(seed_samples),flush=True)
     active=set();lock=threading.Lock();cancel=threading.Event()
     def launch(item):
         i,job=item;jp=temp/f'{i}.json';out=temp/f'{i}.result.json';log=temp/f'{i}.log'
@@ -511,6 +512,7 @@ def main(argv=None):
     parser.add_argument('--max-files-per-sample',type=int,default=0,help='0: all; positive: first N sorted parts per period/sample')
     parser.add_argument('--output',required=True,type=Path)
     parser.add_argument('--reuse-histograms',type=Path,help='Existing completed study; no ROOT or production inputs needed')
+    parser.add_argument('--repair-controls-from',type=Path,help='Keep all completed one-photon histograms and rescan only pi0 controls')
     parser.add_argument('--reuse-data-from',type=Path,help='Reuse verified DATA histograms from the earlier signal-only study')
     parser.add_argument('--signal-only',action='store_true',help='Legacy signal-only comparison without pi0 controls')
     parser.add_argument('--aaogen-exposure-ratio',type=float,default=1.,help='Generated exposure of pi0 control MC / leakage MC; production convention is 1')
@@ -523,7 +525,7 @@ def main(argv=None):
     output=args.output.resolve()
     if output.exists():parser.error(f'Output already exists: {output}; choose a new directory')
     if args.reuse_histograms:
-        if args.config or args.production_run or args.reuse_data_from:parser.error('Reuse uses its saved cuts, source provenance, ranges and strata; omit --config/--production-run')
+        if args.config or args.production_run or args.reuse_data_from or args.repair_controls_from:parser.error('Reuse uses its saved cuts, source provenance, ranges and strata; omit --config/--production-run')
         previous=args.reuse_histograms.resolve();manifest=json.loads((previous/'manifest.json').read_text())
         if manifest['spec']['version']!=VERSION:parser.error('Incompatible saved histogram version')
         if digest(previous/'histograms.npz')!=manifest['histogram_sha256']:parser.error('Histogram checksum mismatch')
@@ -534,13 +536,15 @@ def main(argv=None):
         print('[reuse] No ROOT inputs will be read',flush=True)
     else:
         if not args.production_run:parser.error('--production-run is required unless --reuse-histograms is supplied')
+        if args.repair_controls_from and (args.reuse_data_from or args.signal_only):parser.error('Control repair requires background-aware mode and no --reuse-data-from')
         spec,paths=build_spec(args.production_run,args.periods,args.config)
         if not math.isfinite(args.aaogen_exposure_ratio) or args.aaogen_exposure_ratio<=0:parser.error('Exposure ratio must be finite and positive')
         spec['background_aware']=not args.signal_only
         spec['control_to_leakage_exposure_ratio']=args.aaogen_exposure_ratio
         files=inventory(args.input_root.resolve(),args.periods,args.max_files_per_sample,not args.signal_only)
         output.mkdir(parents=True)
-        arrays,manifest=scan(output,spec,paths,files,args.workers,args.reuse_data_from.resolve() if args.reuse_data_from else None)
+        seed=args.repair_controls_from or args.reuse_data_from
+        arrays,manifest=scan(output,spec,paths,files,args.workers,seed.resolve() if seed else None,('data','mc','background') if args.repair_controls_from else ('data',))
     render(output,arrays,manifest,args.min_entries,args.dpi)
 
 if __name__=='__main__':main()

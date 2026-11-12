@@ -43,11 +43,12 @@ static GlobalCutConfig config(const json& j) {
 struct Reader {
     struct Bound {TBranch* branch;TLeaf* conversion;double* value;};
     TTree* tree;
+    bool pi0_mc=false;
     std::map<std::string,double> v;
     std::vector<Bound> generated, reconstructed;
     Reader(TTree* t):tree(t) { tree->SetBranchStatus("*",0); }
     bool bind(const std::string& name, std::vector<Bound>& group, bool optional=false) {
-        std::string physical=name;
+        std::string physical=(pi0_mc && name=="detector2")?"detector_gamma1":name;
         auto* b=tree->GetBranch(physical.c_str());
         if (!b) { if (optional) return false; throw std::runtime_error("Missing branch " + name); }
         auto* leaves=b->GetListOfLeaves();
@@ -118,7 +119,7 @@ static void run(const json& spec,const json& job,const std::string& output) {
         if(f.IsZombie()) throw std::runtime_error("Cannot open "+path);
         auto* tree=dynamic_cast<TTree*>(f.Get("PhysicsEvents"));
         if(!tree) throw std::runtime_error("Missing PhysicsEvents in "+path);
-        tree->SetCacheSize(32*1024*1024);Reader b(tree);
+        tree->SetCacheSize(32*1024*1024);Reader b(tree);b.pi0_mc=sample=="pi0_mc";
         for(auto name:{"x","Q2","t1","detector1","detector2","e_p","e_theta","e_phi","p1_p","p1_theta","p1_phi","p2_p","p2_theta","p2_phi","open_angle_ep2","pTmiss"}) b.bind(name,b.reconstructed);
         bool runnum=b.bind("runnum",b.reconstructed,true);
         if(!runnum && !cfg.excluded_runs.empty()) throw std::runtime_error("Cannot enforce run blacklist without runnum");
