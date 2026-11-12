@@ -42,6 +42,13 @@ int main(){
 
 
 def numerical_tests():
+    for name,current in [('a_50nA_1.root',50),('a_50nA.root',50),('a-45na-1.root',45),('a_nobkg_1.root',0),('a_no_bkg_1.root',0),('a_no-background_1.root',0),('a_75nA_1.root',75),('a_part001.root',None)]:
+        assert s.filename_current(name)==current,(name,s.filename_current(name))
+    files=[Path('a_45nA.root'),Path('a_nobkg.root'),Path('a_75nA.root')]
+    assert s.select_leakage_files(files,'45nA','test')==files[:1]
+    try:s.select_leakage_files(files+[Path('unknown.root')],'45nA','test')
+    except ValueError as e:assert 'unknown.root' in str(e) and 'test:' in str(e)
+    else:raise AssertionError('Ambiguous leakage exposure silently accepted')
     assert s.saved_window(dict(mode='upper_quantile',cut_low=0,cut_high=.2))==[None,.2]
     assert s.saved_window(dict(mean=1,std=2))==[-5,7]
     for bad in [dict(mode='upper_quantile',cut_high=float('nan')),dict(mean=0,std=0)]:

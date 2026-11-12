@@ -135,6 +135,30 @@ def build_spec(run,periods,config=None):
     add_joint_grids(spec)
     return spec,paths
 
+def filename_current(path):
+    """Read explicit current tokens; zero-background samples are zero-current."""
+    name=Path(path).name
+    labels={float(x.replace('p','.')) for x in re.findall(r'(?<![a-z0-9])(\d+(?:[p.]\d+)?)\s*nA(?![a-z0-9])',name,re.I)}
+    if re.search(r'(?<![a-z0-9])no[_-]?(?:bkg|background)(?![a-z0-9])',name,re.I):labels.add(0.)
+    if len(labels)>1:raise ValueError('Contradictory current labels: '+str(path))
+    return next(iter(labels)) if labels else None
+
+def select_leakage_files(files,current,period):
+    classified=[(f,filename_current(f)) for f in files]
+    known=[(f,c) for f,c in classified if c is not None]
+    unknown=[f for f,c in classified if c is None]
+    if known and unknown:
+        raise ValueError(f'{period}: leakage filenames contain both known currents and unknown labels. '
+            'Cannot establish a common AAOgen exposure. Unknown examples: '+', '.join(str(f) for f in unknown[:8])+
+            '; labelled examples: '+', '.join(str(f) for f,c in known[:4]))
+    if not known:return files # original production convention for period-only exports
+    nominal=float(current[:-2])
+    selected=[f for f,c in known if c==nominal]
+    counts={c:sum(v==c for _,v in known) for _,c in known}
+    print(f'[inputs] {period}: leakage parts by current {counts}; selected {len(selected)} at {current}',flush=True)
+    return selected
+
+
 def inventory(root,periods,limit,background_aware=False):
     result={}
     for p in periods:
@@ -155,12 +179,7 @@ def inventory(root,periods,limit,background_aware=False):
             for sample,(directory,pattern) in locations.items():
                 files=sorted(f.resolve() for f in directory.glob(pattern) if '.partial' not in f.name)
                 if sample=='pi0_mc':files=[f for f in files if '_'+current+'_' in f.name]
-                if sample=='background':
-                    # Leakage exports may be period-only; reject mixed-current exports.
-                    labelled=[f for f in files if any('_'+c+'_' in f.name for c in ('0nA','35nA','40nA','45nA','50nA','55nA'))]
-                    if labelled:
-                        if len(labelled)!=len(files):raise ValueError('Mixed labelled/unlabelled leakage inputs')
-                        files=[f for f in files if '_'+current+'_' in f.name]
+                if sample=='background':files=select_leakage_files(files,current,p)
                 if not files:raise FileNotFoundError(f'No {sample} files at {directory}')
                 result[p,sample]=files
     return result
