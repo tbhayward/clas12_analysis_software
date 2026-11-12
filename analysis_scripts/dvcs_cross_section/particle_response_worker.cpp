@@ -96,4 +96,6 @@ static void evaluate(const json& spec,const json& job,const std::string& out){
  std::ofstream binary(out,std::ios::binary);binary.write(reinterpret_cast<const char*>(counts.data()),counts.size()*sizeof(int64_t));if(!binary)throw std::runtime_error("Response write failed");
  std::ofstream meta(out+".json");meta<<json{{"shape",{ns,2,3,ng,int(NV),maxbins}},{"records",nr},{"selected",selected}};
 }
-int main(int argc,char** argv){try{if(argc!=5)throw std::runtime_error("worker cache/evaluate SPEC JOB OUTPUT");auto spec=read_json(argv[2]),job=read_json(argv[3]);std::string mode=argv[1];if(mode=="cache")cache_events(spec,job,argv[4]);else if(mode=="evaluate")evaluate(spec,job,argv[4]);else throw std::runtime_error("Unknown mode");}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}
+#include "particle_control_worker.h"
+
+int main(int argc,char** argv){try{if(argc!=5)throw std::runtime_error("worker cache/evaluate SPEC JOB OUTPUT");auto spec=read_json(argv[2]),job=read_json(argv[3]);std::string mode=argv[1];if(mode=="cache")cache_events(spec,job,argv[4]);else if(mode=="cache-control")cache_control(spec,job,argv[4]);else if(mode=="evaluate"){if(job.at("sample")=="pi0_mc")evaluate_control(spec,job,argv[4]);else evaluate(spec,job,argv[4]);}else throw std::runtime_error("Unknown mode");}catch(const std::exception& e){std::cerr<<e.what()<<'\n';return 1;}}

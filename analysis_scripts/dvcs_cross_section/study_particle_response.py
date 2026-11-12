@@ -57,7 +57,7 @@ def compile_worker(output,reference):
         source=reference/'backend'/n
         if not source.is_file():raise FileNotFoundError('Missing saved global-cut source: '+str(source))
         shutil.copy2(source,build/n)
-    for n in ('exclusivity_resolution_worker.cpp','exclusivity_resolution_core.h','particle_response_core.h','particle_response_worker.cpp'):shutil.copy2(SOURCE/n,build/n)
+    for n in ('exclusivity_resolution_worker.cpp','exclusivity_resolution_core.h','particle_response_core.h','particle_response_worker.cpp','particle_control_core.h','particle_control_worker.h'):shutil.copy2(SOURCE/n,build/n)
     included=build/'exclusivity_resolution_worker.cpp'
     included.write_text(included.read_text().split('\nint main(',1)[0]+'\n')
     flags=shlex.split(subprocess.check_output(['root-config','--cflags'],text=True));libs=shlex.split(subprocess.check_output(['root-config','--libs'],text=True))
@@ -145,10 +145,33 @@ def build_cache(pool,spec,manifest,reference,reuse=None):
     dump(pool.output/'cache_manifest.json',dict(version=VERSION,reference_sha256=digest(reference/'manifest.json'),seed=spec['seed'],samples={k:{n:v for n,v in r.items() if n!='path'} for k,r in result.items()}))
     return result
 
+def ensure_control_cache(pool,spec,manifest,reference,cache):
+    jobs=[]
+    for period in spec['periods']:
+        key=period+'__pi0_mc'
+        if key in cache and cache[key].get('kind')=='two-photon-control-v1':continue
+        entries=[r for r in manifest['inventory'] if r['period']==period and r['sample']=='pi0_mc']
+        if not entries:raise ValueError('Reference has no two-photon MC inventory: '+period)
+        paths=[]
+        for r in entries:
+            path=Path(r['path']);st=path.stat()
+            if (st.st_size,st.st_mtime_ns)!=(r['size'],r['mtime_ns']):raise ValueError('Control input changed: '+str(path))
+            paths.append(str(path))
+        jobs.append(dict(period=period,sample='pi0_mc',files=paths))
+    if jobs:
+        print('[control] Caching two-photon MC once; existing signal/leakage caches retained',flush=True)
+        for i,job,path in pool.run('cache-control',jobs,'control_cache'):
+            meta=json.loads(Path(str(path)+'.json').read_text())
+            if meta['record_bytes']!=280 or not meta['records'] or path.stat().st_size!=280*meta['records']:raise ValueError('Invalid two-photon cache')
+            cache[job['period']+'__pi0_mc']=dict(path=str(path.resolve()),file=str(path.resolve()),sha256=digest(path),**meta)
+    return cache
+
+
 class Engine:
     def __init__(self,pool,spec,cache,data,norm,fit_topologies,min_mc,background_transfer_uncertainty=0.):
         if len(spec['periods'])!=1:raise ValueError('Each fit must contain exactly one period/polarity')
         self.background_transfer_uncertainty=background_transfer_uncertainty
+        self.control=None;self.current_selected=None;self.control_metadata=None
         self.pool=pool;self.spec=spec;self.cache=cache;self.data=data;self.norm=norm
         self.fit_topologies=[TOPS.index(t) for t in fit_topologies];self.min_mc=min_mc;self.calls=0;self.history=[]
     def evaluate(self,parameters,label,detailed=False):
@@ -156,22 +179,44 @@ class Engine:
         unique=[tuple([0.]*20)]
         for p in parameters:
             if tuple(p) not in unique:unique.append(tuple(p))
-        jobs=[dict(period=p,sample=s,cache=self.cache[p+'__'+s]['path'],parameters=unique,detailed=detailed) for p in self.spec['periods'] for s in ('mc','background')]
+        jobs=[dict(period=p,sample=s,cache=self.cache[p+'__'+s]['path'],parameters=unique,detailed=detailed) for p in self.spec['periods'] for s in ('mc','background','pi0_mc') if s!='pi0_mc' or p+'__pi0_mc' in self.cache]
         outputs=self.pool.run('evaluate',jobs,f'eval_{self.calls:03d}_{label}');self.calls+=1
         hist={};selected={}
         for i,job,path in outputs:
             meta=json.loads(Path(str(path)+'.json').read_text());key=job['period']+'__'+job['sample']
+            if job['sample']=='pi0_mc':
+                self.control=np.asarray(meta['selected'],dtype=np.int64).reshape(len(unique),2,3);self.control_metadata=meta
+                total=self.control[0].sum();bad=sum(meta['unresolved_selected'])
+                if total<=0 or bad/total>.01:raise ValueError(f'{job["period"]}: too many unresolved control photon pairs ({bad}/{total}); inspect control cache metadata')
+                path.unlink();continue
             hist[key]=np.memmap(path,dtype='<i8',mode='r',shape=tuple(meta['shape']))
             selected[key]=np.asarray(meta['selected'],dtype=np.int64).reshape(len(unique),2,3)
+        self.current_selected=selected
+        if self.control is not None:
+            p=self.spec['periods'][0];prob=self.cache[p+'__pi0_mc']['probability'];full=sum(self.spec['reference_flows'][p+'__pi0_mc']['selected']);estimate=self.control[0].sum()/prob
+            error=np.sqrt(full*(1-prob)/prob) if prob<1 else 0.
+            if abs(estimate-full)>max(7*error,1e-6):raise ValueError('Nominal two-photon control replay disagrees with reference')
         scores,by_variable=self.score(hist,unique)
         self.history.extend(dict(call=label,scenario=i,parameters=list(p),**scores[i]) for i,p in enumerate(unique))
         return unique,scores,by_variable,hist,selected
-    def weighted(self,hist,p,i,half,t,g,v,background_multiplier=1.):
-        n=self.spec['variables'][v]['bins']+2;row=self.norm[p,t]
+    def normalization(self,p,i,half,t,multiplier=1.,reference=False):
+        row=self.norm[p,t];beta=float(row['signal_scale']);alpha=float(row['background_scale'])*multiplier;ratio=1.
+        if self.control is not None and self.current_selected is not None and not reference:
+            before=float(self.control[0,half].sum());after=float(self.control[i,half].sum())
+            if after<=0:return float('nan'),float('nan'),float('nan')
+            ratio=before/after;alpha*=ratio
+            sr=float(self.current_selected[p+'__mc'][i,half,t])*2/self.cache[p+'__mc']['probability']
+            br=float(self.current_selected[p+'__background'][i,half,t])*2/self.cache[p+'__background']['probability']
+            data=float(self.spec['reference_flows'][p+'__data']['selected'][t])
+            if sr<=0 or alpha*br>=data:return float('nan'),alpha,ratio
+            beta=(data-alpha*br)/sr
+        return beta,alpha,ratio
+    def weighted(self,hist,p,i,half,t,g,v,background_multiplier=1.,reference_scales=False):
+        n=self.spec['variables'][v]['bins']+2;beta,alpha,_=self.normalization(p,i,half,t,background_multiplier,reference_scales)
         totals=[];variances=[]
-        for sample,scale in [('mc',row['signal_scale']),('background',row['background_scale'])]:
+        for sample,scale in [('mc',beta),('background',alpha)]:
             count=hist[p+'__'+sample][i,half,t,g,v,:n].astype(float)
-            weight=2*float(scale)*(background_multiplier if sample=="background" else 1.)/self.cache[p+'__'+sample]['probability']
+            weight=2*scale/self.cache[p+'__'+sample]['probability']
             totals.append(count*weight);variances.append(count*weight*weight)
         return sum(totals),sum(variances)
     def score(self,hist,parameters,profile=True):
@@ -185,7 +230,7 @@ class Engine:
         for i,pars in enumerate(parameters):
             trials=[]
             for multiplier in multipliers:
-                score,detail=self.score_one(hist,i,multiplier)
+                score,detail=self.score_one(hist,i,multiplier,reference=not profile)
                 prior=((multiplier-1)/sigma)**2 if sigma>0 else 0.
                 score['train_shape']=score['train'];score['train']+=prior
                 score.update(background_multiplier=multiplier,background_constraint_sigma=sigma,background_prior_penalty=prior)
@@ -193,16 +238,16 @@ class Engine:
             chosen=min(trials,key=lambda trial:(trial[0]['train'],abs(trial[0]['background_multiplier']-1)))
             scores.append(chosen[0]);records.extend(chosen[1])
         return scores,records
-    def score_one(self,hist,i,multiplier):
+    def score_one(self,hist,i,multiplier,reference=False):
         buckets={k:[] for k in ('train','validation_mc','heldout_observables')};records=[]
         for p in self.spec['periods']:
             for t in self.fit_topologies:
                 for v in TRAIN_OBS+VALID_OBS:
                     d=self.data[p+'__data'][t,0,v,:self.spec['variables'][v]['bins']+2].astype(float)
                     for half in (0,1):
-                        m,var=self.weighted(hist,p,i,half,t,0,v,multiplier)
+                        m,var=self.weighted(hist,p,i,half,t,0,v,multiplier,reference)
                         raw=sum(hist[p+'__'+s][i,half,t,0,v,:len(d)].sum() for s in ('mc','background'))
-                        m0,var0=self.weighted(hist,p,0,half,t,0,v,1.)
+                        m0,var0=self.weighted(hist,p,0,half,t,0,v,1.,True)
                         raw0=sum(hist[p+'__'+s][0,half,t,0,v,:len(d)].sum() for s in ('mc','background'))
                         score,bins=shape_score(d,m,var,int(raw0),self.min_mc,m0,var0)
                         kind='heldout_observables' if v in VALID_OBS else 'validation_mc' if half else 'train'
@@ -217,7 +262,7 @@ class Engine:
 def shape_score(data,model,variance,raw_mc,min_mc,reference_model=None,reference_variance=None):
     # Shape-only diagnostic. The common area scale changes neither component ratio
     # nor any displayed fixed-normalization prediction; no formal p-value is used.
-    if raw_mc<min_mc or data.sum()<=0 or model.sum()<=0:return float('nan'),0
+    if raw_mc<min_mc or data.sum()<=0 or model.sum()<=0 or not np.all(np.isfinite(model)):return float('nan'),0
     # Blocks of 4 original bins reduce MC sparsity, including finite under/overflow.
     cuts=np.arange(0,len(data),4)
     d=np.add.reduceat(data,cuts);m=np.add.reduceat(model,cuts);var=np.add.reduceat(variance,cuts)
@@ -259,10 +304,15 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
     for p in spec['periods']:
         for t,top in enumerate(TOPS):
             for i,name in [(0,'nominal'),(bi,'candidate')]:
-                total=0.;parts={}
-                for sample,scale in [('mc',engine.norm[p,t]['signal_scale']),('background',engine.norm[p,t]['background_scale'])]:
-                    key=p+'__'+sample;part=selected[key][i,:,t].sum()/engine.cache[key]['probability']*float(scale)*(candidate_multiplier if name=='candidate' and sample=='background' else 1.);parts[sample]=part;total+=part
-                yield_rows.append(dict(period=p,topology=top,scenario=name,predicted_selected=float(total),signal_selected=float(parts['mc']),background_selected=float(parts['background']),background_multiplier=candidate_multiplier if name=='candidate' else 1.,data_selected=spec['reference_flows'][p+'__data']['selected'][t]))
+                parts={};raw={};scales=[]
+                for half in (0,1):
+                    beta,alpha,ratio=engine.normalization(p,i,half,t,candidate_multiplier if name=='candidate' else 1.,reference=name=='nominal')
+                    scales.append((beta,alpha,ratio))
+                    for sample,scale in [('mc',beta),('background',alpha)]:
+                        count=float(selected[p+'__'+sample][i,half,t])/engine.cache[p+'__'+sample]['probability']
+                        raw[sample]=raw.get(sample,0.)+count;parts[sample]=parts.get(sample,0.)+count*scale
+                before=float(selected[p+'__mc'][0,:,t].sum())/engine.cache[p+'__mc']['probability']
+                yield_rows.append(dict(period=p,topology=top,scenario=name,predicted_selected=sum(parts.values()),signal_selected=parts['mc'],background_selected=parts['background'],raw_signal_selected=raw['mc'],raw_leakage_selected=raw['background'],raw_signal_selection_ratio=raw['mc']/before if before else float('nan'),control_response_ratio=float(np.mean([x[2] for x in scales])),background_multiplier=candidate_multiplier if name=='candidate' else 1.,data_selected=spec['reference_flows'][p+'__data']['selected'][t]))
             fig,axes=plt.subplots(3,3,figsize=(15,11),constrained_layout=True)
             for vi,v in enumerate(spec['variables']):
                 ax=axes.flat[vi];edges=diag.variable_edges(v);n=v['bins']+2
@@ -270,7 +320,7 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
                 prediction=[]
                 for i,tag in [(0,'nominal'),(bi,'candidate')]:
                     multiplier=candidate_multiplier if tag=='candidate' else 1.
-                    a,_=engine.weighted(hist,p,i,0,t,0,vi,multiplier);b,_=engine.weighted(hist,p,i,1,t,0,vi,multiplier);prediction.append((a+b)/2)
+                    a,_=engine.weighted(hist,p,i,0,t,0,vi,multiplier,reference_scales=tag=='nominal');b,_=engine.weighted(hist,p,i,1,t,0,vi,multiplier,reference_scales=tag=='nominal');prediction.append((a+b)/2)
                 for values,color,label in [(d,'#205cab','DATA'),(prediction[0],'#d45c18','Nominal MC'),(prediction[1],'#22946b','Candidate MC')]:
                     y=values[1:-1]/denom/np.diff(edges) if denom else values[1:-1]
                     ax.stairs(y,edges,color=color,label=label)
@@ -283,13 +333,21 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
             for ax in axes.flat[7:]:ax.axis('off')
             axes.flat[7].text(0,1,'Independent period/polarity response.\nOpening angle/pT and mass eγ\nwere not used to choose parameters.\nCandidate pi0 multiplier is recorded.\nCandidate is a detector-response test,\nnot an accepted production correction.',va='top')
             fig.suptitle(p+' · '+top+' · particle-level response test');destination=output/'plots'/p;destination.mkdir(parents=True,exist_ok=True)
-            fig.savefig(destination/(top+'.png'),dpi=110);plt.close(fig)
+            fig.savefig(destination/(top+'.png'),dpi=110)
+            for vi,v in enumerate(spec['variables']):
+                ax=axes.flat[vi]
+                for artist in ax.patches:
+                    values=artist.get_data();area=float(np.sum(values.values*np.diff(values.edges)))
+                    if area>0:artist.set_data(values.values/area,values.edges)
+                ax.relim();ax.autoscale_view(scalex=False);ax.set_ylabel('Unit-area density')
+            fig.suptitle(p+' · '+top+' · shape comparison (each distribution normalized)')
+            fig.savefig(destination/(top+'_shapes.png'),dpi=110);plt.close(fig)
             for g,stratum in enumerate(spec['strata']):
                 for vi,v in enumerate(spec['variables']):
                     edges=diag.variable_edges(v);n=v['bins']+2;d=engine.data[p+'__data'][t,g,vi,:n].astype(float)
                     dm=diag.shape_metrics(d,edges,0,0)
                     for i,name in [(0,'nominal'),(bi,'candidate')]:
-                        m0,var0=engine.weighted(hist,p,i,0,t,g,vi,candidate_multiplier if name=='candidate' else 1.);m1,var1=engine.weighted(hist,p,i,1,t,g,vi,candidate_multiplier if name=='candidate' else 1.);m=(m0+m1)/2
+                        m0,var0=engine.weighted(hist,p,i,0,t,g,vi,candidate_multiplier if name=='candidate' else 1.,reference_scales=name=='nominal');m1,var1=engine.weighted(hist,p,i,1,t,g,vi,candidate_multiplier if name=='candidate' else 1.,reference_scales=name=='nominal');m=(m0+m1)/2
                         variance=(var0+var1)/4;neff=float(m.sum()**2/variance.sum()) if variance.sum()>0 else 0.
                         mm=diag.shape_metrics(m,edges,0,0)
                         flags=[]
@@ -302,6 +360,14 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
                             median_shift_MC_spreads=(dm['median']-mm['median'])/mm['core_spread'] if mm['core_spread']>0 else float('nan'),
                             data_in_range=dm['in_range_fraction'],mc_in_range=mm['in_range_fraction']))
     table(output/'final_shapes.csv',rows);table(output/'selection_yields.csv',yield_rows)
+    if engine.control is not None:
+        control_rows=[];meta=engine.control_metadata
+        for i,name in [(0,'nominal'),(bi,'candidate')]:
+            for half in (0,1):
+                before=float(engine.control[0,half].sum());after=float(engine.control[i,half].sum())
+                control_rows.append(dict(scenario=name,half=half,nominal_selected=before,selected=after,transfer_ratio=before/after if after else float('nan'),unresolved_nominal_selected=meta['unresolved_selected'][half],input_records=meta.get('half_records',[0,0])[half],mass_outside_saved_window=meta['mass_outside_input_window'][i*2+half]))
+        table(output/'control_transfer.csv',control_rows)
+
     with (output/'single_parameter_ranking.csv').open() as f:ranking=list(csv.DictReader(f))
     labels=[r['parameter'].replace('_sigma_fraction',' σ').replace('_sigma_rad',' σ').replace('_bias_fraction',' bias').replace('_',' ') for r in ranking]
     training=[1-float(r['train_score'])/float(r['nominal_train']) for r in ranking]
@@ -311,8 +377,8 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
     ax.barh(y+.17,validation,height=.32,label='Held-out-observable improvement',color='#d45c18')
     ax.set(yticks=y,yticklabels=labels,xlabel='Fractional reduction of shape-discrepancy score');ax.axvline(0,color='gray');ax.invert_yaxis();ax.legend();ax.grid(axis='x',alpha=.15)
     fig.savefig(output/'single_parameter_effects.png',dpi=120);plt.close(fig)
-    links=''.join(f'<li>{p}: '+ ' · '.join(f'<a href="plots/{p}/{t}.png">{t}</a>' for t in TOPS)+'</li>' for p in spec['periods'])
-    (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Particle response test</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}li{margin:15px}</style><h1>Particle-response test</h1><p>Start with CD_FT. Blue: DATA; orange: nominal MC; green: candidate MC. Signal scales are fixed and one control-constrained pi0 multiplier is shared across topologies; no per-plot matching is applied. This is a candidate additional Gaussian response and momentum-scale model, not a production correction.</p><p><a href="single_parameter_effects.png">Which particle variations improve the distributions?</a></p><ul>'+links+'</ul><p><a href="REPORT.md">Fit definitions, limitations and parameter values</a> · <a href="single_parameter_ranking.csv">Single-parameter ranking</a> · <a href="final_scores.csv">Training/validation scores</a> · <a href="selection_yields.csv">Selection yields</a> · <a href="final_shapes.csv">All joint-cell shapes</a></p>')
+    links=''.join(f'<li>{p}: '+ ' · '.join(f'<a href="plots/{p}/{t}.png">{t} rates</a> / <a href="plots/{p}/{t}_shapes.png">shapes</a>' for t in TOPS)+'</li>' for p in spec['periods'])
+    (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Particle response test</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}li{margin:15px}</style><h1>Particle-response test</h1><p>Start with CD_FT. Blue: DATA; orange: nominal MC; green: candidate MC. Candidate background transfer includes the morphed two-photon control. Candidate signal normalization is fitted once per topology to the fully selected sample, then held fixed across all plotted observables. Shape links normalize each distribution to unit area. Raw signal selection ratios in selection_yields.csv expose efficiency changes independently of that normalization. The upstream gamma-gamma mass window cannot be undone with these saved trees. This is a candidate additional Gaussian response and momentum-scale model, not a production correction.</p><p><a href="single_parameter_effects.png">Which particle variations improve the distributions?</a></p><ul>'+links+'</ul><p><a href="REPORT.md">Fit definitions, limitations and parameter values</a> · <a href="single_parameter_ranking.csv">Single-parameter ranking</a> · <a href="final_scores.csv">Training/validation scores</a> · <a href="selection_yields.csv">Selection yields</a> · <a href="final_shapes.csv">All joint-cell shapes</a></p>')
 
 def discard_histograms(hist):
     """Release mappings and unlink only this evaluation's expendable binaries."""
@@ -335,6 +401,7 @@ def compact_results(output,periods):
         for path in (output/period).iterdir():
             if path.is_file() and path.suffix in ('.csv','.json','.md','.html','.png'):shutil.copy2(path,target/path.name)
         shutil.copytree(output/period/'plots',target/'plots',dirs_exist_ok=True)
+    if (output/'control_photon_reconstruction.csv').exists():shutil.copy2(output/'control_photon_reconstruction.csv',destination/'control_photon_reconstruction.csv')
     for name in ('REPORT.html','manifest.json','cache_manifest.json','reconstruction_audit.csv','scratch_location.json'):shutil.copy2(output/name,destination/name)
     return destination
 
@@ -342,7 +409,7 @@ def compact_results(output,periods):
 def publish_results(output,spec,args,reference):
     links=''.join(f'<li><a href="{p}/REPORT.html">{p}: independent response test</a></li>' for p in spec['periods'])
     (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Independent period response tests</title><style>body{font:18px system-ui;max-width:1000px;margin:40px auto}li{padding:10px}</style><h1>Independent particle-response tests</h1><p>Every period and polarity has its own fitted response parameters. No Spring/Fall or inbending/outbending parameters are pooled. Each fit is checked with an independent MC subset and held-out observables from the same sample.</p><ul>'+links+'</ul>')
-    dump(output/'manifest.json',dict(version=VERSION,reference_manifest_sha256=digest(reference/'manifest.json'),arguments={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},source_hashes={n:digest(SOURCE/n) for n in ('study_particle_response.py','particle_response_worker.cpp','particle_response_core.h')},independent_periods=spec['periods']))
+    dump(output/'manifest.json',dict(version=VERSION,reference_manifest_sha256=digest(reference/'manifest.json'),arguments={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},source_hashes={n:digest(SOURCE/n) for n in ('study_particle_response.py','particle_response_worker.cpp','particle_response_core.h','particle_control_core.h','particle_control_worker.h')},independent_periods=spec['periods']))
     compact=compact_results(output,spec['periods'])
     print('[done] Open '+str(compact/'REPORT.html')+'; transfer the results directory only, retain the MC cache on the farm',flush=True)
 
@@ -373,6 +440,7 @@ def recover_reports(output,reference,data,norm):
             job=json.loads(job_path.read_text())
             if 'parameters' not in job:continue
             if job['period']!=period or not job.get('detailed'):raise ValueError('Unexpected final response job')
+            if job['sample']=='pi0_mc':continue
             path=job_path.with_suffix('.bin');meta=json.loads(Path(str(path)+'.json').read_text())
             if not path.is_file() or path.stat().st_size!=int(np.prod(meta['shape']))*8:raise ValueError('Final trial binary missing/incomplete: '+str(path))
             if parameters is None:parameters=job['parameters']
@@ -383,6 +451,8 @@ def recover_reports(output,reference,data,norm):
         expected=[candidate['parameters'].get(name,0.) for name in PARAMS]
         if list(parameters[-1])!=expected or any(parameters[0]):raise ValueError('Saved candidate differs from final trial')
         engine=Engine(None,spec,cache,data,norm,candidate['fit_topologies'],100,candidate.get('background_transfer_uncertainty',0.))
+        if candidate.get('normalization_mode')=='morphed_control_profiled_signal':
+            control=json.loads((folder/'final_control_response.json').read_text());engine.control=np.asarray(control['selected'],dtype=np.int64);engine.control_metadata=control['metadata'];engine.current_selected=selected
         recovered.append((engine,folder,parameters,[dict(background_multiplier=candidate.get('background_multiplier',1.))],hist,selected))
     return saved,recovered
 
@@ -429,7 +499,7 @@ def compare_models(args,reference,output):
             for top in TOPS:
                 z={r['scenario']:float(r['predicted_selected']) for r in yields if r['topology']==top}
                 row[top+'_mixture_yield_change_fraction']=z['candidate']/z['nominal']-1 if z['nominal'] else float('nan')
-                signal={r['scenario']:float(r['signal_selected']) for r in yields if r['topology']==top}
+                signal={r['scenario']:float(r.get('raw_signal_selected',r['signal_selected'])) for r in yields if r['topology']==top}
                 row[top+'_signal_yield_change_fraction']=signal['candidate']/signal['nominal']-1 if signal['nominal'] else float('nan')
             rows.append(row)
     table(result/'model_comparison.csv',rows)
@@ -488,10 +558,9 @@ def main(argv=None):
     print('[scratch] '+str(work),flush=True)
     pool=Pool(worker,output/'spec.json',work,args.workers)
     cache=build_cache(pool,spec,manifest,reference,args.reuse_cache.resolve() if args.reuse_cache else None)
-    if not args.reuse_cache:shutil.copy2(work/'cache_manifest.json',output/'cache_manifest.json')
-    # Preserve cache provenance when reusing an earlier immutable cache.
-    if args.reuse_cache:
-        (output/'cache_manifest.json').write_text(json.dumps(dict(version=VERSION,reference_sha256=digest(reference/'manifest.json'),seed=args.seed,samples={k:dict(r,file=r['path']) for k,r in cache.items()}),indent=2))
+    cache=ensure_control_cache(pool,spec,manifest,reference,cache)
+    dump(output/'cache_manifest.json',dict(version=VERSION,reference_sha256=digest(reference/'manifest.json'),seed=args.seed,
+        samples={k:dict(r,file=r['path']) for k,r in cache.items()}))
     audit_rows=[]
     for key,record in cache.items():
         audits=record['audit'];number=sum(a['audited'] for a in audits)
@@ -500,6 +569,7 @@ def main(argv=None):
                 mean_absolute_offset=sum(a['absolute_difference_sum'][j] for a in audits)/number if number else float('nan'),
                 maximum_absolute_offset=max(a['absolute_difference_max'][j] for a in audits)))
     table(output/'reconstruction_audit.csv',audit_rows)
+    table(output/'control_photon_reconstruction.csv',[dict(sample=k,path=a['path'],saved=a['saved'],unresolved=a['unresolved_photons']) for k,r in cache.items() if r.get('kind')=='two-photon-control-v1' for a in r['audit']])
     budget=pool.budget
     def fit_period(period):
         folder=output/period;folder.mkdir()
@@ -594,8 +664,10 @@ def fit_candidate(engine,output,args):
     original_score=engine.score(h,p,profile=False)[0][0] if isinstance(engine,Engine) else s[0]
     table(output/'final_scores.csv',[dict(scenario='nominal',**original_score),dict(scenario='candidate',**s[-1])])
     table(output/'final_projection_scores.csv',projections)
+    if getattr(engine,'control',None) is not None:
+        dump(output/'final_control_response.json',dict(selected=engine.control.tolist(),metadata=engine.control_metadata))
     active={PARAMS[k]:best[k] for k in grid};boundary=[PARAMS[k] for k,levels in grid.items() if best[k]!=0 and best[k] in (levels[0],levels[-1])]
-    dump(output/'candidate_parameters.json',dict(version=VERSION,parameters=active,boundary_parameters=boundary,period=spec['periods'][0],bias_mode=getattr(args,'bias_mode','fit'),background_multiplier=s[-1].get('background_multiplier',1.),background_constraint_sigma=s[-1].get('background_constraint_sigma',0.),background_multiplier_at_boundary=abs(abs(s[-1].get('background_multiplier',1.)-1)-2*s[-1].get('background_constraint_sigma',0.))<1e-10 and s[-1].get('background_constraint_sigma',0.)>0,background_transfer_uncertainty=getattr(args,'background_transfer_uncertainty',0.),fit_topologies=args.fit_topologies,training_observables=[OBS[i] for i in TRAIN_OBS],validation_observables=[OBS[i] for i in VALID_OBS]))
+    dump(output/'candidate_parameters.json',dict(version=VERSION,normalization_mode='morphed_control_profiled_signal' if getattr(engine,'control',None) is not None else 'legacy_fixed',parameters=active,boundary_parameters=boundary,period=spec['periods'][0],bias_mode=getattr(args,'bias_mode','fit'),background_multiplier=s[-1].get('background_multiplier',1.),background_constraint_sigma=s[-1].get('background_constraint_sigma',0.),background_multiplier_at_boundary=abs(abs(s[-1].get('background_multiplier',1.)-1)-2*s[-1].get('background_constraint_sigma',0.))<1e-10 and s[-1].get('background_constraint_sigma',0.)>0,background_transfer_uncertainty=getattr(args,'background_transfer_uncertainty',0.),fit_topologies=args.fit_topologies,training_observables=[OBS[i] for i in TRAIN_OBS],validation_observables=[OBS[i] for i in VALID_OBS]))
     table(output/'evaluation_history.csv',[dict(call=r['call'],scenario=r['scenario'],parameters=json.dumps(r['parameters']),**{k:v for k,v in r.items() if k not in ('call','scenario','parameters')}) for r in engine.history])
     units=[]
     for k,value in active.items():
@@ -633,8 +705,7 @@ Within-cell or more detailed momentum dependence can still remain.
 The objective is a descriptive mean weighted shape discrepancy over equal-weight
 projections, not a chi-square probability: variables share events. Four original
 histogram bins form one score bin. The model sum is area-normalized ONLY in the
-shape score; a shared control-constrained pi0 transfer multiplier is profiled using training data only. Displayed predictions and
-selection yields retain their fixed reference scales. The score uses fixed
+shape score; a shared control-constrained pi0 transfer multiplier is profiled using training data only. The control MC is morphed with both photons separately, and its selected-count ratio corrects the transfer. Candidate signal scales are then fitted once per topology in the fully selected sample and held fixed for all projections. Nominal plots retain reference scales. Unit-area shape plots are supplied separately; raw_signal_selection_ratio reports the efficiency change without absorbing it in that fitted scale. The score uses fixed
 nominal sampling variance/masks to avoid favoring a trial merely because it has
 less MC precision. Every training projection must have sufficient nominal MC.
 No fit uncertainty or production systematic is inferred from this score. The

@@ -16,8 +16,7 @@ python3 test_particle_response.py --root-smoke --reference-study "$PWD/test_runs
 
 The native worker compiles automatically; no full-analysis rebuild is required.
 The reference supplies the saved global cuts/source snapshots, DATA histograms,
-component scales, file inventory and exclusivity windows. DATA and two-photon
-controls are not reread. All five reference periods are processed; CD_FT is the
+component scales, file inventory and exclusivity windows. DATA is not reread. Two-photon control MC is cached once on the first updated run, then reused. All five reference periods are processed; CD_FT is the
 default fit topology. All three topologies are predicted for each period.
 
 ## Exactly what changes in a trial
@@ -37,7 +36,7 @@ exactly the original event. The direct recomputation offsets are audited.
 Detector identities stay fixed; measured fiducial angles/sectors are reevaluated.
 Global selections, DATA exclusivity windows and joint kinematic cells are
 reevaluated for every trial, with the plotted variable's cut omitted as before.
-Signal and pi0 leakage MC are both varied; their reference scales stay fixed.
+Signal, pi0 leakage, and two-photon control MC are varied consistently. Nominal plots retain reference scales; candidate scales follow the control/profile procedure below.
 
 ## Fitting and validation
 
@@ -51,7 +50,7 @@ validation sample for a different detector/software configuration.
 
 The fit score compares areas normalized within each projection to focus on
 shape. It retains the signal/background ratio. Displayed predictions, all joint
-cell comparisons and selection yields use the original fixed scales. The score
+cell comparisons use one candidate signal normalization per topology, fitted in the fully selected sample and held fixed across observables. Raw selection ratios are reported separately. The score
 uses frozen nominal MC uncertainty and bin masks so increased sampling noise
 cannot improve the objective simply by inflating its denominator. Every training
 projection must be populated. This score is descriptive, not a formal independent
@@ -208,3 +207,36 @@ large event/trial files stay on scratch. Existing studies remain unchanged.
 For report-only recovery of this paired run, add --compare-models --finish-reports
 and use the same output/reference paths. The scalar response fit remains an
 effective model; production acceptance and Frad are not modified.
+
+
+## Consistent two-photon control response
+
+Both individual photons are recovered from the saved composite three-momentum,
+Trento azimuths, electron opening angles and measured gamma-gamma mass. Each is
+varied with its own detector response and independent random numbers; the same
+laws apply to signal and leakage photons. The composite is rebuilt with the
+producer's nominal pion-mass convention. Unresolved pairs are retained unchanged;
+the run stops if they exceed 1% of nominal selected control events. Inspect
+`control_photon_reconstruction.csv` and each period's `control_transfer.csv`.
+
+For each trial, alpha = alpha_reference * C_nominal/C_trial, where C is the
+selected two-photon MC control count. A shared constrained transfer multiplier
+is applied in addition. For each topology beta = (D-alpha*B_trial)/S_trial,
+using only the common fully selected sample. Beta then stays fixed in every
+omitted-cut projection and joint cell; there is no per-plot normalization fit.
+Invalid negative signal residuals reject the trial. Counting diagnostics use
+independent MC halves consistently with the shape checks.
+
+Rate plots show this profiled prediction; `_shapes.png` plots normalize each
+curve to unit area. `selection_yields.csv` includes `raw_signal_selection_ratio`:
+with fixed generated sample this is the relative reconstructed selection
+acceptance, before any fitted signal scale. A ratio below one means fewer
+selected MC events and hence a larger acceptance-corrected data yield.
+
+The producer already requires 0.11 < m(gamma gamma) < 0.16 GeV before saving
+these control trees. The study reapplies saved analysis-stage cuts, records
+migration out of that upstream mass window, and does not add another mass cut.
+It cannot recover incoming candidates discarded upstream. These remain
+conditional response tests; a wider upstream control skim is needed to establish
+the full mass-window response before production adoption. Production analysis
+and imported Frad/Fbin remain unchanged.

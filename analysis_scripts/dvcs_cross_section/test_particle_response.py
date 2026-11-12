@@ -55,10 +55,29 @@ int main(){
 }
 '''
 
+CONTROL_TEST='#include "particle_control_core.h"\n#include <iostream>\n#include <cassert>\nusing namespace particle_response;\nint main(){\n Record r{};r.v[5]=5;r.v[6]=.2;r.v[7]=.3;r.v[11]=5;r.v[12]=.12;r.v[13]=1.3;\n double beam=10.604;F pi=particle(5,.12,1.3,MPI0),e=particle(5,.2,.3,ME),k={{0,0,std::sqrt(beam*beam-ME*ME)},beam};\n int failed=0,wrong=0;double maxrel=0;\n auto round5=[](double x){return std::round(x*1e5)/1e5;};\n for(int i=0;i<1000;++i){double ct=2*uniform(i*3)-1,phi=2*PI*uniform(i*3+1);F a=particle(MPI0/2,std::acos(ct),phi,0),b={a.p*(-1),a.e};a=a.boost(pi.p*(1/pi.e));b=b.boost(pi.p*(1/pi.e));\n  double f1=round5(trento((k-e).p,e.p,a.p)),f2=round5(trento((k-e).p,e.p,b.p));double o1=round5(angle(e.p,a.p)*180/PI),o2=round5(angle(e.p,b.p)*180/PI);\n  std::array<double,10> recovered{};double error;bool ok=recover_photons(r,beam,f1,f2,o1,o2,round5(MPI0),recovered,error);\n  if(!ok){++failed;continue;}\n  ControlRecord c{};c.base=r;c.base.v[8]=1;c.base.v[9]=.5;c.base.v[3]=2;c.base.v[4]=1;c.photons=recovered;c.photons[6]=c.photons[7]=1;\n  auto original=derived(c.base.v,beam,false,MPI0);std::array<double,NP> pars{};std::array<double,12> z{};double mass;\n  assert(sizeof(ControlRecord)==280);assert(vary_control(c,pars,beam,original,z,mass)==c.base.v);\n  pars[15]=.01;auto changed=vary_control(c,pars,beam,original,z,mass);\n  assert(std::abs(changed[11]/r.v[11]-1.01)<.001);assert(std::abs(mass/std::sqrt((particle(recovered[0],recovered[1],recovered[2],0)+particle(recovered[3],recovered[4],recovered[5],0)).m2())-1.01)<1e-10);\n  pars.fill(0);pars[12]=.01;z[6]=1;z[9]=-1;auto independent=vary_control(c,pars,beam,original,z,mass);\n  assert(std::abs(mass/std::sqrt((particle(recovered[0],recovered[1],recovered[2],0)+particle(recovered[3],recovered[4],recovered[5],0)).m2())-std::sqrt(1-.0001))<1e-10);\ndouble rel=std::abs(recovered[0]/a.e-1);maxrel=std::max(maxrel,rel);if(rel>.02)++wrong;\n }\n std::cout<<"failed "<<failed<<" wrong "<<wrong<<" maxrelative "<<maxrel<<\'\\n\';assert(failed<10&&wrong<10);\n}\n'
+
 def core(tmp):
     source=tmp/'core.cpp';source.write_text(CORE_TEST);exe=tmp/'core'
     subprocess.run(['c++','-O2','-std=c++17','-I'+str(s.SOURCE),str(source),'-o',str(exe)],check=True)
     subprocess.run([str(exe)],check=True)
+
+def control_tests(tmp):
+    source=tmp/'control.cpp';source.write_text(CONTROL_TEST);exe=tmp/'control'
+    subprocess.run(['c++','-O2','-std=c++17','-I'+str(s.SOURCE),str(source),'-o',str(exe)],check=True)
+    subprocess.run([str(exe)],check=True)
+    p='fa18_inb';cache={p+'__mc':dict(probability=1),p+'__background':dict(probability=1)}
+    norm={(p,t):dict(signal_scale='2',background_scale='3') for t in range(3)}
+    e=s.Engine(None,dict(periods=[p],reference_flows={p+'__data':dict(selected=[1000]*3)}),cache,{},norm,s.TOPS,10)
+    e.control=np.array([[[100]*3]*2,[[50]*3]*2])
+    e.current_selected={p+'__mc':np.array([[[100]*3]*2,[[50]*3]*2]),p+'__background':np.array([[[20]*3]*2,[[10]*3]*2])}
+    b0,a0,r0=e.normalization(p,0,0,0);b1,a1,r1=e.normalization(p,1,0,0)
+    assert a1==2*a0 and r1==2 and np.isclose(b1,2*b0)
+    assert np.isclose(b0*200+a0*40,1000) and np.isclose(b1*100+a1*20,1000)
+    assert e.normalization(p,1,0,0,reference=True)==(2.,3.,1.)
+    assert not np.isfinite(e.normalization(p,1,0,0,multiplier=100)[0])
+    print('PASS: morphed control transfer, selected-sample signal profiling, raw efficiency separation and invalid-background rejection')
+
 
 def numerical():
     e=np.linspace(-4,4,401);x=(e[:-1]+e[1:])/2
@@ -157,6 +176,18 @@ def report_test(tmp):
     return engine,out,hist,selected
 
 
+def profiled_report_test(tmp):
+    work=tmp/'profiled';work.mkdir();engine,out,hist,selected=report_test(work)
+    engine.control=np.array([[[100]*3]*2,[[50]*3]*2]);engine.control_metadata=dict(unresolved_selected=[0,0],half_records=[1000,1000],mass_outside_input_window=[0,0,4,5])
+    selected['fa18_inb__mc'][1]//=2;selected['fa18_inb__background'][1]//=2;engine.current_selected=selected
+    s.detailed_report(engine,out,[[0]*20,[.01]+[0]*19],[{},{}],hist,selected)
+    with (out/'selection_yields.csv').open() as f:rows=list(s.csv.DictReader(f))
+    candidate=[r for r in rows if r['scenario']=='candidate']
+    assert all(np.isclose(float(r['predicted_selected']),1000) and float(r['raw_signal_selection_ratio'])==.5 and float(r['control_response_ratio'])==2 for r in candidate)
+    assert (out/'control_transfer.csv').exists() and (out/'plots/fa18_inb/CD_FT_shapes.png').exists()
+    print('PASS: profiled rate/shape reports retain raw efficiency losses and control mass-window diagnostics')
+
+
 def scratch_test(tmp):
     a=s.scratch_directory(tmp/'scratch',tmp/'run');b=s.scratch_directory(tmp/'scratch',tmp/'run')
     assert a!=b and a.parent==b.parent==(tmp/'scratch').resolve()
@@ -211,7 +242,7 @@ def joint_model_tests(tmp):
     assert all(k%4!=3 for k in s.parameter_grid(s.TOPS,'zero'))
     p='fa18_inb';norm={(p,t):dict(signal_scale=1,background_scale=1,background_scale_stat=0) for t in range(3)}
     engine=s.Engine(None,dict(periods=[p]),{}, {},norm,s.TOPS,10,.1)
-    def fake_score(self,hist,i,m):return dict(train=10000*(m-1.1)**2,validation_mc=999 if m>1 else 0,heldout_observables=999,training_projections=9),[]
+    def fake_score(self,hist,i,m,reference=False):return dict(train=10000*(m-1.1)**2,validation_mc=999 if m>1 else 0,heldout_observables=999,training_projections=9),[]
     engine.score_one=MethodType(fake_score,engine)
     scores,_=engine.score({},[[0]*20]);assert abs(scores[0]['background_multiplier']-1.1)<1e-12
     assert abs(scores[0]['background_prior_penalty']-1)<1e-12
@@ -266,7 +297,7 @@ def main():
     args=parser.parse_args()
     if args.root_smoke and not args.reference_study:parser.error('--root-smoke requires --reference-study')
     with tempfile.TemporaryDirectory() as name:
-        tmp=Path(name);core(tmp);numerical();independent_fit(tmp);budget_test(tmp);report_test(tmp);scratch_test(tmp);recovery_test(tmp);joint_model_tests(tmp)
+        tmp=Path(name);core(tmp);control_tests(tmp);numerical();independent_fit(tmp);budget_test(tmp);report_test(tmp);profiled_report_test(tmp);scratch_test(tmp);recovery_test(tmp);joint_model_tests(tmp)
         if args.root_smoke:
             # Existing fixture accepts a nominal production source directory;
             # reference backend has those same sources and output cuts below.

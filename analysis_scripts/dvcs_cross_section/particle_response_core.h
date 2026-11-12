@@ -34,9 +34,9 @@ inline double angle(V a,V b){double n=a.norm()*b.norm();return n>0?std::acos(std
 inline F particle(double p,double t,double f,double m){return {{p*std::sin(t)*std::cos(f),p*std::sin(t)*std::sin(f),p*std::cos(t)},std::sqrt(p*p+m*m)};}
 inline double trento(V q,V e,V h){V a=q.cross(e),b=q.cross(h);return wrap(std::atan2(e.cross(h).dot(q)*q.norm(),a.dot(b)));}
 // Derived columns: x,Q2,t1,open_angle,pT,then the seven production variables.
-inline std::array<double,12> derived(const std::array<double,NC>& v,double beam,bool fallback=false){
+inline std::array<double,12> derived(const std::array<double,NC>& v,double beam,bool fallback=false,double neutral_mass=0){
  F k={{0,0,std::sqrt(beam*beam-ME*ME)},beam},target={{0,0,0},MP};
- F e=particle(v[5],v[6],v[7],ME),p=particle(v[8],v[9],v[10],MP),g=particle(v[11],v[12],v[13],0);
+ F e=particle(v[5],v[6],v[7],ME),p=particle(v[8],v[9],v[10],MP),g=particle(v[11],v[12],v[13],neutral_mass);
  F q=k-e,missing=k+target-e-p-g,h=p+g;
  auto pb=p.boost(h.p*(-1/h.e));
  double delta=fallback?std::abs(std::remainder(v[10]-v[13],2*PI)):wrap(trento(q.p,e.p,g.p)-trento(q.p,e.p,p.p));
