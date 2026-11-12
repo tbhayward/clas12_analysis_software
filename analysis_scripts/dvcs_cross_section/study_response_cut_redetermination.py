@@ -29,6 +29,16 @@ def load_candidate_parameters(path):
         values.append(value)
     return values
 
+def candidate_paths(models,periods,training_study=None):
+    paths={(p,name):(training_study/p/name/'candidate_parameters.json' if training_study else model/p/'candidate_parameters.json') for name,model in models.items() for p in periods}
+    if training_study:
+        for (period,name),path in paths.items():
+            if json.loads(path.read_text()).get('period')!=period:raise ValueError('Training candidate period mismatch: '+str(path))
+            marker=json.loads((path.parent/'completed_fit.json').read_text())
+            if response.digest(path)!=marker['candidate_sha256']:raise ValueError('Training candidate changed after completion: '+str(path))
+    return paths
+
+
 def publish_results(run,output):
     """Link the original cut output, including when recovering a legacy run."""
     report=run/'REPORT.html'
@@ -144,6 +154,7 @@ def plot_controls(period,scenario,arrays,baseline,blocks,output):
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ['reference-study','response-run','output']:parser.add_argument('--'+name,type=Path,required=True)
+    parser.add_argument('--training-study',type=Path,help='Use checked current and add_pt candidates from the completed training-variable study')
     parser.add_argument('--scratch-root',type=Path,default=Path('/scratch/thayward/dvcs_particle_response'));parser.add_argument('--workers',type=int,default=10)
     args=parser.parse_args(argv)
     if not 1<=args.workers<=10:parser.error('Workers must be between 1 and 10')
@@ -152,12 +163,19 @@ def main(argv=None):
     reference=args.reference_study.resolve();run=args.response_run.resolve();meta=json.loads((reference/'manifest.json').read_text());spec=copy.deepcopy(meta['spec'])
     models={name:run/name for name in ['broadening_only','with_bias'] if (run/name/'cache_manifest.json').is_file()}
     if not models:models={run.name:run}
+    if args.training_study:
+        if (run/'with_bias/cache_manifest.json').is_file():run=run/'with_bias'
+        models={name:run for name in ['current','add_pt']}
     first=next(iter(models.values()));cachemeta=json.loads((first/'cache_manifest.json').read_text())
     for name,model in models.items():
         other=json.loads((model/'cache_manifest.json').read_text())
         if other['reference_sha256']!=cachemeta['reference_sha256'] or other['seed']!=cachemeta['seed'] or {k:r['sha256'] for k,r in other['samples'].items()}!={k:r['sha256'] for k,r in cachemeta['samples'].items()}:raise ValueError('Candidates must use the same verified event cache')
     if cachemeta['reference_sha256']!=response.digest(reference/'manifest.json'):raise ValueError('Response and reference provenance differ')
-    candidate_vectors={(period,name):load_candidate_parameters(model/period/'candidate_parameters.json') for name,model in models.items() for period in spec['periods']}
+    paths=candidate_paths(models,spec['periods'],args.training_study.resolve() if args.training_study else None)
+    if args.training_study:
+        training_meta=json.loads((args.training_study/'manifest.json').read_text())
+        if training_meta['reference_sha256']!=response.digest(reference/'manifest.json') or training_meta['cache_manifest_sha256']!=response.digest(first/'cache_manifest.json'):raise ValueError('Training/cut input provenance mismatch')
+    candidate_vectors={key:load_candidate_parameters(path) for key,path in paths.items()}
     output.mkdir(parents=True);work=response.scratch_directory(args.scratch_root,output);response.dump(output/'scratch_location.json',dict(directory=str(work)))
     response.dump(output/'spec.json',spec);worker=response.compile_worker(output,reference);pool=response.Pool(worker,output/'spec.json',work,args.workers)
     cache={k:dict(r,path=str((first/r['file']).resolve())) for k,r in cachemeta['samples'].items()}
@@ -201,12 +219,18 @@ def main(argv=None):
                 z=comparison_rows(period,scenario,arrays_for(period,scenario),baseline,blocks,results[period,'nominal'],prob)
                 for r in z:r['scenario']+='__versus_nominal_refit'
                 rows+=z
+            if scenario=='add_pt' and 'current' in models:
+                z=comparison_rows(period,scenario,arrays_for(period,scenario),arrays_for(period,'current'),blocks,results[period,'current'],prob)
+                for r in z:r['scenario']+='__versus_current_training_refit'
+                rows+=z
             plots=output/'control_plots';plots.mkdir(exist_ok=True)
             links+=plot_controls(period,scenario,arrays_for(period,scenario),baseline,blocks,plots)
     response.table(output/'relative_acceptance.csv',rows)
-    response.dump(output/'manifest.json',dict(reference_sha256=response.digest(reference/'manifest.json'),response_cache_sha256=response.digest(first/'cache_manifest.json'),production_fitter_sha256=response.digest(Path(production.__file__)),candidate_hashes={name:{p:response.digest(model/p/'candidate_parameters.json') for p in spec['periods']} for name,model in models.items()},scenarios=['nominal',*models],arguments={k:str(v) for k,v in vars(args).items()}))
+    response.dump(output/'manifest.json',dict(reference_sha256=response.digest(reference/'manifest.json'),response_cache_sha256=response.digest(first/'cache_manifest.json'),production_fitter_sha256=response.digest(Path(production.__file__)),candidate_hashes={name:{p:response.digest(paths[p,name]) for p in spec['periods']} for name,model in models.items()},scenarios=['nominal',*models],arguments={k:str(v) for k,v in vars(args).items()}))
     (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Production cut redetermination</title><style>body{font:17px system-ui;max-width:1100px;margin:35px auto}li{margin:8px}</style><h1>Separate DATA/MC cut redetermination</h1><p>Uses the production template fitter and iterative 90/95/98% cut algorithms. DATA are unchanged; their signal templates and fitted boundaries are reestimated for each MC response. Cut fitting uses the same minimal preselection as production. Relative acceptance counts additionally apply the saved full analysis global cuts. Production outputs are untouched.</p><p><a href="relative_acceptance.csv">Relative reconstructed acceptance by period, topology and |t|</a>. The generated denominator is unchanged and cancels in these ratios. The inverse acceptance factor alone is not a cross-section prediction: DATA cuts, background subtraction, bin migration and fitted-parameter uncertainties also matter. Statistical errors are paired MC counting errors only. The original upstream two-photon mass-window limitation remains.</p><h2>Two-photon controls before exclusivity cuts</h2><ul>'+''.join('<li><a href="control_plots/'+x+'">'+x+'</a></li>' for x in links)+'</ul><p>Per-period/scenario folders contain combined_cuts_95.json and topology-specific production cut-development figures.</p>')
-    publish_results(run,output)
+    if args.training_study:
+        report=output/'REPORT.html';report.write_text(report.read_text()+'<p>Training follow-up: current is the equally refined original-training candidate; add_pt adds missing transverse momentum to training. Rows ending __versus_current_training_refit isolate that training-choice change after both DATA and MC cuts are redetermined.</p>')
+    else:publish_results(run,output)
     print('[done] '+str(output/'REPORT.html'),flush=True)
 
 if __name__=='__main__':main()

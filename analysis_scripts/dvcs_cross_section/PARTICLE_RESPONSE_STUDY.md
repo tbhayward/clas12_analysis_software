@@ -352,3 +352,40 @@ and the compiled backend stay in the unique scratch folder. Completed fits save
 compact curves and checked metadata; rerun the same command with `--resume` to
 reuse completed period/configuration fits and retry only unfinished fits. Inputs,
 weights and fit settings must match the original manifest.
+
+
+## Add-pT candidate follow-up
+
+`study_particle_training_followup.py --training-study STUDY --output NEW_OUTPUT`
+reads the saved input locations from the completed training study manifest;
+`--reference-study` and `--response-run` can override locations with matching
+checksums. It validates completed candidate hashes and reuses the original
+MC caches. It evaluates only the two fixed candidates (`current` and `add_pt`),
+with no new parameter fitting or broadening-only run. One total worker budget
+of at most ten spans all period evaluations.
+
+The first stage reapplies the saved common DATA diagnostic windows and fills
+the same momentum/angle and joint kinematic cells as the reference study.
+Comparisons use area-normalized shapes with the same nominal-MC variance and
+usable-bin mask for both responses. Cells with fewer than 300 DATA events,
+insufficient nominal MC or fewer than five score bins are flagged. Static
+per-topology heatmaps show improvements/regressions; additional panels display
+the most challenging reserved-variable checks. These are conditional population
+comparisons with overlapping cells, not independent DATA validation or unique
+detector-resolution measurements.
+
+The second stage calls the production cut-redetermination study with the checked
+training candidates. Two-photon DATA are read once there; MC comes from the
+same caches. It refits separate DATA/MC DVCS and two-photon windows using the
+existing production algorithm and writes control distributions plus relative
+acceptance tables. `add_pt__versus_current_training_refit` rows isolate the
+incremental training-choice effect after both sets of cuts are redetermined.
+Nominal/saved-cut comparisons remain available. The upstream two-photon mass
+window limitation and the need for updated background subtraction before a
+cross-section prediction remain unchanged. Nothing is installed into production.
+
+Open the new run-root REPORT.html for subdivision diagnostics and its cut-study
+link. The report links original files directly, without duplicate packages.
+Large intermediate arrays remain on scratch. The cut substage can also be run
+separately with `study_response_cut_redetermination.py --training-study STUDY`
+and the corresponding verified reference/response paths if needed.
