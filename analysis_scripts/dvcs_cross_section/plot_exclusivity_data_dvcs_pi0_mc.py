@@ -110,10 +110,15 @@ except ImportError:
     uproot = None
 #endif
 
-try:
-    import ROOT
-except ImportError:
+# Array-only callers reuse fit/cut algorithms without initializing a ROOT runtime.
+if os.environ.get('DVCS_EXCLUSIVITY_ARRAY_ONLY') == '1':
     ROOT = None
+else:
+    try:
+        import ROOT
+    except ImportError:
+        ROOT = None
+    #endif
 #endif
 
 

@@ -40,7 +40,7 @@ def table(path,rows):
     with Path(path).open('w',newline='') as f:
         w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
 
-def parameter_grid(topologies,bias_mode="fit"):
+def parameter_grid(topologies,bias_mode="fit",scan_range="standard"):
     regions={0}
     for top in topologies:
         regions.add(1 if top=='FD_FD' else 2);regions.add(4 if top=='CD_FT' else 3)
@@ -49,7 +49,21 @@ def parameter_grid(topologies,bias_mode="fit"):
         widths=[0,.003,.01,.02,.03] if r==0 else [0,.01,.03,.06] if r==1 else [0,.02,.05,.08,.12] if r==2 else [0,.01,.02,.04,.06]
         for coordinate in range(3 if bias_mode=="zero" else 4):
             result[4*r+coordinate]=widths if coordinate==0 else [0,.002,.006,.012] if coordinate==1 else [0,.01,.03,.06] if coordinate==2 else [-.015,-.005,0,.005,.015]
+    if scan_range=='wide':
+        for k,values in result.items():
+            extra=([.06,.10] if k//4==0 else [.16,.24] if k//4==2 else [.10,.16]) if k%4==0 else [.024,.04] if k%4==1 else [.10,.16] if k%4==2 else [-.10,-.05,-.025,.025,.05,.10]
+            result[k]=sorted(set(values+extra))
     return result
+
+def mass_plot_limits(edges,curves):
+    """Zoom on robust cores; sparse tails never determine the visible range."""
+    limits=[]
+    for h in curves:
+        q=[diag.quantile(h[1:-1],edges,x) for x in (.16,.5,.84)]
+        if all(np.isfinite(q)):
+            width=max(q[1]-q[0],q[2]-q[1],.0005);limits.extend([q[1]-4*width,q[1]+4*width])
+    if not limits:return (-.01,.01)
+    return max(edges[0],max(-.06,min(limits))),min(edges[-1],min(.06,max(limits)))
 
 def compile_worker(output,reference):
     build=output/'backend';build.mkdir()
@@ -57,7 +71,7 @@ def compile_worker(output,reference):
         source=reference/'backend'/n
         if not source.is_file():raise FileNotFoundError('Missing saved global-cut source: '+str(source))
         shutil.copy2(source,build/n)
-    for n in ('exclusivity_resolution_worker.cpp','exclusivity_resolution_core.h','particle_response_core.h','particle_response_worker.cpp','particle_control_core.h','particle_control_worker.h'):shutil.copy2(SOURCE/n,build/n)
+    for n in ('exclusivity_resolution_worker.cpp','exclusivity_resolution_core.h','particle_response_core.h','particle_response_worker.cpp','particle_control_core.h','particle_control_worker.h','particle_response_cut_arrays.h'):shutil.copy2(SOURCE/n,build/n)
     included=build/'exclusivity_resolution_worker.cpp'
     included.write_text(included.read_text().split('\nint main(',1)[0]+'\n')
     flags=shlex.split(subprocess.check_output(['root-config','--cflags'],text=True));libs=shlex.split(subprocess.check_output(['root-config','--libs'],text=True))
@@ -119,6 +133,7 @@ def build_cache(pool,spec,manifest,reference,reuse=None):
         for key,r in saved['samples'].items():
             path=reuse/r['file']
             if digest(path)!=r['sha256']:raise ValueError('Corrupt event cache: '+key)
+            if spec.get('expected_cache_events') and r['probability']+1e-12<min(1.,spec['expected_cache_events']/r['entries']):raise ValueError('Reused cache is smaller than requested; omit --reuse-cache to build the larger sample')
             result[key]=dict(r,path=str(path.resolve()))
         print('[cache] Verified reusable MC cache; no ROOT reads',flush=True)
         return result
@@ -329,6 +344,8 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
                 if q:
                     lo,hi=min(q),max(q);pad=max((hi-lo)*.1,np.min(np.diff(edges))*5)
                     ax.set_xlim(max(edges[0],lo-pad),min(edges[-1],hi+pad))
+                if v['name']=='Mx2':
+                    ax.set_xlim(*mass_plot_limits(edges,[d,*prediction]));ax.text(.02,.97,'Core view; tails retained',transform=ax.transAxes,va='top',fontsize=7)
                 ax.set(xlabel=v['label'],ylabel='Density / DATA total');ax.legend(fontsize=8);ax.grid(alpha=.15)
             for ax in axes.flat[7:]:ax.axis('off')
             axes.flat[7].text(0,1,'Independent period/polarity response.\nOpening angle/pT and mass eγ\nwere not used to choose parameters.\nCandidate pi0 multiplier is recorded.\nCandidate is a detector-response test,\nnot an accepted production correction.',va='top')
@@ -409,7 +426,7 @@ def compact_results(output,periods):
 def publish_results(output,spec,args,reference):
     links=''.join(f'<li><a href="{p}/REPORT.html">{p}: independent response test</a></li>' for p in spec['periods'])
     (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Independent period response tests</title><style>body{font:18px system-ui;max-width:1000px;margin:40px auto}li{padding:10px}</style><h1>Independent particle-response tests</h1><p>Every period and polarity has its own fitted response parameters. No Spring/Fall or inbending/outbending parameters are pooled. Each fit is checked with an independent MC subset and held-out observables from the same sample.</p><ul>'+links+'</ul>')
-    dump(output/'manifest.json',dict(version=VERSION,reference_manifest_sha256=digest(reference/'manifest.json'),arguments={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},source_hashes={n:digest(SOURCE/n) for n in ('study_particle_response.py','particle_response_worker.cpp','particle_response_core.h','particle_control_core.h','particle_control_worker.h')},independent_periods=spec['periods']))
+    dump(output/'manifest.json',dict(version=VERSION,reference_manifest_sha256=digest(reference/'manifest.json'),arguments={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},source_hashes={n:digest(SOURCE/n) for n in ('study_particle_response.py','particle_response_worker.cpp','particle_response_core.h','particle_control_core.h','particle_control_worker.h','particle_response_cut_arrays.h')},independent_periods=spec['periods']))
     compact=compact_results(output,spec['periods'])
     print('[done] Open '+str(compact/'REPORT.html')+'; transfer the results directory only, retain the MC cache on the farm',flush=True)
 
@@ -476,7 +493,7 @@ def compare_models(args,reference,output):
         cmd=[sys.executable,str(SOURCE/'study_particle_response.py'),'--reference-study',str(reference),'--output',str(target),
             '--scratch-root',str(args.scratch_root),'--workers',str(args.workers),'--expected-cache-events',str(args.expected_cache_events),
             '--seed',str(args.seed),'--coordinate-rounds',str(args.coordinate_rounds),'--refinement-rounds',str(args.refinement_rounds),
-            '--min-mc',str(args.min_mc),'--bias-mode',mode,'--background-transfer-uncertainty',str(args.background_transfer_uncertainty),
+            '--scan-range',getattr(args,'scan_range','standard'),'--min-mc',str(args.min_mc),'--bias-mode',mode,'--background-transfer-uncertainty',str(args.background_transfer_uncertainty),
             '--fit-topologies',*args.fit_topologies]
         if target.exists():
             if not args.finish_reports:raise ValueError('Existing unfinished comparison model')
@@ -485,6 +502,10 @@ def compare_models(args,reference,output):
             reuse=output/'broadening_only' if mode=='fit' else args.reuse_cache
             if reuse:cmd.extend(['--reuse-cache',str(reuse)])
             if mode=='fit':cmd.extend(['--initial-parameters-from',str(output/'broadening_only')])
+            elif getattr(args,'initial_parameters_from',None):
+                start=args.initial_parameters_from
+                if (start/'broadening_only').is_dir():start=start/'broadening_only'
+                cmd.extend(['--initial-parameters-from',str(start)])
         print('[comparison] '+label+'; all periods remain independent',flush=True);subprocess.run(cmd,check=True)
     result=output/'results';result.mkdir(exist_ok=True);rows=[]
     for label in ('broadening_only','with_bias'):
@@ -505,9 +526,16 @@ def compare_models(args,reference,output):
     table(result/'model_comparison.csv',rows)
     content='<!doctype html><meta charset="utf-8"><title>Joint-topology response models</title><style>body{font:18px system-ui;max-width:1100px;margin:40px auto}li{padding:12px}</style><h1>Joint-topology effective-response comparison</h1><p>Each period/polarity has independent parameters. Within it, detector-specific particle responses are shared across all three topologies, for signal and pi0 leakage. Compare held-out shapes and selection yields before interpreting parameter values.</p><ul><li><a href="broadening_only/REPORT.html">Broadening only: momentum biases fixed to zero</a></li><li><a href="with_bias/REPORT.html">Broadening plus momentum biases</a></li></ul><p><a href="model_comparison.csv">Side-by-side period/model scores and yield changes</a></p><p>The pi0 transfer nuisance is shared across topologies within a period. Its configured extra uncertainty is an exploratory assumption, not a measured systematic. Production acceptance and Frad are unchanged.</p>'
     (result/'REPORT.html').write_text(content);(output/'REPORT.html').write_text('<!doctype html><meta http-equiv="refresh" content="0; url=results/REPORT.html"><a href="results/REPORT.html">Open results</a>')
-    dump(output/'comparison_config.json',dict(reference_sha256=digest(reference/'manifest.json'),periods=periods,fit_topologies=args.fit_topologies,background_transfer_uncertainty=args.background_transfer_uncertainty))
+    dump(output/'comparison_config.json',dict(reference_sha256=digest(reference/'manifest.json'),periods=periods,fit_topologies=args.fit_topologies,background_transfer_uncertainty=args.background_transfer_uncertainty,scan_range=getattr(args,'scan_range','standard'),expected_cache_events=args.expected_cache_events))
     shutil.copy2(output/'comparison_config.json',result/'comparison_config.json')
     print('[done] '+str(result/'REPORT.html')+'; transfer the results directory only',flush=True)
+
+
+def run_cut_redetermination(args,reference,output):
+    subprocess.run([sys.executable,str(SOURCE/'study_response_cut_redetermination.py'),'--reference-study',str(reference),'--response-run',str(output),'--workers',str(args.workers),'--scratch-root',str(args.scratch_root),'--output',str(output/'cut_redetermination')],check=True)
+    destination=output/'results';target=destination/'cut_redetermination'
+    shutil.copytree(output/'cut_redetermination',target,dirs_exist_ok=True,ignore=shutil.ignore_patterns('backend'))
+    report=destination/'REPORT.html';report.write_text(report.read_text()+'<p><a href="cut_redetermination/REPORT.html">Redetermined DATA/MC cuts, relative acceptance and two-photon controls</a></p>')
 
 
 def main(argv=None):
@@ -521,6 +549,8 @@ def main(argv=None):
     parser.add_argument('--reuse-cache',type=Path,help='Previous particle-response output containing a verified event cache')
     parser.add_argument('--seed',type=int,default=173205)
     parser.add_argument('--initial-parameters-from',type=Path,help='Optional completed per-period candidate starting point')
+    parser.add_argument('--scan-range',choices=['standard','wide'],default='standard',help='Exploratory wide bounds include momentum biases up to +/-10 percent')
+    parser.add_argument('--redetermine-cuts',action='store_true',help='After response fitting, rerun production data/MC cut determination in an isolated study')
     parser.add_argument('--bias-mode',choices=['zero','fit'],default='fit')
     parser.add_argument('--compare-models',action='store_true',help='Run broadening-only and broadening-plus-bias fits against the same cache')
     parser.add_argument('--background-transfer-uncertainty',type=float,default=.10,help='Assumed relative pi0 transfer uncertainty; default 0.10 is exploratory, added in quadrature to control counting error')
@@ -533,7 +563,9 @@ def main(argv=None):
     if not 1<=args.workers<=10 or args.expected_cache_events<1000 or not 0<=args.seed<2**64 or args.coordinate_rounds<0 or args.refinement_rounds<0 or args.min_mc<10:parser.error('Invalid worker/cache/seed/fit limits')
     reference=args.reference_study.resolve();output=args.output.resolve()
     if args.compare_models:
-        compare_models(args,reference,output);return
+        compare_models(args,reference,output)
+        if args.redetermine_cuts:run_cut_redetermination(args,reference,output)
+        return
     if output.exists() and not args.finish_reports:parser.error('Output already exists; choose a new directory')
     manifest=json.loads((reference/'manifest.json').read_text());spec=copy.deepcopy(manifest['spec'])
     if not spec.get('background_aware') or not spec.get('joint_grids'):parser.error('Use the completed background-aware joint diagnostic as reference')
@@ -589,11 +621,12 @@ def main(argv=None):
     finally:executor.shutdown(wait=True,cancel_futures=True)
     render_completed(results)
     publish_results(output,spec,args,reference)
+    if args.redetermine_cuts:run_cut_redetermination(args,reference,output)
 
 
 def fit_candidate(engine,output,args):
     spec=engine.spec
-    grid=parameter_grid(args.fit_topologies,getattr(args,"bias_mode","fit"));nominal=[0.]*20;candidates=[nominal]
+    grid=parameter_grid(args.fit_topologies,getattr(args,"bias_mode","fit"),getattr(args,"scan_range","standard"));nominal=[0.]*20;candidates=[nominal]
     for k,levels in grid.items():
         for value in levels:
             if value:
@@ -644,14 +677,16 @@ def fit_candidate(engine,output,args):
     best=list(pars[best_training(pars,scores)])
     discard_histograms(hist)
     del hist,selected
-    steps=[]
+    steps=[];refinement_levels={k:list(v) for k,v in grid.items()}
     for phase,rounds in [('coordinate',args.coordinate_rounds),('refine',args.refinement_rounds)]:
         for iteration in range(rounds):
             for k,levels in grid.items():
                 values=levels
                 if phase=='refine':
-                    lower=max([x for x in levels if x<best[k]],default=levels[0]);upper=min([x for x in levels if x>best[k]],default=levels[-1])
+                    refined=sorted(set(refinement_levels[k]+[best[k]]))
+                    lower=max([x for x in refined if x<best[k]],default=refined[0]);upper=min([x for x in refined if x>best[k]],default=refined[-1])
                     values=sorted(set([best[k],(lower+best[k])/2,(upper+best[k])/2]))
+                    refinement_levels[k]=sorted(set(refined+values))
                 trials=[list(best)]
                 for value in values:
                     p=list(best);p[k]=value;trials.append(p)
@@ -667,7 +702,7 @@ def fit_candidate(engine,output,args):
     if getattr(engine,'control',None) is not None:
         dump(output/'final_control_response.json',dict(selected=engine.control.tolist(),metadata=engine.control_metadata))
     active={PARAMS[k]:best[k] for k in grid};boundary=[PARAMS[k] for k,levels in grid.items() if best[k]!=0 and best[k] in (levels[0],levels[-1])]
-    dump(output/'candidate_parameters.json',dict(version=VERSION,normalization_mode='morphed_control_profiled_signal' if getattr(engine,'control',None) is not None else 'legacy_fixed',parameters=active,boundary_parameters=boundary,period=spec['periods'][0],bias_mode=getattr(args,'bias_mode','fit'),background_multiplier=s[-1].get('background_multiplier',1.),background_constraint_sigma=s[-1].get('background_constraint_sigma',0.),background_multiplier_at_boundary=abs(abs(s[-1].get('background_multiplier',1.)-1)-2*s[-1].get('background_constraint_sigma',0.))<1e-10 and s[-1].get('background_constraint_sigma',0.)>0,background_transfer_uncertainty=getattr(args,'background_transfer_uncertainty',0.),fit_topologies=args.fit_topologies,training_observables=[OBS[i] for i in TRAIN_OBS],validation_observables=[OBS[i] for i in VALID_OBS]))
+    dump(output/'candidate_parameters.json',dict(version=VERSION,normalization_mode='morphed_control_profiled_signal' if getattr(engine,'control',None) is not None else 'legacy_fixed',parameters=active,boundary_parameters=boundary,period=spec['periods'][0],bias_mode=getattr(args,'bias_mode','fit'),scan_range=getattr(args,'scan_range','standard'),background_multiplier=s[-1].get('background_multiplier',1.),background_constraint_sigma=s[-1].get('background_constraint_sigma',0.),background_multiplier_at_boundary=abs(abs(s[-1].get('background_multiplier',1.)-1)-2*s[-1].get('background_constraint_sigma',0.))<1e-10 and s[-1].get('background_constraint_sigma',0.)>0,background_transfer_uncertainty=getattr(args,'background_transfer_uncertainty',0.),fit_topologies=args.fit_topologies,training_observables=[OBS[i] for i in TRAIN_OBS],validation_observables=[OBS[i] for i in VALID_OBS]))
     table(output/'evaluation_history.csv',[dict(call=r['call'],scenario=r['scenario'],parameters=json.dumps(r['parameters']),**{k:v for k,v in r.items() if k not in ('call','scenario','parameters')}) for r in engine.history])
     units=[]
     for k,value in active.items():
@@ -678,9 +713,8 @@ def fit_candidate(engine,output,args):
     (output/'REPORT.md').write_text('''# Particle-response test
 
 Open REPORT.html, then CD_FT for each period. Compare blue DATA with orange
-nominal MC and green candidate MC. Signal scales stay fixed; candidate leakage uses the recorded control-constrained multiplier.
-selection_yields.csv shows actual predicted selection changes, not renormalized
-agreement. final_shapes.csv retains inclusive and all joint-cell comparisons.
+nominal MC and green candidate MC. Candidate signal normalization is fitted once per topology in the fully selected sample and held fixed across projections; candidate leakage uses the morphed-control transfer and recorded nuisance multiplier.
+selection_yields.csv reports raw selection changes separately from those fitted normalizations. The rates are not an independent normalization validation. final_shapes.csv retains inclusive and all joint-cell comparisons.
 
 This first search adds independent Gaussian errors to reconstructed particle
 momentum magnitude, polar angle and azimuth, plus optional fractional momentum

@@ -240,3 +240,58 @@ It cannot recover incoming candidates discarded upstream. These remain
 conditional response tests; a wider upstream control skim is needed to establish
 the full mass-window response before production adoption. Production analysis
 and imported Frad/Fbin remain unchanged.
+
+
+## Larger-cache wide scan and production cut redetermination
+
+Use `--expected-cache-events 800000` for four times the original target per
+period/MC sample (or every event in smaller samples). It is a pre-cut expected
+count; MC halves each contain approximately half. Standard error should decrease
+by roughly two where the target grows fourfold. Incompatible smaller reusable
+caches now cause an explicit error. Omit `--reuse-cache` when increasing the target.
+The paired second model automatically reuses the first model's larger cache.
+
+`--scan-range wide` keeps the old grid and adds momentum biases to +/-10%,
+electron fractional momentum broadening to 10%, CD proton broadening to 24%,
+other momentum broadening to 16%, theta broadening to 40 mrad and phi broadening
+to 160 mrad. These are exploratory search limits, not plausible calibration
+errors or priors. Use `--coordinate-rounds 2 --refinement-rounds 3` to revisit
+correlated coordinates and narrow local brackets; held-out scores never choose
+parameters. Refinement retains newly inserted grid points so successive passes
+actually narrow the search. A bounded coordinate scan still does not prove a
+global optimum or determine parameter uncertainties.
+
+The Mx2(epgamma) display uses robust core widths rather than extreme tails to
+set its visible range. All histogram bins and tails remain in scores/tables.
+`_shapes.png` normalizes each curve independently; ordinary plots retain a
+single selected-sample normalization per topology. They can look similar by
+construction. Neither alone validates the event rate.
+
+`--redetermine-cuts` runs `study_response_cut_redetermination.py` after fitting.
+It reads each DATA channel once at full statistics and exports pre-exclusivity
+MC arrays from the shared cache, preserving aligned events across responses.
+Large arrays stay in the unique scratch folder. It calls the existing production
+`fit_single_template`, `run_dvcs_iterative_cuts`, and `run_pi0_iterative_cuts`
+functions with their current default settings, including the direct-pi0 priors,
+iterative order, stopping rule and separate DATA/MC 90/95/98% windows. Display-only
+xF variables cannot affect any fitted cut and are not exported. Production cut
+fitting uses its original minimal preselection; the subsequent relative-acceptance
+counts additionally apply the saved full analysis global selection. No fixed old
+exclusivity cut is imposed before determining new cuts. DATA themselves are not
+morphed, but their fitted signal templates and boundaries can change.
+
+A fresh nominal fit and both candidate fits are retained independently. Each
+candidate is compared both with saved cuts and with the fresh nominal refit.
+`relative_acceptance.csv` reports reconstructed-count ratios by period/topology
+and |t|, with correlated MC counting errors. The generated denominator cancels
+for a fixed generated sample and fixed reporting bin. Inverse acceptance alone
+is not the cross-section change: DATA selection and background subtraction must
+also be updated. Parameter/cut-fit uncertainties are not included in that error.
+The upstream two-photon mass-window limitation remains unchanged.
+
+Two-photon control figures now show DATA, nominal MC and candidate MC before
+exclusivity cuts, with the newly fitted DATA/MC boundaries overlaid. They are
+linked from `results/cut_redetermination/REPORT.html`; the same folder contains
+per-topology production cut-development plots and trial cut JSONs. Nothing is
+installed into production output/jsons. `DVCS_EXCLUSIVITY_ARRAY_ONLY=1` lets this
+array-only caller import the production fitter without starting PyROOT.

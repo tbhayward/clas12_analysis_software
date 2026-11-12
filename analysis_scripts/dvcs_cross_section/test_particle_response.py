@@ -290,6 +290,10 @@ def root_smoke(tmp,reference):
     assert not np.array_equal(h[0],h[1]);assert np.all(h>=0)
     for grid in saved['joint_grids']:
         assert np.array_equal(h[0,:,:,grid['offset']:grid['offset']+24].sum(axis=2),h[0,:,:,0])
+    job['parameters']=[0.]*20;s.dump(out/'export.json',job)
+    exported=out/'export.bin';subprocess.run([str(worker),'cut-arrays',str(out/'spec.json'),str(out/'export.json'),str(exported)],check=True)
+    em=json.loads(Path(str(exported)+'.json').read_text());events=np.fromfile(exported,dtype='<f8').reshape(em['shape']);assert events.shape[1]==12 and events.shape[0]>6
+    assert set(events[:,0])=={0,1,2} and set(events[:,8])<={0,1} and set(events[:,10])<={0,1}
     print('PASS: actual ROOT cache includes pre-cut events, exact nominal selection, nonzero response and joint reassignment')
 
 def main():
