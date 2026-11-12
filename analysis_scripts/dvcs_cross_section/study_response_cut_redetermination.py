@@ -13,6 +13,35 @@ import plot_exclusivity_data_dvcs_pi0_mc as production
 
 T_EDGES=[0,.11,.15,.25,.40,.60,.80,1.0]
 
+def load_candidate_parameters(path):
+    """Expand intentionally fixed parameters; never hide missing fitted values."""
+    candidate=json.loads(Path(path).read_text())
+    mode=candidate.get('bias_mode','fit');topologies=candidate.get('fit_topologies',response.TOPS)
+    if mode not in ('zero','fit') or not topologies or any(t not in response.TOPS for t in topologies):raise ValueError('Invalid candidate response configuration: '+str(path))
+    active=response.parameter_grid(topologies,mode);saved=candidate['parameters'];values=[]
+    if set(saved)-set(response.PARAMS):raise ValueError('Unknown candidate parameters: '+str(path))
+    for index,name in enumerate(response.PARAMS):
+        if name in saved:value=float(saved[name])
+        elif index not in active:value=0.
+        else:raise ValueError('Missing fitted parameter '+name+' in '+str(path))
+        if not np.isfinite(value) or (index%4!=3 and value<0):raise ValueError('Invalid response parameter '+name+' in '+str(path))
+        if mode=='zero' and index%4==3 and value!=0:raise ValueError('Broadening-only candidate has a nonzero bias: '+str(path))
+        values.append(value)
+    return values
+
+def publish_results(run,output):
+    """Make standalone cut-stage recovery visible from the existing response report."""
+    report=run/'results/REPORT.html'
+    if not report.is_file():return
+    destination=run/'results'/output.name
+    if destination.resolve()!=output.resolve():
+        if destination.exists():raise ValueError('Published cut results already exist: '+str(destination))
+        shutil.copytree(output,destination,ignore=shutil.ignore_patterns('backend'))
+    link='<p><a href="'+output.name+'/REPORT.html">Redetermined DATA/MC cuts, relative acceptance and two-photon controls</a></p>'
+    content=report.read_text()
+    if link not in content:report.write_text(content+link)
+
+
 def window_mask(rows,block,kind):
     mask=np.asarray(rows[:,8]>.5)
     for branch,stats in block[kind].items():
@@ -132,6 +161,7 @@ def main(argv=None):
         other=json.loads((model/'cache_manifest.json').read_text())
         if other['reference_sha256']!=cachemeta['reference_sha256'] or other['seed']!=cachemeta['seed'] or {k:r['sha256'] for k,r in other['samples'].items()}!={k:r['sha256'] for k,r in cachemeta['samples'].items()}:raise ValueError('Candidates must use the same verified event cache')
     if cachemeta['reference_sha256']!=response.digest(reference/'manifest.json'):raise ValueError('Response and reference provenance differ')
+    candidate_vectors={(period,name):load_candidate_parameters(model/period/'candidate_parameters.json') for name,model in models.items() for period in spec['periods']}
     output.mkdir(parents=True);work=response.scratch_directory(args.scratch_root,output);response.dump(output/'scratch_location.json',dict(directory=str(work)))
     response.dump(output/'spec.json',spec);worker=response.compile_worker(output,reference);pool=response.Pool(worker,output/'spec.json',work,args.workers)
     cache={k:dict(r,path=str((first/r['file']).resolve())) for k,r in cachemeta['samples'].items()}
@@ -147,7 +177,7 @@ def main(argv=None):
                 if (st.st_size,st.st_mtime_ns)!=(r['size'],r['mtime_ns']):raise ValueError('DATA input changed')
             jobs.append(dict(period=period,sample=sample,files=[r['path'] for r in entries]));descriptors.append((period,'shared',sample))
         for scenario in ['nominal',*models]:
-            pars=[0.]*20 if scenario=='nominal' else [json.loads((models[scenario]/period/'candidate_parameters.json').read_text())['parameters'][k] for k in response.PARAMS]
+            pars=[0.]*20 if scenario=='nominal' else candidate_vectors[period,scenario]
             for sample in ['mc','background','pi0_mc']:
                 jobs.append(dict(period=period,sample=sample,cache=cache[period+'__'+sample]['path'],parameters=pars));descriptors.append((period,scenario,sample))
     exported={}
@@ -180,6 +210,7 @@ def main(argv=None):
     response.table(output/'relative_acceptance.csv',rows)
     response.dump(output/'manifest.json',dict(reference_sha256=response.digest(reference/'manifest.json'),response_cache_sha256=response.digest(first/'cache_manifest.json'),production_fitter_sha256=response.digest(Path(production.__file__)),candidate_hashes={name:{p:response.digest(model/p/'candidate_parameters.json') for p in spec['periods']} for name,model in models.items()},scenarios=['nominal',*models],arguments={k:str(v) for k,v in vars(args).items()}))
     (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Production cut redetermination</title><style>body{font:17px system-ui;max-width:1100px;margin:35px auto}li{margin:8px}</style><h1>Separate DATA/MC cut redetermination</h1><p>Uses the production template fitter and iterative 90/95/98% cut algorithms. DATA are unchanged; their signal templates and fitted boundaries are reestimated for each MC response. Cut fitting uses the same minimal preselection as production. Relative acceptance counts additionally apply the saved full analysis global cuts. Production outputs are untouched.</p><p><a href="relative_acceptance.csv">Relative reconstructed acceptance by period, topology and |t|</a>. The generated denominator is unchanged and cancels in these ratios. The inverse acceptance factor alone is not a cross-section prediction: DATA cuts, background subtraction, bin migration and fitted-parameter uncertainties also matter. Statistical errors are paired MC counting errors only. The original upstream two-photon mass-window limitation remains.</p><h2>Two-photon controls before exclusivity cuts</h2><ul>'+''.join('<li><a href="control_plots/'+x+'">'+x+'</a></li>' for x in links)+'</ul><p>Per-period/scenario folders contain combined_cuts_95.json and topology-specific production cut-development figures.</p>')
+    publish_results(run,output)
     print('[done] '+str(output/'REPORT.html'),flush=True)
 
 if __name__=='__main__':main()

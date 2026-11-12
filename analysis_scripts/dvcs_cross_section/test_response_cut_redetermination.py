@@ -22,6 +22,28 @@ def basic():
     assert c.window_mask(rows,block,'mc').tolist()==[True,True,True,False]
     print('PASS: wider bounds preserve standard grid; robust mass zoom; paired efficiency errors; production upper-cut semantics')
 
+def recovery(tmp):
+    path=tmp/'candidate.json'
+    for mode in ['zero','fit']:
+        active=s.parameter_grid(s.TOPS,mode)
+        saved={s.PARAMS[i]:(-.015 if i%4==3 else .002) for i in active}
+        s.dump(path,dict(bias_mode=mode,fit_topologies=s.TOPS,parameters=saved))
+        values=c.load_candidate_parameters(path)
+        assert len(values)==20
+        assert all(values[i]==(0. if mode=='zero' else -.015) for i in range(3,20,4))
+        del saved['electron_FD_p_sigma_fraction'];s.dump(path,dict(bias_mode=mode,fit_topologies=s.TOPS,parameters=saved))
+        try:c.load_candidate_parameters(path)
+        except ValueError as error:assert 'Missing fitted parameter' in str(error)
+        else:raise AssertionError('Missing fitted parameter was silently replaced')
+    run=tmp/'run';(run/'results').mkdir(parents=True);(run/'results/REPORT.html').write_text('Completed response fits')
+    output=run/'cut_redetermination_002';output.mkdir();(output/'REPORT.html').write_text('Recovered cuts')
+    c.publish_results(run,output)
+    assert (run/'results/cut_redetermination_002/REPORT.html').read_text()=='Recovered cuts'
+    assert 'Completed response fits' in (run/'results/REPORT.html').read_text()
+    assert 'cut_redetermination_002/REPORT.html' in (run/'results/REPORT.html').read_text()
+    print('PASS: omitted fixed biases expand to zero, missing fitted parameters fail, standalone cut recovery preserves and links completed response reports')
+
+
 def synthetic(tmp):
     rng=np.random.default_rng(2026)
     def make(n,bg=False):
@@ -50,5 +72,6 @@ def synthetic(tmp):
 
 def main():
     basic()
-    with tempfile.TemporaryDirectory() as d:synthetic(Path(d))
+    with tempfile.TemporaryDirectory() as d:
+        recovery(Path(d));synthetic(Path(d))
 if __name__=='__main__':main()

@@ -533,9 +533,6 @@ def compare_models(args,reference,output):
 
 def run_cut_redetermination(args,reference,output):
     subprocess.run([sys.executable,str(SOURCE/'study_response_cut_redetermination.py'),'--reference-study',str(reference),'--response-run',str(output),'--workers',str(args.workers),'--scratch-root',str(args.scratch_root),'--output',str(output/'cut_redetermination')],check=True)
-    destination=output/'results';target=destination/'cut_redetermination'
-    shutil.copytree(output/'cut_redetermination',target,dirs_exist_ok=True,ignore=shutil.ignore_patterns('backend'))
-    report=destination/'REPORT.html';report.write_text(report.read_text()+'<p><a href="cut_redetermination/REPORT.html">Redetermined DATA/MC cuts, relative acceptance and two-photon controls</a></p>')
 
 
 def main(argv=None):
