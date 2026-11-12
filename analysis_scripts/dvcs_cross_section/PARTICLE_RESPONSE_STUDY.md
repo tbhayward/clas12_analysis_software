@@ -136,3 +136,20 @@ and summaries are produced. Event caches are retained for reuse. Their manifest
 uses absolute paths, so --reuse-cache still points to the prior study output
 even though its binary files are on scratch. Keep that scratch cache available
 for later reuse. Pre-change relative cache manifests remain readable.
+
+## Finish reports after a reporting failure
+
+If all final evaluations finished but report generation failed, retain the study
+and scratch directory. `--finish-reports` reads the saved final histograms and
+candidate parameters, without ROOT reads or refitting:
+
+```sh
+python3 study_particle_response.py --finish-reports --reference-study "$PWD/test_runs/exclusivity_resolution_all_periods_joint_001" --output "$PWD/test_runs/particle_response_all_periods_001"
+```
+
+It validates the reference identity, final parameter agreement and binary sizes.
+Completed report markers permit retries after some periods were already
+rendered and their trial binaries deleted. Final binaries are removed only
+after the corresponding period report is complete. Existing compact results
+can be refreshed safely. CSV normalization values are explicitly converted
+to numbers before reporting selected yields.

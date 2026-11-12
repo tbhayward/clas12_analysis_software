@@ -133,7 +133,7 @@ def report_test(tmp):
     x=np.linspace(-4,4,40);curve=np.r_[0,np.round(50*np.exp(-x*x/2)),0].astype(np.int64)
     for sample in ('mc','background'):
         key='fa18_inb__'+sample;hist[key]=np.tile(curve,(2,2,3,1,7,1));cache[key]=dict(probability=1)
-    for top in range(3):norm['fa18_inb',top]=dict(signal_scale=.8,background_scale=.2)
+    for top in range(3):norm['fa18_inb',top]=dict(signal_scale='0.8',background_scale='0.2')
     data['fa18_inb__data']=np.tile(curve*2,(3,1,7,1))
     engine=s.Engine(None,spec,cache,data,norm,['CD_FT'],10)
     out=tmp/'report';out.mkdir()
@@ -142,7 +142,8 @@ def report_test(tmp):
     s.detailed_report(engine,out,[[0]*20,[.01]+[0]*19],[],hist,selected)
     assert (out/'REPORT.html').exists() and (out/'plots/fa18_inb/CD_FT.png').exists()
     assert (out/'single_parameter_effects.png').exists()
-    print('PASS: static before/after report, attribution plot and selection/joint summaries')
+    print('PASS: static before/after report, attribution plot and selection/joint summaries (CSV string scales)')
+    return engine,out,hist,selected
 
 
 def scratch_test(tmp):
@@ -160,6 +161,35 @@ def scratch_test(tmp):
     loaded=s.build_cache(None,dict(seed=17),{},reference,prior)
     assert loaded['sample']['path']==str(cache)
     print('PASS: isolated scratch directories, removal of expendable trial binaries, cache preservation and absolute-path reuse')
+
+
+def recovery_test(tmp):
+    from unittest.mock import patch
+    case=tmp/'recovery_case';case.mkdir();engine,report,hist,selected=report_test(case)
+    run=case/'run';run.mkdir();folder=run/'fa18_inb'
+    import shutil
+    shutil.move(str(report),folder)
+    reference=case/'reference';reference.mkdir();s.dump(reference/'manifest.json',{})
+    s.dump(run/'spec.json',engine.spec);s.dump(folder/'spec.json',engine.spec)
+    candidate=dict(parameters={s.PARAMS[0]:.01},fit_topologies=['CD_FT']);s.dump(folder/'candidate_parameters.json',candidate)
+    s.dump(run/'cache_manifest.json',dict(version=s.VERSION,reference_sha256=s.digest(reference/'manifest.json'),samples=engine.cache))
+    work=case/'scratch';final=work/'fa18_inb/eval_025_final';final.mkdir(parents=True)
+    s.dump(run/'scratch_location.json',dict(directory=str(work)))
+    pars=[[0]*20,[.01]+[0]*19]
+    for i,sample in enumerate(('mc','background')):
+        key='fa18_inb__'+sample;path=final/f'{i}.bin';hist[key].tofile(path)
+        s.dump(final/f'{i}.json',dict(period='fa18_inb',sample=sample,detailed=True,parameters=pars))
+        s.dump(Path(str(path)+'.json'),dict(shape=hist[key].shape,selected=selected[key].ravel().tolist()))
+    with patch.object(s.Engine,'evaluate',side_effect=AssertionError('Recovery must not fit')):
+        spec,recovered=s.recover_reports(run,reference,engine.data,engine.norm)
+        assert len(recovered)==1;s.render_completed(recovered)
+        assert (folder/'report_complete.json').exists()
+        assert not list(final.glob('*.bin'))
+        _,again=s.recover_reports(run,reference,engine.data,engine.norm);assert again==[]
+    (run/'REPORT.html').write_text('index');s.dump(run/'manifest.json',{});(run/'reconstruction_audit.csv').write_text('audit')
+    s.compact_results(run,['fa18_inb']);s.compact_results(run,['fa18_inb'])
+    assert (run/'results/fa18_inb/REPORT.html').exists()
+    print('PASS: saved-trial report recovery without refitting, completion markers, cleanup and repeated publication')
 
 
 def root_smoke(tmp,reference):
@@ -188,7 +218,7 @@ def main():
     args=parser.parse_args()
     if args.root_smoke and not args.reference_study:parser.error('--root-smoke requires --reference-study')
     with tempfile.TemporaryDirectory() as name:
-        tmp=Path(name);core(tmp);numerical();independent_fit(tmp);budget_test(tmp);report_test(tmp);scratch_test(tmp)
+        tmp=Path(name);core(tmp);numerical();independent_fit(tmp);budget_test(tmp);report_test(tmp);scratch_test(tmp);recovery_test(tmp)
         if args.root_smoke:
             # Existing fixture accepts a nominal production source directory;
             # reference backend has those same sources and output cuts below.

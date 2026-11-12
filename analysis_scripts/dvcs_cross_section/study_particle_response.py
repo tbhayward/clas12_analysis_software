@@ -239,7 +239,7 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
             for i,name in [(0,'nominal'),(bi,'candidate')]:
                 total=0.
                 for sample,scale in [('mc',engine.norm[p,t]['signal_scale']),('background',engine.norm[p,t]['background_scale'])]:
-                    key=p+'__'+sample;total+=selected[key][i,:,t].sum()/engine.cache[key]['probability']*scale
+                    key=p+'__'+sample;total+=selected[key][i,:,t].sum()/engine.cache[key]['probability']*float(scale)
                 yield_rows.append(dict(period=p,topology=top,scenario=name,predicted_selected=float(total),data_selected=spec['reference_flows'][p+'__data']['selected'][t]))
             fig,axes=plt.subplots(3,3,figsize=(15,11),constrained_layout=True)
             for vi,v in enumerate(spec['variables']):
@@ -306,14 +306,69 @@ def scratch_directory(root,output):
 
 
 def compact_results(output,periods):
-    destination=output/'results';destination.mkdir()
+    destination=output/'results';destination.mkdir(exist_ok=True)
     for period in periods:
-        target=destination/period;target.mkdir()
+        target=destination/period;target.mkdir(exist_ok=True)
         for path in (output/period).iterdir():
             if path.is_file() and path.suffix in ('.csv','.json','.md','.html','.png'):shutil.copy2(path,target/path.name)
-        shutil.copytree(output/period/'plots',target/'plots')
+        shutil.copytree(output/period/'plots',target/'plots',dirs_exist_ok=True)
     for name in ('REPORT.html','manifest.json','cache_manifest.json','reconstruction_audit.csv','scratch_location.json'):shutil.copy2(output/name,destination/name)
     return destination
+
+
+def publish_results(output,spec,args,reference):
+    links=''.join(f'<li><a href="{p}/REPORT.html">{p}: independent response test</a></li>' for p in spec['periods'])
+    (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Independent period response tests</title><style>body{font:18px system-ui;max-width:1000px;margin:40px auto}li{padding:10px}</style><h1>Independent particle-response tests</h1><p>Every period and polarity has its own fitted response parameters. No Spring/Fall or inbending/outbending parameters are pooled. Each fit is checked with an independent MC subset and held-out observables from the same sample.</p><ul>'+links+'</ul>')
+    dump(output/'manifest.json',dict(version=VERSION,reference_manifest_sha256=digest(reference/'manifest.json'),arguments={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},source_hashes={n:digest(SOURCE/n) for n in ('study_particle_response.py','particle_response_worker.cpp','particle_response_core.h')},independent_periods=spec['periods']))
+    compact=compact_results(output,spec['periods'])
+    print('[done] Open '+str(compact/'REPORT.html')+'; transfer the results directory only, retain the MC cache on the farm',flush=True)
+
+
+def recover_reports(output,reference,data,norm):
+    saved=json.loads((output/'spec.json').read_text())
+    cache_meta=json.loads((output/'cache_manifest.json').read_text())
+    if cache_meta['reference_sha256']!=digest(reference/'manifest.json'):raise ValueError('Recovery reference differs from the completed fits')
+    if cache_meta['version']!=VERSION:raise ValueError('Incompatible fit cache version')
+    cache=cache_meta['samples']
+    work=Path(json.loads((output/'scratch_location.json').read_text())['directory'])
+    recovered=[]
+    for period in saved['periods']:
+        folder=output/period
+        required=[folder/'REPORT.html',folder/'final_shapes.csv',folder/'selection_yields.csv',folder/'single_parameter_effects.png',*[folder/'plots'/period/(t+'.png') for t in TOPS]]
+        if (folder/'report_complete.json').is_file() and all(p.is_file() for p in required):
+            marker=json.loads((folder/'report_complete.json').read_text())
+            if marker['candidate_sha256']!=digest(folder/'candidate_parameters.json'):raise ValueError('Candidate parameters changed after reporting: '+period)
+            print('[recover] Existing completed reports retained: '+period,flush=True);continue
+        candidate=json.loads((folder/'candidate_parameters.json').read_text())
+        spec=json.loads((folder/'spec.json').read_text())
+        if spec['periods']!=[period]:raise ValueError('Recovery period configuration mismatch')
+        locations=list((work/period).glob('eval_*_final'))
+        if len(locations)!=1:raise ValueError('Cannot identify completed final evaluation for '+period)
+        hist={};selected={};parameters=None
+        for job_path in sorted(locations[0].glob('*.json')):
+            if job_path.name.endswith('.bin.json'):continue
+            job=json.loads(job_path.read_text())
+            if 'parameters' not in job:continue
+            if job['period']!=period or not job.get('detailed'):raise ValueError('Unexpected final response job')
+            path=job_path.with_suffix('.bin');meta=json.loads(Path(str(path)+'.json').read_text())
+            if not path.is_file() or path.stat().st_size!=int(np.prod(meta['shape']))*8:raise ValueError('Final trial binary missing/incomplete: '+str(path))
+            if parameters is None:parameters=job['parameters']
+            elif parameters!=job['parameters']:raise ValueError('Signal/leakage parameter mismatch')
+            key=period+'__'+job['sample'];hist[key]=np.memmap(path,dtype='<i8',mode='r',shape=tuple(meta['shape']))
+            selected[key]=np.asarray(meta['selected'],dtype=np.int64).reshape(len(parameters),2,3)
+        if set(hist)!={period+'__mc',period+'__background'}:raise ValueError('Incomplete final signal/leakage trials')
+        expected=[candidate['parameters'].get(name,0.) for name in PARAMS]
+        if list(parameters[-1])!=expected or any(parameters[0]):raise ValueError('Saved candidate differs from final trial')
+        engine=Engine(None,spec,cache,data,norm,candidate['fit_topologies'],100)
+        recovered.append((engine,folder,parameters,[],hist,selected))
+    return saved,recovered
+
+
+def render_completed(results):
+    for engine,folder,pars,scores,hist,selected in results:
+        detailed_report(engine,folder,pars,scores,hist,selected)
+        dump(folder/'report_complete.json',dict(candidate_sha256=digest(folder/'candidate_parameters.json')))
+        discard_histograms(hist)
 
 
 def main(argv=None):
@@ -321,6 +376,7 @@ def main(argv=None):
     parser.add_argument('--reference-study',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--scratch-root',type=Path,default=Path('/scratch/thayward/dvcs_particle_response'),help='Large MC caches and temporary evaluation files; each run gets a unique subdirectory')
+    parser.add_argument('--finish-reports',action='store_true',help='Finish reports from saved final trials in the existing --output; no ROOT reads or refitting')
     parser.add_argument('--workers',type=int,default=10)
     parser.add_argument('--expected-cache-events',type=int,default=200000,help='Expected uniform pre-cut MC events per period/sample, not a selected-event cap')
     parser.add_argument('--reuse-cache',type=Path,help='Previous particle-response output containing a verified event cache')
@@ -332,7 +388,7 @@ def main(argv=None):
     args=parser.parse_args(argv)
     if not 1<=args.workers<=10 or args.expected_cache_events<1000 or not 0<=args.seed<2**64 or args.coordinate_rounds<0 or args.refinement_rounds<0 or args.min_mc<10:parser.error('Invalid worker/cache/seed/fit limits')
     reference=args.reference_study.resolve();output=args.output.resolve()
-    if output.exists():parser.error('Output already exists; choose a new directory')
+    if output.exists() and not args.finish_reports:parser.error('Output already exists; choose a new directory')
     manifest=json.loads((reference/'manifest.json').read_text());spec=copy.deepcopy(manifest['spec'])
     if not spec.get('background_aware') or not spec.get('joint_grids'):parser.error('Use the completed background-aware joint diagnostic as reference')
     if digest(reference/'histograms.npz')!=manifest['histogram_sha256']:raise ValueError('Reference histogram checksum mismatch')
@@ -344,6 +400,10 @@ def main(argv=None):
     with (reference/'normalizations.csv').open() as f:
         norm={(r['period'],TOPS.index(r['topology'])):r for r in csv.DictReader(f)}
     if any(r['status']!='ok' for r in norm.values()):raise ValueError('Invalid reference component normalization')
+    if args.finish_reports:
+        if not output.is_dir():parser.error('Report recovery requires an existing output directory')
+        old,finished=recover_reports(output,reference,data,norm)
+        render_completed(finished);publish_results(output,old,args,reference);return
     output.mkdir(parents=True);dump(output/'spec.json',spec)
     print('[build] Compiling cached particle-response worker',flush=True)
     worker=compile_worker(output,reference)
@@ -381,14 +441,8 @@ def main(argv=None):
         for future in futures:future.cancel()
         raise
     finally:executor.shutdown(wait=True,cancel_futures=True)
-    for engine,folder,pars,scores,hist,selected in results:
-        detailed_report(engine,folder,pars,scores,hist,selected)
-        discard_histograms(hist)
-    links=''.join(f'<li><a href="{p}/REPORT.html">{p}: independent response test</a></li>' for p in spec['periods'])
-    (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Independent period response tests</title><style>body{font:18px system-ui;max-width:1000px;margin:40px auto}li{padding:10px}</style><h1>Independent particle-response tests</h1><p>Every period and polarity has its own fitted response parameters. No Spring/Fall or inbending/outbending parameters are pooled. Each fit is checked with an independent MC subset and held-out observables from the same sample.</p><ul>'+links+'</ul>')
-    dump(output/'manifest.json',dict(version=VERSION,reference_manifest_sha256=digest(reference/'manifest.json'),arguments={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},source_hashes={n:digest(SOURCE/n) for n in ('study_particle_response.py','particle_response_worker.cpp','particle_response_core.h')},independent_periods=spec['periods']))
-    compact=compact_results(output,spec['periods'])
-    print('[done] Open '+str(compact/'REPORT.html')+'; transfer the results directory only, retain the MC cache on the farm',flush=True)
+    render_completed(results)
+    publish_results(output,spec,args,reference)
 
 
 def fit_candidate(engine,output,args):
