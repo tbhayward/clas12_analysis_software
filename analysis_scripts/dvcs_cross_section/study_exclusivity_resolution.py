@@ -408,15 +408,15 @@ def plot_overviews(output,arrays,spec,rows,dpi):
             fig,axs=plt.subplots(3,3,figsize=(15,11),constrained_layout=True)
             for vi,v in enumerate(spec['variables']):
                 ax=axs.flat[vi];edges=variable_edges(v);hist=[]
-                for sample,color in (('data','#205cab'),('mc','#c62828')):
+                for sample,color in (('data','#205cab'),('mc','#d45c18')):
                     h=arrays[f'{p}__{sample}'][ti,0,vi,:v['bins']+2];hist.append(h)
                     total=float(h.sum())
                     denom=float(arrays[f'{p}__data'][ti,0,vi,:v['bins']+2].sum()) if spec.get('background_aware') else total
                     ax.stairs(h[1:-1]/denom/np.diff(edges) if denom else h[1:-1],edges,color=color,label=f'{sample.upper()} N={int(total):,}')
                     if sample=='mc' and spec.get('background_aware'):
-                        for component,style in [('signal','--'),('background',':')]:
+                        for component,color_component in [('signal','#22946b'),('background','#a45ab5')]:
                             z=arrays[p+'__'+component][ti,0,vi,:v['bins']+2]
-                            ax.stairs(z[1:-1]/denom/np.diff(edges) if denom else z[1:-1],edges,color='#c62828',linestyle=style,label='DVCS signal' if component=='signal' else 'π⁰ background')
+                            ax.stairs(z[1:-1]/denom/np.diff(edges) if denom else z[1:-1],edges,color=color_component,label='DVCS signal' if component=='signal' else 'π⁰ background')
                     for bound in effective_window(spec,p,t,sample,v['name']):
                         if bound is not None:ax.axvline(bound,color='#777777',ls='-.',alpha=.6,lw=1)
                 r=index[p,t,'inclusive','Inclusive',v['name']]
