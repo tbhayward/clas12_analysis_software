@@ -29,14 +29,34 @@ struct Histogram {
     int bins; double low,high;
     // Includes under/overflow; nonfinite values have a separate counter.
     std::vector<uint64_t> counts;
+    std::vector<double> edges;
     uint64_t nonfinite=0,pass_own_cut=0;
     Histogram(int n,double l,double h):bins(n),low(l),high(h),counts(n+2) {
         if(n<2 || !std::isfinite(l) || !std::isfinite(h) || h<=l) throw std::runtime_error("Bad histogram range");
     }
+    explicit Histogram(const std::vector<double>& e):Histogram(int(e.size())-1,e.front(),e.back()) {
+        if(!std::is_sorted(e.begin(),e.end()) || std::adjacent_find(e.begin(),e.end())!=e.end()) throw std::runtime_error("Invalid nonuniform histogram edges");
+        edges=e;
+    }
     void add(double value,bool own_pass) {
         if(!std::isfinite(value)) {++nonfinite;return;}
         int bin=value<low?0:value>=high?bins+1:1+std::min(bins-1,int((value-low)/(high-low)*bins));
+        if(!edges.empty() && value>=low && value<high) bin=int(std::upper_bound(edges.begin(),edges.end(),value)-edges.begin());
         ++counts[bin]; if(own_pass) ++pass_own_cut;
+    }
+};
+struct JointGrid {
+    int offset;
+    std::vector<int> indices;
+    std::vector<std::vector<double>> edges;
+    int find(const std::array<double,8>& values) const {
+        int cell=0;
+        for(size_t i=0;i<indices.size();++i) {
+            double value=values[indices[i]];const auto& e=edges[i];
+            if(!std::isfinite(value) || value<e.front() || value>=e.back()) return -1;
+            cell=cell*int(e.size()-1)+int(std::upper_bound(e.begin(),e.end(),value)-e.begin())-1;
+        }
+        return offset+cell;
     }
 };
 struct Stratum {

@@ -16,6 +16,7 @@ import html
 import json
 import math
 import re
+import itertools
 from pathlib import Path
 import shlex
 import shutil
@@ -24,7 +25,7 @@ import threading
 import numpy as np
 
 SOURCE=Path(__file__).resolve().parent
-VERSION='exclusivity-resolution-v2'
+VERSION='exclusivity-resolution-v3'
 PERIODS={'fa18_inb':('Fa18_Inb','50nA'),'fa18_out':('Fa18_Out','50nA'),
          'sp18_inb':('Sp18_Inb','50nA'),'sp18_out':('Sp18_Out','45nA'),'sp19_inb':('Sp19_Inb','50nA')}
 TOPOLOGIES=['FD_FD','CD_FD','CD_FT']
@@ -45,6 +46,27 @@ AXES={
     'p1_theta':dict(label='Proton polar angle (deg)',edges=[0,25,37,45,50,55,60,64.23,180.000001]),
     'p2_p':dict(label='Photon energy (GeV)',edges=[0,2,4,6,8,12,100]),
     'p2_theta':dict(label='Photon polar angle (deg)',edges=[0,5,8,12,20,30,40,180.000001])}
+
+JOINT_GRIDS={
+    'joint_proton':dict(label='Joint xB / Q² / proton p / proton θ',dimensions={
+        'x':[0,.2,1], 'Q2':[0,2.5,100], 'p1_p':[0,.5,.8,100], 'p1_theta':[0,50,180.000001]}),
+    'joint_photon':dict(label='Joint xB / Q² / photon E / photon θ',dimensions={
+        'x':[0,.2,1], 'Q2':[0,2.5,100], 'p2_p':[0,6,8,100], 'p2_theta':[0,8,180.000001]})}
+KINEMATIC_INDICES={'e_p':0,'e_theta':1,'p1_p':2,'p1_theta':3,'p2_p':4,'p2_theta':5,'x':6,'Q2':7}
+
+def variable_edges(v):
+    return np.asarray(v['edges'],dtype=float) if 'edges' in v else np.linspace(v['low'],v['high'],v['bins']+1)
+
+def add_joint_grids(spec):
+    spec['joint_grids']=[]
+    for name,definition in JOINT_GRIDS.items():
+        dims=definition['dimensions'];edges=list(dims.values());offset=len(spec['strata'])
+        spec['axes'][name]=dict(label=definition['label'],edges=[])
+        for boxes in itertools.product(*[list(zip(e[:-1],e[1:])) for e in edges]):
+            label='; '.join(f'{key} {lo:g}–{hi:g}' for key,(lo,hi) in zip(dims,boxes))
+            spec['strata'].append(dict(axis=name,label=label));spec['strata_axis_index'].append(-1)
+        spec['joint_grids'].append(dict(name=name,offset=offset,indices=[KINEMATIC_INDICES[k] for k in dims],edges=edges))
+
 
 def digest(path):return hashlib.sha256(Path(path).read_bytes()).hexdigest()
 def write_json(path,value):Path(path).write_text(json.dumps(value,indent=2,allow_nan=False)+'\n')
@@ -72,6 +94,9 @@ def configuration(path=None):
             v.update(updates)
         for name,edges in custom.get('axes',{}).items():axes[name]['edges']=edges
     for v in variables:
+        if v['name']=='Mx2' and (v['bins'],v['low'],v['high'])==(600,-.12,.12):
+            e=np.concatenate([np.linspace(-1,-.12,45)[:-1],np.linspace(-.12,.12,601),np.linspace(.12,1,45)[1:]])
+            v.update(edges=e.tolist(),bins=len(e)-1,low=float(e[0]),high=float(e[-1]))
         if not isinstance(v['bins'],int) or v['bins']<20 or v['bins']>10000 or not math.isfinite(v['low']) or not math.isfinite(v['high']) or v['high']<=v['low']:
             raise ValueError('Invalid histogram configuration')
     strata=[dict(axis='inclusive',label='Inclusive')];indices=[-1]
@@ -107,6 +132,7 @@ def build_spec(run,periods,config=None):
                 block=spec['exclusivity'][f'DVCS_{PERIODS[p][0]}_{t}'][sample]
                 if 'Mx2' not in block or set(block)-allowed:raise ValueError(f'Invalid saved cuts: {p}/{t}/{sample}')
                 for stats in block.values():saved_window(stats)
+    add_joint_grids(spec)
     return spec,paths
 
 def inventory(root,periods,limit,background_aware=False):
@@ -141,8 +167,10 @@ def inventory(root,periods,limit,background_aware=False):
 
 def make_jobs(files,workers):
     jobs=[]
+    total_bytes=sum(f.stat().st_size for paths in files.values() for f in paths)
+    target_bytes=max(1,total_bytes/max(1,2*workers))
     for (p,sample),paths in files.items():
-        count=min(len(paths),max(1,math.ceil(2*workers/len(files))))
+        count=min(len(paths),max(1,min(2*workers,math.ceil(sum(f.stat().st_size for f in paths)/target_bytes))))
         batches=[[] for _ in range(count)];sizes=[0]*count
         for path in sorted(paths,key=lambda f:f.stat().st_size,reverse=True):
             k=int(np.argmin(sizes));batches[k].append(str(path));sizes[k]+=path.stat().st_size
@@ -171,8 +199,8 @@ def scan(output,spec,paths,files,workers,seed_data=None,seed_samples=('data',)):
     ng=len(spec['strata']);maxbins=max(v['bins'] for v in spec['variables'])+2
     for p,s in files:
         key=f'{p}__{s}'
-        arrays[key]=np.zeros((3,ng,7,maxbins),dtype=np.uint64)
-        arrays[key+'__stats']=np.zeros((3,ng,7,2),dtype=np.uint64)
+        arrays[key]=np.zeros((3,ng,7,maxbins),dtype=np.uint64) if s not in ('pi0_data','pi0_mc') else np.empty((0,),dtype=np.uint64)
+        arrays[key+'__stats']=np.zeros((3,ng,7,2),dtype=np.uint64) if s not in ('pi0_data','pi0_mc') else np.empty((0,),dtype=np.uint64)
         flows[key]=dict(entries=0,global_pass=[0]*3,selected=[0]*3)
     if seed_data:
         old=json.loads((seed_data/'manifest.json').read_text())
@@ -255,11 +283,11 @@ def quantile(counts,edges,probability):
 def shape_metrics(counts,edges,nonfinite,passed):
     n=float(np.sum(counts));inside=float(np.sum(counts[1:-1]));finite_fraction=inside/n if n else 0.
     qs=[quantile(counts[1:-1],edges,q) for q in (.025,.16,.5,.84,.975)]
-    smooth=np.convolve(counts[1:-1].astype(float),[1,2,1],mode='same')
+    smooth=np.convolve(counts[1:-1].astype(float)/np.diff(edges),[1,2,1],mode='same')
     peak=float((edges[np.argmax(smooth)]+edges[np.argmax(smooth)+1])/2) if inside else float('nan')
     return dict(n_finite=n,n_nonfinite=int(nonfinite),in_range_fraction=finite_fraction,
         underflow=float(counts[0]),overflow=float(counts[-1]),q025=qs[0],q16=qs[1],median=qs[2],q84=qs[3],q975=qs[4],
-        core_spread=(qs[3]-qs[1])/2,peak=peak,pass_own_cut_fraction=passed/(n+nonfinite) if n+nonfinite else float('nan'))
+        core_spread=(qs[3]-qs[1])/2,core_asymmetry=(qs[3]+qs[1]-2*qs[2])/(qs[3]-qs[1]) if qs[3]>qs[1] else float('nan'),peak=peak,pass_own_cut_fraction=passed/(n+nonfinite) if n+nonfinite else float('nan'))
 
 def outside_fraction(counts,edges,lo,hi):
     total=float(np.sum(counts))
@@ -267,13 +295,20 @@ def outside_fraction(counts,edges,lo,hi):
     overlap=np.clip(np.minimum(edges[1:],hi)-np.maximum(edges[:-1],lo),0,None)/np.diff(edges)
     return float(1-np.dot(counts[1:-1],overlap)/total)
 
+def fraction_below(counts,edges,bound):
+    total=float(np.sum(counts))
+    if total<=0 or not math.isfinite(bound):return float('nan')
+    portion=np.clip((bound-edges[:-1])/np.diff(edges),0,1)
+    return float((counts[0]+np.dot(counts[1:-1],portion))/total)
+
+
 def comparisons(arrays,spec,min_entries):
     rows=[];detail={}
     for p in spec['periods']:
         for t,topology in enumerate(TOPOLOGIES):
             for g,stratum in enumerate(spec['strata']):
                 for vi,v in enumerate(spec['variables']):
-                    edges=np.linspace(v['low'],v['high'],v['bins']+1);metrics=[];hist=[]
+                    edges=variable_edges(v);metrics=[];hist=[]
                     for sample in ('data','mc'):
                         key=f'{p}__{sample}';counts=arrays[key][t,g,vi,:v['bins']+2]
                         stats=arrays[key+'__stats'][t,g,vi]
@@ -285,10 +320,12 @@ def comparisons(arrays,spec,min_entries):
                     flags=[]
                     if min(d['n_finite'],m['n_finite'])<min_entries:flags.append('low statistics')
                     if min(d['in_range_fraction'],m['in_range_fraction'])<.99:flags.append('range truncation')
-                    if any(z['core_spread']<2*(edges[1]-edges[0]) for z in metrics):flags.append('core poorly resolved by histogram')
+                    if any(z['core_spread']<2*np.diff(edges)[int(np.clip(np.searchsorted(edges,z['median'])-1,0,len(edges)-2))] for z in metrics):flags.append('core poorly resolved by histogram')
                     if d['n_nonfinite'] or m['n_nonfinite']:flags.append('nonfinite values')
                     row=dict(period=p,topology=topology,axis=stratum['axis'],stratum=stratum['label'],variable=v['name'],
                         width_ratio=ratio,median_shift_MC_spreads=shift,data_outside_MC95=dtail,mc_outside_MC95=mtail,
+                        data_lower_tail_MC95=fraction_below(hist[0],edges,m['q025']),data_upper_tail_MC95=1-fraction_below(hist[0],edges,m['q975']),
+                        mc_lower_tail_MC95=fraction_below(hist[1],edges,m['q025']),mc_upper_tail_MC95=1-fraction_below(hist[1],edges,m['q975']),
                         excess_tail_fraction=dtail-mtail,status='; '.join(flags) or 'usable shape comparison')
                     for prefix,z in zip(('data','mc'),metrics):row.update({prefix+'_'+k:value for k,value in z.items()})
                     rows.append(row)
@@ -333,7 +370,7 @@ def effective_window(spec,p,t,sample,var):
     return bounds
 
 def view_limits(spec,p,t,vi,d,m):
-    v=spec['variables'][vi];edges=np.linspace(v['low'],v['high'],v['bins']+1)
+    v=spec['variables'][vi];edges=variable_edges(v)
     limits=[quantile(h[1:-1],edges,q) for h in (d,m) for q in (.005,.995)]
     limits.extend(x for s in ('data','mc') for x in effective_window(spec,p,t,s,v['name']) if x is not None)
     limits=[x for x in limits if math.isfinite(x)]
@@ -351,20 +388,20 @@ def plot_overviews(output,arrays,spec,rows,dpi):
             destination=output/p/t;destination.mkdir(parents=True)
             fig,axs=plt.subplots(3,3,figsize=(15,11),constrained_layout=True)
             for vi,v in enumerate(spec['variables']):
-                ax=axs.flat[vi];edges=np.linspace(v['low'],v['high'],v['bins']+1);hist=[]
+                ax=axs.flat[vi];edges=variable_edges(v);hist=[]
                 for sample,color in (('data','#205cab'),('mc','#c62828')):
                     h=arrays[f'{p}__{sample}'][ti,0,vi,:v['bins']+2];hist.append(h)
                     total=float(h.sum())
                     denom=float(arrays[f'{p}__data'][ti,0,vi,:v['bins']+2].sum()) if spec.get('background_aware') else total
-                    ax.stairs(h[1:-1]/denom if denom else h[1:-1],edges,color=color,label=f'{sample.upper()} N={int(total):,}')
+                    ax.stairs(h[1:-1]/denom/np.diff(edges) if denom else h[1:-1],edges,color=color,label=f'{sample.upper()} N={int(total):,}')
                     if sample=='mc' and spec.get('background_aware'):
                         for component,style in [('signal','--'),('background',':')]:
                             z=arrays[p+'__'+component][ti,0,vi,:v['bins']+2]
-                            ax.stairs(z[1:-1]/denom if denom else z[1:-1],edges,color='#c62828',linestyle=style,label='DVCS signal' if component=='signal' else 'π⁰ background')
+                            ax.stairs(z[1:-1]/denom/np.diff(edges) if denom else z[1:-1],edges,color='#c62828',linestyle=style,label='DVCS signal' if component=='signal' else 'π⁰ background')
                     for bound in effective_window(spec,p,t,sample,v['name']):
                         if bound is not None:ax.axvline(bound,color='#777777',ls='-.',alpha=.6,lw=1)
                 r=index[p,t,'inclusive','Inclusive',v['name']]
-                ax.set(xlim=view_limits(spec,p,t,vi,*hist),xlabel=v['label'],ylabel='Fraction of finite candidates / bin')
+                ax.set(xlim=view_limits(spec,p,t,vi,*hist),xlabel=v['label'],ylabel='Density / normalization total')
                 ax.set_title(f"spread ratio={r['width_ratio']:.2f}; median shift={r['median_shift_MC_spreads']:+.2f} MC spreads",fontsize=10)
                 ax.legend(fontsize=8);ax.grid(alpha=.15)
                 if r['status']!='usable shape comparison':ax.text(.02,.96,r['status'],va='top',transform=ax.transAxes,fontsize=7,color='#a52a2a',wrap=True)
@@ -372,9 +409,9 @@ def plot_overviews(output,arrays,spec,rows,dpi):
             axs.flat[7].text(0,.95,'Each panel leaves its own cut out.\nOther saved selection cuts remain.\nGray dash-dot: omitted cut boundaries.\nUnit-weighted candidates; no subtraction.\nWidths are conditional shape diagnostics.\nMetrics use full histogram; tails outside\nits range are recorded and flagged.',va='top',fontsize=11)
             fig.suptitle(f'{p} · {t.replace("_","–")} · inclusive exclusivity shapes')
             fig.savefig(destination/'inclusive_shapes.png',dpi=dpi);plt.close(fig)
-            ng=len(spec['strata']);values=np.full((3,7,ng-1),np.nan)
+            viewgroups=[s for s in spec['strata'][1:] if not s['axis'].startswith('joint_')];ng=len(viewgroups)+1;values=np.full((3,7,ng-1),np.nan)
             for vi,v in enumerate(spec['variables']):
-                for g,s in enumerate(spec['strata'][1:]):
+                for g,s in enumerate(viewgroups):
                     r=index[p,t,s['axis'],s['label'],v['name']]
                     if r['status']=='usable shape comparison':
                         values[:,vi,g]=[r['width_ratio'],r['median_shift_MC_spreads'],r['excess_tail_fraction']]
@@ -382,10 +419,10 @@ def plot_overviews(output,arrays,spec,rows,dpi):
             for ax,z,label,lo,hi in zip(axs,values,['DATA/MC core spread','Median shift / MC core spread','Excess fraction outside MC central 95%'],[.5,-1.5,-.2],[2,1.5,.2]):
                 cm=plt.get_cmap('coolwarm').copy();cm.set_bad('#dddddd')
                 im=ax.imshow(z,aspect='auto',cmap=cm,vmin=lo,vmax=hi)
-                ax.set(yticks=range(7),yticklabels=[v['name'] for v in spec['variables']],xticks=range(ng-1),xticklabels=[s['label'] for s in spec['strata'][1:]],title=label)
+                ax.set(yticks=range(7),yticklabels=[v['name'] for v in spec['variables']],xticks=range(ng-1),xticklabels=[s['label'] for s in viewgroups],title=label)
                 ax.tick_params(axis='x',rotation=90,labelsize=7)
-                for ai,name in enumerate(spec['axes']):
-                    positions=[g for g,s in enumerate(spec['strata'][1:]) if s['axis']==name]
+                for ai,name in enumerate(k for k in spec['axes'] if not k.startswith('joint_')):
+                    positions=[g for g,s in enumerate(viewgroups) if s['axis']==name]
                     ax.text((positions[0]+positions[-1])/2,-.7,name,ha='center',fontsize=8)
                     ax.axvline(positions[0]-.5,color='white',lw=2)
                 fig.colorbar(im,ax=ax,extend='both',pad=.01)
@@ -422,9 +459,44 @@ def render(output,arrays,manifest,min_entries,dpi):
     plot_overviews(output,arrays,spec,rows,dpi)
     windows={f'{p}|{t}|{v["name"]}':{s:effective_window(spec,p,t,s,v['name']) for s in ('data','mc')}
         for p in spec['periods'] for t in TOPOLOGIES for v in spec['variables']}
-    content=json.dumps(clean_json(dict(spec=spec,detail=detail,windows=windows)),allow_nan=False,separators=(',',':')).replace('<','\\u003c')
-    template=SOURCE/'exclusivity_resolution_report.html'
-    (output/'REPORT.html').write_text(template.read_text().replace('__PAYLOAD__',content))
+    template=(SOURCE/'exclusivity_resolution_report.html').read_text()
+    if spec.get('joint_grids'):
+        # Split pages avoid making the browser parse every period/topology at once.
+        links=[]
+        for p in spec['periods']:
+            for t in TOPOLOGIES:
+                page_spec=dict(spec,periods=[p],topologies=[t])
+                page_detail={}
+                for key,record in detail.items():
+                    if not key.startswith(p+'|'+t+'|'):continue
+                    record=dict(record)
+                    for name in ('data','mc','signal','background'):
+                        if name in record:
+                            values=record[name]
+                            record[name]=dict(length=len(values),entries=[[i,round(float(v),8)] for i,v in enumerate(values) if v])
+                    page_detail[key]=record
+                page_windows={k:v for k,v in windows.items() if k.startswith(p+'|'+t+'|')}
+                payload=dict(spec=page_spec,detail=page_detail,windows=page_windows)
+                content=json.dumps(clean_json(payload),allow_nan=False,separators=(',',':')).replace('<','\\u003c')
+                target=output/p/t/'REPORT.html'
+                target.write_text(template.replace('__PAYLOAD__',content).replace('href="summary.csv"','href="../../summary.csv"').replace('href="REPORT.md"','href="../../REPORT.md"').replace('href="manifest.json"','href="../../manifest.json"'))
+                links.append(f'<tr><td>{p}</td><td>{t}</td><td><a href="{p}/{t}/REPORT.html">Interactive distributions</a></td><td><a href="{p}/{t}/inclusive_shapes.png">Inclusive plots</a></td></tr>')
+        (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>All-period exclusivity diagnostic</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}td,th{padding:10px;border-bottom:1px solid #ddd}a{color:#205cab}</style><h1>All-period exclusivity diagnostic</h1><p>Choose a period and topology. In each interactive report select <b>Joint xB / Q² / proton p / proton θ</b> or <b>Joint xB / Q² / photon E / photon θ</b> to examine coupled kinematics. Other menus retain the inclusive and separate projections.</p><p>Component scales remain fixed across cells. Joint slicing reduces population mixing; it does not make the full data and MC populations identical. Gray/flagged comparisons need more statistics or range coverage. No smearing or production correction has been applied.</p><table><tr><th>Period</th><th>Topology</th><th>Report</th><th>Overview</th></tr>'+''.join(links)+'</table><p><a href="joint_summary.csv">Joint-cell diagnostics</a> · <a href="period_comparison.csv">Period comparisons</a> · <a href="normalizations.csv">Component scales</a> · <a href="REPORT.md">Definitions and limitations</a></p>')
+        joint_rows=[r for r in rows if r['axis'].startswith('joint_')]
+        with (output/'joint_summary.csv').open('w',newline='') as f:
+            writer=csv.DictWriter(f,fieldnames=list(rows[0]));writer.writeheader();writer.writerows(joint_rows)
+        cross={}
+        for r in rows:
+            key=(r['topology'],r['axis'],r['stratum'],r['variable'])
+            cell=cross.setdefault(key,dict(zip(('topology','axis','stratum','variable'),key)))
+            for metric in ('width_ratio','median_shift_MC_spreads','excess_tail_fraction','data_n_finite','status'):
+                cell[r['period']+'_'+metric]=r[metric]
+        fields=['topology','axis','stratum','variable']+[p+'_'+metric for p in spec['periods'] for metric in ('width_ratio','median_shift_MC_spreads','excess_tail_fraction','data_n_finite','status')]
+        with (output/'period_comparison.csv').open('w',newline='') as f:
+            writer=csv.DictWriter(f,fieldnames=fields);writer.writeheader();writer.writerows(cross.values())
+    else:
+        content=json.dumps(clean_json(dict(spec=spec,detail=detail,windows=windows)),allow_nan=False,separators=(',',':')).replace('<','\\u003c')
+        (output/'REPORT.html').write_text(template.replace('__PAYLOAD__',content))
     flowlines=[]
     for key,flow in manifest['flows'].items():
         flowlines.append(f"| {key.replace('__',' / ')} | {flow['entries']:,} | "+' | '.join(f'{n:,}' for n in flow['selected'])+' |')
@@ -449,7 +521,9 @@ Core spread = (q84 − q16)/2, a robust descriptive width, not a Gaussian fit.
 Median shift is expressed in MC core spreads. Peak is the histogram mode after
 [1,2,1] smoothing; it is descriptive and can be unstable. Tail fraction is the
 fraction outside MC's central 95% interval, including histogram under/overflow.
-Quantiles use within-bin interpolation of in-range finite values. Comparisons
+Quantiles use within-bin interpolation of in-range finite values. Missing-mass
+tails extend to ±1 GeV² while retaining 0.0004 GeV² central bins. Plots use
+density per variable unit, including the variable-width tail bins. Comparisons
 with <99% histogram coverage, too few entries, nonfinite values, or core spread
 less than two histogram bins are flagged; do not tune smearing from those cells.
 No uncertainty/significance estimate is attached to width ratios.
@@ -459,8 +533,9 @@ reweighting, current/proton-efficiency weighting or cross-section normalization
 is applied. The study uses the saved global phase space, not just populated CSV
 bins. Different physics populations, backgrounds and radiation can change these
 shapes. A width ratio alone does not identify a particle to smear.
-The six momentum/angle subdivisions are separate 1D projections, not a joint
-matching of all kinematics. A single event appears in several projections.
+The six single-axis subdivisions are separate 1D projections. New joint cells
+hold xB/Q2 and particle momentum/angle together but still do not match every
+kinematic degree of freedom or the within-cell populations. A single event appears in several projections.
 
 The producer stores theta_gamma_gamma in degrees and Emiss2 as missing energy
 in GeV. Particle e/p1/p2 polar angles are converted from radians to degrees.
@@ -507,7 +582,7 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--production-run',type=Path,help='Preserved nominal run containing saved sources and output/jsons')
     parser.add_argument('--input-root',type=Path,default=Path('/volatile/clas12/thayward/dvcs_pass2_full_rebuild'))
-    parser.add_argument('--periods',nargs='+',choices=PERIODS,default=['fa18_inb','fa18_out'])
+    parser.add_argument('--periods',nargs='+',choices=PERIODS,default=list(PERIODS))
     parser.add_argument('--workers',type=int,default=10,help='Total worker budget shared by all samples/periods')
     parser.add_argument('--max-files-per-sample',type=int,default=0,help='0: all; positive: first N sorted parts per period/sample')
     parser.add_argument('--output',required=True,type=Path)
@@ -527,7 +602,7 @@ def main(argv=None):
     if args.reuse_histograms:
         if args.config or args.production_run or args.reuse_data_from or args.repair_controls_from:parser.error('Reuse uses its saved cuts, source provenance, ranges and strata; omit --config/--production-run')
         previous=args.reuse_histograms.resolve();manifest=json.loads((previous/'manifest.json').read_text())
-        if manifest['spec']['version']!=VERSION:parser.error('Incompatible saved histogram version')
+        if manifest['spec']['version'] not in (VERSION,'exclusivity-resolution-v2'):parser.error('Incompatible saved histogram version')
         if digest(previous/'histograms.npz')!=manifest['histogram_sha256']:parser.error('Histogram checksum mismatch')
         with np.load(previous/'histograms.npz',allow_pickle=False) as data:arrays={k:data[k] for k in data.files}
         output.mkdir(parents=True)
@@ -539,6 +614,14 @@ def main(argv=None):
         if args.repair_controls_from and (args.reuse_data_from or args.signal_only):parser.error('Control repair requires background-aware mode and no --reuse-data-from')
         spec,paths=build_spec(args.production_run,args.periods,args.config)
         if not math.isfinite(args.aaogen_exposure_ratio) or args.aaogen_exposure_ratio<=0:parser.error('Exposure ratio must be finite and positive')
+        if not args.signal_only:
+            allowed={v['name'] for v in spec['variables']}
+            for period in args.periods:
+                for topology in TOPOLOGIES:
+                    for sample in ('data','mc'):
+                        block=spec['exclusivity'][f'eppi0_{spec["period_codes"][period]}_{topology}'][sample]
+                        if 'Mx2' not in block or set(block)-allowed:raise ValueError('Invalid saved two-photon control cuts')
+                        for stats in block.values():saved_window(stats)
         spec['background_aware']=not args.signal_only
         spec['control_to_leakage_exposure_ratio']=args.aaogen_exposure_ratio
         files=inventory(args.input_root.resolve(),args.periods,args.max_files_per_sample,not args.signal_only)

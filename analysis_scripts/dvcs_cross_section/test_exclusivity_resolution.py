@@ -29,6 +29,11 @@ int main(){
  v[5]=std::numeric_limits<double>::quiet_NaN();mask=failures(v,c);assert(leave_one_out(mask,5));assert(!leave_one_out(mask,3));
  Histogram h(10,0,1);h.add(-.1,false);h.add(0,true);h.add(.1,true);h.add(1,false);h.add(std::numeric_limits<double>::infinity(),false);
  assert(h.counts[0]==1&&h.counts[1]==1&&h.counts[2]==1&&h.counts[11]==1&&h.nonfinite==1&&h.pass_own_cut==2);
+ Histogram wide(std::vector<double>{-1,-.12,0,.12,1});wide.add(-.5,false);wide.add(0,true);wide.add(.12,false);wide.add(1,false);
+ assert(wide.counts[1]==1&&wide.counts[3]==1&&wide.counts[4]==1&&wide.counts[5]==1);
+ JointGrid grid{10,{6,7,2,3},{{0,.2,1},{0,2.5,100},{0,.5,.8,100},{0,50,180.000001}}};
+ std::array<double,8> values={0,0,.6,45,0,0,.2,2};assert(grid.find(values)==24);
+ values[6]=1;assert(grid.find(values)==-1);values[6]=std::numeric_limits<double>::quiet_NaN();assert(grid.find(values)==-1);
  Stratum group{"p1_theta",45,50};assert(group.contains(45));assert(!group.contains(50));assert(!group.contains(std::numeric_limits<double>::quiet_NaN()));
 }
 ''')
@@ -57,6 +62,14 @@ def numerical_tests():
     variables,axes,groups,index=s.configuration()
     for g in groups[1:]:
         if g['axis']=='p1_theta':assert g['high']>g['low']
+    mass=next(v for v in variables if v['name']=='Mx2');e=s.variable_edges(mass)
+    assert e[0]==-1 and e[-1]==1
+    assert abs(np.diff(e)[np.searchsorted(e,0)]-.0004)<1e-12
+    spec=dict(strata=copy.deepcopy(groups),strata_axis_index=list(index),axes=copy.deepcopy(axes))
+    s.add_joint_grids(spec)
+    assert len(spec['joint_grids'])==2 and len(spec['strata'])==len(groups)+48
+    for grid in spec['joint_grids']:
+        assert len(spec['strata'][grid['offset']:grid['offset']+24])==24
     assert variables[2]['label'].endswith('(deg)') and variables[4]['label'].endswith('(GeV)')
 
 
@@ -93,9 +106,9 @@ def synthetic_report(tmp):
         arrays[key]=np.zeros((3,len(strata),7,maxbins),dtype=np.uint64)
         arrays[key+'__stats']=np.zeros((3,len(strata),7,2),dtype=np.uint64)
         for vi,v in enumerate(variables):
-            e=np.linspace(v['low'],v['high'],v['bins']+1);c=(e[:-1]+e[1:])/2
-            mu=(v['low']+v['high'])/2;sd=(v['high']-v['low'])/(12 if sample=='data' else 18)
-            h=np.r_[0,np.round(1000*np.exp(-.5*((c-mu)/sd)**2)),0].astype(np.uint64)
+            e=s.variable_edges(v);c=(e[:-1]+e[1:])/2
+            mu=(v['low']+v['high'])/2;sd=(.24 if v['name']=='Mx2' else v['high']-v['low'])/(12 if sample=='data' else 18)
+            h=np.r_[0,np.round(1000*np.exp(-.5*((c-mu)/sd)**2)*np.diff(e)/np.min(np.diff(e))),0].astype(np.uint64)
             arrays[key][:,:,vi,:len(h)]=h
     output=tmp/'report';output.mkdir();np.savez_compressed(output/'histograms.npz',**arrays)
     manifest=dict(spec=spec,flows={k:dict(entries=100,selected=[10,20,30]) for k in ['fa18_inb__data','fa18_inb__mc']},histogram_sha256=s.digest(output/'histograms.npz'))
@@ -126,6 +139,16 @@ def synthetic_report(tmp):
     mixpage=(mixout/'REPORT.html').read_text()
     mixpayload=json.loads(mixpage.split('<script id="payload" type="application/json">')[1].split('</script>')[0])
     assert 'signal' in mixpayload['detail']['fa18_inb|FD_FD|0|0']
+    joint_manifest=copy.deepcopy(mix_manifest);s.add_joint_grids(joint_manifest['spec'])
+    joint_arrays={k:np.pad(v,((0,0),(0,48),(0,0),(0,0))) for k,v in mix_arrays.items()}
+    jointout=tmp/'joint_report';jointout.mkdir()
+    s.render(jointout,joint_arrays,joint_manifest,300,60)
+    assert (jointout/'joint_summary.csv').exists() and (jointout/'period_comparison.csv').exists()
+    assert (jointout/'fa18_inb/FD_FD/REPORT.html').exists()
+    page=(jointout/'fa18_inb/FD_FD/REPORT.html').read_text()
+    payload=json.loads(page.split('<script id="payload" type="application/json">')[1].split('</script>')[0])
+    assert isinstance(payload['detail']['fa18_inb|FD_FD|0|0']['data'],dict)
+    assert payload['spec']['topologies']==['FD_FD']
     (output/'histograms.npz').write_bytes(b'broken')
     with contextlib.redirect_stderr(io.StringIO()):
         try:s.main(['--reuse-histograms',str(output),'--output',str(tmp/'bad_hash')])
@@ -184,7 +207,7 @@ json.dump(dict(histograms=h,entries=n*10,global_pass=[n]*3,selected=[n]*3,files=
 def root_smoke(tmp,production):
     """Actual worker and production global functions; deterministic tiny ROOT input."""
     import shlex
-    spec,paths=s.build_spec(production,['fa18_inb','fa18_out'])
+    spec,paths=s.build_spec(production,list(s.PERIODS))
     cfg=spec['global_cuts'];cfg.update(enable_auxiliary_fiducial_cuts=False,
         enable_analysis_phase_space_cuts=False,enable_pTmiss_cut=True,pTmiss_max=.15,
         excluded_runs=[999],enable_topology_filter=False,enable_dvcsgen_ycol_cut=False)
@@ -204,7 +227,7 @@ int main(int argc,char**argv){TFile f(argv[1],"RECREATE");TTree t("PhysicsEvents
 for(auto n:{"x","Q2","t1","detector1","detector2","e_p","e_theta","e_phi","p1_p","p1_theta","p1_phi","p2_p","p2_theta","p2_phi","open_angle_ep2","pTmiss","theta","theta_gamma_gamma","Emiss2","Mx2","Mx2_2","runnum","detector_gamma1"}){v[n]=0;t.Branch(n,&v[n],(std::string(n)+"/D").c_str());}
 v["x"]=.2;v["Q2"]=2;v["t1"]=-.13;v["e_p"]=5;v["e_theta"]=.25;v["p1_p"]=.6;v["p1_theta"]=.8;v["p1_phi"]=3.141592653589793;v["p2_p"]=4;v["p2_theta"]=.2;v["open_angle_ep2"]=10;v["theta"]=3;v["theta_gamma_gamma"]=1;v["Mx2_2"]=.88;
 for(int top=0;top<3;++top){v["detector1"]=top==0?1:2;v["detector2"]=(argc>2)?-1:(top==2?0:1);v["detector_gamma1"]=top==2?0:1;
-for(int i=0;i<7;++i){v["runnum"]=i==6?999:100;v["pTmiss"]=(i==1||i==3)?.18:(i==5?.12:.05);v["Mx2"]=(i==2||i==3)?.04:(i==4?-.13:0);t.Fill();}}
+for(int i=0;i<7;++i){v["runnum"]=i==6?999:100;v["pTmiss"]=(i==1||i==3)?.18:(i==5?.12:.05);v["Mx2"]=(i==2||i==3)?.04:(i==4?-1.3:0);t.Fill();}}
 t.Write();}
 ''')
     flags=shlex.split(subprocess.check_output(['root-config','--cflags'],text=True));libs=shlex.split(subprocess.check_output(['root-config','--libs'],text=True))
@@ -243,6 +266,15 @@ t.Write();}
         payload=json.loads((out/'result.json').read_text())
         assert payload['selected']==[expected]*3
         if sample.startswith('pi0'):assert payload['histograms']==[]
+    s.write_json(out/'job.json',dict(period='fa18_inb',sample='mc',files=[str(root)]))
+    subprocess.run([str(worker),str(out/'spec.json'),str(out/'job.json'),str(out/'result.json')],check=True)
+    joint_payload=json.loads((out/'result.json').read_text())
+    for grid in spec['joint_grids']:
+        for t in range(3):
+            for v in range(7):
+                count=lambda g:sum(joint_payload['histograms'][(t*ng+g)*7+v]['counts'])
+                assert sum(count(g) for g in range(grid['offset'],grid['offset']+24))==count(0)
+    print('PASS: joint cells partition the inclusive selection without double counting')
     print('PASS: background/MC common DATA windows and independent two-photon controls')
     print('PASS: native ROOT I/O, both periods/samples, all topologies, global/own cut omission, blacklist, overflow and phi fallback')
 

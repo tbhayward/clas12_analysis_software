@@ -107,10 +107,15 @@ static void run(const json& spec,const json& job,const std::string& output) {
     for(const auto& s:spec.at("strata")) strata.push_back({s.at("axis"),s.value("low",0.),s.value("high",0.)});
     const int ng=strata.size();
     auto axis_index=spec.at("strata_axis_index").get<std::vector<int>>();
-    std::vector<int> groups;groups.reserve(7);
+    std::vector<int> groups;groups.reserve(9);
+    std::vector<JointGrid> joint;
+    if(spec.contains("joint_grids")) for(const auto& j:spec.at("joint_grids"))
+        joint.push_back({j.at("offset"),j.at("indices").get<std::vector<int>>(),j.at("edges").get<std::vector<std::vector<double>>>()});
     std::vector<Histogram> hist;
-    if(!control) for(int t=0;t<3;++t) for(int g=0;g<ng;++g) for(const auto& v:spec.at("variables"))
-        hist.emplace_back(v.at("bins"),v.at("low"),v.at("high"));
+    if(!control) for(int t=0;t<3;++t) for(int g=0;g<ng;++g) for(const auto& v:spec.at("variables")) {
+        if(v.contains("edges")) hist.emplace_back(v.at("edges").get<std::vector<double>>());
+        else hist.emplace_back(v.at("bins"),v.at("low"),v.at("high"));
+    }
     std::array<uint64_t,3> global_count{},selected{};
     uint64_t entries=0;
     json files=json::array();
@@ -158,13 +163,15 @@ static void run(const json& spec,const json& job,const std::string& output) {
             unsigned mask=failures(values,cuts[t]);
             if(gp && !mask) ++selected[t];
             if(control) continue;
-            std::array<double,6> axes={*p[5],*p[6]*DEG,*p[8],*p[9]*DEG,*p[11],*p[12]*DEG};
+            std::array<double,8> axes={*p[5],*p[6]*DEG,*p[8],*p[9]*DEG,*p[11],*p[12]*DEG,*p[0],*p[1]};
             groups.clear();groups.push_back(0);
             // Strata are ordered by six axes in the specification.
             for(int g=1;g<ng;++g) {
                 int a=axis_index[g];
+                if(a<0) continue;
                 if(strata[g].contains(axes[a])) groups.push_back(g);
             }
+            for(const auto& grid:joint) {int g=grid.find(axes);if(g>=0) groups.push_back(g);}
             for(size_t v=0;v<NV;++v) {
                 if(!leave_one_out(mask,v) || (!gp && v!=3)) continue;
                 bool own_pass=cuts[t][v].pass(values[v]);

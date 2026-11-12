@@ -179,3 +179,59 @@ this correction, use `--repair-controls-from OLD_STUDY` with a new `--output`.
 This verifies/reuses DATA, DVCS MC and leakage histograms, rereading only the
 two-photon DATA/MC controls. Do not use complete `--reuse-histograms` for that
 repair: it would retain the original zero control counts.
+
+## All-period joint kinematics (v3)
+
+All five periods are now the default: Fa18 in/out, Sp18 in/out and Sp19 in.
+The study still fills every topology, with one shared ten-worker budget.
+
+Two new menus provide **joint** cells rather than independent projections:
+
+- xB × Q² × proton momentum × proton polar angle (24 cells).
+- xB × Q² × photon energy × photon polar angle (24 cells).
+
+The initial bins are deliberately broad enough to retain statistics. Each
+family partitions its supported domain without overlap. An event fills at most
+one cell per joint family; these are separate comparisons, never summed across
+families. xB splits at 0.2, Q² at 2.5 GeV²; proton momentum splits at 0.5/0.8
+GeV and angle at 50 degrees; photon energy at 6/8 GeV and angle at 8 degrees.
+Joint cells reduce physics/detector population mixing but do not match every
+variable or the within-cell distributions. No weights are fitted to the
+exclusivity variables; signal/background scales remain fixed by period/topology.
+No particle smearing or new production correction is applied at this stage.
+
+Missing mass squared epγ now covers [-1,+1] GeV², retaining the original
+0.0004 GeV² bins over [-0.12,+0.12] and using wider bins in the tails.
+Plots show density per variable unit so wider tail bins do not create false
+shape features. Histogram quantiles integrate counts, not density. The mode is
+estimated from smoothed density. The bin-resolution flag uses the local bin
+width near the median. Underflow/overflow and range flags remain explicit.
+CSV summaries separately report median/mode, core spread/asymmetry, and lower
+and upper tail fractions outside the MC central 95% interval. These descriptive
+quantities do not identify a particle resolution or supply statistical fits.
+
+REPORT.html is now a small index linking separate period/topology interactive
+reports. Zero histogram bins are stored sparsely in those pages to keep browser
+memory and parsing costs down. joint_summary.csv contains the joint-cell
+metrics; period_comparison.csv places each period's metrics/status alongside
+one another for identical cells. Existing inclusive PNG/heatmaps remain compact;
+the joint cells are accessed in the interactive menus or CSVs.
+
+ROOT files are still streamed once each. Native mixed-radix lookup fills just
+one cell per joint grid, instead of scanning every joint cell for each event.
+Two-photon controls store counts only rather than empty diagnostic histograms.
+This keeps the additional event-loop cost and memory modest.
+
+A fresh scan is necessary: older aggregates cannot recover the new tails or
+joint event correlations. Version-2 histogram replotting remains supported,
+but seed/recovery options correctly reject incompatible new ranges/strata.
+
+```sh
+python3 test_exclusivity_resolution.py --root-smoke --production-run "$PWD/test_runs/current_mc_fixed_001/proton_t_default_001" && python3 study_exclusivity_resolution.py --production-run "$PWD/test_runs/current_mc_fixed_001/proton_t_default_001" --periods sp18_inb sp18_out fa18_inb fa18_out sp19_inb --workers 10 --output "$PWD/test_runs/exclusivity_resolution_all_periods_joint_001"
+```
+
+Read CD_FT first for response diagnostics, then the FD-photon topologies for
+background sensitivity. Compare the same joint cells across periods, respecting
+low-statistics/range flags. Choose which particle-level smearing variations to
+test only after checking these more controlled shapes. The default AAOgen
+common-exposure assumption and other background-transfer limitations still apply.
