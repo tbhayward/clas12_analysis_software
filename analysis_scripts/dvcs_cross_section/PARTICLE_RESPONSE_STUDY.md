@@ -275,8 +275,9 @@ Large arrays stay in the unique scratch folder. It calls the existing production
 functions with their current default settings, including the direct-pi0 priors,
 iterative order, stopping rule and separate DATA/MC 90/95/98% windows. Display-only
 xF variables cannot affect any fitted cut and are not exported. Production cut
-fitting uses its original minimal preselection; the subsequent relative-acceptance
-counts additionally apply the saved full analysis global selection. No fixed old
+fitting now defaults to the full analysis-global selection; legacy minimal
+preselection is available explicitly for comparison. Relative-acceptance counts
+always apply the saved full analysis global selection. No fixed old
 exclusivity cut is imposed before determining new cuts. DATA themselves are not
 morphed, but their fitted signal templates and boundaries can change.
 
@@ -389,3 +390,62 @@ link. The report links original files directly, without duplicate packages.
 Large intermediate arrays remain on scratch. The cut substage can also be run
 separately with `study_response_cut_redetermination.py --training-study STUDY`
 and the corresponding verified reference/response paths if needed.
+
+
+## Matched-global selection and physical-mixture closure
+
+`study_particle_selection_closure.py --followup-study PREVIOUS_FOLLOWUP --output NEW`
+reuses the pre-cut exports from the preceding add-pT follow-up. If scratch exports
+were removed, it rebuilds those exports only, without any response parameter scan.
+It checks the original candidate hashes and records export hashes in its manifest.
+
+The regular production uproot selected-array loader now calls the same configured
+global selection as the PyROOT loader. Previously the uproot implementation used
+only hard-coded minimal cuts and unconditional sector requirements. Newly generated
+production cut fits therefore use the configured analysis phase space, run blacklist,
+fiducial filters and other global requirements. Existing cached cut JSONs are not
+silently replaced. The standalone cut-refit helper also defaults to full globals;
+`--fit-selection minimal` retains the explicit legacy comparison, and `--export-only`
+can rebuild reusable arrays without fitting cuts.
+
+The new closure study refits the current and add-pT candidates with full globals,
+using the existing production cut-order, containment, nuisance and stopping algorithms.
+Old minimal-preselection results are retained as the comparison. Its acceptance table
+isolates global-versus-minimal cut determination and add-pT-versus-current under the
+new global cut definition. Production output JSONs are not overwritten by this study.
+
+Primary DVCS plots show the physical DVCS-plus-pi0 sum, separate DVCS and pi0
+components, and (in common-selection views) the current-training sum. No histogram
+morph or per-observable rate fit is applied to these curves. One control scale per
+period comes from selected two-photon DATA/MC counts, accounting for MC cache sampling;
+the leakage scale also includes the saved generated-exposure ratio and fitted transfer
+multiplier. Signal normalization is fixed once per topology from the remaining selected
+DATA yield. Invalid or nonpositive residuals are flagged rather than clipped. Both
+components use the same common DATA-area display divisor so their sum is preserved.
+
+Views are minimal pre-exclusivity, full-global pre-exclusivity, full-global N−1 with
+shared saved DATA windows, and final add-pT DATA/MC with their own newly derived cuts.
+N−1 drops only the displayed exclusivity cut; configured global cuts remain. In
+particular, an enabled global pT cut is retained and explicitly disclosed. Two-photon
+plots are shown separately under full globals before exclusivity and in shared-window
+N−1 selections; their signal generator is pi0 MC, not the one-photon DVCS mixture.
+
+Additional histogram-template fits appear only in the clearly separated global_cut_refits
+cut-development figures. Their green total-fit curves must not be confused with the
+primary physical MC prediction. The selected normalization anchor agrees in total by
+construction; closure in other selections and distribution shapes is the useful check.
+The upstream pi0 mass-window and independent-DATA-validation limitations still apply.
+
+The production cut-development canvas now shows the summed input DVCS+pi0 template
+using its fitted mixture fraction, rather than scaling signal-only MC to the full
+DATA area. Its subsequent histogram-template fit is explicitly labeled. This is
+still a fit-derived mixture; the closure study's separate primary plots use the
+control-constrained background and fixed selected-sample signal normalization.
+
+`physical_prediction_counts.csv` also records robust DATA/MC core-width ratios,
+median offsets in MC core-width units, and histogram range coverage for both
+one-photon mixtures and two-photon controls. `relative_acceptance.csv` includes
+an explicitly unit-weighted pi0-subtracted-yield/acceptance proxy, using newly
+normalized leakage in each compared selection. Negative/empty subtracted yields
+are flagged, never clipped. Current-response, luminosity, radiative/bin-centering,
+unfolding and the remaining production corrections are outside that proxy.

@@ -4030,19 +4030,7 @@ def load_selected_arrays_uproot(
     for arrays in iterate_rebuilt(path, expressions, step_size):
         detector1 = np.asarray(arrays["detector1"])
         detector2 = np.asarray(arrays["detector2"])
-        t1 = np.asarray(arrays["t1"], dtype=np.float64)
-        open_angle = np.asarray(arrays["open_angle_ep2"], dtype=np.float64)
-        base_mask = (
-            np.isfinite(t1)
-            & np.isfinite(open_angle)
-            & ((-t1) < T1_ABS_MAX)
-            & (open_angle > OPEN_ANGLE_MIN_DEG)
-        )
-        if REQUIRE_DISTINCT_FD_SECTORS:
-            e_sector = fd_sector_from_phi(np.asarray(arrays["e_phi"], dtype=np.float64))
-            p_sector = fd_sector_from_phi(np.asarray(arrays["p1_phi"], dtype=np.float64))
-            g_sector = fd_sector_from_phi(np.asarray(arrays["p2_phi"], dtype=np.float64))
-        # endif
+        base_mask = global_cut_mask_uproot(arrays, period_key, detector1, detector2)
 
         for topology in topologies:
             mask = (
@@ -4050,18 +4038,6 @@ def load_selected_arrays_uproot(
                 & (detector1 == topology.detector1)
                 & (detector2 == topology.detector2)
             )
-            if REQUIRE_DISTINCT_FD_SECTORS:
-                mask &= e_sector >= 1
-                if topology.detector1 == 1:
-                    mask &= (p_sector >= 1) & (p_sector != e_sector)
-                # endif
-                if topology.detector2 == 1:
-                    mask &= (g_sector >= 1) & (g_sector != e_sector)
-                # endif
-                if topology.detector1 == 1 and topology.detector2 == 1:
-                    mask &= p_sector != g_sector
-                # endif
-            # endif
             if not np.any(mask):
                 continue
             # endif
@@ -4280,14 +4256,17 @@ def draw_iterative_cut_canvas(
 
         signal_shape = normalized_shape(signal)
         if signal_shape is not None:
-            axis.stairs(
-                float(np.sum(data)) * signal_shape,
-                edges,
-                color="0.55",
-                linestyle=":",
-                linewidth=1.4,
-                label="raw signal MC",
-            )
+            raw_model = float(np.sum(data)) * signal_shape
+            raw_label = "particle-level signal (before template fit)"
+            if channel == "dvcs" and background is not None:
+                background_shape = normalized_shape(background)
+                accepted = [s for s in steps if s.accepted_for_production]
+                fraction = (step.f_pi0_before if not summary and step is not None
+                            else accepted[-1].f_pi0_after if accepted else 0.0)
+                if background_shape is not None and math.isfinite(fraction):
+                    raw_model = float(np.sum(data)) * ((1.0 - fraction) * signal_shape + fraction * background_shape)
+                    raw_label = r"input DVCS+$\pi^0$ sum (fit fraction)"
+            axis.stairs(raw_model, edges, color="0.4", linestyle=":", linewidth=1.6, label=raw_label)
         # endif
 
         if not summary and step is not None and step.fit_result.success:
@@ -4312,7 +4291,7 @@ def draw_iterative_cut_canvas(
                     color="tab:green",
                     linestyle="--",
                     linewidth=2.0,
-                    label="total fit",
+                    label="after histogram-template fit",
                 )
             else:
                 axis.stairs(
@@ -4320,7 +4299,7 @@ def draw_iterative_cut_canvas(
                     edges,
                     color="tab:green",
                     linewidth=2.0,
-                    label="morphed signal MC",
+                    label="after histogram-template fit",
                 )
             # endif
         elif summary and background is not None:

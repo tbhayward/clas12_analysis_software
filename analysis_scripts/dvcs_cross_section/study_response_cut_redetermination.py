@@ -56,8 +56,9 @@ def window_mask(rows,block,kind):
         else:mask &= production.apply_window(v,float(stats['cut_low']),float(stats['cut_high']))
     return mask
 
-def fit_arrays(rows,top):
-    selected=(rows[:,0]==top)&(rows[:,10]>.5)
+def fit_arrays(rows,top,selection='global'):
+    if selection not in ('global','minimal'):raise ValueError('Unknown fit selection')
+    selected=(rows[:,0]==top)&(rows[:,8 if selection=='global' else 10]>.5)
     return {name:np.asarray(rows[selected,i+1],dtype=np.float32) for i,name in enumerate(response.OBS)}
 
 def calibration(pi0_data,pi0_mc,topology):
@@ -75,10 +76,10 @@ def calibration(pi0_data,pi0_mc,topology):
         if fit.success and np.isfinite(fit.shift) and np.isfinite(fit.sigma_add):out[variable.branch]=(fit.shift,fit.sigma_add)
     return out
 
-def refit(period,top,arrays,folder):
+def refit(period,top,arrays,folder,selection='global'):
     topology=production.TOPOLOGIES[top]
-    dvcs={s:fit_arrays(arrays[key],top) for s,key in [('data','data'),('signal','mc'),('background','background')]}
-    pi0={s:fit_arrays(arrays[key],top) for s,key in [('data','pi0_data'),('signal','pi0_mc')]}
+    dvcs={s:fit_arrays(arrays[key],top,selection) for s,key in [('data','data'),('signal','mc'),('background','background')]}
+    pi0={s:fit_arrays(arrays[key],top,selection) for s,key in [('data','pi0_data'),('signal','pi0_mc')]}
     if any(len(a['Delta_phi'])<100 for a in [*dvcs.values(),*pi0.values()]):raise ValueError(f'{period.key}/{topology.key}: insufficient preselection events for production cut fit')
     containments=dict(nominal=.95,tight=.90,loose=.98)
     cal=calibration(pi0['data'],pi0['signal'],topology)
@@ -117,18 +118,18 @@ def comparison_rows(period,scenario,arrays,baseline,new_blocks,old_blocks,probab
             result.append(dict(period=period,scenario=scenario,topology=topology,t_low=lo,t_high=hi,baseline_mc_selected=int(b.sum()),candidate_mc_selected=int(n.sum()),relative_acceptance=ratio,paired_mc_stat_error=error,inverse_acceptance_factor=1/ratio if ratio>0 else float('nan'),old_data_selected=int((old_data&dm).sum()),new_data_selected=int((new_data&dm).sum()),mc_sampling_probability=probabilities['mc']))
     return result
 
-def plot_controls(period,scenario,arrays,baseline,blocks,output):
+def plot_controls(period,scenario,arrays,baseline,blocks,output,selection='global'):
     import matplotlib.pyplot as plt
     paths=[]
     for top,topology in enumerate(response.TOPS):
-        if not any(np.any((a[:,0]==top)&(a[:,10]>.5)) for a in [arrays['pi0_data'],arrays['pi0_mc'],baseline['pi0_mc']]):continue
+        if not any(np.any((a[:,0]==top)&(a[:,8 if selection=='global' else 10]>.5)) for a in [arrays['pi0_data'],arrays['pi0_mc'],baseline['pi0_mc']]):continue
         fig,axes=plt.subplots(3,3,figsize=(15,10),constrained_layout=True)
         samples=[('DATA',arrays['pi0_data'],'#205cab'),('Nominal MC',baseline['pi0_mc'],'#d45c18'),('Candidate MC',arrays['pi0_mc'],'#22946b')]
         for i,name in enumerate(response.OBS):
             ax=axes.flat[i];values=[]
             for label,rows,color in samples:
                 # Common minimal preselection, before exclusivity: avoids hiding tails behind refitted cuts.
-                a=rows[(rows[:,0]==top)&(rows[:,10]>.5),i+1];values.append(a[np.isfinite(a)])
+                a=rows[(rows[:,0]==top)&(rows[:,8 if selection=='global' else 10]>.5),i+1];values.append(a[np.isfinite(a)])
             qs=[np.quantile(a,[.01,.99]) for a in values if len(a)]
             lo=min(q[0] for q in qs);hi=max(q[1] for q in qs)
             if name=='Mx2':
@@ -146,7 +147,7 @@ def plot_controls(period,scenario,arrays,baseline,blocks,output):
             labels={'Delta_phi':'Coplanarity Δφ (rad)','theta':'CM angle θ (rad)','theta_gamma_gamma':'π⁰ opening angle (deg)','pTmiss':'Missing transverse momentum (GeV)','Emiss2':'Missing energy (GeV)','Mx2':'Missing mass squared epπ⁰ (GeV²)','Mx2_2':'Missing mass squared eπ⁰ (GeV²)'}
             ax.set(xlabel=labels[name],ylabel='Unit-area density');ax.legend(fontsize=7);ax.grid(alpha=.15)
         for ax in axes.flat[7:]:ax.axis('off')
-        axes.flat[7].text(0,1,'Two-photon control: before exclusivity cuts.\nSeparate DATA/MC refitted boundaries are dashed.\nCurves normalized by all finite events;\nrange truncation is not renormalized.',va='top')
+        axes.flat[7].text(0,1,'Two-photon control: selected phase space, before exclusivity cuts.\nSeparate DATA/MC refitted boundaries are dashed.\nCurves normalized by all finite events;\nrange truncation is not renormalized.',va='top')
         fig.suptitle(period+' · '+scenario+' · '+topology+' · two-photon control')
         path=output/(period+'_'+scenario+'_'+topology+'_control.png');fig.savefig(path,dpi=110);plt.close(fig);paths.append(path.name)
     return paths
@@ -154,6 +155,8 @@ def plot_controls(period,scenario,arrays,baseline,blocks,output):
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ['reference-study','response-run','output']:parser.add_argument('--'+name,type=Path,required=True)
+    parser.add_argument('--fit-selection',choices=['global','minimal'],default='global',help='Selection for cut determination; global matches acceptance (default)')
+    parser.add_argument('--export-only',action='store_true',help='Export cached/input events and stop before fitting cuts')
     parser.add_argument('--training-study',type=Path,help='Use checked current and add_pt candidates from the completed training-variable study')
     parser.add_argument('--scratch-root',type=Path,default=Path('/scratch/thayward/dvcs_particle_response'));parser.add_argument('--workers',type=int,default=10)
     args=parser.parse_args(argv)
@@ -198,13 +201,15 @@ def main(argv=None):
     for index,job,path in pool.run('cut-arrays',jobs,'precut_arrays'):
         shape=json.loads(Path(str(path)+'.json').read_text())['shape'];exported[descriptors[index]]=np.memmap(path,dtype='<f8',mode='r',shape=tuple(shape))
     def arrays_for(period,scenario):return {sample:exported[period,'shared' if sample in ['data','pi0_data'] else scenario,sample] for sample in ['data','mc','background','pi0_data','pi0_mc']}
+    if args.export_only:
+        print('[done] Pre-cut event exports: '+str(work),flush=True);return
     tasks={};results={}
     with ThreadPoolExecutor(max_workers=args.workers) as executor:
         for period in spec['periods']:
             p=next(p for p in production.PERIODS if p.key==period)
             for scenario in ['nominal',*models]:
                 a=arrays_for(period,scenario)
-                for top,topology in enumerate(response.TOPS):tasks[executor.submit(refit,p,top,a,output/period/scenario/topology)]=(period,scenario,topology)
+                for top,topology in enumerate(response.TOPS):tasks[executor.submit(refit,p,top,a,output/period/scenario/topology,args.fit_selection)]=(period,scenario,topology)
         for future in as_completed(tasks):
             p,s,t=tasks[future];results.setdefault((p,s),{}).update(future.result());print('[cuts] '+p+'/'+s+'/'+t+' complete',flush=True)
     rows=[];links=[]
@@ -224,10 +229,10 @@ def main(argv=None):
                 for r in z:r['scenario']+='__versus_current_training_refit'
                 rows+=z
             plots=output/'control_plots';plots.mkdir(exist_ok=True)
-            links+=plot_controls(period,scenario,arrays_for(period,scenario),baseline,blocks,plots)
+            links+=plot_controls(period,scenario,arrays_for(period,scenario),baseline,blocks,plots,args.fit_selection)
     response.table(output/'relative_acceptance.csv',rows)
     response.dump(output/'manifest.json',dict(reference_sha256=response.digest(reference/'manifest.json'),response_cache_sha256=response.digest(first/'cache_manifest.json'),production_fitter_sha256=response.digest(Path(production.__file__)),candidate_hashes={name:{p:response.digest(paths[p,name]) for p in spec['periods']} for name,model in models.items()},scenarios=['nominal',*models],arguments={k:str(v) for k,v in vars(args).items()}))
-    (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Production cut redetermination</title><style>body{font:17px system-ui;max-width:1100px;margin:35px auto}li{margin:8px}</style><h1>Separate DATA/MC cut redetermination</h1><p>Uses the production template fitter and iterative 90/95/98% cut algorithms. DATA are unchanged; their signal templates and fitted boundaries are reestimated for each MC response. Cut fitting uses the same minimal preselection as production. Relative acceptance counts additionally apply the saved full analysis global cuts. Production outputs are untouched.</p><p><a href="relative_acceptance.csv">Relative reconstructed acceptance by period, topology and |t|</a>. The generated denominator is unchanged and cancels in these ratios. The inverse acceptance factor alone is not a cross-section prediction: DATA cuts, background subtraction, bin migration and fitted-parameter uncertainties also matter. Statistical errors are paired MC counting errors only. The original upstream two-photon mass-window limitation remains.</p><h2>Two-photon controls before exclusivity cuts</h2><ul>'+''.join('<li><a href="control_plots/'+x+'">'+x+'</a></li>' for x in links)+'</ul><p>Per-period/scenario folders contain combined_cuts_95.json and topology-specific production cut-development figures.</p>')
+    (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Production cut redetermination</title><style>body{font:17px system-ui;max-width:1100px;margin:35px auto}li{margin:8px}</style><h1>Separate DATA/MC cut redetermination</h1><p>Uses the production template fitter and iterative 90/95/98% cut algorithms. DATA are unchanged; their signal templates and fitted boundaries are reestimated for each MC response. Cut fitting uses the requested selection (global by default); relative-acceptance counts always use the saved full analysis global cuts. Production outputs are untouched.</p><p><a href="relative_acceptance.csv">Relative reconstructed acceptance by period, topology and |t|</a>. The generated denominator is unchanged and cancels in these ratios. The inverse acceptance factor alone is not a cross-section prediction: DATA cuts, background subtraction, bin migration and fitted-parameter uncertainties also matter. Statistical errors are paired MC counting errors only. The original upstream two-photon mass-window limitation remains.</p><h2>Two-photon controls before exclusivity cuts</h2><ul>'+''.join('<li><a href="control_plots/'+x+'">'+x+'</a></li>' for x in links)+'</ul><p>Per-period/scenario folders contain combined_cuts_95.json and topology-specific production cut-development figures.</p>')
     if args.training_study:
         report=output/'REPORT.html';report.write_text(report.read_text()+'<p>Training follow-up: current is the equally refined original-training candidate; add_pt adds missing transverse momentum to training. Rows ending __versus_current_training_refit isolate that training-choice change after both DATA and MC cuts are redetermined.</p>')
     else:publish_results(run,output)
