@@ -121,3 +121,18 @@ python3 study_particle_response.py --reference-study "$PWD/test_runs/exclusivity
 each. --fit-topologies can include CD_FD/FD_FD; that adds FD photon/proton
 parameters, but those fits are much more sensitive to the pi0 model. Default
 zero values for those *unfitted* regions do not assert correct FD resolutions.
+
+## Scratch storage
+
+Large event caches and native evaluation binaries now live under
+`/scratch/thayward/dvcs_particle_response` by default. Every run gets a unique
+subdirectory, allowing independent runs without collisions. `--scratch-root`
+overrides the parent. `scratch_location.json` records the actual directory.
+Reports, CSVs and the compact results directory stay under --output.
+
+Intermediate evaluation binaries are unmapped and deleted immediately after
+their scores/sensitivities are recorded; final binaries are removed after plots
+and summaries are produced. Event caches are retained for reuse. Their manifest
+uses absolute paths, so --reuse-cache still points to the prior study output
+even though its binary files are on scratch. Keep that scratch cache available
+for later reuse. Pre-change relative cache manifests remain readable.

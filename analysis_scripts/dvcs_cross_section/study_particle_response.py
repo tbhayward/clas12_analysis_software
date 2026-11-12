@@ -19,6 +19,7 @@ import shlex
 import shutil
 import subprocess
 import threading
+import tempfile
 import numpy as np
 import study_exclusivity_resolution as diag
 
@@ -139,7 +140,7 @@ def build_cache(pool,spec,manifest,reference,reuse=None):
         for f in job['files']:
             st=Path(f).stat();old=inventory[f]
             if (st.st_size,st.st_mtime_ns)!=(old['size'],old['mtime_ns']):raise ValueError('ROOT file changed during cache scan')
-        result[job['period']+'__'+job['sample']]=dict(path=str(path.resolve()),file=str(path.relative_to(pool.output)),sha256=digest(path),**meta)
+        result[job['period']+'__'+job['sample']]=dict(path=str(path.resolve()),file=str(path.resolve()),sha256=digest(path),**meta)
     dump(pool.output/'cache_manifest.json',dict(version=VERSION,reference_sha256=digest(reference/'manifest.json'),seed=spec['seed'],samples={k:{n:v for n,v in r.items() if n!='path'} for k,r in result.items()}))
     return result
 
@@ -290,6 +291,20 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
     links=''.join(f'<li>{p}: '+ ' · '.join(f'<a href="plots/{p}/{t}.png">{t}</a>' for t in TOPS)+'</li>' for p in spec['periods'])
     (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Particle response test</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}li{margin:15px}</style><h1>Particle-response test</h1><p>Start with CD_FT. Blue: DATA; orange: nominal MC; green: candidate MC. Normalizations are fixed; no per-plot matching is applied. This is a candidate additional Gaussian response and momentum-scale model, not a production correction.</p><p><a href="single_parameter_effects.png">Which particle variations improve the distributions?</a></p><ul>'+links+'</ul><p><a href="REPORT.md">Fit definitions, limitations and parameter values</a> · <a href="single_parameter_ranking.csv">Single-parameter ranking</a> · <a href="final_scores.csv">Training/validation scores</a> · <a href="selection_yields.csv">Selection yields</a> · <a href="final_shapes.csv">All joint-cell shapes</a></p>')
 
+def discard_histograms(hist):
+    """Release mappings and unlink only this evaluation's expendable binaries."""
+    files=set()
+    for array in hist.values():
+        if isinstance(array,np.memmap):
+            files.add(Path(array.filename));array._mmap.close()
+    hist.clear()
+    for path in files:path.unlink()
+
+def scratch_directory(root,output):
+    root=Path(root).resolve();root.mkdir(parents=True,exist_ok=True)
+    return Path(tempfile.mkdtemp(prefix=Path(output).name+'-',dir=root))
+
+
 def compact_results(output,periods):
     destination=output/'results';destination.mkdir()
     for period in periods:
@@ -297,7 +312,7 @@ def compact_results(output,periods):
         for path in (output/period).iterdir():
             if path.is_file() and path.suffix in ('.csv','.json','.md','.html','.png'):shutil.copy2(path,target/path.name)
         shutil.copytree(output/period/'plots',target/'plots')
-    for name in ('REPORT.html','manifest.json','cache_manifest.json','reconstruction_audit.csv'):shutil.copy2(output/name,destination/name)
+    for name in ('REPORT.html','manifest.json','cache_manifest.json','reconstruction_audit.csv','scratch_location.json'):shutil.copy2(output/name,destination/name)
     return destination
 
 
@@ -305,6 +320,7 @@ def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--reference-study',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
+    parser.add_argument('--scratch-root',type=Path,default=Path('/scratch/thayward/dvcs_particle_response'),help='Large MC caches and temporary evaluation files; each run gets a unique subdirectory')
     parser.add_argument('--workers',type=int,default=10)
     parser.add_argument('--expected-cache-events',type=int,default=200000,help='Expected uniform pre-cut MC events per period/sample, not a selected-event cap')
     parser.add_argument('--reuse-cache',type=Path,help='Previous particle-response output containing a verified event cache')
@@ -330,8 +346,13 @@ def main(argv=None):
     if any(r['status']!='ok' for r in norm.values()):raise ValueError('Invalid reference component normalization')
     output.mkdir(parents=True);dump(output/'spec.json',spec)
     print('[build] Compiling cached particle-response worker',flush=True)
-    worker=compile_worker(output,reference);pool=Pool(worker,output/'spec.json',output,args.workers)
+    worker=compile_worker(output,reference)
+    work=scratch_directory(args.scratch_root,output)
+    dump(output/'scratch_location.json',dict(directory=str(work)))
+    print('[scratch] '+str(work),flush=True)
+    pool=Pool(worker,output/'spec.json',work,args.workers)
     cache=build_cache(pool,spec,manifest,reference,args.reuse_cache.resolve() if args.reuse_cache else None)
+    if not args.reuse_cache:shutil.copy2(work/'cache_manifest.json',output/'cache_manifest.json')
     # Preserve cache provenance when reusing an earlier immutable cache.
     if args.reuse_cache:
         (output/'cache_manifest.json').write_text(json.dumps(dict(version=VERSION,reference_sha256=digest(reference/'manifest.json'),seed=args.seed,samples={k:dict(r,file=r['path']) for k,r in cache.items()}),indent=2))
@@ -347,7 +368,8 @@ def main(argv=None):
     def fit_period(period):
         folder=output/period;folder.mkdir()
         one=copy.deepcopy(spec);one['periods']=[period];dump(folder/'spec.json',one)
-        local_pool=Pool(worker,folder/'spec.json',folder,args.workers,budget)
+        period_work=work/period;period_work.mkdir()
+        local_pool=Pool(worker,folder/'spec.json',period_work,args.workers,budget)
         engine=Engine(local_pool,one,cache,data,norm,args.fit_topologies,args.min_mc)
         return fit_candidate(engine,folder,args)
     executor=ThreadPoolExecutor(max_workers=min(args.workers,len(spec['periods'])))
@@ -361,6 +383,7 @@ def main(argv=None):
     finally:executor.shutdown(wait=True,cancel_futures=True)
     for engine,folder,pars,scores,hist,selected in results:
         detailed_report(engine,folder,pars,scores,hist,selected)
+        discard_histograms(hist)
     links=''.join(f'<li><a href="{p}/REPORT.html">{p}: independent response test</a></li>' for p in spec['periods'])
     (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Independent period response tests</title><style>body{font:18px system-ui;max-width:1000px;margin:40px auto}li{padding:10px}</style><h1>Independent particle-response tests</h1><p>Every period and polarity has its own fitted response parameters. No Spring/Fall or inbending/outbending parameters are pooled. Each fit is checked with an independent MC subset and held-out observables from the same sample.</p><ul>'+links+'</ul>')
     dump(output/'manifest.json',dict(version=VERSION,reference_manifest_sha256=digest(reference/'manifest.json'),arguments={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},source_hashes={n:digest(SOURCE/n) for n in ('study_particle_response.py','particle_response_worker.cpp','particle_response_core.h')},independent_periods=spec['periods']))
@@ -411,6 +434,7 @@ def fit_candidate(engine,output,args):
                 similarities.append(dict(parameter_a=names[a],parameter_b=names[b],template_response_cosine=cosine))
         table(output/'response_similarity.csv',similarities)
     best=list(pars[best_training(pars,scores)])
+    discard_histograms(hist)
     del hist,selected
     steps=[]
     for phase,rounds in [('coordinate',args.coordinate_rounds),('refine',args.refinement_rounds)]:
@@ -425,6 +449,7 @@ def fit_candidate(engine,output,args):
                     p=list(best);p[k]=value;trials.append(p)
                 p,s,_,h,se=engine.evaluate(trials,f'{phase}_{iteration}_{k}')
                 chosen=best_training(p,s);best=list(p[chosen]);steps.append(dict(phase=phase,round=iteration,parameter=PARAMS[k],chosen_value=best[k],**s[chosen]))
+                discard_histograms(h)
                 del h,se
     table(output/'fit_steps.csv',steps)
     p,s,projections,h,se=engine.evaluate([nominal,best],'final',detailed=True)

@@ -145,6 +145,23 @@ def report_test(tmp):
     print('PASS: static before/after report, attribution plot and selection/joint summaries')
 
 
+def scratch_test(tmp):
+    a=s.scratch_directory(tmp/'scratch',tmp/'run');b=s.scratch_directory(tmp/'scratch',tmp/'run')
+    assert a!=b and a.parent==b.parent==(tmp/'scratch').resolve()
+    binary=a/'trial.bin';np.arange(12,dtype=np.int64).tofile(binary)
+    mapped={'mc':np.memmap(binary,dtype=np.int64,mode='r',shape=(12,))}
+    cache=a/'cache.bin';cache.write_bytes(b'keep')
+    s.discard_histograms(mapped)
+    assert not binary.exists() and not mapped and cache.read_bytes()==b'keep'
+    reference=tmp/'cache_reference';reference.mkdir();(reference/'manifest.json').write_text('{}')
+    prior=tmp/'prior';prior.mkdir()
+    s.dump(prior/'cache_manifest.json',dict(version=s.VERSION,reference_sha256=s.digest(reference/'manifest.json'),seed=17,
+        samples={'sample':dict(file=str(cache),sha256=s.digest(cache),probability=1)}))
+    loaded=s.build_cache(None,dict(seed=17),{},reference,prior)
+    assert loaded['sample']['path']==str(cache)
+    print('PASS: isolated scratch directories, removal of expendable trial binaries, cache preservation and absolute-path reuse')
+
+
 def root_smoke(tmp,reference):
     # Reuse the production-cut test's tiny reconstructed ROOT fixture, not farm data.
     import test_exclusivity_resolution as diagnostic_tests
@@ -171,7 +188,7 @@ def main():
     args=parser.parse_args()
     if args.root_smoke and not args.reference_study:parser.error('--root-smoke requires --reference-study')
     with tempfile.TemporaryDirectory() as name:
-        tmp=Path(name);core(tmp);numerical();independent_fit(tmp);budget_test(tmp);report_test(tmp)
+        tmp=Path(name);core(tmp);numerical();independent_fit(tmp);budget_test(tmp);report_test(tmp);scratch_test(tmp)
         if args.root_smoke:
             # Existing fixture accepts a nominal production source directory;
             # reference backend has those same sources and output cuts below.
