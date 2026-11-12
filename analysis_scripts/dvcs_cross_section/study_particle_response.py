@@ -19,6 +19,7 @@ import shlex
 import shutil
 import subprocess
 import threading
+import sys
 import tempfile
 import numpy as np
 import study_exclusivity_resolution as diag
@@ -39,15 +40,15 @@ def table(path,rows):
     with Path(path).open('w',newline='') as f:
         w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
 
-def parameter_grid(topologies):
+def parameter_grid(topologies,bias_mode="fit"):
     regions={0}
     for top in topologies:
         regions.add(1 if top=='FD_FD' else 2);regions.add(4 if top=='CD_FT' else 3)
     result={}
     for r in sorted(regions):
-        widths=[0,.002,.006,.012] if r==0 else ([0,.005,.015,.03] if r==1 else [0,.01,.03,.06])
-        for coordinate in range(4):
-            result[4*r+coordinate]=widths if coordinate==0 else [0,.001,.003,.006] if coordinate==1 else [0,.005,.015,.03] if coordinate==2 else [-.006,-.002,0,.002,.006]
+        widths=[0,.003,.01,.02,.03] if r==0 else [0,.01,.03,.06] if r==1 else [0,.02,.05,.08,.12] if r==2 else [0,.01,.02,.04,.06]
+        for coordinate in range(3 if bias_mode=="zero" else 4):
+            result[4*r+coordinate]=widths if coordinate==0 else [0,.002,.006,.012] if coordinate==1 else [0,.01,.03,.06] if coordinate==2 else [-.015,-.005,0,.005,.015]
     return result
 
 def compile_worker(output,reference):
@@ -145,7 +146,9 @@ def build_cache(pool,spec,manifest,reference,reuse=None):
     return result
 
 class Engine:
-    def __init__(self,pool,spec,cache,data,norm,fit_topologies,min_mc):
+    def __init__(self,pool,spec,cache,data,norm,fit_topologies,min_mc,background_transfer_uncertainty=0.):
+        if len(spec['periods'])!=1:raise ValueError('Each fit must contain exactly one period/polarity')
+        self.background_transfer_uncertainty=background_transfer_uncertainty
         self.pool=pool;self.spec=spec;self.cache=cache;self.data=data;self.norm=norm
         self.fit_topologies=[TOPS.index(t) for t in fit_topologies];self.min_mc=min_mc;self.calls=0;self.history=[]
     def evaluate(self,parameters,label,detailed=False):
@@ -163,35 +166,53 @@ class Engine:
         scores,by_variable=self.score(hist,unique)
         self.history.extend(dict(call=label,scenario=i,parameters=list(p),**scores[i]) for i,p in enumerate(unique))
         return unique,scores,by_variable,hist,selected
-    def weighted(self,hist,p,i,half,t,g,v):
+    def weighted(self,hist,p,i,half,t,g,v,background_multiplier=1.):
         n=self.spec['variables'][v]['bins']+2;row=self.norm[p,t]
         totals=[];variances=[]
         for sample,scale in [('mc',row['signal_scale']),('background',row['background_scale'])]:
             count=hist[p+'__'+sample][i,half,t,g,v,:n].astype(float)
-            weight=2*float(scale)/self.cache[p+'__'+sample]['probability']
+            weight=2*float(scale)*(background_multiplier if sample=="background" else 1.)/self.cache[p+'__'+sample]['probability']
             totals.append(count*weight);variances.append(count*weight*weight)
         return sum(totals),sum(variances)
-    def score(self,hist,parameters):
+    def score(self,hist,parameters,profile=True):
         scores=[];records=[]
+        # Every Engine fits exactly one period; the one nuisance multiplier is
+        # shared across all three topology templates and constrained by controls.
+        p=self.spec['periods'][0];row=self.norm[p,0]
+        stat=float(row.get('background_scale_stat',0))/float(row['background_scale'])
+        sigma=float(np.hypot(stat,self.background_transfer_uncertainty))
+        multipliers=sorted(set(max(.01,1+x*sigma) for x in (-2,-1,0,1,2))) if profile and sigma>0 else [1.]
         for i,pars in enumerate(parameters):
-            buckets={k:[] for k in ('train','validation_mc','heldout_observables')}
-            for p in self.spec['periods']:
-                for t in self.fit_topologies:
-                    for v in TRAIN_OBS+VALID_OBS:
-                        d=self.data[p+'__data'][t,0,v,:self.spec['variables'][v]['bins']+2].astype(float)
-                        for half in (0,1):
-                            m,var=self.weighted(hist,p,i,half,t,0,v)
-                            raw=sum(hist[p+'__'+s][i,half,t,0,v,:len(d)].sum() for s in ('mc','background'))
-                            m0,var0=self.weighted(hist,p,0,half,t,0,v)
-                            raw0=sum(hist[p+'__'+s][0,half,t,0,v,:len(d)].sum() for s in ('mc','background'))
-                            score,bins=shape_score(d,m,var,int(raw0),self.min_mc,m0,var0)
-                            kind='heldout_observables' if v in VALID_OBS else 'validation_mc' if half else 'train'
-                            if np.isfinite(score):buckets[kind].append(score)
-                            records.append(dict(scenario=i,period=p,topology=TOPS[t],variable=OBS[v],half=half,kind=kind,score=score,usable_bins=bins,raw_mc=int(raw)))
-            expected=len(self.spec['periods'])*len(self.fit_topologies)*len(TRAIN_OBS)
-            if len(buckets['train'])!=expected:buckets['train']=[]
-            scores.append({**{k:float(np.mean(values)) if values else float('inf') for k,values in buckets.items()},'training_projections':len(buckets['train'])})
+            trials=[]
+            for multiplier in multipliers:
+                score,detail=self.score_one(hist,i,multiplier)
+                prior=((multiplier-1)/sigma)**2 if sigma>0 else 0.
+                score['train_shape']=score['train'];score['train']+=prior
+                score.update(background_multiplier=multiplier,background_constraint_sigma=sigma,background_prior_penalty=prior)
+                trials.append((score,detail))
+            chosen=min(trials,key=lambda trial:(trial[0]['train'],abs(trial[0]['background_multiplier']-1)))
+            scores.append(chosen[0]);records.extend(chosen[1])
         return scores,records
+    def score_one(self,hist,i,multiplier):
+        buckets={k:[] for k in ('train','validation_mc','heldout_observables')};records=[]
+        for p in self.spec['periods']:
+            for t in self.fit_topologies:
+                for v in TRAIN_OBS+VALID_OBS:
+                    d=self.data[p+'__data'][t,0,v,:self.spec['variables'][v]['bins']+2].astype(float)
+                    for half in (0,1):
+                        m,var=self.weighted(hist,p,i,half,t,0,v,multiplier)
+                        raw=sum(hist[p+'__'+s][i,half,t,0,v,:len(d)].sum() for s in ('mc','background'))
+                        m0,var0=self.weighted(hist,p,0,half,t,0,v,1.)
+                        raw0=sum(hist[p+'__'+s][0,half,t,0,v,:len(d)].sum() for s in ('mc','background'))
+                        score,bins=shape_score(d,m,var,int(raw0),self.min_mc,m0,var0)
+                        kind='heldout_observables' if v in VALID_OBS else 'validation_mc' if half else 'train'
+                        if np.isfinite(score):buckets[kind].append(score)
+                        records.append(dict(scenario=i,period=p,topology=TOPS[t],variable=OBS[v],half=half,kind=kind,score=score,usable_bins=bins,raw_mc=int(raw),background_multiplier=multiplier))
+        expected=len(self.spec['periods'])*len(self.fit_topologies)*len(TRAIN_OBS)
+        if len(buckets['train'])!=expected:buckets['train']=[]
+        result={**{k:float(np.mean(values)) if values else float('inf') for k,values in buckets.items()},'training_projections':len(buckets['train'])}
+        return result,records
+
 
 def shape_score(data,model,variance,raw_mc,min_mc,reference_model=None,reference_variance=None):
     # Shape-only diagnostic. The common area scale changes neither component ratio
@@ -232,22 +253,24 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
     best=tuple(parameters[-1])
+    candidate_multiplier=scores[-1].get('background_multiplier',1.) if scores else 1.
     # Caller includes nominal and final candidate only; look up final index.
     bi=len(parameters)-1;spec=engine.spec;rows=[];yield_rows=[]
     for p in spec['periods']:
         for t,top in enumerate(TOPS):
             for i,name in [(0,'nominal'),(bi,'candidate')]:
-                total=0.
+                total=0.;parts={}
                 for sample,scale in [('mc',engine.norm[p,t]['signal_scale']),('background',engine.norm[p,t]['background_scale'])]:
-                    key=p+'__'+sample;total+=selected[key][i,:,t].sum()/engine.cache[key]['probability']*float(scale)
-                yield_rows.append(dict(period=p,topology=top,scenario=name,predicted_selected=float(total),data_selected=spec['reference_flows'][p+'__data']['selected'][t]))
+                    key=p+'__'+sample;part=selected[key][i,:,t].sum()/engine.cache[key]['probability']*float(scale)*(candidate_multiplier if name=='candidate' and sample=='background' else 1.);parts[sample]=part;total+=part
+                yield_rows.append(dict(period=p,topology=top,scenario=name,predicted_selected=float(total),signal_selected=float(parts['mc']),background_selected=float(parts['background']),background_multiplier=candidate_multiplier if name=='candidate' else 1.,data_selected=spec['reference_flows'][p+'__data']['selected'][t]))
             fig,axes=plt.subplots(3,3,figsize=(15,11),constrained_layout=True)
             for vi,v in enumerate(spec['variables']):
                 ax=axes.flat[vi];edges=diag.variable_edges(v);n=v['bins']+2
                 d=engine.data[p+'__data'][t,0,vi,:n].astype(float);denom=d.sum()
                 prediction=[]
-                for i in (0,bi):
-                    a,_=engine.weighted(hist,p,i,0,t,0,vi);b,_=engine.weighted(hist,p,i,1,t,0,vi);prediction.append((a+b)/2)
+                for i,tag in [(0,'nominal'),(bi,'candidate')]:
+                    multiplier=candidate_multiplier if tag=='candidate' else 1.
+                    a,_=engine.weighted(hist,p,i,0,t,0,vi,multiplier);b,_=engine.weighted(hist,p,i,1,t,0,vi,multiplier);prediction.append((a+b)/2)
                 for values,color,label in [(d,'#205cab','DATA'),(prediction[0],'#d45c18','Nominal MC'),(prediction[1],'#22946b','Candidate MC')]:
                     y=values[1:-1]/denom/np.diff(edges) if denom else values[1:-1]
                     ax.stairs(y,edges,color=color,label=label)
@@ -258,7 +281,7 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
                     ax.set_xlim(max(edges[0],lo-pad),min(edges[-1],hi+pad))
                 ax.set(xlabel=v['label'],ylabel='Density / DATA total');ax.legend(fontsize=8);ax.grid(alpha=.15)
             for ax in axes.flat[7:]:ax.axis('off')
-            axes.flat[7].text(0,1,'Independent period/polarity response.\nOpening angle/pT and mass eγ\nwere not used to choose parameters.\nComponent normalizations remain fixed.\nCandidate is a detector-response test,\nnot an accepted production correction.',va='top')
+            axes.flat[7].text(0,1,'Independent period/polarity response.\nOpening angle/pT and mass eγ\nwere not used to choose parameters.\nCandidate pi0 multiplier is recorded.\nCandidate is a detector-response test,\nnot an accepted production correction.',va='top')
             fig.suptitle(p+' · '+top+' · particle-level response test');destination=output/'plots'/p;destination.mkdir(parents=True,exist_ok=True)
             fig.savefig(destination/(top+'.png'),dpi=110);plt.close(fig)
             for g,stratum in enumerate(spec['strata']):
@@ -266,7 +289,7 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
                     edges=diag.variable_edges(v);n=v['bins']+2;d=engine.data[p+'__data'][t,g,vi,:n].astype(float)
                     dm=diag.shape_metrics(d,edges,0,0)
                     for i,name in [(0,'nominal'),(bi,'candidate')]:
-                        m0,var0=engine.weighted(hist,p,i,0,t,g,vi);m1,var1=engine.weighted(hist,p,i,1,t,g,vi);m=(m0+m1)/2
+                        m0,var0=engine.weighted(hist,p,i,0,t,g,vi,candidate_multiplier if name=='candidate' else 1.);m1,var1=engine.weighted(hist,p,i,1,t,g,vi,candidate_multiplier if name=='candidate' else 1.);m=(m0+m1)/2
                         variance=(var0+var1)/4;neff=float(m.sum()**2/variance.sum()) if variance.sum()>0 else 0.
                         mm=diag.shape_metrics(m,edges,0,0)
                         flags=[]
@@ -289,7 +312,7 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
     ax.set(yticks=y,yticklabels=labels,xlabel='Fractional reduction of shape-discrepancy score');ax.axvline(0,color='gray');ax.invert_yaxis();ax.legend();ax.grid(axis='x',alpha=.15)
     fig.savefig(output/'single_parameter_effects.png',dpi=120);plt.close(fig)
     links=''.join(f'<li>{p}: '+ ' · '.join(f'<a href="plots/{p}/{t}.png">{t}</a>' for t in TOPS)+'</li>' for p in spec['periods'])
-    (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Particle response test</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}li{margin:15px}</style><h1>Particle-response test</h1><p>Start with CD_FT. Blue: DATA; orange: nominal MC; green: candidate MC. Normalizations are fixed; no per-plot matching is applied. This is a candidate additional Gaussian response and momentum-scale model, not a production correction.</p><p><a href="single_parameter_effects.png">Which particle variations improve the distributions?</a></p><ul>'+links+'</ul><p><a href="REPORT.md">Fit definitions, limitations and parameter values</a> · <a href="single_parameter_ranking.csv">Single-parameter ranking</a> · <a href="final_scores.csv">Training/validation scores</a> · <a href="selection_yields.csv">Selection yields</a> · <a href="final_shapes.csv">All joint-cell shapes</a></p>')
+    (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Particle response test</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}li{margin:15px}</style><h1>Particle-response test</h1><p>Start with CD_FT. Blue: DATA; orange: nominal MC; green: candidate MC. Signal scales are fixed and one control-constrained pi0 multiplier is shared across topologies; no per-plot matching is applied. This is a candidate additional Gaussian response and momentum-scale model, not a production correction.</p><p><a href="single_parameter_effects.png">Which particle variations improve the distributions?</a></p><ul>'+links+'</ul><p><a href="REPORT.md">Fit definitions, limitations and parameter values</a> · <a href="single_parameter_ranking.csv">Single-parameter ranking</a> · <a href="final_scores.csv">Training/validation scores</a> · <a href="selection_yields.csv">Selection yields</a> · <a href="final_shapes.csv">All joint-cell shapes</a></p>')
 
 def discard_histograms(hist):
     """Release mappings and unlink only this evaluation's expendable binaries."""
@@ -359,8 +382,8 @@ def recover_reports(output,reference,data,norm):
         if set(hist)!={period+'__mc',period+'__background'}:raise ValueError('Incomplete final signal/leakage trials')
         expected=[candidate['parameters'].get(name,0.) for name in PARAMS]
         if list(parameters[-1])!=expected or any(parameters[0]):raise ValueError('Saved candidate differs from final trial')
-        engine=Engine(None,spec,cache,data,norm,candidate['fit_topologies'],100)
-        recovered.append((engine,folder,parameters,[],hist,selected))
+        engine=Engine(None,spec,cache,data,norm,candidate['fit_topologies'],100,candidate.get('background_transfer_uncertainty',0.))
+        recovered.append((engine,folder,parameters,[dict(background_multiplier=candidate.get('background_multiplier',1.))],hist,selected))
     return saved,recovered
 
 
@@ -369,6 +392,52 @@ def render_completed(results):
         detailed_report(engine,folder,pars,scores,hist,selected)
         dump(folder/'report_complete.json',dict(candidate_sha256=digest(folder/'candidate_parameters.json')))
         discard_histograms(hist)
+
+
+def compare_models(args,reference,output):
+    if output.exists() and not args.finish_reports:raise ValueError('Output already exists; choose a new directory')
+    output.mkdir(parents=True,exist_ok=True)
+    reference_meta=json.loads((reference/'manifest.json').read_text());periods=reference_meta['spec']['periods']
+    for label,mode in [('broadening_only','zero'),('with_bias','fit')]:
+        target=output/label
+        if (target/'manifest.json').is_file() and (target/'results/REPORT.html').is_file():
+            if not args.finish_reports:raise ValueError('Existing comparison model output')
+            print('[comparison] Retaining completed '+label,flush=True);continue
+        cmd=[sys.executable,str(SOURCE/'study_particle_response.py'),'--reference-study',str(reference),'--output',str(target),
+            '--scratch-root',str(args.scratch_root),'--workers',str(args.workers),'--expected-cache-events',str(args.expected_cache_events),
+            '--seed',str(args.seed),'--coordinate-rounds',str(args.coordinate_rounds),'--refinement-rounds',str(args.refinement_rounds),
+            '--min-mc',str(args.min_mc),'--bias-mode',mode,'--background-transfer-uncertainty',str(args.background_transfer_uncertainty),
+            '--fit-topologies',*args.fit_topologies]
+        if target.exists():
+            if not args.finish_reports:raise ValueError('Existing unfinished comparison model')
+            cmd.append('--finish-reports')
+        else:
+            reuse=output/'broadening_only' if mode=='fit' else args.reuse_cache
+            if reuse:cmd.extend(['--reuse-cache',str(reuse)])
+            if mode=='fit':cmd.extend(['--initial-parameters-from',str(output/'broadening_only')])
+        print('[comparison] '+label+'; all periods remain independent',flush=True);subprocess.run(cmd,check=True)
+    result=output/'results';result.mkdir(exist_ok=True);rows=[]
+    for label in ('broadening_only','with_bias'):
+        shutil.copytree(output/label/'results',result/label,dirs_exist_ok=True)
+        for period in periods:
+            folder=output/label/period
+            with (folder/'final_scores.csv').open() as f:scores={r['scenario']:r for r in csv.DictReader(f)}
+            candidate=json.loads((folder/'candidate_parameters.json').read_text());r=scores['candidate']
+            row=dict(period=period,model=label,train_shape=r.get('train_shape',r['train']),train_objective=r['train'],validation_mc=r['validation_mc'],
+                heldout_observables=r['heldout_observables'],background_multiplier=candidate.get('background_multiplier',1),boundary_parameters=len(candidate['boundary_parameters']))
+            with (folder/'selection_yields.csv').open() as f:yields=list(csv.DictReader(f))
+            for top in TOPS:
+                z={r['scenario']:float(r['predicted_selected']) for r in yields if r['topology']==top}
+                row[top+'_mixture_yield_change_fraction']=z['candidate']/z['nominal']-1 if z['nominal'] else float('nan')
+                signal={r['scenario']:float(r['signal_selected']) for r in yields if r['topology']==top}
+                row[top+'_signal_yield_change_fraction']=signal['candidate']/signal['nominal']-1 if signal['nominal'] else float('nan')
+            rows.append(row)
+    table(result/'model_comparison.csv',rows)
+    content='<!doctype html><meta charset="utf-8"><title>Joint-topology response models</title><style>body{font:18px system-ui;max-width:1100px;margin:40px auto}li{padding:12px}</style><h1>Joint-topology effective-response comparison</h1><p>Each period/polarity has independent parameters. Within it, detector-specific particle responses are shared across all three topologies, for signal and pi0 leakage. Compare held-out shapes and selection yields before interpreting parameter values.</p><ul><li><a href="broadening_only/REPORT.html">Broadening only: momentum biases fixed to zero</a></li><li><a href="with_bias/REPORT.html">Broadening plus momentum biases</a></li></ul><p><a href="model_comparison.csv">Side-by-side period/model scores and yield changes</a></p><p>The pi0 transfer nuisance is shared across topologies within a period. Its configured extra uncertainty is an exploratory assumption, not a measured systematic. Production acceptance and Frad are unchanged.</p>'
+    (result/'REPORT.html').write_text(content);(output/'REPORT.html').write_text('<!doctype html><meta http-equiv="refresh" content="0; url=results/REPORT.html"><a href="results/REPORT.html">Open results</a>')
+    dump(output/'comparison_config.json',dict(reference_sha256=digest(reference/'manifest.json'),periods=periods,fit_topologies=args.fit_topologies,background_transfer_uncertainty=args.background_transfer_uncertainty))
+    shutil.copy2(output/'comparison_config.json',result/'comparison_config.json')
+    print('[done] '+str(result/'REPORT.html')+'; transfer the results directory only',flush=True)
 
 
 def main(argv=None):
@@ -381,13 +450,20 @@ def main(argv=None):
     parser.add_argument('--expected-cache-events',type=int,default=200000,help='Expected uniform pre-cut MC events per period/sample, not a selected-event cap')
     parser.add_argument('--reuse-cache',type=Path,help='Previous particle-response output containing a verified event cache')
     parser.add_argument('--seed',type=int,default=173205)
-    parser.add_argument('--fit-topologies',choices=TOPS,nargs='+',default=['CD_FT'])
+    parser.add_argument('--initial-parameters-from',type=Path,help='Optional completed per-period candidate starting point')
+    parser.add_argument('--bias-mode',choices=['zero','fit'],default='fit')
+    parser.add_argument('--compare-models',action='store_true',help='Run broadening-only and broadening-plus-bias fits against the same cache')
+    parser.add_argument('--background-transfer-uncertainty',type=float,default=.10,help='Assumed relative pi0 transfer uncertainty; default 0.10 is exploratory, added in quadrature to control counting error')
+    parser.add_argument('--fit-topologies',choices=TOPS,nargs='+',default=list(TOPS))
     parser.add_argument('--coordinate-rounds',type=int,default=1)
     parser.add_argument('--refinement-rounds',type=int,default=1)
     parser.add_argument('--min-mc',type=int,default=100)
     args=parser.parse_args(argv)
+    if not np.isfinite(args.background_transfer_uncertainty) or args.background_transfer_uncertainty<0:parser.error('Background transfer uncertainty must be finite and nonnegative')
     if not 1<=args.workers<=10 or args.expected_cache_events<1000 or not 0<=args.seed<2**64 or args.coordinate_rounds<0 or args.refinement_rounds<0 or args.min_mc<10:parser.error('Invalid worker/cache/seed/fit limits')
     reference=args.reference_study.resolve();output=args.output.resolve()
+    if args.compare_models:
+        compare_models(args,reference,output);return
     if output.exists() and not args.finish_reports:parser.error('Output already exists; choose a new directory')
     manifest=json.loads((reference/'manifest.json').read_text());spec=copy.deepcopy(manifest['spec'])
     if not spec.get('background_aware') or not spec.get('joint_grids'):parser.error('Use the completed background-aware joint diagnostic as reference')
@@ -430,7 +506,7 @@ def main(argv=None):
         one=copy.deepcopy(spec);one['periods']=[period];dump(folder/'spec.json',one)
         period_work=work/period;period_work.mkdir()
         local_pool=Pool(worker,folder/'spec.json',period_work,args.workers,budget)
-        engine=Engine(local_pool,one,cache,data,norm,args.fit_topologies,args.min_mc)
+        engine=Engine(local_pool,one,cache,data,norm,args.fit_topologies,args.min_mc,args.background_transfer_uncertainty)
         return fit_candidate(engine,folder,args)
     executor=ThreadPoolExecutor(max_workers=min(args.workers,len(spec['periods'])))
     futures=[executor.submit(fit_period,p) for p in spec['periods']];results=[]
@@ -447,11 +523,19 @@ def main(argv=None):
 
 def fit_candidate(engine,output,args):
     spec=engine.spec
-    grid=parameter_grid(args.fit_topologies);nominal=[0.]*20;candidates=[nominal]
+    grid=parameter_grid(args.fit_topologies,getattr(args,"bias_mode","fit"));nominal=[0.]*20;candidates=[nominal]
     for k,levels in grid.items():
         for value in levels:
             if value:
                 p=list(nominal);p[k]=value;candidates.append(p)
+    if getattr(args,'initial_parameters_from',None):
+        start=args.initial_parameters_from/spec['periods'][0]/'candidate_parameters.json'
+        previous=json.loads(start.read_text())
+        if previous['period']!=spec['periods'][0]:raise ValueError('Starting parameter period mismatch')
+        initial=[previous['parameters'].get(name,0.) if k in grid else 0. for k,name in enumerate(PARAMS)]
+        if getattr(args,'bias_mode','fit')=='zero':
+            for k in range(3,20,4):initial[k]=0.
+        candidates.append(initial)
     print(f'[fit] {len(candidates)} initial scenarios; fit {args.fit_topologies}; independent fit for {spec['periods'][0]}',flush=True)
     pars,scores,projections,hist,selected=engine.evaluate(candidates,'single_parameters')
     replay=replay_check(engine,hist,selected,pars);table(output/'nominal_replay.csv',replay)
@@ -507,10 +591,11 @@ def fit_candidate(engine,output,args):
                 del h,se
     table(output/'fit_steps.csv',steps)
     p,s,projections,h,se=engine.evaluate([nominal,best],'final',detailed=True)
-    table(output/'final_scores.csv',[dict(scenario='nominal',**s[0]),dict(scenario='candidate',**s[-1])])
+    original_score=engine.score(h,p,profile=False)[0][0] if isinstance(engine,Engine) else s[0]
+    table(output/'final_scores.csv',[dict(scenario='nominal',**original_score),dict(scenario='candidate',**s[-1])])
     table(output/'final_projection_scores.csv',projections)
     active={PARAMS[k]:best[k] for k in grid};boundary=[PARAMS[k] for k,levels in grid.items() if best[k]!=0 and best[k] in (levels[0],levels[-1])]
-    dump(output/'candidate_parameters.json',dict(version=VERSION,parameters=active,boundary_parameters=boundary,period=spec['periods'][0],fit_topologies=args.fit_topologies,training_observables=[OBS[i] for i in TRAIN_OBS],validation_observables=[OBS[i] for i in VALID_OBS]))
+    dump(output/'candidate_parameters.json',dict(version=VERSION,parameters=active,boundary_parameters=boundary,period=spec['periods'][0],bias_mode=getattr(args,'bias_mode','fit'),background_multiplier=s[-1].get('background_multiplier',1.),background_constraint_sigma=s[-1].get('background_constraint_sigma',0.),background_multiplier_at_boundary=abs(abs(s[-1].get('background_multiplier',1.)-1)-2*s[-1].get('background_constraint_sigma',0.))<1e-10 and s[-1].get('background_constraint_sigma',0.)>0,background_transfer_uncertainty=getattr(args,'background_transfer_uncertainty',0.),fit_topologies=args.fit_topologies,training_observables=[OBS[i] for i in TRAIN_OBS],validation_observables=[OBS[i] for i in VALID_OBS]))
     table(output/'evaluation_history.csv',[dict(call=r['call'],scenario=r['scenario'],parameters=json.dumps(r['parameters']),**{k:v for k,v in r.items() if k not in ('call','scenario','parameters')}) for r in engine.history])
     units=[]
     for k,value in active.items():
@@ -521,7 +606,7 @@ def fit_candidate(engine,output,args):
     (output/'REPORT.md').write_text('''# Particle-response test
 
 Open REPORT.html, then CD_FT for each period. Compare blue DATA with orange
-nominal MC and green candidate MC. Component scales stay fixed to the reference.
+nominal MC and green candidate MC. Signal scales stay fixed; candidate leakage uses the recorded control-constrained multiplier.
 selection_yields.csv shows actual predicted selection changes, not renormalized
 agreement. final_shapes.csv retains inclusive and all joint-cell comparisons.
 
@@ -535,23 +620,29 @@ near +1 flags variations producing similar changes in the training projections.
 This is a sensitivity diagnostic, not a parameter covariance measurement. A good
 fit does not uniquely determine which physical detector defect is responsible.
 
-Default tuning uses CD_FT only, separately for each individual period/polarity,
+Default tuning simultaneously uses FD_FD, CD_FD and CD_FT, separately for each period/polarity,
 with coplanarity, signed missing energy and signed missing mass squared. No
 parameters are pooled between periods or polarities. Photon
 opening angle, pT and missing mass eγ are held out in that same period. Every period predicts all three topologies. Within that period only, the
 electron FD response is shared across topologies;
-FD-proton and FD-photon parameters remain zero unless those topologies are
-explicitly included with --fit-topologies. Do not infer their resolutions from
-unfitted parameter values. Other topologies are background-sensitive checks.
+Shared response laws use sigma_p = a*p, constant polar/azimuthal widths and
+fractional momentum bias per detector region. They are identical at the same
+particle kinematics across topologies; no per-topology particle knobs are fitted.
+Within-cell or more detailed momentum dependence can still remain.
 
 The objective is a descriptive mean weighted shape discrepancy over equal-weight
 projections, not a chi-square probability: variables share events. Four original
 histogram bins form one score bin. The model sum is area-normalized ONLY in the
-shape score; the signal/background ratio stays fixed. Displayed predictions and
+shape score; a shared control-constrained pi0 transfer multiplier is profiled using training data only. Displayed predictions and
 selection yields retain their fixed reference scales. The score uses fixed
 nominal sampling variance/masks to avoid favoring a trial merely because it has
 less MC precision. Every training projection must have sufficient nominal MC.
-No fit uncertainty or production systematic is inferred from this score.
+No fit uncertainty or production systematic is inferred from this score. The
+pi0 multiplier is selected from 1±sigma and 1±2sigma using training data only.
+Its penalty is ((multiplier−1)/sigma)^2. Sigma combines control counting error
+with the configured transfer uncertainty; the default extra 10% is an exploratory
+assumption, not a measured systematic. Signal/background selected yields are
+reported separately so nuisance normalization is not mistaken for acceptance.
 
 The uniform MC cache is sampled BEFORE global/exclusivity cuts. Both signal and
 leakage are varied, including events which can migrate into the selection.

@@ -43,6 +43,13 @@ int main(){
  assert(std::abs(sum/20000)<.03);assert(std::abs(sum2/20000-1)<.04);
  r.key=42;auto a=vary(r,pars,E,false,original),b=vary(r,pars,E,false,original);assert(a==b);
  assert(a[3]==r.v[3]&&a[4]==r.v[4]&&a[23]==r.v[23]);
+ // Shared detector response across topology labels at identical kinematics.
+ pars.fill(0);pars[8]=.03;Record cdft=r,cdfd=r;cdft.v[3]=cdfd.v[3]=2;cdft.v[4]=0;cdfd.v[4]=1;
+ auto cd1=vary(cdft,pars,E,false,original),cd2=vary(cdfd,pars,E,false,original);assert(cd1[8]==cd2[8]);
+ pars.fill(0);pars[12]=.02;Record fdfd=cdfd;fdfd.v[3]=1;
+ auto ph1=vary(cdfd,pars,E,false,original),ph2=vary(fdfd,pars,E,false,original);assert(ph1[11]==ph2[11]);
+ assert(vary(cdft,pars,E,false,original)[11]==cdft.v[11]);
+ pars.fill(0);pars[0]=.01;assert(vary(cdft,pars,E,false,original)[5]==vary(fdfd,pars,E,false,original)[5]);
  assert(sizeof(Record)==200);
  std::cout<<"PASS: physical DVCS conservation, Trento orientation, exact nominal, recomputed shifts, offset preservation, deterministic Gaussian width and record layout\n";
 }
@@ -95,9 +102,9 @@ def independent_fit(tmp):
     def run(item):
         period,goal=item;out=tmp/period;out.mkdir();s.fit_candidate(ToyEngine(period,goal),out,args)
         return json.loads((out/'candidate_parameters.json').read_text())
-    with ThreadPoolExecutor(max_workers=2) as pool:a,b=list(pool.map(run,[('sp18_inb',.006),('fa18_inb',.012)]))
-    assert a['parameters']['electron_FD_p_sigma_fraction']==.006
-    assert b['parameters']['electron_FD_p_sigma_fraction']==.012
+    with ThreadPoolExecutor(max_workers=2) as pool:a,b=list(pool.map(run,[('sp18_inb',.01),('fa18_inb',.02)]))
+    assert a['parameters']['electron_FD_p_sigma_fraction']==.01
+    assert b['parameters']['electron_FD_p_sigma_fraction']==.02
     print('PASS: separate period fits recover different injected parameters; validation scores do not select the fit')
 
 def budget_test(tmp):
@@ -139,9 +146,13 @@ def report_test(tmp):
     out=tmp/'report';out.mkdir()
     s.table(out/'single_parameter_ranking.csv',[dict(parameter='electron_FD_p_sigma_fraction',train_score=2,nominal_train=4,heldout_observables=3,nominal_heldout_observables=5)])
     selected={k:np.full((2,2,3),500) for k in hist}
-    s.detailed_report(engine,out,[[0]*20,[.01]+[0]*19],[],hist,selected)
+    s.detailed_report(engine,out,[[0]*20,[.01]+[0]*19],[dict(background_multiplier=1),dict(background_multiplier=1.1)],hist,selected)
     assert (out/'REPORT.html').exists() and (out/'plots/fa18_inb/CD_FT.png').exists()
     assert (out/'single_parameter_effects.png').exists()
+    with (out/'selection_yields.csv').open() as f:yield_rows=list(s.csv.DictReader(f))
+    pair=[r for r in yield_rows if r['topology']=='CD_FT']
+    assert np.isclose(float(pair[1]['background_selected'])/float(pair[0]['background_selected']),1.1)
+    assert float(pair[1]['signal_selected'])==float(pair[0]['signal_selected'])
     print('PASS: static before/after report, attribution plot and selection/joint summaries (CSV string scales)')
     return engine,out,hist,selected
 
@@ -171,7 +182,7 @@ def recovery_test(tmp):
     shutil.move(str(report),folder)
     reference=case/'reference';reference.mkdir();s.dump(reference/'manifest.json',{})
     s.dump(run/'spec.json',engine.spec);s.dump(folder/'spec.json',engine.spec)
-    candidate=dict(parameters={s.PARAMS[0]:.01},fit_topologies=['CD_FT']);s.dump(folder/'candidate_parameters.json',candidate)
+    candidate=dict(parameters={s.PARAMS[0]:.01},fit_topologies=['CD_FT'],background_multiplier=1.1);s.dump(folder/'candidate_parameters.json',candidate)
     s.dump(run/'cache_manifest.json',dict(version=s.VERSION,reference_sha256=s.digest(reference/'manifest.json'),samples=engine.cache))
     work=case/'scratch';final=work/'fa18_inb/eval_025_final';final.mkdir(parents=True)
     s.dump(run/'scratch_location.json',dict(directory=str(work)))
@@ -190,6 +201,43 @@ def recovery_test(tmp):
     s.compact_results(run,['fa18_inb']);s.compact_results(run,['fa18_inb'])
     assert (run/'results/fa18_inb/REPORT.html').exists()
     print('PASS: saved-trial report recovery without refitting, completion markers, cleanup and repeated publication')
+
+
+def joint_model_tests(tmp):
+    from types import MethodType
+    from unittest.mock import patch
+    assert len(s.parameter_grid(s.TOPS,'zero'))==15
+    assert len(s.parameter_grid(s.TOPS,'fit'))==20
+    assert all(k%4!=3 for k in s.parameter_grid(s.TOPS,'zero'))
+    p='fa18_inb';norm={(p,t):dict(signal_scale=1,background_scale=1,background_scale_stat=0) for t in range(3)}
+    engine=s.Engine(None,dict(periods=[p]),{}, {},norm,s.TOPS,10,.1)
+    def fake_score(self,hist,i,m):return dict(train=10000*(m-1.1)**2,validation_mc=999 if m>1 else 0,heldout_observables=999,training_projections=9),[]
+    engine.score_one=MethodType(fake_score,engine)
+    scores,_=engine.score({},[[0]*20]);assert abs(scores[0]['background_multiplier']-1.1)<1e-12
+    assert abs(scores[0]['background_prior_penalty']-1)<1e-12
+    fixed,_=engine.score({},[[0]*20],profile=False);assert fixed[0]['background_multiplier']==1
+    try:s.Engine(None,dict(periods=['sp18_inb','fa18_inb']),{},{},norm,s.TOPS,10)
+    except ValueError:pass
+    else:raise AssertionError('Cross-period pooling allowed')
+    reference=tmp/'compare_reference';reference.mkdir();s.dump(reference/'manifest.json',dict(spec=dict(periods=[p])))
+    args=SimpleNamespace(finish_reports=False,scratch_root=tmp/'scratch',workers=3,expected_cache_events=1000,seed=17,
+        coordinate_rounds=0,refinement_rounds=0,min_mc=10,background_transfer_uncertainty=.1,fit_topologies=s.TOPS,reuse_cache=tmp/'old_cache')
+    output=tmp/'comparison';commands=[]
+    def fake_run(cmd,check):
+        commands.append(cmd);dest=Path(cmd[cmd.index('--output')+1]);dest.mkdir(parents=True);(dest/'results').mkdir()
+        (dest/'results/REPORT.html').write_text('report');s.dump(dest/'manifest.json',{})
+        folder=dest/p;folder.mkdir()
+        s.table(folder/'final_scores.csv',[dict(scenario='nominal',train=10,validation_mc=10,heldout_observables=10),dict(scenario='candidate',train=5,validation_mc=6,heldout_observables=7)])
+        s.dump(folder/'candidate_parameters.json',dict(boundary_parameters=[]))
+        s.table(folder/'selection_yields.csv',[dict(topology=t,scenario=a,predicted_selected=100,signal_selected=70) for t in s.TOPS for a in ('nominal','candidate')])
+    with patch.object(s.subprocess,'run',fake_run):s.compare_models(args,reference,output)
+    assert len(commands)==2
+    assert commands[0][commands[0].index('--bias-mode')+1]=='zero'
+    assert commands[1][commands[1].index('--bias-mode')+1]=='fit'
+    assert commands[1][commands[1].index('--reuse-cache')+1]==str(output/'broadening_only')
+    assert '--initial-parameters-from' in commands[1]
+    assert (output/'results/model_comparison.csv').exists()
+    print('PASS: shared detector laws, no period pooling, broadening-only controls, constrained background profiling and paired cached-model orchestration')
 
 
 def root_smoke(tmp,reference):
@@ -218,7 +266,7 @@ def main():
     args=parser.parse_args()
     if args.root_smoke and not args.reference_study:parser.error('--root-smoke requires --reference-study')
     with tempfile.TemporaryDirectory() as name:
-        tmp=Path(name);core(tmp);numerical();independent_fit(tmp);budget_test(tmp);report_test(tmp);scratch_test(tmp);recovery_test(tmp)
+        tmp=Path(name);core(tmp);numerical();independent_fit(tmp);budget_test(tmp);report_test(tmp);scratch_test(tmp);recovery_test(tmp);joint_model_tests(tmp)
         if args.root_smoke:
             # Existing fixture accepts a nominal production source directory;
             # reference backend has those same sources and output cuts below.

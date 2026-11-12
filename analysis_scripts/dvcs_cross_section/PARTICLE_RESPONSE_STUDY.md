@@ -153,3 +153,58 @@ rendered and their trial binaries deleted. Final binaries are removed only
 after the corresponding period report is complete. Existing compact results
 can be refreshed safely. CSV normalization values are explicitly converted
 to numbers before reporting selected yields.
+
+## Joint-topology model comparison (current default topology selection)
+
+All three topologies now participate in each independent period/polarity fit.
+The electron FD response is shared across all three; CD-proton response across
+CD_FT/CD_FD; FD-photon response across CD_FD/FD_FD. FD protons and FT photons
+have their own detector-specific responses. These same laws are applied to
+signal and leakage MC: fractional momentum width gives sigma_p=a*p, with
+constant angular widths and optional fractional momentum bias per detector
+region. The identical law is used at identical particle kinematics in every
+topology. This initial functional model is not a fine-grained momentum/angle
+calibration; joint-cell validation can reveal a need for more dependence.
+
+--compare-models runs broadening_only (all momentum biases exactly zero) and
+with_bias (biases fitted). The second model reuses the first model's event cache
+and includes its period-specific candidate as a starting point. Both searches
+retain nominal and one-parameter starting candidates, then perform bounded
+coordinate search/refinement. It is still not a proof of a global optimum.
+Native worker budget stays ten TOTAL; the two model runs execute sequentially.
+The all-period old cache can also seed the first model, avoiding all ROOT reads.
+
+Scan limits are broadened: electron momentum sigma up to 3%, CD-proton up to
+12%, FD-proton up to 6%, photon energy up to 6%; angular sigmas up to 12 mrad
+(theta) and 60 mrad (phi); fitted momentum bias up to ±1.5%. These are exploratory
+ADDITIONAL-error ranges, not measured detector resolutions. Boundary hits are
+recorded and still require scrutiny.
+
+One pi0 transfer multiplier per period is shared by all topologies and profiled
+using training observables only. Its constraint combines the saved control
+counting error with --background-transfer-uncertainty (default 0.10). That extra
+10% is an explicit exploratory transfer uncertainty, NOT a measured systematic.
+Set it to 0 for counting-only constraints, or rerun other assumptions from cache.
+The grid considers 1, 1±sigma and 1±2sigma, with a squared standardized penalty.
+A single multiplier cannot repair arbitrary background spectral mismodelling.
+The same chosen multiplier is used for independent-MC and held-out validation.
+The unsmeared nominal displayed model remains at its original background scale.
+
+candidate_parameters.json records the multiplier, constraint width and whether
+it hit a nuisance boundary. selection_yields.csv now separates signal and
+background yields; a nuisance normalization change is not an acceptance change.
+No per-variable/per-topology background normalization or refitting is performed.
+
+Recommended command:
+
+```sh
+python3 study_particle_response.py --reference-study "$PWD/test_runs/exclusivity_resolution_all_periods_joint_001" --reuse-cache "$PWD/test_runs/particle_response_all_periods_001" --compare-models --workers 10 --scratch-root /scratch/thayward/dvcs_particle_response --output "$PWD/test_runs/particle_response_joint_topologies_001"
+```
+
+Open results/REPORT.html and compare the two models. model_comparison.csv lists
+per-period training/held-out scores, nuisance multipliers, boundary counts and
+separate signal/mixture yield changes. Transfer only results for assessment;
+large event/trial files stay on scratch. Existing studies remain unchanged.
+For report-only recovery of this paired run, add --compare-models --finish-reports
+and use the same output/reference paths. The scalar response fit remains an
+effective model; production acceptance and Frad are not modified.
