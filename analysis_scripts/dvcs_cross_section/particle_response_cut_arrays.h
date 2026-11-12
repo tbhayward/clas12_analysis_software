@@ -4,21 +4,25 @@ static void export_cut_arrays(const json& spec,const json& job,const std::string
  using namespace particle_response;const std::string period=job.at("period"),sample=job.at("sample");
  bool control=sample=="pi0_mc"||sample=="pi0_data";double beam=beam_energy_for_period_label(period);auto cfg=config(spec.at("global_cuts"));
  std::array<double,NP> pars{};if(job.contains("parameters"))pars=job.at("parameters").get<std::array<double,NP>>();
+ const bool extended=job.value("export_kinematics",false);
  std::ofstream binary(out,std::ios::binary);uint64_t count=0;
  auto emit=[&](const std::array<double,NC>& v,uint64_t key){
   if(!std::isfinite(v[3])||!std::isfinite(v[4])||!std::isfinite(v[23]))return;
   int d1=int(v[3]),d2=int(v[4]),top=d1==1&&d2==1?0:d1==2&&d2==1?1:d1==2&&d2==0?2:-1;if(top<0)return;
+  if(job.contains("export_topology")&&top!=job.at("export_topology").get<int>())return;
   bool global=!is_excluded_run(int(v[23]),cfg)&&passes_analysis_phase_space_cuts(period,v[0],v[1],v[2],v[5],cfg)&&passes_proton_momentum_cut(d1,period,v[8],cfg)&&passes_global_cuts(v[2],v[14],v[15],d1,d2,period,v[5],v[6],v[7],v[9],v[10],v[11],v[12],v[13],cfg);
+  if(job.value("export_global_only",false)&&!global)return;
   int es=fd_sector_from_phi_rad(v[7]),ps=fd_sector_from_phi_rad(v[10]),gs=fd_sector_from_phi_rad(v[13]);
   bool minimal=std::isfinite(v[2])&&std::isfinite(v[14])&&(-v[2])<1.&&v[14]>5.&&es>=1&&
    (d1!=1||(ps>=1&&ps!=es))&&(d2!=1||(gs>=1&&gs!=es))&&(d1!=1||d2!=1||ps!=gs);
-  std::array<double,12> row{};row[0]=top;for(int j=0;j<7;++j)row[1+j]=v[16+j];row[8]=global;row[9]=std::abs(v[2]);row[10]=minimal;row[11]=(mix(key^0xb234fe3adbf120ddULL)>>40)&1;
-  binary.write(reinterpret_cast<const char*>(row.data()),sizeof(row));++count;
+  std::array<double,20> row{};row[0]=top;for(int j=0;j<7;++j)row[1+j]=v[16+j];row[8]=global;row[9]=std::abs(v[2]);row[10]=minimal;row[11]=(mix(key^0xb234fe3adbf120ddULL)>>40)&1;
+  if(extended){int indices[8]={0,1,5,6,8,9,11,12};for(int j=0;j<8;++j)row[12+j]=v[indices[j]];}
+  binary.write(reinterpret_cast<const char*>(row.data()),sizeof(double)*(extended?20:12));++count;
  };
  if(job.contains("cache")){
   std::ifstream input(job.at("cache").get<std::string>(),std::ios::binary);if(!input)throw std::runtime_error("Missing cut-export cache");
   if(control){ControlRecord c;while(input.read(reinterpret_cast<char*>(&c),sizeof c)){auto base=derived(c.base.v,beam,c.base.key&1,MPI0);std::array<double,12> noise;for(int j=0;j<12;++j)noise[j]=gaussian(c.base.key,j);double mass;emit(vary_control(c,pars,beam,base,noise,mass),c.base.key);}}
-  else{Record r;while(input.read(reinterpret_cast<char*>(&r),sizeof r)){auto base=derived(r.v,beam,r.key&1);emit(vary(r,pars,beam,r.key&1,base),r.key);}}
+  else{Record r;while(input.read(reinterpret_cast<char*>(&r),sizeof r)){if(job.contains("export_topology")){if(!std::isfinite(r.v[3])||!std::isfinite(r.v[4]))continue;int d1=int(r.v[3]),d2=int(r.v[4]);int t=d1==1&&d2==1?0:d1==2&&d2==1?1:d1==2&&d2==0?2:-1;if(t!=job.at("export_topology").get<int>())continue;}auto base=derived(r.v,beam,r.key&1);emit(vary(r,pars,beam,r.key&1,base),r.key);}}
   if(!input.eof()||input.gcount())throw std::runtime_error("Truncated cut-export cache");
  }else{
   // DATA are read once, without sampling, then shared by every response model.
@@ -32,5 +36,5 @@ static void export_cut_arrays(const json& spec,const json& job,const std::string
    for(Long64_t i=0;i<tree->GetEntries();++i){b.read(b.reconstructed,i);Record r{};for(int j=0;j<24;++j)r.v[j]=ptr[j]?*ptr[j]:0;if(!direct)r.v[16]=std::abs(std::remainder(r.v[10]-r.v[13],2*PI));emit(r.v,mix(pathkey(path)^uint64_t(i)));}
   }
  }
- if(!binary)throw std::runtime_error("Cut-export write failed");std::ofstream meta(out+".json");meta<<json{{"shape",{count,12}},{"columns",{"topology","Delta_phi","theta","theta_gamma_gamma","pTmiss","Emiss2","Mx2","Mx2_2","global_pass","t_abs","minimal_pass","half"}}};
+ if(!binary)throw std::runtime_error("Cut-export write failed");std::ofstream meta(out+".json");meta<<json{{"shape",{count,extended?20:12}},{"columns",{"topology","Delta_phi","theta","theta_gamma_gamma","pTmiss","Emiss2","Mx2","Mx2_2","global_pass","t_abs","minimal_pass","half"}},{"kinematic_columns",extended?json({"xB","Q2","electron_p","electron_theta_rad","proton_p","proton_theta_rad","photon_p","photon_theta_rad"}):json::array()}};
 }
