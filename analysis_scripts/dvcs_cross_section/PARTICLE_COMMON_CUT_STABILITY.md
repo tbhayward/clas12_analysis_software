@@ -35,8 +35,13 @@ Open REPORT.html. Each period/topology/|t| cell has two plots:
   line is the reference threshold; if that variable has no saved cut, defaults
   are 0.20 GeV and 0.02 GeV². The reference is normalized to one by definition.
 
-The three responses are unmodified MC, the original-training fitted response,
-and the add-pT fitted response. All include consistently modified leakage and
+By default plots and scans compare unmodified MC with the add-pT fitted response.
+The superseded original-training response is available with
+`--include-original-training`; it is not calculated or plotted by default.
+Files are grouped as `plots/PERIOD/TOPOLOGY/tLOW_HIGH/{shapes,stability}.png`.
+The HTML report groups links by period/topology and includes global DATA counts.
+Empty DATA cells are listed in `coverage.csv` and the report instead of generating
+blank figures. All include consistently modified leakage and
 two-photon MC. The two-photon normalization is taken once per period using the
 **same saved DATA control windows on control DATA and MC**. It fixes the leakage
 scale using the saved exposure ratio and response's transfer multiplier. The

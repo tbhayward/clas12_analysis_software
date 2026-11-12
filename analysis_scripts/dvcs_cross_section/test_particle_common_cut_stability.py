@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """Deterministic physics/counting and cache-only report integration checks."""
-import contextlib,copy,io,json,tempfile
+import contextlib,copy,csv,io,json,tempfile
 from pathlib import Path
 from unittest.mock import patch
 import numpy as np
@@ -43,6 +43,9 @@ def checks(tmp):
     anchors={c:{2:sc} for c in study.SCENARIOS};(tmp/'plots').mkdir()
     rows,links=study.render_case('fa18_inb',2,(.11,.15),cases,common,dict(saved_DATA=common,refitted_DATA=common),anchors,dict(mc=1,background=1,pi0_mc=1),tmp)
     assert len(links)==2 and all((tmp/p).is_file() for p in links)
+    assert links==['plots/fa18_inb/CD_FT/t0.11_0.15/shapes.png','plots/fa18_inb/CD_FT/t0.11_0.15/stability.png']
+    empty={c:{k:v[:0] for k,v in samples.items()} for c in study.SCENARIOS}
+    assert study.render_case('fa18_inb',2,(.11,.15),empty,common,dict(saved_DATA=common,refitted_DATA=common),anchors,dict(mc=1,background=1,pi0_mc=1),tmp)==([],[])
     assert all(np.isclose(r['relative_signal_scale'],1) for r in rows if r['status']=='ok')
     assert all(r['conditional_stat_error']==0 for r in rows if r['threshold']==r['reference_threshold'] and r['status']=='ok')
     assert study.export_digest(tmp/links[0])==study.base.digest(tmp/links[0])
@@ -72,6 +75,10 @@ def orchestration(tmp):
         study.main(argv)
         assert (output/'REPORT.html').is_file() and (output/'cut_stability.csv').is_file()
         manifest=json.loads((output/'manifest.json').read_text());assert manifest['candidate_hashes']==hashes
+        with (output/'cut_stability.csv').open() as f:assert {r['scenario'] for r in csv.DictReader(f)}=={'nominal','add_pt'}
+        report=(output/'REPORT.html').read_text();assert '<summary>CD_FT</summary>' in report and 'plots/fa18_inb/CD_FT/t0.11_0.15/shapes.png' in report
+        study.main(argv[:argv.index('--output')]+['--output',str(tmp/'with_original'),'--topologies','CD_FT','--include-original-training'])
+        with (tmp/'with_original'/'cut_stability.csv').open() as f:assert {r['scenario'] for r in csv.DictReader(f)}==set(study.SCENARIOS)
         try:
             with contextlib.redirect_stderr(io.StringIO()):study.main(argv)
         except SystemExit as e:assert e.code==2
@@ -81,7 +88,7 @@ def orchestration(tmp):
             with contextlib.redirect_stderr(io.StringIO()):study.main(['--followup-study',str(source.parent),'--closure-study',str(closed),'--output',str(tmp/'bad')])
         except SystemExit:pass
         else:raise AssertionError('Accepted changed provenance')
-    print('PASS: cache-only end-to-end driver, source/candidate provenance, manifest/CSV/HTML, overwrite guard')
+    print('PASS: cache-only driver, default add-pT versus unmodified/optional old training, grouped paths/navigation, empty coverage, source provenance and overwrite guards')
 
 if __name__=='__main__':
     with tempfile.TemporaryDirectory() as folder:

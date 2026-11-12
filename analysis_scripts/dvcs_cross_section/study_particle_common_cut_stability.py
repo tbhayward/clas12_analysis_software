@@ -11,6 +11,7 @@ import study_particle_selection_closure as closure
 base=closure.base
 cuts=closure.cuts
 SCENARIOS=('nominal','current','add_pt')
+DEFAULT_SCENARIOS=('nominal','add_pt')
 LABELS={'nominal':'Unmodified MC','current':'Original-training response','add_pt':'Add-pT response'}
 COLORS={'nominal':'#888888','current':'#d45c18','add_pt':'#22946b'}
 VARIABLES=('pTmiss','Mx2')
@@ -79,15 +80,19 @@ def calculate_scan(arrays,top,block,variable,bounds,thresholds,reference,center,
 def render_case(period,top,bounds,cases,blocks,families,anchors,prob,out):
     import matplotlib.pyplot as plt
     cases={c:{s:a[(a[:,9]>=bounds[0])&(a[:,9]<bounds[1])] for s,a in samples.items()} for c,samples in cases.items()}
+    scenarios=tuple(c for c in SCENARIOS if c in cases)
+    if not len(cases['add_pt']['data']):return [],[]
     topology=base.TOPS[top];cfg=next(p for p in cuts.production.PERIODS if p.key==period)
     key=cuts.production.cut_json_key('dvcs',cfg,cuts.production.TOPOLOGIES[top])
     tag=f'{period}_{topology}_t{bounds[0]:.2f}_{bounds[1]:.2f}';links=[];records=[]
+    folder=out/'plots'/period/topology/f't{bounds[0]:.2f}_{bounds[1]:.2f}'
+    folder.mkdir(parents=True,exist_ok=True)
     fig,axes=plt.subplots(3,2,figsize=(12,11),layout='constrained')
     # Same saved DATA windows on every sample; omit the displayed cut only.
     for vi,var in enumerate(VARIABLES):
         edges=np.linspace(0,.45,121) if var=='pTmiss' else np.linspace(-.045,.045,151)
         col=1+base.OBS.index(var);hist={};pre={}
-        for scenario in SCENARIOS:
+        for scenario in scenarios:
             a=cases[scenario];h=[]
             for sample in ('data','mc','background'):
                 rows=a[sample];sel=closure.mask(rows,top,blocks[key],'data',omit=var)&(rows[:,9]>=bounds[0])&(rows[:,9]<bounds[1])
@@ -99,7 +104,7 @@ def render_case(period,top,bounds,cases,blocks,families,anchors,prob,out):
             d=hh['add_pt'][0];dn=d.sum()
             ax=axes[row,vi]
             if dn:ax.stairs(d[1:-1]/dn/np.diff(edges),edges,color='#205cab',label='DATA')
-            for scenario in SCENARIOS:
+            for scenario in scenarios:
                 _,s,b=hh[scenario];sc=anchors[scenario][top]
                 ss,bb=scaled_shape(d,s,b,sc['signal_scale'],sc['background_scale'],prob,equal)
                 ax.stairs((ss+bb)[1:-1]/np.diff(edges),edges,color=COLORS[scenario],label=LABELS[scenario])
@@ -108,7 +113,7 @@ def render_case(period,top,bounds,cases,blocks,families,anchors,prob,out):
                     ax.stairs(bb[1:-1]/np.diff(edges),edges,color=COLORS[scenario],ls=':',lw=.8,label='Add-pT π⁰')
             ax.set(title=('Before exclusivity: equal areas' if row==0 else 'Common N−1 cuts: equal areas' if equal else 'Common N−1 cuts: fixed scales'),xlabel=var,ylabel='Density');ax.legend(fontsize=7);ax.grid(alpha=.2)
     fig.suptitle(tag+' · full globals; before exclusivity and common N−1 windows')
-    path=out/'plots'/(tag+'_shapes.png');fig.savefig(path,dpi=110);plt.close(fig);links.append(path.relative_to(out).as_posix())
+    path=folder/'shapes.png';fig.savefig(path,dpi=110);plt.close(fig);links.append(path.relative_to(out).as_posix())
     fig,axes=plt.subplots(2,2,figsize=(12,8),layout='constrained')
     for fi,(family,allblocks) in enumerate(families.items()):
         block=allblocks[key]
@@ -117,7 +122,7 @@ def render_case(period,top,bounds,cases,blocks,families,anchors,prob,out):
             reference=float(stats['cut_high'])-center if stats else (.2 if var=='pTmiss' else .02)
             thresholds=np.unique(np.r_[np.linspace(.04,.42,25) if var=='pTmiss' else np.linspace(.002,.045,25),reference])
             ax=axes[fi,vi]
-            for scenario in SCENARIOS:
+            for scenario in scenarios:
                 rows=calculate_scan(cases[scenario],top,block,var,bounds,thresholds,reference,center,anchors[scenario][top],prob)
                 for r in rows:r.update(period=period,topology=topology,t_low=bounds[0],t_high=bounds[1],scenario=scenario,window_family=family,variable=var)
                 records+=rows
@@ -125,16 +130,37 @@ def render_case(period,top,bounds,cases,blocks,families,anchors,prob,out):
             ax.axhline(1,color='black',lw=.8);ax.axvline(reference,color='black',ls=':',lw=.8)
             ax.set(title=family,xlabel=var+(' upper cut (GeV)' if var=='pTmiss' else ' half-window (GeV²)'),ylabel='Signal scale / scale at reference');ax.legend(fontsize=7);ax.grid(alpha=.2)
     fig.suptitle(tag+' · identical cuts on DATA, signal MC and leakage MC')
-    path=out/'plots'/(tag+'_stability.png');fig.savefig(path,dpi=110);plt.close(fig);links.append(path.relative_to(out).as_posix())
+    path=folder/'stability.png';fig.savefig(path,dpi=110);plt.close(fig);links.append(path.relative_to(out).as_posix())
     return records,links
+
+
+def report_gallery(coverage,links):
+    available=set(links);parts=[]
+    for period in dict.fromkeys(r['period'] for r in coverage):
+        parts.append('<details open><summary><b>'+html.escape(period)+'</b></summary>')
+        for top in dict.fromkeys(r['topology'] for r in coverage if r['period']==period):
+            parts.append('<details><summary>'+html.escape(top)+'</summary><table><tr><th>|t| (GeV²)</th><th>Global DATA</th><th>Shapes</th><th>Cut stability</th></tr>')
+            for r in coverage:
+                if (r['period'],r['topology'])!=(period,top):continue
+                stem=f"plots/{period}/{top}/t{r['t_low']:.2f}_{r['t_high']:.2f}/"
+                cells=[]
+                for name in ('shapes','stability'):
+                    path=stem+name+'.png'
+                    cells.append('<a href="'+html.escape(path)+'">'+name+'</a>' if path in available else html.escape(r['status']))
+                parts.append(f"<tr><td>{r['t_low']:.2f}–{r['t_high']:.2f}</td><td>{r['global_data_count']}</td><td>{cells[0]}</td><td>{cells[1]}</td></tr>")
+            parts.append('</table></details>')
+        parts.append('</details>')
+    return ''.join(parts)
 
 
 def main(argv=None):
     parser=argparse.ArgumentParser(description=__doc__)
     for name in ('followup-study','closure-study','output'):parser.add_argument('--'+name,type=Path,required=True)
+    parser.add_argument('--include-original-training',action='store_true',help='Also calculate/plot the superseded current training response; default compares unmodified MC to add-pT only')
     parser.add_argument('--periods',nargs='+',choices=[p.key for p in cuts.production.PERIODS])
     parser.add_argument('--topologies',nargs='+',choices=base.TOPS,default=base.TOPS)
-    args=parser.parse_args(argv);source=args.followup_study.resolve()/'cut_redetermination';closed=args.closure_study.resolve();out=args.output.resolve()
+    args=parser.parse_args(argv);scenarios=SCENARIOS if args.include_original_training else DEFAULT_SCENARIOS
+    source=args.followup_study.resolve()/'cut_redetermination';closed=args.closure_study.resolve();out=args.output.resolve()
     if out.exists():parser.error('Output exists; choose a fresh output directory')
     old=json.loads((source/'manifest.json').read_text());cmf=json.loads((closed/'manifest.json').read_text())
     if cmf['source_cut_manifest_sha256']!=base.digest(source/'manifest.json') or cmf['candidate_hashes']!=old['candidate_hashes']:parser.error('Closure and follow-up provenance differ')
@@ -152,15 +178,15 @@ def main(argv=None):
     except FileNotFoundError as e:parser.error(str(e)+'; retain/rebuild the follow-up pre-cut scratch exports before this cache-only study')
     # Verify the exact arrays used in the closure study; hashing is sequential and memory bounded.
     print('[verify] Checking streamed export hashes once; no ROOT reads or response refits',flush=True)
-    for path in set(files.values()):
+    for path in {path for key,path in files.items() if key[1] in (*scenarios,'shared')}:
         expected=cmf['export_hashes'].get(str(path))
         if expected is None or export_digest(path)!=expected:parser.error('Pre-cut export differs from closure inputs: '+str(path))
-    out.mkdir(parents=True);(out/'plots').mkdir();records=[];links=[];norms=[]
+    out.mkdir(parents=True);(out/'plots').mkdir();records=[];links=[];norms=[];coverage=[]
     saved=common_blocks(spec['exclusivity'])
     base.dump(out/'manifest.json',dict(arguments={k:str(v) if isinstance(v,Path) else v for k,v in vars(args).items()},source_sha256=base.digest(source/'manifest.json'),closure_sha256=base.digest(closed/'manifest.json'),candidate_hashes=old['candidate_hashes'],normalization='Common saved DATA windows for all samples, including control; scales fixed across thresholds',caveats=['Unit-weight counts; no final cross sections','Statistical errors conditional on fitted response/windows and transfer multiplier','Only |t| subdivision: exports lack xB/Q2/polar angles; changing kinematic mixtures can cause scale drift']))
     for period in periods:
-        cases={c:closure.arrays_for(exports,period,c) for c in SCENARIOS};prob={s:cache['samples'][period+'__'+s]['probability'] for s in ('mc','background','pi0_mc')};anchors={}
-        for c in SCENARIOS:
+        cases={c:closure.arrays_for(exports,period,c) for c in scenarios};prob={s:cache['samples'][period+'__'+s]['probability'] for s in ('mc','background','pi0_mc')};anchors={}
+        for c in scenarios:
             multiplier=1. if c=='nominal' else json.loads(paths[period,c].read_text())['background_multiplier']
             anchors[c]=closure.scales(period,cases[c],saved,prob,spec.get('control_to_leakage_exposure_ratio',1.),multiplier,True)
             for top,v in anchors[c].items():norms.append(dict(period=period,scenario=c,topology=base.TOPS[top],**v))
@@ -169,10 +195,14 @@ def main(argv=None):
             top=base.TOPS.index(topology)
             local={c:{s:a[(a[:,0]==top)&(a[:,8]>.5)] for s,a in samples.items() if s in ('data','mc','background')} for c,samples in cases.items()}
             for bounds in BINS:
+                ndata=int(((local['add_pt']['data'][:,9]>=bounds[0])&(local['add_pt']['data'][:,9]<bounds[1])).sum())
+                coverage.append(dict(period=period,topology=topology,t_low=bounds[0],t_high=bounds[1],global_data_count=ndata,status='available' if ndata else 'No DATA in this global-selection cell'))
                 rows,ll=render_case(period,top,bounds,local,saved,dict(saved_DATA=saved,refitted_DATA=refit),anchors,prob,out);records+=rows;links+=ll
         print('[done] '+period+' common-cut scans; no ROOT reads, compilation or parameter fits',flush=True)
-    base.table(out/'cut_stability.csv',records);base.table(out/'normalizations.csv',norms)
-    (out/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Common-cut stability</title><style>body{font:17px system-ui;max-width:1100px;margin:35px auto}li{margin:8px}</style><h1>Common-cut stability</h1><p>Exactly the same boundaries are applied to DATA, particle-corrected DVCS MC and π⁰ leakage MC. No additional histogram shift or broadening is fitted. Every scenario uses its own consistent two-photon MC, with common saved DATA control windows. The period-wide control scale fixes π⁰, then one signal scale per topology matches the selected DATA total.</p><p>Shape plots: first row shows full globals before exclusivity, second row applies common windows but omits the displayed variable. Both rescale the summed MC to the DATA integral (components retain relative weights). Third row carries the fixed selected-anchor scale under the second-row selection. Before integrating, overflow is retained. No cross sections are compared.</p><p>Stability: (DATA − predicted π⁰)/DVCS MC, divided by its value at the dotted reference threshold in the same |t| bin and scenario. A flat curve supports cut stability. All other cuts remain fixed. The two rows use saved versus newly refitted DATA windows on every sample; a 95% window is not imposed or re-fitted here. Relative scales do not independently validate absolute efficiencies. The reference value is one by definition.</p><p>Error bars include paired, overlapping counts and the shared control-count uncertainty, conditional on the fitted response, cut boundaries and background transfer. They exclude transfer/model uncertainties. Counts are unit weighted. These exports cannot subdivide xB, Q² or particle angles: differing kinematic populations can also cause drift, so do not interpret every slope as a resolution defect.</p><p><a href="cut_stability.csv">Threshold counts, subtracted yields and scales</a> · <a href="normalizations.csv">Fixed signal/control anchors and validity flags</a></p><ul>'+''.join('<li><a href="'+html.escape(p)+'">'+html.escape(Path(p).stem)+'</a></li>' for p in links)+'</ul>')
+    base.table(out/'cut_stability.csv',records);base.table(out/'normalizations.csv',norms);base.table(out/'coverage.csv',coverage)
+    gallery=report_gallery(coverage,links)
+
+    (out/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Common-cut stability</title><style>body{font:17px system-ui;max-width:1100px;margin:35px auto}li{margin:8px}</style><h1>Common-cut stability</h1><p>Default: unmodified MC versus the add-pT response. The superseded original-training response is optional (--include-original-training). Plots are grouped by period, topology and |t|.</p><p>Exactly the same boundaries are applied to DATA, particle-corrected DVCS MC and π⁰ leakage MC. No additional histogram shift or broadening is fitted. Every scenario uses its own consistent two-photon MC, with common saved DATA control windows. The period-wide control scale fixes π⁰, then one signal scale per topology matches the selected DATA total.</p><p>Shape plots: first row shows full globals before exclusivity, second row applies common windows but omits the displayed variable. Both rescale the summed MC to the DATA integral (components retain relative weights). Third row carries the fixed selected-anchor scale under the second-row selection. Before integrating, overflow is retained. No cross sections are compared.</p><p>Stability: (DATA − predicted π⁰)/DVCS MC, divided by its value at the dotted reference threshold in the same |t| bin and scenario. A flat curve supports cut stability. All other cuts remain fixed. The two rows use saved versus newly refitted DATA windows on every sample; a 95% window is not imposed or re-fitted here. Relative scales do not independently validate absolute efficiencies. The reference value is one by definition.</p><p>Error bars include paired, overlapping counts and the shared control-count uncertainty, conditional on the fitted response, cut boundaries and background transfer. They exclude transfer/model uncertainties. Counts are unit weighted. These exports cannot subdivide xB, Q² or particle angles: differing kinematic populations can also cause drift, so do not interpret every slope as a resolution defect.</p><p><a href="cut_stability.csv">Threshold counts, subtracted yields and scales</a> · <a href="normalizations.csv">Fixed signal/control anchors and validity flags</a> · <a href="coverage.csv">Cell coverage</a></p>'+gallery)
     print('[done] '+str(out/'REPORT.html'),flush=True)
 
 if __name__=='__main__':main()
