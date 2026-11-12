@@ -352,24 +352,24 @@ def plot_overviews(output,arrays,spec,rows,dpi):
             fig,axs=plt.subplots(3,3,figsize=(15,11),constrained_layout=True)
             for vi,v in enumerate(spec['variables']):
                 ax=axs.flat[vi];edges=np.linspace(v['low'],v['high'],v['bins']+1);hist=[]
-                for sample,color in (('data','#205cab'),('mc','#d45c18')):
+                for sample,color in (('data','#205cab'),('mc','#c62828')):
                     h=arrays[f'{p}__{sample}'][ti,0,vi,:v['bins']+2];hist.append(h)
                     total=float(h.sum())
                     denom=float(arrays[f'{p}__data'][ti,0,vi,:v['bins']+2].sum()) if spec.get('background_aware') else total
                     ax.stairs(h[1:-1]/denom if denom else h[1:-1],edges,color=color,label=f'{sample.upper()} N={int(total):,}')
                     if sample=='mc' and spec.get('background_aware'):
-                        for component,c in [('signal','#22946b'),('background','#a45ab5')]:
+                        for component,style in [('signal','--'),('background',':')]:
                             z=arrays[p+'__'+component][ti,0,vi,:v['bins']+2]
-                            ax.stairs(z[1:-1]/denom if denom else z[1:-1],edges,color=c,label=component)
+                            ax.stairs(z[1:-1]/denom if denom else z[1:-1],edges,color='#c62828',linestyle=style,label='DVCS signal' if component=='signal' else 'π⁰ background')
                     for bound in effective_window(spec,p,t,sample,v['name']):
-                        if bound is not None:ax.axvline(bound,color=color,ls='--',alpha=.65,lw=1)
+                        if bound is not None:ax.axvline(bound,color='#777777',ls='-.',alpha=.6,lw=1)
                 r=index[p,t,'inclusive','Inclusive',v['name']]
                 ax.set(xlim=view_limits(spec,p,t,vi,*hist),xlabel=v['label'],ylabel='Fraction of finite candidates / bin')
                 ax.set_title(f"spread ratio={r['width_ratio']:.2f}; median shift={r['median_shift_MC_spreads']:+.2f} MC spreads",fontsize=10)
                 ax.legend(fontsize=8);ax.grid(alpha=.15)
                 if r['status']!='usable shape comparison':ax.text(.02,.96,r['status'],va='top',transform=ax.transAxes,fontsize=7,color='#a52a2a',wrap=True)
             for ax in axs.flat[7:]:ax.axis('off')
-            axs.flat[7].text(0,.95,'Each panel leaves its own cut out.\nOther saved selection cuts remain.\nDashed lines: omitted cut boundaries.\nUnit-weighted candidates; no subtraction.\nWidths are conditional shape diagnostics.\nMetrics use full histogram; tails outside\nits range are recorded and flagged.',va='top',fontsize=11)
+            axs.flat[7].text(0,.95,'Each panel leaves its own cut out.\nOther saved selection cuts remain.\nGray dash-dot: omitted cut boundaries.\nUnit-weighted candidates; no subtraction.\nWidths are conditional shape diagnostics.\nMetrics use full histogram; tails outside\nits range are recorded and flagged.',va='top',fontsize=11)
             fig.suptitle(f'{p} · {t.replace("_","–")} · inclusive exclusivity shapes')
             fig.savefig(destination/'inclusive_shapes.png',dpi=dpi);plt.close(fig)
             ng=len(spec['strata']);values=np.full((3,7,ng-1),np.nan)
