@@ -81,7 +81,9 @@ def gate(baseline,replay,out):
         if any(x[k]!=y[k] for k in audit.EDGES):raise ValueError('Production bin edges changed')
         if str(x.get('valid bin','1')).strip()=='0':continue
         for c in yield_columns(list(x)):
-            v=audit.triple(x[c]);w=audit.triple(y[c]);checks+=1
+            try:v=audit.triple(x[c]);w=audit.triple(y[c])
+            except ValueError as exc:raise ValueError(f'Yield parse failure at row {i}, column {c!r}; saved={x[c]!r}; replay={y[c]!r}') from exc
+            checks+=1
             if not np.allclose(v,w,rtol=2e-8,atol=2e-7):mismatches.append(dict(row=i,column=c,saved=str(v.tolist()),replay=str(w.tolist())))
     audit.table(out/'nominal_mismatches.csv',mismatches)
     response.dump(out/'nominal_gate.json',dict(scope='Saved valid production rows; terminal invalid rows excluded',checked_cells=checks,mismatches=len(mismatches),passed=not mismatches))
@@ -115,7 +117,7 @@ def topology_comparison(nominal,morphed,out):
 
 def make_plots(rows,out):
     import matplotlib.pyplot as plt
-    summary=[];(out/'plots').mkdir()
+    summary=[];(out/'plots').mkdir(exist_ok=True)
     for period in audit.PERIODS:
         a=[r for r in rows if r['period']==period];bins=sorted({(float(r['t_abs_min']),float(r['t_abs_max'])) for r in a});fig,ax=plt.subplots(figsize=(10,6),layout='constrained')
         for tag,color in [('nominal','#777777'),('morphed','#22946b')]:
@@ -128,10 +130,23 @@ def make_plots(rows,out):
     audit.table(out/'summary.csv',summary)
 
 
+def completed_count(out,scenario):
+    target=out/(scenario+'.csv');marker=out/(scenario+'_count_complete.json')
+    if not target.is_file():return False
+    if marker.is_file():
+        if json.loads(marker.read_text())['csv_sha256']!=response.digest(target):raise ValueError('Completed counts changed: '+scenario)
+        return True
+    # Recovery of the original parser crash: the C++ process returned successfully
+    # before the Python gate. Require its post-write success marker for this CSV.
+    log=out/(scenario+'.log')
+    return log.is_file() and ('[total_counts] Updated data and MC count columns in: '+str(target)) in log.read_text()
+
+
 def main(argv=None):
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--workers',type=int,default=10);p.add_argument('--production-run',type=Path,required=True);p.add_argument('--response-followup',type=Path,required=True);p.add_argument('--output',type=Path,required=True);args=p.parse_args(argv)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--resume',action='store_true');p.add_argument('--workers',type=int,default=10);p.add_argument('--production-run',type=Path,required=True);p.add_argument('--response-followup',type=Path,required=True);p.add_argument('--output',type=Path,required=True);args=p.parse_args(argv)
     run=args.production_run.resolve();out=args.output.resolve();follow=args.response_followup.resolve()/'cut_redetermination'
-    if out.exists():p.error('Output exists; choose a fresh directory')
+    if out.exists() and not args.resume:p.error('Output exists; use --resume for checked recovery')
+    if args.resume and not (out/'manifest.json').is_file():p.error('Resume requires the original manifest')
     if not 1<=args.workers<=10:p.error('Workers must be 1–10 total')
     baseline=run/'output/csvs/dvcs_pass2_analysis.csv';cuts=run/'output/jsons/combined_cuts.json';globals=run/'output/jsons/global_cuts_config.json';current=run/'output/dvcs_current_dependence/calibration/current_response_model.json'
     for path in (baseline,cuts,globals,current):
@@ -141,12 +156,28 @@ def main(argv=None):
         path=training/period/'add_pt/candidate_parameters.json'
         if response.digest(path)!=meta['candidate_hashes']['add_pt'][period]:p.error('Response parameters changed')
         pars[period]=candidates.load_candidate_parameters(path)
-    out.mkdir(parents=True);response.dump(out/'response.json',dict(seed=spec.get('seed',1031),periods=pars));response.dump(out/'manifest.json',dict(arguments={k:str(v) for k,v in vars(args).items()},production_inputs={str(x):response.digest(x) for x in (baseline,cuts,globals,current)},counter_sha256=response.digest(SOURCE/'total_counts.cpp'),response_parameters=pars))
-    exe=build(out/'backend')
+    current_manifest=dict(arguments={k:str(v) for k,v in vars(args).items()},production_inputs={str(x):response.digest(x) for x in (baseline,cuts,globals,current)},counter_sha256=response.digest(SOURCE/'total_counts.cpp'),response_parameters=pars)
+    if args.resume:
+        previous=json.loads((out/'manifest.json').read_text())
+        for key in ('production_inputs','counter_sha256','response_parameters'):
+            if previous[key]!=current_manifest[key]:p.error('Cannot resume: changed '+key)
+        saved_response=json.loads((out/'response.json').read_text())
+        if saved_response!=dict(seed=spec.get('seed',1031),periods=pars):p.error('Saved response configuration changed')
+    else:
+        out.mkdir(parents=True);response.dump(out/'response.json',dict(seed=spec.get('seed',1031),periods=pars));response.dump(out/'manifest.json',current_manifest)
+    exe=out/'backend/production_pi0_counter'
+    if not exe.is_file():
+        if (out/'backend').exists():raise ValueError('Incomplete backend; preserve it and choose a fresh output')
+        exe=build(out/'backend')
     for scenario in ('nominal','morphed'):
-        target=out/(scenario+'.csv');prepare_csv(baseline,target)
-        print('[count] '+scenario+' full-statistics pi0 control/leakage only; production binning, cuts and current weights; ten-worker cap',flush=True)
-        with (out/(scenario+'.log')).open('w') as log:subprocess.run([str(exe),str(target),str(cuts),str(globals),str(current),'none' if scenario=='nominal' else str(out/'response.json'),str(args.workers)],cwd=out,stdout=log,stderr=subprocess.STDOUT,check=True)
+        target=out/(scenario+'.csv')
+        if args.resume and completed_count(out,scenario):
+            print('[reuse] '+scenario+' completed production counts; no ROOT reread',flush=True)
+        else:
+            prepare_csv(baseline,target)
+            print('[count] '+scenario+' full-statistics pi0 control/leakage only; production binning, cuts and current weights; ten-worker cap',flush=True)
+            with (out/(scenario+'.log')).open('w') as log:subprocess.run([str(exe),str(target),str(cuts),str(globals),str(current),'none' if scenario=='nominal' else str(out/'response.json'),str(args.workers)],cwd=out,stdout=log,stderr=subprocess.STDOUT,check=True)
+        response.dump(out/(scenario+'_count_complete.json'),dict(csv_sha256=response.digest(target)))
         if scenario=='nominal':gate(baseline,target,out)
     topology_comparison(out/'nominal.csv',out/'morphed.csv',out)
     rows0=audit.replay(out/'nominal.csv');rows1=audit.replay(out/'morphed.csv');result=[]

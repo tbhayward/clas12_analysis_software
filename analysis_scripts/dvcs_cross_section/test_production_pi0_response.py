@@ -20,6 +20,15 @@ def unit(tmp):
     text=(study.SOURCE/'total_counts.cpp').read_text();modified=study.instrument(text)
     assert modified.count('apply_pi0_test_response(b,work_cfg,tags,i);')==1
     assert (study.SOURCE/'total_counts.cpp').read_text()==text
+    counts=tmp/'nominal.csv';counts.write_text('counts')
+    assert not study.completed_count(tmp,'nominal')
+    (tmp/'nominal.log').write_text('[total_counts] Updated data and MC count columns in: '+str(counts))
+    assert study.completed_count(tmp,'nominal')
+    study.response.dump(tmp/'nominal_count_complete.json',dict(csv_sha256=study.response.digest(counts)))
+    counts.write_text('changed')
+    try:study.completed_count(tmp,'nominal')
+    except ValueError:pass
+    else:raise AssertionError('Accepted changed completed CSV')
     print('PASS: isolated-source instrumentation, zero-before-recount, untouched DATA, nominal agreement and mismatch gate')
 
 

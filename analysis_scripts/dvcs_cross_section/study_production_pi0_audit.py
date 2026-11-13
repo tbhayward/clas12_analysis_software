@@ -8,8 +8,12 @@ PERIODS=['Fa18 Inb','Fa18 Out','Sp18 Inb','Sp18 Out','Sp19 Inb'];TOPS=['(FD, FD)
 
 def triple(s):
     if not s.strip():return np.zeros(3)
-    a=np.fromstring(s.strip().strip('()'),sep=',')
-    if len(a)!=3 or not np.all(np.isfinite(a)):raise ValueError('Invalid yield triple: '+s)
+    # Production's parse_tuple_numbers removes parentheses and literal quotes.
+    # Explicit tokens avoid NumPy-version-dependent partial parsing behavior.
+    cleaned=s.translate(str.maketrans({'(':' ',')':' ','"':' '}))
+    try:a=np.array([float(token.strip()) for token in cleaned.split(',')])
+    except ValueError as exc:raise ValueError('Invalid yield triple: '+repr(s)) from exc
+    if len(a)!=3 or not np.all(np.isfinite(a)) or np.any(a[1:]<0):raise ValueError('Invalid yield triple: '+repr(s))
     return a
 
 
