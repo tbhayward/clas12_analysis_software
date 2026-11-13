@@ -47,11 +47,16 @@ int main(){
  auto before=b;apply_pi0_test_response(b,work,tags,0);assert(b.p2_p==before.p2_p&&b.phi2==before.phi2&&b.t1==before.t1);
  p[15]=.01;pi0_test_parameters["fa18_inb"]=p;apply_pi0_test_response(b,work,tags,0);assert(std::abs(b.p2_p-3.03)<1e-12);assert(std::abs(b.Emiss2-before.Emiss2+.03)<1e-10);assert(b.phi2>=0&&b.phi2<2*particle_response::PI);
  b=before;work.channel_cfg=eppi0_config();bool rejected=false;try{apply_pi0_test_response(b,work,tags,0);}catch(...){rejected=true;}assert(rejected);
+ b=before;b.response_extra_ok.fill(true);b.response_extra.fill(0);apply_pi0_test_response(b,work,tags,1);
+ assert(b.response_unresolved&&b.p2_p==before.p2_p&&b.phi2==before.phi2&&b.t1==before.t1);
+ audit_pi0_recovery_row(b,work,tags,7);flush_pi0_recovery_audit();
+ assert(pi0_recovery_counts[tags.tree_key][1]==1&&pi0_recovery_bins[tags.tree_key+"|7"][1]==1);
+
 }
 ''')
     flags=subprocess.check_output(['root-config','--cflags'],text=True).split();libs=subprocess.check_output(['root-config','--libs'],text=True).split();binary=backend/'fixture'
     subprocess.run(['c++',*flags,'-O1','-std=c++17','-pthread','-I'+str(backend),str(fixture),str(study.SOURCE/'global_cuts.cpp'),str(study.SOURCE/'load_trees.cpp'),'-o',str(binary),*libs],check=True);subprocess.run([str(binary)],check=True)
-    print('PASS: real production-counter backend compilation, exact zero-response identity, particle bias/derived missing energy, phi wrapping and missing two-photon recovery rejection')
+    print('PASS: real production-counter backend compilation, exact zero-response identity, particle bias/derived missing energy, phi wrapping and missing-branch rejection and unchanged unresolved-event retention with selected-bin audit')
 
 if __name__=='__main__':
     p=argparse.ArgumentParser();p.add_argument('--native',action='store_true');args=p.parse_args()

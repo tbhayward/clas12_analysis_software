@@ -31,8 +31,12 @@ four-vectors and derived coordinates before all those steps. Stored phi offsets
 are preserved while its physical Trento-angle change is applied. The original
 period current model is used without requiring a newer calibration schema; its
 existing angle-dependent terms are still evaluated. Individual control photons
-are recovered, independently varied, then the pi0 is rebuilt. Failed recovery
-aborts; no composite-photon approximation or silent event loss is allowed.
+are recovered, independently varied, then the pi0 is rebuilt. Failed photon recovery retains the entire original event unchanged, matching the
+prior response studies. No composite-photon approximation or silent event loss is
+allowed. photon_recovery_audit.json records attempts/unresolved counts;
+photon_recovery_rows.csv records selected per-row counts/fractions. The morph is
+incomplete for those events, so these fractions must be reviewed. Missing
+required recovery branches remain fatal.
 
 Deterministic per-tree/entry random numbers apply the saved fitted parameter
 values to full MC. These are new full-statistics noise realizations, not a replay
@@ -59,3 +63,13 @@ The matched full-statistics farm gate remains essential even when native unit
 checks pass. Tests with --native additionally compile the actual counter backend
 and exercise response identity, phi range, missing-energy changes and rejection
 of control events lacking individual-photon recovery inputs.
+
+Recovery from the original first-unresolved-event abort:
+
+```sh
+python3 study_production_pi0_response.py --production-run "$PWD/test_runs/current_mc_fixed_001/proton_t_default_001" --response-followup "$PWD/test_runs/particle_response_add_pt_followup_001" --workers 10 --output "$PWD/test_runs/production_pi0_response_001" --resume --rebuild-backend
+```
+
+This preserves backend_before_rebuild and completed nominal counts. Subsequent
+resumes should omit --rebuild-backend. The recovery audit uses worker-local
+accumulators merged per tree, avoiding a shared lock for every event.
