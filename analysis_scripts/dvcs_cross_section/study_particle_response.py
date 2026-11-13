@@ -422,7 +422,10 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
     fig.savefig(output/'single_parameter_effects.png',dpi=120);plt.close(fig)
     links=''.join(f'<li>{p}: '+ ' · '.join(f'<a href="plots/{p}/{t}.png">{t} rates</a> / <a href="plots/{p}/{t}_shapes.png">shapes</a>' for t in TOPS)+'</li>' for p in spec['periods'])
     (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Particle response test</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}li{margin:15px}</style><h1>Particle-response test</h1><p>Start with CD_FT. Blue: DATA; orange: nominal MC; green: candidate MC. Candidate background transfer includes the morphed two-photon control. Candidate signal normalization is fitted once per topology to the fully selected sample, then held fixed across all plotted observables. Shape links normalize each distribution to unit area. Raw signal selection ratios in selection_yields.csv expose efficiency changes independently of that normalization. The upstream gamma-gamma mass window cannot be undone with these saved trees. This is a candidate additional Gaussian response and momentum-scale model, not a production correction.</p><p><a href="single_parameter_effects.png">Which particle variations improve the distributions?</a></p><ul>'+links+'</ul><p><a href="REPORT.md">Fit definitions, limitations and parameter values</a> · <a href="single_parameter_ranking.csv">Single-parameter ranking</a> · <a href="final_scores.csv">Training/validation scores</a> · <a href="selection_yields.csv">Selection yields</a> · <a href="final_shapes.csv">All joint-cell shapes</a></p>')
-    if spec.get('joint_control_fit'):render_joint_controls(engine,output,hist)
+    if spec.get('joint_control_fit'):
+        render_joint_controls(engine,output,hist)
+        from plot_response_score_improvements import render
+        render(output)
 
 def render_joint_controls(engine,output,hist):
     import matplotlib.pyplot as plt
