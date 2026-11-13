@@ -295,7 +295,7 @@ class Engine:
         for kind in buckets:
             old=result[kind];new=float(np.mean(buckets[kind])) if buckets[kind] else float('inf')
             if kind=='train' and len(buckets[kind])!=expected:new=float('inf')
-            result['epgamma_'+kind]=old;result['epgammagamma_'+kind]=new;result[kind]=.5*(old+new)
+            result['epgamma_'+kind]=old;result['epgammagamma_'+kind]=new;weight=float(self.spec.get('joint_control_weight',.5));result[kind]=old if weight==0 else .5*(old+new) if weight==.5 else (1-weight)*old+weight*new
         result['training_projections']+=len(buckets['train'])
         return result,records
 
@@ -443,7 +443,7 @@ def render_joint_controls(engine,output,hist):
             fig.suptitle(p+' · '+TOPS[t]+' · two-photon control shapes; common DATA windows, displayed cut omitted')
             folder=output/'control_plots'/p;folder.mkdir(parents=True,exist_ok=True);path=folder/(TOPS[t]+'.png');fig.savefig(path,dpi=110);plt.close(fig);links.append(path)
     for path in links:add_report_link(output/'REPORT.html',path,'Joint-fit two-photon shapes: '+path.parent.name+' '+path.stem)
-    with (output/'REPORT.html').open('a') as f:f.write('<p>Joint objective: equal weight to the mean epgamma shape score and the mean two-photon control shape score. Training uses coplanarity, missing pT, missing energy and missing mass squared. Opening angle and missing mass eγ/eπ0 remain reserved. MC half 1 is validation only; experimental DATA are shared, so this is not independent DATA validation. Control shapes use common DATA windows, omitting the displayed cut. Transfer normalization retains its original MC control windows. Each photon receives its own detector response.</p>')
+    with (output/'REPORT.html').open('a') as f:f.write('<p>The control weight is recorded in spec.json and candidate_parameters.json; zero trains only on epgamma while still reporting control validation. Training uses coplanarity, missing pT, missing energy and missing mass squared. Opening angle and missing mass eγ/eπ0 remain reserved. MC half 1 is validation only; experimental DATA are shared, so this is not independent DATA validation. Control shapes use common DATA windows, omitting the displayed cut. Transfer normalization retains its original MC control windows. Each photon receives its own detector response.</p>')
 
 
 def discard_histograms(hist):
@@ -617,6 +617,7 @@ def main(argv=None):
     global TRAIN_OBS,VALID_OBS
     parser=argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--local-refinement',action='store_true',help='Skip broad single-parameter scan; start from checked previous parameters and test adjacent levels')
+    parser.add_argument('--joint-control-weight',type=float,default=.5,help='Control-channel fraction of training shape objective; zero still evaluates control validation')
     parser.add_argument('--joint-control-study',type=Path,help='Completed pi0_control_transfer output; enable simultaneous control shape training')
     parser.add_argument('--reference-study',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
@@ -637,6 +638,7 @@ def main(argv=None):
     parser.add_argument('--refinement-rounds',type=int,default=1)
     parser.add_argument('--min-mc',type=int,default=100)
     args=parser.parse_args(argv)
+    if not np.isfinite(args.joint_control_weight) or not 0<=args.joint_control_weight<=1:parser.error('Control weight must be between zero and one')
     if args.joint_control_study:
         TRAIN_OBS=[0,3,4,5];VALID_OBS=[2,6]
         if args.reuse_cache and (args.reuse_cache/'with_bias/cache_manifest.json').is_file():args.reuse_cache=args.reuse_cache/'with_bias'
@@ -653,7 +655,7 @@ def main(argv=None):
     manifest=json.loads((reference/'manifest.json').read_text());spec=copy.deepcopy(manifest['spec'])
     if not spec.get('background_aware') or not spec.get('joint_grids'):parser.error('Use the completed background-aware joint diagnostic as reference')
     if digest(reference/'histograms.npz')!=manifest['histogram_sha256']:raise ValueError('Reference histogram checksum mismatch')
-    if args.joint_control_study:spec['joint_control_fit']=True
+    if args.joint_control_study:spec.update(joint_control_fit=True,joint_control_weight=args.joint_control_weight)
     spec.update(expected_cache_events=args.expected_cache_events,seed=args.seed,reference_flows=manifest['flows'])
     for k,n in [('global_cpp','global_cuts.cpp'),('global_header','global_cuts.h'),('domain_header','kinematic_bin_integration.h')]:
         if digest(reference/'backend'/n)!=spec['input_hashes'][k]:raise ValueError('Saved global-cut source hash mismatch')
@@ -792,7 +794,7 @@ def fit_candidate(engine,output,args):
     if getattr(engine,'control',None) is not None:
         dump(output/'final_control_response.json',dict(selected=engine.control.tolist(),metadata=engine.control_metadata))
     active={PARAMS[k]:best[k] for k in grid};boundary=[PARAMS[k] for k,levels in grid.items() if best[k]!=0 and best[k] in (levels[0],levels[-1])]
-    dump(output/'candidate_parameters.json',dict(version=VERSION,joint_control_fit=bool(spec.get('joint_control_fit')),normalization_mode='morphed_control_profiled_signal' if getattr(engine,'control',None) is not None else 'legacy_fixed',parameters=active,boundary_parameters=boundary,period=spec['periods'][0],bias_mode=getattr(args,'bias_mode','fit'),scan_range=getattr(args,'scan_range','standard'),background_multiplier=s[-1].get('background_multiplier',1.),background_constraint_sigma=s[-1].get('background_constraint_sigma',0.),background_multiplier_at_boundary=abs(abs(s[-1].get('background_multiplier',1.)-1)-2*s[-1].get('background_constraint_sigma',0.))<1e-10 and s[-1].get('background_constraint_sigma',0.)>0,background_transfer_uncertainty=getattr(args,'background_transfer_uncertainty',0.),fit_topologies=args.fit_topologies,training_observables=[OBS[i] for i in TRAIN_OBS],validation_observables=[OBS[i] for i in VALID_OBS]))
+    dump(output/'candidate_parameters.json',dict(version=VERSION,joint_control_fit=bool(spec.get('joint_control_fit')),joint_control_weight=float(spec.get('joint_control_weight',.5)),normalization_mode='morphed_control_profiled_signal' if getattr(engine,'control',None) is not None else 'legacy_fixed',parameters=active,boundary_parameters=boundary,period=spec['periods'][0],bias_mode=getattr(args,'bias_mode','fit'),scan_range=getattr(args,'scan_range','standard'),background_multiplier=s[-1].get('background_multiplier',1.),background_constraint_sigma=s[-1].get('background_constraint_sigma',0.),background_multiplier_at_boundary=abs(abs(s[-1].get('background_multiplier',1.)-1)-2*s[-1].get('background_constraint_sigma',0.))<1e-10 and s[-1].get('background_constraint_sigma',0.)>0,background_transfer_uncertainty=getattr(args,'background_transfer_uncertainty',0.),fit_topologies=args.fit_topologies,training_observables=[OBS[i] for i in TRAIN_OBS],validation_observables=[OBS[i] for i in VALID_OBS]))
     table(output/'evaluation_history.csv',[dict(call=r['call'],scenario=r['scenario'],parameters=json.dumps(r['parameters']),**{k:v for k,v in r.items() if k not in ('call','scenario','parameters')}) for r in engine.history])
     units=[]
     for k,value in active.items():
