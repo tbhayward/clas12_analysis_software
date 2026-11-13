@@ -192,7 +192,9 @@ class Engine:
         self.fit_topologies=[TOPS.index(t) for t in fit_topologies];self.min_mc=min_mc;self.calls=0;self.history=[]
     def evaluate(self,parameters,label,detailed=False):
         # Worker slot zero is always the exact nominal. Parameter rows are deduplicated.
-        unique=[tuple([0.]*20)]
+        if not parameters or len(parameters[0]) not in (20,21):raise ValueError('Expected 20 response parameters, or 21 for the isolated CD-angle study')
+        if any(len(p)!=len(parameters[0]) or not np.all(np.isfinite(p)) for p in parameters):raise ValueError('Inconsistent or nonfinite response parameters')
+        unique=[tuple([0.]*len(parameters[0]))]
         for p in parameters:
             if tuple(p) not in unique:unique.append(tuple(p))
         jobs=[dict(period=p,sample=s,cache=self.cache[p+'__'+s]['path'],parameters=unique,detailed=detailed) for p in self.spec['periods'] for s in ('mc','background','pi0_mc') if s!='pi0_mc' or p+'__pi0_mc' in self.cache]
