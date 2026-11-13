@@ -58,20 +58,29 @@ def pick(parameters,scores,start):
     if not finite:raise ValueError('No finite joint training objective')
     return min(finite,key=lambda i:(scores[i]['train'],parameters[i][20]))
 
+def check_source_provenance(meta,fingerprint):
+    # Fitting does not call cut-arrays. Its helper gained the optional 28-column
+    # photon export after the joint fit; compare it with the exporting study.
+    evaluators=('particle_response_worker.cpp','particle_response_core.h','particle_control_core.h','particle_control_worker.h')
+    for name in evaluators:
+        if base.digest(base.SOURCE/name)!=meta['source_hashes'][name]:raise ValueError('Frozen evaluator differs: '+name)
+    for name in ('particle_response_cut_arrays.h',*evaluators):
+        if base.digest(base.SOURCE/name)!=fingerprint['export_sources'][name]:raise ValueError('Frozen diagnostic exporter differs: '+name)
+
+
 def load_inputs(run,diagnostic):
     meta=json.loads((run/'manifest.json').read_text());spec=json.loads((run/'spec.json').read_text());cm=json.loads((run/'cache_manifest.json').read_text())
     if not spec.get('joint_control_fit') or spec.get('joint_control_weight',.5)!=.5:raise ValueError('Requires default-weight joint fit')
     reference=Path(meta['arguments']['reference_study']);ref=json.loads((reference/'manifest.json').read_text())
     if base.digest(reference/'manifest.json')!=meta['reference_manifest_sha256'] or cm['reference_sha256']!=base.digest(reference/'manifest.json'):raise ValueError('Reference provenance changed')
-    for name in SOURCES[2:]:
-        if base.digest(base.SOURCE/name)!=meta['source_hashes'][name]:raise ValueError('Frozen evaluator differs: '+name)
+    em=json.loads((diagnostic/'export_manifest.json').read_text());fp=em['fingerprint']
+    check_source_provenance(meta,fp)
     for key,name in [('global_cpp','global_cuts.cpp'),('global_header','global_cuts.h'),('domain_header','kinematic_bin_integration.h')]:
         if base.digest(reference/'backend'/name)!=spec['input_hashes'][key]:raise ValueError('Saved global selection changed')
     cache={k:dict(r,path=str((run/r['file']).resolve())) for k,r in cm['samples'].items()}
     for r in cache.values():
         if export_digest(r['path'])!=r['sha256']:raise ValueError('Cache checksum changed: '+r['path'])
     starts={p:cuts.load_candidate_parameters(run/p/'candidate_parameters.json') for p in spec['periods']}
-    em=json.loads((diagnostic/'export_manifest.json').read_text());fp=em['fingerprint']
     if fp['joint_manifest']!=base.digest(run/'manifest.json') or fp['cache_manifest']!=base.digest(run/'cache_manifest.json') or fp['candidates']!={p:base.digest(run/p/'candidate_parameters.json') for p in spec['periods']}:raise ValueError('Frozen diagnostic uses different fit/cache')
     data_arrays={p:{} for p in spec['periods']}
     for r in em['records']:

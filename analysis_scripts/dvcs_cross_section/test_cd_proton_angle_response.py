@@ -7,6 +7,21 @@ import study_particle_response as base
 import study_cd_proton_angle_response as study
 
 
+def provenance():
+    names=('particle_response_cut_arrays.h','particle_response_worker.cpp','particle_response_core.h','particle_control_core.h','particle_control_worker.h')
+    current={n:base.digest(base.SOURCE/n) for n in names}
+    meta=dict(source_hashes=dict(current,**{'particle_response_cut_arrays.h':'older helper without individual-photon export'}))
+    fp=dict(export_sources=current.copy())
+    study.check_source_provenance(meta,fp)
+    for source,name in [(meta['source_hashes'],'particle_response_core.h'),(meta['source_hashes'],'particle_response_worker.cpp'),(fp['export_sources'],'particle_response_cut_arrays.h'),(fp['export_sources'],'particle_control_core.h')]:
+        old=source[name];source[name]='changed'
+        try:study.check_source_provenance(meta,fp)
+        except ValueError:pass
+        else:raise AssertionError('Changed source was incorrectly accepted: '+name)
+        finally:source[name]=old
+    print('PASS: historical joint-fit export helper accepted only with matching frozen-export provenance; changed evaluators/exporters rejected')
+
+
 def native_core(tmp):
     isolated=tmp/'isolated';study.angle_sources(base.SOURCE,isolated)
     cpp=tmp/'core.cpp';cpp.write_text(r'''
@@ -95,7 +110,7 @@ def root_smoke(tmp):
     print('PASS: actual ROOT worker compilation, zero-parameter export replay and both control/signal extended evaluator paths')
 
 if __name__=='__main__':
-    p=argparse.ArgumentParser();p.add_argument('--root-smoke',action='store_true');args=p.parse_args();selector()
+    p=argparse.ArgumentParser();p.add_argument('--root-smoke',action='store_true');args=p.parse_args();provenance();selector()
     with tempfile.TemporaryDirectory() as folder:
         native_core(Path(folder))
     with tempfile.TemporaryDirectory() as folder:plot_smoke(Path(folder))
