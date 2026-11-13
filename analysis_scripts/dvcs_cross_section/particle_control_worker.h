@@ -24,7 +24,7 @@ static void cache_control(const json& spec,const json& job,const std::string& ou
   for(Long64_t i=0;i<tree->GetEntries();++i){uint64_t samplekey=mix(key^uint64_t(i));if(uniform(samplekey^0x93c467e37db0c7a5ULL)>=probability)continue;
    b.read(b.reconstructed,i);ControlRecord c{};for(int j=0;j<24;++j)c.base.v[j]=ptr[j]?*ptr[j]:0;
    if(!direct)c.base.v[16]=std::abs(std::remainder(c.base.v[10]-c.base.v[13],2*PI));c.base.key=(samplekey&~uint64_t(1))|uint64_t(!direct);
-   c.photons[6]=c.base.v[4];c.photons[7]=b.get("detector_gamma2");double error;
+   c.photons[6]=c.base.v[4];c.photons[7]=b.get("detector_gamma2");if((c.photons[6]!=0&&c.photons[6]!=1)||(c.photons[7]!=0&&c.photons[7]!=1))throw std::runtime_error("Photon detector tags must be 0=FT or 1=FD");double error;
    bool ok=recover_photons(c.base,beam,b.get("gamma_phi1"),b.get("gamma_phi2"),b.get("open_angle_egamma1"),b.get("open_angle_egamma2"),b.get("Mh_gammagamma"),c.photons,error);
    if(!ok)++unresolved;binary.write(reinterpret_cast<const char*>(&c),sizeof c);++saved;++number;
   }
@@ -38,17 +38,29 @@ static void evaluate_control(const json& spec,const json& job,const std::string&
  for(int t=0;t<3;++t){const auto& block=spec.at("exclusivity").at("eppi0_"+code+"_"+topnames[t]).at("mc");for(auto it=block.begin();it!=block.end();++it){auto v=std::find(VARIABLES.begin(),VARIABLES.end(),it.key());if(v==VARIABLES.end())throw std::runtime_error("Unknown control cut");cuts[t][v-VARIABLES.begin()]=window(it.value());}}
  std::vector<std::array<double,NP>> pars;for(auto& p:job.at("parameters"))pars.push_back(p.get<std::array<double,NP>>());
  if(pars.empty()||std::any_of(pars[0].begin(),pars[0].end(),[](double p){return p!=0;}))throw std::runtime_error("Control needs nominal first");
+ bool joint=spec.value("joint_control_fit",false);int maxbins=0;std::array<std::vector<double>,NV> edges;
+ std::array<std::array<Window,NV>,3> shape_cuts;
+ if(joint)for(int t=0;t<3;++t){const auto& block=spec.at("exclusivity").at("eppi0_"+code+"_"+topnames[t]).at("data");for(auto it=block.begin();it!=block.end();++it){auto j=std::find(VARIABLES.begin(),VARIABLES.end(),it.key())-VARIABLES.begin();if(j==NV)throw std::runtime_error("Unknown control shape cut");shape_cuts[t][j]=window(it.value());}}
+ if(joint)for(int v=0;v<int(NV);++v){const auto& j=spec.at("variables")[v];int n=j.at("bins");maxbins=std::max(maxbins,n+2);if(j.contains("edges"))edges[v]=j.at("edges").get<std::vector<double>>();else{double lo=j.at("low"),hi=j.at("high");for(int b=0;b<=n;++b)edges[v].push_back(lo+(hi-lo)*b/n);}}
+ std::vector<int64_t> shapes(joint?pars.size()*2*3*NV*maxbins:0);
+ auto add_shape=[&](const std::array<double,24>& v,int scenario,int half){
+   int top=-1;std::array<std::array<Window,NV>,3> empty;
+   if(!control_pass(v,period,cfg,empty,top))return;
+   std::array<double,NV> obs;for(int j=0;j<int(NV);++j)obs[j]=v[16+j];unsigned failed=failures(obs,shape_cuts[top]);
+   for(int j=0;j<int(NV);++j)if(leave_one_out(failed,j)&&std::isfinite(obs[j])){int bin=std::upper_bound(edges[j].begin(),edges[j].end(),obs[j])-edges[j].begin();size_t index=(((size_t(scenario)*2+half)*3+top)*NV+j)*maxbins+bin;++shapes[index];}
+ };
  std::vector<int64_t> selected(pars.size()*6),mass_out(pars.size()*2);std::array<int64_t,2> unresolved{},half_records{};ControlRecord c;uint64_t count=0;double beam=beam_energy_for_period_label(period);
  std::ifstream input(job.at("cache").get<std::string>(),std::ios::binary);if(!input)throw std::runtime_error("Missing control cache");
  while(input.read(reinterpret_cast<char*>(&c),sizeof c)){
   ++count;int half=(mix(c.base.key^0xb234fe3adbf120ddULL)>>40)&1,t=-1;bool passed=control_pass(c.base.v,period,cfg,cuts,t);++half_records[half];
+  if(joint)add_shape(c.base.v,0,half);
   if(passed){++selected[half*3+t];if(c.photons[9]<.5)++unresolved[half];}
   std::array<double,12> noise;for(int j=0;j<12;++j)noise[j]=gaussian(c.base.key,j);
   auto original=derived(c.base.v,beam,c.base.key&1,MPI0);
-  for(size_t s=1;s<pars.size();++s){double mass;auto v=vary_control(c,pars[s],beam,original,noise,mass);if(control_pass(v,period,cfg,cuts,t))++selected[(s*2+half)*3+t];if(mass<.11||mass>.16)++mass_out[s*2+half];}
+  for(size_t s=1;s<pars.size();++s){double mass;auto v=vary_control(c,pars[s],beam,original,noise,mass);if(joint)add_shape(v,s,half);if(control_pass(v,period,cfg,cuts,t))++selected[(s*2+half)*3+t];if(mass<.11||mass>.16)++mass_out[s*2+half];}
   if(c.photons[8]<.11||c.photons[8]>.16)++mass_out[half];
  }
  if(!input.eof()||input.gcount())throw std::runtime_error("Truncated control cache");
- std::ofstream binary(out,std::ios::binary);binary.write(reinterpret_cast<char*>(selected.data()),selected.size()*sizeof(int64_t));
- std::ofstream meta(out+".json");meta<<json{{"shape",{int(pars.size()),2,3}},{"records",count},{"half_records",half_records},{"selected",selected},{"unresolved_selected",unresolved},{"mass_outside_input_window",mass_out}};
+ std::ofstream binary(out,std::ios::binary);if(joint)binary.write(reinterpret_cast<char*>(shapes.data()),shapes.size()*sizeof(int64_t));else binary.write(reinterpret_cast<char*>(selected.data()),selected.size()*sizeof(int64_t));
+ std::ofstream meta(out+".json");meta<<json{{"hist_shape",{int(pars.size()),2,3,1,int(NV),maxbins}},{"shape",{int(pars.size()),2,3}},{"records",count},{"half_records",half_records},{"selected",selected},{"unresolved_selected",unresolved},{"mass_outside_input_window",mass_out}};
 }

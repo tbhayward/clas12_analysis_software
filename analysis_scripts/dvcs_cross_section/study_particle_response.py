@@ -204,7 +204,10 @@ class Engine:
                 self.control=np.asarray(meta['selected'],dtype=np.int64).reshape(len(unique),2,3);self.control_metadata=meta
                 total=self.control[0].sum();bad=sum(meta['unresolved_selected'])
                 if total<=0 or bad/total>.01:raise ValueError(f'{job["period"]}: too many unresolved control photon pairs ({bad}/{total}); inspect control cache metadata')
-                path.unlink();continue
+                if self.spec.get('joint_control_fit'):
+                    hist[key]=np.memmap(path,dtype='<i8',mode='r',shape=tuple(meta['hist_shape']))
+                else:path.unlink()
+                continue
             hist[key]=np.memmap(path,dtype='<i8',mode='r',shape=tuple(meta['shape']))
             selected[key]=np.asarray(meta['selected'],dtype=np.int64).reshape(len(unique),2,3)
         self.current_selected=selected
@@ -268,10 +271,32 @@ class Engine:
                         score,bins=shape_score(d,m,var,int(raw0),self.min_mc,m0,var0)
                         kind='heldout_observables' if v in VALID_OBS else 'validation_mc' if half else 'train'
                         if np.isfinite(score):buckets[kind].append(score)
-                        records.append(dict(scenario=i,period=p,topology=TOPS[t],variable=OBS[v],half=half,kind=kind,score=score,usable_bins=bins,raw_mc=int(raw),background_multiplier=multiplier))
+                        records.append(dict(scenario=i,period=p,topology=TOPS[t],variable=OBS[v],half=half,kind=kind,score=score,usable_bins=bins,raw_mc=int(raw),background_multiplier=multiplier,channel='epgamma'))
         expected=len(self.spec['periods'])*len(self.fit_topologies)*len(TRAIN_OBS)
         if len(buckets['train'])!=expected:buckets['train']=[]
         result={**{k:float(np.mean(values)) if values else float('inf') for k,values in buckets.items()},'training_projections':len(buckets['train'])}
+        if self.spec.get('joint_control_fit'):
+            result,records=self.joint_control_score(hist,i,result,records)
+        return result,records
+
+    def joint_control_score(self,hist,i,result,records):
+        buckets={k:[] for k in ('train','validation_mc','heldout_observables')}
+        for p in self.spec['periods']:
+            for t in self.fit_topologies:
+                for v in TRAIN_OBS+VALID_OBS:
+                    n=self.spec['variables'][v]['bins']+2;d=self.data[p+'__pi0_data'][t,0,v,:n].astype(float)
+                    for half in (0,1):
+                        raw=hist[p+'__pi0_mc'][i,half,t,0,v,:n].astype(float);nominal=hist[p+'__pi0_mc'][0,half,t,0,v,:n].astype(float)
+                        score,bins=shape_score(d,raw,raw,int(nominal.sum()),self.min_mc,nominal,nominal)
+                        kind='heldout_observables' if v in VALID_OBS else 'validation_mc' if half else 'train'
+                        if np.isfinite(score):buckets[kind].append(score)
+                        records.append(dict(scenario=i,period=p,topology=TOPS[t],variable=OBS[v],half=half,kind=kind,score=score,usable_bins=bins,raw_mc=int(raw.sum()),background_multiplier=1.,channel='epgammagamma'))
+        expected=len(self.spec['periods'])*len(self.fit_topologies)*len(TRAIN_OBS)
+        for kind in buckets:
+            old=result[kind];new=float(np.mean(buckets[kind])) if buckets[kind] else float('inf')
+            if kind=='train' and len(buckets[kind])!=expected:new=float('inf')
+            result['epgamma_'+kind]=old;result['epgammagamma_'+kind]=new;result[kind]=.5*(old+new)
+        result['training_projections']+=len(buckets['train'])
         return result,records
 
 
@@ -349,7 +374,7 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
                     ax.set_xlim(*mass_plot_limits(edges,[d,*prediction]));ax.text(.02,.97,'Core view; tails retained',transform=ax.transAxes,va='top',fontsize=7)
                 ax.set(xlabel=v['label'],ylabel='Density / DATA total');ax.legend(fontsize=8);ax.grid(alpha=.15)
             for ax in axes.flat[7:]:ax.axis('off')
-            axes.flat[7].text(0,1,'Independent period/polarity response.\nOpening angle/pT and mass eγ\nwere not used to choose parameters.\nCandidate pi0 multiplier is recorded.\nCandidate is a detector-response test,\nnot an accepted production correction.',va='top')
+            axes.flat[7].text(0,1,'Independent period/polarity response.\nSee candidate_parameters.json for training variables.\nReserved observables are validation only.\nCandidate pi0 multiplier is recorded.\nCandidate is a detector-response test,\nnot an accepted production correction.',va='top')
             fig.suptitle(p+' · '+top+' · particle-level response test');destination=output/'plots'/p;destination.mkdir(parents=True,exist_ok=True)
             fig.savefig(destination/(top+'.png'),dpi=110)
             for vi,v in enumerate(spec['variables']):
@@ -397,6 +422,26 @@ def detailed_report(engine,output,parameters,scores,hist,selected):
     fig.savefig(output/'single_parameter_effects.png',dpi=120);plt.close(fig)
     links=''.join(f'<li>{p}: '+ ' · '.join(f'<a href="plots/{p}/{t}.png">{t} rates</a> / <a href="plots/{p}/{t}_shapes.png">shapes</a>' for t in TOPS)+'</li>' for p in spec['periods'])
     (output/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><title>Particle response test</title><style>body{font:17px system-ui;max-width:1100px;margin:40px auto}li{margin:15px}</style><h1>Particle-response test</h1><p>Start with CD_FT. Blue: DATA; orange: nominal MC; green: candidate MC. Candidate background transfer includes the morphed two-photon control. Candidate signal normalization is fitted once per topology to the fully selected sample, then held fixed across all plotted observables. Shape links normalize each distribution to unit area. Raw signal selection ratios in selection_yields.csv expose efficiency changes independently of that normalization. The upstream gamma-gamma mass window cannot be undone with these saved trees. This is a candidate additional Gaussian response and momentum-scale model, not a production correction.</p><p><a href="single_parameter_effects.png">Which particle variations improve the distributions?</a></p><ul>'+links+'</ul><p><a href="REPORT.md">Fit definitions, limitations and parameter values</a> · <a href="single_parameter_ranking.csv">Single-parameter ranking</a> · <a href="final_scores.csv">Training/validation scores</a> · <a href="selection_yields.csv">Selection yields</a> · <a href="final_shapes.csv">All joint-cell shapes</a></p>')
+    if spec.get('joint_control_fit'):render_joint_controls(engine,output,hist)
+
+def render_joint_controls(engine,output,hist):
+    import matplotlib.pyplot as plt
+    links=[]
+    for p in engine.spec['periods']:
+        for t in engine.fit_topologies:
+            fig,axes=plt.subplots(3,3,figsize=(14,10),layout='constrained')
+            for v,variable in enumerate(engine.spec['variables']):
+                ax=axes.flat[v];n=variable['bins']+2;edges=diag.variable_edges(variable);d=engine.data[p+'__pi0_data'][t,0,v,:n]
+                for label,h,color in [('DATA',d,'#205cab'),('Nominal two-photon MC',hist[p+'__pi0_mc'][0,:,t,0,v,:n].sum(axis=0),'#d45c18'),('Joint-fit two-photon MC',hist[p+'__pi0_mc'][-1,:,t,0,v,:n].sum(axis=0),'#22946b')]:
+                    if h.sum():ax.stairs(h[1:-1]/h.sum()/np.diff(edges),edges,color=color,label=label)
+                if variable['name']=='Mx2':ax.set_xlim(*mass_plot_limits(edges,[d]))
+                ax.set(xlabel=variable['label'].replace('γ','π⁰'),ylabel='Unit-area density');ax.legend(fontsize=7);ax.grid(alpha=.2)
+            for ax in axes.flat[7:]:ax.axis('off')
+            fig.suptitle(p+' · '+TOPS[t]+' · two-photon control shapes; common DATA windows, displayed cut omitted')
+            folder=output/'control_plots'/p;folder.mkdir(parents=True,exist_ok=True);path=folder/(TOPS[t]+'.png');fig.savefig(path,dpi=110);plt.close(fig);links.append(path)
+    for path in links:add_report_link(output/'REPORT.html',path,'Joint-fit two-photon shapes: '+path.parent.name+' '+path.stem)
+    with (output/'REPORT.html').open('a') as f:f.write('<p>Joint objective: equal weight to the mean epgamma shape score and the mean two-photon control shape score. Training uses coplanarity, missing pT, missing energy and missing mass squared. Opening angle and missing mass eγ/eπ0 remain reserved. MC half 1 is validation only; experimental DATA are shared, so this is not independent DATA validation. Control shapes use common DATA windows, omitting the displayed cut. Transfer normalization retains its original MC control windows. Each photon receives its own detector response.</p>')
+
 
 def discard_histograms(hist):
     """Release mappings and unlink only this evaluation's expendable binaries."""
@@ -536,8 +581,40 @@ def run_cut_redetermination(args,reference,output):
     subprocess.run([sys.executable,str(SOURCE/'study_response_cut_redetermination.py'),'--reference-study',str(reference),'--response-run',str(output),'--workers',str(args.workers),'--scratch-root',str(args.scratch_root),'--output',str(output/'cut_redetermination')],check=True)
 
 
+def load_joint_control_data(folder,spec,reference):
+    from study_fd_background_transfer import common
+    saved=json.loads((folder/'export_manifest.json').read_text());fp=saved['fingerprint']
+    original=json.loads((folder/'manifest.json').read_text());parent=json.loads((Path(original['arguments']['common_study'])/'manifest.json').read_text());source=Path(parent['arguments']['followup_study'])/'cut_redetermination'
+    oldspec=json.loads((source/'spec.json').read_text())
+    for key in ('global_cuts','exclusivity','variables'):
+        if oldspec[key]!=spec[key]:raise ValueError('Control/reference selection or histogram mismatch: '+key)
+    old=json.loads((source/'manifest.json').read_text())
+    training=Path(old['arguments']['training_study']);spec['joint_start_paths']={}
+    for period in spec['periods']:
+        path=training/period/'add_pt/candidate_parameters.json'
+        if digest(path)!=old['candidate_hashes']['add_pt'][period]:raise ValueError('Joint starting candidate changed')
+        spec['joint_start_paths'][period]=str(path)
+    if old['reference_sha256']!=digest(reference/'manifest.json'):raise ValueError('Control/reference provenance mismatch')
+    result={};nb=max(v['bins']+2 for v in spec['variables'])
+    for record in saved['records']:
+        if record['sample']!='pi0_data' or record['period'] not in spec['periods']:continue
+        path=Path(record['path']);shape=record['shape']
+        if common.export_digest(path)!=record['sha256'] or shape[1]!=20:raise ValueError('Invalid control DATA export')
+        a=np.memmap(path,dtype='<f8',mode='r',shape=tuple(shape)) if shape[0] else np.empty((0,20));h=np.zeros((3,1,len(OBS),nb),dtype=np.int64);code=spec['period_codes'][record['period']]
+        for t,top in enumerate(TOPS):
+            block=spec['exclusivity']['eppi0_'+code+'_'+top]
+            for v,name in enumerate(OBS):
+                selected=common.closure.mask(a,t,block,'data',omit=name);edges=diag.variable_edges(spec['variables'][v]);h[t,0,v,:len(edges)+1]=common.closure.histogram(a[:,v+1],selected,edges)
+        result[record['period']+'__pi0_data']=h
+    if any(p+'__pi0_data' not in result for p in spec['periods']):raise ValueError('Missing two-photon DATA exports')
+    return result
+
+
 def main(argv=None):
+    global TRAIN_OBS,VALID_OBS
     parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--local-refinement',action='store_true',help='Skip broad single-parameter scan; start from checked previous parameters and test adjacent levels')
+    parser.add_argument('--joint-control-study',type=Path,help='Completed pi0_control_transfer output; enable simultaneous control shape training')
     parser.add_argument('--reference-study',type=Path,required=True)
     parser.add_argument('--output',type=Path,required=True)
     parser.add_argument('--scratch-root',type=Path,default=Path('/scratch/thayward/dvcs_particle_response'),help='Large MC caches and temporary evaluation files; each run gets a unique subdirectory')
@@ -557,8 +634,13 @@ def main(argv=None):
     parser.add_argument('--refinement-rounds',type=int,default=1)
     parser.add_argument('--min-mc',type=int,default=100)
     args=parser.parse_args(argv)
+    if args.joint_control_study:
+        TRAIN_OBS=[0,3,4,5];VALID_OBS=[2,6]
+        if args.reuse_cache and (args.reuse_cache/'with_bias/cache_manifest.json').is_file():args.reuse_cache=args.reuse_cache/'with_bias'
+        if args.compare_models or args.finish_reports:parser.error('Joint control fitting requires a fresh single-model run')
     if not np.isfinite(args.background_transfer_uncertainty) or args.background_transfer_uncertainty<0:parser.error('Background transfer uncertainty must be finite and nonnegative')
     if not 1<=args.workers<=10 or args.expected_cache_events<1000 or not 0<=args.seed<2**64 or args.coordinate_rounds<0 or args.refinement_rounds<0 or args.min_mc<10:parser.error('Invalid worker/cache/seed/fit limits')
+    if args.local_refinement and not (args.joint_control_study or args.initial_parameters_from):parser.error('Local refinement requires a starting candidate')
     reference=args.reference_study.resolve();output=args.output.resolve()
     if args.compare_models:
         compare_models(args,reference,output)
@@ -568,11 +650,14 @@ def main(argv=None):
     manifest=json.loads((reference/'manifest.json').read_text());spec=copy.deepcopy(manifest['spec'])
     if not spec.get('background_aware') or not spec.get('joint_grids'):parser.error('Use the completed background-aware joint diagnostic as reference')
     if digest(reference/'histograms.npz')!=manifest['histogram_sha256']:raise ValueError('Reference histogram checksum mismatch')
+    if args.joint_control_study:spec['joint_control_fit']=True
     spec.update(expected_cache_events=args.expected_cache_events,seed=args.seed,reference_flows=manifest['flows'])
     for k,n in [('global_cpp','global_cuts.cpp'),('global_header','global_cuts.h'),('domain_header','kinematic_bin_integration.h')]:
         if digest(reference/'backend'/n)!=spec['input_hashes'][k]:raise ValueError('Saved global-cut source hash mismatch')
     with np.load(reference/'histograms.npz',allow_pickle=False) as archive:
         data={p+'__data':archive[p+'__data'].copy() for p in spec['periods']}
+    if args.joint_control_study:
+        data.update(load_joint_control_data(args.joint_control_study.resolve(),spec,reference))
     with (reference/'normalizations.csv').open() as f:
         norm={(r['period'],TOPS.index(r['topology'])):r for r in csv.DictReader(f)}
     if any(r['status']!='ok' for r in norm.values()):raise ValueError('Invalid reference component normalization')
@@ -625,12 +710,12 @@ def main(argv=None):
 def fit_candidate(engine,output,args):
     spec=engine.spec
     grid=parameter_grid(args.fit_topologies,getattr(args,"bias_mode","fit"),getattr(args,"scan_range","standard"));nominal=[0.]*20;candidates=[nominal]
-    for k,levels in grid.items():
+    for k,levels in ([] if getattr(args,'local_refinement',False) else grid.items()):
         for value in levels:
             if value:
                 p=list(nominal);p[k]=value;candidates.append(p)
-    if getattr(args,'initial_parameters_from',None):
-        start=args.initial_parameters_from/spec['periods'][0]/'candidate_parameters.json'
+    if getattr(args,'initial_parameters_from',None) or spec.get('joint_start_paths'):
+        start=args.initial_parameters_from/spec['periods'][0]/'candidate_parameters.json' if getattr(args,'initial_parameters_from',None) else Path(spec['joint_start_paths'][spec['periods'][0]])
         previous=json.loads(start.read_text())
         if previous['period']!=spec['periods'][0]:raise ValueError('Starting parameter period mismatch')
         initial=[previous['parameters'].get(name,0.) if k in grid else 0. for k,name in enumerate(PARAMS)]
@@ -646,11 +731,13 @@ def fit_candidate(engine,output,args):
     ranking=[]
     for k,levels in grid.items():
         indices=[i for i,p in enumerate(pars) if p[k]!=0 and sum(x!=0 for x in p)==1]
+        if not indices:continue
         b=min(indices,key=lambda i:scores[i]['train'])
         ranking.append(dict(parameter=PARAMS[k],nominal_heldout_observables=scores[0]['heldout_observables'],best_single_value=pars[b][k],train_score=scores[b]['train'],nominal_train=scores[0]['train'],improvement=scores[0]['train']-scores[b]['train'],heldout_observables=scores[b]['heldout_observables'],validation_mc=scores[b]['validation_mc']))
-    table(output/'single_parameter_ranking.csv',sorted(ranking,key=lambda r:r['train_score']))
+    if ranking:table(output/'single_parameter_ranking.csv',sorted(ranking,key=lambda r:r['train_score']))
+    else:(output/'single_parameter_ranking.csv').write_text('parameter,train_score,nominal_train,heldout_observables,nominal_heldout_observables\n')
     # Finite template-response similarities flag ambiguous track attribution.
-    if hist:
+    if hist and not getattr(args,'local_refinement',False):
         vectors=[];names=[]
         for k,levels in grid.items():
             candidates=[i for i,p in enumerate(pars) if p[k]!=0 and sum(x!=0 for x in p)==1]
@@ -680,6 +767,8 @@ def fit_candidate(engine,output,args):
         for iteration in range(rounds):
             for k,levels in grid.items():
                 values=levels
+                if phase=='coordinate' and getattr(args,'local_refinement',False):
+                    values=sorted(set([best[k],max((v for v in levels if v<best[k]),default=best[k]),min((v for v in levels if v>best[k]),default=best[k])]))
                 if phase=='refine':
                     refined=sorted(set(refinement_levels[k]+[best[k]]))
                     lower=max([x for x in refined if x<best[k]],default=refined[0]);upper=min([x for x in refined if x>best[k]],default=refined[-1])
@@ -700,7 +789,7 @@ def fit_candidate(engine,output,args):
     if getattr(engine,'control',None) is not None:
         dump(output/'final_control_response.json',dict(selected=engine.control.tolist(),metadata=engine.control_metadata))
     active={PARAMS[k]:best[k] for k in grid};boundary=[PARAMS[k] for k,levels in grid.items() if best[k]!=0 and best[k] in (levels[0],levels[-1])]
-    dump(output/'candidate_parameters.json',dict(version=VERSION,normalization_mode='morphed_control_profiled_signal' if getattr(engine,'control',None) is not None else 'legacy_fixed',parameters=active,boundary_parameters=boundary,period=spec['periods'][0],bias_mode=getattr(args,'bias_mode','fit'),scan_range=getattr(args,'scan_range','standard'),background_multiplier=s[-1].get('background_multiplier',1.),background_constraint_sigma=s[-1].get('background_constraint_sigma',0.),background_multiplier_at_boundary=abs(abs(s[-1].get('background_multiplier',1.)-1)-2*s[-1].get('background_constraint_sigma',0.))<1e-10 and s[-1].get('background_constraint_sigma',0.)>0,background_transfer_uncertainty=getattr(args,'background_transfer_uncertainty',0.),fit_topologies=args.fit_topologies,training_observables=[OBS[i] for i in TRAIN_OBS],validation_observables=[OBS[i] for i in VALID_OBS]))
+    dump(output/'candidate_parameters.json',dict(version=VERSION,joint_control_fit=bool(spec.get('joint_control_fit')),normalization_mode='morphed_control_profiled_signal' if getattr(engine,'control',None) is not None else 'legacy_fixed',parameters=active,boundary_parameters=boundary,period=spec['periods'][0],bias_mode=getattr(args,'bias_mode','fit'),scan_range=getattr(args,'scan_range','standard'),background_multiplier=s[-1].get('background_multiplier',1.),background_constraint_sigma=s[-1].get('background_constraint_sigma',0.),background_multiplier_at_boundary=abs(abs(s[-1].get('background_multiplier',1.)-1)-2*s[-1].get('background_constraint_sigma',0.))<1e-10 and s[-1].get('background_constraint_sigma',0.)>0,background_transfer_uncertainty=getattr(args,'background_transfer_uncertainty',0.),fit_topologies=args.fit_topologies,training_observables=[OBS[i] for i in TRAIN_OBS],validation_observables=[OBS[i] for i in VALID_OBS]))
     table(output/'evaluation_history.csv',[dict(call=r['call'],scenario=r['scenario'],parameters=json.dumps(r['parameters']),**{k:v for k,v in r.items() if k not in ('call','scenario','parameters')}) for r in engine.history])
     units=[]
     for k,value in active.items():
