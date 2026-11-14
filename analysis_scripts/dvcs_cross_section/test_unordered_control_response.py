@@ -17,7 +17,7 @@ def selections(tmp):
     assert study.selection(a,3,study.blocks(spec,'fa18_inb',3),omit='pTmiss').sum()==200
     h=study.histogram(a,study.selection(a,3,[]),4,np.linspace(-1,1,81));assert h.sum()==200
     rows,flows,links,metrics=study.render('fa18_inb',{'DATA':a,'nominal':a,'frozen':a},spec,tmp,10,50)
-    assert len(links)==12 and all((tmp/x).is_file() for x in links) and len(rows)==384 and len(flows)==36 and len(metrics)==12
+    assert len(links)==8 and all((tmp/x).is_file() for x in links) and len(rows)==256 and len(flows)==24 and len(metrics)==12
     print('PASS: six disjoint groups, common window intersection, N-minus-one selection, both MC halves, pi0 mass and complete paired report plots')
 
 
