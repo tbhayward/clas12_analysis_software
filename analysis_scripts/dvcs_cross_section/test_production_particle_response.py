@@ -192,12 +192,12 @@ def data_reader_and_note(tmp,rows,globals_):
         for top in production.TOPOLOGIES:cut[production.cut_json_key(channel,period,top)]=dict(data={},mc={})
     (origin/'cuts.json').write_text(json.dumps(cut))
     with patch.object(production,'PERIODS',(period,)),patch.object(note,'data_arrays',return_value=data):note.main(['--response-output',str(origin),'--cuts',str(origin/'cuts.json'),'--output',str(origin/'analysis_note')])
-    assert len(list((origin/'analysis_note').rglob('*.png')))==10 and (origin/'analysis_note/particle_response_figures.pdf').stat().st_size>10000
+    assert len(list((origin/'analysis_note').rglob('*.png')))==10 and not list((origin/'analysis_note').rglob('*.pdf'))
     with np.load(origin/'analysis_note/plot_histograms.npz') as h:assert len(h.files)>60
     assert (origin/'analysis_note/full_statistics_manifest.json').is_file() and (origin/'analysis_note/influence_scores.csv').is_file()
     with patch.object(note,'data_arrays',side_effect=AssertionError('Replot reread DATA')),patch.object(note,'note_histograms',side_effect=AssertionError('Replot reread MC')):
         note.main(['--replot','--output',str(origin/'analysis_note')])
-    print('PASS: actual production DATA reader/cache with saved control mass, final-window note scores, all parameter ablations, component overlays, vector PDF and histogram-only replot')
+    print('PASS: actual production DATA reader/cache with saved control mass, final-window note scores, all parameter ablations, component overlays, PNG-only output and histogram-only replot')
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);p.add_argument('--native',action='store_true',help='Compile the native evaluator and test actual ROOT files');a=p.parse_args()

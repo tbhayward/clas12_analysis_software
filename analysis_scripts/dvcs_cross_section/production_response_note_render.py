@@ -5,7 +5,6 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
-from matplotlib.backends.backend_pdf import PdfPages
 import study_particle_response as base
 CORE=(0,3,4,5)
 COLORS=dict(DATA='#205cab',nominal='#888888',modified='#c62828')
@@ -15,13 +14,13 @@ COORDS=('p_sigma_fraction','theta_sigma_rad','phi_sigma_rad','p_bias_fraction')
 
 def render(out):
     out=Path(out);params=list(csv.DictReader((out/'parameters.csv').open()));scores=list(csv.DictReader((out/'shape_scores.csv').open()));influences=list(csv.DictReader((out/'influence_scores.csv').open())) if (out/'influence_scores.csv').is_file() else scores;links=[]
-    plt.rcParams.update({'font.family':'serif','font.size':11,'axes.labelsize':12,'axes.titlesize':12,'legend.fontsize':9,'axes.spines.top':True,'axes.spines.right':True,'savefig.facecolor':'white','pdf.fonttype':42})
-    def save(fig,folder,name,pdf):
+    plt.rcParams.update({'font.family':'serif','font.size':11,'axes.labelsize':12,'axes.titlesize':12,'legend.fontsize':9,'axes.spines.top':True,'axes.spines.right':True,'savefig.facecolor':'white'})
+    def save(fig,folder,name):
 
         for ax in fig.axes:
             for spine in ax.spines.values():spine.set_visible(True);spine.set_linewidth(.8)
-        folder.mkdir(parents=True,exist_ok=True);path=folder/(name+'.pdf');fig.savefig(path,bbox_inches='tight');fig.savefig(path.with_suffix('.png'),dpi=220,bbox_inches='tight');pdf.savefig(fig,bbox_inches='tight');plt.close(fig);links.append(path.relative_to(out).as_posix())
-    with np.load(out/'plot_histograms.npz',allow_pickle=False) as h,PdfPages(out/'particle_response_figures.pdf') as pdf:
+        folder.mkdir(parents=True,exist_ok=True);path=folder/(name+'.png');fig.savefig(path,dpi=220,bbox_inches='tight');plt.close(fig);links.append(path.relative_to(out).as_posix())
+    with np.load(out/'plot_histograms.npz',allow_pickle=False) as h:
       for period in dict.fromkeys(r['period'] for r in params):
         label=period.replace('_',' ').title();folder=out/'plots'/period;records=[r for r in scores if r['period']==period];par=np.zeros((5,4))
         for r in params:
@@ -29,7 +28,7 @@ def render(out):
         fig,axes=plt.subplots(2,2,figsize=(10,7),layout='constrained')
         for j,ax in enumerate(axes.flat):
             ax.bar(range(5),par[:,j]*(100 if j in (0,3) else 1000),color=['#537ba6','#b87a3f','#8b5c99','#48937e','#c45c64']);ax.axhline(0,color='black',lw=.7);ax.set(xticks=range(5),xticklabels=REGIONS,ylabel=['Added momentum width (%)','Added polar-angle width (mrad)','Added azimuth width (mrad)','Momentum bias (%)'][j]);ax.tick_params(axis='x',rotation=25);ax.grid(axis='y',alpha=.2)
-        fig.suptitle(label+' — frozen reconstructed-MC response');save(fig,folder,'parameters',pdf)
+        fig.suptitle(label+' — frozen reconstructed-MC response');save(fig,folder,'parameters')
         support={(r['channel'],r['topology'],r['variable'],int(r['half'])) for r in records if r['scenario']=='nominal' and r['status']=='supported'}
         def average(scenario,channel,half,reserved=False,source=None):
             source=records if source is None else source;active_support={(r['channel'],r['topology'],r['variable'],int(r['half'])) for r in source if r['scenario']=='nominal' and r['status']=='supported'}
@@ -38,12 +37,12 @@ def render(out):
         for ax,ch in zip(axes,('epgamma','epgammagamma')):
             for i,(scenario,color) in enumerate((('nominal',COLORS['nominal']),('modified',COLORS['modified']))):ax.bar(np.arange(3)+(i-.5)*.35,[average(scenario,ch,0),average(scenario,ch,1),average(scenario,ch,1,True)],.35,label=scenario,color=color)
             ax.set(xticks=range(3),xticklabels=['Training variables\nMC half 0','Training variables\nMC half 1','Reserved mass\nMC half 1'],ylabel='Shape discrepancy score',title=r'$ep\gamma$' if ch=='epgamma' else r'$ep\gamma\gamma$');ax.legend();ax.grid(axis='y',alpha=.2)
-        fig.suptitle(label+' — final common DATA windows; frozen response');save(fig,folder,'validation',pdf)
+        fig.suptitle(label+' — final common DATA windows; frozen response');save(fig,folder,'validation')
         influence_records=[r for r in influences if r['period']==period]
         fig,axes=plt.subplots(2,2,figsize=(10,7),layout='constrained');baseline=.5*(average('modified','epgamma',0,source=influence_records)+average('modified','epgammagamma',0,source=influence_records))
         for j,ax in enumerate(axes.flat):
             effect=[.5*(average('without_'+base.PARAMS[4*r+j],'epgamma',0,source=influence_records)+average('without_'+base.PARAMS[4*r+j],'epgammagamma',0,source=influence_records))-baseline for r in range(5)];ax.bar(range(5),effect,color='#537ba6');ax.axhline(0,color='black',lw=.7);ax.set(xticks=range(5),xticklabels=REGIONS,title=['Momentum width','Polar-angle width','Azimuth width','Momentum bias'][j],ylabel='Score increase when omitted');ax.tick_params(axis='x',rotation=25);ax.grid(axis='y',alpha=.2)
-        fig.suptitle(label+' — conditional influence of each fitted term\nPaired diagnostic sample; other terms fixed; positive means improvement');save(fig,folder,'parameter_influence',pdf)
+        fig.suptitle(label+' — conditional influence of each fitted term\nPaired diagnostic sample; other terms fixed; positive means improvement');save(fig,folder,'parameter_influence')
         for ch in ('epgamma','epgammagamma'):
           for g,topology in enumerate(base.TOPS):
             fig,axes=plt.subplots(2,2,figsize=(10,7));fig.subplots_adjust(left=.095,right=.98,bottom=.09,top=.81,wspace=.24,hspace=.29)
@@ -64,15 +63,15 @@ def render(out):
             fig.suptitle(label+' — '+topology.replace('_','–')+' — '+(r'$ep\gamma$' if ch=='epgamma' else r'$ep\gamma\gamma$'),fontsize=15,y=.985)
             fig.text(.5,.937,'Common final DATA selection; displayed cut omitted',ha='center',fontsize=10)
             handles,labels=axes.flat[0].get_legend_handles_labels();order=sorted(range(len(labels)),key=lambda k:dict(DATA=0,**{'Nominal MC':1,'Total MC':2,'DVCS signal':3}).get(labels[k],4));fig.legend([handles[k] for k in order],[labels[k] for k in order],loc='upper center',bbox_to_anchor=(.5,.913),ncol=5,frameon=False,fontsize=9,columnspacing=1.5,handlelength=2.4)
-            save(fig,folder/('dvcs' if ch=='epgamma' else 'two_photon'),'exclusivity_'+topology,pdf)
+            save(fig,folder/('dvcs' if ch=='epgamma' else 'two_photon'),'exclusivity_'+topology)
         fig,axes=plt.subplots(1,3,figsize=(12,3.8),layout='constrained');edges=h['edges_mass'];width=np.diff(edges)
         for g,ax in enumerate(axes):
             for name,color in [('DATA',COLORS['DATA']),('nominal',COLORS['nominal']),('modified',COLORS['modified'])]:
                 values=h[f'{period}_mass_{g}_{name}']
                 if values.sum()>0:ax.stairs(values[1:-1]/values.sum()/width,edges,label=name,color=color,lw=2.1 if name=='modified' else 1.3)
             ax.set(title=base.TOPS[g].replace('_','–'),xlabel=LABELS['m_gamma_gamma'],ylabel='Unit-area density');ax.legend();ax.grid(alpha=.15)
-        fig.suptitle(label+' — two-photon mass; common final selection');save(fig,folder/'two_photon','mass',pdf)
-    (out/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><style>body{font:17px system-ui;max-width:1200px;margin:30px auto}img{max-width:100%}</style><h1>Production particle-response note figures</h1><p><a href="particle_response_figures.pdf">Combined vector PDF</a> · <a href="parameters.csv">Parameters</a> · <a href="shape_scores.csv">Scores and support flags</a></p><p>DATA coordinates and generated truth are unchanged. Frozen response modifies full-statistics reconstructed inputs before selection. Publication overlays and nominal/modified score comparisons use all available MC statistics. Conditional parameter-influence bars use the bounded paired diagnostic sample; both scores in each difference use that same sample. Common final DATA windows define N−1 shapes; production yields use their actual separate DATA/MC windows. Both photons share detector response laws.</p><p>Control labels follow the existing production photon-1 convention, identically in the cut finder and counting. They are not the diagnostic unordered groups. Unresolved controls retain their original vectors and are tabulated. Background transfer here uses raw selected control counts and the saved exposure ratio, not production current/proton weights. The fitted exploratory background nuisance is not promoted to a production correction. MC halves share the same DATA; scores are not formal chi-square probabilities.</p><p>Parameter-influence bars omit one term at a time without refitting; correlations mean effects are not additive. Parameters have no fitted uncertainty estimate. Normalization follows selected populations per scenario, and projections are shown as unit-area shapes (including histogram under/overflow). The remaining two-photon mass mismatch is displayed explicitly. Original processing thresholds and the control mass window restrict available events; this stage cannot restore events absent from the trees.</p>'+''.join('<p><a href="'+x+'">'+html.escape(x)+'</a><br><img loading="lazy" src="'+x.replace('.pdf','.png')+'"></p>' for x in links));base.dump(out/'render_provenance.json',dict(renderer_sha256=base.digest(Path(__file__)),histograms_sha256=base.digest(out/'plot_histograms.npz')))
+        fig.suptitle(label+' — two-photon mass; common final selection');save(fig,folder/'two_photon','mass')
+    (out/'REPORT.html').write_text('<!doctype html><meta charset="utf-8"><style>body{font:17px system-ui;max-width:1200px;margin:30px auto}img{max-width:100%}</style><h1>Production particle-response note figures</h1><p><a href="parameters.csv">Parameters</a> · <a href="shape_scores.csv">Scores and support flags</a></p><p>DATA coordinates and generated truth are unchanged. Frozen response modifies full-statistics reconstructed inputs before selection. Publication overlays and nominal/modified score comparisons use all available MC statistics. Conditional parameter-influence bars use the bounded paired diagnostic sample; both scores in each difference use that same sample. Common final DATA windows define N−1 shapes; production yields use their actual separate DATA/MC windows. Both photons share detector response laws.</p><p>Control labels follow the existing production photon-1 convention, identically in the cut finder and counting. They are not the diagnostic unordered groups. Unresolved controls retain their original vectors and are tabulated. Background transfer here uses raw selected control counts and the saved exposure ratio, not production current/proton weights. The fitted exploratory background nuisance is not promoted to a production correction. MC halves share the same DATA; scores are not formal chi-square probabilities.</p><p>Parameter-influence bars omit one term at a time without refitting; correlations mean effects are not additive. Parameters have no fitted uncertainty estimate. Normalization follows selected populations per scenario, and projections are shown as unit-area shapes (including histogram under/overflow). The remaining two-photon mass mismatch is displayed explicitly. Original processing thresholds and the control mass window restrict available events; this stage cannot restore events absent from the trees.</p>'+''.join('<p><a href="'+x+'">'+html.escape(x)+'</a><br><img loading="lazy" src="'+x+'"></p>' for x in links));base.dump(out/'render_provenance.json',dict(renderer_sha256=base.digest(Path(__file__)),histograms_sha256=base.digest(out/'plot_histograms.npz')))
     if (out.parent/'fit/REPORT.html').is_file():
         with (out/'REPORT.html').open('a') as page:page.write('<p><a href="../fit/REPORT.html">Fit performed in this run: training and validation</a></p>')
     print('[response note] '+str(out/'REPORT.html'),flush=True)

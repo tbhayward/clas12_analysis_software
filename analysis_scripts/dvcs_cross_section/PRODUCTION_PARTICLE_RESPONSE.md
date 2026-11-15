@@ -167,8 +167,8 @@ Open:
 
 `test_runs/production_response_001/output/particle_response/analysis_note/REPORT.html`
 
-The package contains vector PDF and 220-dpi PNG figures, grouped by period and
-DVCS/two-photon channel, plus one combined `particle_response_figures.pdf`:
+The package contains 220-dpi PNG figures only, grouped by period and
+DVCS/two-photon channel:
 
 * Signed momentum biases and additional momentum/polar/azimuth widths.
 * Conditional score influence of each of the 20 individual terms, obtained by
@@ -194,7 +194,7 @@ These are conditional effects, not parameter uncertainties or formal p-values.
 
 DATA are blue; nominal MC gray; modified total red, with thin dashed red signal
 and dotted red pi0 background. Every subplot has a full border and the common
-legend is outside the distributions. Vector PDF and PNG outputs are unchanged.
+legend is outside the distributions. Figures are saved as PNG only; no individual or combined PDFs are generated.
 `full_statistics_manifest.json` documents the input files/selection and
 `full_statistics_histograms.npz` caches the counts. `influence_scores.csv` is
 separate from full-statistics `shape_scores.csv`.
