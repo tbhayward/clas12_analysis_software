@@ -5,6 +5,7 @@
 #include "periods.h"
 #include "global_cuts.h"
 #include "python_exclusivity_runner.h"
+#include "production_particle_response.h"
 #include "load_binning_scheme.h"
 #include "bin_means.h"
 #include "total_counts.h"
@@ -16,6 +17,7 @@
 #include "bsa.h"
 #include "radiative_corrections.h"
 #include <filesystem>
+#include <cstdlib>
 #include <fstream>
 #include <optional>
 #include <algorithm>
@@ -171,6 +173,10 @@ static SystematicRunSelection parse_systematic_selection(
 } // namespace
 
 int main(int argc, char* argv[]) {
+    ProductionParticleResponseOptions particle_response;
+    // Only this invocation may install a reconstructed-input response.
+    unsetenv("DVCS_PARTICLE_RESPONSE_MANIFEST");
+    unsetenv("DVCS_PARTICLE_RESPONSE_DATA_CACHE");
     bool quick_xsec_only = false;
     bool run_pass1_bsa_binning = false;
     bool run_sebastian_bsa_binning = false;
@@ -191,7 +197,17 @@ int main(int argc, char* argv[]) {
     bool proton_p_min_overridden = false;
     bool proton_theta_max_overridden = false;
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--merge-low-t") {
+        if (std::string(argv[i]) == "--particle-response-run") {
+            if (i + 1 >= argc) { std::cerr << "--particle-response-run requires a fitted run directory\n"; return 1; }
+            particle_response.fitted_run = argv[++i];
+        } else if (std::string(argv[i]) == "--particle-response-scratch") {
+            if (i + 1 >= argc) { std::cerr << "--particle-response-scratch requires a directory\n"; return 1; }
+            particle_response.scratch_root = argv[++i];
+        } else if (std::string(argv[i]) == "--particle-response-workers") {
+            if (i + 1 >= argc) { std::cerr << "--particle-response-workers requires 1–10\n"; return 1; }
+            try { particle_response.workers = std::stoi(argv[++i]); } catch (...) { return 1; }
+            if (particle_response.workers < 1 || particle_response.workers > 10) return 1;
+        } else if (std::string(argv[i]) == "--merge-low-t") {
             analysis_merge_low_t = true;
         } else if (std::string(argv[i]) == "--photon-t") {
             analysis_photon_t = true;
@@ -281,6 +297,19 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+    if (!particle_response.fitted_run.empty() && !std::filesystem::is_directory(particle_response.fitted_run)) {
+        std::cerr << "[main] FATAL: fitted particle-response directory does not exist: " << particle_response.fitted_run << '\n';
+        return 1;
+    }
+    if (!particle_response.fitted_run.empty() && (acceptance_reweighting_only || eppi0_normalization_only || eppi0_production_test || topology_acceptance_study)) {
+        std::cerr << "[main] FATAL: --particle-response-run requires a full extraction; use its completed output for diagnostic-only modes.\n";
+        return 1;
+    }
+    if (particle_response.fitted_run.empty() && std::filesystem::exists("output/particle_response/input_manifest.json")) {
+        std::cerr << "[main] FATAL: this output belongs to a particle-response extraction. "
+                     "Use --particle-response-run for its full rerun, or a fresh working directory for nominal/diagnostic extraction.\n";
+        return 1;
+    }
     const int n_particle_sector_filters =
         (electron_sector_cli != 0) + (proton_fd_sector_cli != 0) +
         (proton_cd_sector_cli != 0) + (photon_sector_cli != 0);
@@ -302,6 +331,7 @@ int main(int argc, char* argv[]) {
                   << "  ./dvcs_analysis --systematics acceptance,csv\n"
                   << "  ./dvcs_analysis --systematics csv\n"
                   << "  ./dvcs_analysis --skip-systematics\n"
+                  << "  ./dvcs_analysis --particle-response-run /path/to/fitted/run --skip-systematics\n"
                   << "  ./dvcs_analysis --acceptance-reweighting-only\n"
                   << "  ./dvcs_analysis --eppi0-normalization-only\n"
                   << "  ./dvcs_analysis --eppi0-production-test\n"
@@ -470,17 +500,22 @@ int main(int argc, char* argv[]) {
     // opening the ROOT trees in the C++ process. The runner validates and
     // installs the 90%, 95%, and 98% cut JSONs under output/jsons, with the
     // nominal 95% result also installed as combined_cuts.json.
+    if (!particle_response.fitted_run.empty()) {
+        const auto data_cache = std::filesystem::absolute(std::filesystem::path(particle_response.scratch_root) / "data_arrays").string();
+        if (setenv("DVCS_PARTICLE_RESPONSE_DATA_CACHE", data_cache.c_str(), 1) != 0) return 1;
+    }
     PythonExclusivityOptions exclusivity_opts;
     exclusivity_opts.enabled = true;
     exclusivity_opts.force_rerun = true;
+    exclusivity_opts.detailed_plots = particle_response.fitted_run.empty();
     exclusivity_opts.python_executable = "python3";
     exclusivity_opts.script_path = "plot_exclusivity_data_dvcs_pi0_mc.py";
     exclusivity_opts.global_cuts_json = "output/jsons/global_cuts_config.json";
-    exclusivity_opts.output_directory = "output/exclusivity_fit";
+    exclusivity_opts.output_directory = particle_response.fitted_run.empty() ? "output/exclusivity_fit" : "output/particle_response/initial_exclusivity";
     exclusivity_opts.install_directory = "output/jsons";
-    // One independent process per run period; there are five period jobs.
-    // Requesting more workers cannot increase concurrency in this stage.
-    exclusivity_opts.workers = 5;
+    // Python allocates one shared period/topology compute budget. Nominal keeps
+    // its existing five slots; response runs can use ten without rereading DATA.
+    exclusivity_opts.workers = particle_response.fitted_run.empty() ? 5 : particle_response.workers;
     exclusivity_opts.tight_containment = 0.90;
     exclusivity_opts.nominal_containment = 0.95;
     exclusivity_opts.loose_containment = 0.98;
@@ -541,6 +576,35 @@ int main(int argc, char* argv[]) {
         currentStudyGenMcTrees, currentStudyRecMcTrees)) {
         std::cerr << "[main] FATAL: loadTrees failed.\n";
         return 1;
+    }
+
+    if (!particle_response.fitted_run.empty()) {
+        namespace fs = std::filesystem;
+        const fs::path initial = fs::path(particle_response.output_dir) / "initial_cuts";
+        fs::create_directories(initial);
+        for (const char* name : {"combined_cuts.json", "combined_cuts_90.json", "combined_cuts_95.json", "combined_cuts_98.json", "global_cuts_config.json"})
+            fs::copy_file(fs::path("output/jsons") / name, initial / name, fs::copy_options::overwrite_existing);
+        const std::vector<std::pair<std::string,ResponseTreeMap*>> response_maps = {
+            {"data", &dataTrees}, {"gen", &genMcTrees}, {"mc", &recMcTrees},
+            {"pi0_data", &eppi0DataTrees}, {"pi0_gen", &eppi0GenMcTrees},
+            {"pi0_mc", &eppi0RecMcTrees}, {"background", &eppi0BkgTrees},
+            {"rad_gen", &radGenMcTrees}, {"rad_mc", &radRecMcTrees},
+            {"current_gen", &currentStudyGenMcTrees}, {"current_mc", &currentStudyRecMcTrees}};
+        if (!prepare_production_particle_response(particle_response, response_maps)) return 1;
+        // Both Python and all reconstructed C++ maps now share one frozen response.
+        exclusivity_opts.output_directory = "output/exclusivity_fit";
+        exclusivity_opts.detailed_plots = true;
+        if (!run_python_exclusivity_analysis(exclusivity_opts)) {
+            std::cerr << "[main] FATAL: final exclusivity cuts with modified MC failed.\n"; return 1;
+        }
+        const fs::path final_cuts = fs::path(particle_response.output_dir) / "final_cuts";
+        fs::create_directories(final_cuts);
+        for (const char* name : {"combined_cuts.json", "combined_cuts_90.json", "combined_cuts_95.json", "combined_cuts_98.json", "global_cuts_config.json"})
+            fs::copy_file(fs::path("output/jsons") / name, final_cuts / name, fs::copy_options::overwrite_existing);
+        if (!quick_xsec_only && !write_production_particle_response_note(particle_response)) {
+            std::cerr << "[main] FATAL: particle-response analysis-note outputs failed.\n"; return 1;
+        }
+        std::cout << "[main] Frozen particle response and final 90/95/98% cuts installed before bin means, current calibration and counts.\n";
     }
 
     std::cout << "All trees loaded successfully." << std::endl;
@@ -1784,6 +1848,10 @@ int main(int argc, char* argv[]) {
     // They are maintained as separate external comparison workflows and were
     // removed from the nominal chain to avoid duplicated runtime.
 
+    if (!finalize_production_particle_response(particle_response)) {
+        std::cerr << "[main] FATAL: could not record the response identity for the completed CSV.\n";
+        return 1;
+    }
     std::cout << "All done." << std::endl;
     return 0;
 }

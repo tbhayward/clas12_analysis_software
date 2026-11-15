@@ -744,7 +744,8 @@ def input_files(path: str) -> List[str]:
             raise FileNotFoundError(f"Compact MC inventory mismatch for {path}: "
                                     f"missing={sorted(expected-set(files))}, "
                                     f"unexpected={sorted(set(files)-expected)}")
-    return files
+    from production_response_io import routed_files
+    return routed_files(files)
 
 
 def is_paired_mc(path: str) -> bool:
@@ -4136,10 +4137,25 @@ def load_selected_arrays_for_file(
     step_size: str,
     variables: Sequence[VariableConfig],
 ) -> Dict[str, Dict[str, np.ndarray]]:
-    if io_backend() == "uproot":
-        return load_selected_arrays_uproot(path, period_key, topologies, step_size, variables)
-    # endif
-    return load_selected_arrays_pyroot(path, period_key, topologies, step_size, variables)
+    # Keep the two-photon mass in the unchanged DATA cache for note plots.
+    # This extra array is ignored by the established template-fit variable lists.
+    augmented = bool(os.environ.get("DVCS_PARTICLE_RESPONSE_DATA_CACHE") and "/data/" in path and "/pi0_data/" in path)
+    read_variables = tuple(variables) + ((VariableConfig("Mh_gammagamma", r"$M_{\gamma\gamma}$ (GeV)", 140, .10, .17),) if augmented and not any(v.branch == "Mh_gammagamma" for v in variables) else ())
+    def load():
+        if io_backend() == "uproot":
+            return load_selected_arrays_uproot(path, period_key, topologies, step_size, read_variables)
+        return load_selected_arrays_pyroot(path, period_key, topologies, step_size, read_variables)
+    # Cache unchanged DATA arrays only. Include the global selection and reader
+    # source so later final-cut fits cannot reuse an incompatible population.
+    if os.environ.get("DVCS_PARTICLE_RESPONSE_DATA_CACHE") and "/data/" in path and "/mc/" not in path:
+        from production_response_io import cached_data_arrays
+        import hashlib
+        files=input_files(path)
+        key=dict(period=period_key,files=[(f,os.stat(f).st_size,os.stat(f).st_mtime_ns) for f in files],
+                 globals=ACTIVE_GLOBAL_CUTS,topologies=[t.key for t in topologies],
+                 variables=[v.branch for v in read_variables],reader=hashlib.sha256(Path(__file__).read_bytes()).hexdigest())
+        return cached_data_arrays(key,load)
+    return load()
 
 
 def distribution_moments(

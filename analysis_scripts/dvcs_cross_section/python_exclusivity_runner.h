@@ -6,6 +6,7 @@
 struct PythonExclusivityOptions {
     bool enabled = true;
     bool force_rerun = true;
+    bool detailed_plots = true;
 
     std::string python_executable = "python3";
     std::string script_path = "plot_exclusivity_data_dvcs_pi0_mc.py";

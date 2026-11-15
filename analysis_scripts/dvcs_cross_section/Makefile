@@ -5,7 +5,7 @@ LDFLAGS  = $(shell root-config --libs) -lMinuit2 -pthread -fopenmp
 
 # ---------- dvcs_analysis ----------
 DVCS_SRC = main.cpp initialize_pass2_csv.cpp load_trees.cpp make_dirs.cpp \
-           python_exclusivity_runner.cpp exclusivity_cuts.cpp \
+           python_exclusivity_runner.cpp production_particle_response.cpp exclusivity_cuts.cpp \
            global_cuts.cpp load_binning_scheme.cpp \
            bin_means.cpp total_counts.cpp current_dependence.cpp current_systematics.cpp eppi0_normalization.cpp yield_totals.cpp pi0_contamination.cpp pi0_corrected_counts.cpp \
            bsa.cpp radiative_corrections.cpp acceptance.cpp unfolding.cpp bin_volume.cpp \
@@ -46,7 +46,10 @@ all: $(DVCS_BIN) $(SYSTEMATICS_BIN)
 migration-study:
 	python3 study_t_migration.py --workers 10
 
-$(DVCS_BIN): $(DVCS_OBJ) $(SYSTEMATICS_BIN)
+production_response_writer: production_response_writer.o global_cuts.o
+	$(CXX) $^ -o $@ $(LDFLAGS)
+
+$(DVCS_BIN): $(DVCS_OBJ) $(SYSTEMATICS_BIN) production_response_writer
 	$(CXX) $(DVCS_OBJ) -o $@ $(LDFLAGS)
 
 $(LEE_BIN): $(LEE_OBJ)
@@ -62,11 +65,11 @@ $(SYSTEMATICS_BIN): $(SYSTEMATICS_OBJ)
 	$(CXX) $(CXXFLAGS) -c $< -o $@
 
 clean:
-	rm -f $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN) $(SYSTEMATICS_OBJ) $(SYSTEMATICS_BIN) $(DEPS)
+	rm -f production_response_writer.o production_response_writer.d production_response_writer $(DVCS_OBJ) $(DVCS_BIN) $(LEE_OBJ) $(LEE_BIN) $(NORM_SCENARIO_OBJ) $(NORM_SCENARIO_BIN) $(SYSTEMATICS_OBJ) $(SYSTEMATICS_BIN) $(DEPS)
 
 # Auto-generated header dependencies. This makes ordinary `make` rebuild only
 # translation units affected by a changed header, so `make clean` is normally unnecessary.
-DEPS = $(DVCS_OBJ:.o=.d) $(LEE_OBJ:.o=.d) $(NORM_SCENARIO_OBJ:.o=.d) $(SYSTEMATICS_OBJ:.o=.d)
+DEPS = production_response_writer.d $(DVCS_OBJ:.o=.d) $(LEE_OBJ:.o=.d) $(NORM_SCENARIO_OBJ:.o=.d) $(SYSTEMATICS_OBJ:.o=.d)
 -include $(DEPS)
 
 .PHONY: all clean migration-study

@@ -149,8 +149,8 @@ bool validate_options(const PythonExclusivityOptions& options) {
         std::cerr << "[python_exclusivity_runner] ERROR: Output directory is empty.\n";
         return false;
     }
-    if (options.workers < 1 || options.workers > 7) {
-        std::cerr << "[python_exclusivity_runner] ERROR: workers must be in [1, 7], got "
+    if (options.workers < 1 || options.workers > 10) {
+        std::cerr << "[python_exclusivity_runner] ERROR: workers must be in [1, 10], got "
                   << options.workers << ".\n";
         return false;
     }
@@ -254,8 +254,8 @@ bool run_python_exclusivity_analysis(
         << " --tight-containment " << format_decimal(options.tight_containment)
         << " --nominal-containment " << format_decimal(options.nominal_containment)
         << " --loose-containment " << format_decimal(options.loose_containment)
-        << " --workers " << options.workers
-        << " --detailed-plots";
+        << " --workers " << options.workers;
+    if (options.detailed_plots) command << " --detailed-plots";
 
     std::cout << "[python_exclusivity_runner] Executing:\n"
               << command.str() << "\n\n" << std::flush;
