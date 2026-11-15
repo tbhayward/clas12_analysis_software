@@ -19,10 +19,10 @@ std::vector<std::string> files(TTree* tree){std::vector<std::string> x;if(auto* 
 bool command(const std::string& s){std::cout<<"[particle_response] "<<s<<std::endl;return std::system(s.c_str())==0;}
 }
 bool prepare_production_particle_response(const ProductionParticleResponseOptions& o,const std::vector<std::pair<std::string,ResponseTreeMap*>>& maps){try{
- if(o.fitted_run.empty())return true;if(o.workers<1||o.workers>10)throw std::runtime_error("Response workers must be in [1,10]");fs::create_directories(o.output_dir);json inv=json::array();
+ if(!o.enabled())return true;if(o.workers<1||o.workers>10)throw std::runtime_error("Response workers must be in [1,10]");fs::create_directories(o.output_dir);json inv=json::array();
  for(const auto& category:maps)for(const auto& item:*category.second)inv.push_back({{"sample",category.first},{"tag",item.first},{"tree",item.second->GetName()},{"files",files(item.second)}});
  const fs::path inventory=fs::path(o.output_dir)/"input_inventory.json";{std::ofstream f(inventory);f<<inv.dump(2);}
- const std::string cmd="python3 prepare_production_particle_response.py --inventory "+quote(inventory.string())+" --response-run "+quote(fs::absolute(o.fitted_run).string())+" --global-cuts output/jsons/global_cuts_config.json --scratch-root "+quote(o.scratch_root)+" --output "+quote(o.output_dir)+" --workers "+std::to_string(o.workers);
+ const std::string cmd="python3 prepare_production_particle_response.py --inventory "+quote(inventory.string())+(o.fit_response ? " --fit-response --initial-cuts "+quote((fs::path(o.output_dir)/"initial_cuts/combined_cuts.json").string()) : " --response-run "+quote(fs::absolute(o.fitted_run).string()))+" --global-cuts output/jsons/global_cuts_config.json --scratch-root "+quote(o.scratch_root)+" --output "+quote(o.output_dir)+" --workers "+std::to_string(o.workers);
  if(!command(cmd))return false;
  const fs::path manifest=fs::absolute(fs::path(o.output_dir)/"input_manifest.json");const auto m=read(manifest);std::vector<std::pair<TTree**,std::unique_ptr<TChain>>> prepared;
  for(const auto& category:maps){if(category.first=="data"||category.first=="pi0_data"||category.first.find("gen")!=std::string::npos)continue;
@@ -34,6 +34,6 @@ bool prepare_production_particle_response(const ProductionParticleResponseOption
  if(setenv("DVCS_PARTICLE_RESPONSE_MANIFEST",manifest.c_str(),1)!=0)throw std::runtime_error("Cannot install response input manifest");
  std::cout<<"[particle_response] All reconstructed maps now use frozen full-statistics response; DATA and generated maps preserved.\n";return true;
 }catch(const std::exception& e){std::cerr<<"[particle_response] FATAL: "<<e.what()<<'\n';return false;}}
-bool write_production_particle_response_note(const ProductionParticleResponseOptions& o){if(o.fitted_run.empty())return true;return command("python3 plot_production_particle_response.py --response-output "+quote(o.output_dir)+" --cuts "+quote((fs::path(o.output_dir)/"final_cuts/combined_cuts.json").string())+" --output "+quote((fs::path(o.output_dir)/"analysis_note").string()));}
+bool write_production_particle_response_note(const ProductionParticleResponseOptions& o){if(!o.enabled())return true;return command("python3 plot_production_particle_response.py --response-output "+quote(o.output_dir)+" --cuts "+quote((fs::path(o.output_dir)/"final_cuts/combined_cuts.json").string())+" --output "+quote((fs::path(o.output_dir)/"analysis_note").string())+" --workers "+std::to_string(o.workers));}
 
-bool finalize_production_particle_response(const ProductionParticleResponseOptions& o){if(o.fitted_run.empty())return true;return command("python3 finalize_production_particle_response.py --response-output "+quote(o.output_dir)+" --csv output/csvs/dvcs_pass2_analysis.csv --cuts "+quote((fs::path(o.output_dir)/"final_cuts/combined_cuts.json").string()));}
+bool finalize_production_particle_response(const ProductionParticleResponseOptions& o){if(!o.enabled())return true;return command("python3 finalize_production_particle_response.py --response-output "+quote(o.output_dir)+" --csv output/csvs/dvcs_pass2_analysis.csv --cuts "+quote((fs::path(o.output_dir)/"final_cuts/combined_cuts.json").string()));}

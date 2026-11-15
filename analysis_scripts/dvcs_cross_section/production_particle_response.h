@@ -6,7 +6,9 @@
 class TTree;
 using ResponseTreeMap=std::map<std::string,TTree*>;
 struct ProductionParticleResponseOptions {
+ bool fit_response=false;
  std::string fitted_run;
+ bool enabled() const {return fit_response || !fitted_run.empty();}
  std::string scratch_root="/scratch/thayward/dvcs_particle_response/production";
  std::string output_dir="output/particle_response";
  int workers=10;

@@ -41,7 +41,13 @@ def models(run):
     return dict(periods=result,seed=int(spec['seed']),source_run=str(run.resolve()),source_spec_sha256=base.digest(run/('source_spec.json' if (run/'source_spec.json').is_file() else 'spec.json')),version=VERSION,control_to_leakage_exposure_ratio=float(spec.get('control_to_leakage_exposure_ratio',1.)))
 
 def prepare(args):
-    out=args.output.resolve();out.mkdir(parents=True,exist_ok=True);model=models(args.response_run.resolve());globals_=read(args.global_cuts)
+    out=args.output.resolve();out.mkdir(parents=True,exist_ok=True)
+    if getattr(args,'fit_response',False):
+        from fit_production_particle_response import run_fit
+        fitted=run_fit(args.inventory,args.initial_cuts,args.global_cuts,args.scratch_root.resolve(),out/'fit',workers=args.workers)
+        model=models(fitted)
+    else:model=models(args.response_run.resolve())
+    globals_=read(args.global_cuts)
     exe=SOURCE/'production_response_writer'
     if not exe.is_file():raise FileNotFoundError('Build production_response_writer with make -j10 dvcs_analysis')
     sources=('production_response_writer.cpp','production_response_kinematics.h','production_response_config.h','production_response_stream.py','particle_response_core.h','particle_control_core.h','global_cuts.cpp','global_cuts.h','kinematic_bin_integration.h')
@@ -119,7 +125,8 @@ def prepare(args):
     atomic_json(out/'response_model.json',model);atomic_json(out/'input_manifest.json',manifest);print('[response] Frozen full-statistics manifest: '+str(out/'input_manifest.json'),flush=True)
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--inventory',required=True,type=Path);p.add_argument('--response-run',required=True,type=Path);p.add_argument('--global-cuts',required=True,type=Path);p.add_argument('--scratch-root',required=True,type=Path);p.add_argument('--output',required=True,type=Path);p.add_argument('--workers',type=int,default=10);p.add_argument('--note-events',type=int,default=50000);a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--inventory',required=True,type=Path);choice=p.add_mutually_exclusive_group(required=True);choice.add_argument('--response-run',type=Path);choice.add_argument('--fit-response',action='store_true');p.add_argument('--initial-cuts',type=Path);p.add_argument('--global-cuts',required=True,type=Path);p.add_argument('--scratch-root',required=True,type=Path);p.add_argument('--output',required=True,type=Path);p.add_argument('--workers',type=int,default=10);p.add_argument('--note-events',type=int,default=50000);a=p.parse_args()
     if not 1<=a.workers<=10 or a.note_events<1000:p.error('workers must be 1–10; note-events at least 1000')
+    if a.fit_response and a.initial_cuts is None:p.error('--fit-response requires --initial-cuts')
     prepare(a)
 if __name__=='__main__':main()

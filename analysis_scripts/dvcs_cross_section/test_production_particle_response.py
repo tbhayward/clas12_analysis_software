@@ -112,7 +112,7 @@ def cache_and_routing(tmp,worker,rows,globals_,source):
     for p in ('sp18_inb','sp18_out','fa18_inb','fa18_out','sp19_inb'):
         folder=model/'response'/p;folder.mkdir(parents=True);pars=dict.fromkeys(prep.base.PARAMS,0.);pars['proton_CD_p_bias_fraction']=-.02;(folder/'candidate_parameters.json').write_text(json.dumps(dict(parameters=pars)))
     (model/'source_spec.json').write_text(json.dumps(dict(seed=1729)));hashes={n:prep.base.digest(REPO/n) for n in ('particle_response_core.h','particle_control_core.h')};(model/'signature.json').write_text(json.dumps(dict(sources=hashes)))
-    gen=root/'generated.root';write_tree(gen,rows['signal']);data=root/'data.root';write_tree(data,rows['signal']);inv=[dict(sample=s,tag=t,tree='PhysicsEvents',files=[str(path)]) for s,t,path in [('mc','DVCS_Fa18_inb_rec',source),('current_mc','DVCS_Fa18_inb_50nA_rec_current',source),('gen','DVCS_Fa18_inb_gen',gen),('data','DVCS_Fa18_inb_data',data)]];inventory=root/'inventory.json';inventory.write_text(json.dumps(inv));args=argparse.Namespace(response_run=model,output=root/'output',scratch_root=root/'scratch',global_cuts=globals_path,inventory=inventory,workers=2,note_events=1000)
+    gen=root/'generated.root';write_tree(gen,rows['signal']);data=root/'data.root';write_tree(data,rows['signal']);inv=[dict(sample=s,tag=t,tree='PhysicsEvents',files=[str(path)]) for s,t,path in [('mc','DVCS_Fa18_inb_rec',source),('current_mc','DVCS_Fa18_inb_50nA_rec_current',source),('gen','DVCS_Fa18_inb_gen',gen),('data','DVCS_Fa18_inb_data',data)]];inventory=root/'inventory.json';inventory.write_text(json.dumps(inv));args=argparse.Namespace(response_run=model,output=root/'output',scratch_root=root/'scratch',global_cuts=globals_path,inventory=inventory,workers=2,note_events=1000,fit_response=False)
     # SOURCE points at the installed/staged code; only the test worker is copied.
     testsource=root/'source';testsource.mkdir()
     for path in SOURCE.iterdir():
@@ -174,7 +174,19 @@ def data_reader_and_note(tmp,rows,globals_):
             for scenario in range(1,22):z[:,scenario,j+1]=latent+sigmas[j]*(.02 if scenario==1 else .03+.002*scenario)
         z[:2000,:,17]=1;z[4000:,:,18]=0
         z[:,:,12]=rng.normal(.134,.009,n)[:,None];file=origin/(sample+'.bin');z.astype('<f8').tofile(file);routes[sample]=dict(period=period.key,roles=[dict(sample=sample)],notes=str(file),summary=dict(note_shape=list(z.shape),note_probability=1.,unresolved=0))
-    model=dict(periods={period.key:dict(parameters=[.01,0,.001,-.01]*5)})
+    physical_names=('x','Q2','t1','detector1','detector2','e_p','e_theta','e_phi','p1_p','p1_theta','p1_phi','p2_p','p2_theta','p2_phi','open_angle_ep2','pTmiss')
+    full_routes={}
+    for sample,r in routes.items():
+        z=np.fromfile(r['notes'],dtype='<f8').reshape(-1,22,31)
+        for scenario in (0,1):
+            frame={name:z[:,scenario,14+j] for j,name in enumerate(physical_names)};frame['runnum']=z[:,scenario,30]
+            frame.update({('theta_pi0_pi0' if sample=='pi0_mc' and name=='theta_gamma_gamma' else name):z[:,scenario,j+1] for j,name in enumerate(prep.base.OBS)})
+            if sample=='pi0_mc':frame.update(detector_gamma1=frame['detector2'],Mh_gammagamma=z[:,scenario,12])
+            path=origin/(sample+str(scenario)+'.root')
+            with uproot.recreate(path) as f:tree=f.mktree('PhysicsEvents',{k:v.dtype for k,v in frame.items()});tree.extend(frame)
+        full_routes[str(origin/(sample+'0.root'))]=dict(r,target=str(origin/(sample+'1.root')))
+    routes=full_routes
+    model=dict(seed=1729,periods={period.key:dict(parameters=[.01,0,.001,-.01]*5)})
     manifest=dict(model_id='test',model=model,routes=routes,global_cuts=globals_,global_cuts_identity=dict(path=str(tmp/'global_cuts_config.json')));(origin/'input_manifest.json').write_text(json.dumps(manifest));cut={}
     for channel in ('dvcs','eppi0'):
         for top in production.TOPOLOGIES:cut[production.cut_json_key(channel,period,top)]=dict(data={},mc={})
@@ -182,6 +194,7 @@ def data_reader_and_note(tmp,rows,globals_):
     with patch.object(production,'PERIODS',(period,)),patch.object(note,'data_arrays',return_value=data):note.main(['--response-output',str(origin),'--cuts',str(origin/'cuts.json'),'--output',str(origin/'analysis_note')])
     assert len(list((origin/'analysis_note').rglob('*.png')))==10 and (origin/'analysis_note/particle_response_figures.pdf').stat().st_size>10000
     with np.load(origin/'analysis_note/plot_histograms.npz') as h:assert len(h.files)>60
+    assert (origin/'analysis_note/full_statistics_manifest.json').is_file() and (origin/'analysis_note/influence_scores.csv').is_file()
     with patch.object(note,'data_arrays',side_effect=AssertionError('Replot reread DATA')),patch.object(note,'note_histograms',side_effect=AssertionError('Replot reread MC')):
         note.main(['--replot','--output',str(origin/'analysis_note')])
     print('PASS: actual production DATA reader/cache with saved control mass, final-window note scores, all parameter ablations, component overlays, vector PDF and histogram-only replot')

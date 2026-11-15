@@ -54,3 +54,25 @@ def stream_file(job,worker,log,batch_size=16384,progress=None):
         if process and process.stdout:process.stdout.close()
         if process and process.stdin and not process.stdin.closed:process.stdin.close()
         protocol.unlink(missing_ok=True)
+
+def stream_fit_cache(job,worker,log,batch_size=16384):
+    """Uniform unfiltered original-event cache; recover control photons only once."""
+    required=['x','Q2','t1','detector1','detector2','e_p','e_theta','e_phi','p1_p','p1_theta','p1_phi','p2_p','p2_theta','p2_phi','open_angle_ep2','pTmiss','Delta_phi','theta','theta_gamma_gamma','Emiss2','Mx2','Mx2_2','runnum']
+    if job['control']:required+=['detector_gamma1','detector_gamma2','theta_pi0_pi0','gamma_phi1','gamma_phi2','open_angle_egamma1','open_angle_egamma2','Mh_gammagamma']
+    record_bytes=280 if job['control'] else 200;executor=uproot.source.futures.TrivialExecutor();protocol=Path(job['target']).with_name('cache_protocol.'+uuid.uuid4().hex+'.json');process=None;records=0;entries=0
+    try:
+        with uproot.open(job['source'],decompression_executor=executor,interpretation_executor=executor,num_workers=1) as source,Path(job['target']).open('wb') as output:
+            tree=source['PhysicsEvents'];columns=[n for n in dict.fromkeys(required) if n in tree];config=dict(job,mode='cache-fit',columns=columns,parameters=[0.]*20,note_probability=0.);protocol.write_text(json.dumps(config));process=subprocess.Popen([str(worker),str(protocol)],stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=log)
+            for chunk in tree.iterate(expressions=columns,step_size=batch_size,library='np'):
+                chunk=dict(chunk) if isinstance(chunk,dict) else {n:chunk[n] for n in chunk.dtype.names};n=len(next(iter(chunk.values())));matrix=np.ascontiguousarray(np.column_stack([chunk[k] for k in columns]),dtype='<f8');process.stdin.write(struct.pack('<Q',n));process.stdin.write(matrix.data);process.stdin.flush();count=struct.unpack('<Q',read_exact(process.stdout,8))[0]
+                if count>n:raise ValueError('Invalid native fitting-cache count')
+                output.write(read_exact(process.stdout,count*record_bytes));records+=count;entries+=n
+            process.stdin.close()
+            if process.wait()!=0:raise RuntimeError('Fitting-cache worker failed; see log')
+            if entries!=tree.num_entries:raise ValueError('Incomplete original-event fit cache')
+        return dict(records=records,entries=entries,record_bytes=record_bytes,probability=job['cache_probability'])
+    finally:
+        if process and process.poll() is None:process.terminate();process.wait()
+        if process and process.stdout:process.stdout.close()
+        if process and process.stdin and not process.stdin.closed:process.stdin.close()
+        protocol.unlink(missing_ok=True)

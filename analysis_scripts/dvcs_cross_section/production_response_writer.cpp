@@ -8,6 +8,7 @@
 #include <set>
 #include <cstring>
 using namespace production_response;
+static_assert(sizeof(Record)==200 && sizeof(ControlRecord)==280,"Original-event cache layout changed");
 static json read(const char* p){std::ifstream f(p);if(!f)throw std::runtime_error(std::string("Cannot read ")+p);json j;f>>j;return j;}
 static uint64_t pathkey(const std::string& s){uint64_t h=1469598103934665603ULL;for(unsigned char c:s){h^=c;h*=1099511628211ULL;}return h;}
 static bool global(const std::array<double,NC>& v,const std::string& period,const GlobalCutConfig& c){return std::isfinite(v[0])&&std::isfinite(v[1])&&std::isfinite(v[2])&&std::isfinite(v[23])&&v[5]>0&&v[8]>0&&v[11]>0&&!is_excluded_run(int(v[23]),c)&&passes_analysis_phase_space_cuts(period,v[0],v[1],v[2],v[5],c)&&passes_proton_momentum_cut(int(v[3]),period,v[8],c)&&passes_global_cuts(v[2],v[14],v[15],int(v[3]),int(v[4]),period,v[5],v[6],v[7],v[9],v[10],v[11],v[12],v[13],c);}
@@ -19,12 +20,22 @@ struct Evaluator {
   for(size_t i=0;i<columns.size();++i)if(!lookup.emplace(columns[i],i).second)throw std::runtime_error("Duplicate response column");
   source_key=pathkey(source)^seed;direct=lookup.count("Delta_phi");active=std::any_of(pars.begin(),pars.end(),[](double x){return x!=0;});
   const std::array<std::string,24> n={"x","Q2","t1","detector1","detector2","e_p","e_theta","e_phi","p1_p","p1_theta","p1_phi","p2_p","p2_theta","p2_phi","open_angle_ep2","pTmiss","Delta_phi","theta","theta_gamma_gamma","pTmiss","Emiss2","Mx2","Mx2_2","runnum"};
-  fields.fill(-1);for(int k=0;k<24;++k){std::string name=control&&k==4?"detector_gamma1":control&&k==18?"theta_pi0_pi0":n[k];auto it=lookup.find(name);if(it!=lookup.end())fields[k]=it->second;else if(k!=16&&k!=23)throw std::runtime_error("Missing response input: "+name);}
+  fields.fill(-1);for(int k=0;k<24;++k){std::string name=control&&k==4&&lookup.count("detector_gamma1")?"detector_gamma1":control&&k==18?"theta_pi0_pi0":n[k];auto it=lookup.find(name);if(it!=lookup.end())fields[k]=it->second;else if(k!=16&&k!=23)throw std::runtime_error("Missing response input: "+name);}
   const std::set<std::string> extra={"Mh_gammagamma","gamma_phi1","gamma_phi2","open_angle_egamma1","open_angle_egamma2"};
   for(size_t i=0;i<columns.size();++i){int d=index(columns[i]),primary=-1;for(int k=5;k<=13;++k)if(columns[i]==n[k])primary=k;
    if(primary>=0)primary_columns.emplace_back(i,primary);else if(d>=0)derived_columns.emplace_back(i,d);else if(!metadata(columns[i])&&!extra.count(columns[i]))throw std::runtime_error("Unclassified physics branch: "+columns[i]);}
   if(control)for(auto& name:extra)if(!lookup.count(name))throw std::runtime_error("Missing two-photon metadata: "+name);
   scenarios={std::array<double,NP>{},pars};for(int k=0;k<NP;++k){auto a=pars;a[k]=0;scenarios.push_back(a);}
+ }
+ void cache_row(const double* values,double probability,std::vector<char>& bytes){
+  uint64_t key=mix(source_key^offset++);if(uniform(key^0x93c467e37db0c7a5ULL)>=probability)return;
+  Record r{};for(int k=0;k<24;++k)r.v[k]=fields[k]>=0?values[fields[k]]:0;
+  if(!direct)r.v[16]=std::abs(std::remainder(r.v[10]-r.v[13],2*PI));r.key=(key&~uint64_t(1))|uint64_t(!direct);
+  auto append=[&](const auto& record){const char* begin=reinterpret_cast<const char*>(&record);bytes.insert(bytes.end(),begin,begin+sizeof record);};
+  if(!control){append(r);return;}
+  auto get=[&](const std::string& n){return values[lookup.at(n)];};ControlRecord c{};c.base=r;c.photons[6]=r.v[4];c.photons[7]=get("detector_gamma2");double error;
+  if((c.photons[6]==0||c.photons[6]==1)&&(c.photons[7]==0||c.photons[7]==1))recover_photons(r,beam,get("gamma_phi1"),get("gamma_phi2"),get("open_angle_egamma1"),get("open_angle_egamma2"),get("Mh_gammagamma"),c.photons,error);
+  c.photons[8]=get("Mh_gammagamma");append(c);
  }
  void row(double* values,int32_t* flags,std::vector<double>& notes){
   Record r{};for(int k=0;k<24;++k)r.v[k]=fields[k]>=0?values[fields[k]]:0;
@@ -51,8 +62,9 @@ struct Evaluator {
  }
 };
 int main(int argc,char** argv){try{
- if(argc!=2)throw std::runtime_error("production_response_writer JOB.json");std::ios::sync_with_stdio(false);std::cin.tie(nullptr);Evaluator evaluator(read(argv[1]));
+ if(argc!=2)throw std::runtime_error("production_response_writer JOB.json");std::ios::sync_with_stdio(false);std::cin.tie(nullptr);const auto job=read(argv[1]);Evaluator evaluator(job);bool fit_cache=job.value("mode",std::string())=="cache-fit";
  while(true){uint64_t n=0;std::cin.read(reinterpret_cast<char*>(&n),sizeof n);if(std::cin.eof()&&!std::cin.gcount())break;if(!std::cin||n>65536)throw std::runtime_error("Invalid response batch");size_t size=n*evaluator.columns.size();std::vector<double> values(size),notes;std::vector<int32_t> flags(n*3);std::cin.read(reinterpret_cast<char*>(values.data()),size*sizeof(double));if(!std::cin)throw std::runtime_error("Truncated response batch");
+ if(fit_cache){std::vector<char> bytes;for(size_t i=0;i<n;++i)evaluator.cache_row(values.data()+i*evaluator.columns.size(),job.at("cache_probability"),bytes);uint64_t count=bytes.size()/(evaluator.control?sizeof(ControlRecord):sizeof(Record));std::cout.write(reinterpret_cast<char*>(&count),sizeof count);std::cout.write(bytes.data(),bytes.size());std::cout.flush();if(!std::cout)throw std::runtime_error("Cache pipe write failed");continue;}
  for(size_t i=0;i<n;++i)evaluator.row(values.data()+i*evaluator.columns.size(),flags.data()+3*i,notes);
  uint64_t note_rows=notes.size()/(22*31);std::cout.write(reinterpret_cast<char*>(values.data()),size*sizeof(double));std::cout.write(reinterpret_cast<char*>(flags.data()),flags.size()*sizeof(int32_t));std::cout.write(reinterpret_cast<char*>(&note_rows),sizeof note_rows);std::cout.write(reinterpret_cast<char*>(notes.data()),notes.size()*sizeof(double));std::cout.flush();if(!std::cout)throw std::runtime_error("Response pipe write failed");}
  return 0;

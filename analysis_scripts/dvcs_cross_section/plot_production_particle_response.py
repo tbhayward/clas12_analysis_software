@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Publication figures from cached DATA arrays and bounded paired MC note samples."""
+"""Publication figures using all available reconstructed MC statistics."""
 from __future__ import annotations
 import os
 for k in ('OPENBLAS_NUM_THREADS','MKL_NUM_THREADS','OMP_NUM_THREADS','NUMEXPR_NUM_THREADS'):os.environ[k]='1'
@@ -65,22 +65,26 @@ def predictions(hist,selected,prob,counts,scenario,half,exposure=1.):
     return alpha,beta
 
 def main(argv=None):
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--response-output',type=Path);p.add_argument('--cuts',type=Path);p.add_argument('--output',required=True,type=Path);p.add_argument('--replot',action='store_true',help='Render only from saved note histograms/tables, with no DATA or MC cache reads');a=p.parse_args(argv)
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--response-output',type=Path);p.add_argument('--cuts',type=Path);p.add_argument('--output',required=True,type=Path);p.add_argument('--workers',type=int,default=10);p.add_argument('--replot',action='store_true',help='Render only from saved note histograms/tables, with no DATA or MC cache reads');a=p.parse_args(argv)
     from production_response_note_render import render
+    from production_response_full_statistics import collect
     out=a.output.resolve()
     if a.replot:render(out);return
     if a.response_output is None or a.cuts is None:p.error('--response-output and --cuts are required unless --replot is used')
+    if not 1<=a.workers<=10:p.error('--workers must be between 1 and 10')
     origin=a.response_output.resolve();manifest=read(origin/'input_manifest.json');cuts=read(a.cuts);out.mkdir(parents=True,exist_ok=True)
     os.environ['DVCS_PARTICLE_RESPONSE_MANIFEST']=str(origin/'input_manifest.json')
     if manifest.get('data_array_cache'):os.environ['DVCS_PARTICLE_RESPONSE_DATA_CACHE']=manifest['data_array_cache']
     production.ACTIVE_GLOBAL_CUTS=production.load_global_cuts_config(manifest['global_cuts_identity']['path'])
     if manifest['global_cuts']!=read(manifest['global_cuts_identity']['path']):raise ValueError('Global cuts changed since response preparation')
     variables=[dict(name=n,label=LABELS.get(n,n),bins=nb,low=lo,high=hi) for n,nb,lo,hi in [('Delta_phi',240,np.pi-.6,np.pi+.6),('theta',120,0,np.pi),('theta_gamma_gamma',120,0,5),('pTmiss',240,0,.6),('Emiss2',240,-1.5,2.5),('Mx2',400,-.04,.04),('Mx2_2',240,-1.5,4.5)]];mass=dict(name='m_gamma_gamma',label=LABELS['m_gamma_gamma'],bins=140,low=.10,high=.17)
-    scale_rows=[];score_rows=[];param_rows=[];saved_hist={'edges_mass':base.diag.variable_edges(mass)};normalizations=[]
+    all_blocks={period.key:{ch:[cuts[production.cut_json_key('dvcs' if ch=='epgamma' else 'eppi0',period,t)] for t in production.TOPOLOGIES] for ch in ('epgamma','epgammagamma')} for period in production.PERIODS if period.key in manifest['model']['periods']}
+    full_statistics=collect(manifest,all_blocks,variables,mass,out,a.workers)
+    scale_rows=[];score_rows=[];influence_rows=[];param_rows=[];saved_hist={'edges_mass':base.diag.variable_edges(mass)};normalizations=[]
     for j in CORE:saved_hist[f'edges_{j}']=base.diag.variable_edges(variables[j])
     for period in production.PERIODS:
         if period.key not in manifest['model']['periods']:continue
-        key=period.key;exposure=float(manifest['model'].get('control_to_leakage_exposure_ratio',1.));data=data_arrays(period);blocks={ch:[cuts[production.cut_json_key('dvcs' if ch=='epgamma' else 'eppi0',period,t)] for t in production.TOPOLOGIES] for ch in data};counts={ch:np.array([int(mask(v,b['data']).sum()) for v,b in zip(data[ch],blocks[ch])]) for ch in data};dh={}
+        key=period.key;exposure=float(manifest['model'].get('control_to_leakage_exposure_ratio',1.));data=data_arrays(period);blocks=all_blocks[key];counts={ch:np.array([int(mask(v,b['data']).sum()) for v,b in zip(data[ch],blocks[ch])]) for ch in data};dh={}
         for ch in data:
             vv=variables+([mass] if ch=='epgammagamma' else []);dh[ch]=np.zeros((3,len(vv),max(v['bins']+2 for v in vv)),dtype=np.int64)
             for g in range(3):
@@ -92,38 +96,44 @@ def main(argv=None):
         parameters=np.array(manifest['model']['periods'][key]['parameters']).reshape(5,4)
         for r,region in enumerate(base.REGIONS):
             for j,coordinate in enumerate(('p_sigma_fraction','theta_sigma_rad','phi_sigma_rad','p_bias_fraction')):param_rows.append(dict(period=key,particle=region,coordinate=coordinate,value=parameters[r,j]))
-        records=[]
-        for scenario in range(22):
-          for half in (0,1):
-            alpha,beta=predictions(hist,selected,prob,counts,scenario,half,exposure);scale_rows.append(dict(period=key,scenario=scenario,half=half,alpha=alpha,beta_FD_FD=beta[0],beta_CD_FD=beta[1],beta_CD_FT=beta[2]));refalpha,refbeta=predictions(hist,selected,prob,counts,0,half,exposure)
-            for ch in data:
-              vv=variables+([mass] if ch=='epgammagamma' else [])
-              for g in range(3):
-                for j in (*CORE,*RESERVED,*([7] if ch=='epgammagamma' else [])):
-                    n=vv[j]['bins']+2;d=dh[ch][g,j,:n]
-                    if ch=='epgamma':
-                        weights=[2*beta[g]/prob['mc'],2*alpha/prob['background']];rw=[2*refbeta[g]/prob['mc'],2*refalpha/prob['background']];m=sum(w*hist[s][scenario,half,g,j,:n] for w,s in zip(weights,('mc','background')));var=sum(w*w*hist[s][scenario,half,g,j,:n] for w,s in zip(weights,('mc','background')));ref=sum(w*hist[s][0,half,g,j,:n] for w,s in zip(rw,('mc','background')));refvar=sum(w*w*hist[s][0,half,g,j,:n] for w,s in zip(rw,('mc','background')));raw=sum(hist[s][0,half,g,j,:n].sum() for s in ('mc','background'))
-                    else:m=hist['pi0_mc'][scenario,half,g,j,:n].astype(float);var=m.copy();ref=hist['pi0_mc'][0,half,g,j,:n].astype(float);refvar=ref.copy();raw=ref.sum()
-                    score,bins=base.shape_score(d,m,var,int(raw),100,ref,refvar);records.append(dict(period=key,channel=ch,topology=base.TOPS[g],variable=vv[j]['name'],scenario='nominal' if scenario==0 else 'modified' if scenario==1 else 'without_'+base.PARAMS[scenario-2],half=half,score=score,usable_bins=bins,raw_nominal_mc=int(raw)))
-        support={(r['channel'],r['topology'],r['variable'],r['half']) for r in records if r['scenario']=='nominal' and np.isfinite(r['score'])};score_rows.extend(dict(r,status='supported' if (r['channel'],r['topology'],r['variable'],r['half']) in support and np.isfinite(r['score']) else 'insufficient_or_invalid') for r in records)
+        sampled=(hist,selected,prob)
+        for diagnostic in (True,False):
+            if diagnostic:hist,selected,prob=sampled
+            else:
+                hist,selected=full_statistics[key];prob=dict.fromkeys(('mc','background','pi0_mc'),1.)
+            records=[]
+            for scenario in range(22 if diagnostic else 2):
+              for half in (0,1):
+                alpha,beta=predictions(hist,selected,prob,counts,scenario,half,exposure);scale_rows.append(dict(statistics='sampled_influence' if diagnostic else 'all_MC',period=key,scenario=scenario,half=half,alpha=alpha,beta_FD_FD=beta[0],beta_CD_FD=beta[1],beta_CD_FT=beta[2]));refalpha,refbeta=predictions(hist,selected,prob,counts,0,half,exposure)
+                for ch in data:
+                  vv=variables+([mass] if ch=='epgammagamma' else [])
+                  for g in range(3):
+                    for j in (*CORE,*RESERVED,*([7] if ch=='epgammagamma' else [])):
+                        n=vv[j]['bins']+2;d=dh[ch][g,j,:n]
+                        if ch=='epgamma':
+                            weights=[2*beta[g]/prob['mc'],2*alpha/prob['background']];rw=[2*refbeta[g]/prob['mc'],2*refalpha/prob['background']];m=sum(w*hist[s][scenario,half,g,j,:n] for w,s in zip(weights,('mc','background')));var=sum(w*w*hist[s][scenario,half,g,j,:n] for w,s in zip(weights,('mc','background')));ref=sum(w*hist[s][0,half,g,j,:n] for w,s in zip(rw,('mc','background')));refvar=sum(w*w*hist[s][0,half,g,j,:n] for w,s in zip(rw,('mc','background')));raw=sum(hist[s][0,half,g,j,:n].sum() for s in ('mc','background'))
+                        else:m=hist['pi0_mc'][scenario,half,g,j,:n].astype(float);var=m.copy();ref=hist['pi0_mc'][0,half,g,j,:n].astype(float);refvar=ref.copy();raw=ref.sum()
+                        score,bins=base.shape_score(d,m,var,int(raw),100,ref,refvar);records.append(dict(period=key,channel=ch,topology=base.TOPS[g],variable=vv[j]['name'],scenario='nominal' if scenario==0 else 'modified' if scenario==1 else 'without_'+base.PARAMS[scenario-2],half=half,score=score,usable_bins=bins,raw_nominal_mc=int(raw)))
+            support={(r['channel'],r['topology'],r['variable'],r['half']) for r in records if r['scenario']=='nominal' and np.isfinite(r['score'])};(influence_rows if diagnostic else score_rows).extend(dict(r,status='supported' if (r['channel'],r['topology'],r['variable'],r['half']) in support and np.isfinite(r['score']) else 'insufficient_or_invalid') for r in records)
         for ch in data:
           for g in range(3):
             for j in CORE:
                 n=variables[j]['bins']+2;prefix=f'{key}_{ch}_{g}_{j}_';saved_hist[prefix+'DATA']=dh[ch][g,j,:n]
                 for scenario,name in ((0,'nominal'),(1,'modified')):
                     if ch=='epgamma':
-                        signal=np.zeros(n);background=np.zeros(n)
-                        for half in (0,1):
-                            alpha,beta=predictions(hist,selected,prob,counts,scenario,half,exposure);signal+=beta[g]*hist['mc'][scenario,half,g,j,:n]/prob['mc'];background+=alpha*hist['background'][scenario,half,g,j,:n]/prob['background']
-                        m=signal+background
+                        # Normalize the full mixture once, pooling both MC halves.
+                        ctrl=selected['pi0_mc'][scenario].sum();alpha=exposure*counts['epgammagamma'].sum()/ctrl if ctrl>0 else np.nan
+                        ns=selected['mc'][scenario,:,g].sum();nb=selected['background'][scenario,:,g].sum();beta=(counts['epgamma'][g]-alpha*nb)/ns if ns>0 else np.nan
+                        if beta<=0:beta=np.nan
+                        signal=beta*hist['mc'][scenario,:,g,j,:n].sum(axis=0);background=alpha*hist['background'][scenario,:,g,j,:n].sum(axis=0);m=signal+background
                     else:m=hist['pi0_mc'][scenario,:,g,j,:n].sum(axis=0).astype(float);signal=m;background=np.zeros(n)
                     saved_hist[prefix+name]=m;saved_hist[prefix+name+'_signal']=signal;saved_hist[prefix+name+'_background']=background
         for g in range(3):
             n=mass['bins']+2;saved_hist[f'{key}_mass_{g}_DATA']=dh['epgammagamma'][g,7,:n]
             for scenario,name in ((0,'nominal'),(1,'modified')):saved_hist[f'{key}_mass_{g}_{name}']=hist['pi0_mc'][scenario,:,g,7,:n].sum(axis=0)
-        print('[response note] '+key+' histograms complete; cached arrays only',flush=True)
-    base.table(out/'component_scales.csv',scale_rows);base.table(out/'parameters.csv',param_rows);base.table(out/'shape_scores.csv',score_rows);base.table(out/'sample_normalizations.csv',normalizations);np.savez_compressed(out/'plot_histograms.npz',**saved_hist)
-    base.dump(out/'provenance.json',dict(model_id=manifest['model_id'],manifest_sha256=base.digest(origin/'input_manifest.json'),cuts_sha256=base.digest(a.cuts),script_sha256=base.digest(Path(__file__))))
+        print('[response note] '+key+' full-statistics overlays and sampled influence complete',flush=True)
+    base.table(out/'component_scales.csv',scale_rows);base.table(out/'parameters.csv',param_rows);base.table(out/'shape_scores.csv',score_rows);base.table(out/'influence_scores.csv',influence_rows);base.table(out/'sample_normalizations.csv',normalizations);np.savez_compressed(out/'plot_histograms.npz',**saved_hist)
+    base.dump(out/'provenance.json',dict(model_id=manifest['model_id'],manifest_sha256=base.digest(origin/'input_manifest.json'),cuts_sha256=base.digest(a.cuts),script_sha256=base.digest(Path(__file__)),overlay_statistics='all available reconstructed MC',influence_statistics='bounded paired sample; conditional term omission only'))
     render(out)
 
 if __name__=='__main__':main()

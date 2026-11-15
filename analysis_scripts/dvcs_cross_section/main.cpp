@@ -197,7 +197,9 @@ int main(int argc, char* argv[]) {
     bool proton_p_min_overridden = false;
     bool proton_theta_max_overridden = false;
     for (int i = 1; i < argc; ++i) {
-        if (std::string(argv[i]) == "--particle-response-run") {
+        if (std::string(argv[i]) == "--particle-response") {
+            particle_response.fit_response = true;
+        } else if (std::string(argv[i]) == "--particle-response-run") {
             if (i + 1 >= argc) { std::cerr << "--particle-response-run requires a fitted run directory\n"; return 1; }
             particle_response.fitted_run = argv[++i];
         } else if (std::string(argv[i]) == "--particle-response-scratch") {
@@ -297,17 +299,23 @@ int main(int argc, char* argv[]) {
             }
         }
     }
+    if (particle_response.fit_response && !particle_response.fitted_run.empty()) {
+        std::cerr << "[main] FATAL: choose fresh --particle-response or explicit --particle-response-run, not both.\n";return 1;
+    }
+    if (particle_response.fit_response && (!topology_cli.empty() || electron_sector_cli || proton_fd_sector_cli || proton_cd_sector_cli || photon_sector_cli)) {
+        std::cerr << "[main] FATAL: fresh response fitting requires all three topologies; use a saved fitted response for restricted studies.\n";return 1;
+    }
     if (!particle_response.fitted_run.empty() && !std::filesystem::is_directory(particle_response.fitted_run)) {
         std::cerr << "[main] FATAL: fitted particle-response directory does not exist: " << particle_response.fitted_run << '\n';
         return 1;
     }
-    if (!particle_response.fitted_run.empty() && (acceptance_reweighting_only || eppi0_normalization_only || eppi0_production_test || topology_acceptance_study)) {
-        std::cerr << "[main] FATAL: --particle-response-run requires a full extraction; use its completed output for diagnostic-only modes.\n";
+    if (particle_response.enabled() && (acceptance_reweighting_only || eppi0_normalization_only || eppi0_production_test || topology_acceptance_study)) {
+        std::cerr << "[main] FATAL: Particle response requires a full extraction; use its completed output for diagnostic-only modes.\n";
         return 1;
     }
-    if (particle_response.fitted_run.empty() && std::filesystem::exists("output/particle_response/input_manifest.json")) {
+    if (!particle_response.enabled() && std::filesystem::exists("output/particle_response/input_manifest.json")) {
         std::cerr << "[main] FATAL: this output belongs to a particle-response extraction. "
-                     "Use --particle-response-run for its full rerun, or a fresh working directory for nominal/diagnostic extraction.\n";
+                     "Use --particle-response or --particle-response-run for its full rerun, or a fresh working directory for nominal/diagnostic extraction.\n";
         return 1;
     }
     const int n_particle_sector_filters =
@@ -331,6 +339,7 @@ int main(int argc, char* argv[]) {
                   << "  ./dvcs_analysis --systematics acceptance,csv\n"
                   << "  ./dvcs_analysis --systematics csv\n"
                   << "  ./dvcs_analysis --skip-systematics\n"
+                  << "  ./dvcs_analysis --particle-response --skip-systematics\n"
                   << "  ./dvcs_analysis --particle-response-run /path/to/fitted/run --skip-systematics\n"
                   << "  ./dvcs_analysis --acceptance-reweighting-only\n"
                   << "  ./dvcs_analysis --eppi0-normalization-only\n"
@@ -500,22 +509,22 @@ int main(int argc, char* argv[]) {
     // opening the ROOT trees in the C++ process. The runner validates and
     // installs the 90%, 95%, and 98% cut JSONs under output/jsons, with the
     // nominal 95% result also installed as combined_cuts.json.
-    if (!particle_response.fitted_run.empty()) {
+    if (particle_response.enabled()) {
         const auto data_cache = std::filesystem::absolute(std::filesystem::path(particle_response.scratch_root) / "data_arrays").string();
         if (setenv("DVCS_PARTICLE_RESPONSE_DATA_CACHE", data_cache.c_str(), 1) != 0) return 1;
     }
     PythonExclusivityOptions exclusivity_opts;
     exclusivity_opts.enabled = true;
     exclusivity_opts.force_rerun = true;
-    exclusivity_opts.detailed_plots = particle_response.fitted_run.empty();
+    exclusivity_opts.detailed_plots = !particle_response.enabled();
     exclusivity_opts.python_executable = "python3";
     exclusivity_opts.script_path = "plot_exclusivity_data_dvcs_pi0_mc.py";
     exclusivity_opts.global_cuts_json = "output/jsons/global_cuts_config.json";
-    exclusivity_opts.output_directory = particle_response.fitted_run.empty() ? "output/exclusivity_fit" : "output/particle_response/initial_exclusivity";
+    exclusivity_opts.output_directory = !particle_response.enabled() ? "output/exclusivity_fit" : "output/particle_response/initial_exclusivity";
     exclusivity_opts.install_directory = "output/jsons";
     // Python allocates one shared period/topology compute budget. Nominal keeps
     // its existing five slots; response runs can use ten without rereading DATA.
-    exclusivity_opts.workers = particle_response.fitted_run.empty() ? 5 : particle_response.workers;
+    exclusivity_opts.workers = !particle_response.enabled() ? 5 : particle_response.workers;
     exclusivity_opts.tight_containment = 0.90;
     exclusivity_opts.nominal_containment = 0.95;
     exclusivity_opts.loose_containment = 0.98;
@@ -578,7 +587,7 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
-    if (!particle_response.fitted_run.empty()) {
+    if (particle_response.enabled()) {
         namespace fs = std::filesystem;
         const fs::path initial = fs::path(particle_response.output_dir) / "initial_cuts";
         fs::create_directories(initial);

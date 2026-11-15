@@ -1,17 +1,28 @@
 # Optional production particle response
 
-The nominal invocation remains `./dvcs_analysis`. Particle response is enabled
-explicitly with `--particle-response-run FITTED_RUN`. This first production
-integration **imports a frozen fitted response**; it does not silently retune
-particle parameters during extraction. The existing joint selected-response
-study remains the fitting/validation workflow. No broadening-only fit is added.
+The nominal invocation remains `./dvcs_analysis`. The response launcher now fits
+inside the analysis by default; no previous study is required. The equivalent
+executable flag is `--particle-response`. Explicit `--response-run FITTED_RUN`
+(launcher) / `--particle-response-run FITTED_RUN` (executable) retains the saved-fit
+override. The fitted response is frozen before full-statistics application.
+
+Fresh fitting starts from zero independently for all five period/polarity groups.
+It jointly fits both channels using the existing shared particle response laws,
+including the two-photon mass, momentum bias and broadening. It uses an expected
+800,000 original events per period/MC category, all DATA, two broad coordinate
+sweeps and one refinement. Training variables/MC half 0 choose parameters; the
+other half and reserved observables are reported without choosing the fit. The
+initial production DATA windows remain fixed during fitting. Pure two-photon
+groups inherit their production windows; the mixed CD FD–FT group uses their
+intersection, avoiding photon-order-dependent cut choices. Unfiltered original
+MC are retained in the fit cache. Fits and per-file caches have checked resumes.
 
 ## Farm build and first extraction
 
 From `analysis_scripts/dvcs_cross_section`, after committing/pushing these changes:
 
 ```sh
-git pull && make -j10 dvcs_analysis && python3 test_production_particle_response.py --native && python3 run_response_analysis.py --response-run "$PWD/test_runs/selected_particle_response_001" --run-dir "$PWD/test_runs/production_response_001" --scratch-root /scratch/thayward/dvcs_particle_response/production --workers 10 --skip-systematics --plot
+git pull && make -j10 dvcs_analysis && python3 test_production_particle_response.py --native && python3 run_response_analysis.py --run-dir "$PWD/test_runs/production_response_fitted_001" --scratch-root /scratch/thayward/dvcs_particle_response/production --workers 10 --skip-systematics --plot
 ```
 
 The launcher creates a new private working directory, snapshots executables and
@@ -31,7 +42,7 @@ new evaluations. Use a fresh `--run-dir` for each extraction.
 The equivalent direct executable option is:
 
 ```sh
-./dvcs_analysis --particle-response-run /absolute/path/to/fitted/run --particle-response-scratch /scratch/thayward/dvcs_particle_response/production --particle-response-workers 10 --skip-systematics
+./dvcs_analysis --particle-response --particle-response-scratch /scratch/thayward/dvcs_particle_response/production --particle-response-workers 10 --skip-systematics
 ```
 
 Run directly only in a private working directory with the usual scripts/imports.
@@ -47,8 +58,9 @@ run receive the modified maps normally; `--skip-systematics` omits those runs.
    Save them under `output/particle_response/initial_cuts`. Initial detailed
    development canvases are suppressed to avoid duplicating final canvases.
 2. Open the ordinary DATA, generated and reconstructed maps and write their
-   explicit input inventory. Import the frozen response, checking the two shared
-   response-core hashes and completed parameter checksum where available.
+   explicit input inventory. Fit the joint response from these inputs and the
+   initial windows (or validate an explicitly supplied saved-fit override).
+   Save fitted parameters, scores and checkpoints under particle_response/fit.
 3. Materialize full-statistics reconstructed MC caches for the reference DVCS,
    pi0 leakage, direct two-photon control, all current scans, and any loaded
    reconstructed radiative inputs. Identical reference/current files are built
@@ -110,7 +122,7 @@ reconstructed response. Neither nominal physics inputs nor raw trees are edited.
 
 ## Selection and normalization conventions
 
-The joint imported fit may use unordered two-photon validation groups. Production
+The joint fit uses unordered two-photon groups. Production
 continues to use its established three topology keys, with the first-photon tag
 for direct pi0. Python final cut determination and C++ production counting use
 that same convention; diagnostic four-group cut JSONs are never substituted into
@@ -168,16 +180,27 @@ DVCS/two-photon channel, plus one combined `particle_response_figures.pdf`:
   omitted, with common final DATA windows on the other variables.
 * Direct-control counterparts and explicit two-photon mass comparisons.
 
-The bounded note sample defaults to an expected **50,000 events per period and
-reference MC category**, before selection. All samples/scenarios are paired. The
-production extraction itself always uses full MC statistics. Bar scores depend
-on note-sample precision and are not formal p-values or independent DATA tests.
-Influences are conditional and not additive; no parameter uncertainty is implied.
-Mass discrepancies remain visible rather than being concealed by the mixture.
+Publication overlays and nominal/modified score comparisons now use **all
+available reference MC events**, pooled across both MC halves for overlay
+normalization. Original and modified ROOT files are streamed using only required
+branches, with at most ten file workers and no nested pools. Small histogram
+caches avoid repeating that scan when selections and inputs are unchanged.
 
-Small tables and `plot_histograms.npz` preserve the parameters, sampled
-normalizations, component histograms, scores and support. To change presentation
-without reading any ROOT files or large event caches:
+Only the twenty conditional parameter-influence diagnostics retain the bounded
+paired sample (50,000 expected original events per period/reference category).
+Both terms in each influence difference use the same sampled population and
+nominal support; they are never mixed with full-statistics validation scores.
+These are conditional effects, not parameter uncertainties or formal p-values.
+
+DATA are blue; nominal MC gray; modified total red, with thin dashed red signal
+and dotted red pi0 background. Every subplot has a full border and the common
+legend is outside the distributions. Vector PDF and PNG outputs are unchanged.
+`full_statistics_manifest.json` documents the input files/selection and
+`full_statistics_histograms.npz` caches the counts. `influence_scores.csv` is
+separate from full-statistics `shape_scores.csv`.
+
+Everything runs automatically during the full analysis. An optional style-only
+replot uses the existing small histogram tables without any ROOT input:
 
 ```sh
 python3 plot_production_particle_response.py --replot --output "$PWD/test_runs/production_response_001/output/particle_response/analysis_note"
@@ -199,3 +222,5 @@ routing, DATA/GEN preservation, the actual production DATA reader/cache, note
 rendering and histogram-only replot. Changed C++ translation units are checked
 separately when developing. These tests do not claim a full farm-data extraction;
 that is the first production command above.
+
+`python3 test_production_response_fitting.py` checks native unfiltered original-event caches, both photon tags and recovery, batching invariance, zero initialization and training-only optimizer selection.
