@@ -190,6 +190,7 @@ int main(int argc, char* argv[]) {
     bool eppi0_normalization_only = false;
     bool eppi0_production_test = false;
     bool use_eppi0_production_normalization = false;
+    bool use_neupane_proton_correction = false;
     std::string topology_cli;
     int photon_sector_cli = 0;
     int electron_sector_cli = 0;
@@ -241,6 +242,10 @@ int main(int argc, char* argv[]) {
             eppi0_production_test = true;
         } else if (std::string(argv[i]) == "--eppi0-normalization") {
             use_eppi0_production_normalization = true;
+        } else if (std::string(argv[i]) == "--neupane-proton-correction") {
+            use_neupane_proton_correction = true;
+        } else if (std::string(argv[i]) == "--no-neupane-proton-correction") {
+            use_neupane_proton_correction = false;
         } else if (std::string(argv[i]) == "--no-eppi0-normalization") {
             // Backward-compatible explicit spelling of the production default.
             use_eppi0_production_normalization = false;
@@ -330,6 +335,11 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    if (use_neupane_proton_correction && use_eppi0_production_normalization) {
+        std::cerr << "[main] FATAL: Neupane DATA correction and eppi0 MC efficiency cannot both be enabled.\n";
+        return 1;
+    }
+
     SystematicRunSelection systematic_selection;
     try {
         systematic_selection = parse_systematic_selection(argc, argv);
@@ -382,7 +392,7 @@ int main(int argc, char* argv[]) {
     std::cout << "[main] Production detector normalization: "
               << (use_eppi0_production_normalization
                       ? "eppi0 sequential theta*p on reconstructed DVCS MC (Krishna OFF)"
-                      : "Krishna/Neupane proton-efficiency correction (eppi0 OFF)")
+                      : (use_neupane_proton_correction ? "Neupane proton-efficiency correction (explicit opt-in)" : "No additional proton DATA/MC efficiency correction (Neupane OFF; eppi0 OFF)"))
               << std::endl;
 
     // Create necessary output directories
@@ -971,12 +981,12 @@ int main(int argc, char* argv[]) {
         total_count_opts.make_note_outputs = true;
         total_count_opts.apply_event_level_current_correction = true;
         // Mutually exclusive detector-normalization modes.  Production default:
-        // eppi0 normalization OFF and Krishna/Neupane proton-efficiency correction
-        // ON.  --eppi0-normalization is an explicit diagnostic alternative that
+        // Both additional proton-efficiency corrections are OFF by default.
+        // --eppi0-normalization is an explicit diagnostic alternative that
         // applies the sequential eppi0 theta*p efficiency map to reconstructed
         // DVCS MC and disables the Krishna/Neupane correction.
         total_count_opts.apply_neupane_proton_efficiency_correction =
-            !use_eppi0_production_normalization;
+            use_neupane_proton_correction;
         total_count_opts.apply_eppi0_efficiency_to_dvcs_rec_mc =
             use_eppi0_production_normalization;
         total_count_opts.eppi0_efficiency_summary_csv =
@@ -1177,7 +1187,7 @@ int main(int argc, char* argv[]) {
             pass1_counts_opts.use_tprime_binning = true;
             pass1_counts_opts.apply_event_level_current_correction = true;
             pass1_counts_opts.apply_neupane_proton_efficiency_correction =
-                !use_eppi0_production_normalization;
+                use_neupane_proton_correction;
             pass1_counts_opts.apply_eppi0_efficiency_to_dvcs_rec_mc =
                 use_eppi0_production_normalization;
             pass1_counts_opts.eppi0_efficiency_summary_csv =
@@ -1252,6 +1262,7 @@ int main(int argc, char* argv[]) {
                 pass1_cut_opts.nominal_csv = pass1_csv;
                 pass1_cut_opts.output_dir =
                     pass1_root + "/cut_variation_systematics";
+                pass1_cut_opts.apply_neupane_proton_efficiency_correction = use_neupane_proton_correction;
                 pass1_cut_opts.use_eppi0_production_normalization =
                     use_eppi0_production_normalization;
                 pass1_cut_opts.eppi0_charge_csv_path =
@@ -1308,7 +1319,7 @@ int main(int argc, char* argv[]) {
             counts.make_note_outputs = false;
             counts.apply_event_level_current_correction = true;
             counts.apply_neupane_proton_efficiency_correction =
-                !use_eppi0_production_normalization;
+                use_neupane_proton_correction;
             counts.apply_eppi0_efficiency_to_dvcs_rec_mc =
                 use_eppi0_production_normalization;
             counts.eppi0_efficiency_summary_csv =
@@ -1370,6 +1381,7 @@ int main(int argc, char* argv[]) {
                 variation.max_workers = 10;
                 variation.nominal_csv = seb_csv;
                 variation.output_dir = seb_root + "/cut_variation_systematics";
+                variation.apply_neupane_proton_efficiency_correction = use_neupane_proton_correction;
                 variation.use_eppi0_production_normalization =
                     use_eppi0_production_normalization;
                 variation.eppi0_charge_csv_path =
@@ -1419,8 +1431,8 @@ int main(int argc, char* argv[]) {
     // --------- Yield totals by current ----------
     // This legacy diagnostic is defined in terms of the pass-1-style eppi0
     // DATA/MC normalization map R_pi0(theta_p).  In nominal production that
-    // normalization is OFF and the Krishna/Neupane proton-efficiency correction
-    // is applied directly in total_counts instead.  Do not require or consume
+    // normalization is OFF. An optional Neupane correction, when explicitly
+    // selected, is applied directly in total_counts instead.  Do not require or consume
     // eppi0_normalization_summary.csv in that nominal mode.
     if (use_eppi0_production_normalization) {
         const std::string csv_main = "output/csvs/dvcs_pass2_analysis.csv";
@@ -1436,7 +1448,7 @@ int main(int argc, char* argv[]) {
         }
     } else {
         std::cout << "[main] Skipping legacy eppi0-normalized yield_totals diagnostic "
-                  << "(eppi0 normalization OFF; Krishna/Neupane production mode).\n";
+                  << "(eppi0 normalization OFF).\n";
     }
 
     // // // // --------- Data/MC comparison ----------
@@ -1776,7 +1788,8 @@ int main(int argc, char* argv[]) {
         // Keep every cut variation on the same detector-normalization branch as
         // the nominal run.  In eppi0 mode the runner re-derives a fresh theta*p
         // map under each varied selection; in --no-eppi0-normalization mode it
-        // instead restores Krishna for every variation.
+        // follows the explicit Neupane switch for every variation.
+        cut_variation_opts.apply_neupane_proton_efficiency_correction = use_neupane_proton_correction;
         cut_variation_opts.use_eppi0_production_normalization =
             use_eppi0_production_normalization;
         cut_variation_opts.eppi0_charge_csv_path =

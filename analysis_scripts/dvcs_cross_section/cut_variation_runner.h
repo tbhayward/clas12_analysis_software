@@ -30,11 +30,12 @@ struct AutomaticCutVariationOptions {
     std::string output_dir = "output/cut_variation_systematics";
 
     // Detector-normalization mode follows the nominal production run.
-    // Production default is eppi0 OFF and Krishna/Neupane proton-efficiency
-    // correction ON.  If the explicit eppi0 diagnostic mode is selected, each
+    // Both additional efficiency corrections are OFF by default.
+    // If the explicit eppi0 diagnostic mode is selected, each
     // cut variation re-derives its own sequential theta_p * p_p efficiency map
     // and applies it to reconstructed DVCS MC instead.
     bool use_eppi0_production_normalization = false;
+    bool apply_neupane_proton_efficiency_correction = false;
     std::string eppi0_charge_csv_path = "imports/integrated_luminosity/global.csv";
     std::string eppi0_normalization_json_path = "imports/eppi0_aao_normalization_inputs.json";
     std::string current_response_model_json =

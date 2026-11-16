@@ -636,7 +636,7 @@ bool produce_variation(
     count_opts.make_note_outputs = false;
     count_opts.use_tprime_binning = options.use_tprime_binning;
     count_opts.apply_neupane_proton_efficiency_correction =
-        !options.use_eppi0_production_normalization;
+        options.apply_neupane_proton_efficiency_correction;
     count_opts.apply_eppi0_efficiency_to_dvcs_rec_mc =
         options.use_eppi0_production_normalization;
     if (options.use_eppi0_production_normalization) {
