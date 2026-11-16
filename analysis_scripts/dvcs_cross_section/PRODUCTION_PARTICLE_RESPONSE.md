@@ -34,7 +34,8 @@ The scratch root is configurable and may be node-local. Same-node jobs use
 per-file locks and can share complete caches without overwriting one another.
 
 `--plot` runs the final-results-by-|t| script with Pass-1 autodetection enabled,
-KM15/theory and measured reference means, using its usual phi sampling default.
+KM15/theory at the reporting coordinates accompanying the imported Fbin factors
+(BSA retains measured means), using its usual phi sampling default.
 To seed valid theory cache entries, add `--theory-cache-from /path/to/previous/run`.
 Coordinates/settings still determine cache validity; changed means can require
 new evaluations. Use a fresh `--run-dir` for each extraction.
@@ -224,3 +225,5 @@ separately when developing. These tests do not claim a full farm-data extraction
 that is the first production command above.
 
 `python3 test_production_response_fitting.py` checks native unfiltered original-event caches, both photon tags and recovery, batching invariance, zero initialization and training-only optimizer selection.
+
+Omit `--skip-systematics` for all production systematics. In that mode `--plot` includes statistical and point-to-point systematic uncertainties in cross-section and BSA error bars; with `--skip-systematics`, those plots retain statistical errors only.

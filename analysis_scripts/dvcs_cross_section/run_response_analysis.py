@@ -51,6 +51,9 @@ def main(argv=None):
     completed=run/'output/particle_response/extraction_manifest.json'
     if not completed.is_file() or not json.loads(completed.read_text()).get('reconstructed_mc_modified'):
         raise RuntimeError('The executable did not finalize a particle-response extraction; rebuild before running')
-    if a.plot:return subprocess.run([sys.executable,str(run/'external_scripts/plot_pass2_final_results_by_t.py'),str(run/'output/csvs/dvcs_pass2_analysis.csv'),'--output-dir',str(run/'output/final_results_by_t'),'--workers',str(a.workers),'--reference-kinematics','means'],cwd=run,env=env).returncode
+    if a.plot:
+        plotting=[sys.executable,str(run/'external_scripts/plot_pass2_final_results_by_t.py'),str(run/'output/csvs/dvcs_pass2_analysis.csv'),'--output-dir',str(run/'output/final_results_by_t'),'--workers',str(a.workers),'--reference-kinematics','imported']
+        if not a.skip_systematics:plotting+=['--xs-total-ptp','--bsa-total-ptp']
+        return subprocess.run(plotting,cwd=run,env=env).returncode
     return 0
 if __name__=='__main__':sys.exit(main())
