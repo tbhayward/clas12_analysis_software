@@ -18,7 +18,13 @@ def main(argv=None):
     for path in SOURCE.iterdir():
         if path.is_file() and (path.suffix in ('.py','.cpp','.h','.json','.sh') or path.name in ('dvcs_analysis','main_systematics','production_response_writer')):shutil.copy2(path,run/path.name)
     for name in ('external_scripts','external_pi0_normalization'):
-        shutil.copytree(SOURCE/name,run/name,ignore=shutil.ignore_patterns('__pycache__','*.pyc','output'))
+        shutil.copytree(SOURCE/name,run/name,ignore=shutil.ignore_patterns('__pycache__','*.pyc','output','*.sif'))
+        # Container images are immutable shared inputs, not per-run snapshots.
+        for image in (SOURCE/name).rglob('*.sif'):
+            if 'output' in image.relative_to(SOURCE/name).parts:continue
+            target=run/name/image.relative_to(SOURCE/name)
+            target.parent.mkdir(parents=True,exist_ok=True)
+            target.symlink_to(image.resolve())
     (run/'imports').symlink_to(SOURCE/'imports',target_is_directory=True)
     frozen=None
     if model is not None:
