@@ -640,7 +640,38 @@ def resolve_finalized_pass2_csv(requested: Optional[Path], script_dir: Path) -> 
 #enddef
 
 
-def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
+def apply_pass2_reporting_coordinates(raw, path, energy=10.6, centering_reference_csv=None):
+    """Resolve exactly the same imported-Fbin reporting points as production plots."""
+    from types import SimpleNamespace
+    from plot_pass2_final_results_by_t import load_centering_references, imported_reference
+
+    args = SimpleNamespace(csv=Path(path), centering_reference_csv=centering_reference_csv)
+    donors = load_centering_references(args)
+    cols = {"bin_index": "bin index", "phi_min": "phimin", "phi_max": "phimax"}
+    energy_label = "10.6 GeV" if energy == 10.6 else "Sp19 Inb"
+    xs_col = f"normed cross sections, ep->epg, exp, {energy_label}, unpol"
+    resolved = raw.copy()
+    for axis in ("xBavg", "Q2avg", "t_abs_avg", "phiavg"):
+        column = f"{axis}, {energy_label}"
+        if column in raw:
+            resolved[f"measured_{axis}, {energy_label}"] = raw[column]
+    for index, row in raw.iterrows():
+        value, _ = _parse_cross_section_tuple(row.get(xs_col, ""))
+        if not np.isfinite(value) or value <= 0:
+            continue
+        record = {k: str(v) for k, v in row.items()}
+        record["bin index"] = str(int(float(row["bin index"])))
+        key = SimpleNamespace(**{attr: float(row[col]) for attr, col in (
+            ("xb_min", "xBmin"), ("xb_max", "xBmax"),
+            ("q2_min", "Q2min"), ("q2_max", "Q2max"),
+            ("t_min", "t_abs_min"), ("t_max", "t_abs_max"))})
+        point = imported_reference(record, cols, key, energy, donors)
+        for axis, coordinate in zip(("xBavg", "Q2avg", "t_abs_avg", "phiavg"), point):
+            resolved.at[index, f"{axis}, {energy_label}"] = coordinate
+    return resolved
+
+
+def canonicalize_pass2_csv(path: Path, centering_reference_csv=None) -> pd.DataFrame:
     """
     Load the finalized combined 10.6-GeV pass-2 cross section using the
     publication-level systematic decomposition:
@@ -672,6 +703,8 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
               "CLAS12 pass-2 Hayward."
         )
     #endif
+
+    raw = apply_pass2_reporting_coordinates(raw, path, centering_reference_csv=centering_reference_csv)
 
     xs_vals = []
     stat_vals = []
@@ -709,6 +742,12 @@ def canonicalize_pass2_csv(path: Path) -> pd.DataFrame:
         "norm_frac": pd.to_numeric(raw[PASS2_NORM_FRAC_COL], errors="coerce"),
         "corr_scale_frac": pd.to_numeric(raw[PASS2_CORR_FRAC_COL], errors="coerce"),
     })
+
+    out["reference_mode"] = "imported_centering"
+    for axis, column in (("xB", "xBavg"), ("Q2", "Q2avg"),
+                         ("t_abs", "t_abs_avg"), ("phi_deg", "phiavg")):
+        out["measured_" + axis] = pd.to_numeric(
+            raw[f"measured_{column}, 10.6 GeV"], errors="coerce")
 
     for out_col, csv_col in [
         ("e_theta", "e_theta, 10.6 GeV"),
@@ -911,7 +950,7 @@ def load_world_data(args, emff) -> pd.DataFrame:
         )
     else:
         try:
-            pass2 = canonicalize_pass2_csv(pass2_path)
+            pass2 = canonicalize_pass2_csv(pass2_path, getattr(args, "centering_reference_csv", None))
         except Pass2UnavailableError as exc:
             print(f"[PASS2 HAYWARD] {exc}", flush=True)
             print(
@@ -1144,7 +1183,7 @@ def evaluate_km15_world(
     expected_cols = [
         "point_id",
         "km15_native", "bh_native",
-        "km15_target", "bh_target",
+        "km15_target", "bh_target", "input_fingerprint",
     ]
 
     cache = pd.DataFrame(columns=expected_cols)
@@ -1166,6 +1205,12 @@ def evaluate_km15_world(
         #endtry
     #endif
 
+    world = world.copy()
+    world["input_fingerprint"] = [model_input_fingerprint(row._asdict(), target_ebeam)
+                                   for row in world.itertuples(index=False)]
+    requested = dict(zip(world["point_id"].astype(str), world["input_fingerprint"]))
+    cache = cache.loc[[requested.get(str(pid)) == signature
+                       for pid, signature in zip(cache["point_id"], cache["input_fingerprint"])]].copy()
     cache_map = set(cache["point_id"].astype(str))
     missing = world.loc[~world["point_id"].astype(str).isin(cache_map)].copy()
 
@@ -1184,9 +1229,10 @@ def evaluate_km15_world(
         )
         for i, row in enumerate(missing.itertuples(index=False), start=1):
             native = evaluate_one_km15(emff, row, float(row.ebeam))
-            target = evaluate_one_km15(emff, row, float(target_ebeam))
+            target = native if math.isclose(float(row.ebeam), float(target_ebeam), rel_tol=0, abs_tol=1e-12) else evaluate_one_km15(emff, row, float(target_ebeam))
             rows.append({
                 "point_id": str(row.point_id),
+                "input_fingerprint": str(row.input_fingerprint),
                 "km15_native": float(native["km15_ep"]),
                 "bh_native": float(native["km15_bh"]),
                 "km15_target": float(target["km15_ep"]),
@@ -1209,7 +1255,7 @@ def evaluate_km15_world(
         print("[KM15] all requested points found in cache", flush=True)
     #endif
 
-    merged = world.merge(cache, on="point_id", how="left", validate="one_to_one")
+    merged = world.merge(cache, on=["point_id", "input_fingerprint"], how="left", validate="one_to_one")
     if merged[expected_cols[1:]].isna().any(axis=None):
         bad = merged.loc[merged[expected_cols[1:]].isna().any(axis=1), "point_id"].head(10)
         raise RuntimeError(
@@ -1220,6 +1266,41 @@ def evaluate_km15_world(
 
     return finalize_km15_columns(merged)
 #enddef
+
+def model_input_fingerprint(row, target_ebeam):
+    import hashlib
+    import json
+    values = [float(row[k]) for k in ("xB", "Q2", "t_abs", "phi_deg", "ebeam")]
+    values.append(float(target_ebeam))
+    return hashlib.sha256(json.dumps([format(x, ".12g") for x in values], separators=(",", ":")).encode()).hexdigest()
+
+
+def migrate_coordinate_cache(outdir, target_ebeam):
+    """Before deleting old tables, attach their actual coordinates to legacy cache IDs."""
+    cache_path = outdir / "cache" / "km15_native_and_target.csv"
+    previous_path = outdir / "tables" / "canonical_world_data_with_models.csv"
+    if not cache_path.is_file() or not previous_path.is_file():
+        return
+    cache = pd.read_csv(cache_path)
+    if "input_fingerprint" in cache:
+        return
+    previous = pd.read_csv(previous_path, low_memory=False)
+    keys = {str(row.point_id): model_input_fingerprint(row._asdict(), target_ebeam)
+            for row in previous.itertuples(index=False)}
+    cache["input_fingerprint"] = cache["point_id"].astype(str).map(keys)
+    # A legacy cache has no target-energy metadata; certify it only when the
+    # previous table's target/native prediction ratio reproduces the saved transport.
+    if "km15_transport_factor" not in previous or not np.allclose(
+            previous["km15_target"] / previous["km15_native"],
+            previous["km15_transport_factor"], equal_nan=True):
+        return
+    # Historical driver caches used the fixed 10.6 GeV target. For another
+    # requested target, recompute rather than claiming old predictions are valid.
+    if not math.isclose(float(target_ebeam), 10.6, rel_tol=0, abs_tol=1e-12):
+        return
+    cache.to_csv(cache_path, index=False)
+    print("[KM15] certified legacy cache coordinates from previous canonical table", flush=True)
+
 
 def finalize_km15_columns(df: pd.DataFrame) -> pd.DataFrame:
     out = df.copy()
@@ -6042,7 +6123,7 @@ def plot_exact_lee_hayward_diagnostics(exact: pd.DataFrame, outdir: Path) -> Non
         ("dQ2_means", r"$\Delta\langle Q^2\rangle$ (GeV$^2$)"),
         ("dt_abs_means", r"$\Delta\langle |t|\rangle$ (GeV$^2$)"),
         ("dphi_means_deg", r"$\Delta\langle\phi\rangle$ (deg)"),
-        ("km15_transport_effect_pct", "KM15 mean-kinematics transport effect (%)"),
+        ("km15_transport_effect_pct", "KM15 reporting-reference transport effect (%)"),
     ]
     for col, xlabel in deltas:
         fig, ax = plt.subplots(figsize=(8.4, 5.4))
@@ -6051,7 +6132,7 @@ def plot_exact_lee_hayward_diagnostics(exact: pd.DataFrame, outdir: Path) -> Non
         ax.set_xlabel(xlabel)
         ax.set_ylabel(r"$\sigma_{\rm Hayward}/\sigma_{\rm Lee}$")
         ax.grid(alpha=0.18)
-        ax.set_title("Same-bin pass-2/pass-1 ratio versus change in reported mean kinematics")
+        ax.set_title("Same-bin pass-2/pass-1 ratio versus change in reporting coordinates")
         fig.tight_layout()
         fig.savefig(outdir / f"exact_bin_ratio_vs_{col}.png", dpi=220)
         plt.close(fig)
@@ -6072,7 +6153,7 @@ def plot_exact_lee_hayward_diagnostics(exact: pd.DataFrame, outdir: Path) -> Non
 #enddef
 
 
-def load_pass2_period_views(pass2_path: Path) -> pd.DataFrame:
+def load_pass2_period_views(pass2_path: Path, centering_reference_csv=None) -> pd.DataFrame:
     """
     Load each individual pass-2 run-period cross section from the finalized CSV.
 
@@ -6083,6 +6164,10 @@ def load_pass2_period_views(pass2_path: Path) -> pd.DataFrame:
     period unless the CSV explicitly supplies one.
     """
     raw = pd.read_csv(pass2_path, low_memory=False)
+    coordinates = {
+        energy: apply_pass2_reporting_coordinates(raw, pass2_path, energy, centering_reference_csv)
+        for energy in (10.6, 10.2)
+    }
     rows = []
     for period, ebeam in PASS2_PERIOD_SPECS.items():
         xs_col = f"normed cross sections, ep->epg, exp, {period}, unpol"
@@ -6095,30 +6180,9 @@ def load_pass2_period_views(pass2_path: Path) -> pd.DataFrame:
             if not np.isfinite(value) or value <= 0.0:
                 continue
             #endif
-            def get_mean(name):
-                cands = [
-                    f"{name}, {period}",
-                    f"{name}, {'10.6 GeV' if period != 'Sp19 Inb' else 'Sp19 Inb'}",
-                ]
-                for c in cands:
-                    if c in raw.columns:
-                        v = pd.to_numeric(pd.Series([rr.get(c)]), errors="coerce").iloc[0]
-                        if np.isfinite(v):
-                            return float(v)
-                        #endif
-                    #endif
-                #endfor
-                base = {"xBavg":"xBmin", "Q2avg":"Q2min", "t_abs_avg":"t_abs_min", "phiavg":"phimin"}
-                if name in base and base[name] in raw.columns:
-                    lo = float(rr.get(base[name], np.nan))
-                    hi = float(rr.get(base[name].replace("min","max"), np.nan))
-                    if np.isfinite(lo) and np.isfinite(hi):
-                        return 0.5*(lo+hi)
-                    #endif
-                #endif
-                return np.nan
-            #enddef
-
+            reference_energy = 10.2 if period == "Sp19 Inb" else 10.6
+            reference_label = "Sp19 Inb" if period == "Sp19 Inb" else "10.6 GeV"
+            reporting_row = coordinates[reference_energy].loc[i]
             ptheta = np.nan
             gtheta = np.nan
             etheta = np.nan
@@ -6141,10 +6205,10 @@ def load_pass2_period_views(pass2_path: Path) -> pd.DataFrame:
                 "ebeam": float(ebeam),
                 "analysis_bin_name": float(rr.get("Bin Name", np.nan)),
                 "four_d_bin_index": float(rr.get("bin index", np.nan)),
-                "xB": get_mean("xBavg"),
-                "Q2": get_mean("Q2avg"),
-                "t_abs": get_mean("t_abs_avg"),
-                "phi_deg": np.mod(get_mean("phiavg"), 360.0),
+                "xB": float(reporting_row[f"xBavg, {reference_label}"]),
+                "Q2": float(reporting_row[f"Q2avg, {reference_label}"]),
+                "t_abs": float(reporting_row[f"t_abs_avg, {reference_label}"]),
+                "phi_deg": float(reporting_row[f"phiavg, {reference_label}"]) % 360.0,
                 "xs": float(value),
                 "stat_abs": float(stat),
                 "tuple_sys_abs": float(tup_sys),
@@ -6167,7 +6231,7 @@ def compare_periods_to_lee_exact(
 
     For the four 10.6-GeV periods the primary ratio is direct same-bin with NO
     energy/kinematic transport.  For Sp19, Lee is transported from 10.604 GeV
-    to 10.2 GeV using KM15 evaluated at the period's mean kinematics.
+    to 10.2 GeV using KM15 evaluated at the period's reporting coordinates.
     """
     lee = world.loc[world["dataset"] == "lee2026"].copy()
     if periods.empty or lee.empty:
@@ -6659,7 +6723,7 @@ def save_outputs(
         )
     #endif
 
-    period_views = load_pass2_period_views(Path(args.resolved_pass2_file))
+    period_views = load_pass2_period_views(Path(args.resolved_pass2_file), getattr(args, "centering_reference_csv", None))
     period_points, period_summary = compare_periods_to_lee_exact(
         period_views, world, emff
     )
@@ -8454,6 +8518,7 @@ def build_parser() -> argparse.ArgumentParser:
         ),
     )
     p.add_argument("--force-km15", action="store_true")
+    p.add_argument("--centering-reference-csv", type=Path, default=None, help="Production imported-Fbin donor CSV; default: discover imports/all_bin_v3.csv.")
 
     p.add_argument("--match-dxb", type=float, default=DEFAULT_MATCH_DXB)
     p.add_argument("--match-dq2", type=float, default=DEFAULT_MATCH_DQ2)
@@ -8563,6 +8628,8 @@ def main(argv: Optional[List[str]] = None) -> int:
         )
         return 0
     #endif
+
+    migrate_coordinate_cache(outdir, args.target_ebeam)
 
     # Never mix a new comparison with stale tables/figures from an earlier run.
     # Preserve the expensive KM15 cache, but rebuild every user-facing product.
