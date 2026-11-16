@@ -1,10 +1,13 @@
 #ifndef PRODUCTION_PARTICLE_RESPONSE_H
 #define PRODUCTION_PARTICLE_RESPONSE_H
 #include <map>
+#include <memory>
 #include <string>
 #include <vector>
 class TTree;
 using ResponseTreeMap=std::map<std::string,TTree*>;
+// Owned by main, so response chains close before ROOT static shutdown.
+using ResponseTreeOwners=std::vector<std::unique_ptr<TTree>>;
 struct ProductionParticleResponseOptions {
  bool fit_response=false;
  std::string fitted_run;
@@ -16,7 +19,8 @@ struct ProductionParticleResponseOptions {
 // Preparation preserves original maps until every cache file is validated.
 // One canonical manifest is then installed for Python and all reconstructed maps.
 bool prepare_production_particle_response(const ProductionParticleResponseOptions& options,
- const std::vector<std::pair<std::string,ResponseTreeMap*>>& maps);
+ const std::vector<std::pair<std::string,ResponseTreeMap*>>& maps,
+ ResponseTreeOwners& owners);
 bool write_production_particle_response_note(const ProductionParticleResponseOptions& options);
 bool finalize_production_particle_response(const ProductionParticleResponseOptions& options);
 #endif

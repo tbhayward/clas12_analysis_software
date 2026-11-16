@@ -12,13 +12,12 @@
 #include <algorithm>
 namespace {
 using json=nlohmann::json;namespace fs=std::filesystem;
-std::vector<std::unique_ptr<TChain>>& owned(){static std::vector<std::unique_ptr<TChain>> x;return x;}
 std::string quote(const std::string& s){std::string x="'";for(char c:s)x+=c=='\''?"'\\''":std::string(1,c);return x+"'";}
 json read(const fs::path& p){std::ifstream f(p);if(!f)throw std::runtime_error("Cannot read "+p.string());json x;f>>x;return x;}
 std::vector<std::string> files(TTree* tree){std::vector<std::string> x;if(auto* c=dynamic_cast<TChain*>(tree)){for(auto* o:*c->GetListOfFiles())x.push_back(fs::absolute(o->GetTitle()).lexically_normal().string());}else if(tree->GetCurrentFile())x.push_back(fs::absolute(tree->GetCurrentFile()->GetName()).lexically_normal().string());else throw std::runtime_error("Response needs file-backed reconstructed trees");return x;}
 bool command(const std::string& s){std::cout<<"[particle_response] "<<s<<std::endl;return std::system(s.c_str())==0;}
 }
-bool prepare_production_particle_response(const ProductionParticleResponseOptions& o,const std::vector<std::pair<std::string,ResponseTreeMap*>>& maps){try{
+bool prepare_production_particle_response(const ProductionParticleResponseOptions& o,const std::vector<std::pair<std::string,ResponseTreeMap*>>& maps,ResponseTreeOwners& owners){try{
  if(!o.enabled())return true;if(o.workers<1||o.workers>10)throw std::runtime_error("Response workers must be in [1,10]");fs::create_directories(o.output_dir);json inv=json::array();
  for(const auto& category:maps)for(const auto& item:*category.second)inv.push_back({{"sample",category.first},{"tag",item.first},{"tree",item.second->GetName()},{"files",files(item.second)}});
  const fs::path inventory=fs::path(o.output_dir)/"input_inventory.json";{std::ofstream f(inventory);f<<inv.dump(2);}
@@ -30,7 +29,7 @@ bool prepare_production_particle_response(const ProductionParticleResponseOption
    if(chain->GetEntries()!=item.second->GetEntries())throw std::runtime_error("Response changed entry count for "+item.first);prepared.emplace_back(&item.second,std::move(chain));
   }
  }
- for(auto& item:prepared){*item.first=item.second.get();owned().push_back(std::move(item.second));}
+ for(auto& item:prepared){*item.first=item.second.get();owners.push_back(std::move(item.second));}
  if(setenv("DVCS_PARTICLE_RESPONSE_MANIFEST",manifest.c_str(),1)!=0)throw std::runtime_error("Cannot install response input manifest");
  std::cout<<"[particle_response] All reconstructed maps now use frozen full-statistics response; DATA and generated maps preserved.\n";return true;
 }catch(const std::exception& e){std::cerr<<"[particle_response] FATAL: "<<e.what()<<'\n';return false;}}

@@ -6,6 +6,7 @@
 #include "global_cuts.h"
 #include "python_exclusivity_runner.h"
 #include "production_particle_response.h"
+#include <TTree.h>
 #include "load_binning_scheme.h"
 #include "bin_means.h"
 #include "total_counts.h"
@@ -173,6 +174,8 @@ static SystematicRunSelection parse_systematic_selection(
 } // namespace
 
 int main(int argc, char* argv[]) {
+    // Destroy response chains on every return, while ROOT is still alive.
+    ResponseTreeOwners particle_response_trees;
     ProductionParticleResponseOptions particle_response;
     // Only this invocation may install a reconstructed-input response.
     unsetenv("DVCS_PARTICLE_RESPONSE_MANIFEST");
@@ -599,7 +602,7 @@ int main(int argc, char* argv[]) {
             {"pi0_mc", &eppi0RecMcTrees}, {"background", &eppi0BkgTrees},
             {"rad_gen", &radGenMcTrees}, {"rad_mc", &radRecMcTrees},
             {"current_gen", &currentStudyGenMcTrees}, {"current_mc", &currentStudyRecMcTrees}};
-        if (!prepare_production_particle_response(particle_response, response_maps)) return 1;
+        if (!prepare_production_particle_response(particle_response, response_maps, particle_response_trees)) return 1;
         // Both Python and all reconstructed C++ maps now share one frozen response.
         exclusivity_opts.output_directory = "output/exclusivity_fit";
         exclusivity_opts.detailed_plots = true;
