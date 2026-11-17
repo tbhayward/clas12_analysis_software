@@ -65,7 +65,14 @@ def parse_pair(v):
 def read_pass1(path):
     d=pd.read_csv(path,sep=r'\s+',comment='#',header=None,
                   names=['phi_rad','Q2','xB','t','energy','A','err'])
-    d['phi']=np.rad2deg(d.phi_rad)%360
+    if d.empty:
+        raise ValueError(f'{path}: empty Pass-1 BSA table')
+    for column in d.columns:
+        try:
+            d[column]=pd.to_numeric(d[column],errors='raise')
+        except (ValueError,TypeError) as exc:
+            raise ValueError(f'{path}: invalid Pass-1 BSA table. Expected seven numeric columns: phi(rad), Q2, xB, t, beam energy, asymmetry, statistical error.') from exc
+    d['phi']=np.rad2deg(d.phi_rad.to_numpy(dtype=float))%360
     d['tp']=tprime(d.Q2,d.xB,d.t)
     d['cell']=[cell_id(q,x,t) for q,x,t in zip(d.Q2,d.xB,d.tp)]
     d['source']='Pass-1'
