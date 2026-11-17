@@ -17,14 +17,14 @@ def source_points(directory,reference):
     if reference=='Pass-1':
         points=[]
         for x in read(directory/'tables/lee_hayward_exact_same_bin_points.csv'):
-            points.append(dict(point_id=x['hayward_point_id'],xB=float(x['hayward_xB']),Q2=float(x['hayward_Q2']),t_abs=float(x['hayward_t_abs']),ratio=float(x['hayward_over_lee_direct']),pull=float(x['direct_pull_pointwise'])))
+            points.append(dict(point_id=x['hayward_point_id'],phi_deg=float(x['hayward_phi']),xB=float(x['hayward_xB']),Q2=float(x['hayward_Q2']),t_abs=float(x['hayward_t_abs']),ratio=float(x['hayward_over_lee_direct']),pull=float(x['direct_pull_pointwise'])))
     else:
         points=[]
         for x in read(directory/'tables/pass2_model_publication_point_residuals.csv'):
             if x['model_name']!=reference or x['scenario']!='raw':continue
             data=float(x['data']);model=float(x['model']);unc=float(x['point_unc'])
             if not (data>0 and model>0 and unc>0):continue
-            points.append(dict(point_id=x['point_id'],xB=float(x['xB']),Q2=float(x['Q2']),t_abs=float(x['t_abs']),ratio=data/model,pull=(data-model)/unc))
+            points.append(dict(point_id=x['point_id'],phi_deg=float(x['phi_deg']),xB=float(x['xB']),Q2=float(x['Q2']),t_abs=float(x['t_abs']),ratio=data/model,pull=(data-model)/unc))
     if len({p['point_id'] for p in points})!=len(points):raise ValueError('Duplicate points in '+reference)
     if not points:raise ValueError('No supported points for '+reference)
     if not all(math.isfinite(p[k]) for p in points for k in ['xB','Q2','t_abs','ratio','pull']):raise ValueError('Nonfinite points for '+reference)
@@ -41,7 +41,7 @@ def summarize(points):
         if sum(x['n'] for x in result if x['variable']==key)!=len(points):raise ValueError('Projection excludes points in '+key)
     return result
 
-def render(points,reference,out,normalization,dpi):
+def render(points,reference,out,normalization,dpi,slug_override=None,title_override=None):
     summary=summarize(points)
     plt.rcParams.update({'font.size':11,'axes.labelsize':12,'xtick.labelsize':10,'ytick.labelsize':10})
     fig,axes=plt.subplots(3,2,figsize=(12,12))
@@ -66,19 +66,26 @@ def render(points,reference,out,normalization,dpi):
         right.axhline(0,color='.25',lw=1);right.set_ylim(-lim,lim);right.set_ylabel('Signed pointwise pull')
     axes[0,0].legend(fontsize=8.5,loc='upper left');axes[0,1].legend(fontsize=9)
     title='Direct same-bin Pass-2 / Pass-1 comparison' if reference=='Pass-1' else 'Pass-2 / '+reference+' at the reporting kinematics'
+    if title_override:title=title_override
     subtitle=f'Unshifted central values, {len(points):,} points, statistical and point-to-point uncertainties'
     fig.suptitle(title+'\n'+subtitle,fontsize=15,y=.98)
     fig.tight_layout(rect=[0,0,1,.94]);fig.subplots_adjust(hspace=.40)
-    slug={'Pass-1':'pass1','BH':'bh','KM15':'km15'}[reference];path=out/(slug+'_ratio_pull_kinematic_summary.png');fig.savefig(path,dpi=dpi);plt.close(fig)
+    slug=slug_override or {'Pass-1':'pass1','BH':'bh','KM15':'km15'}[reference];path=out/(slug+'_ratio_pull_kinematic_summary.png');fig.savefig(path,dpi=dpi);plt.close(fig)
     with (out/(slug+'_ratio_pull_kinematic_summary.csv')).open('w') as f:
         writer=csv.DictWriter(f,fieldnames=list(summary[0]));writer.writeheader();writer.writerows(summary)
     return dict(reference=reference,points=len(points),figure=str(path),normalization_band_fraction=normalization if reference=='Pass-1' else None,right_axis_limit=lim)
 
 def main():
-    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--comparison-dir',type=Path,required=True);p.add_argument('--output-dir',type=Path,default=Path('output/ratio_pull_summaries'));p.add_argument('--pass1-normalization',type=float,default=.31);p.add_argument('--dpi',type=int,default=220);a=p.parse_args()
+    p=argparse.ArgumentParser(description=__doc__);p.add_argument('--comparison-dir',type=Path,required=True);p.add_argument('--output-dir',type=Path,default=Path('output/ratio_pull_summaries'));p.add_argument('--pass1-normalization',type=float,default=.31);p.add_argument('--bh-phi-edge',type=float,default=None,help='Also show BH points with circular phi below this edge or above 360 minus the edge');p.add_argument('--dpi',type=int,default=220);a=p.parse_args()
     if not 0<=a.pass1_normalization<1:p.error('normalization must be between zero and one')
+    if a.bh_phi_edge is not None and not 0<a.bh_phi_edge<180:p.error('BH phi edge must be between 0 and 180 degrees')
     a.output_dir.mkdir(parents=True,exist_ok=True)
     manifest=[render(source_points(a.comparison_dir,r),r,a.output_dir,a.pass1_normalization,a.dpi) for r in ['Pass-1','BH','KM15']]
+    if a.bh_phi_edge is not None:
+        edge=a.bh_phi_edge
+        points=[x for x in source_points(a.comparison_dir,'BH') if x['phi_deg']%360<edge or x['phi_deg']%360>360-edge]
+        item=render(points,'BH',a.output_dir,a.pass1_normalization,a.dpi,slug_override='bh_phi0',title_override=rf'Pass-2 / BH for $\phi<{edge:g}^\circ$ or $\phi>{360-edge:g}^\circ$')
+        item['phi_edge_degrees']=edge;manifest.append(item)
     (a.output_dir/'manifest.json').write_text(json.dumps(manifest,indent=2)+'\n')
     for x in manifest:print(x['reference'],x['points'],x['figure'])
 if __name__=='__main__':main()
