@@ -1,3 +1,4 @@
+#include "current_response_provenance.h"
 #include "sebastian_tgamma_binning.h"
 // total_counts.cpp
 // -----------------------------------------------------------------------------
@@ -3914,6 +3915,9 @@ static std::string current_sample_token(const CountCollection& C) {
 static void write_current_nuisance_response_csv(
     const std::map<std::string, CountCollection>& collections,
     const std::string& path,
+    const CSV& source_csv,
+    const std::string& cuts_path,
+    const std::string& calibration_path,
     bool use_epg_mc_current_factor_for_eppi0_bkg) {
 
     const std::filesystem::path out_path(path);
@@ -3940,10 +3944,11 @@ static void write_current_nuisance_response_csv(
                 const std::string& period = per_kv.first;
                 if (should_skip_csv_for_label(period)) continue;
 
-                for (const auto& row_kv : per_kv.second) {
-                    const HelCounts& h = row_kv.second;
+                for (size_t row = 0; row < source_csv.rows.size(); ++row) {
+                    const auto it = per_kv.second.find(static_cast<int>(row));
+                    const HelCounts h = it == per_kv.second.end() ? HelCounts{} : it->second;
                     const double nominal = h.unpol + h.pos + h.neg;
-                    out << row_kv.first << ','
+                    out << row << ','
                         << csv_escape(period) << ','
                         << csv_escape(sample) << ','
                         << csv_escape("NOMINAL") << ','
@@ -3968,9 +3973,10 @@ static void write_current_nuisance_response_csv(
             const std::string sample_kind =
                 C.work_cfg.sample_kind == SampleKind::DATA ? "data" : "mc";
 
-            for (const auto& row_kv : per_kv.second) {
-                const int row = row_kv.first;
-                const WeightedHelCounts& h = row_kv.second;
+            for (size_t row = 0; row < source_csv.rows.size(); ++row) {
+                const auto it = per_kv.second.find(static_cast<int>(row));
+                const WeightedHelCounts zero{};
+                const WeightedHelCounts& h = it == per_kv.second.end() ? zero : it->second;
                 const double nominal = weighted_total_value(h);
 
                 // Always write one nominal record.
@@ -4039,6 +4045,22 @@ static void write_current_nuisance_response_csv(
 
     std::cout << "[total_counts] Wrote correlated current-response nuisance "
               << "yield responses to " << path << std::endl;
+    out.close();
+    if (!out) fatal("[total_counts] FATAL: incomplete current-response export: " + path);
+    std::ofstream meta(path + ".provenance.csv");
+    meta << "row,xBmin,xBmax,Q2min,Q2max,t_abs_min,t_abs_max,phimin,phimax,cuts_hash,calibration_hash,response_hash\n";
+    const std::string cuts_hash = current_response_provenance::file_hash(cuts_path);
+    const std::string calibration_hash = current_response_provenance::file_hash(calibration_path);
+    const std::string response_hash = current_response_provenance::file_hash(path);
+    for (size_t row = 0; row < source_csv.rows.size(); ++row) {
+        meta << row;
+        for (const auto* name : current_response_provenance::bin_columns())
+            meta << ',' << source_csv.rows[row][source_csv.index.at(name)];
+        meta << ',' << cuts_hash << ',' << calibration_hash << ',' << response_hash << '\n';
+    }
+    meta.close();
+    if (!meta) fatal("[total_counts] FATAL: incomplete current-response provenance: " + path);
+
 }
 
 static void write_collection_to_csv(CSV& csv,
@@ -5270,6 +5292,7 @@ bool update_total_counts_csv(const std::string& csv_path,
             write_current_nuisance_response_csv(
                 collections,
                 options.current_nuisance_response_csv,
+                csv, combined_cuts_json, options.current_response_model_json,
                 options.use_epg_mc_current_factor_for_eppi0_bkg);
         }
 

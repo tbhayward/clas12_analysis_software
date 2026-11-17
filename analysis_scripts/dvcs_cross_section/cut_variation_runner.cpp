@@ -634,6 +634,8 @@ bool produce_variation(
     count_opts.use_nobkg_dvcs_mc_counts = use_nobkg_dvcs_mc_for_acceptance;
     count_opts.make_plots = false;
     count_opts.make_note_outputs = false;
+    // A variation must never replace the nominal calibration-response file.
+    count_opts.write_current_nuisance_responses = false;
     count_opts.use_tprime_binning = options.use_tprime_binning;
     count_opts.apply_neupane_proton_efficiency_correction =
         options.apply_neupane_proton_efficiency_correction;

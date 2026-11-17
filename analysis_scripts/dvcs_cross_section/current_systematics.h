@@ -11,6 +11,9 @@ struct CurrentSystematicsOptions {
         "fa18_sp19_50nA_shape_distance.csv";
     std::string output_dir =
         "output/current_systematics/analysis_note";
+    std::string combined_cuts_json = "output/jsons/combined_cuts.json";
+    std::string current_response_model_json =
+        "output/dvcs_current_dependence/calibration/current_response_model.json";
     bool write_csv_columns = true;
 };
 

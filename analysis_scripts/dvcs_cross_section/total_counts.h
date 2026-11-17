@@ -71,8 +71,10 @@ struct TotalCountsOptions {
     // Write the signed one-standard-deviation response of each current-corrected
     // yield to every fitted current-response calibration parameter.  These
     // responses are consumed by current_systematics.cpp and preserve the
-    // correlated nuisance structure across physics bins.
-    bool write_current_nuisance_responses = true;
+    // correlated nuisance structure across physics bins. Nominal production
+    // explicitly enables this export. Diagnostic/variation jobs must opt in
+    // with their own isolated filename.
+    bool write_current_nuisance_responses = false;
     std::string current_nuisance_response_csv =
         "output/current_systematics/current_yield_nuisance_responses.csv";
 };

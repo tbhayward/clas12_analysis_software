@@ -1,3 +1,4 @@
+#include "current_response_provenance.h"
 // current_systematics.cpp
 // -----------------------------------------------------------------------------
 // Correlated current-dependent efficiency systematic.
@@ -241,6 +242,70 @@ static bool sample_nom(const PeriodMap& p,const std::string& period,
     return std::isfinite(v);
 }
 
+static void validate_response_provenance(const Csv& analysis,
+                                         const CurrentSystematicsOptions& options) {
+    const std::string meta_path=options.nuisance_response_csv+".provenance.csv";
+    if(!fs::exists(meta_path))
+        throw std::runtime_error("Missing nominal current-response provenance. Recount nominal responses with the updated exporter: "+meta_path);
+    const Csv meta=read_csv(meta_path);
+    if(meta.rows.size()!=analysis.rows.size())
+        throw std::runtime_error("Current-response binning differs from the nominal analysis (row count)");
+    const auto ch=current_response_provenance::file_hash(options.combined_cuts_json);
+    const auto mh=current_response_provenance::file_hash(options.current_response_model_json);
+    const auto rh=current_response_provenance::file_hash(options.nuisance_response_csv);
+    for(size_t i=0;i<meta.rows.size();++i){
+        const auto& row=meta.rows[i];
+        if(num(row.at(meta.index.at("row")))!=static_cast<double>(i))
+            throw std::runtime_error("Invalid current-response row identity");
+        for(const auto* name:current_response_provenance::bin_columns()){
+            const double a=num(row.at(meta.index.at(name)));
+            const double b=num(analysis.rows[i].at(analysis.index.at(name)));
+            if(!current_response_provenance::same_value(a,b))
+                throw std::runtime_error("Current-response binning mismatch at row "+std::to_string(i)+": "+name);
+        }
+        if(row.at(meta.index.at("cuts_hash"))!=ch ||
+           row.at(meta.index.at("calibration_hash"))!=mh ||
+           row.at(meta.index.at("response_hash"))!=rh)
+            throw std::runtime_error("Current-response file, selection or calibration provenance differs from nominal production");
+    }
+}
+
+// Independent numeric check of every nominal component. This detects a wrong
+// selection even when its four-dimensional binning is identical.
+static void validate_nominal_response_yields(const Csv& csv,const ResponseByRow& resp){
+    const std::array<std::string,5> periods={"Fa18 Inb","Fa18 Out","Sp18 Inb","Sp18 Out","Sp19 Inb"};
+    const std::array<std::string,6> samples={"epg_data","eppi0_data","epg_rec","eppi0_rec","misid_rec","epg_gen"};
+    for(size_t i=0;i<csv.rows.size();++i){
+        const auto ir=resp.find(static_cast<int>(i));
+        if(ir==resp.end()) throw std::runtime_error("Missing nominal current-response row "+std::to_string(i));
+        for(const auto& period:periods) for(const auto& sample:samples){
+            double actual=0.;
+            if(!sample_nom(ir->second,period,sample,actual))
+                throw std::runtime_error("Missing nominal current-response component: row "+std::to_string(i)+" "+period+" "+sample);
+            double expected=0.;
+            auto cell=[&](const std::string& name){
+                double result=0.;
+                const auto c=csv.index.find(name);
+                if(c==csv.index.end()) throw std::runtime_error("Missing production column: "+name);
+                const std::string& raw=csv.rows[i][c->second];
+                if(trim(raw).empty()) return 0.;
+                if(!tuple_first(raw,result)) throw std::runtime_error("Invalid production yield: "+name);
+                return result;
+            };
+            if(sample=="epg_data" || sample=="eppi0_data"){
+                const std::string channel=sample=="epg_data" ? "ep->epg" : "ep->eppi0";
+                for(const auto* topo:{"(FD, FD)","(CD, FD)","(CD, FT)"})
+                    expected+=cell("normalized raw yield, "+channel+", "+topo+", exp, "+period+", unpol");
+            } else {
+                const std::string channel=sample=="eppi0_rec" ? "ep->eppi0" : (sample=="misid_rec" ? "ep->eppi0->epg" : "ep->epg");
+                expected=cell((sample=="epg_gen" ? "generated yield, " : "reconstructed current corrected yield, ")+channel+", mc, "+period);
+            }
+            if(!current_response_provenance::same_value(actual,expected))
+                throw std::runtime_error("Current-response nominal yield mismatch at row "+std::to_string(i)+" "+period+" "+sample+". Recount nominal responses, do not reuse variation exports.");
+        }
+    }
+}
+
 static double sample_delta(const PeriodMap& p,const std::string& period,
                            const std::string& sample,const std::string& nuisance) {
     auto ip=p.find(period); if(ip==p.end()) return 0.0;
@@ -280,13 +345,18 @@ static bool unfolded_for_period(const PeriodMap& p,
         Rg  += sign*sample_delta(p,period,"epg_rec",*nuisance);
     }
 
-    if(!(Rpi>0.0) || !(Rg>0.0) || !(G>0.0)) return false;
-
-    const double S=D-M*P/Rpi;
-    if(!(S>0.0) || !std::isfinite(S)) return false;
-
+    if(!(Rg>0.0) || !(G>0.0)) return false;
+    // An explicitly zero selected numerator has zero calibration response.
+    // It is not a missing control record and must not invalidate a signal bin.
+    const bool zero_background=(P==0.0 || M==0.0);
+    if(!zero_background && !(Rpi>0.0)) return false;
+    const double background=zero_background ? 0.0 : M*P/Rpi;
+    const double S=D-background;
+    if(!std::isfinite(S) || (!nuisance && !(S>0.0))) return false;
     U=S*G/Rg;
-    return std::isfinite(U) && U>0.0;
+    // A nuisance excursion may cross zero signal. Keep its signed response,
+    // rather than silently dropping a large uncertainty contribution.
+    return std::isfinite(U);
 }
 
 struct BinResult {
@@ -313,7 +383,8 @@ static BinResult period_result(
     for(const auto& n:nuis){
         double up=0.0,dn=0.0;
         if(!unfolded_for_period(p,period,&n,+1.0,up) ||
-           !unfolded_for_period(p,period,&n,-1.0,dn)) continue;
+           !unfolded_for_period(p,period,&n,-1.0,dn))
+            throw std::runtime_error("Invalid current-calibration excursion: "+period+" "+n);
 
         const double fsym=
             (std::fabs(up-U0)+std::fabs(dn-U0))/(2.0*std::fabs(U0));
@@ -396,7 +467,7 @@ static BinResult combined_10p6_result(const PeriodMap& p) {
             minus+=dn;
         }
 
-        if(!ok) continue;
+        if(!ok) throw std::runtime_error("Invalid combined current-calibration excursion: "+n);
 
         const double fsym=
             (std::fabs(plus-total0)+std::fabs(minus-total0))/
@@ -531,7 +602,9 @@ bool evaluate_current_dependence_systematics(
         fs::create_directories(options.output_dir);
 
         Csv csv=read_csv(analysis_csv);
+        validate_response_provenance(csv,options);
         const ResponseByRow resp=read_responses(options.nuisance_response_csv);
+        validate_nominal_response_yields(csv,resp);
         const double dmax=read_dmax(options.transfer_shape_csv);
 
         std::vector<BinResult> r10(csv.rows.size());
@@ -614,6 +687,7 @@ bool evaluate_current_dependence_systematics(
                 auto ix=csv.index.find(t.xs_col);
                 for(size_t r=0;r<csv.rows.size();++r){
                     const BinResult& br=(*t.result)[r];
+                    for(const int col:{cf,ca,cd,cm,ct}) csv.rows[r][col].clear();
                     if(!br.valid) continue;
                     csv.rows[r][cf]=fmt(br.scalar);
                     csv.rows[r][cd]=fmt(br.data_scalar);
