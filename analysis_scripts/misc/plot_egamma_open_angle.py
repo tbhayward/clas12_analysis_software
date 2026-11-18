@@ -10,7 +10,7 @@ files = {
 
 plt.figure(figsize=(10, 6))
 
-bins = np.linspace(0, 180, 181)
+bins = np.linspace(0, 60, 121)
 
 for label, path in files.items():
     with uproot.open(path) as f:
