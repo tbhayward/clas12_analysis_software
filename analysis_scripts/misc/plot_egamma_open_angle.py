@@ -18,7 +18,7 @@ for label, path in files.items():
     #endwith
 
     angles = angles[np.isfinite(angles)]
-    angles = angles[(angles >= 0) & (angles <= 180)]
+    angles = angles[(angles >= 0) & (angles <= 60)]
 
     plt.hist(
         angles,
