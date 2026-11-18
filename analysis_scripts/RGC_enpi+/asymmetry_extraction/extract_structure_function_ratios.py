@@ -210,7 +210,7 @@ import multiprocessing as mp
 import queue
 import time
 import tempfile
-from dataclasses import dataclass
+from dataclasses import asdict, dataclass
 from datetime import datetime, timezone
 import hashlib
 import json
@@ -1383,9 +1383,22 @@ def write_hybrid_fit_method_cut_jsons(
             half_p = 0.5 * (phi - plo)
             out_mu[index]["nominal"] = [mu_p - half_c, mu_p + half_c]
             out_sigma[index]["nominal"] = [mu_c - half_p, mu_c + half_p]
+            for row, mu, half in ((out_mu[index], mu_p, half_c),
+                                  (out_sigma[index], mu_c, half_p)):
+                row["mu_gev2"] = mu
+                row["sigma_gev2"] = half / 2.0
+                for label, multiple in (("tight", 1.0), ("loose", 3.0)):
+                    row[label] = [mu - multiple * half / 2.0, mu + multiple * half / 2.0]
+            out_mu[index]["mu_error_gev2"] = prow.get("mu_error_gev2")
+            out_sigma[index]["sigma_error_gev2"] = prow.get("sigma_error_gev2")
         # endfor
     # endfor
 
+    for payload, method in ((mu_poly_sigma_c, "polynomial mean, carbon width"),
+                            (mu_c_sigma_poly, "carbon mean, polynomial width")):
+        payload.pop("flat_rows", None)
+        payload["method"] = f"Diagnostic hybrid: {method}; nominal dilution held fixed"
+        payload["fixed_dilution_diagnostic"] = True
     ensure_directory(output_dir)
     mu_path = output_dir / "hybrid_mu_polynomial_sigma_carbon_cuts.json"
     sigma_path = output_dir / "hybrid_mu_carbon_sigma_polynomial_cuts.json"
@@ -1453,6 +1466,14 @@ def load_channel_cuts(
             f"Expected {expected} period/bin cuts, found {len(cuts)}."
         )
     # endif
+    if payload.get("width_model") == "shared_per_bin":
+        for bin_number in range(1, NUMBER_OF_BINS + 1):
+            reference = cuts[(PERIODS[0], bin_number)]
+            for period in PERIODS[1:]:
+                entry = cuts[(period, bin_number)]
+                if not np.allclose([entry.low_gev2, entry.high_gev2],
+                                   [reference.low_gev2, reference.high_gev2], rtol=0, atol=1e-12):
+                    raise RuntimeError(f"Shared-width cut file has unequal periods in bin {bin_number}")
     return cuts
 
 
@@ -1517,6 +1538,17 @@ def find_default_dilution_json(directory: Path) -> Path:
         )
     # endif
     return candidates[0]
+
+
+def validate_dilution_cut_source(dilution_path: Path, cut_path: Path) -> None:
+    """Require production dilution to have been calculated with these exact cuts."""
+    payload = read_json_tolerating_trailing_escaped_whitespace(dilution_path)
+    expected = sha256_file(cut_path)
+    if payload.get("source_exclusivity_json_sha256") != expected:
+        raise RuntimeError(
+            f"Dilution/cut provenance mismatch: {dilution_path} was not calculated "
+            f"with {cut_path}. Rerun determine_dilution_factor.py with these cuts."
+        )
 
 
 def _extract_recommended_record(cut_payload: Mapping[str, Any]) -> tuple[float, float]:
@@ -1638,8 +1670,80 @@ _TRANSIENT_EVENT_DIR = Path(tempfile.gettempdir()) / f"rgc_enpi_{os.environ.get(
 def _event_cache_path(requested_path: Path) -> Path:
     """Map legacy cache paths to transient system storage, never the analysis tree."""
     requested = Path(requested_path).expanduser().resolve()
+    if requested.parent == _TRANSIENT_EVENT_DIR.resolve():
+        return requested
     digest = hashlib.sha1(str(requested).encode("utf-8")).hexdigest()[:16]
     return _TRANSIENT_EVENT_DIR / f"selected_events_{digest}.npz"
+
+
+def _cache_selection(cuts: Mapping[tuple[str, int], CutRecord]) -> list[dict[str, Any]]:
+    return [asdict(cuts[key]) for key in sorted(cuts)]
+
+
+def _cache_identity(input_paths: Mapping[str, Path], tree_name: str,
+                    run_records: Mapping[int, RunRecord]) -> dict[str, Any]:
+    inputs = {}
+    for period, path in sorted(input_paths.items()):
+        resolved = Path(path).expanduser().resolve()
+        stat = resolved.stat()
+        inputs[period] = {"path": str(resolved), "size": stat.st_size,
+                          "mtime_ns": stat.st_mtime_ns}
+    return {"schema_version": 1, "selection_code_sha256": sha256_file(Path(__file__)),
+            "inputs": inputs, "tree": tree_name,
+            "runs": [asdict(run_records[key]) for key in sorted(run_records)]}
+
+
+def _cache_metadata_path(path: Path) -> Path:
+    return path.with_suffix(path.suffix + ".metadata.json")
+
+
+def _write_cache_metadata(path: Path, cuts: Mapping[tuple[str, int], CutRecord],
+                          identity: dict[str, Any]) -> None:
+    stat = path.stat()
+    write_json(_cache_metadata_path(path), {"identity": identity,
+        "cuts": _cache_selection(cuts),
+        "cache_size": stat.st_size, "cache_mtime_ns": stat.st_mtime_ns})
+
+
+def _read_cache_metadata(path: Path) -> dict[str, Any]:
+    path = _event_cache_path(path)
+    metadata_path = _cache_metadata_path(path)
+    if not path.is_file() or not metadata_path.is_file():
+        raise RuntimeError(f"Missing cache provenance for {path}; rebuild from ROOT.")
+    metadata = json.loads(metadata_path.read_text())
+    stat = path.stat()
+    if (metadata.get("cache_size"), metadata.get("cache_mtime_ns")) != (stat.st_size, stat.st_mtime_ns):
+        raise RuntimeError(f"Stale cache provenance for {path}; rebuild from ROOT.")
+    identity = metadata.get("identity", {})
+    if identity.get("selection_code_sha256") != sha256_file(Path(__file__)):
+        raise RuntimeError(f"Cache selection code changed for {path}; rebuild from ROOT.")
+    for item in identity.get("inputs", {}).values():
+        stat = Path(item["path"]).stat()
+        if (stat.st_size, stat.st_mtime_ns) != (item["size"], item["mtime_ns"]):
+            raise RuntimeError(f"Cache input changed: {item['path']}; rebuild from ROOT.")
+    return metadata
+
+
+def validate_event_cache(path: Path, cuts: Mapping[tuple[str, int], CutRecord],
+                         identity: dict[str, Any] | None = None,
+                         *, require_superset: bool = False) -> dict[str, Any]:
+    """Reject stale selections and sources that cannot contain the requested cuts."""
+    metadata = _read_cache_metadata(path)
+    if identity is not None and metadata.get("identity") != identity:
+        raise RuntimeError(f"Cache inputs/run selection changed for {path}; rebuild from ROOT.")
+    requested = _cache_selection(cuts)
+    if require_superset:
+        source = {(row["period"], row["bin_number"]): row for row in metadata["cuts"]}
+        for row in requested:
+            old = source.get((row["period"], row["bin_number"]))
+            if (old is None or old["x_index"] != row["x_index"]
+                    or old["t_index"] != row["t_index"]
+                    or old["low_gev2"] > row["low_gev2"]
+                    or old["high_gev2"] < row["high_gev2"]):
+                raise RuntimeError(f"Cache {path} is not a selection superset; rebuild from ROOT.")
+    elif metadata.get("cuts") != requested:
+        raise RuntimeError(f"Cache cuts changed for {path}; rebuild from ROOT.")
+    return metadata
 
 
 def parse_input_override(text: str) -> tuple[str, Path]:
@@ -1787,6 +1891,7 @@ def build_event_cache(
 ) -> dict[str, Any]:
     cache_path = _event_cache_path(cache_path)
     ensure_directory(cache_path.parent)
+    identity = _cache_identity(input_paths, tree_name, run_records)
     cache_build_start = time.perf_counter()
     print(
         f"[cache] BUILD START -> {cache_path.resolve()}",
@@ -2131,6 +2236,7 @@ def build_event_cache(
         flush=True,
     )
     np.savez_compressed(cache_path, **cache)
+    _write_cache_metadata(cache_path, cuts, identity)
     print(
         f"[cache] BUILD DONE; selected={cache['runnum'].size:,}; "
         f"elapsed={time.perf_counter() - cache_build_start:.1f} s",
@@ -2160,6 +2266,7 @@ def derive_event_cache(
         f"{cache_path.resolve()}",
         flush=True,
     )
+    metadata = validate_event_cache(source_cache_path, cuts, require_superset=True)
     source = load_event_cache(source_cache_path)
     print(
         f"[cache] source cache loaded: {source['runnum'].size:,} events",
@@ -2192,6 +2299,7 @@ def derive_event_cache(
     ensure_directory(cache_path.parent)
     filtered = {name: values[selected] for name, values in source.items()}
     np.savez_compressed(cache_path, **filtered)
+    _write_cache_metadata(cache_path, cuts, metadata["identity"])
     print(
         f"[cache] DERIVE DONE; selected={np.count_nonzero(selected):,}/"
         f"{selected.size:,}; elapsed={time.perf_counter() - derive_start:.1f} s",
@@ -6772,6 +6880,7 @@ def run_analysis_variant(
     cut_label: str = "nominal",
     source_cache_path: Path | None = None,
     zero_uu_baseline: bool = False,
+    fixed_dilution_diagnostic: bool = False,
 ) -> dict[str, Any]:
     tables_dir = output_dir / "tables"
     json_dir = output_dir / "json"
@@ -6808,11 +6917,17 @@ def run_analysis_variant(
     run_records = parse_run_info_csv(run_info_path)
     run_states = run_state_arrays(run_records)
     cuts = load_channel_cuts(cut_json_path, cut_label=cut_label)
+    if fixed_dilution_diagnostic:
+        print("[diagnostic] Holding nominal dilution fixed for the fit-method comparison.", flush=True)
+    else:
+        validate_dilution_cut_source(dilution_json_path, cut_json_path)
     dilution_records = load_dilution_factors(
         dilution_json_path, cut_label=cut_label
     )
+    cache_identity = _cache_identity(input_paths, tree_name, run_records)
     if reuse_cache:
         print(f"[cache] REUSE requested: {cache_path}", flush=True)
+        validate_event_cache(cache_path, cuts, cache_identity)
         events = load_event_cache(cache_path)
         print(
             f"[cache] REUSE DONE: loaded {events['runnum'].size:,} events",
@@ -6825,6 +6940,7 @@ def run_analysis_variant(
             "derived_from_cache": None,
         }
     elif source_cache_path is not None:
+        validate_event_cache(source_cache_path, cuts, cache_identity, require_superset=True)
         cache_summary = derive_event_cache(
             source_cache_path=source_cache_path,
             cuts=cuts,
@@ -7065,6 +7181,7 @@ def run_analysis_variant(
             "root_files": {period: str(input_paths[period].expanduser().resolve()) for period in PERIODS},
             "run_info_csv": str(run_info_path), "run_info_csv_sha256": sha256_file(run_info_path),
             "channel_cut_json": str(cut_json_path), "channel_cut_json_sha256": sha256_file(cut_json_path),
+            "fixed_dilution_diagnostic": fixed_dilution_diagnostic,
             "dilution_json": str(dilution_json_path), "dilution_json_sha256": sha256_file(dilution_json_path),
         },
         "results": results,
@@ -14228,7 +14345,7 @@ def build_argument_parser() -> argparse.ArgumentParser:
             "Run only the period-wide A_LL normalization-nuisance study from the "
             "existing period-stability table. Fits Su22/Fa22/Sp23 scale factors "
             "with period-specific PbPt Gaussian priors, then repeats after adding "
-            "the correlated 4% dilution-factor scale uncertainty in quadrature."
+            "the correlated 4%% dilution-factor scale uncertainty in quadrature."
         ),
     )
     parser.add_argument(
@@ -14839,6 +14956,7 @@ def main() -> int:
                 include_target_axis_study=False,
                 include_period_diagnostics=False,
                 cut_label="nominal",
+                fixed_dilution_diagnostic=True,
             )
         # endfor
         products = write_fit_method_diagnostic_products(

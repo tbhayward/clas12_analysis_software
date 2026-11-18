@@ -39,6 +39,7 @@ The default exclusivity-cut JSON is therefore
         final_carbon_assisted_cuts/tables/
         final_carbon_assisted_mx2_cuts.json
 
+The Gaussian mean and width are shared across periods within each bin.
 The production exclusivity definitions are tight = mu +/- 1 sigma,
 nominal = mu +/- 2 sigma, and loose = mu +/- 3 sigma.  When the ISR diagnostic
 is enabled, the same Method-1 calculation is repeated with the matched
@@ -1627,6 +1628,19 @@ def load_exclusivity_cuts(path: Path) -> dict[tuple[str, int, int], CutEntry]:
         # endfor
     # endfor
 
+    if payload.get("width_model") == "shared_per_bin":
+        for xi in range(len(XB_BINS)):
+            for ti in range(len(MINUS_TPRIME_BINS_GEV2)):
+                reference = cuts[(PERIODS[0], xi, ti)]
+                for period in PERIODS[1:]:
+                    entry = cuts[(period, xi, ti)]
+                    pairs = [(entry.mu_gev2, reference.mu_gev2),
+                             (entry.sigma_gev2, reference.sigma_gev2),
+                             (entry.sigma_error_gev2, reference.sigma_error_gev2)]
+                    pairs.extend((v, ref) for label in CUT_VARIATIONS
+                                 for v, ref in zip(entry.interval(label), reference.interval(label)))
+                    if any(not math.isclose(v, ref, rel_tol=0, abs_tol=1e-12) for v, ref in pairs):
+                        raise RuntimeError(f"Shared-width cut file has unequal periods in bin {(xi, ti)}")
     return cuts
 
 
@@ -4588,6 +4602,7 @@ def main() -> int:
                 "periods": isr_compact_periods,
                 "source_master_json": str(isr_master_json_path),
                 "source_exclusivity_json": str(isr_cut_json),
+                "source_exclusivity_json_sha256": sha256_file(isr_cut_json),
             },
         )
 

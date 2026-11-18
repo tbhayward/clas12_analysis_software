@@ -10,12 +10,12 @@ nominal and ISR analysis trees are retained under output/nominal and output/isr;
 no fit plots, polynomial-method plots, carbon-subtraction diagnostics, tables,
 or fit-status products are discarded after completion.
 
-The physics fit remains the established carbon-assisted corrected-data fit:
-for each of the fixed 4 xB by 6 (-tprime) bins, Su22, Fa22, and Sp23 share one
-corrected Gaussian mean while retaining independent Gaussian widths, yields,
-and residual-background parameters. The exported tight, nominal, and loose
+The carbon-assisted corrected-data fit shares one Gaussian mean and width
+across Su22, Fa22, and Sp23 in each of the fixed 4 xB by 6 (-tprime) bins.
+Signal yields, constrained carbon normalizations, and residual backgrounds
+remain period-specific. The exported tight, nominal, and loose
 windows are respectively mu +/- 1 sigma, mu +/- 2 sigma, and mu +/- 3 sigma
-for each run period.
+identically across the three periods within each bin.
 
 The public output is intentionally compact:
 
@@ -1609,24 +1609,26 @@ def joint_parameter_layout(
         cursor += 1
     # endif
 
+    sigma_index = cursor
+    cursor += 1
     period_slices: dict[str, dict[str, Any]] = {}
     for period in periods:
         yield_index = cursor
-        sigma_index = cursor + 1
         coefficient_slice = slice(
-            cursor + 2,
-            cursor + 2 + coefficient_count,
+            cursor + 1,
+            cursor + 1 + coefficient_count,
         )
         period_slices[period] = {
             "yield_index": yield_index,
             "sigma_index": sigma_index,
             "coefficient_slice": coefficient_slice,
         }
-        cursor += 2 + coefficient_count
+        cursor += 1 + coefficient_count
     # endfor
 
     return {
         "mean_index": mean_index,
+        "sigma_index": sigma_index,
         "period_slices": period_slices,
         "number_of_parameters": cursor,
         "coefficient_count": coefficient_count,
@@ -1697,6 +1699,10 @@ def joint_initial_values_and_bounds(
         upper.append(mean_high)
     # endif
 
+    initial.append(0.075)
+    lower.append(0.010)
+    upper.append(0.180)
+
     for period in periods:
         histogram = histograms[period]
         fit_mask = histogram["fit_mask"]
@@ -1737,9 +1743,9 @@ def joint_initial_values_and_bounds(
             background_scale=background_scale,
         )
 
-        initial.extend([yield_guess, sigma_guess, *background_initial])
-        lower.extend([0.0, 0.010, *background_lower])
-        upper.extend([yield_upper, 0.180, *background_upper])
+        initial.extend([yield_guess, *background_initial])
+        lower.extend([0.0, *background_lower])
+        upper.extend([yield_upper, *background_upper])
     # endfor
 
     return (
@@ -1996,8 +2002,8 @@ def fit_joint_background_model(
         period_chi2 = float(np.sum(pulls**2))
         period_npoints = int(fit_x.size)
         period_parameter_count_approx = (
-            2 + polynomial_parameter_count(background_model)
-            + 1.0 / len(periods)
+            1 + polynomial_parameter_count(background_model)
+            + (1 + int(fixed_mean_gev2 is None)) / len(periods)
         )
         period_ndf_approx = max(
             int(round(period_npoints - period_parameter_count_approx)),
@@ -2138,7 +2144,7 @@ def fit_joint_background_model(
             "chi2": period_chi2,
             "ndf": period_ndf_approx,
             "chi2_ndf": period_chi2_ndf_approx,
-            "signal_region_definition": "shared mean +/- 2 period sigma",
+            "signal_region_definition": "shared mean +/- 2 shared sigma",
             "signal_region_chi2": local_chi2,
             "signal_region_npoints": local_npoints,
             "signal_region_ndf_approx": local_ndf_approx,
@@ -2163,6 +2169,11 @@ def fit_joint_background_model(
             "covariance": covariance.tolist(),
             "shared_mean": True,
             "shared_mean_fixed": fixed_mean_gev2 is not None,
+            "shared_sigma_gev2": float(parameters[layout["sigma_index"]]),
+            "shared_sigma_error_gev2": float(errors[layout["sigma_index"]]),
+            "width_model": "shared_per_bin",
+            "number_of_parameters": len(parameters),
+            "shared_parameter_indices": {"mean": layout["mean_index"], "sigma": layout["sigma_index"]},
             "parameter_source": (
                 "fixed_neighbor_mean"
                 if fixed_mean_gev2 is not None
@@ -2212,6 +2223,11 @@ def fit_joint_background_model(
         "shared_mean_gev2": mean_gev2,
         "shared_mean_error_gev2": mean_error_gev2,
         "shared_mean_fixed": fixed_mean_gev2 is not None,
+        "shared_sigma_gev2": float(parameters[layout["sigma_index"]]),
+        "shared_sigma_error_gev2": float(errors[layout["sigma_index"]]),
+        "width_model": "shared_per_bin",
+        "number_of_parameters": len(parameters),
+        "shared_parameter_indices": {"mean": layout["mean_index"], "sigma": layout["sigma_index"]},
         "joint_chi2": chi2,
         "joint_ndf": int(ndf),
         "joint_chi2_ndf": chi2_ndf,
@@ -2506,6 +2522,9 @@ def assemble_joint_period_results(
                 selected_joint["shared_mean_error_gev2"]
             ),
             "shared_mean_fixed": selected_joint["shared_mean_fixed"],
+            "shared_sigma_gev2": selected_joint["shared_sigma_gev2"],
+            "shared_sigma_error_gev2": selected_joint["shared_sigma_error_gev2"],
+            "width_model": "shared_per_bin",
             "background_model": selected_model,
             "joint_chi2": selected_joint["joint_chi2"],
             "joint_ndf": selected_joint["joint_ndf"],
@@ -2959,6 +2978,8 @@ def run_joint_replicas(
                 "requested": config.replicas,
                 "successful": successful,
                 "model_order_fixed": True,
+                "width_model": "shared_per_bin",
+                "mean_and_sigma_shared_across_periods": True,
                 "background_model": model_name,
             }
             for quantity in ("mean", "sigma", "yield"):
@@ -4622,9 +4643,8 @@ def fit_one_carbon_candidate(
     # endfor
 
     ncoef=residual_order
-    # shared mu; then alpha, yield, sigma, thresholded residual coefficients
-    # for each period. There is no residual constant term.
-    initial=[NEUTRON_MASS2_GEV2]; lower=[0.82]; upper=[0.95]
+    # Shared mu and sigma; period-specific alpha, yield and residual coefficients.
+    initial=[NEUTRON_MASS2_GEV2, 0.055]; lower=[0.82, 0.015]; upper=[0.95, 0.20]
     for period in periods:
         item=prepared[period]; mask=item['fit_mask']
         residual=np.maximum(item['nh3'][mask]-item['alpha0']*item['carbon'][mask],0.0)
@@ -4654,19 +4674,19 @@ def fit_one_carbon_candidate(
         # endif
         residual_initial = [slope0] + [0.0] * (residual_order - 1)
         initial.extend(
-            [item['alpha0'], y0, 0.055] + residual_initial
+            [item['alpha0'], y0] + residual_initial
         )
-        lower.extend([0.0, 0.0, 0.015] + [-1.0e7] * ncoef)
+        lower.extend([0.0, 0.0] + [-1.0e7] * ncoef)
         upper.extend(
-            [max(10.0 * item['alpha0'], 1.0), 1.0e10, 0.20]
+            [max(10.0 * item['alpha0'], 1.0), 1.0e10]
             + [1.0e7] * ncoef
         )
     # endfor
 
-    stride=3+ncoef
+    stride=2+ncoef
     def unpack(p: np.ndarray, idx: int) -> tuple[float,float,float,np.ndarray]:
-        off=1+idx*stride
-        return float(p[off]),float(p[off+1]),float(p[off+2]),np.asarray(p[off+3:off+3+ncoef],dtype=float)
+        off=2+idx*stride
+        return float(p[off]),float(p[off+1]),float(p[1]),np.asarray(p[off+2:off+2+ncoef],dtype=float)
     # enddef
 
     def residual_function(p: np.ndarray) -> np.ndarray:
@@ -4695,6 +4715,7 @@ def fit_one_carbon_candidate(
         except np.linalg.LinAlgError: pass
     # endif
     mu=float(p[0]); muerr=math.sqrt(max(float(cov[0,0]),0.0)) if np.isfinite(cov[0,0]) else math.nan
+    sigmaerr=math.sqrt(max(float(cov[1,1]),0.0)) if np.isfinite(cov[1,1]) else math.nan
     records=[]; payloads={}; local_scores=[]
     for idx,period in enumerate(periods):
         item=prepared[period]; alpha,yield_,sigma,coeff=unpack(p,idx)
@@ -4703,9 +4724,9 @@ def fit_one_carbon_candidate(
         carbon_component=alpha*item['carbon']; total=carbon_component+signal+residual_bg
         variance=np.maximum(item['nh3']+alpha**2*item['carbon'],1.0)
         mask=item['fit_mask']; local=(item['nh3'][mask]-total[mask])/np.sqrt(variance[mask])
-        local_chi2=float(np.sum(local**2)); local_ndf=max(int(np.count_nonzero(mask))-(3+ncoef),1)
+        local_chi2=float(np.sum(local**2)); local_ndf=max(float(np.count_nonzero(mask))-(2+ncoef)-2.0/len(periods),1.0)
         local_score=local_chi2/local_ndf; local_scores.append(local_score)
-        off=1+idx*stride
+        off=2+idx*stride
         diag=[cov[off+j,off+j] for j in range(stride)]
         errs=[math.sqrt(max(float(v),0.0)) if np.isfinite(v) else math.nan for v in diag]
         significance=yield_/errs[1] if np.isfinite(errs[1]) and errs[1]>0 else math.nan
@@ -4721,15 +4742,17 @@ def fit_one_carbon_candidate(
             'alpha_fit':alpha,'alpha_fit_error':errs[0],'alpha_control':item['alpha0'],
             'alpha_control_error':item['alpha_error'],'alpha_pull':(alpha-item['alpha0'])/item['alpha_error'],
             'signal_yield':yield_,'signal_yield_error':errs[1],'signal_significance':significance,
-            'sigma_gev2':sigma,'sigma_error_gev2':errs[2],
-            'residual_coefficients':coeff.tolist(),'residual_coefficient_errors':errs[3:],
+            'sigma_gev2':sigma,'sigma_error_gev2':sigmaerr,
+            'shared_sigma_gev2':sigma,'shared_sigma_error_gev2':sigmaerr,
+            'width_model':'shared_per_bin',
+            'residual_coefficients':coeff.tolist(),'residual_coefficient_errors':errs[2:],
             'local_chi2_ndf':local_score,'joint_chi2':chi2,'joint_ndf':ndf,'joint_chi2_ndf':chi2/ndf,
             'aicc':aicc,'fit_min_gev2':fit_min_gev2,'fit_max_gev2':fit_max_gev2,
             'residual_threshold_gev2':CARBON_RESIDUAL_THRESHOLD_GEV2,
             'residual_is_zero_below_threshold':True,
             'residual_is_continuous_at_threshold':True,
             'residual_has_constant_term':False,
-            'production_fit_changed':False,
+            'production_fit_changed':True,
         }
         records.append(rec)
         payloads[period]={'record':rec,'centers':item['centers'],'nh3':item['nh3'],'error':np.sqrt(variance),
@@ -4737,6 +4760,11 @@ def fit_one_carbon_candidate(
     # endfor
     return {'stage':stage,'x_index':x_index,'t_index':t_index,'success':bool(opt.success),
             'residual_order':residual_order,'shared_mean_gev2':mu,'shared_mean_error_gev2':muerr,
+            'shared_sigma_gev2':float(p[1]),'shared_sigma_error_gev2':sigmaerr,
+            'width_model':'shared_per_bin','number_of_parameters':npar,
+            'parameters':p.tolist(),'covariance':cov.tolist(),
+            'parameter_names':['mu','sigma']+[f'{period}_{name}' for period in periods
+                for name in ['alpha','yield']+[f'residual_{j+1}' for j in range(ncoef)]],
             'joint_chi2':chi2,'joint_ndf':ndf,'joint_chi2_ndf':chi2/ndf,'aicc':aicc,
             'maximum_local_chi2_ndf':max(local_scores),'period_records':records,'payloads':payloads}
 
@@ -4791,10 +4819,11 @@ def run_carbon_template_fits(
                 selected['selected_model']=selected['residual_order']
                 selected['p1_aicc']=p1['aicc']; selected['p2_aicc']=p2['aicc']; selected['p2_aicc_improvement']=p2_improvement
                 selected['model_mean_difference_gev2']=mean_shift
+                selected['model_sigma_difference_gev2']=abs(p2['shared_sigma_gev2']-p1['shared_sigma_gev2'])
                 selected['classification']=classify_carbon_candidate(selected,alternative)
                 selected['candidate_summaries']={
-                    'P1':{k:p1[k] for k in ('aicc','joint_chi2_ndf','shared_mean_gev2','shared_mean_error_gev2','maximum_local_chi2_ndf')},
-                    'P2':{k:p2[k] for k in ('aicc','joint_chi2_ndf','shared_mean_gev2','shared_mean_error_gev2','maximum_local_chi2_ndf')},
+                    'P1':{k:p1[k] for k in ('aicc','joint_chi2_ndf','shared_mean_gev2','shared_mean_error_gev2','shared_sigma_gev2','shared_sigma_error_gev2','maximum_local_chi2_ndf')},
+                    'P2':{k:p2[k] for k in ('aicc','joint_chi2_ndf','shared_mean_gev2','shared_mean_error_gev2','shared_sigma_gev2','shared_sigma_error_gev2','maximum_local_chi2_ndf')},
                 }
                 # Expensive stability scans are development diagnostics,
                 # not part of the production cut determination.
@@ -4818,6 +4847,8 @@ def run_carbon_template_fits(
                             'fit_min_gev2':lo,'fit_max_gev2':hi,
                             'shared_mean_gev2':v['shared_mean_gev2'],
                             'delta_mean_gev2':v['shared_mean_gev2']-selected['shared_mean_gev2'],
+                            'shared_sigma_gev2':v['shared_sigma_gev2'],
+                            'delta_sigma_gev2':v['shared_sigma_gev2']-selected['shared_sigma_gev2'],
                             'joint_chi2_ndf':v['joint_chi2_ndf']
                         })
                     # endfor
@@ -4836,6 +4867,8 @@ def run_carbon_template_fits(
                             'control_max_gev2':endpoint,
                             'shared_mean_gev2':v['shared_mean_gev2'],
                             'delta_mean_gev2':v['shared_mean_gev2']-selected['shared_mean_gev2'],
+                            'shared_sigma_gev2':v['shared_sigma_gev2'],
+                            'delta_sigma_gev2':v['shared_sigma_gev2']-selected['shared_sigma_gev2'],
                             'joint_chi2_ndf':v['joint_chi2_ndf']
                         })
                     # endfor
@@ -4843,11 +4876,18 @@ def run_carbon_template_fits(
                 selected['fit_range_variations']=variations; selected['control_endpoint_variations']=endpoint_vars
                 selected['maximum_abs_fit_range_delta_mean_gev2']=max((abs(v['delta_mean_gev2']) for v in variations),default=0.0)
                 selected['maximum_abs_control_delta_mean_gev2']=max((abs(v['delta_mean_gev2']) for v in endpoint_vars),default=0.0)
+                selected['maximum_abs_fit_range_delta_sigma_gev2']=max((abs(v['delta_sigma_gev2']) for v in variations),default=0.0)
+                selected['maximum_abs_control_delta_sigma_gev2']=max((abs(v['delta_sigma_gev2']) for v in endpoint_vars),default=0.0)
+                selected['width_stability_scans_performed']=full_diagnostics
                 for r in selected['period_records']:
                     r.update({'selected_model':selected['selected_model'],'classification':selected['classification'],
                               'p1_aicc':selected['p1_aicc'],'p2_aicc':selected['p2_aicc'],
                               'p2_aicc_improvement':selected['p2_aicc_improvement'],
                               'model_mean_difference_gev2':selected['model_mean_difference_gev2'],
+                              'model_sigma_difference_gev2':selected['model_sigma_difference_gev2'],
+                              'width_stability_scans_performed':full_diagnostics,
+                              'maximum_abs_fit_range_delta_sigma_gev2':selected['maximum_abs_fit_range_delta_sigma_gev2'],
+                              'maximum_abs_control_delta_sigma_gev2':selected['maximum_abs_control_delta_sigma_gev2'],
                               'maximum_abs_fit_range_delta_mean_gev2':selected['maximum_abs_fit_range_delta_mean_gev2'],
                               'maximum_abs_control_delta_mean_gev2':selected['maximum_abs_control_delta_mean_gev2']})
                 # endfor
@@ -5051,7 +5091,7 @@ def write_carbon_template_fit_products(results: list[dict[str, Any]], production
     for j in results:
         compact.append({k:v for k,v in j.items() if k!='payloads'})
     # endfor
-    json_path.write_text(json.dumps(json_safe({'description':'Candidate constrained-carbon fits; original production fits remain unchanged.','results':compact}),indent=2)+'\n',encoding='utf-8')
+    json_path.write_text(json.dumps(json_safe({'description':'Constrained-carbon fits with a shared mean and width per bin; period-specific backgrounds.','results':compact}),indent=2)+'\n',encoding='utf-8')
     plots=plot_carbon_template_fit_canvases(results,plot_dir)
     return {'csv':csv_path,'json':json_path,'comparison_csv':comparison_path,'plots':plots}
 
@@ -5083,12 +5123,10 @@ def build_final_carbon_cut_table(
     results: list[dict[str, Any]],
 ) -> pd.DataFrame:
     """
-    Build period-specific tight, nominal, and loose Mx2 windows.
+    Build common tight, nominal, and loose Mx2 windows for all periods.
 
-    Each kinematic bin retains the shared fitted mean from the simultaneous
-    corrected-data fit. Su22, Fa22, and Sp23 retain their independently fitted
-    Gaussian widths and therefore receive independent 1-, 2-, and 3-sigma
-    windows.
+    Each bin shares both fitted mean and width across the three periods.
+    Period columns are retained for compatibility and contain identical cuts.
     """
     rows: list[dict[str, Any]] = []
     periods = ("su22", "fa22", "sp23")
@@ -5174,38 +5212,45 @@ def build_final_carbon_cut_table(
     return frame
 
 
+def validate_shared_width_table(cuts: pd.DataFrame) -> None:
+    """Reject exports that accidentally restore independent period selections."""
+    for period in ("fa22", "sp23"):
+        for suffix in ("gev2", "error_gev2"):
+            if not np.allclose(cuts[f"sigma_{period}_{suffix}"],
+                               cuts[f"sigma_su22_{suffix}"], rtol=0, atol=1e-12):
+                raise RuntimeError("Final cuts must contain one shared sigma/error per bin")
+        for window in ("tight", "nominal", "loose"):
+            for edge in ("min", "max"):
+                if not np.allclose(cuts[f"{window}_{period}_{edge}_gev2"],
+                                   cuts[f"{window}_su22_{edge}_gev2"], rtol=0, atol=1e-12):
+                    raise RuntimeError("Final cut intervals must agree across periods")
+    cuts["shared_sigma_gev2"] = cuts["sigma_su22_gev2"]
+    cuts["shared_sigma_error_gev2"] = cuts["sigma_su22_error_gev2"]
+    cuts["width_model"] = "shared_per_bin"
+
+
 def write_final_cut_latex_table(cuts: pd.DataFrame, output_path: Path) -> Path:
-    """Write one compact analysis-note table of the final peak parameters."""
-    frame = cuts.sort_values("bin_number").copy()
+    """Write one mean and width, including their errors, per kinematic bin."""
+    validate_shared_width_table(cuts)
     lines = [
-        "% Auto-generated final channel-selection table.",
-        "\\begin{table}[htbp]",
-        "\\centering",
-        "\\scriptsize",
-        "\\setlength{\\tabcolsep}{4.5pt}",
-        "\\renewcommand{\\arraystretch}{1.10}",
-        "\\caption{Final missing-neutron peak parameters after momentum corrections. "
-        "The peak position $\\mu$ is shared among Su22, Fa22, and Sp23 in each "
-        "kinematic bin, while the Gaussian width $\\sigma$ is determined "
-        "independently for each run period. All quantities are in GeV$^2$.}",
-        "\\label{tab:final_mx2_peak_parameters}",
-        "\\begin{tabular}{c cc cc c ccc}",
-        "\\hline",
-        "Bin & $x_{B,\\min}$ & $x_{B,\\max}$ & $(-t')_{\\min}$ & $(-t')_{\\max}$ "
-        "& $\\mu$ & $\\sigma_{\\rm Su22}$ & $\\sigma_{\\rm Fa22}$ & $\\sigma_{\\rm Sp23}$ \\\\",
-        "\\hline",
+        r"\begin{table}[htbp]", r"\centering", r"\scriptsize",
+        r"\caption{Final missing-neutron peak parameters after momentum corrections. "
+        r"Both $\mu$ and $\sigma$ are shared among Su22, Fa22, and Sp23 within each "
+        r"kinematic bin. All peak parameters are in GeV$^2$.}",
+        r"\label{tab:final_mx2_peak_parameters}",
+        r"\begin{tabular}{c cc cc cc}", r"\hline",
+        r"Bin & $x_{B,\min}$ & $x_{B,\max}$ & $(-t')_{\min}$ & $(-t')_{\max}$ "
+        r"& $\mu\pm\delta\mu$ & $\sigma\pm\delta\sigma$ \\", r"\hline",
     ]
-    for row in frame.itertuples(index=False):
+    for row in cuts.sort_values("bin_number").itertuples(index=False):
         lines.append(
-            f"{int(row.bin_number)} & {row.xB_min:.3f} & {row.xB_max:.3f} & "
+            f"{row.bin_number:d} & {row.xB_min:.3f} & {row.xB_max:.3f} & "
             f"{row.minus_tprime_min_gev2:.3f} & {row.minus_tprime_max_gev2:.3f} & "
-            f"{row.shared_mean_gev2:.4f} $\\pm$ {row.shared_mean_error_gev2:.4f} & "
-            f"{row.sigma_su22_gev2:.4f} & {row.sigma_fa22_gev2:.4f} & "
-            f"{row.sigma_sp23_gev2:.4f} \\\\"
+            f"${row.shared_mean_gev2:.4f}\\pm{row.shared_mean_error_gev2:.4f}$ & "
+            f"${row.shared_sigma_gev2:.4f}\\pm{row.shared_sigma_error_gev2:.4f}$ " + r"\\"
         )
-    # endfor
-    lines.extend(["\\hline", "\\end{tabular}", "\\end{table}", ""])
-    output_path.write_text("\\n".join(lines), encoding="utf-8")
+    lines.extend([r"\hline", r"\end{tabular}", r"\end{table}", ""])
+    output_path.write_text("\n".join(lines), encoding="utf-8")
     return output_path
 
 
@@ -5216,7 +5261,7 @@ def write_python_cut_lookup(
     """Write an importable period-first Python lookup for downstream stages."""
     periods = ("su22", "fa22", "sp23")
     lines = [
-        '"""Auto-generated period-specific carbon-assisted Mx2 cuts."""',
+        '"""Auto-generated carbon-assisted Mx2 cuts with shared mean and width."""',
         "",
         'CUT_VERSION = "v21"',
         'CUT_UNITS = "GeV^2"',
@@ -5262,7 +5307,7 @@ def write_cpp_cut_lookup(
     cuts: pd.DataFrame,
     output_path: Path,
 ) -> None:
-    """Write a C++ header with period-specific cuts and a lookup helper."""
+    """Write a period-compatible C++ lookup of the common cuts."""
     periods = ("su22", "fa22", "sp23")
     enum_names = {"su22": "Su22", "fa22": "Fa22", "sp23": "Sp23"}
     lines = [
@@ -5510,7 +5555,7 @@ def plot_final_cut_canvases(
                 ax.set_title(
                     f"Bin {cut.bin_number}: "
                     f"$\\mu$={cut.shared_mean_gev2:.4f}, "
-                    f"$\\sigma_{{{PERIOD_LABELS[period]}}}$="
+                    f"$\\sigma_{{shared}}$="
                     f"{period_sigma:.4f}$\\pm${period_sigma_error:.4f}",
                     fontsize=8,
                 )
@@ -5598,7 +5643,7 @@ def plot_carbon_vs_polynomial_mu_sigma(
         polynomial_mu.append(float(shared_values.iloc[0]) if not shared_values.empty else math.nan)
         polynomial_mu_error.append(float(shared_errors.iloc[0]) if not shared_errors.empty else math.nan)
         carbon_period_records = {record["period"]: record for record in joint["period_records"]}
-        for period in ("su22", "fa22", "sp23"):
+        for period in ("su22",):
             carbon_sigma[period].append(float(carbon_period_records[period]["sigma_gev2"]))
             polynomial_row = polynomial_bin[polynomial_bin["period"] == period]
             polynomial_sigma[period].append(
@@ -5620,17 +5665,13 @@ def plot_carbon_vs_polynomial_mu_sigma(
     ax_mu.grid(alpha=0.25)
     ax_mu.legend(ncol=3, fontsize=9)
 
-    # One color per run period; line style alone identifies the fit method.
-    period_colors = {"su22": "C0", "fa22": "C1", "sp23": "C2"}
-    for period in ("su22", "fa22", "sp23"):
-        color = period_colors[period]
-        ax_sigma.plot(bins, carbon_sigma[period], marker="o", color=color,
-                      linewidth=1.2, markersize=3.5, linestyle="-",
-                      label=f"{PERIOD_LABELS[period]}, carbon")
-        ax_sigma.plot(bins, polynomial_sigma[period], marker="s", color=color,
-                      linestyle="--", linewidth=1.1, markersize=3.0,
-                      label=f"{PERIOD_LABELS[period]}, polynomial")
-    # endfor
+    # Each method contributes one width/error per bin, not three measurements.
+    carbon_sigma_error = [float(carbon_by_bin[int(b)]["shared_sigma_error_gev2"]) for b in bins]
+    poly_rows = polynomial[polynomial["period"] == "su22"].set_index("bin_number").reindex(bins)
+    ax_sigma.errorbar(bins, carbon_sigma["su22"], yerr=carbon_sigma_error,
+                      marker="o", capsize=2, label="Carbon-assisted shared sigma")
+    ax_sigma.errorbar(bins, polynomial_sigma["su22"], yerr=poly_rows["sigma_error_gev2"],
+                      marker="s", capsize=2, linestyle="--", label="Polynomial-only shared sigma")
     ax_sigma.set_xlabel("Combined kinematic-bin number")
     ax_sigma.set_ylabel("Fitted $\\sigma$ (GeV$^2$)")
     ax_sigma.set_xticks(bins)
@@ -5647,12 +5688,7 @@ def plot_master_cut_summary(
     output_path: Path,
 ) -> Path:
     """
-    Plot a compact two-panel summary of the final period-specific cuts.
-
-    The upper bands use the mean of the three fitted period widths only as a
-    compact visual summary. The exported and applied cuts remain strictly
-    period specific. The lower panel shows each fitted width with its fit
-    uncertainty.
+    Plot the actual common cut bands and the shared width with its uncertainty.
     """
     frame = cuts.sort_values("bin_number").copy()
     bins = frame["bin_number"].to_numpy(dtype=int)
@@ -5677,21 +5713,21 @@ def plot_master_cut_summary(
         mean - 3.0 * sigma_summary,
         mean + 3.0 * sigma_summary,
         alpha=0.10,
-        label="Loose (3$\\sigma$), mean period width",
+        label="Loose (3$\\sigma$), shared width",
     )
     ax_bounds.fill_between(
         bins,
         mean - 2.0 * sigma_summary,
         mean + 2.0 * sigma_summary,
         alpha=0.13,
-        label="Nominal (2$\\sigma$), mean period width",
+        label="Nominal (2$\\sigma$), shared width",
     )
     ax_bounds.fill_between(
         bins,
         mean - 1.0 * sigma_summary,
         mean + 1.0 * sigma_summary,
         alpha=0.17,
-        label="Tight (1$\\sigma$), mean period width",
+        label="Tight (1$\\sigma$), shared width",
     )
     ax_bounds.errorbar(
         bins,
@@ -5723,8 +5759,8 @@ def plot_master_cut_summary(
         "fa22": 0.00,
         "sp23": 0.12,
     }
-    for period in ("su22", "fa22", "sp23"):
-        x_values = bins.astype(float) + period_offsets[period]
+    for period in ("su22",):
+        x_values = bins.astype(float)
         ax_width.errorbar(
             x_values,
             frame[f"sigma_{period}_gev2"],
@@ -5736,7 +5772,7 @@ def plot_master_cut_summary(
             markersize=4,
             capsize=3,
             capthick=1.0,
-            label=f"{PERIOD_LABELS[period]} $\\sigma$",
+            label="Shared fitted $\\sigma$",
             zorder=3,
         )
     # endfor
@@ -5796,7 +5832,9 @@ def build_final_polynomial_cut_table(production_frame: pd.DataFrame) -> pd.DataF
 
 def write_cut_json_from_table(cuts: pd.DataFrame, output_path: Path, method: str) -> Path:
     """Write a cut JSON with the same downstream schema used by the asymmetry extraction."""
-    payload = {"method": method, "tight_sigma_multiple": 1.0, "nominal_sigma_multiple": 2.0,
+    validate_shared_width_table(cuts)
+    payload = {"method": method, "width_model": "shared_per_bin",
+               "shared_sigma_across_periods": True, "cross_period_sigma_correlation": 1.0, "tight_sigma_multiple": 1.0, "nominal_sigma_multiple": 2.0,
                "loose_sigma_multiple": 3.0, "periods": {}}
     for period in ("su22", "fa22", "sp23"):
         payload["periods"][period] = []
@@ -5817,7 +5855,7 @@ def write_cut_json_from_table(cuts: pd.DataFrame, output_path: Path, method: str
     # endfor
     payload["flat_rows"] = cuts.to_dict(orient="records")
     ensure_directory(output_path.parent)
-    output_path.write_text(json.dumps(json_safe(payload), indent=2) + "\\n", encoding="utf-8")
+    output_path.write_text(json.dumps(json_safe(payload), indent=2) + "\n", encoding="utf-8")
     return output_path
 
 
@@ -5861,7 +5899,7 @@ def plot_final_polynomial_cut_canvases(results: list[dict[str, Any]], cuts: pd.D
                     ax.axvline(mu + multiple*sigma, linestyle=style, linewidth=0.8, color="C0", alpha=0.85)
                 # endfor
                 bn = combined_bin_number(x_index, t_index)
-                ax.set_title(f"Bin {bn}: $\\mu$={mu:.4f}, $\\sigma_{{{period}}}$={sigma:.4f}", fontsize=8)
+                ax.set_title(f"Bin {bn}: $\\mu$={mu:.4f}, $\\sigma_{{shared}}$={sigma:.4f}", fontsize=8)
                 ax.set_xlim(display_x_min_gev2, display_x_max_gev2)
                 ax.grid(alpha=0.22); ax.tick_params(labelsize=7)
                 if x_index == len(XB_BINS)-1: ax.set_xlabel("$M_x^2$ (GeV$^2$)", fontsize=8)
@@ -5894,15 +5932,15 @@ def plot_polynomial_master_cut_summary(cuts: pd.DataFrame, output_path: Path) ->
     sigma_summary = frame["mean_sigma_for_summary_gev2"].to_numpy(dtype=float)
     fig, axes = plt.subplots(2, 1, figsize=(16, 10), sharex=True, gridspec_kw={"height_ratios": [1.15, 1.0]})
     ax = axes[0]
-    ax.fill_between(bins, mean-3*sigma_summary, mean+3*sigma_summary, alpha=0.10, label="Loose (3$\\sigma$), mean period width")
-    ax.fill_between(bins, mean-2*sigma_summary, mean+2*sigma_summary, alpha=0.13, label="Nominal (2$\\sigma$), mean period width")
-    ax.fill_between(bins, mean-1*sigma_summary, mean+1*sigma_summary, alpha=0.17, label="Tight (1$\\sigma$), mean period width")
+    ax.fill_between(bins, mean-3*sigma_summary, mean+3*sigma_summary, alpha=0.10, label="Loose (3$\\sigma$), shared width")
+    ax.fill_between(bins, mean-2*sigma_summary, mean+2*sigma_summary, alpha=0.13, label="Nominal (2$\\sigma$), shared width")
+    ax.fill_between(bins, mean-1*sigma_summary, mean+1*sigma_summary, alpha=0.17, label="Tight (1$\\sigma$), shared width")
     ax.errorbar(bins, mean, yerr=mean_error, marker="o", linewidth=1.2, markersize=4, capsize=2, label="Shared fitted $\\mu$")
     ax.axhline(NEUTRON_MASS2_GEV2, linestyle=":", linewidth=1.0, label="$m_n^2$")
     ax.set_ylabel("$M_x^2$ position (GeV$^2$)"); ax.set_title("Final polynomial-only missing-neutron cut summary"); ax.grid(alpha=0.25); ax.legend(ncol=3, fontsize=9)
     offsets={"su22":-0.12,"fa22":0.0,"sp23":0.12}; ax=axes[1]
-    for period in ("su22","fa22","sp23"):
-        ax.errorbar(bins.astype(float)+offsets[period], frame[f"sigma_{period}_gev2"], yerr=frame[f"sigma_{period}_error_gev2"], marker="o", linestyle="none", capsize=3, label=f"{PERIOD_LABELS[period]} $\\sigma$")
+    for period in ("su22",):
+        ax.errorbar(bins.astype(float), frame[f"sigma_{period}_gev2"], yerr=frame[f"sigma_{period}_error_gev2"], marker="o", linestyle="none", capsize=3, label="Shared fitted $\\sigma$")
     # endfor
     ax.set_xlabel("Combined kinematic-bin number"); ax.set_ylabel("Fitted $\\sigma$ (GeV$^2$)"); ax.set_xticks(bins); ax.grid(alpha=0.25); ax.legend(ncol=3, fontsize=9)
     fig.tight_layout(); ensure_directory(output_path.parent); fig.savefig(output_path, dpi=180); plt.close(fig); return output_path
@@ -5912,8 +5950,9 @@ def write_final_polynomial_cut_products(results: list[dict[str, Any]], productio
     """Write polynomial-only cut tables/JSON and the four requested final plots."""
     tables_dir=output_dir/"tables"; plots_dir=output_dir/"plots"; ensure_directory(tables_dir); ensure_directory(plots_dir)
     cuts=build_final_polynomial_cut_table(production_frame)
+    validate_shared_width_table(cuts)
     csv_path=tables_dir/"final_polynomial_only_mx2_cuts.csv"; json_path=tables_dir/"final_polynomial_only_mx2_cuts.json"
-    cuts.to_csv(csv_path,index=False); write_cut_json_from_table(cuts,json_path,"Recommended corrected polynomial-only fit: shared mean with period-specific Gaussian widths.")
+    cuts.to_csv(csv_path,index=False); write_cut_json_from_table(cuts,json_path,"Recommended corrected polynomial-only fit: shared mean and Gaussian width across periods.")
     canvases=plot_final_polynomial_cut_canvases(results,cuts,plots_dir)
     master=plot_polynomial_master_cut_summary(cuts,plots_dir/"final_polynomial_cut_master_summary_v27.png")
     return {"csv":csv_path,"json":json_path,"cut_plots":canvases,"master_summary_plot":master}
@@ -5938,6 +5977,7 @@ def write_final_carbon_cut_products(
     # endfor
 
     cuts = build_final_carbon_cut_table(results)
+    validate_shared_width_table(cuts)
     csv_path = tables_dir / "final_carbon_assisted_mx2_cuts.csv"
     json_path = tables_dir / "final_carbon_assisted_mx2_cuts.json"
     python_path = exports_dir / "final_carbon_assisted_mx2_cuts.py"
@@ -5957,11 +5997,14 @@ def write_final_carbon_cut_products(
             json_safe(
                 {
                     "method": (
-                        "Shared carbon-assisted mean with independent period-specific "
-                        "Gaussian widths and cut windows. The residual "
+                        "Shared carbon-assisted mean and Gaussian width across periods "
+                        "with common cut windows. The residual "
                         "P1/P2 background is exactly zero below Mx2=0.40 "
                         "GeV^2."
                     ),
+                    "width_model": "shared_per_bin",
+                    "shared_sigma_across_periods": True,
+                    "cross_period_sigma_correlation": 1.0,
                     "tight_sigma_multiple": 1.0,
                     "nominal_sigma_multiple": 2.0,
                     "loose_sigma_multiple": 3.0,
@@ -6031,11 +6074,13 @@ def write_final_carbon_cut_products(
                 "fit_method": (
                     "Shared corrected-data mean; constrained period-wide "
                     "carbon template; adaptive thresholded P1/P2 residual that is "
-                    "zero below Mx2=0.40 GeV^2; independent "
-                    "period-specific Gaussian widths."
+                    "zero below Mx2=0.40 GeV^2; shared "
+                    "Gaussian mean and width across periods."
                 ),
                 "shared_mean_across_periods": True,
-                "period_specific_widths": True,
+                "period_specific_widths": False,
+                "shared_sigma_across_periods": True,
+                "width_model": "shared_per_bin",
                 "sigma_multiples": {
                     "tight": 1.0,
                     "nominal": 2.0,
@@ -7010,9 +7055,9 @@ def build_compact_json(
                 "method": (
                     "simultaneous Su22/Fa22/Sp23 fit in each kinematic bin"
                 ),
-                "shared_parameter": "Gaussian mean",
+                "shared_parameters": ["Gaussian mean", "Gaussian sigma"],
                 "period_specific_parameters": (
-                    "signal yield, Gaussian sigma, and background coefficients"
+                    "signal yield and background coefficients"
                 ),
                 "initial_mean_gev2": NEUTRON_MASS2_GEV2,
                 "corrected_mean_upper_guardrail_gev2": (
@@ -7045,7 +7090,7 @@ def build_compact_json(
                     args.marginal_local_score_max
                 ),
                 "background_positivity_region": (
-                    "shared mean +/- 3 period-specific sigma"
+                    "shared mean +/- 3 shared sigma"
                 ),
                 "background_negativity_tolerance": (
                     "max(1 count, 1 percent of the characteristic count scale)"
@@ -7058,7 +7103,7 @@ def build_compact_json(
             },
             "signal_region_fit_quality": {
                 "definition": (
-                    "shared mean +/- 2 period-specific fitted sigma"
+                    "shared mean +/- 2 shared fitted sigma"
                 ),
                 "primary_local_score": (
                     "chi2 divided by the number of signal-region histogram bins"
@@ -7164,20 +7209,20 @@ def plot_nominal_vs_isr_mu_sigma(
     axes[0].legend(ncol=3)
 
     offsets = {"su22": -0.18, "fa22": 0.0, "sp23": 0.18}
-    for period in ("su22", "fa22", "sp23"):
+    for period in ("su22",):
         axes[1].errorbar(
-            bins + offsets[period] - 0.045,
+            bins + 0.0 - 0.045,
             nominal[f"sigma_{period}_gev2"],
             yerr=nominal[f"sigma_{period}_error_gev2"],
             marker="o", linestyle="none", capsize=2,
-            label=f"{PERIOD_LABELS[period]} nominal",
+            label="Nominal shared sigma",
         )
         axes[1].errorbar(
-            bins + offsets[period] + 0.045,
+            bins + 0.0 + 0.045,
             isr[f"sigma_{period}_gev2"],
             yerr=isr[f"sigma_{period}_error_gev2"],
             marker="s", linestyle="none", capsize=2,
-            label=f"{PERIOD_LABELS[period]} ISR",
+            label="ISR shared sigma",
         )
     # endfor
     axes[1].set_xlabel("Combined kinematic-bin number")
@@ -7216,7 +7261,7 @@ def plot_nominal_vs_isr_parameter_differences(
     axes[0].grid(alpha=0.25)
 
     offsets = {"su22": -0.12, "fa22": 0.0, "sp23": 0.12}
-    for period in ("su22", "fa22", "sp23"):
+    for period in ("su22",):
         delta_sigma = (
             isr[f"sigma_{period}_gev2"]
             - nominal[f"sigma_{period}_gev2"]
@@ -7226,10 +7271,10 @@ def plot_nominal_vs_isr_parameter_differences(
             + nominal[f"sigma_{period}_error_gev2"] ** 2
         )
         axes[1].errorbar(
-            bins + offsets[period], delta_sigma,
+            bins + 0.0, delta_sigma,
             yerr=delta_sigma_error, marker="o",
             linestyle="none", capsize=2,
-            label=PERIOD_LABELS[period],
+            label="Shared sigma",
         )
     # endfor
     axes[1].axhline(0.0, linestyle=":", linewidth=1.0)
@@ -7273,6 +7318,10 @@ def write_nominal_isr_comparison_products(
             - merged[f"sigma_{period}_gev2_nominal"]
         )
     # endfor
+
+    merged["delta_shared_sigma_isr_minus_nominal_gev2"] = (
+        merged["shared_sigma_gev2_isr"] - merged["shared_sigma_gev2_nominal"]
+    )
 
     csv_path = tables_dir / "nominal_vs_isr_fit_comparison_v27.csv"
     json_path = tables_dir / "nominal_vs_isr_fit_comparison_v27.json"
