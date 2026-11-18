@@ -78,7 +78,7 @@ axes[1].set(
     xlabel=r"Photon energy (GeV)",
     ylabel="Normalized counts",
     title=r"Photon energy: $\theta_{e\gamma}<8^\circ$ vs. $\geq8^\circ$",
-    xlim=(0, 10.6),
+    xlim=(0, 5.0),
 )
 
 for ax in axes:
