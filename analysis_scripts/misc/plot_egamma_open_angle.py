@@ -33,7 +33,7 @@ for label, path in files.items():
 plt.xlabel(r"Electron-photon opening angle (deg)")
 plt.ylabel("Normalized counts")
 plt.title(r"CLAS12 Fa22: Electron-photon opening angle")
-plt.xlim(0, 180)
+plt.xlim(0, 60)
 plt.legend()
 plt.grid(alpha=0.25)
 plt.tight_layout()
