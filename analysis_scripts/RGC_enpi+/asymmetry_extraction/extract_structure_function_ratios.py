@@ -3941,6 +3941,65 @@ def fit_stage_worker(task: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def fit_checkpoint_context(
+    cache_path: Path,
+    run_state_payload: Mapping[str, Any],
+    dilution_payload: Mapping[str, Any],
+) -> dict[str, Any]:
+    """Identify the actual selected events, auxiliary inputs and fitting code."""
+    return {
+        "selected_events_sha256": sha256_file(_event_cache_path(cache_path)),
+        "selection_metadata": _read_cache_metadata(cache_path),
+        "run_states": run_state_payload,
+        "dilution": dilution_payload,
+        "fit_code_sha256": sha256_file(Path(__file__)),
+    }
+
+
+def fit_checkpoint_signature(
+    stage_name: str, tasks: list[dict[str, Any]], context: Mapping[str, Any],
+) -> str:
+    """A checkpoint is reusable only for exactly the same fit problem."""
+    encoded = json.dumps(json_safe({
+        "stage": stage_name,
+        "tasks": sorted(tasks, key=_task_key),
+        "context": context,
+    }), sort_keys=True, allow_nan=False).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def load_fit_checkpoint(
+    path: Path, signature: str, tasks: list[dict[str, Any]], *, fresh_fits: bool,
+) -> dict[str, dict[str, Any]]:
+    """Ignore legacy, mismatched or explicitly bypassed fit checkpoints."""
+    if fresh_fits or not path.is_file():
+        if fresh_fits and path.is_file():
+            print(f"[checkpoint] --fresh-fits: ignoring {path}", flush=True)
+        return {}
+    try:
+        payload = json.loads(path.read_text())
+        if not isinstance(payload, dict):
+            raise ValueError("Checkpoint is not an object")
+        if payload.get("schema_version") != 2 or payload.get("input_signature") != signature:
+            print(f"[checkpoint] Inputs/code changed or provenance missing; refitting {path}", flush=True)
+            return {}
+        allowed = {_task_key(task) for task in tasks}
+        completed = {}
+        if not isinstance(payload["completed"], list):
+            raise ValueError("Checkpoint completed tasks are not a list")
+        for item in payload["completed"]:
+            if not isinstance(item, dict):
+                raise ValueError("Checkpoint task is not an object")
+            key = _task_key(item)
+            if key not in allowed or key in completed or not isinstance(item.get("fit"), dict):
+                raise ValueError("Checkpoint contains unexpected or duplicate tasks")
+            completed[key] = item
+        return completed
+    except (OSError, ValueError, KeyError, TypeError) as exc:
+        print(f"[checkpoint] Unusable checkpoint {path}: {exc}; refitting.", flush=True)
+        return {}
+
+
 def run_fit_stage(
     *,
     stage_name: str,
@@ -3951,29 +4010,26 @@ def run_fit_stage(
     dilution_payload: dict[str, Any],
     output_dir: Path | None = None,
     checkpoint_tag: str | None = None,
+    fresh_fits: bool = False,
+    checkpoint_context: Mapping[str, Any] | None = None,
 ) -> list[dict[str, Any]]:
-    """Run one fit stage with incremental task-level checkpointing.
+    """Resume only checkpoints matching the selected sample, inputs and code.
 
-    Completed tasks are written immediately.  If the same stage is restarted,
-    those exact completed fit payloads are reused and only missing tasks are
-    submitted.  This changes scheduling only, never the fit itself.
+    --fresh-fits bypasses even matching checkpoints for an explicit full refit.
     """
+    context = checkpoint_context if checkpoint_context is not None else fit_checkpoint_context(
+        cache_path, run_state_payload, dilution_payload
+    )
+    signature = fit_checkpoint_signature(stage_name, tasks, context)
     partial_path = None
     completed_by_key: dict[str, dict[str, Any]] = {}
     if output_dir is not None and checkpoint_tag is not None:
         partial_path = output_dir / "json" / f"checkpoint_{checkpoint_tag}_partial.json"
-        if partial_path.is_file():
-            try:
-                payload = json.loads(partial_path.read_text())
-                for item in payload.get("completed", []):
-                    key = _task_key(item)
-                    completed_by_key[key] = item
-                # endfor
-                print(f"[stage {stage_name}] RESUME: loaded {len(completed_by_key)} completed tasks", flush=True)
-            except Exception as exc:
-                print(f"[stage {stage_name}] WARNING: could not read partial checkpoint: {exc}", flush=True)
-            # endtry
-        # endif
+        completed_by_key = load_fit_checkpoint(
+            partial_path, signature, tasks, fresh_fits=fresh_fits
+        )
+        if completed_by_key:
+            print(f"[stage {stage_name}] RESUME: {len(completed_by_key)} input-matched tasks", flush=True)
     # endif
     pending_tasks = [task for task in tasks if _task_key(task) not in completed_by_key]
 
@@ -4023,7 +4079,8 @@ def run_fit_stage(
                 write_json(
                     partial_path,
                     {
-                        "schema_version": 1,
+                        "schema_version": 2,
+                        "input_signature": signature,
                         "stage": stage_name,
                         "updated_utc": datetime.now(timezone.utc).isoformat(),
                         "completed": sorted(completed, key=_task_key),
@@ -6881,6 +6938,7 @@ def run_analysis_variant(
     source_cache_path: Path | None = None,
     zero_uu_baseline: bool = False,
     fixed_dilution_diagnostic: bool = False,
+    fresh_fits: bool = False,
 ) -> dict[str, Any]:
     tables_dir = output_dir / "tables"
     json_dir = output_dir / "json"
@@ -6964,6 +7022,7 @@ def run_analysis_variant(
 
     run_state_payload = {period: {key: values.tolist() for key, values in state.items()} for period, state in run_states.items()}
     dilution_payload = {period: {str(bin_number): {"x_index": record.x_index, "t_index": record.t_index, "value": record.value, "stat_uncertainty": record.stat_uncertainty} for (record_period, bin_number), record in dilution_records.items() if record_period == period} for period in PERIODS}
+    checkpoint_context = fit_checkpoint_context(cache_path, run_state_payload, dilution_payload)
     results: list[dict[str, Any]] = []
 
     # Stage 1: the quoted simultaneous extraction.  These are exactly the
@@ -6982,7 +7041,20 @@ def run_analysis_variant(
         run_state_payload=run_state_payload,
         dilution_payload=dilution_payload,
         output_dir=output_dir, checkpoint_tag="01_simultaneous_tasks",
+        fresh_fits=fresh_fits, checkpoint_context=checkpoint_context,
     )
+    for item in nominal_stage:
+        fit = item["fit"]
+        bin_number = int(item["bin_number"])
+        metadata = fit["metadata"]
+        expected_events = int(np.count_nonzero(events["bin_number"] == bin_number))
+        if metadata["number_of_events"] != expected_events:
+            raise RuntimeError(f"Fit/sample mismatch in bin {bin_number}; rerun with --fresh-fits.")
+        for period in PERIODS:
+            expected_dilution = dilution_records[(period, bin_number)].value
+            if not math.isclose(metadata["dilution_central"][period], expected_dilution,
+                                rel_tol=0, abs_tol=1e-12):
+                raise RuntimeError(f"Fit/dilution mismatch in {period} bin {bin_number}; rerun with --fresh-fits.")
     nominal_by_bin = {
         int(item["bin_number"]): item["fit"] for item in nominal_stage
     }
@@ -7035,6 +7107,7 @@ def run_analysis_variant(
             run_state_payload=run_state_payload,
             dilution_payload=dilution_payload,
             output_dir=output_dir, checkpoint_tag="02_target_axis_tasks",
+            fresh_fits=fresh_fits, checkpoint_context=checkpoint_context,
         )
         for item in target_stage:
             result = results_by_bin[int(item["bin_number"])]
@@ -7085,6 +7158,7 @@ def run_analysis_variant(
             run_state_payload=run_state_payload,
             dilution_payload=dilution_payload,
             output_dir=output_dir, checkpoint_tag="03_period_only_tasks",
+            fresh_fits=fresh_fits, checkpoint_context=checkpoint_context,
         )
         for item in period_stage:
             results_by_bin[int(item["bin_number"])]["period_fits"][
@@ -7135,6 +7209,7 @@ def run_analysis_variant(
                 run_state_payload=run_state_payload,
                 dilution_payload=dilution_payload,
                 output_dir=output_dir, checkpoint_tag="04_period_constraints_tasks",
+                fresh_fits=fresh_fits, checkpoint_context=checkpoint_context,
             )
             for item in constraint_stage:
                 results_by_bin[int(item["bin_number"])][
@@ -7177,6 +7252,8 @@ def run_analysis_variant(
         "beam_polarization": BEAM_POLARIZATION,
         "beam_energy_gev": BEAM_ENERGY_GEV,
         "cache": cache_summary,
+        "fresh_fits_requested": fresh_fits,
+        "checkpoint_context_sha256": fit_checkpoint_signature(sample_variant, [], checkpoint_context),
         "inputs": {
             "root_files": {period: str(input_paths[period].expanduser().resolve()) for period in PERIODS},
             "run_info_csv": str(run_info_path), "run_info_csv_sha256": sha256_file(run_info_path),
@@ -14276,6 +14353,10 @@ def build_argument_parser() -> argparse.ArgumentParser:
     # Persistent selected-event caches were removed. Internal staging, when needed
     # by spawned workers, lives under the system temporary directory.
     parser.set_defaults(cache=None, reuse_cache=False)
+    parser.add_argument(
+        "--fresh-fits", action="store_true",
+        help="Refit all extraction stages, ignoring saved task checkpoints even when their inputs match.",
+    )
     parser.add_argument("--disable-isr", action="store_true")
     parser.add_argument(
         "--disable-momentum-corrections", action="store_true",
@@ -14739,6 +14820,7 @@ def main() -> int:
         chunk_size=args.chunk_size,
         workers=workers,
         reuse_cache=args.reuse_cache,
+        fresh_fits=args.fresh_fits,
         skip_plots=args.skip_plots,
         include_target_axis_study=(
             not args.baseline_zero_uu_only and not args.period_stability_only
@@ -14952,6 +15034,7 @@ def main() -> int:
                 chunk_size=args.chunk_size,
                 workers=workers,
                 reuse_cache=args.reuse_cache,
+                fresh_fits=args.fresh_fits,
                 skip_plots=True,
                 include_target_axis_study=False,
                 include_period_diagnostics=False,
@@ -15009,6 +15092,7 @@ def main() -> int:
             chunk_size=args.chunk_size,
             workers=workers,
             reuse_cache=args.reuse_cache,
+            fresh_fits=args.fresh_fits,
             skip_plots=args.skip_plots,
             include_target_axis_study=False,
             cut_label="nominal",
@@ -15041,6 +15125,7 @@ def main() -> int:
             chunk_size=args.chunk_size,
             workers=workers,
             reuse_cache=args.reuse_cache,
+            fresh_fits=args.fresh_fits,
             skip_plots=args.skip_plots,
             include_target_axis_study=False,
             cut_label="nominal",
@@ -15074,6 +15159,7 @@ def main() -> int:
             chunk_size=args.chunk_size,
             workers=workers,
             reuse_cache=channel_loose_cache_ready,
+            fresh_fits=args.fresh_fits,
             skip_plots=args.skip_plots,
             include_target_axis_study=False,
             cut_label="loose",
@@ -15102,6 +15188,7 @@ def main() -> int:
             chunk_size=args.chunk_size,
             workers=workers,
             reuse_cache=args.reuse_cache,
+            fresh_fits=args.fresh_fits,
             skip_plots=args.skip_plots,
             include_target_axis_study=False,
             cut_label="tight",
