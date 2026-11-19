@@ -17,6 +17,8 @@ LABELS = (r'$F_{LU}^{\sin\phi}/F_{UU}$',
           r'$F_{LL,\mathrm{lab}}^{\cos\phi}/F_{UU}$')
 TP_EDGES = np.array((.05, .25, .45, .65, .85, 1.05, 1.25))
 XB_EDGES = (.10, .25, .35, .45, .60)
+XB_COLORS = ('#0072B2', '#D55E00', '#009E73', '#CC79A7')
+XB_MARKERS = ('o', 's', '^', 'D')
 
 
 def plot_results(frame, output_dir):
@@ -52,8 +54,8 @@ def plot_results(frame, output_dir):
                         fmt='o', color='black', ecolor='black', markersize=4,
                         capsize=3, linewidth=1.1, zorder=3)
             ax.set_xlim(0, 1.30)
-            ax.set_ylim((-.5, .5) if panel < 3 else (-1, 1))
-            ax.set_yticks((-.5, -.25, 0, .25, .5) if panel < 3 else (-1, -.5, 0, .5, 1))
+            ax.set_ylim((-.4, .4) if panel < 3 else (-1, 1))
+            ax.set_yticks(np.linspace(-.4, .4, 9) if panel < 3 else (-1, -.5, 0, .5, 1))
             ax.set_xlabel(r'$-t^\prime$ (GeV$^2$)')
             ax.set_ylabel(label)
             ax.grid(alpha=.18, zorder=0)
@@ -64,6 +66,37 @@ def plot_results(frame, output_dir):
         fig.savefig(path, dpi=200)
         paths.append(path)
         plt.close(fig)
+    # Overlay the four xB ranges using the Kroll comparison colors and markers.
+    fig, axes = plt.subplots(2, 3, figsize=(12, 7))
+    axes = axes.ravel()
+    handles = []
+    for panel, (ax, obs, label) in enumerate(zip(axes, OBSERVABLES, LABELS)):
+        for xi, (color, marker) in enumerate(zip(XB_COLORS, XB_MARKERS)):
+            g = frame[frame.x_index == xi].sort_values('t_index')
+            ax.bar(TP_EDGES[:-1], g[obs+'_point_to_point_systematic'],
+                   width=np.diff(TP_EDGES), align='edge', bottom=0,
+                   color=color, alpha=.15, linewidth=0, zorder=1)
+            points = ax.errorbar(
+                g.mean_minus_tprime_gev2, g[obs], yerr=g[obs+'_stat'],
+                fmt=marker, color=color, ecolor=color, markersize=4,
+                capsize=3, linewidth=1.1, zorder=3,
+                label=rf'${XB_EDGES[xi]:.2f}<x_B<{XB_EDGES[xi+1]:.2f}$')
+            if panel == 0:
+                handles.append(points)
+        ax.axhline(0, color='0.45', linewidth=.8, zorder=2)
+        ax.set_xlim(0, 1.30)
+        ax.set_ylim((-.4, .4) if panel < 3 else (-1, 1))
+        ax.set_yticks(np.linspace(-.4, .4, 9) if panel < 3 else (-1, -.5, 0, .5, 1))
+        ax.set_xlabel(r'$-t^\prime$ (GeV$^2$)')
+        ax.set_ylabel(label)
+        ax.grid(alpha=.18, zorder=0)
+    axes[5].axis('off')
+    axes[5].legend(handles=handles, loc='center', frameon=False, fontsize=12)
+    fig.tight_layout()
+    path = output_dir/'final_results_all_xB.png'
+    fig.savefig(path, dpi=200)
+    paths.append(path)
+    plt.close(fig)
     return paths
 
 
