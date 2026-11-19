@@ -10,6 +10,8 @@ import argparse
 from concurrent.futures import ProcessPoolExecutor, as_completed
 from dataclasses import replace
 import hashlib
+import fcntl
+import socket
 import json
 from importlib.metadata import version
 import math
@@ -22,6 +24,8 @@ import time
 # Avoid multiplying BLAS threads inside each worker.
 os.environ.setdefault('OMP_NUM_THREADS', '1')
 os.environ.setdefault('OPENBLAS_NUM_THREADS', '1')
+os.environ.setdefault('MKL_NUM_THREADS', '1')
+os.environ.setdefault('NUMEXPR_NUM_THREADS', '1')
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
@@ -39,7 +43,7 @@ _WORK = None
 def atomic_json(path, payload):
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(path.suffix + '.tmp')
+    tmp = path.with_suffix(path.suffix + f'.{socket.gethostname()}.{os.getpid()}.tmp')
     tmp.write_text(json.dumps(prod.json_safe(payload), indent=2, allow_nan=False))
     tmp.replace(path)
 
@@ -50,6 +54,40 @@ def digest(path):
         for block in iter(lambda: f.read(1024 * 1024), b''):
             h.update(block)
     return h.hexdigest()
+
+
+# The only accepted production-code upgrade is the previously implemented
+# migration-only refresh; it changes neither selected events nor likelihood fits.
+MIGRATION_ONLY_UPGRADE = (
+    '5d1155658230a14071ed1c0a763f42d90a4e1a2ebe9ae0fd22bd2ed5cbacb926',
+    '5a0f5142ed6f8b8663a767af4408b44db5e22d4912fdadf087c635f1ee6b1dfc',
+)
+
+
+def same_event_identity(a, b):
+    return ({k:v for k,v in a.items() if k != 'selection_code_sha256'}
+            == {k:v for k,v in b.items() if k != 'selection_code_sha256'})
+
+
+def validate_resume_cache(cache, cuts, identity, accept_upgrade):
+    try:
+        return prod.validate_event_cache(cache, cuts, identity)
+    except RuntimeError:
+        if not accept_upgrade:
+            raise
+        actual = prod._event_cache_path(cache)
+        metadata = json.loads(prod._cache_metadata_path(actual).read_text())
+        old_identity = metadata.get('identity', {})
+        pair = (old_identity.get('selection_code_sha256'), identity['selection_code_sha256'])
+        stat = actual.stat()
+        if (pair != MIGRATION_ONLY_UPGRADE
+                or not same_event_identity(old_identity, identity)
+                or metadata.get('cuts') != prod._cache_selection(cuts)
+                or (metadata.get('cache_size'), metadata.get('cache_mtime_ns'))
+                   != (stat.st_size, stat.st_mtime_ns)):
+            raise RuntimeError('Cache mismatch is not the recognized migration-only code upgrade')
+        print('Reusing unchanged event cache across recognized migration-only code upgrade.', flush=True)
+        return metadata
 
 
 def usable(fit):
@@ -259,6 +297,20 @@ def init_worker(cache, states, records, config, output):
 
 
 def run_bin(b):
+    """Hold an OS lock for the entire bin; released automatically on process exit."""
+    output = _WORK[-1]
+    lock_dir = output / 'locks'
+    lock_dir.mkdir(parents=True, exist_ok=True)
+    with (lock_dir / f'bin_{b:02d}.lock').open('a+') as lock:
+        try:
+            fcntl.flock(lock, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        except BlockingIOError:
+            print(f'[bin {b}] owned by another process; skipping', flush=True)
+            return {'bin_number': b, 'status': 'owned_elsewhere'}
+        return run_bin_locked(b)
+
+
+def run_bin_locked(b):
     events_all, states, records, config, output = _WORK
     events = {k: v[events_all['bin_number'] == b] for k, v in events_all.items()}
     path = output/'checkpoints'/f'bin_{b:02d}.json'
@@ -339,8 +391,8 @@ def run_bin(b):
                 except (ValueError, RuntimeError) as exc:
                     row.update(status='failed', usable=False, reason=str(exc))
                 scenario['rows'].append(row)
+                atomic_json(path, state)
                 if (rep+1) % 10 == 0:
-                    atomic_json(path, state)
                     print(f'[bin {b}] {name}: {rep+1}/{config["replicas"]} toys', flush=True)
             scenario['status'] = 'complete'
             atomic_json(path, state)
@@ -438,7 +490,7 @@ def write_products(results, config, output):
     atomic_json(table/'zero_polarization_identifiability.json', flat)
     for result in results:
         b = result['bin_number']
-        if result.get('profiles'):
+        if all(p in result.get('profiles', {}) for p in UU):
             fig, axes = plt.subplots(1, 2, figsize=(10, 4))
             for ax, p in zip(axes, UU):
                 scan = result['profiles'][p]
@@ -452,7 +504,9 @@ def write_products(results, config, output):
                 ax.legend(fontsize=8)
             fig.suptitle(f'Bin {b}: profiled UU likelihoods'); fig.tight_layout()
             fig.savefig(plots/f'profiles_bin_{b:02d}.png', dpi=170); plt.close(fig)
-            rows = result['joint']['rows']
+            rows = result.get('joint', {}).get('rows', [])
+            if not rows:
+                continue
             x = np.array([r[0]['u1'] for r in rows]); y = np.array([r['u2'] for r in rows[0]])
             z = np.array([[r['two_delta_nll'] if r['valid'] else np.nan for r in row] for row in rows])
             fig, ax = plt.subplots(figsize=(6, 5))
@@ -491,6 +545,12 @@ def parser():
     p.add_argument('--extent', type=float, default=4., help='Scan half-width in nominal Hesse sigma')
     p.add_argument('--seed', type=int, default=20261119)
     p.add_argument('--workers', type=int, default=4)
+    p.add_argument('--distributed', action='store_true',
+                   help='Claim shared bins using OS locks; defer combined products to --summarize-only')
+    p.add_argument('--summarize-only', action='store_true',
+                   help='Build combined tables/PNGs from saved checkpoints; no events or fits needed')
+    p.add_argument('--resume-compatible-code', action='store_true',
+                   help='Explicitly accept code-only provenance changes while preserving original manifest and checkpoints')
     p.add_argument('--auxiliary-mode', choices=('fluctuate','fixed_truth'), default='fluctuate')
     p.add_argument('--output-dir', type=Path, default=HERE/'output/unpolarized_validation')
     p.add_argument('--production-output', type=Path, default=HERE/'output/asymmetry_extraction')
@@ -517,6 +577,16 @@ def main():
     args.scenarios = list(dict.fromkeys(args.scenarios))
     args.studies = sorted(set(args.studies))
     output = args.output_dir.expanduser().resolve()
+    if args.summarize_only:
+        manifest = json.loads((output/'manifest.json').read_text())
+        config = manifest['config']
+        results = [json.loads(path.read_text()) for b in config['bins']
+                   if (path := output/'checkpoints'/f'bin_{b:02d}.json').exists()]
+        if not results:
+            raise RuntimeError('No checkpoints available')
+        write_products(results, config, output)
+        print(f'Summarized {len(results)} saved bins; {sum(bool(r.get("complete")) for r in results)} complete. Partial toys included.', flush=True)
+        return 0
     production_output = args.production_output.expanduser().resolve()
     if output == production_output or output in production_output.parents or production_output/'nominal' in output.parents or output == production_output/'nominal':
         raise ValueError('Choose a separate diagnostic output directory, outside nominal results')
@@ -534,7 +604,7 @@ def main():
     if args.rebuild_events or not prod._event_cache_path(cache).exists():
         print('Building selected-event staging from existing momentum-corrected ROOT inputs', flush=True)
         prod.build_event_cache(inputs, args.tree, args.chunk_size, records, cuts, cache)
-    prod.validate_event_cache(cache, cuts, identity)
+    validate_resume_cache(cache, cuts, identity, args.resume_compatible_code)
     config = {k:getattr(args,k) for k in ('bins','studies','scenarios','replicas','profile_points','joint_points','extent','seed','auxiliary_mode')}
     provenance = {'config':config, 'runtime':{'python':sys.version,'numpy':np.__version__,'iminuit':version('iminuit')}, 'diagnostic_sha256':digest(Path(__file__)),
                   'production_sha256':digest(Path(prod.__file__)), 'event_identity':identity,
@@ -542,27 +612,51 @@ def main():
                   'run_info_sha256':digest(args.run_info_csv.expanduser().resolve())}
     signature = hashlib.sha256(json.dumps(provenance, sort_keys=True).encode()).hexdigest()
     manifest_path = output/'manifest.json'
-    if manifest_path.exists():
-        old = json.loads(manifest_path.read_text())
-        if old['signature'] != signature:
-            raise RuntimeError('Diagnostic inputs/configuration changed. Use a new --output-dir; old checkpoints will not be reused.')
-    elif output.exists() and any(output.iterdir()):
-        raise RuntimeError('Output directory is nonempty without a matching manifest; choose a new directory')
     output.mkdir(parents=True, exist_ok=True)
-    atomic_json(manifest_path, {'signature':signature, **provenance,
-        'scope':'conditional estimator closure at fixed accepted kinematics; not a detector-model or omitted-harmonic test',
-        'intervals':'data profiles: 1,3.84 (1D), 2.30,5.99 (2D); toy coverage: Hesse +/-1 and +/-1.96 sigma',
-        'auxiliary_treatment':args.auxiliary_mode})
+    # Serialize manifest initialization/validation across nodes. Never rewrite the
+    # original provenance when accepting a deliberate code-only upgrade.
+    with (output/'.manifest.lock').open('a+') as lock:
+        fcntl.flock(lock, fcntl.LOCK_EX)
+        if manifest_path.exists():
+            old = json.loads(manifest_path.read_text())
+            if old['signature'] != signature:
+                fields = ('config', 'runtime', 'cuts_sha256',
+                          'dilution_sha256', 'run_info_sha256')
+                differences = [k for k in fields if old.get(k) != provenance.get(k)]
+                if not same_event_identity(old['event_identity'], identity):
+                    differences.append('event_identity')
+                pair = (old['production_sha256'], provenance['production_sha256'])
+                if pair[0] != pair[1] and pair != MIGRATION_ONLY_UPGRADE:
+                    differences.append('unrecognized_production_code')
+                if differences or not args.resume_compatible_code:
+                    raise RuntimeError('Checkpoint provenance changed: '
+                        + str(differences or ['code'])
+                        + '. Code-only upgrades require --resume-compatible-code; changed inputs/settings require a new output directory.')
+                audit = output/'resume_provenance'/f'{socket.gethostname()}_{os.getpid()}.json'
+                atomic_json(audit, {'original_signature': old['signature'],
+                                   'resume_signature': signature, **provenance})
+                print('Resuming existing checkpoints with explicitly accepted code-only changes.', flush=True)
+        else:
+            existing = [p for p in output.iterdir() if p.name != '.manifest.lock']
+            if existing:
+                raise RuntimeError('Output directory is nonempty without a matching manifest')
+            atomic_json(manifest_path, {'signature':signature, **provenance,
+                'scope':'conditional estimator closure at fixed accepted kinematics; not a detector-model or omitted-harmonic test',
+                'intervals':'data profiles: 1,3.84 (1D), 2.30,5.99 (2D); toy coverage: Hesse +/-1 and +/-1.96 sigma',
+                'auxiliary_treatment':args.auxiliary_mode})
     print(f'Running {len(args.bins)} bins; studies={args.studies}; replicas={args.replicas}; workers={args.workers}', flush=True)
     results, failures = [], []
     started = time.monotonic()
-    with ProcessPoolExecutor(max_workers=min(args.workers,len(args.bins)), mp_context=mp.get_context('spawn'),
+    with ProcessPoolExecutor(max_workers=min(args.workers,10,len(args.bins)), mp_context=mp.get_context('spawn'),
             initializer=init_worker, initargs=(str(cache),states,dilutions,config,str(output))) as pool:
         futures = {pool.submit(run_bin,b):b for b in args.bins}
         for future in as_completed(futures):
             b = futures[future]
             try:
-                result = future.result(); results.append(result)
+                result = future.result()
+                if result['status'] == 'owned_elsewhere':
+                    continue
+                results.append(result)
                 if result['status'] != 'complete':
                     failures.append({'bin_number':b, 'reason':result['status']})
                 print(f'Bin {b}: {result["status"]} ({len(results)}/{len(args.bins)}); elapsed {(time.monotonic()-started)/60:.1f} min', flush=True)
@@ -570,13 +664,16 @@ def main():
                 failures.append({'bin_number':b, 'reason':repr(exc)})
                 print(f'Bin {b}: FAILED: {exc}', flush=True)
     results.sort(key=lambda r:r['bin_number'])
-    write_products(results, config, output)
+    if not args.distributed:
+        write_products(results, config, output)
     skipped = [{'bin_number':r['bin_number'],'scenario':name,'reason':s.get('reason')}
                for r in results for name,s in r.get('scenarios',{}).items()
                if s.get('status')=='nonphysical_injection']
     for item in skipped:
         print(f'Nonphysical injection skipped: {item}', flush=True)
-    atomic_json(output/'run_status.json', {'finished_bins':[r['bin_number'] for r in results],
+    status_path = (output/'node_status'/f'{socket.gethostname()}_{os.getpid()}.json'
+                   if args.distributed else output/'run_status.json')
+    atomic_json(status_path, {'finished_bins':[r['bin_number'] for r in results],
                 'failures':failures, 'nonphysical_injections':skipped})
     print(f'Diagnostics: {output}', flush=True)
     return 2 if failures else 0

@@ -52,7 +52,7 @@ python3 asymmetry_extraction/validate_unpolarized_modulations.py --studies profi
 ```
 
 Use the same command to resume an interrupted run. Checkpoints are saved after
-each one-dimensional profile, each contour row, each group of ten replicas, and
+each one-dimensional profile, each contour row, each replica, and
 each completed scenario. The identity includes source code, ROOT input identities,
 run information, cut and dilution hashes, runtime versions, and study settings.
 Changed inputs or settings require a new output directory. Changing only the
@@ -152,3 +152,38 @@ auxiliary draw distribution, prevent crossings across failed points, expose fail
 fits in coverage denominators, and exercise production-fit recovery with a
 nonuniform accepted phi distribution. These are implementation tests, not the
 results of the full 24-bin physics validation.
+
+## Two nodes sharing the same output directory
+
+Stop the old single-node invocation before launching either updated process.
+From the same shared RGC_enpi+ directory, run this command on both ifarm2401 and
+ifarm2402 (one invocation per node):
+
+```bash
+OMP_NUM_THREADS=1 OPENBLAS_NUM_THREADS=1 MKL_NUM_THREADS=1 NUMEXPR_NUM_THREADS=1 python3 asymmetry_extraction/validate_unpolarized_modulations.py --workers 10 --replicas 100 --distributed --resume-compatible-code --cache /scratch/thayward/rgc_enpi_thayward/selected_events_5774b50cd1143836.npz
+```
+
+Both processes inspect all requested bins. Nonblocking OS file locks give each
+bin to exactly one process. Completed bins are reused and partial bins resume.
+The directory must be the same shared filesystem on both nodes and support
+cross-node flock locking. Lock files stay on disk but the OS releases ownership
+when a process exits; do not delete lock files while any worker is running.
+The scratch event cache may be local to each node: a missing copy is rebuilt
+once from the existing ROOT inputs. Do not use --rebuild-events on a shared live
+cache. Each process writes its own node_status file. Tables/PNGs are deferred to
+avoid competing writes; combine results after both processes exit:
+
+```bash
+python3 asymmetry_extraction/validate_unpolarized_modulations.py --summarize-only
+```
+
+The same summary command can inspect partial checkpoints while the workers run.
+Checkpoint writes are atomic. Original manifest provenance is preserved; explicit
+code-upgrade acceptance is recorded separately under resume_provenance. Inputs,
+settings and runtime versions must match. Production code must be identical or
+match the specifically recognized migration-only upgrade; arbitrary production
+code changes are rejected. The statistical procedures, replicas and seeds are
+unchanged. Previously uncheckpointed toys (at most nine per active bin in the old
+version) are repeated deterministically; the new version saves every toy.
+Workers are capped at ten per invocation. Set the thread variables as above to
+avoid nested numerical-library threads competing with the fit workers.

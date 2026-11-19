@@ -142,4 +142,35 @@ class ConditionalValidationTests(unittest.TestCase):
             self.assertLess(abs(fit['values'][p]-truth[p]),5*fit['errors'][p])
 
 
+class DistributedChecks(unittest.TestCase):
+    def test_bin_lock_excludes_second_worker_and_releases(self):
+        import fcntl
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            (output/'locks').mkdir()
+            with patch.object(study, '_WORK', (None,None,None,None,output)):
+                with (output/'locks/bin_01.lock').open('a+') as held:
+                    fcntl.flock(held, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                    with patch.object(study, 'run_bin_locked') as work:
+                        self.assertEqual(study.run_bin(1)['status'], 'owned_elsewhere')
+                        work.assert_not_called()
+                with patch.object(study, 'run_bin_locked', return_value={'status':'complete'}) as work:
+                    self.assertEqual(study.run_bin(1)['status'], 'complete')
+                    work.assert_called_once_with(1)
+
+    def test_event_identity_still_rejects_changed_inputs(self):
+        old = {'selection_code_sha256':'old', 'inputs':{'file':'original'}}
+        self.assertTrue(study.same_event_identity(old, dict(old, selection_code_sha256='new')))
+        self.assertFalse(study.same_event_identity(old, dict(old, inputs={'file':'changed'})))
+
+    def test_atomic_checkpoint_replacement(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'bin_01.json'
+            study.atomic_json(path, {'rows':[1]})
+            study.atomic_json(path, {'rows':[1,2]})
+            self.assertEqual(json.loads(path.read_text()), {'rows':[1,2]})
+            self.assertFalse(list(Path(directory).glob('*.tmp')))
+
+
 if __name__=='__main__':unittest.main()
