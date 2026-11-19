@@ -1,0 +1,436 @@
+\documentclass[aps,prd,showpacs,notitlepage,nofootinbib,preprintnumbers,amsmath,amssymb]{revtex4-2}
+
+\allowdisplaybreaks
+
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{xcolor}
+\usepackage{mathbbol}
+\usepackage{slashed}
+\usepackage{caption}
+\usepackage{ragged2e}
+\usepackage[most]{tcolorbox}
+\usepackage[colorlinks=true,citecolor=blue,linkcolor=blue,urlcolor=blue]{hyperref}
+\usepackage{booktabs}
+
+\def\fig#1{{Fig.~\ref{#1}}}
+\def\eq#1{{Eq.~(\ref{#1})}}
+\def\sec#1{Sec.~\ref{#1}}
+\newcommand{\tp}{-t'}
+\newcommand{\cA}{\mathcal A}
+\newcommand{\cB}{\mathcal B}
+\newcommand{\cC}{\mathcal C}
+\newcommand{\cH}{\mathcal H_L}
+\newcommand{\cE}{\mathcal E_L}
+\newcommand{\cD}{\mathcal D}
+\newcommand{\cP}{\mathcal P}
+\newcommand{\Dp}{\Delta_\perp}
+\newcommand{\R}[1]{F_{#1}/F_{UU}}
+\newcommand{\ratiofig}[3]{\begin{figure}[ht!]\centering\includegraphics[width=\textwidth]{figs_predictions/ratio_#1.pdf}\caption{#2 Rows: $\pi^0p$, $\pi^+n$, $\pi^-p$; panels as described in \sec{sec:den}.}\label{#3}\end{figure}}
+\newcommand{\prodfig}[3]{\begin{figure}[ht!]\centering\includegraphics[width=\textwidth]{figs_predictions/prod_#1.pdf}\caption{#2 Columns: the four RGC bin means; rows: $\pi^0p$, $\pi^+n$, $\pi^-p$.}\label{#3}\end{figure}}
+\newcommand{\helfig}[3]{\begin{figure}[ht!]\centering\includegraphics[width=\textwidth]{figs_predictions/hel_#1.pdf}\caption{#2 Solid lines show the real part and dashed lines the imaginary part. Rows: $\pi^0p$, $\pi^+n$, $\pi^-p$; panels as described in \sec{sec:hel}.}\label{#3}\end{figure}}
+
+\newcommand{\fix}[1]{\textcolor{red}{#1}}
+
+\begin{document}
+
+\title{Predictions for exclusive $\pi^0$ and $\pi^\pm$ production at CLAS12\\[2pt]
+from a collinear twist-3 calculation}
+\author{Brandon Manley}
+  \email[Email: ]{brandon.manley@uconn.edu}
+	\affiliation{Department of Physics, University of Connecticut, Storrs, CT 06269, USA}
+    
+\maketitle
+
+\tableofcontents
+
+%======================================================================
+\section{Theory overview}
+\label{sec:setup}
+
+For $ep\to e'\pi N'$ with beam helicity $\lambda_e$ and target polarization $(S_L,S_T)$ referred to the virtual-photon direction, the cross section decomposes as~\cite{Bacchetta:2004jz, Diehl:2005pc}
+\begin{align}
+\frac{d\sigma}{dx_B\,dQ^2\,dt\,d\phi\,d\phi_S}&=
+\frac{1}{\pi}\frac{(N_c^2-1)^2\alpha_{\rm em}^2\alpha_s^2f_\pi^2\xi^3}{4N_c^4(1-\xi^2)(1+\xi)Q^{10}} \Big[1+(1-y)^2 \Big]
+\notag \\ 
+&\times 
+\Big\{F_{UU,T}+\epsilon F_{UU,L}+\sqrt{2\epsilon(1+\epsilon)}\cos\phi\,F_{UU}^{\cos\phi}+\epsilon\cos2\phi\,F_{UU}^{\cos2\phi}\nonumber\\
+&+\lambda_e\sqrt{2\epsilon(1-\epsilon)}\sin\phi\,F_{LU}^{\sin\phi}+S_L\Big[\sqrt{2\epsilon(1+\epsilon)}\sin\phi\,F_{UL}^{\sin\phi}+\epsilon\sin2\phi\,F_{UL}^{\sin2\phi}\Big]\nonumber\\
+&+S_L\lambda_e\Big[\sqrt{1-\epsilon^2}\,F_{LL}+\sqrt{2\epsilon(1-\epsilon)}\cos\phi\,F_{LL}^{\cos\phi}\Big]\nonumber\\
+&+S_T\Big[\sin(\phi-\phi_S)\big(F_{UT,T}^{\sin(\phi-\phi_S)}+\epsilon F_{UT,L}^{\sin(\phi-\phi_S)}\big)+\epsilon\sin(\phi+\phi_S)\,F_{UT}^{\sin(\phi+\phi_S)}\nonumber\\
+&\qquad+\epsilon\sin(3\phi-\phi_S)\,F_{UT}^{\sin(3\phi-\phi_S)}\nonumber\\
+&\qquad+\sqrt{2\epsilon(1+\epsilon)}\Big(\sin\phi_S\,F_{UT}^{\sin\phi_S}+\sin(2\phi-\phi_S)\,F_{UT}^{\sin(2\phi-\phi_S)}\Big)\Big]\nonumber\\
+&+S_T\lambda_e\Big[\sqrt{1-\epsilon^2}\cos(\phi-\phi_S)\,F_{LT}^{\cos(\phi-\phi_S)}\nonumber\\
+&\qquad+\sqrt{2\epsilon(1-\epsilon)}\Big(\cos\phi_S\,F_{LT}^{\cos\phi_S}+\cos(2\phi-\phi_S)\,F_{LT}^{\cos(2\phi-\phi_S)}\Big)\Big]\Big\}.
+\label{eq:xsec}
+\end{align}
+Here $\epsilon=2(1-y)/[1+(1-y)^2]$ is the ratio of longitudinal to transverse photon flux (at leading order in $M/Q$). All ratios below are normalized to the unseparated $F_{UU}=F_{UU,T}+\epsilon F_{UU,L}$, with the depolarization factors divided out.
+
+The longitudinal amplitude is leading twist and involves the helicity GPDs $\tilde H$ and $\tilde E$. The transverse amplitude starts at twist 3 and has two sources. In the chiral-even one, twist-3 moments of quark GTMDs pair with the twist-2 pion DA $\phi_\pi$~\cite{Bhattacharya:2023hbq}. In the chiral-odd one, the transversity GPDs $H_T$ and $\bar E_T$ combine with the twist-3 DA $\phi_p$~\cite{Goloskokov:2009ia,Goloskokov:2011rd}. Both amplitudes are built from Compton form factors (CFF). For $\pi^\pm$ the helicity GPD $\tilde E$ contains the pion pole, which we write as a separate term $\cP$, so that $\tilde{\mathcal E}_L$ below is the CFF of the non-pole $\tilde E$ only. 
+
+We write $t'=t-t_0$, where $t_0=-4\xi^2M^2/(1-\xi^2)$ is the value of $t$ at zero transverse momentum transfer (so that $-t'\ge0$ and $t'=0$ at $t=t_{\min}$), and $\Dp^2=(1-\xi^2)(-t')$. All observables are then given by six combinations of CFFs, which we define in the Trento frame,
+\begin{subequations}\label{combos}
+\begin{align}
+\cA&=\mathcal F_{1,1}+\mathcal G_{1,1}-\frac{2\mu_\pi}{M}\bar{\mathcal E}_T,
+\\
+\cB&=\mathcal F_{1,2}+\mathcal G_{1,2}+\frac{4\mu_\pi}{M}\Big[(1-\xi^2)\mathcal H_T-\xi^2\bar{\mathcal E}_T\Big]+\frac{\xi\Dp^2}{2(1+\xi)M^2}\,\tilde{\mathcal E}_L-\frac{\Dp^2}{2(1+\xi)M^2}\,\cP,
+\\
+\cC&=\mathcal G_{1,4}-\mathcal F_{1,4}-\frac{2\mu_\pi\xi}{M}\bar{\mathcal E}_T+2(1-\xi)\tilde{\mathcal H}_L-\frac{2\xi^2}{1+\xi}\,\tilde{\mathcal E}_L+\frac{2\xi}{1+\xi}\,\cP,
+\\
+\cD&=\frac{1}{1+\xi}\Big(\cP-\xi\,\tilde{\mathcal E}_L\Big),
+\\
+\cH&=(1-\xi^2)\tilde{\mathcal H}_L-\xi^2\tilde{\mathcal E}_L+\frac{2\xi^2\Dp^2}{(1+\xi)Q^2}\left(\mathcal G_{1,4}-\mathcal F_{1,4}-\frac{2\mu_\pi\xi}{M}\bar{\mathcal E}_T\right)-\xi^2\left(1-\frac{4\xi\Dp^2}{(1+\xi)Q^2}\right)\cP,
+\\
+\cE&=\tilde{\mathcal E}_L+\frac{4\xi M^2}{(1+\xi)Q^2}\left\{\mathcal F_{1,2}+\mathcal G_{1,2}+\frac{4\mu_\pi}{M}\Big[(1-\xi^2)\mathcal H_T-\xi^2\bar{\mathcal E}_T\Big]\right\}+\left(1-\frac{4\xi\Dp^2}{(1+\xi)Q^2}\right)\cP,
+\end{align}
+\end{subequations}
+where $\mathcal{F}_{a,b}, \mathcal{G}_{a,b}$ are the chiral-even twist-3 GTMD moment CFFs, $\mathcal{H}_T$ and $\bar{\mathcal E}_T$ are the chiral-odd transversity GPD CFFs, and $\tilde{\mathcal H}_L, \tilde{\mathcal E}_L$ are the helicity GPD CFFs. Also, $\mu_\pi=m_\pi^2/(m_u+m_d)$ and $M$ is the target mass. In terms of Eqs.~(\ref{combos}) the structure functions are (\sec{sec:hel} gives the same results in terms of helicity amplitudes)
+\begin{subequations}\label{sfs}
+\begin{align}
+F_{UU,T}&=\frac{\Dp^2}{2}\big(|\cA|^2+|\cC|^2\big)+M^2|\cB|^2+\frac{\Dp^4}{4M^2}|\cD|^2,
+\\
+F_{UU,L}&=\frac{Q^2}{\xi^2}|\cH|^2+\frac{\Dp^2Q^2}{4M^2}|\cE|^2,
+\\
+F_{UU}^{\cos2\phi}&=\frac{\Dp^2}{2}\big(|\cC|^2-|\cA|^2\big)-\Dp^2\,{\rm Re}(\cD\cB^*),
+\\
+F_{UU}^{\cos\phi}&=\frac{Q\Dp}{2\xi}{\rm Re}\,\left[2\cC\cH^*+\xi\left(\cB-\frac{\Dp^2}{2M^2}\cD\right)\cE^*\right],
+\\
+F_{LU}^{\sin\phi}&=-\frac{Q\Dp}{2\xi}{\rm Im}\,\left[2\cC\cH^*+\xi\left(\cB-\frac{\Dp^2}{2M^2}\cD\right)\cE^*\right],
+\\
+F_{LL}&=M^2|\cB|^2-\frac{\Dp^4}{4M^2}|\cD|^2+\Dp^2\,{\rm Re}(\cC\cA^*),
+\\
+F_{UL}^{\sin2\phi}&=\Dp^2\,{\rm Im}\big(\cC\cA^*-\cD\cB^*\big),
+\\
+F_{UL}^{\sin\phi}&=-\frac{Q\Dp}{2\xi}{\rm Im}\,\left[2\cA\cH^*+\xi\left(\cB+\frac{\Dp^2}{2M^2}\cD\right)\cE^*\right],
+\\
+F_{LL}^{\cos\phi}&=\frac{Q\Dp}{2\xi}{\rm Re}\,\left[2\cA\cH^*+\xi\left(\cB+\frac{\Dp^2}{2M^2}\cD\right)\cE^*\right].
+\end{align}
+\end{subequations}
+The transversely polarized ratios can also be computed with the combination in Eqs.~\eqref{combos}. All structure functions and ratios below refer to a target polarized along the virtual photon. We can also compute the beam-referenced moments from~(\ref{combos}).
+
+
+The CFFs have the generic form
+\begin{align} \label{cff}
+    \mathcal{X} = \int \limits^1_{-1} \, dx 
+    \int \limits^1_0 dz \, \frac{K(x, \xi, z)}{(x + \xi - i \varepsilon)^n (x - \xi + i \varepsilon)^n} \, 
+    X(x, \xi, t) \, \phi (z),
+\end{align}
+where $\phi(z) = \phi_\pi(z)$ for the chiral-even and twist-2 cases and $\phi(z)=\phi_p(z)$ for the chiral-odd case. $K$ is the kernel coming from the hard scattering, and $X$ is the GPD or GTMD moment. The twist-2 CFFs also have single poles $n=1$, while the twist-3 ones have double poles $n=2$. 
+
+For the twist-3 CFFs, the kernels $K$ are singular at the endpoints $z\to0,1$. As in Ref.~\cite{Bhattacharya:2023hbq}, we regulate the $z$ integrals by integrating over $z \in [\delta, 1- \delta]$, where $\delta = \langle p_\perp^2\rangle/Q^2$ mimics the endpoint suppression coming from the transverse momentum dependence of the pion wavefunction. Likewise, the GPD and GTMD models we use have discontinuities at $x=\pm\xi$. To avoid these when integrating over $x$ in \eq{cff}, we shift the poles in the kernel $K$ from $x= \pm \xi$ to $x=\pm\xi\pm\delta$. We infer the parameter $\langle p_\perp^2\rangle$ from data, and use a separate value for chiral-odd and chiral-even contributions, $\langle p_\perp^2\rangle_o$ and $\langle p_\perp^2\rangle_e$, respectively.
+
+Table~\ref{tab:inputs} lists the sources of all non-perturbative input we use above. The three parameters $\langle p_\perp^2\rangle_e$, $\langle p_\perp^2\rangle_o$ and an extra slope $e^{b_ot}$ of $H_T$ and $\bar E_T$ are fitted to the 21 CLAS6 $\pi^0$ $\sigma_U$ points~\cite{CLAS:2014jpc} with Eqs.~(\ref{sfs}), which gives $\langle p_\perp^2\rangle_e=0.126$~GeV$^2$, $\langle p_\perp^2\rangle_o=0.052$~GeV$^2$, $b_o=1.09$~GeV$^{-2}$ and $\chi^2/N=1.68$. The bands in all figures are the $1\sigma$ errors coming from the fit. 
+
+\begin{table}[h]
+\centering
+\begin{tabular}{l l l}
+\toprule
+CFF or ingredient & input & source\\
+\midrule
+$\mathcal F_{1,1}$ & $H$, $E$ & DK13~\cite{Diehl:2013xca}\\
+$\mathcal G_{1,4}$, $\tilde{\mathcal H}_L$, $\tilde{\mathcal E}_L$ & $\tilde H$, non-pole $\tilde E$ & DK13/GK~\cite{Diehl:2013xca,Goloskokov:2009ia}\\
+$\mathcal G_{1,1}$, $\mathcal F_{1,4}$ & spin--orbit and OAM GTMDs & WW approximation~\cite{Hatta:2012cs}\\
+$\mathcal G_{1,2}$ & worm-gear $g_{1T}^{(1)}$ & WW approximation\\
+$\mathcal F_{1,2}$ & Sivers moment & JAM3D-22~\cite{Gamberg:2022kdb}\\
+$\mathcal H_T$ & transversity $h_1$ & JAM3D-22~\cite{Gamberg:2022kdb}\\
+$\bar{\mathcal E}_T$ & $\bar E_T$ & GK~\cite{Goloskokov:2011rd}\\
+$\xi$ and $t$ dependence & DD with Regge profiles & DK13/GK~\cite{Diehl:2013xca,Goloskokov:2011rd}\\
+$\phi_\pi$ & Gegenbauer moments, LO evolution & FQCD~\cite{FQCD-pionDA}\\
+$\phi_p$ & beyond-WW form ($\eta_3$, $\omega_3$) & Braun--Filyanov~\cite{Braun:1989iv,Ball:2006wn}\\
+$\mu_\pi$ & light-quark masses, LO running & FLAG~\cite{FlavourLatticeAveragingGroupFLAG:2024oxs}\\
+pion pole ($\pi^\pm$) & measured $F_\pi$, $\pi NN$ form factor & GK~\cite{Goloskokov:2009ia,Goloskokov:2011rd}\\
+regulators & $z$ cut and $x$-pole shift & BZZ~\cite{Bhattacharya:2023hbq}, fitted to CLAS6~\cite{CLAS:2014jpc}\\
+\bottomrule
+\end{tabular}
+\caption{Sources of the non-perturbative input.}
+\label{tab:inputs}
+\end{table}
+
+\clearpage
+
+\section{Overview of longitudinal asymmetries}
+\label{sec:long}
+
+Figures~\ref{fig:long_pi0}--\ref{fig:long_pim} collect the five ratios accessible with a polarized beam and a longitudinally polarized target, as functions of $\tp$ in the four RGC $x_B$ bins, with $\epsilon$ at its RGC value in each bin (\sec{sec:den}). They are discussed one by one in Secs.~\ref{sec:LU}--\ref{sec:LL}.
+
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.9\textwidth]{figs_predictions/long_pi0.pdf}
+\caption{Beam-spin, target-spin and double-spin ratios for $\pi^0p$ in the four $x_B$ bins.}
+\label{fig:long_pi0}
+\end{figure}
+
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.9\textwidth]{figs_predictions/long_pip.pdf}
+\caption{As \fig{fig:long_pi0}, for $\pi^+n$.}
+\label{fig:long_pip}
+\end{figure}
+
+\begin{figure}[ht!]
+\centering
+\includegraphics[width=0.9\textwidth]{figs_predictions/long_pim.pdf}
+\caption{As \fig{fig:long_pi0}, for $\pi^-p$.}
+\label{fig:long_pim}
+\end{figure}
+
+\clearpage
+%======================================================================
+\section{Unpolarized longitudinal v. transverse photons}
+\label{sec:den}
+
+Figures~\ref{fig:LoT}--\ref{fig:LLc} share one layout, with rows for $\pi^0p$, $\pi^+n$ and $\pi^-p$:
+\begin{itemize}
+    \item Columns (a) show the $t'$ dependence at the four RGC bin means $(x_B,Q^2\, [\rm{GeV}^2])=(0.20,2.2)$, $(0.30,2.6)$,$(0.40,3.1)$ and $(0.50,4.3)$. 
+    \item Columns (b) decompose the ratios at $x_B=0.30$, $Q^2=2.6$~GeV$^2$ into various products of the numerators (we separate chiral-even and chiral-odd contributions) from the RHS of Eqs.~\eqref{sfs} and shows the five largest together with the total (black). In the legends, $\cA$ denotes only the chiral-even part $\mathcal F_{1,1}+\mathcal G_{1,1}$, $\bar{\mathcal E}_T$ being shown separately, and $\tilde{\mathcal H}_L,\tilde{\mathcal E}_L$ the non-pole longitudinal CFFs. 
+    \item Columns (c) show the $x_B$ dependence at fixed $Q^2=2.6$~GeV$^2$ for $\tp=0.34$ (solid) and 0.75~GeV$^2$ (dashed).
+    \item Columns (d) show the $Q^2$ dependence at $\tp=0.34$~GeV$^2$ for $x_B=0.2$ and 0.4.
+\end{itemize}
+ The bands use the baseline regulator with fixed $\langle p_\perp^2\rangle$. (In columns (d) the dotted curves show an alternative regulator that freezes $\delta$ at its value at $Q^2=2.5$~GeV$^2$.) All bands are the $1\sigma$ fit uncertainty.
+
+
+\clearpage
+
+\subsection{$F_{UU,L}/F_{UU,T}$}
+
+\ratiofig{LoT}{The ratio $F_{UU,L}/F_{UU,T}$ of the longitudinal and transverse cross sections.}{fig:LoT}
+
+\begin{itemize}
+    \item $\pi^0$: Longitudinal cross section is a small ($\sim10$\%) correction. The $\pi^0$ ratios are therefore transverse--transverse interferences or $L$--$T$ interferences diluted by a small longitudinal amplitude. The ratio rises with $\tp$ because the helicity-flip $\cB$, which dominates $\sigma_T$, falls faster than $\tilde H_L$. Panel (d) shows how the regulator sets the $Q^2$ scaling.
+    \item $\pi^+$: $\sigma_L$ and $\sigma_T$ are comparable, and $\sigma_L$ is mostly the pion pole.  As $-t_{\min}$ grows with $\xi$ the kinematics move away from the pion pole, while the regulator suppression of $\sigma_T$ weakens. This fall is what drives the rise of $F_{LL}/F_{UU}$ with $x_B$ seen in the RGC data (\sec{sec:LL}). Again, panel (d) shows how the regulator sets the $Q^2$ scaling.
+\end{itemize}
+
+
+\clearpage
+%======================================================================
+\section{Unpolarized azimuthal modulations}
+\label{sec:UU}
+
+\subsection{$F_{UU}^{\cos\phi}/F_{UU}$}
+
+\ratiofig{UU_cos}{$F_{UU}^{\cos\phi}/F_{UU}$.}{fig:UUc}
+
+\begin{itemize}
+    \item $\pi^0$: Stronger chiral-odd contribution at low $t'$ but larger chiral-even at larger $t'$. 
+    \item $\pi^+$: Dominated by pole for most of $t'$ range.
+\end{itemize}
+
+\clearpage
+
+\subsection{$F_{UU}^{\cos2\phi}/F_{UU}$}
+
+\ratiofig{UU_cos2}{$F_{UU}^{\cos2\phi}/F_{UU}$.}{fig:UUc2}
+
+\begin{itemize}
+    \item $\pi^0$: Negative ratio implies $|\cA|>|\cC|$. The magnitude grows with $Q^2$ with fixed $\langle p_\perp^2\rangle$ and shrinks with frozen $\delta$ (panel d). 
+    \item $\pi^+$: Zero crossing in ($t'$) in the two upper $x_B$ bins marks where the $\tilde H$-driven $G_{1,4}$ overtakes $F_{1,1}$, so the sign at large $x_B$ and $\tp$ measures the balance of $H$ and $\tilde H$. 
+\end{itemize}
+
+
+\clearpage
+%======================================================================
+\section{Beam-spin asymmetry}
+\label{sec:LU}
+
+\subsection{$F_{LU}^{\sin\phi}/F_{UU}$}
+
+\ratiofig{LU_sin}{$F_{LU}^{\sin\phi}/F_{UU}$.}{fig:LU}
+
+\begin{itemize}
+    \item $\pi^0$: Longitudinal amplitude is small, and both ingredients are mostly imaginary, so their relative phase is small. Large $t'$ dominated by chiral-even effect.
+    \item $\pi^+$: Large $t'$ dominated by chiral-even effect. Small $t'$ delicate balance of many amplitudes. 
+\end{itemize}
+
+
+\clearpage
+
+%======================================================================
+\section{Longitudinally polarized target}
+\label{sec:UL}
+
+\subsection{$F_{UL}^{\sin\phi}/F_{UU}$}
+
+\ratiofig{UL_sin}{$F_{UL}^{\sin\phi}/F_{UU}$.}{fig:ULs}
+
+\begin{itemize}
+    \item $\pi^0$: Chiral-odd + chiral-even GPD driven at small $t'$ and completely chiral-even driven at large $t'$. 
+    \item $\pi^+$: Several terms of similar size compete. Beyond $\tp\approx0.1$ model keeps falling, drive by chiral-even amplitudes.
+\end{itemize}
+
+
+
+\clearpage
+
+\subsection{$F_{UL}^{\sin2\phi}/F_{UU}$}
+
+\ratiofig{UL_sin2}{$F_{UL}^{\sin2\phi}/F_{UU}$.}{fig:ULs2}
+
+\begin{itemize}
+    \item $\pi^0$: Cancellation between many amplitudes. Very little $x_B$ dependence. 
+    \item $\pi^+$: strong negative $t'$ trend driven by chiral-even GPDs. Very little $x_B$ dependence. 
+\end{itemize}
+
+\clearpage
+%======================================================================
+\section{Double spin asymmetry}
+\label{sec:LL}
+
+\subsection{$F_{LL}/F_{UU}$}
+
+\ratiofig{LL}{$F_{LL}/F_{UU}$.}{fig:LL}
+
+$F_{LL}$ is purely transverse.
+
+\begin{itemize}
+    \item $\pi^0$: Close to one at $t_{\min}$ from $H_T$ dominance. Large chiral-even contribution at large $t'$. 
+    \item $\pi^+$: Rise with $x_B$ at fixed $Q^2$ is the fall of the pole-dominated $F_{UU,L}/F_{UU,T}$. $H_T$ dominance.
+\end{itemize}
+
+
+
+\clearpage
+
+\subsection{$F_{LL}^{\cos\phi}/F_{UU}$}
+
+\ratiofig{LL_cos}{$F_{LL}^{\cos\phi}/F_{UU}$.}{fig:LLc}
+
+\begin{itemize}
+    \item $\pi^0$: $E_T$ dominated at small $t'$.
+    \item $\pi^+$: At small-$t'$, pole-calibrated measurement of $H_T$. Large chiral-even contribution at large $t'$.  
+\end{itemize}
+
+
+\clearpage
+%======================================================================
+\section{Ratios in terms of helicity amplitudes}
+\label{sec:hel}
+
+Every structure function in \eq{sfs} is a bilinear in the helicity amplitudes $T^{0\lambda'}_{\mu\lambda}$ of $\gamma^*(\mu)+N(\lambda)\to\pi+N'(\lambda')$, where $\mu$ is the photon helicity and $\lambda$ and $\lambda'$ are the helicities of the incoming and outgoing nucleon. We follow the conventions of Diehl~\cite{Diehl:2007hd}, which are also those of the note Harut shared on helicity structure functions.
+
+\subsection{Conventions}
+
+At $\phi_h=0$ parity relates the amplitudes in pairs,
+\begin{equation}
+T^{0,-\lambda'}_{-\mu,-\lambda}=-(-1)^{\mu-(\lambda-\lambda')/2}\;T^{0\lambda'}_{\mu\lambda},
+\label{eq:hel_parity}
+\end{equation}
+so six of them are independent. We label them
+\begin{equation}
+a=T^{0+}_{+1,+},\qquad b=T^{0-}_{+1,+},\qquad c=T^{0+}_{+1,-},\qquad d=T^{0-}_{+1,-},\qquad l=T^{0+}_{0,+},\qquad f=T^{0-}_{0,+},
+\label{eq:hel_abcd}
+\end{equation}
+and the others follow as $T^{0+}_{-1,+}=d$, $T^{0-}_{-1,+}=-c$, $T^{0-}_{-1,-}=a$, $T^{0+}_{-1,-}=-b$, $T^{0-}_{0,-}=-l$ and $T^{0+}_{0,-}=f$. The amplitudes $a$, $d$ and $l$ conserve the nucleon helicity, $b$ and $f$ flip it, and $c$ flips it against the photon helicity, so that two units of helicity are transferred. Near $t_{\min}$, $a$, $d$ and $f$ vanish like $\sqrt{-t'}$ and $c$ like $-t'$, while $b$ and $l$ stay finite. The amplitudes are dimensionless. With
+\begin{equation}
+\mathcal N^2=\frac{16\pi^3(N_c^2-1)^2\,\alpha_{\rm em}\,\alpha_s^2(Q^2)\,f_\pi^2\,\xi^2}{N_c^4\,(1-\xi^2)\,Q^4},
+\label{eq:hel_N}
+\end{equation}
+they give the unpolarized structure functions as
+\begin{subequations}\label{eq:hel_norm}
+\begin{align}
+F_{UU,T}&=\frac{1}{2\mathcal N^2}\big(|a|^2+|b|^2+|c|^2+|d|^2\big),\\
+F_{UU,L}&=\frac{1}{\mathcal N^2}\big(|l|^2+|f|^2\big).
+\end{align}
+\end{subequations}
+
+In terms of the individual CFFs, the Trento-frame amplitudes at $\phi_h=0$ are
+\begin{subequations}\label{eq:hel_thy}
+\begin{align}
+a&=\frac{i}{\sqrt2}\,\mathcal N\Dp\left[\mathcal F_{1,1}+\mathcal G_{1,1}+\mathcal G_{1,4}-\mathcal F_{1,4}-\frac{2\mu_\pi(1+\xi)}{M}\bar{\mathcal E}_T+2(1-\xi)\tilde{\mathcal H}_L-\frac{2\xi^2}{1+\xi}\tilde{\mathcal E}_L+\frac{2\xi}{1+\xi}\cP\right],\\
+d&=\frac{i}{\sqrt2}\,\mathcal N\Dp\left[\mathcal F_{1,1}+\mathcal G_{1,1}-\mathcal G_{1,4}+\mathcal F_{1,4}-\frac{2\mu_\pi(1-\xi)}{M}\bar{\mathcal E}_T-2(1-\xi)\tilde{\mathcal H}_L+\frac{2\xi^2}{1+\xi}\tilde{\mathcal E}_L-\frac{2\xi}{1+\xi}\cP\right],\\
+b&=-i\sqrt2\,\mathcal NM\left\{\mathcal F_{1,2}+\mathcal G_{1,2}+\frac{4\mu_\pi}{M}\left[(1-\xi^2)\mathcal H_T-\xi^2\bar{\mathcal E}_T\right]+\frac{\xi\Dp^2}{2(1+\xi)M^2}\tilde{\mathcal E}_L-\frac{\Dp^2}{2(1+\xi)M^2}\cP\right\},\\
+c&=\frac{i\,\mathcal N\Dp^2}{\sqrt2\,(1+\xi)M}\Big(\cP-\xi\,\tilde{\mathcal E}_L\Big),\\
+l&=-i\,\mathcal N\frac{Q}{\xi}\left[(1-\xi^2)\tilde{\mathcal H}_L-\xi^2\tilde{\mathcal E}_L+\frac{2\xi^2\Dp^2}{(1+\xi)Q^2}\left(\mathcal G_{1,4}-\mathcal F_{1,4}-\frac{2\mu_\pi\xi}{M}\bar{\mathcal E}_T\right)-\xi^2\left(1-\frac{4\xi\Dp^2}{(1+\xi)Q^2}\right)\cP\right],\\
+f&=\frac{i\,\mathcal NQ\Dp}{2M}\left\{\tilde{\mathcal E}_L+\frac{4\xi M^2}{(1+\xi)Q^2}\Big(\mathcal F_{1,2}+\mathcal G_{1,2}\Big)+\frac{16\xi\mu_\pi M}{(1+\xi)Q^2}\Big[(1-\xi^2)\mathcal H_T-\xi^2\bar{\mathcal E}_T\Big]+\left(1-\frac{4\xi\Dp^2}{(1+\xi)Q^2}\right)\cP\right\}.
+\end{align}
+\end{subequations}
+ The overall phase is a convention of the factorized amplitude. Our $T$ is $-i$ times the amplitudes of Ref.~\cite{Goloskokov:2009ia}, so the pion pole, which is real there, is imaginary here. Because of the factors $\pm i$ in Eqs.~(\ref{eq:hel_thy}), the real part of each plotted amplitude gives the imaginary part of its CFF combination and vice versa.
+
+With the photon-referenced target spin of the previous sections, the structure functions measured with a longitudinally polarized target are
+\begin{subequations}\label{eq:hel_sf}
+\begin{align}
+F_{LL}&=\frac{1}{2\mathcal N^2}\big(|a|^2+|b|^2-|c|^2-|d|^2\big),\\
+F_{UU}^{\cos2\phi}&=-\frac{1}{\mathcal N^2}\,{\rm Re}\big(da^*-cb^*\big),\\
+F_{UL}^{\sin2\phi}&=-\frac{1}{\mathcal N^2}\,{\rm Im}\big(da^*-cb^*\big),\\
+F_{UU}^{\cos\phi}&=-\frac{1}{\sqrt2\,\mathcal N^2}\,{\rm Re}\big(la^*+fb^*+fc^*-ld^*\big),\\
+F_{LU}^{\sin\phi}&=-\frac{1}{\sqrt2\,\mathcal N^2}\,{\rm Im}\big(la^*+fb^*+fc^*-ld^*\big),\\
+F_{UL}^{\sin\phi}&=-\frac{1}{\sqrt2\,\mathcal N^2}\,{\rm Im}\big(la^*+fb^*-fc^*+ld^*\big),\\
+F_{LL}^{\cos\phi}&=-\frac{1}{\sqrt2\,\mathcal N^2}\,{\rm Re}\big(la^*+fb^*-fc^*+ld^*\big).
+\end{align}
+\end{subequations}
+\ref{fig:prod_LLc} show each product at the four RGC bin means, with central values of the baseline. Each term is divided by the full denominator, which is not split, so the terms add up to the ratios of the previous sections (black). Two pairs differ only in the sign of the $fc^*$ and $ld^*$ terms, $F_{UU}^{\cos\phi}$ and $F_{LL}^{\cos\phi}$ (real parts), and $F_{LU}^{\sin\phi}$ and $F_{UL}^{\sin\phi}$ (imaginary parts).
+
+\subsection{The denominator}
+
+\prodfig{den}{Fractions of $F_{UU}$ carried by $|a|^2/2$, $|b|^2/2$, $|c|^2/2$, $|d|^2/2$, $\epsilon|l|^2$ and $\epsilon|f|^2$.}{fig:prod_den}
+
+\clearpage
+
+\subsection{$F_{UU,L}/F_{UU,T}$}
+
+\prodfig{LoT}{$F_{UU,L}/F_{UU,T}$ split into $|l|^2$ and $|f|^2$, here over $\frac12(|a|^2+|b|^2+|c|^2+|d|^2)$.}{fig:prod_LoT}
+
+
+\clearpage
+
+\subsection{$F_{UU}^{\cos\phi}/F_{UU}$}
+
+\prodfig{UU_cos}{$F_{UU}^{\cos\phi}/F_{UU}$.}{fig:prod_UUc}
+
+\clearpage
+
+\subsection{$F_{UU}^{\cos2\phi}/F_{UU}$}
+
+\prodfig{UU_cos2}{$F_{UU}^{\cos2\phi}/F_{UU}$.}{fig:prod_UUc2}
+
+\clearpage
+
+\subsection{$F_{LU}^{\sin\phi}/F_{UU}$}
+
+\prodfig{LU_sin}{$F_{LU}^{\sin\phi}/F_{UU}$.}{fig:prod_LU}
+
+\clearpage
+
+\subsection{$F_{UL}^{\sin\phi}/F_{UU}$}
+
+\prodfig{UL_sin}{$F_{UL}^{\sin\phi}/F_{UU}$.}{fig:prod_ULs}
+
+\clearpage
+
+\subsection{$F_{UL}^{\sin2\phi}/F_{UU}$}
+
+\prodfig{UL_sin2}{$F_{UL}^{\sin2\phi}/F_{UU}$.}{fig:prod_ULs2}
+
+\clearpage
+
+\subsection{$F_{LL}/F_{UU}$}
+
+\prodfig{LL}{$F_{LL}/F_{UU}$.}{fig:prod_LL}
+
+\clearpage
+
+\subsection{$F_{LL}^{\cos\phi}/F_{UU}$}
+
+\prodfig{LL_cos}{$F_{LL}^{\cos\phi}/F_{UU}$.}{fig:prod_LLc}
+
+\clearpage
+
+
+\begin{thebibliography}{99}
+\bibitem{Bacchetta:2004jz} A.~Bacchetta, U.~D'Alesio, M.~Diehl and C.~A.~Miller, Phys.\ Rev.\ D \textbf{70}, 117504 (2004), hep-ph/0410050.
+\bibitem{Diehl:2005pc} M.~Diehl and S.~Sapeta, Eur.\ Phys.\ J.\ C \textbf{41}, 515 (2005), hep-ph/0503023.
+\bibitem{Bhattacharya:2023hbq} S.~Bhattacharya, D.~Zheng and J.~Zhou, arXiv:2312.01309.
+\bibitem{Goloskokov:2009ia} S.~V.~Goloskokov and P.~Kroll, Eur.\ Phys.\ J.\ C \textbf{65}, 137 (2010), arXiv:0906.0460.
+\bibitem{Goloskokov:2011rd} S.~V.~Goloskokov and P.~Kroll, Eur.\ Phys.\ J.\ A \textbf{47}, 112 (2011), arXiv:1106.4897.
+\bibitem{Diehl:2013xca} M.~Diehl and P.~Kroll, Eur.\ Phys.\ J.\ C \textbf{73}, 2397 (2013), arXiv:1302.4604.
+\bibitem{Hatta:2012cs} Y.~Hatta and S.~Yoshida, JHEP \textbf{10}, 080 (2012), arXiv:1207.5332.
+\bibitem{Gamberg:2022kdb} L.~Gamberg, M.~Malda, J.~A.~Miller, D.~Pitonyak, A.~Prokudin and N.~Sato, Phys.\ Rev.\ D \textbf{106}, 034014 (2022), arXiv:2205.00107.
+\bibitem{FQCD-pionDA} Pion distribution amplitudes from functional QCD, arXiv:2607.04871.
+\bibitem{Braun:1989iv} V.~M.~Braun and I.~E.~Filyanov, Z.\ Phys.\ C \textbf{48}, 239 (1990).
+\bibitem{Ball:2006wn} P.~Ball, V.~M.~Braun and A.~Lenz, JHEP \textbf{05}, 004 (2006), hep-ph/0603063.
+\bibitem{FlavourLatticeAveragingGroupFLAG:2024oxs} Y.~Aoki \emph{et al.} (FLAG), arXiv:2411.04268.
+\bibitem{CLAS:2014jpc} I.~Bedlinskiy \emph{et al.} (CLAS), Phys.\ Rev.\ C \textbf{90}, 025205 (2014).
+\bibitem{CLAS-Kim-pi0} A.~Kim \emph{et al.} (CLAS), Phys.\ Lett.\ B \textbf{768}, 168 (2017), arXiv:1511.03338.
+\bibitem{Diehl:2007hd} M.~Diehl, JHEP \textbf{09}, 064 (2007), arXiv:0704.1565.
+\end{thebibliography}
+
+\end{document}

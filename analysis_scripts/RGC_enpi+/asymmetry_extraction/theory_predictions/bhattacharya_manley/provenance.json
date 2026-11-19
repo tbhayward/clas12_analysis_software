@@ -1,0 +1,30 @@
+{
+  "provided_by": "Shohini Bhattacharya and Brandon Manley",
+  "received_date": "2026-11-19",
+  "csv_source": "/Users/tbhayward/Desktop/pip_long_asymmetries_pred.csv",
+  "csv_sha256": "14622856098bf7acbf738fa9a8df366f3fd1db824ee3d3794bb2af9fc4cae609",
+  "source_document": "predictions.tex from CLAS12_exclusive_pi__longitudinally_polarized_target_measurements.zip",
+  "predictions_tex_sha256": "5d2c6b41261ba7dda6a7b6b11dfb2bb9ca98d6fd9a4a589c7d1ede75cccad810",
+  "ratios": "F_XY/(F_UU,T + epsilon F_UU,L), depolarization factors divided out",
+  "angles": "Trento",
+  "target_axis": "virtual photon",
+  "errors": "_lo = central - lower bound; _hi = upper bound - central, both nonnegative; supplied 1-sigma fit uncertainty",
+  "kinematics": [
+    {
+      "xB": 0.2,
+      "Q2_gev2": 2.2
+    },
+    {
+      "xB": 0.3,
+      "Q2_gev2": 2.6
+    },
+    {
+      "xB": 0.4,
+      "Q2_gev2": 3.1
+    },
+    {
+      "xB": 0.5,
+      "Q2_gev2": 4.3
+    }
+  ]
+}
