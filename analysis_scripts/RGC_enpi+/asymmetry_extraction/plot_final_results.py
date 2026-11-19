@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Regenerate the four final-result figures from the finished extraction CSV."""
+"""Regenerate the individual and combined final-result figures from the finished extraction CSV."""
 import argparse
 from pathlib import Path
 import matplotlib
@@ -10,8 +10,11 @@ import numpy as np
 import pandas as pd
 
 HERE = Path(__file__).resolve().parent
-OBSERVABLES = ('lu1', 'ul1', 'ul2', 'll0', 'll1')
-LABELS = (r'$F_{LU}^{\sin\phi}/F_{UU}$',
+OBSERVABLES = ('u1', 'u2', 'lu1', 'ul1', 'ul2', 'll0', 'll1')
+PANEL_INDICES = (0, 1, 3, 4, 5, 6, 7)
+LABELS = (r'$F_{UU}^{\cos\phi}/F_{UU}$',
+          r'$F_{UU}^{\cos2\phi}/F_{UU}$',
+          r'$F_{LU}^{\sin\phi}/F_{UU}$',
           r'$F_{UL,\mathrm{lab}}^{\sin\phi}/F_{UU}$',
           r'$F_{UL,\mathrm{lab}}^{\sin2\phi}/F_{UU}$',
           r'$F_{LL,\mathrm{lab}}/F_{UU}$',
@@ -40,9 +43,9 @@ def plot_results(frame, output_dir):
         g = frame[frame.x_index == xi].sort_values('t_index')
         if g.t_index.tolist() != list(range(6)):
             raise ValueError(f'Incomplete t-prime binning in xB group {xi}')
-        fig, axes = plt.subplots(2, 3, figsize=(12, 7))
+        fig, axes = plt.subplots(3, 3, figsize=(12, 10))
         axes = axes.ravel()
-        for panel, (ax, obs, label) in enumerate(zip(axes, OBSERVABLES, LABELS)):
+        for panel, (ax, obs, label) in enumerate(zip(axes[list(PANEL_INDICES)], OBSERVABLES, LABELS)):
             syst = g[obs+'_point_to_point_systematic'].to_numpy()
             stat = g[obs+'_stat'].to_numpy()
             if (syst < 0).any() or (stat <= 0).any():
@@ -55,12 +58,13 @@ def plot_results(frame, output_dir):
                         fmt='o', color='black', ecolor='black', markersize=4,
                         capsize=3, linewidth=1.1, zorder=3)
             ax.set_xlim(0, 1.30)
-            ax.set_ylim((-.4, .4) if panel < 3 else (-1, 1))
-            ax.set_yticks(np.linspace(-.4, .4, 9) if panel < 3 else np.linspace(-1, 1, 11))
+            ax.set_ylim((-.4, .4) if obs in ('lu1', 'ul1', 'ul2') else (-1, 1))
+            ax.set_yticks(np.linspace(-.4, .4, 9) if obs in ('lu1', 'ul1', 'ul2') else np.linspace(-1, 1, 11))
             ax.set_xlabel(r'$-t^\prime$ (GeV$^2$)')
             ax.set_ylabel(label)
             ax.grid(alpha=.18, zorder=0)
-        axes[5].axis('off')
+        axes[2].axis('off')
+        axes[8].axis('off')
         fig.suptitle(rf'${XB_EDGES[xi]:.2f}<x_B<{XB_EDGES[xi+1]:.2f}$')
         fig.tight_layout(rect=(0, 0, 1, .96))
         path = output_dir/f'final_results_xB_bin_{xi+1}.png'
@@ -68,10 +72,10 @@ def plot_results(frame, output_dir):
         paths.append(path)
         plt.close(fig)
     # Overlay the four xB ranges using the Kroll comparison colors and markers.
-    fig, axes = plt.subplots(2, 3, figsize=(12, 7))
+    fig, axes = plt.subplots(3, 3, figsize=(12, 10))
     axes = axes.ravel()
     handles = []
-    for panel, (ax, obs, label) in enumerate(zip(axes, OBSERVABLES, LABELS)):
+    for panel, (ax, obs, label) in enumerate(zip(axes[list(PANEL_INDICES)], OBSERVABLES, LABELS)):
         for xi, (color, marker) in enumerate(zip(XB_COLORS, XB_MARKERS)):
             g = frame[frame.x_index == xi].sort_values('t_index')
             if xi == 1:
@@ -87,16 +91,17 @@ def plot_results(frame, output_dir):
                 handles.append(points)
         ax.axhline(0, color='0.45', linewidth=.8, zorder=2)
         ax.set_xlim(0, 1.30)
-        ax.set_ylim((-.4, .4) if panel < 3 else (-1, 1))
-        ax.set_yticks(np.linspace(-.4, .4, 9) if panel < 3 else np.linspace(-1, 1, 11))
+        ax.set_ylim((-.4, .4) if obs in ('lu1', 'ul1', 'ul2') else (-1, 1))
+        ax.set_yticks(np.linspace(-.4, .4, 9) if obs in ('lu1', 'ul1', 'ul2') else np.linspace(-1, 1, 11))
         ax.set_xlabel(r'$-t^\prime$ (GeV$^2$)')
         ax.set_ylabel(label)
         ax.grid(alpha=.18, zorder=0)
-    axes[5].axis('off')
+    axes[2].axis('off')
+    axes[8].axis('off')
     handles.append(Patch(facecolor='0.65', alpha=.35, edgecolor='none',
                          label='Systematic uncertainties:\na representative example\n'
                                r'($0.25<x_B<0.35$)'))
-    axes[5].legend(handles=handles, loc='center', frameon=False, fontsize=10)
+    axes[8].legend(handles=handles, loc='center', frameon=False, fontsize=10)
     fig.tight_layout()
     path = output_dir/'final_results_all_xB.png'
     fig.savefig(path, dpi=200)
