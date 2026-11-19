@@ -7,14 +7,14 @@ Run this *after* extract_structure_function_ratios.py.  By default the script re
 
 and writes PNG files to
 
-    output/kroll_comparisons/                         (Kroll: five PNGs)
+    output/kroll_comparisons/                         (Goloskokov–Kroll: five PNGs)
     output/kroll_comparisons/bhattacharya_manley/     (new theory: five PNGs)
     output/kroll_comparisons/both_theories/          (individual xB: four PNGs)
 
-The Kroll predictions supplied in October 2026 are hard-coded below.  They are
+The Goloskokov–Kroll predictions supplied in October 2026 are hard-coded below.  They are
 virtual-photon-frame quantities.  The RGC UL/LL measurements remain in the lab-
 frame convention used by the analysis; no frame conversion is applied here.
-The supplied Bhattacharya--Manley CSV contains the same five ratios with
+The supplied Manley--Bhattacharya CSV contains the same five ratios with
 asymmetric one-sigma fit-error lengths. These are plotted without additional
 sign changes or depolarization factors; the bands are central-lo, central+hi.
 """
@@ -39,7 +39,7 @@ DEFAULT_INPUT_CSV = Path("output/asymmetry_extraction/nominal/tables/structure_f
 DEFAULT_OUTPUT_DIR = Path("output/kroll_comparisons")
 DEFAULT_PREDICTION_CSV = (Path(__file__).resolve().parent / "theory_predictions"
                           / "bhattacharya_manley" / "pip_long_asymmetries_pred.csv")
-NEW_THEORY_LABEL = "Bhattacharya–Manley"
+NEW_THEORY_LABEL = "Manley–Bhattacharya"
 THEORY_XB = (0.2, 0.3, 0.4, 0.5)
 NEW_THEORY_COLUMNS = {
     "lu1": "A_LU_sinphi", "ul1": "A_UL_sinphi", "ul2": "A_UL_sin2phi",
@@ -73,7 +73,7 @@ OBSERVABLE_LABELS = {
     "ll1": r"$F_{LL,\mathrm{lab}}^{\cos\phi}/F_{UU}$",
 }
 
-# Kroll labels deliberately omit "lab": these are virtual-photon-frame predictions.
+# Goloskokov–Kroll labels deliberately omit "lab": these are virtual-photon-frame predictions.
 KROLL_LABELS = {
     "lu1": r"$F_{LU}^{\sin\phi}/F_{UU}$",
     "ul1": r"$F_{UL}^{\sin\phi}/F_{UU}$",
@@ -391,12 +391,12 @@ def info_panel(ax: plt.Axes, x_index: int | None = None) -> None:
                mew=1.3, ms=6.5, label="RGC measurement (stat.)"),
         Patch(facecolor="0.45", edgecolor="none", alpha=0.20,
               label="Point-to-point syst."),
-        Line2D([], [], color="black", lw=2.0, label="Kroll prediction"),
+        Line2D([], [], color="black", lw=2.0, label="Goloskokov–Kroll prediction"),
     ]
     ax.legend(handles=handles, loc="upper left", frameon=False, handlelength=2.5)
 
     text = (
-        "Kroll curves: virtual-photon frame\n"
+        "Goloskokov–Kroll curves: virtual-photon frame\n"
         "RGC UL/LL points: lab-frame definition\n"
     )
     if x_index is not None:
@@ -492,7 +492,7 @@ def plot_all_xb_canvas(
         xb_handles.append(
             Line2D([], [], color=color, lw=2.0, marker=marker, mfc="white",
                    mec=color, mew=1.2, ms=6,
-                   label=rf"${xlo:.2f}<x_B<{xhi:.2f}$; Kroll $x_B={(0.2,0.3,0.4,0.5)[x_index]:.1f}$")
+                   label=rf"${xlo:.2f}<x_B<{xhi:.2f}$; Goloskokov–Kroll $x_B={(0.2,0.3,0.4,0.5)[x_index]:.1f}$")
         )
     # endfor
     style_handles = [
@@ -500,7 +500,7 @@ def plot_all_xb_canvas(
                mew=1.3, ms=6.5, label="RGC point: statistical error bar"),
         Patch(facecolor="0.45", edgecolor="none", alpha=0.20,
               label="RGC point-to-point systematic"),
-        Line2D([], [], color="black", lw=2.0, label="Solid line: Kroll prediction"),
+        Line2D([], [], color="black", lw=2.0, label="Solid line: Goloskokov–Kroll prediction"),
     ]
     legend1 = legend_ax.legend(handles=xb_handles, loc="upper left", frameon=False,
                                title=r"$x_B$ groups", title_fontsize=11)
@@ -508,11 +508,11 @@ def plot_all_xb_canvas(
     legend_ax.legend(handles=style_handles, loc="lower left", frameon=False)
     legend_ax.text(
         0.02, 0.46,
-        "Kroll: virtual-photon frame\nRGC UL/LL: lab-frame definition",
+        "Goloskokov–Kroll: virtual-photon frame\nRGC UL/LL: lab-frame definition",
         transform=legend_ax.transAxes, va="top", fontsize=10.3, linespacing=1.4,
     )
 
-    fig.suptitle(r"CLAS12 $ep \rightarrow e(n)\pi^+$ structure-function ratios and Kroll predictions",
+    fig.suptitle(r"CLAS12 $ep \rightarrow e(n)\pi^+$ structure-function ratios and Goloskokov–Kroll predictions",
                  y=0.985, fontsize=15)
     fig.subplots_adjust(left=0.085, right=0.985, bottom=0.09, top=0.91,
                         wspace=0.24, hspace=0.20)
@@ -569,7 +569,7 @@ def plot_new_theory_canvas(measurements, predictions, output_dir, x_index=None,
               label=NEW_THEORY_LABEL + r" $1\sigma$ fit band"),
     ]
     if combined:
-        styles.insert(2, Line2D([], [], color="black", lw=2.0, label="Kroll prediction"))
+        styles.insert(2, Line2D([], [], color="black", lw=2.0, label="Goloskokov–Kroll prediction"))
     if all_xb:
         handles = [Line2D([], [], color=color, lw=2.0, marker=marker, mfc="white",
                            mec=color, mew=1.2, ms=6,
@@ -591,7 +591,7 @@ def plot_new_theory_canvas(measurements, predictions, output_dir, x_index=None,
                 + rf"{NEW_THEORY_LABEL}: $x_B={THEORY_XB[x_index]:.1f}$, $Q^2={q2:.1f}$ GeV$^2$")
         if combined:
             kp = kroll_predictions.loc[np.isclose(kroll_predictions["xB"], THEORY_XB[x_index])]
-            text += "\n" + rf"Kroll: $x_B={THEORY_XB[x_index]:.1f}$, $Q^2={float(kp['Q2'].iloc[0]):.2f}$ GeV$^2$"
+            text += "\n" + rf"Goloskokov–Kroll: $x_B={THEORY_XB[x_index]:.1f}$, $Q^2={float(kp['Q2'].iloc[0]):.2f}$ GeV$^2$"
         text += "\nTheory: virtual-photon frame\nRGC UL/LL: lab-frame definition"
         legend_ax.text(0.02, 0.48, text, transform=legend_ax.transAxes, va="top", ha="left",
                        fontsize=9.2, linespacing=1.45)
@@ -630,7 +630,7 @@ def parse_args() -> argparse.Namespace:
     )
     parser.add_argument(
         "--prediction-csv", type=Path, default=DEFAULT_PREDICTION_CSV,
-        help="Supplied Bhattacharya–Manley ratios and asymmetric one-sigma error lengths.",
+        help="Supplied Manley–Bhattacharya ratios and asymmetric one-sigma error lengths.",
     )
     return parser.parse_args()
 
@@ -665,7 +665,7 @@ def main() -> None:
                                              kroll_predictions=predictions, preliminary=not args.final))
     outputs.append(plot_new_theory_canvas(measurements, new_predictions, new_dir, preliminary=not args.final))
 
-    print("Theory comparison plots complete (5 Kroll, 5 Bhattacharya–Manley, 4 overlays).")
+    print("Theory comparison plots complete (5 Goloskokov–Kroll, 5 Manley–Bhattacharya, 4 overlays).")
     manifest = {
         "input_csv": str(input_csv),
         "input_csv_sha256": hashlib.sha256(input_csv.read_bytes()).hexdigest(),
