@@ -5,6 +5,7 @@ from pathlib import Path
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
+from matplotlib.patches import Patch
 import numpy as np
 import pandas as pd
 
@@ -55,7 +56,7 @@ def plot_results(frame, output_dir):
                         capsize=3, linewidth=1.1, zorder=3)
             ax.set_xlim(0, 1.30)
             ax.set_ylim((-.4, .4) if panel < 3 else (-1, 1))
-            ax.set_yticks(np.linspace(-.4, .4, 9) if panel < 3 else (-1, -.5, 0, .5, 1))
+            ax.set_yticks(np.linspace(-.4, .4, 9) if panel < 3 else np.linspace(-1, 1, 11))
             ax.set_xlabel(r'$-t^\prime$ (GeV$^2$)')
             ax.set_ylabel(label)
             ax.grid(alpha=.18, zorder=0)
@@ -73,9 +74,10 @@ def plot_results(frame, output_dir):
     for panel, (ax, obs, label) in enumerate(zip(axes, OBSERVABLES, LABELS)):
         for xi, (color, marker) in enumerate(zip(XB_COLORS, XB_MARKERS)):
             g = frame[frame.x_index == xi].sort_values('t_index')
-            ax.bar(TP_EDGES[:-1], g[obs+'_point_to_point_systematic'],
-                   width=np.diff(TP_EDGES), align='edge', bottom=0,
-                   color=color, alpha=.15, linewidth=0, zorder=1)
+            if xi == 1:
+                ax.bar(TP_EDGES[:-1], g[obs+'_point_to_point_systematic'],
+                       width=np.diff(TP_EDGES), align='edge', bottom=0,
+                       color=color, alpha=.25, linewidth=0, zorder=1)
             points = ax.errorbar(
                 g.mean_minus_tprime_gev2, g[obs], yerr=g[obs+'_stat'],
                 fmt=marker, color=color, ecolor=color, markersize=4,
@@ -86,12 +88,15 @@ def plot_results(frame, output_dir):
         ax.axhline(0, color='0.45', linewidth=.8, zorder=2)
         ax.set_xlim(0, 1.30)
         ax.set_ylim((-.4, .4) if panel < 3 else (-1, 1))
-        ax.set_yticks(np.linspace(-.4, .4, 9) if panel < 3 else (-1, -.5, 0, .5, 1))
+        ax.set_yticks(np.linspace(-.4, .4, 9) if panel < 3 else np.linspace(-1, 1, 11))
         ax.set_xlabel(r'$-t^\prime$ (GeV$^2$)')
         ax.set_ylabel(label)
         ax.grid(alpha=.18, zorder=0)
     axes[5].axis('off')
-    axes[5].legend(handles=handles, loc='center', frameon=False, fontsize=12)
+    handles.append(Patch(facecolor=XB_COLORS[1], alpha=.25, edgecolor='none',
+                         label='Systematic uncertainties:\na representative example\n'
+                               r'($0.25<x_B<0.35$)'))
+    axes[5].legend(handles=handles, loc='center', frameon=False, fontsize=10)
     fig.tight_layout()
     path = output_dir/'final_results_all_xB.png'
     fig.savefig(path, dpi=200)
