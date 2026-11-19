@@ -77,7 +77,7 @@ def plot_results(frame, output_dir):
             if xi == 1:
                 ax.bar(TP_EDGES[:-1], g[obs+'_point_to_point_systematic'],
                        width=np.diff(TP_EDGES), align='edge', bottom=0,
-                       color=color, alpha=.25, linewidth=0, zorder=1)
+                       color='0.65', alpha=.35, linewidth=0, zorder=1)
             points = ax.errorbar(
                 g.mean_minus_tprime_gev2, g[obs], yerr=g[obs+'_stat'],
                 fmt=marker, color=color, ecolor=color, markersize=4,
@@ -93,7 +93,7 @@ def plot_results(frame, output_dir):
         ax.set_ylabel(label)
         ax.grid(alpha=.18, zorder=0)
     axes[5].axis('off')
-    handles.append(Patch(facecolor=XB_COLORS[1], alpha=.25, edgecolor='none',
+    handles.append(Patch(facecolor='0.65', alpha=.35, edgecolor='none',
                          label='Systematic uncertainties:\na representative example\n'
                                r'($0.25<x_B<0.35$)'))
     axes[5].legend(handles=handles, loc='center', frameon=False, fontsize=10)
