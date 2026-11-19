@@ -56,15 +56,13 @@ def plot_results(frame, output_dir):
             ax.set_yticks((-.5, -.25, 0, .25, .5) if panel < 3 else (-1, -.5, 0, .5, 1))
             ax.set_xlabel(r'$-t^\prime$ (GeV$^2$)')
             ax.set_ylabel(label)
-            ax.text(.04, .92, f'({chr(97+panel)})', transform=ax.transAxes)
             ax.grid(alpha=.18, zorder=0)
         axes[5].axis('off')
         fig.suptitle(rf'${XB_EDGES[xi]:.2f}<x_B<{XB_EDGES[xi+1]:.2f}$')
         fig.tight_layout(rect=(0, 0, 1, .96))
-        for ext in ('pdf', 'png'):
-            path = output_dir/f'final_results_xB_bin_{xi+1}.{ext}'
-            fig.savefig(path, dpi=200)
-            paths.append(path)
+        path = output_dir/f'final_results_xB_bin_{xi+1}.png'
+        fig.savefig(path, dpi=200)
+        paths.append(path)
         plt.close(fig)
     return paths
 
