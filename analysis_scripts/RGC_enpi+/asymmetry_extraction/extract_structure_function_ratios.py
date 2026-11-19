@@ -7733,7 +7733,7 @@ def calculate_migration_systematics(
     Returns
     -------
     migrated
-        Migration-smeared values for the five published polarized ratios.
+        Migration-smeared values for all seven fitted ratios.
     assigned
         1.5 * abs(migrated - nominal), the established conservative systematic.
     matrix_normalized
@@ -7769,7 +7769,7 @@ def calculate_migration_systematics(
 
     migrated: dict[str, np.ndarray] = {}
     assigned: dict[str, np.ndarray] = {}
-    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+    for parameter in PHYSICS_PARAMETERS:
         values = pd.to_numeric(ordered[parameter], errors="coerce").to_numpy(dtype=float)
         if not np.all(np.isfinite(values)):
             raise ValueError(
@@ -7815,7 +7815,7 @@ def write_migration_systematic_products(
     plot_paths: list[str] = []
     x = ordered["bin_number"].to_numpy(dtype=float)
 
-    for parameter in PUBLISHED_SYSTEMATIC_PARAMETERS:
+    for parameter in PHYSICS_PARAMETERS:
         nominal_values = ordered[parameter].to_numpy(dtype=float)
         smeared = migrated[parameter]
         signed_base_shift = smeared - nominal_values
@@ -7883,7 +7883,7 @@ def write_migration_systematic_products(
     frame.to_csv(csv_path, index=False)
     write_json(json_path, {
         "schema_version": 1,
-        "published_parameters_only": list(PUBLISHED_SYSTEMATIC_PARAMETERS),
+        "parameters": list(PHYSICS_PARAMETERS),
         "matrix_definition": (
             "Published row i gives generated-bin composition j of reconstructed bin i. "
             "Rows are renormalized before application because the published entries are "
@@ -7919,15 +7919,12 @@ def attach_point_to_point_systematics(
 ) -> pd.DataFrame:
     """Attach source-by-source and final point-to-point uncertainties.
 
-    For the five published polarized observables, the assigned total is
+    For all seven fitted ratios, the assigned total is
 
-        delta_ptp = sqrt(delta_rad^2 + delta_axis^2
-                         + delta_ch^2 + delta_migration^2).
+        delta_ptp = sqrt(delta_rad^2 + delta_ch^2 + delta_migration^2).
 
-    The target-axis study envelope and momentum-correction on/off difference are retained in diagnostic
-    columns but are deliberately excluded from the assigned total.  The two UU
-    modulations are fitted nuisance quantities and receive no migration term;
-    they are excluded from publication-level systematic summaries.
+    The target-axis study envelope and momentum-correction on/off difference
+    remain diagnostic columns and are excluded from the assigned total.
     """
     output = nominal.copy().sort_values("bin_number").reset_index(drop=True)
     _, migration_assigned, _ = calculate_migration_systematics(output)
@@ -7975,11 +7972,7 @@ def attach_point_to_point_systematics(
             channel = np.sqrt(0.5 * (tight_shift**2 + loose_shift**2))
         # endif
 
-        migration = (
-            migration_assigned[parameter]
-            if parameter in PUBLISHED_SYSTEMATIC_PARAMETERS
-            else np.zeros_like(nominal_values)
-        )
+        migration = migration_assigned[parameter]
         total = np.sqrt(radiation**2 + channel**2 + migration**2)
 
         output[f"{parameter}_radiation_systematic"] = radiation
@@ -14302,12 +14295,48 @@ def write_period_all_scale_normalization_study(
     }
 
 
+def refresh_migration_systematics(root: Path) -> int:
+    """Refresh migration and totals from saved results without loading events or fitting."""
+    nominal_dir = root / "nominal"
+    csv_path = nominal_dir / "tables/structure_function_ratios.csv"
+    frame = pd.read_csv(csv_path).sort_values("bin_number").reset_index(drop=True)
+    # Require existing source uncertainties: never silently replace missing studies by zero.
+    required = [f"{p}_{source}_systematic" for p in PHYSICS_PARAMETERS
+                for source in ("radiation", "channel_selection")]
+    missing = [name for name in required if name not in frame]
+    if missing:
+        raise ValueError(f"Saved nominal results lack required systematic columns: {missing}")
+    _, assigned, _ = calculate_migration_systematics(frame)
+    for parameter in PHYSICS_PARAMETERS:
+        migration = assigned[parameter]
+        total = np.sqrt(frame[f"{parameter}_radiation_systematic"].to_numpy() ** 2
+                        + frame[f"{parameter}_channel_selection_systematic"].to_numpy() ** 2
+                        + migration ** 2)
+        frame[f"{parameter}_bin_migration_systematic"] = migration
+        frame[f"{parameter}_point_to_point_systematic"] = total
+        stat = frame[f"{parameter}_stat"].to_numpy(dtype=float)
+        frame[f"{parameter}_point_to_point_systematic_to_stat"] = np.divide(
+            total, stat, out=np.full_like(total, np.nan), where=stat > 0)
+    diagnostics = root / "diagnostics"
+    write_migration_systematic_products(frame, diagnostics / "bin_migration")
+    frame.to_csv(csv_path, index=False)
+    frame.to_csv(diagnostics / "point_to_point_systematics.csv", index=False)
+    write_latex_table(frame, nominal_dir / "latex/structure_function_ratios.tex",
+                      include_target_axis_uncertainty=False, sample_variant="nominal")
+    print(f"Updated migration uncertainties and totals for all seven ratios: {csv_path}", flush=True)
+    return 0
+
+
 def build_argument_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         description=(
             "Fit nominal and systematic-variation RGC exclusive-pi+ "
             "structure-function ratios."
         )
+    )
+    parser.add_argument(
+        "--refresh-migration-only", action="store_true",
+        help="Update migration uncertainties and totals from saved nominal CSV; do not rerun fits.",
     )
     parser.add_argument("--tree", default=DEFAULT_TREE_NAME)
     parser.add_argument("--input", action="append", default=[], type=parse_input_override, metavar="PERIOD=FILE")
@@ -14544,6 +14573,8 @@ def build_argument_parser() -> argparse.ArgumentParser:
 
 def main() -> int:
     args = build_argument_parser().parse_args()
+    if args.refresh_migration_only:
+        return refresh_migration_systematics(args.output_dir.expanduser().resolve())
     worker_cap = 10 if args.period_stability_only else 8
     workers = max(
         1,
