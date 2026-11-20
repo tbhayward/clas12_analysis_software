@@ -1,8 +1,8 @@
 {
-  "provided_by": "Shohini Bhattacharya and Brandon Manley",
+  "provided_by": "Brandon Manley and Shohini Bhattacharya",
   "received_date": "2026-11-19",
   "csv_source": "/Users/tbhayward/Desktop/pip_long_asymmetries_pred.csv",
-  "csv_sha256": "14622856098bf7acbf738fa9a8df366f3fd1db824ee3d3794bb2af9fc4cae609",
+  "csv_sha256": "9e78d042d95e0d931481cef92fab4a3c3a4cbe5ede3b155255ddb7d4d0be68be",
   "source_document": "predictions.tex from CLAS12_exclusive_pi__longitudinally_polarized_target_measurements.zip",
   "predictions_tex_sha256": "5d2c6b41261ba7dda6a7b6b11dfb2bb9ca98d6fd9a4a589c7d1ede75cccad810",
   "ratios": "F_XY/(F_UU,T + epsilon F_UU,L), depolarization factors divided out",
@@ -26,5 +26,24 @@
       "xB": 0.5,
       "Q2_gev2": 4.3
     }
-  ]
+  ],
+  "csv_files": {
+    "pip": {
+      "source": "/Users/tbhayward/Desktop/pip_long_asymmetries_pred.csv",
+      "sha256": "9e78d042d95e0d931481cef92fab4a3c3a4cbe5ede3b155255ddb7d4d0be68be"
+    },
+    "pi0": {
+      "source": "/Users/tbhayward/Desktop/pi0_long_asymmetries_pred.csv",
+      "sha256": "d19d8375ca3493a2314f95ed4eb97fbc604546aeb1a6a6bb5210523e14db3d7c"
+    },
+    "pim": {
+      "source": "/Users/tbhayward/Desktop/pim_long_asymmetries_pred.csv",
+      "sha256": "3d230e0e1c9493da57e556f7301c08391cf644bebbb864f03403decd47ff8225"
+    }
+  },
+  "unpolarized_columns": [
+    "A_UU_cosphi",
+    "A_UU_cos2phi"
+  ],
+  "plotted_channel": "pip"
 }

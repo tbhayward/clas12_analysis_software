@@ -39,7 +39,8 @@ class PredictionChecks(unittest.TestCase):
     def test_malformed_inputs_are_rejected(self):
         raw = pd.read_csv(plot.DEFAULT_PREDICTION_CSV, comment='#')
         cases = {'duplicate': pd.concat([raw,raw.iloc[:1]],ignore_index=True),
-                 'missing_column':raw.drop(columns=['A_LL_hi'])}
+                 'missing_column':raw.drop(columns=['A_LL_hi']),
+                 'missing_unpolarized':raw.drop(columns=['A_UU_cosphi'])}
         negative=raw.copy();negative.loc[0,'A_LL_lo']=-.01;cases['negative_error']=negative
         nonfinite=raw.copy();nonfinite.loc[0,'A_LL']=np.nan;cases['nonfinite']=nonfinite
         mixed=raw.copy();mixed.loc[0,'Q2']=9.;cases['multiple_q2']=mixed
@@ -50,7 +51,7 @@ class PredictionChecks(unittest.TestCase):
                     with self.assertRaises(ValueError):plot.load_new_theory(path)
 
     def test_axes_contain_the_supplied_bands(self):
-        for observable in plot.OBSERVABLES:
+        for observable in plot.NEW_THEORY_OBSERVABLES:
             low,high=plot.new_theory_y_limits(self.predictions,observable)
             self.assertLessEqual(low,(self.predictions[observable]-self.predictions[observable+'_lo']).min())
             self.assertGreaterEqual(high,(self.predictions[observable]+self.predictions[observable+'_hi']).max())

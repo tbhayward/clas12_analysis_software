@@ -14,7 +14,7 @@ and writes PNG files to
 The Goloskokov–Kroll predictions supplied in October 2026 are hard-coded below.  They are
 virtual-photon-frame quantities.  The RGC UL/LL measurements remain in the lab-
 frame convention used by the analysis; no frame conversion is applied here.
-The supplied Manley--Bhattacharya CSV contains the same five ratios with
+The supplied Manley--Bhattacharya CSV contains the seven ratios with
 asymmetric one-sigma fit-error lengths. These are plotted without additional
 sign changes or depolarization factors; the bands are central-lo, central+hi.
 """
@@ -42,6 +42,7 @@ DEFAULT_PREDICTION_CSV = (Path(__file__).resolve().parent / "theory_predictions"
 NEW_THEORY_LABEL = "Manley–Bhattacharya"
 THEORY_XB = (0.2, 0.3, 0.4, 0.5)
 NEW_THEORY_COLUMNS = {
+    "u1": "A_UU_cosphi", "u2": "A_UU_cos2phi",
     "lu1": "A_LU_sinphi", "ul1": "A_UL_sinphi", "ul2": "A_UL_sin2phi",
     "ll0": "A_LL", "ll1": "A_LL_cosphi",
 }
@@ -65,7 +66,12 @@ OBSERVABLES = (
     "ll1",
 )
 
+NEW_THEORY_OBSERVABLES = ("u1", "u2", *OBSERVABLES)
+NEW_THEORY_PANEL_INDICES = (0, 1, 3, 4, 5, 6, 7)
+
 OBSERVABLE_LABELS = {
+    "u1": r"$F_{UU}^{\cos\phi}/F_{UU}$",
+    "u2": r"$F_{UU}^{\cos2\phi}/F_{UU}$",
     "lu1": r"$F_{LU}^{\sin\phi}/F_{UU}$",
     "ul1": r"$F_{UL,\mathrm{lab}}^{\sin\phi}/F_{UU}$",
     "ul2": r"$F_{UL,\mathrm{lab}}^{\sin2\phi}/F_{UU}$",
@@ -85,6 +91,8 @@ KROLL_LABELS = {
 SINGLE_SPIN = frozenset(("lu1", "ul1", "ul2"))
 
 Y_LIMITS = {
+    "u1": (-1.0, 1.0),
+    "u2": (-1.0, 1.0),
     "lu1": (-0.4, 0.4),
     "ul1": (-0.4, 0.4),
     "ul2": (-0.4, 0.4),
@@ -215,7 +223,7 @@ def new_theory_y_limits(predictions, observable):
 
 def validate_measurements(frame: pd.DataFrame) -> pd.DataFrame:
     required = {"bin_number", "mean_xB", "mean_minus_tprime_gev2"}
-    for observable in OBSERVABLES:
+    for observable in NEW_THEORY_OBSERVABLES:
         required.add(observable)
         required.add(f"{observable}_stat")
         required.add(f"{observable}_point_to_point_systematic")
@@ -239,7 +247,7 @@ def validate_measurements(frame: pd.DataFrame) -> pd.DataFrame:
     numeric = output[sorted(required)].to_numpy(dtype=float)
     if not np.isfinite(numeric).all():
         raise ValueError("Input contains nonfinite measurements or uncertainties.")
-    for observable in OBSERVABLES:
+    for observable in NEW_THEORY_OBSERVABLES:
         if (output[f"{observable}_stat"] <= 0).any() or (output[f"{observable}_point_to_point_systematic"] < 0).any():
             raise ValueError(f"Invalid uncertainties for {observable}.")
     if "nominal_fit_valid" in output and not output["nominal_fit_valid"].isin([True, "True", "true", 1]).all():
@@ -531,34 +539,36 @@ def plot_all_xb_canvas(
 
 def plot_new_theory_canvas(measurements, predictions, output_dir, x_index=None,
                            kroll_predictions=None, preliminary=True):
-    """Same five-panel layout, with either the new theory or both theories."""
+    """Seven-panel layout: unpolarized top, single-spin middle, double-spin bottom."""
     combined = kroll_predictions is not None
     if combined and x_index is None:
         raise ValueError("Both-theory overlays are individual-xB plots only")
     all_xb = x_index is None
-    fig, axes = plt.subplots(2, 3, figsize=(12.8, 7.6) if all_xb else (12.2, 7.4),
+    fig, axes = plt.subplots(3, 3, figsize=(12.8, 10.5),
                              constrained_layout=False)
     axes_flat = axes.ravel()
     indices = range(4) if all_xb else [x_index]
     theory_color = "#6A3D9A" if combined else "black"
-    for i, observable in enumerate(OBSERVABLES):
-        ax = axes_flat[i]
+    for i, (panel, observable) in enumerate(zip(NEW_THEORY_PANEL_INDICES, NEW_THEORY_OBSERVABLES)):
+        ax = axes_flat[panel]
         for xi in indices:
             subset = measurements.loc[measurements["x_index_plot"] == xi]
             pred = predictions.loc[np.isclose(predictions["xB"], THEORY_XB[xi])]
             color = XB_COLORS[xi] if all_xb else theory_color
             draw_new_theory_curve(ax, pred, observable, color,
                                   linestyle="--" if combined else "-")
-            if combined:
+            if combined and observable in OBSERVABLES:
                 kp = kroll_predictions.loc[np.isclose(kroll_predictions["xB"], THEORY_XB[xi])]
                 draw_kroll_curve(ax, kp, observable, color="black")
             draw_measurements(ax, subset, observable, color=XB_COLORS[xi], marker=XB_MARKERS[xi])
-        format_axis(ax, observable, show_xlabel=(i >= 3))
+        format_axis(ax, observable, show_xlabel=True)
         ax.set_ylim(*new_theory_y_limits(predictions, observable))
         ax.text(0.04, 0.94, f"({chr(97 + i)})", transform=ax.transAxes,
                 va="top", ha="left", fontweight="bold")
-    legend_ax = axes_flat[5]
+    legend_ax = axes_flat[8]
+    info_ax = axes_flat[2]
     legend_ax.axis("off")
+    info_ax.axis("off")
     styles = [
         Line2D([], [], marker="o", linestyle="none", mfc="white", mec="black",
                mew=1.3, ms=6.5, label="RGC measurement (stat.)"),
@@ -575,11 +585,10 @@ def plot_new_theory_canvas(measurements, predictions, output_dir, x_index=None,
                            mec=color, mew=1.2, ms=6,
                            label=rf"${lo:.2f}<x_B<{hi:.2f}$; theory $x_B={THEORY_XB[xi]:.1f}$")
                    for xi, ((lo, hi), color, marker) in enumerate(zip(XB_BINS, XB_COLORS, XB_MARKERS))]
-        legend1 = legend_ax.legend(handles=handles, loc="upper left", frameon=False,
+        legend1 = info_ax.legend(handles=handles, loc="upper left", frameon=False,
                                    title=r"$x_B$ groups", title_fontsize=11)
-        legend_ax.add_artist(legend1)
         legend_ax.legend(handles=styles, loc="lower left", frameon=False, fontsize=9)
-        legend_ax.text(0.02, 0.45, "Theory: virtual-photon frame\nRGC UL/LL: lab-frame definition",
+        legend_ax.text(0.02, 0.90, "Theory: virtual-photon frame\nRGC UL/LL: lab-frame definition",
                        transform=legend_ax.transAxes, va="top", fontsize=10.3, linespacing=1.4)
         title = (r"CLAS12 $ep \rightarrow e(n)\pi^+$ ratios and " + NEW_THEORY_LABEL + " predictions")
         filename = "bhattacharya_manley_comparison_all_xB.png"
@@ -593,14 +602,14 @@ def plot_new_theory_canvas(measurements, predictions, output_dir, x_index=None,
             kp = kroll_predictions.loc[np.isclose(kroll_predictions["xB"], THEORY_XB[x_index])]
             text += "\n" + rf"Goloskokov–Kroll: $x_B={THEORY_XB[x_index]:.1f}$, $Q^2={float(kp['Q2'].iloc[0]):.2f}$ GeV$^2$"
         text += "\nTheory: virtual-photon frame\nRGC UL/LL: lab-frame definition"
-        legend_ax.text(0.02, 0.48, text, transform=legend_ax.transAxes, va="top", ha="left",
+        info_ax.text(0.02, 0.95, text, transform=info_ax.transAxes, va="top", ha="left",
                        fontsize=9.2, linespacing=1.45)
         title = (rf"CLAS12 $ep \rightarrow e(n)\pi^+$ structure-function ratios: "
                  + rf"${lo:.2f}<x_B<{hi:.2f}$")
         prefix = "both_theories" if combined else "bhattacharya_manley"
         filename = f"{prefix}_comparison_xB_bin_{x_index + 1}.png"
     fig.suptitle(title, y=0.985, fontsize=15)
-    fig.subplots_adjust(left=0.085, right=0.985, bottom=0.09, top=0.91, wspace=0.24, hspace=0.20)
+    fig.subplots_adjust(left=0.085, right=0.985, bottom=0.09, top=0.91, wspace=0.24, hspace=0.32)
     if preliminary:
         fig.text(0.50, 0.50, "PRELIMINARY", ha="center", va="center", rotation=18,
                  fontsize=90, fontweight="bold", color="red", alpha=0.08,
@@ -674,6 +683,8 @@ def main() -> None:
         "prediction_csv": str(prediction_csv),
         "prediction_csv_sha256": hashlib.sha256(prediction_csv.read_bytes()).hexdigest(),
         "new_theory": NEW_THEORY_LABEL,
+        "new_theory_observables": list(NEW_THEORY_OBSERVABLES),
+        "kroll_observables": list(OBSERVABLES),
         "new_theory_uncertainty": "central-lo to central+hi; supplied asymmetric 1-sigma fit-error lengths",
         "new_theory_kinematics": new_predictions[["xB", "Q2"]].drop_duplicates().to_dict(orient="records"),
         "sign_or_depolarization_adjustment": "none; use supplied structure-function ratios directly",
