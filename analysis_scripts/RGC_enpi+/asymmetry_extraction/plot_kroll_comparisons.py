@@ -11,6 +11,10 @@ and writes PNG files to
     output/kroll_comparisons/bhattacharya_manley/     (new theory: five PNGs)
     output/kroll_comparisons/both_theories/          (individual xB: four PNGs)
 
+A second copy of all 14 PNGs under combined_errors/ adds experimental statistical
+and point-to-point systematic uncertainties in quadrature into one error bar.
+Correlated scale uncertainties remain excluded and theory bands are unchanged.
+
 The Goloskokov–Kroll predictions supplied in October 2026 are hard-coded below.  They are
 virtual-photon-frame quantities.  The RGC UL/LL measurements remain in the lab-
 frame convention used by the analysis; no frame conversion is applied here.
@@ -291,17 +295,20 @@ def draw_measurements(
     color: str,
     marker: str,
     label: str | None = None,
+    combined_errors: bool = False,
 ) -> None:
     x = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
     y = subset[observable].to_numpy(dtype=float)
     stat = subset[f"{observable}_stat"].to_numpy(dtype=float)
     sys = subset[f"{observable}_point_to_point_systematic"].to_numpy(dtype=float)
 
-    add_systematic_boxes(ax, x, y, sys, color=color)
+    if not combined_errors:
+        add_systematic_boxes(ax, x, y, sys, color=color)
+    errors = np.hypot(stat, sys) if combined_errors else stat
     ax.errorbar(
         x,
         y,
-        yerr=stat,
+        yerr=errors,
         fmt=marker,
         ms=6.2,
         mfc="white",
@@ -392,7 +399,7 @@ def robust_y_limits(
     return lo, hi
 
 
-def info_panel(ax: plt.Axes, x_index: int | None = None) -> None:
+def info_panel(ax: plt.Axes, x_index: int | None = None, combined_errors: bool = False) -> None:
     ax.axis("off")
     handles = [
         Line2D([], [], marker="o", linestyle="none", mfc="white", mec="black",
@@ -401,6 +408,9 @@ def info_panel(ax: plt.Axes, x_index: int | None = None) -> None:
               label="Point-to-point syst."),
         Line2D([], [], color="black", lw=2.0, label="Goloskokov–Kroll prediction"),
     ]
+    if combined_errors:
+        handles[0].set_label("RGC measurement (stat. + ptp syst.)")
+        del handles[1]
     ax.legend(handles=handles, loc="upper left", frameon=False, handlelength=2.5)
 
     text = (
@@ -421,6 +431,7 @@ def plot_one_xb_canvas(
     x_index: int,
     output_dir: Path,
     preliminary: bool = True,
+    combined_errors: bool = False,
 ) -> Path:
     subset = measurements.loc[measurements["x_index_plot"] == x_index].copy()
     kroll_xb = (0.2, 0.3, 0.4, 0.5)[x_index]
@@ -433,14 +444,14 @@ def plot_one_xb_canvas(
     for i, observable in enumerate(OBSERVABLES):
         ax = axes_flat[i]
         draw_kroll_curve(ax, pred, observable, color="black")
-        draw_measurements(ax, subset, observable, color=color, marker=XB_MARKERS[x_index])
+        draw_measurements(ax, subset, observable, color=color, marker=XB_MARKERS[x_index], combined_errors=combined_errors)
         format_axis(ax, observable, show_xlabel=(i >= 3))
         ax.set_ylim(*Y_LIMITS[observable])
         ax.text(0.04, 0.94, f"({chr(97 + i)})", transform=ax.transAxes,
                 va="top", ha="left", fontweight="bold")
     # endfor
 
-    info_panel(axes_flat[5], x_index=x_index)
+    info_panel(axes_flat[5], x_index=x_index, combined_errors=combined_errors)
     xlo, xhi = XB_BINS[x_index]
     fig.suptitle(
         rf"CLAS12 $ep \rightarrow e(n)\pi^+$ structure-function ratios: "
@@ -468,6 +479,7 @@ def plot_all_xb_canvas(
     predictions: pd.DataFrame,
     output_dir: Path,
     preliminary: bool = True,
+    combined_errors: bool = False,
 ) -> Path:
     fig, axes = plt.subplots(2, 3, figsize=(12.8, 7.6), constrained_layout=False)
     axes_flat = axes.ravel()
@@ -484,7 +496,7 @@ def plot_all_xb_canvas(
             measurement_subsets.append(subset)
             prediction_subsets.append(pred)
             draw_kroll_curve(ax, pred, observable, color=color)
-            draw_measurements(ax, subset, observable, color=color, marker=marker)
+            draw_measurements(ax, subset, observable, color=color, marker=marker, combined_errors=combined_errors)
         # endfor
 
         format_axis(ax, observable, show_xlabel=(i >= 3))
@@ -510,6 +522,9 @@ def plot_all_xb_canvas(
               label="RGC point-to-point systematic"),
         Line2D([], [], color="black", lw=2.0, label="Solid line: Goloskokov–Kroll prediction"),
     ]
+    if combined_errors:
+        style_handles[0].set_label("RGC point: stat. + ptp syst.")
+        del style_handles[1]
     legend1 = legend_ax.legend(handles=xb_handles, loc="upper left", frameon=False,
                                title=r"$x_B$ groups", title_fontsize=11)
     legend_ax.add_artist(legend1)
@@ -538,7 +553,7 @@ def plot_all_xb_canvas(
 
 
 def plot_new_theory_canvas(measurements, predictions, output_dir, x_index=None,
-                           kroll_predictions=None, preliminary=True):
+                           kroll_predictions=None, preliminary=True, combined_errors=False):
     """Seven-panel layout: unpolarized top, single-spin middle, double-spin bottom."""
     combined = kroll_predictions is not None
     if combined and x_index is None:
@@ -560,7 +575,7 @@ def plot_new_theory_canvas(measurements, predictions, output_dir, x_index=None,
             if combined and observable in OBSERVABLES:
                 kp = kroll_predictions.loc[np.isclose(kroll_predictions["xB"], THEORY_XB[xi])]
                 draw_kroll_curve(ax, kp, observable, color="black")
-            draw_measurements(ax, subset, observable, color=XB_COLORS[xi], marker=XB_MARKERS[xi])
+            draw_measurements(ax, subset, observable, color=XB_COLORS[xi], marker=XB_MARKERS[xi], combined_errors=combined_errors)
         format_axis(ax, observable, show_xlabel=True)
         ax.set_ylim(*new_theory_y_limits(predictions, observable))
         ax.text(0.04, 0.94, f"({chr(97 + i)})", transform=ax.transAxes,
@@ -578,8 +593,11 @@ def plot_new_theory_canvas(measurements, predictions, output_dir, x_index=None,
         Patch(facecolor=theory_color, edgecolor="none", alpha=0.16,
               label=NEW_THEORY_LABEL + r" $1\sigma$ fit band"),
     ]
+    if combined_errors:
+        styles[0].set_label("RGC measurement (stat. + ptp syst.)")
+        del styles[1]
     if combined:
-        styles.insert(2, Line2D([], [], color="black", lw=2.0, label="Goloskokov–Kroll prediction"))
+        styles.insert(1 if combined_errors else 2, Line2D([], [], color="black", lw=2.0, label="Goloskokov–Kroll prediction"))
     if all_xb:
         handles = [Line2D([], [], color=color, lw=2.0, marker=marker, mfc="white",
                            mec=color, mew=1.2, ms=6,
@@ -658,28 +676,43 @@ def main() -> None:
     new_predictions = load_new_theory(prediction_csv)
 
     outputs: list[Path] = []
-    for x_index in range(4):
-        outputs.append(plot_one_xb_canvas(measurements, predictions, x_index, output_dir, preliminary=not args.final))
-    # endfor
-    outputs.append(plot_all_xb_canvas(measurements, predictions, output_dir, preliminary=not args.final))
+    for combined_errors, version_dir in ((False, output_dir),
+                                         (True, output_dir / "combined_errors")):
+        version_dir.mkdir(parents=True, exist_ok=True)
+        for x_index in range(4):
+            outputs.append(plot_one_xb_canvas(
+                measurements, predictions, x_index, version_dir,
+                preliminary=not args.final, combined_errors=combined_errors))
+        outputs.append(plot_all_xb_canvas(
+            measurements, predictions, version_dir,
+            preliminary=not args.final, combined_errors=combined_errors))
+        new_dir = version_dir / "bhattacharya_manley"
+        both_dir = version_dir / "both_theories"
+        new_dir.mkdir(parents=True, exist_ok=True)
+        both_dir.mkdir(parents=True, exist_ok=True)
+        for x_index in range(4):
+            outputs.append(plot_new_theory_canvas(
+                measurements, new_predictions, new_dir, x_index=x_index,
+                preliminary=not args.final, combined_errors=combined_errors))
+            outputs.append(plot_new_theory_canvas(
+                measurements, new_predictions, both_dir, x_index=x_index,
+                kroll_predictions=predictions, preliminary=not args.final,
+                combined_errors=combined_errors))
+        outputs.append(plot_new_theory_canvas(
+            measurements, new_predictions, new_dir,
+            preliminary=not args.final, combined_errors=combined_errors))
 
-    new_dir = output_dir / "bhattacharya_manley"
-    both_dir = output_dir / "both_theories"
-    new_dir.mkdir(parents=True, exist_ok=True)
-    both_dir.mkdir(parents=True, exist_ok=True)
-    for x_index in range(4):
-        outputs.append(plot_new_theory_canvas(measurements, new_predictions, new_dir, x_index=x_index,
-                                             preliminary=not args.final))
-        outputs.append(plot_new_theory_canvas(measurements, new_predictions, both_dir, x_index=x_index,
-                                             kroll_predictions=predictions, preliminary=not args.final))
-    outputs.append(plot_new_theory_canvas(measurements, new_predictions, new_dir, preliminary=not args.final))
-
-    print("Theory comparison plots complete (5 Goloskokov–Kroll, 5 Manley–Bhattacharya, 4 overlays).")
+    print("Theory comparison plots complete: 14 original + 14 combined-error PNGs.")
     manifest = {
         "input_csv": str(input_csv),
         "input_csv_sha256": hashlib.sha256(input_csv.read_bytes()).hexdigest(),
         "plots": [str(path) for path in outputs],
         "preliminary": not args.final,
+        "measurement_error_versions": {
+            "original": "statistical error bars and separate ptp systematic boxes",
+            "combined_errors": "single error bar sqrt(stat^2 + ptp_systematic^2), no systematic boxes",
+        },
+        "correlated_scale_errors_included": False,
         "prediction_csv": str(prediction_csv),
         "prediction_csv_sha256": hashlib.sha256(prediction_csv.read_bytes()).hexdigest(),
         "new_theory": NEW_THEORY_LABEL,

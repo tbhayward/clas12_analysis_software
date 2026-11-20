@@ -48,3 +48,9 @@ Manley–Bhattacharya and joint canvases now have seven panels: UU on the top ro
 single-spin on the middle row and double-spin on the bottom row. Joint plots
 show only Manley–Bhattacharya predictions in the UU panels, because no UU GK
 input was supplied. GK-only canvases retain their original five-panel layout.
+
+Every invocation also writes a second copy of all 14 comparison plots under
+`combined_errors/`, preserving the same theory subdirectories and filenames.
+Those copies use a single experimental error bar sqrt(stat^2 + ptp_syst^2),
+without separate systematic rectangles. Correlated scale uncertainties are not
+included. Theory one-sigma bands are unchanged. The original plots are retained.

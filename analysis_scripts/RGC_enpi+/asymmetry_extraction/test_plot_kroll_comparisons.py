@@ -56,6 +56,19 @@ class PredictionChecks(unittest.TestCase):
             self.assertLessEqual(low,(self.predictions[observable]-self.predictions[observable+'_lo']).min())
             self.assertGreaterEqual(high,(self.predictions[observable]+self.predictions[observable+'_hi']).max())
 
+    def test_measurement_error_versions(self):
+        from unittest.mock import Mock
+        frame = pd.DataFrame({'mean_minus_tprime_gev2':[.2], 'll1':[.1],
+                              'll1_stat':[.03], 'll1_point_to_point_systematic':[.04]})
+        combined = Mock()
+        plot.draw_measurements(combined,frame,'ll1','black','o',combined_errors=True)
+        np.testing.assert_allclose(combined.errorbar.call_args.kwargs['yerr'],[.05])
+        combined.add_patch.assert_not_called()
+        original = Mock()
+        plot.draw_measurements(original,frame,'ll1','black','o')
+        np.testing.assert_allclose(original.errorbar.call_args.kwargs['yerr'],[.03])
+        self.assertEqual(original.add_patch.call_count,1)
+
     def test_no_combined_theory_all_xb_canvas(self):
         with self.assertRaises(ValueError):
             plot.plot_new_theory_canvas(None,None,Path('.'),kroll_predictions=plot.kroll_frame())
