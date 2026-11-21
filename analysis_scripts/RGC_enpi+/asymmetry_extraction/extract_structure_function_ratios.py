@@ -152,12 +152,11 @@ it is imposed separately as a scale uncertainty on the final observables.
 
 Bin-migration uncertainty
 -------------------------
-The established 24x24 MC migration matrix from the previous analysis-note
-version is embedded below.  Matrix row i gives the fractional composition of
-reconstructed bin i in terms of generated bins j.  Because the published table
-is rounded to two decimal places, each row is renormalized to unit sum before
-application; otherwise a constant observable would acquire an artificial 1--2%
-shift from rounding alone.  For each of the five published polarized ratios,
+The established 24x24 MC migration matrix is embedded below.  
+Matrix row i gives the fractional composition of reconstructed bin i in terms 
+of generated bins j.  
+
+For each of the five published polarized ratios,
 
     a_migrated[i] = sum_j M_normalized[i,j] * a_nominal[j]
 
