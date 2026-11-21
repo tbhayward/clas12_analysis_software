@@ -78,7 +78,7 @@ Three fits are performed in every kinematic bin.
     inverse-total-variance weighted HERMES exclusive-pi+ averages over
     0.07 < x_B < 0.35, omitting the lowest-x_B bin.  The additional
     sin(phi+phi_S) input is assigned the same signed value as the measured
-    sin(phi-phi_S) input for this study, as requested.  Statistical and
+    sin(phi-phi_S) input for this study.  Statistical and
     systematic uncertainties are combined in quadrature for the weighted
     averages. No factor of two is applied.
 
