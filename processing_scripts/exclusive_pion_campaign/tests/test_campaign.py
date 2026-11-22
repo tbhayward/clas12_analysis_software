@@ -23,10 +23,16 @@ class CampaignTest(unittest.TestCase):
    for name in ['claims','chunks','work','logs']:(root/name).mkdir()
    inp=root/'input.hipo';inp.write_text('input');s=inp.stat()
    job=dict(id='one',dataset='RGB_spring2019_D2',target='D2',run=6420,bytes=5,files=[dict(path=str(inp),size=s.st_size,mtime_ns=s.st_mtime_ns)])
+   (root/'build/source').mkdir(parents=True)
+   (root/'build/source/processing_exclusive_piminus.groovy').write_text('if(args.length!=3) throw new Exception()')
    calls=[]
    def fake_run(cmd,**kwargs):
     calls.append(cmd[0])
-    if str(cmd[0])=='groovy':Path(cmd[-3]).write_text('events')
+    if str(cmd[0])=='groovy':
+     self.assertEqual(len(cmd),7)
+     self.assertIn('-Xmx2048m',kwargs['env']['JAVA_OPTS'])
+     self.assertNotIn('ActiveProcessorCount',kwargs['env']['JAVA_OPTS'])
+     Path(cmd[5]).write_text('events')
     else:
      Path(cmd[2]).write_text('root')
      return type('Result',(),dict(stdout='7\n',stderr='',returncode=0))()

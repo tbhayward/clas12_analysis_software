@@ -26,7 +26,7 @@ The test selects one eligible run per period/target combination (19 runs), proce
 
 For custom selections, add `--test-runs selections.json` to preparation (JSON object mapping dataset IDs such as `RGC_summer2022_ND3` to integer run numbers). For unusual filenames, add `--run-map paths.json` (exact absolute filenames mapped to integer run numbers).
 
-Preparation builds the optimized converter, compiles current helper and campaign Java sources, checks real QADB availability and processor compilation, and runs ROOT conversion tests. It freezes source, dependencies, QA data, and the polarization CSV. Workers use this frozen implementation. Existing processing.csh and run-groovy launchers are bypassed because they modify shared files.
+Preparation builds the optimized converter, compiles current helper and campaign Java sources, checks real QADB availability and processor compilation, and runs ROOT conversion tests. It freezes source, dependencies, QA data, and the polarization CSV. Workers use the frozen physics implementation; the current repository worker handles launch-time settings and records its own checksum and Java settings in each batch runtime.json and completion record. Existing processing.csh and run-groovy launchers are bypassed because they modify shared files.
 
 ## Outputs and monitoring
 
@@ -171,3 +171,9 @@ Mx2 is (q+n-p-pi)^2; Mx2_1 is (q+n-p)^2; Mx2_2 is (q+n-pi)^2. Emiss is the full 
 ## Validation
 
 Local checks: campaign Java/helper compilation; Groovy processor compilation with a QA test double; physical two-body events checking conservation, phi sign, pion pT/xF and exact t/tmin/tprime; electron correction periods/sectors/endpoints; 19-dataset inventory; batching; 20 simultaneous contenders for a batch; failure isolation; C-shell syntax; exact Java/C++ schema agreement. The C++ converter compiles locally. The local ROOT runtime has a pre-existing Cling/macOS SDK incompatibility, so actual ROOT conversion tests are enforced during farm preparation. The real QADB and real HIPO data are checked by the farm test launch.
+
+## Restore original memory settings on an existing campaign
+
+The worker now uses the original processing launcher defaults (1 GiB initial, 2 GiB maximum), removing the campaign-specific 1.5 GiB maximum and ActiveProcessorCount=1. This restores the baseline; adequate memory still needs verification on representative files. Advanced overrides can use PION_JAVA_OPTS. Each launched batch records its settings in work/BATCH/runtime.json.
+
+For a stalled old worker, stop that specific Java process normally with kill -TERM PID, wait for both node coordinator commands to return, and update the repository files on the farm. Release failed batches once with retry-failed, then run the existing run_test.csh command separately on each host against the SAME campaign directory. Completed chunks are skipped. Frozen physics sources and checksums are preserved, and the updated worker supports old processors accepting three arguments. Do not prepare a fresh campaign just to change these runtime settings. An exited process might have completed or failed; its completion record and log establish which.

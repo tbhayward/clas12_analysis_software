@@ -185,11 +185,18 @@ def process_job(root,build,j):
             s=Path(f['path']).stat()
             if s.st_size!=f['size'] or s.st_mtime_ns!=f['mtime_ns']:raise RuntimeError('Input changed: '+f['path'])
         listing=work/'inputs.list';listing.write_text(''.join(f['path']+'\n' for f in j['files']))
-        text=work/'events.txt';tmp=work/'events.root';env=os.environ.copy();env['QADB']=str(build/'qadb');env['JAVA_OPTS']='-Xms128m -Xmx1536m -XX:ActiveProcessorCount=1'
+        text=work/'events.txt';tmp=work/'events.root';env=os.environ.copy();env['QADB']=str(build/'qadb');env['JAVA_OPTS']=os.environ.get('PION_JAVA_OPTS','-Dsun.java2d.pmoffscreen=false -Xms1024m -Xmx2048m')
         started=time.time()
         print(f'START {j["id"]} @ {socket.gethostname()}: {len(j["files"])} files, {j["bytes"]/1024**3:.2f} GiB',flush=True)
         with (root/'logs'/(j['id']+'.log')).open('w') as log:
-            run(['groovy','-cp',classnamepath(build),build/'source/processing_exclusive_piminus.groovy',listing,text,str(j['run']),work/'progress.json'],env=env,stdout=log,stderr=subprocess.STDOUT)
+            processor=build/'source/processing_exclusive_piminus.groovy'
+            command=['groovy','-cp',classnamepath(build),processor,listing,text,str(j['run'])]
+            # Earlier frozen processors accept exactly three arguments.
+            if not processor.exists() or 'args.length!=3' not in processor.read_text():command.append(work/'progress.json')
+            runtime=dict(java_opts=env['JAVA_OPTS'],runner_sha256=digest(Path(__file__).resolve()),started=started)
+            atomic_json(work/'runtime.json',runtime)
+            print(f'  Java settings: {env["JAVA_OPTS"]}',flush=True)
+            run(command,env=env,stdout=log,stderr=subprocess.STDOUT)
             processing_seconds=time.time()-started
             progress_path=work/'progress.json'
             if progress_path.exists():
@@ -203,7 +210,7 @@ def process_job(root,build,j):
             diagnostic=read(work/'progress.json') if (work/'progress.json').exists() else {}
             if diagnostic:
                 diagnostic.update(stage='done',updated=time.time());atomic_json(work/'progress.json',diagnostic)
-            atomic_json(done,dict(diagnostics=diagnostic,entries=entries,seconds=time.time()-started,processing_seconds=processing_seconds,conversion_seconds=time.time()-started-processing_seconds,host=socket.gethostname(),bytes=j['bytes'],root_sha256=digest(final)))
+            atomic_json(done,dict(runtime=runtime,diagnostics=diagnostic,entries=entries,seconds=time.time()-started,processing_seconds=processing_seconds,conversion_seconds=time.time()-started-processing_seconds,host=socket.gethostname(),bytes=j['bytes'],root_sha256=digest(final)))
         text.unlink();(claim/'failed.json').unlink(missing_ok=True)
         print(f'DONE {j["id"]}: {entries:,} entries; processing {processing_seconds:.1f}s, conversion {time.time()-started-processing_seconds:.1f}s',flush=True)
         if entries==0:
