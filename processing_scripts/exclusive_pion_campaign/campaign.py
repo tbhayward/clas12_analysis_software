@@ -158,10 +158,13 @@ def process_job(root,build,j):
         started=time.time()
         with (root/'logs'/(j['id']+'.log')).open('w') as log:
             run(['groovy','-cp',classnamepath(build),build/'source/processing_exclusive_piminus.groovy',listing,text,str(j['run'])],env=env,stdout=log,stderr=subprocess.STDOUT)
-            result=run([build/'converter',text,tmp,build/'run_info.csv',j['target'],str(j['run'])],stdout=subprocess.PIPE,stderr=log,text=True)
+            processing_seconds=time.time()-started
+            result=subprocess.run([str(x) for x in [build/'converter',text,tmp,build/'run_info.csv',j['target'],str(j['run'])]],capture_output=True,text=True)
+            log.write(result.stderr)
+            if result.returncode:raise RuntimeError('Converter: '+result.stderr.strip())
             entries=int(result.stdout.strip().splitlines()[-1])
             final=root/'chunks'/(j['id']+'.root');os.replace(tmp,final)
-            atomic_json(done,dict(entries=entries,seconds=time.time()-started,host=socket.gethostname(),bytes=j['bytes'],root_sha256=digest(final)))
+            atomic_json(done,dict(entries=entries,seconds=time.time()-started,processing_seconds=processing_seconds,conversion_seconds=time.time()-started-processing_seconds,host=socket.gethostname(),bytes=j['bytes'],root_sha256=digest(final)))
         text.unlink();(claim/'failed.json').unlink(missing_ok=True)
         print(f'DONE {j["id"]}: {entries} entries',flush=True)
     except Exception as e:
@@ -172,7 +175,9 @@ def process_job(root,build,j):
     (claim/'owner.json').unlink(missing_ok=True);claim.rmdir()
 
 def worker(a):
-    root=a.campaign.resolve();manifest=read(root/'manifest.json');host=socket.gethostname().split('.')[0]
+    root=a.campaign.resolve()
+    if (root/'claims'/'conversion_recovery').exists():raise RuntimeError('Conversion recovery is running; do not start workers')
+    manifest=read(root/'manifest.json');host=socket.gethostname().split('.')[0]
     if host not in HOSTS and not a.allow_other_host:raise RuntimeError('Workers are restricted to ifarm2401/ifarm2402')
     hostlock=root/'hosts'/host;hostlock.mkdir()
     try:
@@ -240,6 +245,50 @@ def merge(a):
         finally:claim.rmdir()
     if fail:raise RuntimeError('Some datasets are incomplete; see status and batch logs')
 
+def recover_conversion(a):
+    """Reconvert completed text with a separately recorded converter repair."""
+    root=a.campaign.resolve()
+    if any((root/'hosts').iterdir()):raise RuntimeError('Wait for both worker commands to finish before conversion recovery')
+    lock=root/'claims'/'conversion_recovery';lock.mkdir()
+    try:
+        build=verified(root);manifest=read(root/'manifest.json')
+        recovery=root/'recoveries'/(time.strftime('%Y%m%d_%H%M%S')+'_'+str(os.getpid()))
+        recovery.mkdir(parents=True)
+        shutil.copytree(HERE/'src',recovery/'src')
+        flags=shlex.split(subprocess.check_output(['root-config','--cflags','--libs'],text=True))
+        converter=recovery/'converter'
+        run(['g++','-O3','-std=c++17',recovery/'src/convert_exclusive_piminus_txt_to_root.cpp','-o',converter,*flags])
+        env=os.environ.copy();env['PION_CONVERTER']=str(converter)
+        run([sys.executable,'-m','unittest','discover','-s',HERE/'tests','-p','test_converter.py','-v'],env=env)
+        atomic_json(recovery/'provenance.json',dict(converter_sha256=digest(converter),sources={str(p.relative_to(recovery)):digest(p) for p in (recovery/'src').rglob('*') if p.is_file()},original_software_unchanged=True))
+        failures=[]
+        for job in manifest['jobs']:
+            jid=job['id'];done=root/'chunks'/(jid+'.json')
+            if done.exists():continue
+            claim=root/'claims'/jid;text=root/'work'/jid/'events.txt';log=root/'logs'/(jid+'.log')
+            if not (claim/'failed.json').exists():
+                failures.append(jid);print('NOT RECOVERED (no failed completion): '+jid,flush=True);continue
+            summaries=re.findall(r'SUMMARY[^\n]*?rows=(\d+)',log.read_text(errors='replace')) if log.exists() else []
+            if not summaries or not text.exists():
+                failures.append(jid);print('NOT RECOVERED (processor did not finish): '+jid,flush=True);continue
+            expected=int(summaries[-1]);tmp=root/'work'/jid/'recovered.root';started=time.time()
+            result=subprocess.run([str(converter),str(text),str(tmp),str(build/'run_info.csv'),job['target'],str(job['run'])],capture_output=True,text=True)
+            with log.open('a') as out:out.write('\nCONVERSION RECOVERY '+str(recovery)+'\n'+result.stdout+result.stderr)
+            try:
+                if result.returncode:raise RuntimeError(result.stderr.strip() or f'Converter exit {result.returncode}')
+                entries=int(result.stdout.strip().splitlines()[-1])
+                if entries!=expected:raise RuntimeError(f'Processor summary {expected} rows != converter {entries}')
+                run([converter,'--validate',tmp,str(entries)])
+                final=root/'chunks'/(jid+'.root');os.replace(tmp,final)
+                atomic_json(done,dict(entries=entries,seconds=time.time()-started,host=socket.gethostname(),bytes=job['bytes'],root_sha256=digest(final),conversion_recovery=str(recovery)))
+                (claim/'failed.json').unlink();(claim/'owner.json').unlink(missing_ok=True);claim.rmdir()
+                print(f'RECOVERED {jid}: {entries} entries; conversion {time.time()-started:.1f}s',flush=True)
+            except Exception as error:
+                failures.append(jid);print(f'FAILED {jid}: {error}',flush=True)
+        if failures:raise RuntimeError(f'{len(failures)} batches still need attention; saved text files retained')
+        merge(a)
+    finally:lock.rmdir()
+
 def retry(a):
     root=a.campaign.resolve()
     if any((root/'hosts').iterdir()):raise RuntimeError('Host claims exist; confirm workers have stopped before recovering stale claims')
@@ -250,14 +299,14 @@ def retry(a):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='command',required=True)
-    for name in ['prepare','worker','status','merge','retry-failed']:
+    for name in ['prepare','worker','status','merge','retry-failed','recover-conversion']:
         s=sub.add_parser(name);s.add_argument('--campaign',type=Path,required=True)
         if name=='prepare':
             s.add_argument('--repo',type=Path,required=True);s.add_argument('--mode',choices=['test','full'],default='test');s.add_argument('--batch-gib',type=float,default=4);s.add_argument('--run-map',type=Path);s.add_argument('--test-runs',type=Path)
         if name=='worker':s.add_argument('--workers',type=int,choices=range(1,11),default=10);s.add_argument('--allow-other-host',action='store_true',help=argparse.SUPPRESS)
     a=p.parse_args()
     if a.command=='prepare' and a.batch_gib<=0:p.error('--batch-gib must be positive')
-    {'prepare':prepare,'worker':worker,'status':lambda a:status(a.campaign.resolve()),'merge':merge,'retry-failed':retry}[a.command](a)
+    {'prepare':prepare,'worker':worker,'status':lambda a:status(a.campaign.resolve()),'merge':merge,'retry-failed':retry,'recover-conversion':recover_conversion}[a.command](a)
 if __name__=='__main__':
     try:main()
     except Exception as e:print('ERROR: '+str(e),file=sys.stderr);sys.exit(1)

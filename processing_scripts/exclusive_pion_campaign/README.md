@@ -84,6 +84,18 @@ Failed retry uses the same frozen software. If code/calibration changes are requ
 
 A crash or killed terminal session can leave host/batch ownership behind. Inspect `owner.json` and confirm the named coordinator and its children have stopped on that host before manually removing a stale claim. There is no timeout-based reassignment: a slow or disconnected live worker must not race a replacement.
 
+## Recover conversion failures without repeating HIPO processing
+
+After both node worker commands have exited, update the checkout and run once on either node:
+
+```sh
+csh -f processing_scripts/exclusive_pion_campaign/environment.csh python3 processing_scripts/exclusive_pion_campaign/campaign.py recover-conversion --campaign /volatile/clas12/thayward/eppi-/test_20261122_v2
+```
+
+This command uses the current checkout to build a repaired converter under `recoveries/`, records its source/binary checksums, and converts existing text only when the batch log proves the processor completed. It verifies the ROOT entry count against the processor's summary. It retains all text, logs and original frozen software, skips previously successful chunks, and merges when all batches are complete. Do not run worker commands during recovery. Converter failures print their actual messages. If a processor did not finish, that batch is left for inspection rather than rerunning it automatically.
+
+The shared metadata CSV contains six-column RGC polarization rows and five-column legacy charge records. Only the requested ND3 run's six-column polarization row is used; unpolarized target polarization is explicitly zero. Future campaign completion records split processing and conversion timings. Existing failed campaigns have no recorded stage timings, so their HIPO processing speed cannot be inferred from converter exit messages alone.
+
 ## Full launch, after the test has been reviewed
 
 Prepare once on either node:

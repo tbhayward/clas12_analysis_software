@@ -29,8 +29,8 @@ class CampaignTest(unittest.TestCase):
     if str(cmd[0])=='groovy':Path(cmd[-2]).write_text('events')
     else:
      Path(cmd[2]).write_text('root')
-     return type('Result',(),dict(stdout='7\n'))()
-   with patch.object(c,'run',side_effect=fake_run):
+     return type('Result',(),dict(stdout='7\n',stderr='',returncode=0))()
+   with patch.object(c,'run',side_effect=fake_run),patch.object(c.subprocess,'run',side_effect=fake_run):
     with concurrent.futures.ThreadPoolExecutor(max_workers=20) as pool:list(pool.map(lambda _:c.process_job(root,root/'build',job),range(20)))
    self.assertEqual(calls.count('groovy'),1)
    self.assertEqual(c.read(root/'chunks/one.json')['entries'],7)
@@ -51,4 +51,25 @@ class CampaignTest(unittest.TestCase):
     merger.assert_called_once_with(args)
    self.assertEqual(list((root/'hosts').iterdir()),[])
    self.assertEqual(list((root/'claims').iterdir()),[])
+ def test_recover_without_reprocessing(self):
+  from types import SimpleNamespace
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp)
+   for name in ['hosts','claims/job','work/job','logs','chunks','build']:(root/name).mkdir(parents=True)
+   c.atomic_json(root/'manifest.json',dict(jobs=[dict(id='job',target='D2',run=6265,bytes=5)]))
+   c.atomic_json(root/'claims/job/failed.json',dict(error='old conversion failed'))
+   (root/'logs/job.log').write_text('SUMMARY seen=4 rows=2\nold converter error\n')
+   (root/'work/job/events.txt').write_text('saved rows')
+   def command(cmd,**kwargs):
+    if str(cmd[0])=='g++':Path(cmd[cmd.index('-o')+1]).write_text('binary')
+   def convert(cmd,**kwargs):
+    self.assertNotEqual(str(cmd[0]),'groovy')
+    Path(cmd[2]).write_text('recovered root')
+    return SimpleNamespace(returncode=0,stdout='2\n',stderr='')
+   with patch.object(c,'verified',return_value=root/'build'),patch.object(c.subprocess,'check_output',return_value=''),patch.object(c,'run',side_effect=command),patch.object(c.subprocess,'run',side_effect=convert),patch.object(c,'merge') as merger:
+    c.recover_conversion(SimpleNamespace(campaign=root))
+    merger.assert_called_once()
+   self.assertEqual(c.read(root/'chunks/job.json')['entries'],2)
+   self.assertTrue((root/'work/job/events.txt').exists())
+   self.assertFalse((root/'claims/job').exists())
 if __name__=='__main__':unittest.main()
