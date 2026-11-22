@@ -4,24 +4,29 @@ Dedicated data-only processing for the exclusive_pion_processing_branch. The def
 
 ## Test launch on the farm
 
-Transfer this directory to `processing_scripts/exclusive_pion_campaign/` in the farm checkout. Run from that checkout's root on either ifarm2401 or ifarm2402:
+Transfer this directory to `processing_scripts/exclusive_pion_campaign/` in the farm checkout. All commands below run from that checkout's root. There is no SSH coordinator or startup barrier: each command starts workers only on the host where you are logged in.
+
+First, prepare the shared test campaign **once**, on either node:
+
+```sh
+csh -f processing_scripts/exclusive_pion_campaign/environment.csh python3 processing_scripts/exclusive_pion_campaign/campaign.py prepare --repo "$PWD" --campaign /volatile/clas12/thayward/eppi-/test_20261122 --mode test
+```
+
+Wait for preparation to finish. Then log into **ifarm2401** and run:
 
 ```sh
 tmux new -s eppi-minus-test 'csh -f processing_scripts/exclusive_pion_campaign/run_test.csh /volatile/clas12/thayward/eppi-/test_20261122'
 ```
 
-This prepares and freezes the campaign, then opens noninteractive SSH sessions to **both ifarm2401 and ifarm2402**, with at most **10 workers on each host**. A launch barrier requires both hosts to verify their runtime before either begins data processing. It selects one eligible run per period/target combination (19 runs), processes **all HIPO files in each selected run**, and merges each completed dataset. A small dataset need not occupy ten workers; 20 is the simultaneous upper limit. Both SSH sessions must be permitted by your existing farm authentication. The launch stays attached inside tmux until both hosts finish and merging completes. Detach with Ctrl-b then d; reattach with `tmux attach -t eppi-minus-test`.
+Log into **ifarm2402** and run the same command there. Each host runs up to ten workers; twenty total when both are busy. Both commands must use the same campaign path. They can start independently and share the queue through atomic batch claims. A host can finish before the other. Whichever finishes the last batches automatically merges the complete campaign under a single finalization claim. An explicit `merge` command is also available for recovery.
 
-The automatically selected run is the eligible run with the smallest total HIPO size. `inventory.json` lists selections and all discovered runs. Preparation fails on missing/empty datasets or ambiguous filename run numbers. It checks filenames against the real RUN::config run during processing. Excluded runs are recorded separately. Filename discovery accepts standard zero-padded train filenames and run directories; if necessary use `--run-map` with a JSON object mapping exact absolute HIPO filenames to integer run numbers.
+Detach from tmux with Ctrl-b then d; reattach on that host with `tmux attach -t eppi-minus-test`.
 
-To select test runs manually, prepare separately with `--test-runs selections.json` (object mapping dataset IDs, such as `RGC_summer2022_ND3`, to integer run numbers), then launch. Omitted selections use the small-run default.
+The test selects one eligible run per period/target combination (19 runs), processes **all HIPO files in each selected run**, and produces 19 final files. The default selection is the eligible run with the smallest total HIPO size. `inventory.json` lists selections and all discovered runs. Preparation fails on missing/empty datasets or ambiguous filename run numbers. Processing checks the inferred run against RUN::config. Excluded runs are recorded separately.
 
-```sh
-csh -f processing_scripts/exclusive_pion_campaign/environment.csh python3 processing_scripts/exclusive_pion_campaign/campaign.py prepare --repo "$PWD" --campaign /volatile/clas12/thayward/eppi-/test_custom --mode test --test-runs selections.json
-csh -f processing_scripts/exclusive_pion_campaign/environment.csh python3 processing_scripts/exclusive_pion_campaign/campaign.py launch --campaign /volatile/clas12/thayward/eppi-/test_custom
-```
+For custom selections, add `--test-runs selections.json` to preparation (JSON object mapping dataset IDs such as `RGC_summer2022_ND3` to integer run numbers). For unusual filenames, add `--run-map paths.json` (exact absolute filenames mapped to integer run numbers).
 
-Preparation builds the converter with optimization, compiles the current helper sources and campaign Java classes, checks real QADB availability, and runs ROOT conversion/validation tests before starting data workers. It freezes dependency JARs, QADB installation/data, source, and the polarization CSV in the campaign directory. It uses the existing Python, ROOT, Groovy and QADB module versions from the analysis environment. Neither processing.csh nor run-groovy is invoked: they modify shared software files.
+Preparation builds the optimized converter, compiles current helper and campaign Java sources, checks real QADB availability and processor compilation, and runs ROOT conversion tests. It freezes source, dependencies, QA data, and the polarization CSV. Workers use this frozen implementation. Existing processing.csh and run-groovy launchers are bypassed because they modify shared files.
 
 ## Outputs and monitoring
 
@@ -72,20 +77,28 @@ Successful chunks are reused. Failed chunks never enter a merge. After the two h
 
 ```sh
 python3 processing_scripts/exclusive_pion_campaign/campaign.py retry-failed --campaign /volatile/clas12/thayward/eppi-/test_20261122
-csh -f processing_scripts/exclusive_pion_campaign/environment.csh python3 processing_scripts/exclusive_pion_campaign/campaign.py launch --campaign /volatile/clas12/thayward/eppi-/test_20261122
+csh -f processing_scripts/exclusive_pion_campaign/run_test.csh /volatile/clas12/thayward/eppi-/test_20261122
 ```
 
 Failed retry uses the same frozen software. If code/calibration changes are required, create a fresh campaign. Do not rerun preparation on an existing campaign root. If preparation fails midway, use a fresh directory after fixing the reported problem.
 
-A crash or killed SSH session can leave host/batch ownership behind. Inspect `owner.json` and confirm the named coordinator and its children have stopped on that host before manually removing a stale claim. There is no timeout-based reassignment: a slow or disconnected live worker must not race a replacement.
+A crash or killed terminal session can leave host/batch ownership behind. Inspect `owner.json` and confirm the named coordinator and its children have stopped on that host before manually removing a stale claim. There is no timeout-based reassignment: a slow or disconnected live worker must not race a replacement.
 
 ## Full launch, after the test has been reviewed
+
+Prepare once on either node:
+
+```sh
+csh -f processing_scripts/exclusive_pion_campaign/environment.csh python3 processing_scripts/exclusive_pion_campaign/campaign.py prepare --repo "$PWD" --campaign /volatile/clas12/thayward/eppi-/full_20261122 --mode full
+```
+
+Then run separately on **each** node:
 
 ```sh
 tmux new -s eppi-minus-full 'csh -f processing_scripts/exclusive_pion_campaign/run_full.csh /volatile/clas12/thayward/eppi-/full_20261122'
 ```
 
-Inputs are the three specified RGB cache paths, all ten specified RGC cache target/period paths, and the six ET/He directories. Production batches are capped at approximately 4 GiB of HIPO input (an individual larger file stays intact). Runs are divided into batches and merged back by dataset. Long batches are offered first to reduce the long tail. Workers perform processing then conversion sequentially within their ten-per-host budget. Merging is sequential after both hosts finish; no extra parallel merge pool is created.
+Inputs are the three specified RGB cache paths, all ten specified RGC cache target/period paths, and the six ET/He directories. Production batches are capped at approximately 4 GiB of HIPO input (an individual larger file stays intact). Runs are divided into batches and merged back by dataset. Long batches are offered first to reduce the long tail. Workers perform processing then conversion sequentially within their ten-per-host budget. Merging is sequential after all batches finish; no extra parallel merge pool is created.
 
 ## Selection and corrections
 

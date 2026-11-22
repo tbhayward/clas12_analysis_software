@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Exclusive pion campaign. No SSH work occurs until the explicit launch command."""
-import argparse, concurrent.futures, hashlib, json, os, re, shlex, shutil, socket, subprocess, sys, time, uuid
+"""Exclusive pion campaign. Start workers separately on each farm host; no SSH is used."""
+import argparse, concurrent.futures, hashlib, json, os, re, shlex, shutil, socket, subprocess, sys, time
 from pathlib import Path
 HERE=Path(__file__).resolve().parent
 HOSTS=('ifarm2401','ifarm2402')
@@ -53,7 +53,7 @@ def prepare(a):
     root.mkdir(parents=True,exist_ok=True)
     lock=root/'prepare.claim';lock.mkdir()  # exclusive preparation; never overwrite a campaign
     try:
-        if (root/'manifest.json').exists():raise RuntimeError('Campaign already prepared; use status/launch, or choose a new directory')
+        if (root/'manifest.json').exists():raise RuntimeError('Campaign already prepared; use status/worker, or choose a new directory')
         if any(root.glob('build*')):raise RuntimeError('Partial preparation exists; choose a fresh campaign directory')
         repo=a.repo.resolve();inventory=[];jobs=[];overrides=read(a.run_map) if a.run_map else {};select=read(a.test_runs) if a.test_runs else {}
         for ds in datasets():
@@ -178,13 +178,6 @@ def worker(a):
     try:
         atomic_json(hostlock/'owner.json',dict(pid=os.getpid(),started=time.time()))
         build=verified(root)
-        if a.launch_id:
-            barrier=root/'launches'/a.launch_id
-            atomic_json(barrier/(host+'.ready.json'),dict(host=host,pid=os.getpid(),ready=time.time()))
-            deadline=time.monotonic()+180
-            while not (barrier/'go').exists():
-                if (barrier/'cancel').exists() or time.monotonic()>deadline:raise RuntimeError('Two-host launch barrier cancelled or timed out')
-                time.sleep(.5)
         with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:
             # Refill from the shared queue. A claimed batch is never considered available.
             pending=set()
@@ -194,7 +187,16 @@ def worker(a):
                 if not pending:break
                 finished,pending=concurrent.futures.wait(pending,return_when=concurrent.futures.FIRST_COMPLETED)
                 for f in finished:f.result()
-        status(root)
+        complete=status(root)
+        if complete:
+            finalizer=root/'claims'/'finalize'
+            try:finalizer.mkdir()
+            except FileExistsError:print('Another host is merging the completed campaign',flush=True)
+            else:
+                try:merge(a)
+                finally:finalizer.rmdir()
+        else:
+            print('Local workers finished; the other host may still be processing. Completed batches are retained.',flush=True)
     finally:
         (hostlock/'owner.json').unlink(missing_ok=True);hostlock.rmdir()
 
@@ -232,58 +234,24 @@ def merge(a):
         finally:claim.rmdir()
     if fail:raise RuntimeError('Some datasets are incomplete; see status and batch logs')
 
-def launch(a):
-    root=a.campaign.resolve();verified(root)
-    if any((root/'hosts').iterdir()):raise RuntimeError('A host is already running or has a stale host claim; inspect before relaunch')
-    # All worker scripts and metadata paths are on the shared filesystem.
-    runner=root/'build/source/campaign.py';envscript=root/'build/source/environment.csh'
-    launch_id=uuid.uuid4().hex
-    barrier=root/'launches'/launch_id;barrier.mkdir(parents=True)
-    remote=['csh','-f',str(envscript),'python3',str(runner),'worker','--campaign',str(root),'--workers','10','--launch-id',launch_id]
-    procs=[]
-    for host in HOSTS:
-        log=(root/'logs'/(host+'.log')).open('a');procs.append((host,subprocess.Popen(['ssh','-o','BatchMode=yes','-o','ConnectTimeout=15',host,shlex.join(remote)],stdout=log,stderr=subprocess.STDOUT),log));print('Started '+host+' (10 workers)',flush=True)
-    # Neither host starts data until both have verified their frozen runtime.
-    deadline=time.monotonic()+180
-    while not all((barrier/(host+'.ready.json')).exists() for host in HOSTS):
-        if any(proc.poll() is not None for _,proc,_ in procs) or time.monotonic()>deadline:
-            (barrier/'cancel').touch()
-            for _,proc,log in procs:
-                try:proc.wait(timeout=20)
-                except subprocess.TimeoutExpired:proc.terminate()
-                log.close()
-            raise RuntimeError('Both hosts did not become ready; inspect host logs')
-        time.sleep(.5)
-    (barrier/'go').touch()
-    print('Both hosts ready; releasing 20-worker campaign',flush=True)
-    # Parent stays alive in tmux; only merge once both host processes have exited.
-    codes=[]
-    try:
-        for host,p,log in procs:codes.append(p.wait());log.close();print(f'{host} exited: {codes[-1]}',flush=True)
-    except KeyboardInterrupt:
-        print('Launch interrupted. Inspect host claims and remote processes before recovery.',flush=True);raise
-    if any(codes):raise RuntimeError('A remote host failed; inspect host logs')
-    if not status(root):raise RuntimeError('Campaign incomplete; inspect failures before retrying')
-    merge(a)
-
 def retry(a):
     root=a.campaign.resolve()
     if any((root/'hosts').iterdir()):raise RuntimeError('Host claims exist; confirm workers have stopped before recovering stale claims')
     for p in (root/'claims').iterdir():
         if (p/'failed.json').exists():
             shutil.rmtree(p);print('Released failed batch '+p.name)
-    print('Failed batches released; run launch again. Active/stale claims were not removed.')
+    print('Failed batches released; run the worker command on each host again. Active/stale claims were not removed.')
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='command',required=True)
-    for name in ['prepare','launch','worker','status','merge','retry-failed']:
+    for name in ['prepare','worker','status','merge','retry-failed']:
         s=sub.add_parser(name);s.add_argument('--campaign',type=Path,required=True)
         if name=='prepare':
             s.add_argument('--repo',type=Path,required=True);s.add_argument('--mode',choices=['test','full'],default='test');s.add_argument('--batch-gib',type=float,default=4);s.add_argument('--run-map',type=Path);s.add_argument('--test-runs',type=Path)
-        if name=='worker':s.add_argument('--launch-id',help=argparse.SUPPRESS);s.add_argument('--workers',type=int,choices=range(1,11),default=10);s.add_argument('--allow-other-host',action='store_true',help=argparse.SUPPRESS)
+        if name=='worker':s.add_argument('--workers',type=int,choices=range(1,11),default=10);s.add_argument('--allow-other-host',action='store_true',help=argparse.SUPPRESS)
     a=p.parse_args()
     if a.command=='prepare' and a.batch_gib<=0:p.error('--batch-gib must be positive')
-    {'prepare':prepare,'launch':launch,'worker':worker,'status':lambda a:status(a.campaign.resolve()),'merge':merge,'retry-failed':retry}[a.command](a)
+    {'prepare':prepare,'worker':worker,'status':lambda a:status(a.campaign.resolve()),'merge':merge,'retry-failed':retry}[a.command](a)
 if __name__=='__main__':
     try:main()
     except Exception as e:print('ERROR: '+str(e),file=sys.stderr);sys.exit(1)

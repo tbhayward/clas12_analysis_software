@@ -39,4 +39,16 @@ class CampaignTest(unittest.TestCase):
    with patch.object(c,'run',side_effect=RuntimeError('simulated failure')):c.process_job(root,root/'build',job)
    self.assertTrue((root/'claims/one/failed.json').exists());self.assertFalse((root/'chunks/one.json').exists())
    with patch.object(c,'run',side_effect=AssertionError('must not retry')):c.process_job(root,root/'build',job)
+ def test_worker_finishes_and_merges_locally(self):
+  from types import SimpleNamespace
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp)
+   for name in ['hosts','claims','chunks']:(root/name).mkdir()
+   c.atomic_json(root/'manifest.json',dict(jobs=[]))
+   args=SimpleNamespace(campaign=root,allow_other_host=False,workers=10)
+   with patch.object(c.socket,'gethostname',return_value='ifarm2401'),patch.object(c,'verified',return_value=root/'build'),patch.object(c,'status',return_value=True),patch.object(c,'merge') as merger,patch.object(c.subprocess,'Popen',side_effect=AssertionError('No remote launch permitted')):
+    c.worker(args)
+    merger.assert_called_once_with(args)
+   self.assertEqual(list((root/'hosts').iterdir()),[])
+   self.assertEqual(list((root/'claims').iterdir()),[])
 if __name__=='__main__':unittest.main()
