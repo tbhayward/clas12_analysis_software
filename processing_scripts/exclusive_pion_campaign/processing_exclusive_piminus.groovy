@@ -13,7 +13,7 @@ def qa=new QADB('latest')
 [6736,6737,6738,6739,6740,6741,6742,6743,6744,6746,6747,6748,6749,6750,6751,6753,6754,6755,6756,6757,16194,16089,16185,16308,16184,16307,16309,16872,16975,17763,17764,17765,17766,17767,17768,17179,17180,17181,17182,17183,17188,17189,17252].each{qa.allowMiscBit(it)}
 def excluded=[5247,5345,17331,16987,17079,17190,17639,16850,16851,16852,16855,16879] as Set
 def fitter=new ExclusivePionFitter()
-long seen=0,rows=0,firstRecords=0,missingBanks=0
+long seen=0,rows=0,firstRecords=0,missingBanks=0,nonPhysics=0
 Double energy=null
 new File(args[1]).withWriter('UTF-8'){writer->
  writer.write('# '+ExclusivePionVariables.INPUT_SCHEMA+'\n')
@@ -25,12 +25,13 @@ new File(args[1]).withWriter('UTF-8'){writer->
    if(reader.hasEvent()){reader.getNextEvent();firstRecords++}
    while(reader.hasEvent()){
     def event=reader.getNextEvent();seen++
-    if(!event.hasBank('RUN::config')){missingBanks++;continue}
-    def cfg=event.getBank('RUN::config');int run=cfg.getInt('run',0),ev=cfg.getInt('event',0)
-    if(run!=expectedRun)throw new IllegalStateException("Input inventory run ${expectedRun} does not match HIPO run ${run}: ${path}")
-    if((run>16600&&run<16700)||(run>17768&&run<=17811)||excluded.contains(run))continue
-    def names=['REC::Event','REC::Particle','REC::Calorimeter','REC::Traj','REC::Track','REC::Cherenkov']
+    def names=['RUN::config','REC::Event','REC::Particle','REC::Calorimeter','REC::Traj','REC::Track','REC::Cherenkov']
     if(!names.every{event.hasBank(it)}){missingBanks++;continue}
+    def cfg=event.getBank('RUN::config')
+    if(cfg.rows()==0||event.getBank('REC::Event').rows()==0||event.getBank('REC::Particle').rows()==0){nonPhysics++;continue}
+    int run=cfg.getInt('run',0),ev=cfg.getInt('event',0)
+    if(!PhysicsRecord.acceptRun(run,expectedRun)){nonPhysics++;continue}
+    if((run>16600&&run<16700)||(run>17768&&run<=17811)||excluded.contains(run))continue
     int h=event.getBank('REC::Event').getByte('helicity',0)
     if(h==0||!qa.pass(run,ev))continue
     if(energy==null)energy=new BeamEnergy(new PhysicsEvent(),run,false).Eb()
@@ -50,4 +51,4 @@ new File(args[1]).withWriter('UTF-8'){writer->
   } finally {reader.close()}
  }
 }
-println("SUMMARY seen=${seen} first_records=${firstRecords} missing_banks=${missingBanks} rows=${rows}")
+println("SUMMARY seen=${seen} first_records=${firstRecords} missing_banks=${missingBanks} non_physics=${nonPhysics} rows=${rows}")

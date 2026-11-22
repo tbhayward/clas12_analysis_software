@@ -196,7 +196,13 @@ def worker(a):
                 try:merge(a)
                 finally:finalizer.rmdir()
         else:
-            print('Local workers finished; the other host may still be processing. Completed batches are retained.',flush=True)
+            failures=[j for j in manifest['jobs'] if (root/'claims'/j['id']/'failed.json').exists()]
+            if failures:
+                for job in failures[:3]:
+                    failure=read(root/'claims'/job['id']/'failed.json')
+                    print(f'FAILED {job["id"]}: {failure["error"]}; log: {root/"logs"/(job["id"]+".log")}',flush=True)
+                raise RuntimeError(f'{len(failures)} failed batches; inspect logs before retrying')
+            print('Local workers finished; remaining batches are claimed by other workers.',flush=True)
     finally:
         (hostlock/'owner.json').unlink(missing_ok=True);hostlock.rmdir()
 
