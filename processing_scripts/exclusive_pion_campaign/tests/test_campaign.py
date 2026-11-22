@@ -26,7 +26,7 @@ class CampaignTest(unittest.TestCase):
    calls=[]
    def fake_run(cmd,**kwargs):
     calls.append(cmd[0])
-    if str(cmd[0])=='groovy':Path(cmd[-2]).write_text('events')
+    if str(cmd[0])=='groovy':Path(cmd[-3]).write_text('events')
     else:
      Path(cmd[2]).write_text('root')
      return type('Result',(),dict(stdout='7\n',stderr='',returncode=0))()
@@ -72,4 +72,18 @@ class CampaignTest(unittest.TestCase):
    self.assertEqual(c.read(root/'chunks/job.json')['entries'],2)
    self.assertTrue((root/'work/job/events.txt').exists())
    self.assertFalse((root/'claims/job').exists())
+ def test_progress_accounts_for_both_hosts(self):
+  import io
+  import contextlib
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp)
+   for name in ['chunks','claims/b','claims/c','work/b']:(root/name).mkdir(parents=True)
+   jobs=[dict(id=n,bytes=1024) for n in 'abcd']
+   c.atomic_json(root/'chunks/a.json',dict(entries=42))
+   c.atomic_json(root/'claims/b/owner.json',dict(host='ifarm2402',started=0))
+   c.atomic_json(root/'claims/c/failed.json',dict(error='failure'))
+   c.atomic_json(root/'work/b/progress.json',dict(stage='processing',updated=c.time.time(),counts=dict(seen=200,rows=10,qa_reject=100,zero_helicity=20)))
+   with contextlib.redirect_stdout(io.StringIO()) as output:state=c.progress_snapshot(root,dict(jobs=jobs))
+   self.assertEqual(state,dict(done=1,active=1,queued=1,failed=1,entries=42))
+   self.assertIn('ifarm2402',output.getvalue());self.assertIn('QA rejected 100',output.getvalue())
 if __name__=='__main__':unittest.main()

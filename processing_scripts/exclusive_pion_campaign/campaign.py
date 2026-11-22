@@ -140,6 +140,37 @@ def verified(root):
         if digest(build/name)!=sha:raise RuntimeError(f'Frozen software modified: {name}')
     return build
 
+def progress_snapshot(root,manifest=None):
+    manifest=manifest or read(root/'manifest.json');done=failed=active=0;entries=completed_bytes=0;details=[]
+    total_bytes=sum(j['bytes'] for j in manifest['jobs'])
+    for job in manifest['jobs']:
+        jid=job['id'];completion=root/'chunks'/(jid+'.json');claim=root/'claims'/jid
+        if completion.exists():
+            info=read(completion);done+=1;entries+=info['entries'];completed_bytes+=job['bytes'];continue
+        if (claim/'failed.json').exists():failed+=1;continue
+        if not claim.exists():continue
+        active+=1
+        try:owner=read(claim/'owner.json')
+        except FileNotFoundError:owner={}
+        line=f'{jid} @ {owner.get("host","claiming")}'
+        progress=root/'work'/jid/'progress.json'
+        try:
+            info=read(progress);counts=info['counts'];age=max(0,time.time()-info['updated'])
+            line+=f': {info["stage"]}, {counts["seen"]:,} events, {counts["rows"]:,} rows, QA rejected {counts.get("qa_reject",0):,}, zero helicity {counts.get("zero_helicity",0):,}; update {age:.0f}s ago'
+        except FileNotFoundError:line+=f': starting/processing ({max(0,time.time()-owner.get("started",time.time())):.0f}s elapsed)'
+        details.append(line)
+    total=len(manifest['jobs']);queued=total-done-failed-active
+    print(f'[{time.strftime("%H:%M:%S")}] BOTH HOSTS: {done}/{total} batches done; {active} active; {queued} queued; {failed} failed; {entries:,} ROOT entries; {completed_bytes/1024**3:.2f}/{total_bytes/1024**3:.2f} GiB input completed',flush=True)
+    for detail in details:print('  '+detail,flush=True)
+    return dict(done=done,active=active,queued=queued,failed=failed,entries=entries)
+
+def monitor(a):
+    root=a.campaign.resolve();manifest=read(root/'manifest.json')
+    while True:
+        state=progress_snapshot(root,manifest)
+        if a.once or state['done']+state['failed']==len(manifest['jobs']):break
+        time.sleep(a.interval)
+
 def process_job(root,build,j):
     claim=root/'claims'/j['id']
     try:claim.mkdir()
@@ -156,17 +187,27 @@ def process_job(root,build,j):
         listing=work/'inputs.list';listing.write_text(''.join(f['path']+'\n' for f in j['files']))
         text=work/'events.txt';tmp=work/'events.root';env=os.environ.copy();env['QADB']=str(build/'qadb');env['JAVA_OPTS']='-Xms128m -Xmx1536m -XX:ActiveProcessorCount=1'
         started=time.time()
+        print(f'START {j["id"]} @ {socket.gethostname()}: {len(j["files"])} files, {j["bytes"]/1024**3:.2f} GiB',flush=True)
         with (root/'logs'/(j['id']+'.log')).open('w') as log:
-            run(['groovy','-cp',classnamepath(build),build/'source/processing_exclusive_piminus.groovy',listing,text,str(j['run'])],env=env,stdout=log,stderr=subprocess.STDOUT)
+            run(['groovy','-cp',classnamepath(build),build/'source/processing_exclusive_piminus.groovy',listing,text,str(j['run']),work/'progress.json'],env=env,stdout=log,stderr=subprocess.STDOUT)
             processing_seconds=time.time()-started
+            progress_path=work/'progress.json'
+            if progress_path.exists():
+                info=read(progress_path);info.update(stage='converting',updated=time.time());atomic_json(progress_path,info)
+            print(f'CONVERT {j["id"]}: processing finished in {processing_seconds:.1f}s',flush=True)
             result=subprocess.run([str(x) for x in [build/'converter',text,tmp,build/'run_info.csv',j['target'],str(j['run'])]],capture_output=True,text=True)
             log.write(result.stderr)
             if result.returncode:raise RuntimeError('Converter: '+result.stderr.strip())
             entries=int(result.stdout.strip().splitlines()[-1])
             final=root/'chunks'/(j['id']+'.root');os.replace(tmp,final)
-            atomic_json(done,dict(entries=entries,seconds=time.time()-started,processing_seconds=processing_seconds,conversion_seconds=time.time()-started-processing_seconds,host=socket.gethostname(),bytes=j['bytes'],root_sha256=digest(final)))
+            diagnostic=read(work/'progress.json') if (work/'progress.json').exists() else {}
+            if diagnostic:
+                diagnostic.update(stage='done',updated=time.time());atomic_json(work/'progress.json',diagnostic)
+            atomic_json(done,dict(diagnostics=diagnostic,entries=entries,seconds=time.time()-started,processing_seconds=processing_seconds,conversion_seconds=time.time()-started-processing_seconds,host=socket.gethostname(),bytes=j['bytes'],root_sha256=digest(final)))
         text.unlink();(claim/'failed.json').unlink(missing_ok=True)
-        print(f'DONE {j["id"]}: {entries} entries',flush=True)
+        print(f'DONE {j["id"]}: {entries:,} entries; processing {processing_seconds:.1f}s, conversion {time.time()-started-processing_seconds:.1f}s',flush=True)
+        if entries==0:
+            print('  EMPTY TREE diagnostics: '+json.dumps(diagnostic.get('counts',{}),sort_keys=True),flush=True)
     except Exception as e:
         atomic_json(claim/'failed.json',dict(error=str(e),time=time.time()))
         print(f'FAILED {j["id"]}: {e}',flush=True)
@@ -183,6 +224,8 @@ def worker(a):
     try:
         atomic_json(hostlock/'owner.json',dict(pid=os.getpid(),started=time.time()))
         build=verified(root)
+        print(f'{host}: starting up to {a.workers} local workers',flush=True)
+        last_report=0.0
         with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:
             # Refill from the shared queue. A claimed batch is never considered available.
             pending=set()
@@ -190,7 +233,9 @@ def worker(a):
                 available=[j for j in manifest['jobs'] if not (root/'chunks'/(j['id']+'.json')).exists() and not (root/'claims'/j['id']).exists()]
                 while available and len(pending)<a.workers:pending.add(pool.submit(process_job,root,build,available.pop(0)))
                 if not pending:break
-                finished,pending=concurrent.futures.wait(pending,return_when=concurrent.futures.FIRST_COMPLETED)
+                if time.monotonic()-last_report>=30:
+                    progress_snapshot(root,manifest);last_report=time.monotonic()
+                finished,pending=concurrent.futures.wait(pending,timeout=1,return_when=concurrent.futures.FIRST_COMPLETED)
                 for f in finished:f.result()
         complete=status(root)
         if complete:
@@ -299,14 +344,16 @@ def retry(a):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='command',required=True)
-    for name in ['prepare','worker','status','merge','retry-failed','recover-conversion']:
+    for name in ['prepare','worker','status','merge','retry-failed','recover-conversion','monitor']:
         s=sub.add_parser(name);s.add_argument('--campaign',type=Path,required=True)
         if name=='prepare':
             s.add_argument('--repo',type=Path,required=True);s.add_argument('--mode',choices=['test','full'],default='test');s.add_argument('--batch-gib',type=float,default=4);s.add_argument('--run-map',type=Path);s.add_argument('--test-runs',type=Path)
+        if name=='monitor':s.add_argument('--interval',type=int,default=30);s.add_argument('--once',action='store_true')
         if name=='worker':s.add_argument('--workers',type=int,choices=range(1,11),default=10);s.add_argument('--allow-other-host',action='store_true',help=argparse.SUPPRESS)
     a=p.parse_args()
+    if a.command=='monitor' and a.interval<1:p.error('--interval must be positive')
     if a.command=='prepare' and a.batch_gib<=0:p.error('--batch-gib must be positive')
-    {'prepare':prepare,'worker':worker,'status':lambda a:status(a.campaign.resolve()),'merge':merge,'retry-failed':retry,'recover-conversion':recover_conversion}[a.command](a)
+    {'prepare':prepare,'worker':worker,'status':lambda a:status(a.campaign.resolve()),'merge':merge,'retry-failed':retry,'recover-conversion':recover_conversion,'monitor':monitor}[a.command](a)
 if __name__=='__main__':
     try:main()
     except Exception as e:print('ERROR: '+str(e),file=sys.stderr);sys.exit(1)

@@ -71,6 +71,20 @@ python3 processing_scripts/exclusive_pion_campaign/campaign.py status --campaign
 
 Batch logs include event, skipped-first-record, missing-bank, and accepted-row counts. A successful empty tree is permitted and flagged in its final report and merge output; inspect such cases before the full launch. A run entirely rejected by QA or channel cuts can legitimately yield no rows.
 
+## Live progress and empty-run diagnostics
+
+New campaigns print START, CONVERT and DONE messages, separate processing/conversion timings, and a combined two-host snapshot every 30 seconds while local jobs are running. Snapshots show completed/active/queued/failed batches, output rows, completed input GiB, and the host and current stage of each active batch. Processor progress files update about every 15 seconds (checked every 1,000 events), with an immediate startup and final update. Long file-open or QA-startup waits may leave an older timestamp visible.
+
+From a separate terminal, monitor an existing campaign without stopping its workers:
+
+```sh
+python3 processing_scripts/exclusive_pion_campaign/campaign.py monitor --campaign /volatile/clas12/thayward/eppi-/test_20261122_v3 --interval 30
+```
+
+Use `--once` for one snapshot. Older campaigns without progress files still show batch completion, host ownership, elapsed claim time and totals. Their frozen processors do not acquire new event counters retroactively.
+
+For newly prepared campaigns, each batch log ends with an ordered event selection summary: seen, skipped first records, missing banks, invalid/nonphysics records, explicit run exclusions, zero helicity, QADB rejection, QADB acceptance, no selected electron, no selected proton, no selected pion, particle-pair candidates, kinematic rejections, accepted events, and output rows. QA rejection counts apply after the nonzero-helicity check. Candidate-pair counts are distinct from event counts because an event can have more than one pair. Empty outputs print these counters directly. Completion JSON files retain the same diagnostics. Existing zero-entry trees alone cannot identify QADB as their cause.
+
 ## Recovery
 
 Successful chunks are reused. Failed chunks never enter a merge. After the two host coordinators have exited, release failed claims and relaunch:
