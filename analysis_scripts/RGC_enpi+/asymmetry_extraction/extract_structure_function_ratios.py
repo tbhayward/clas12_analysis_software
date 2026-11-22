@@ -163,10 +163,7 @@ For each of the five published polarized ratios,
     delta_migration[i] = 1.5 * abs(a_migrated[i] - a_nominal[i]).
 
 The factor 1.5 retains the established conservative prescription for GEMC
-underestimating the relevant detector resolution.  The two fitted unpolarized
-modulations are nuisance quantities required by the simultaneous likelihood;
-they are not publication observables and are excluded from migration and from
-publication-level systematic averages.
+underestimating the relevant detector resolution. 
 
 The final published point-to-point systematic is therefore
 
@@ -186,8 +183,8 @@ A variation passes the criterion when B >= 1.  A zero denominator with a
 nonzero shift is treated as B = infinity and therefore passes; a zero
 denominator with a zero shift is reported as undefined.  The complete Barlow
 values and pass/fail/undefined states are written for target-axis,
-ISR, momentum-correction, and channel-selection variations.  The Barlow decision is diagnostic and
-does not silently delete a requested systematic; both the raw variation and
+ISR, momentum-correction, and channel-selection variations.  The Barlow decision is 
+diagnostic and does not remove a systematic; both the raw variation and
 the criterion result are retained.
 
 Beam- and target-polarization uncertainties are intentionally ignored by this
@@ -676,10 +673,8 @@ PUBLISHED_SYSTEMATIC_PARAMETERS: tuple[str, ...] = (
     "lu1", "ul1", "ul2", "ll0", "ll1",
 )
 
-# Established MC bin-migration composition matrix from the previous analysis
-# note.  Row i is the generated-bin composition of reconstructed bin i.
-# Values were published rounded to two decimal places, so rows are normalized
-# before use.
+# Established MC bin-migration composition matrix 
+#  Row i is the generated-bin composition of reconstructed bin i.
 MIGRATION_RESOLUTION_SCALE = 1.5
 MIGRATION_MATRIX = np.asarray([
     [0.93,0.03,0,0,0,0,0.03,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0],
