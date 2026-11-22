@@ -48,6 +48,23 @@ def make_batches(files,target_bytes):
     if current:batches.append(current)
     return batches
 
+def empty_test_datasets(previous):
+    old=read(previous/'manifest.json');empty={}
+    for dataset in old['datasets']:
+        jobs=[j for j in old['jobs'] if j['dataset']==dataset['id']]
+        if not jobs:continue
+        completions=[previous/'chunks'/(j['id']+'.json') for j in jobs]
+        if not all(p.exists() for p in completions):raise RuntimeError('Previous test is incomplete')
+        if sum(read(p)['entries'] for p in completions)==0:empty[dataset['id']]=sorted({j['run'] for j in jobs})
+    return empty
+
+def retest_runs(groups,eligible,original):
+    # Preserve the original run for diagnosis, plus two independent replacements.
+    candidates=sorted((n for n in eligible if n not in original),key=lambda n:(sum(f['size'] for f in groups[n]),n))
+    if len(candidates)<2:raise RuntimeError('Need two alternative runs for focused retest')
+    middle=max(0,len(candidates)//2-1)
+    return sorted(set(original)|set(candidates[middle:middle+2]))
+
 def prepare(a):
     root=a.campaign.resolve()
     root.mkdir(parents=True,exist_ok=True)
@@ -55,8 +72,12 @@ def prepare(a):
     try:
         if (root/'manifest.json').exists():raise RuntimeError('Campaign already prepared; use status/worker, or choose a new directory')
         if any(root.glob('build*')):raise RuntimeError('Partial preparation exists; choose a fresh campaign directory')
+        retest=empty_test_datasets(a.retest_empty_from.resolve()) if getattr(a,'retest_empty_from',None) else None
+        if retest is not None and not retest:raise RuntimeError('No empty datasets in previous test')
+        selected_datasets=[d for d in datasets() if retest is None or d['id'] in retest]
+        if retest is not None and a.mode!='test':raise RuntimeError('--retest-empty-from requires --mode test')
         repo=a.repo.resolve();inventory=[];jobs=[];overrides=read(a.run_map) if a.run_map else {};select=read(a.test_runs) if a.test_runs else {}
-        for ds in datasets():
+        for ds in selected_datasets:
             source=Path(ds['path']);groups={}
             if not source.is_dir():raise RuntimeError(f'Missing input directory: {source}')
             for p in sorted(source.rglob('*.hipo')):
@@ -68,7 +89,10 @@ def prepare(a):
             eligible=sorted(n for n in groups if allowed(n))
             if not eligible:raise RuntimeError(f'No eligible input runs: {ds["id"]}')
             selected=eligible
-            if a.mode=='test':
+            if retest is not None:
+                selected=retest_runs(groups,eligible,retest[ds['id']])
+                print(f'RETEST {ds["id"]}: original {retest[ds["id"]]}, selected {selected}',flush=True)
+            elif a.mode=='test':
                 # Prefer a small run for a quick smoke test; user can select alternatives.
                 chosen=int(select[ds['id']]) if ds['id'] in select else min(eligible,key=lambda n:(sum(f['size'] for f in groups[n]),n))
                 if chosen not in eligible:raise RuntimeError(f'Invalid test run {chosen} for {ds["id"]}')
@@ -127,10 +151,10 @@ def prepare(a):
         run(['groovy','-cp',classnamepath(build),'-e',"new GroovyClassLoader().parseClass(new File(args[0])); println('Campaign processor compiled')",str(build/'source/processing_exclusive_piminus.groovy')],env=env)
         for name in ['claims','chunks','work','logs','reports','root','hosts']: (root/name).mkdir()
         atomic_json(root/'inventory.json',inventory)
-        atomic_json(root/'manifest.json',dict(mode=a.mode,workers_per_host=10,hosts=HOSTS,jobs=sorted(jobs,key=lambda j:(-j['bytes'],j['id'])),datasets=datasets(),created=time.time(),repo=str(repo)))
+        atomic_json(root/'manifest.json',dict(mode=a.mode,workers_per_host=10,hosts=HOSTS,jobs=sorted(jobs,key=lambda j:(-j['bytes'],j['id'])),datasets=selected_datasets,retest_original_runs=retest,created=time.time(),repo=str(repo)))
         frozen={str(p.relative_to(build)):digest(p) for p in build.rglob('*') if p.is_file()}
         atomic_json(root/'checksums.json',frozen)
-        print(f'Prepared {a.mode}: {len(jobs)} batches, 19 datasets in {root}',flush=True)
+        print(f'Prepared {a.mode}: {len(jobs)} batches, {len(selected_datasets)} datasets in {root}',flush=True)
         for ds in inventory:print(f'  {ds["id"]}: runs {ds["selected_runs"]}')
     finally:lock.rmdir()
 
@@ -271,6 +295,25 @@ def status(root):
     print(f'Total: {total}/{len(m["jobs"])} complete; {failed} failed',flush=True)
     return total==len(m['jobs'])
 
+def retest_report(root):
+    manifest=read(root/'manifest.json');original=manifest.get('retest_original_runs')
+    if not original:raise RuntimeError('This is not a focused retest campaign')
+    passed=True
+    for dataset,runs in original.items():
+        new_entries=0;complete=True
+        print(dataset+':',flush=True)
+        for job in (j for j in manifest['jobs'] if j['dataset']==dataset):
+            path=root/'chunks'/(job['id']+'.json')
+            if not path.exists():complete=False;print('  INCOMPLETE '+job['id']);continue
+            info=read(path);label='original' if job['run'] in runs else 'replacement'
+            print(f'  {label} run {job["run"]}: {info["entries"]:,} rows',flush=True)
+            if label=='replacement':new_entries+=info['entries']
+            if info['entries']==0:print('    Rejections: '+json.dumps(info.get('diagnostics',{}).get('counts',{}),sort_keys=True),flush=True)
+        okay=complete and new_entries>0;passed=passed and okay
+        print('  '+('PASS: replacement data produced rows' if okay else 'NEEDS INVESTIGATION: no validated nonempty replacement'),flush=True)
+    if not passed:raise RuntimeError('Focused retest has unresolved combinations; do not launch full campaign yet')
+    print('All focused retest combinations produced nonempty replacement output. Review rejection counts and physics distributions before production.',flush=True)
+
 def merge(a):
     root=a.campaign.resolve();build=verified(root);m=read(root/'manifest.json');fail=False
     for ds in m['datasets']:
@@ -351,16 +394,16 @@ def retry(a):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='command',required=True)
-    for name in ['prepare','worker','status','merge','retry-failed','recover-conversion','monitor']:
+    for name in ['prepare','worker','status','merge','retry-failed','recover-conversion','monitor','retest-report']:
         s=sub.add_parser(name);s.add_argument('--campaign',type=Path,required=True)
         if name=='prepare':
-            s.add_argument('--repo',type=Path,required=True);s.add_argument('--mode',choices=['test','full'],default='test');s.add_argument('--batch-gib',type=float,default=4);s.add_argument('--run-map',type=Path);s.add_argument('--test-runs',type=Path)
+            s.add_argument('--repo',type=Path,required=True);s.add_argument('--mode',choices=['test','full'],default='test');s.add_argument('--batch-gib',type=float,default=4);s.add_argument('--run-map',type=Path);s.add_argument('--test-runs',type=Path);s.add_argument('--retest-empty-from',type=Path)
         if name=='monitor':s.add_argument('--interval',type=int,default=30);s.add_argument('--once',action='store_true')
         if name=='worker':s.add_argument('--workers',type=int,choices=range(1,11),default=10);s.add_argument('--allow-other-host',action='store_true',help=argparse.SUPPRESS)
     a=p.parse_args()
     if a.command=='monitor' and a.interval<1:p.error('--interval must be positive')
     if a.command=='prepare' and a.batch_gib<=0:p.error('--batch-gib must be positive')
-    {'prepare':prepare,'worker':worker,'status':lambda a:status(a.campaign.resolve()),'merge':merge,'retry-failed':retry,'recover-conversion':recover_conversion,'monitor':monitor}[a.command](a)
+    {'prepare':prepare,'worker':worker,'status':lambda a:status(a.campaign.resolve()),'merge':merge,'retry-failed':retry,'recover-conversion':recover_conversion,'monitor':monitor,'retest-report':lambda a:retest_report(a.campaign.resolve())}[a.command](a)
 if __name__=='__main__':
     try:main()
     except Exception as e:print('ERROR: '+str(e),file=sys.stderr);sys.exit(1)

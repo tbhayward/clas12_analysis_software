@@ -92,4 +92,18 @@ class CampaignTest(unittest.TestCase):
    with contextlib.redirect_stdout(io.StringIO()) as output:state=c.progress_snapshot(root,dict(jobs=jobs))
    self.assertEqual(state,dict(done=1,active=1,queued=1,failed=1,entries=42))
    self.assertIn('ifarm2402',output.getvalue());self.assertIn('QA rejected 100',output.getvalue())
+ def test_retest_selection_and_gate(self):
+  import contextlib,io
+  groups={n:[dict(size=n)] for n in range(1,11)}
+  selected=c.retest_runs(groups,list(groups),[1])
+  self.assertIn(1,selected);self.assertEqual(len(selected),3);self.assertNotIn(2,selected)
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);(root/'chunks').mkdir()
+   c.atomic_json(root/'manifest.json',dict(retest_original_runs={'example':[1]},jobs=[dict(id='old',dataset='example',run=1),dict(id='new',dataset='example',run=5)]))
+   c.atomic_json(root/'chunks/old.json',dict(entries=0,diagnostics=dict(counts=dict(qa_reject=100))))
+   c.atomic_json(root/'chunks/new.json',dict(entries=0))
+   with contextlib.redirect_stdout(io.StringIO()),self.assertRaises(RuntimeError):c.retest_report(root)
+   c.atomic_json(root/'chunks/new.json',dict(entries=10))
+   with contextlib.redirect_stdout(io.StringIO()) as output:c.retest_report(root)
+   self.assertIn('PASS',output.getvalue())
 if __name__=='__main__':unittest.main()

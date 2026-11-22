@@ -31,6 +31,8 @@ def qa=new QADB('latest')
 def excluded=[5247,5345,17331,16987,17079,17190,17639,16850,16851,16852,16855,16879] as Set
 def fitter=new ExclusivePionFitter()
 stage='processing';publish(true)
+def requiredBanks=['RUN::config','REC::Event','REC::Particle','REC::Calorimeter','REC::Traj','REC::Track','REC::Cherenkov']
+requiredBanks.each{counts['missing_'+it.replace('::','_')]=0L}
 Double energy=null
 new File(args[1]).withWriter('UTF-8'){writer->
  writer.write('# '+ExclusivePionVariables.INPUT_SCHEMA+'\n')
@@ -42,8 +44,9 @@ new File(args[1]).withWriter('UTF-8'){writer->
    if(reader.hasEvent()){reader.getNextEvent();counts.first_records++}
    while(reader.hasEvent()){
     def event=reader.getNextEvent();counts.seen++;if(counts.seen%1000==0)publish(false)
-    def names=['RUN::config','REC::Event','REC::Particle','REC::Calorimeter','REC::Traj','REC::Track','REC::Cherenkov']
-    if(!names.every{event.hasBank(it)}){counts.missing_banks++;continue}
+    boolean missing=false
+    for(String bank:requiredBanks){if(!event.hasBank(bank)){counts['missing_'+bank.replace('::','_')]++;missing=true}}
+    if(missing){counts.missing_banks++;continue}
     def cfg=event.getBank('RUN::config')
     if(cfg.rows()==0||event.getBank('REC::Event').rows()==0||event.getBank('REC::Particle').rows()==0){counts.non_physics++;continue}
     int run=cfg.getInt('run',0),ev=cfg.getInt('event',0)
