@@ -75,6 +75,11 @@ def prepare(a):
         retest=empty_test_datasets(a.retest_empty_from.resolve()) if getattr(a,'retest_empty_from',None) else None
         if retest is not None and not retest:raise RuntimeError('No empty datasets in previous test')
         selected_datasets=[d for d in datasets() if retest is None or d['id'] in retest]
+        requested=getattr(a,'datasets',None)
+        if requested:
+            unknown=set(requested)-{d['id'] for d in selected_datasets}
+            if unknown:raise RuntimeError('Unknown/unavailable datasets: '+', '.join(sorted(unknown)))
+            selected_datasets=[d for d in selected_datasets if d['id'] in requested]
         if retest is not None and a.mode!='test':raise RuntimeError('--retest-empty-from requires --mode test')
         repo=a.repo.resolve();inventory=[];jobs=[];overrides=read(a.run_map) if a.run_map else {};select=read(a.test_runs) if a.test_runs else {}
         for ds in selected_datasets:
@@ -397,7 +402,7 @@ def main():
     for name in ['prepare','worker','status','merge','retry-failed','recover-conversion','monitor','retest-report']:
         s=sub.add_parser(name);s.add_argument('--campaign',type=Path,required=True)
         if name=='prepare':
-            s.add_argument('--repo',type=Path,required=True);s.add_argument('--mode',choices=['test','full'],default='test');s.add_argument('--batch-gib',type=float,default=4);s.add_argument('--run-map',type=Path);s.add_argument('--test-runs',type=Path);s.add_argument('--retest-empty-from',type=Path)
+            s.add_argument('--repo',type=Path,required=True);s.add_argument('--mode',choices=['test','full'],default='test');s.add_argument('--batch-gib',type=float,default=4);s.add_argument('--run-map',type=Path);s.add_argument('--test-runs',type=Path);s.add_argument('--retest-empty-from',type=Path);s.add_argument('--datasets',nargs='+')
         if name=='monitor':s.add_argument('--interval',type=int,default=30);s.add_argument('--once',action='store_true')
         if name=='worker':s.add_argument('--workers',type=int,choices=range(1,11),default=10);s.add_argument('--allow-other-host',action='store_true',help=argparse.SUPPRESS)
     a=p.parse_args()
