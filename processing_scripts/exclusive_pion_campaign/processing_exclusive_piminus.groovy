@@ -14,12 +14,14 @@ int expectedRun=Integer.parseInt(args[2])
 def counts=[seen:0L,first_records:0L,missing_banks:0L,non_physics:0L,excluded_run:0L,zero_helicity:0L,qa_reject:0L,qa_pass:0L,no_electron:0L,no_proton:0L,no_pion:0L,pairs:0L,kinematic_reject:0L,accepted_events:0L,rows:0L]
 def progressFile=new File(args.length==4?args[3]:args[1]+'.progress.json')
 long begun=System.currentTimeMillis(),lastUpdate=0
-String stage='qadb_startup'
+String stage='qadb_startup',currentFile=''
+long totalInputBytes=inputs.sum{new File(it).length()} as long
+long completedInputBytes=0,currentFileBytes=0,currentFileEvents=0,currentFileRead=0,completedFiles=0
 def publish={ boolean force ->
  long now=System.currentTimeMillis()
  if(force||now-lastUpdate>=15000){
   def tmp=new File(progressFile.path+'.tmp')
-  tmp.text=JsonOutput.toJson([stage:stage,updated:now/1000.0,elapsed_seconds:(now-begun)/1000.0,counts:counts])
+  tmp.text=JsonOutput.toJson([stage:stage,updated:now/1000.0,elapsed_seconds:(now-begun)/1000.0,counts:counts,files_total:inputs.size(),files_done:completedFiles,current_file:currentFile,file_events_total:currentFileEvents,file_events_read:currentFileRead,file_fraction:currentFileEvents>0?Math.min(1.0,currentFileRead/(double)currentFileEvents):null,fraction_read:totalInputBytes>0?Math.min(1.0,(completedInputBytes+(currentFileEvents>0?currentFileBytes*Math.min(1.0,currentFileRead/(double)currentFileEvents):0))/(double)totalInputBytes):0.0])
   Files.move(tmp.toPath(),progressFile.toPath(),StandardCopyOption.REPLACE_EXISTING)
   lastUpdate=now
  }
@@ -39,11 +41,14 @@ new File(args[1]).withWriter('UTF-8'){writer->
  inputs.each{path->
   def reader=new HipoDataSource()
   try {
+   currentFile=path;currentFileBytes=new File(path).length();currentFileEvents=0;currentFileRead=0
+   stage='opening_file';publish(true)
    println('Opening '+path);reader.open(path)
+   currentFileEvents=reader.getSize();stage='processing';publish(true)
    // Preserve the established train-file convention: first record is metadata.
-   if(reader.hasEvent()){reader.getNextEvent();counts.first_records++}
+   if(reader.hasEvent()){reader.getNextEvent();counts.first_records++;currentFileRead++}
    while(reader.hasEvent()){
-    def event=reader.getNextEvent();counts.seen++;if(counts.seen%1000==0)publish(false)
+    def event=reader.getNextEvent();currentFileRead++;counts.seen++;if(counts.seen%1000==0)publish(false)
     boolean missing=false
     for(String bank:requiredBanks){if(!event.hasBank(bank)){counts['missing_'+bank.replace('::','_')]++;missing=true}}
     if(missing){counts.missing_banks++;continue}
@@ -75,6 +80,7 @@ new File(args[1]).withWriter('UTF-8'){writer->
     }}
     if(counts.rows>rowsBefore)counts.accepted_events++
    }
+   completedInputBytes+=currentFileBytes;completedFiles++;currentFileBytes=0;publish(true)
   } finally {reader.close()}
  }
 }

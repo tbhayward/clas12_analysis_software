@@ -88,10 +88,10 @@ class CampaignTest(unittest.TestCase):
    c.atomic_json(root/'chunks/a.json',dict(entries=42))
    c.atomic_json(root/'claims/b/owner.json',dict(host='ifarm2402',started=0))
    c.atomic_json(root/'claims/c/failed.json',dict(error='failure'))
-   c.atomic_json(root/'work/b/progress.json',dict(stage='processing',updated=c.time.time(),counts=dict(seen=200,rows=10,qa_reject=100,zero_helicity=20)))
+   c.atomic_json(root/'work/b/progress.json',dict(stage='processing',fraction_read=0.5,file_fraction=0.5,file_events_read=200,file_events_total=400,files_total=1,files_done=0,updated=c.time.time(),counts=dict(seen=200,rows=10,qa_reject=100,zero_helicity=20)))
    with contextlib.redirect_stdout(io.StringIO()) as output:state=c.progress_snapshot(root,dict(jobs=jobs))
    self.assertEqual(state,dict(done=1,active=1,queued=1,failed=1,entries=42))
-   self.assertIn('ifarm2402',output.getvalue());self.assertIn('QA rejected 100',output.getvalue())
+   self.assertIn('ifarm2402',output.getvalue());self.assertIn('QA rejected 100',output.getvalue());self.assertIn('validated 25.0%',output.getvalue());self.assertIn('read ~37.5%',output.getvalue());self.assertIn('current file 50.0%',output.getvalue())
  def test_retest_selection_and_gate(self):
   import contextlib,io
   groups={n:[dict(size=n)] for n in range(1,11)}

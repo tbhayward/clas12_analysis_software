@@ -183,3 +183,21 @@ For a stalled old worker, stop that specific Java process normally with kill -TE
 Prepare with `--mode test --retest-empty-from /path/to/completed/test` to include only datasets whose previous test chunks all completed with zero entries. For each combination, this selects the original run (to identify its rejection cause) and two alternative runs near the middle of the available run-size distribution. These alternatives are candidates, not guaranteed physics-rich runs. The detailed counters determine acceptance. Other datasets are not processed again. The manifest records original runs and all selections. A focused campaign with five empty datasets usually has 15 runs, potentially more batches.
 
 Use a fresh campaign directory such as `test_20261122_empty_retest`. Run workers separately on each host; `worker --workers 5` gives five local workers per host for this small test. The original run outputs remain preserved in the previous campaign. After completion, run `retest-report --campaign NEW_PATH`: it prints each original and replacement run's yield and zero-output rejection counts, and exits unsuccessfully if any dataset lacks a completed nonempty replacement. Success confirms processing coverage for these combinations, not physics-quality validation. The updated counters identify each missing required bank individually and retain all existing cuts and QA rules.
+
+## Percentage dashboard
+
+For newly prepared campaigns the 30-second snapshots and `monitor` command display:
+
+- **Input validated %**: input bytes belonging to successfully converted batches divided by total input bytes. This is conservative, remains unchanged while a large batch runs, and reaches 100% only after all batch conversions succeed.
+- **Read ~%**: includes active batches, using each file's fraction of HIPO events read, weighted by the file's input size. This is an estimate of input processing progress, not actual disk bytes read or elapsed-time completion.
+- A table for every period/target showing these percentages, completed/total batches, active workers and failures.
+- Each active worker's host, batch read percentage, exact current-file event-read percentage, files completed, current stage, output rows and age of the latest update. One batch belongs to one period/target/run; workers take another batch when finished.
+- A separate count of merged final datasets. Reading 100% does not mean conversion, validation and merging are finished.
+
+Event denominators come from HIPO file headers when files are opened; no second full read is required. Updates are published about every 15 seconds, checked every 1,000 events, and on file/stage changes. These percentages include records that are subsequently rejected by cuts or QA, since those records still require reading. Older frozen processors without event totals show only conservative completed-input percentages. Prepare the full campaign after syncing this update to get worker-level percentages; do not edit an existing frozen processor.
+
+```sh
+python3 processing_scripts/exclusive_pion_campaign/campaign.py monitor --campaign /volatile/clas12/thayward/eppi-/full_20261122 --interval 30
+```
+
+Run in a separate terminal on either node, or add `--once` for one snapshot. No SSH, worker restart or second-node command is required for monitoring. Percentages describe work processed, not a time estimate; event complexity and QA acceptance change processing rates.

@@ -170,26 +170,39 @@ def verified(root):
     return build
 
 def progress_snapshot(root,manifest=None):
-    manifest=manifest or read(root/'manifest.json');done=failed=active=0;entries=completed_bytes=0;details=[]
+    manifest=manifest or read(root/'manifest.json');done=failed=active=0;entries=completed_bytes=0;estimated_bytes=0.0;details=[];groups={}
     total_bytes=sum(j['bytes'] for j in manifest['jobs'])
     for job in manifest['jobs']:
         jid=job['id'];completion=root/'chunks'/(jid+'.json');claim=root/'claims'/jid
+        group=groups.setdefault(job.get('dataset','unknown'),dict(total=0,done=0,active=0,failed=0,bytes=0,completed=0,estimated=0.0))
+        group['total']+=1;group['bytes']+=job['bytes']
         if completion.exists():
-            info=read(completion);done+=1;entries+=info['entries'];completed_bytes+=job['bytes'];continue
-        if (claim/'failed.json').exists():failed+=1;continue
+            info=read(completion);done+=1;entries+=info['entries'];completed_bytes+=job['bytes'];estimated_bytes+=job['bytes'];group['done']+=1;group['completed']+=job['bytes'];group['estimated']+=job['bytes'];continue
+        if (claim/'failed.json').exists():failed+=1;group['failed']+=1;continue
         if not claim.exists():continue
-        active+=1
+        active+=1;group['active']+=1
         try:owner=read(claim/'owner.json')
         except FileNotFoundError:owner={}
         line=f'{jid} @ {owner.get("host","claiming")}'
         progress=root/'work'/jid/'progress.json'
         try:
             info=read(progress);counts=info['counts'];age=max(0,time.time()-info['updated'])
-            line+=f': {info["stage"]}, {counts["seen"]:,} events, {counts["rows"]:,} rows, QA rejected {counts.get("qa_reject",0):,}, zero helicity {counts.get("zero_helicity",0):,}; update {age:.0f}s ago'
+            fraction=info.get('fraction_read')
+            if fraction is not None:
+                fraction=max(0.0,min(1.0,float(fraction)));estimated_bytes+=job['bytes']*fraction;group['estimated']+=job['bytes']*fraction
+                line+=f': batch read ~{100*fraction:.1f}%'
+                if info.get('file_fraction') is not None:line+=f', current file {100*info["file_fraction"]:.1f}% ({info["file_events_read"]:,}/{info["file_events_total"]:,} events)'
+                line+=f', files finished {info.get("files_done",0)}/{info.get("files_total",len(job.get("files",[])))}'
+            line+=f'; {info["stage"]}, {counts["seen"]:,} events, {counts["rows"]:,} rows, QA rejected {counts.get("qa_reject",0):,}, zero helicity {counts.get("zero_helicity",0):,}; update {age:.0f}s ago'
         except FileNotFoundError:line+=f': starting/processing ({max(0,time.time()-owner.get("started",time.time())):.0f}s elapsed)'
         details.append(line)
     total=len(manifest['jobs']);queued=total-done-failed-active
-    print(f'[{time.strftime("%H:%M:%S")}] BOTH HOSTS: {done}/{total} batches done; {active} active; {queued} queued; {failed} failed; {entries:,} ROOT entries; {completed_bytes/1024**3:.2f}/{total_bytes/1024**3:.2f} GiB input completed',flush=True)
+    percentage=lambda value,denom:100*value/denom if denom else 0.0
+    merges=sum((root/'reports'/(d+'.json')).exists() for d in groups)
+    print(f'[{time.strftime("%H:%M:%S")}] BOTH HOSTS: input validated {percentage(completed_bytes,total_bytes):.1f}%; read ~{percentage(estimated_bytes,total_bytes):.1f}%; {done}/{total} batches done; {active} active; {queued} queued; {failed} failed; {entries:,} ROOT entries; merged {merges}/{len(groups)} datasets',flush=True)
+    print('PERIOD / TARGET                     VALIDATED   READ~    BATCHES    ACTIVE FAILED',flush=True)
+    for name,g in groups.items():
+        print(f'{name:36} {percentage(g["completed"],g["bytes"]):8.1f}% {percentage(g["estimated"],g["bytes"]):6.1f}% {g["done"]:5}/{g["total"]:<5} {g["active"]:5} {g["failed"]:6}',flush=True)
     for detail in details:print('  '+detail,flush=True)
     return dict(done=done,active=active,queued=queued,failed=failed,entries=entries)
 
