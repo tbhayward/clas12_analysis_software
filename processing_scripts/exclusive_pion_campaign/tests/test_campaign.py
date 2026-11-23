@@ -106,4 +106,15 @@ class CampaignTest(unittest.TestCase):
    c.atomic_json(root/'chunks/new.json',dict(entries=10))
    with contextlib.redirect_stdout(io.StringIO()) as output:c.retest_report(root)
    self.assertIn('PASS',output.getvalue())
+ def test_partial_progress_never_stops_workers(self):
+  import io,contextlib
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp)
+   for name in ['claims/job','chunks','work/job']:(root/name).mkdir(parents=True)
+   (root/'claims/job/owner.json').write_text('')
+   (root/'work/job/progress.json').write_text('{')
+   with contextlib.redirect_stdout(io.StringIO()):state=c.progress_snapshot(root,dict(jobs=[dict(id='job',dataset='D2',bytes=100,files=[])]))
+   self.assertEqual(state['active'],1)
+   self.assertEqual(state['failed'],0)
+   with self.assertRaises(json.JSONDecodeError):c.read(root/'work/job/progress.json')
 if __name__=='__main__':unittest.main()

@@ -22,6 +22,18 @@ def datasets():
 def atomic_json(path,value):
     tmp=path.with_name(path.name+f'.{os.getpid()}.tmp');tmp.write_text(json.dumps(value,indent=2)+'\n');os.replace(tmp,path)
 def read(path): return json.loads(path.read_text())
+def read_advisory(path):
+    """Progress/ownership hints must never abort processing or mark a batch failed.
+    Manifests, completion records and checksums continue to use strict read().
+    """
+    for attempt in range(3):
+        try:
+            value=read(path)
+            return value if isinstance(value,dict) else {}
+        except (OSError,json.JSONDecodeError,UnicodeDecodeError):
+            if attempt<2:time.sleep(.02)
+    return {}
+
 def digest(path):
     h=hashlib.sha256()
     with path.open('rb') as f:
@@ -181,12 +193,13 @@ def progress_snapshot(root,manifest=None):
         if (claim/'failed.json').exists():failed+=1;group['failed']+=1;continue
         if not claim.exists():continue
         active+=1;group['active']+=1
-        try:owner=read(claim/'owner.json')
-        except FileNotFoundError:owner={}
+        owner=read_advisory(claim/'owner.json')
         line=f'{jid} @ {owner.get("host","claiming")}'
         progress=root/'work'/jid/'progress.json'
         try:
-            info=read(progress);counts=info['counts'];age=max(0,time.time()-info['updated'])
+            info=read_advisory(progress)
+            if not info:raise FileNotFoundError('Progress temporarily unavailable')
+            counts=info['counts'];age=max(0,time.time()-info['updated'])
             fraction=info.get('fraction_read')
             if fraction is not None:
                 fraction=max(0.0,min(1.0,float(fraction)));estimated_bytes+=job['bytes']*fraction;group['estimated']+=job['bytes']*fraction
@@ -194,7 +207,7 @@ def progress_snapshot(root,manifest=None):
                 if info.get('file_fraction') is not None:line+=f', current file {100*info["file_fraction"]:.1f}% ({info["file_events_read"]:,}/{info["file_events_total"]:,} events)'
                 line+=f', files finished {info.get("files_done",0)}/{info.get("files_total",len(job.get("files",[])))}'
             line+=f'; {info["stage"]}, {counts["seen"]:,} events, {counts["rows"]:,} rows, QA rejected {counts.get("qa_reject",0):,}, zero helicity {counts.get("zero_helicity",0):,}; update {age:.0f}s ago'
-        except FileNotFoundError:line+=f': starting/processing ({max(0,time.time()-owner.get("started",time.time())):.0f}s elapsed)'
+        except (FileNotFoundError,KeyError,TypeError,ValueError):line+=f': starting/processing ({max(0,time.time()-owner.get("started",time.time())):.0f}s elapsed)'
         details.append(line)
     total=len(manifest['jobs']);queued=total-done-failed-active
     percentage=lambda value,denom:100*value/denom if denom else 0.0
@@ -242,14 +255,16 @@ def process_job(root,build,j):
             processing_seconds=time.time()-started
             progress_path=work/'progress.json'
             if progress_path.exists():
-                info=read(progress_path);info.update(stage='converting',updated=time.time());atomic_json(progress_path,info)
+                info=read_advisory(progress_path)
+                if info:
+                    info.update(stage='converting',updated=time.time());atomic_json(progress_path,info)
             print(f'CONVERT {j["id"]}: processing finished in {processing_seconds:.1f}s',flush=True)
             result=subprocess.run([str(x) for x in [build/'converter',text,tmp,build/'run_info.csv',j['target'],str(j['run'])]],capture_output=True,text=True)
             log.write(result.stderr)
             if result.returncode:raise RuntimeError('Converter: '+result.stderr.strip())
             entries=int(result.stdout.strip().splitlines()[-1])
             final=root/'chunks'/(j['id']+'.root');os.replace(tmp,final)
-            diagnostic=read(work/'progress.json') if (work/'progress.json').exists() else {}
+            diagnostic=read_advisory(work/'progress.json')
             if diagnostic:
                 diagnostic.update(stage='done',updated=time.time());atomic_json(work/'progress.json',diagnostic)
             atomic_json(done,dict(runtime=runtime,diagnostics=diagnostic,entries=entries,seconds=time.time()-started,processing_seconds=processing_seconds,conversion_seconds=time.time()-started-processing_seconds,host=socket.gethostname(),bytes=j['bytes'],root_sha256=digest(final)))
