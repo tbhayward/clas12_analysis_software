@@ -226,6 +226,23 @@ def monitor(a):
         if a.once or state['done']+state['failed']==len(manifest['jobs']):break
         time.sleep(a.interval)
 
+def safe_progress_processor(original,work):
+    """Wrap only frozen progress publication; preserve every physics statement."""
+    source=original.read_text()
+    if 'def publish={ boolean force ->' not in source or 'PROGRESS_IO_NONFATAL' in source:return original
+    start=source.index('def publish={ boolean force ->');end=source.index('\npublish(true)',start)
+    block=source[start:end];header='def publish={ boolean force ->'
+    body=block[len(header):].rstrip()
+    if not body.endswith('}'):raise RuntimeError('Unrecognized frozen progress closure')
+    replacement=header+'\n // PROGRESS_IO_NONFATAL\n try {'+body[:-1]+"\n } catch (java.io.IOException progressError) {\n  lastUpdate=System.currentTimeMillis()\n  System.err.println('WARNING: progress update unavailable; continuing event processing: '+progressError.toString())\n }\n}"
+    patched=work/'runtime_source'/original.name;patched.parent.mkdir(exist_ok=True)
+    patched.write_text(source[:start]+replacement+source[end:])
+    return patched
+
+def write_advisory(path,value):
+    try:atomic_json(path,value)
+    except OSError as error:print(f'WARNING: progress update unavailable; processing continues: {error}',flush=True)
+
 def process_job(root,build,j):
     claim=root/'claims'/j['id']
     try:claim.mkdir()
@@ -244,11 +261,12 @@ def process_job(root,build,j):
         started=time.time()
         print(f'START {j["id"]} @ {socket.gethostname()}: {len(j["files"])} files, {j["bytes"]/1024**3:.2f} GiB',flush=True)
         with (root/'logs'/(j['id']+'.log')).open('w') as log:
-            processor=build/'source/processing_exclusive_piminus.groovy'
+            original_processor=build/'source/processing_exclusive_piminus.groovy'
+            processor=safe_progress_processor(original_processor,work)
             command=['groovy','-cp',classnamepath(build),processor,listing,text,str(j['run'])]
             # Earlier frozen processors accept exactly three arguments.
             if not processor.exists() or 'args.length!=3' not in processor.read_text():command.append(work/'progress.json')
-            runtime=dict(java_opts=env['JAVA_OPTS'],runner_sha256=digest(Path(__file__).resolve()),started=started)
+            runtime=dict(java_opts=env['JAVA_OPTS'],runner_sha256=digest(Path(__file__).resolve()),processor_sha256=digest(processor),original_processor_sha256=digest(original_processor),started=started)
             atomic_json(work/'runtime.json',runtime)
             print(f'  Java settings: {env["JAVA_OPTS"]}',flush=True)
             run(command,env=env,stdout=log,stderr=subprocess.STDOUT)
@@ -257,7 +275,7 @@ def process_job(root,build,j):
             if progress_path.exists():
                 info=read_advisory(progress_path)
                 if info:
-                    info.update(stage='converting',updated=time.time());atomic_json(progress_path,info)
+                    info.update(stage='converting',updated=time.time());write_advisory(progress_path,info)
             print(f'CONVERT {j["id"]}: processing finished in {processing_seconds:.1f}s',flush=True)
             result=subprocess.run([str(x) for x in [build/'converter',text,tmp,build/'run_info.csv',j['target'],str(j['run'])]],capture_output=True,text=True)
             log.write(result.stderr)
@@ -266,7 +284,7 @@ def process_job(root,build,j):
             final=root/'chunks'/(j['id']+'.root');os.replace(tmp,final)
             diagnostic=read_advisory(work/'progress.json')
             if diagnostic:
-                diagnostic.update(stage='done',updated=time.time());atomic_json(work/'progress.json',diagnostic)
+                diagnostic.update(stage='done',updated=time.time());write_advisory(work/'progress.json',diagnostic)
             atomic_json(done,dict(runtime=runtime,diagnostics=diagnostic,entries=entries,seconds=time.time()-started,processing_seconds=processing_seconds,conversion_seconds=time.time()-started-processing_seconds,host=socket.gethostname(),bytes=j['bytes'],root_sha256=digest(final)))
         text.unlink();(claim/'failed.json').unlink(missing_ok=True)
         print(f'DONE {j["id"]}: {entries:,} entries; processing {processing_seconds:.1f}s, conversion {time.time()-started-processing_seconds:.1f}s',flush=True)

@@ -117,4 +117,17 @@ class CampaignTest(unittest.TestCase):
    self.assertEqual(state['active'],1)
    self.assertEqual(state['failed'],0)
    with self.assertRaises(json.JSONDecodeError):c.read(root/'work/job/progress.json')
+ def test_progress_write_failure_and_narrow_repair(self):
+  import io,contextlib
+  with patch.object(c,'atomic_json',side_effect=OSError('simulated shared-filesystem error')),contextlib.redirect_stdout(io.StringIO()) as output:c.write_advisory(Path('unused'),{})
+  self.assertIn('processing continues',output.getvalue())
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);source=root/'processor.groovy'
+   prefix='// physics before\n';suffix='\npublish(true)\n// physics after\n'
+   source.write_text(prefix+'def publish={ boolean force ->\n Files.move(a,b)\n}'+suffix)
+   patched=c.safe_progress_processor(source,root)
+   self.assertTrue(patched.read_text().startswith(prefix));self.assertTrue(patched.read_text().endswith(suffix))
+   self.assertIn('catch (java.io.IOException',patched.read_text())
+   self.assertNotIn('PROGRESS_IO_NONFATAL',source.read_text())
+   self.assertEqual(c.safe_progress_processor(patched,root),patched)
 if __name__=='__main__':unittest.main()

@@ -18,12 +18,19 @@ String stage='qadb_startup',currentFile=''
 long totalInputBytes=inputs.sum{new File(it).length()} as long
 long completedInputBytes=0,currentFileBytes=0,currentFileEvents=0,currentFileRead=0,completedFiles=0
 def publish={ boolean force ->
+ // PROGRESS_IO_NONFATAL
+ try {
  long now=System.currentTimeMillis()
  if(force||now-lastUpdate>=15000){
   def tmp=new File(progressFile.path+'.tmp')
   tmp.text=JsonOutput.toJson([stage:stage,updated:now/1000.0,elapsed_seconds:(now-begun)/1000.0,counts:counts,files_total:inputs.size(),files_done:completedFiles,current_file:currentFile,file_events_total:currentFileEvents,file_events_read:currentFileRead,file_fraction:currentFileEvents>0?Math.min(1.0,currentFileRead/(double)currentFileEvents):null,fraction_read:totalInputBytes>0?Math.min(1.0,(completedInputBytes+(currentFileEvents>0?currentFileBytes*Math.min(1.0,currentFileRead/(double)currentFileEvents):0))/(double)totalInputBytes):0.0])
   Files.move(tmp.toPath(),progressFile.toPath(),StandardCopyOption.REPLACE_EXISTING)
   lastUpdate=now
+ }
+
+ } catch (java.io.IOException progressError) {
+  lastUpdate=System.currentTimeMillis()
+  System.err.println('WARNING: progress update unavailable; continuing event processing: '+progressError.toString())
  }
 }
 publish(true)
