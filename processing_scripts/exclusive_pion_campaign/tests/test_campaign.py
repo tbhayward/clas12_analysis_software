@@ -159,4 +159,18 @@ class CampaignTest(unittest.TestCase):
    self.assertEqual((root/'build'/relative).read_bytes(),source.read_bytes())
    (root/'build'/relative).unlink();source.write_text('{"different":true}')
    with patch.dict(c.os.environ,{'QADB':str(qa)}),self.assertRaises(RuntimeError):c.repair_libraries(SimpleNamespace(campaign=root,repo=repo))
+ def test_metadata_addition_preserves_frozen_rows(self):
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp);old=root/'old.csv';new=root/'corrected.csv';out=root/'effective.csv'
+   original='# comment\n16137,10,5,5,0.2,0.01\n'
+   old.write_text(original)
+   new.write_text('16137,999,999,999,0.9,0.02\n17523,0,0,0,0.3,0.01\n')
+   provenance=c.corrected_run_metadata(old,new,[17523],out)
+   self.assertEqual(old.read_text(),original)
+   self.assertEqual(out.read_text(),original+'17523,0,0,0,0.3,0.01\n')
+   self.assertEqual(provenance['added_run_rows'][0][0],'17523')
+   new.write_text('17523,0,0,0,9.0,0.01\n')
+   with self.assertRaises(RuntimeError):c.corrected_run_metadata(old,new,[17523],out)
+   new.write_text('')
+   with self.assertRaises(RuntimeError):c.corrected_run_metadata(old,new,[17523],out)
 if __name__=='__main__':unittest.main()

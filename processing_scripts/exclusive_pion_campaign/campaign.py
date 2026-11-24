@@ -439,6 +439,28 @@ def merge(a):
         finally:claim.rmdir()
     if fail:raise RuntimeError('Some datasets are incomplete; see status and batch logs')
 
+def corrected_run_metadata(original,updated,required_runs,destination):
+    """Add only missing required run rows; preserve every frozen existing row."""
+    import csv,math
+    def rows(path):
+        result={}
+        for cells in csv.reader(path.read_text().splitlines()):
+            if not cells or not cells[0].strip() or cells[0].lstrip().startswith('#'):continue
+            run=int(cells[0]);result.setdefault(run,[]).append(cells)
+        return result
+    old=rows(original);new=rows(updated);additions=[]
+    for run in sorted(set(required_runs)):
+        if run in old:continue
+        matches=new.get(run,[])
+        if len(matches)!=1:raise RuntimeError(f'Need exactly one corrected CSV entry for run {run}')
+        cells=matches[0]
+        if len(cells)!=6:raise RuntimeError(f'Expected six metadata columns for run {run}')
+        values=[float(v) for v in cells[1:]]
+        if not all(math.isfinite(v) for v in values) or abs(values[3])>1 or values[4]<0:raise RuntimeError(f'Invalid corrected metadata for run {run}')
+        additions.append(cells)
+    text=original.read_text();destination.write_text(text+('' if text.endswith('\n') else '\n')+''.join(','.join(row)+'\n' for row in additions))
+    return dict(source=str(updated),source_sha256=digest(updated),original_sha256=digest(original),effective_sha256=digest(destination),added_run_rows=additions)
+
 def recover_conversion(a):
     """Reconvert completed text with a separately recorded converter repair."""
     root=a.campaign.resolve()
@@ -450,11 +472,17 @@ def recover_conversion(a):
         recovery.mkdir(parents=True)
         shutil.copytree(HERE/'src',recovery/'src')
         flags=shlex.split(subprocess.check_output(['root-config','--cflags','--libs'],text=True))
+        metadata=build/'run_info.csv';metadata_provenance=None
+        if getattr(a,'run_info',None):
+            metadata=recovery/'run_info.csv'
+            required=[j['run'] for j in manifest['jobs'] if j['target']=='ND3' and not (root/'chunks'/(j['id']+'.json')).exists()]
+            metadata_provenance=corrected_run_metadata(build/'run_info.csv',a.run_info.resolve(),required,metadata)
+            print('Recorded metadata additions for runs: '+str([row[0] for row in metadata_provenance['added_run_rows']]),flush=True)
         converter=recovery/'converter'
         run(['g++','-O3','-std=c++17',recovery/'src/convert_exclusive_piminus_txt_to_root.cpp','-o',converter,*flags])
         env=os.environ.copy();env['PION_CONVERTER']=str(converter)
         run([sys.executable,'-m','unittest','discover','-s',HERE/'tests','-p','test_converter.py','-v'],env=env)
-        atomic_json(recovery/'provenance.json',dict(converter_sha256=digest(converter),sources={str(p.relative_to(recovery)):digest(p) for p in (recovery/'src').rglob('*') if p.is_file()},original_software_unchanged=True))
+        atomic_json(recovery/'provenance.json',dict(metadata_correction=metadata_provenance,converter_sha256=digest(converter),sources={str(p.relative_to(recovery)):digest(p) for p in (recovery/'src').rglob('*') if p.is_file()},original_software_unchanged=True))
         failures=[]
         for job in manifest['jobs']:
             jid=job['id'];done=root/'chunks'/(jid+'.json')
@@ -466,7 +494,7 @@ def recover_conversion(a):
             if not summaries or not text.exists():
                 failures.append(jid);print('NOT RECOVERED (processor did not finish): '+jid,flush=True);continue
             expected=int(summaries[-1]);tmp=root/'work'/jid/'recovered.root';started=time.time()
-            result=subprocess.run([str(converter),str(text),str(tmp),str(build/'run_info.csv'),job['target'],str(job['run'])],capture_output=True,text=True)
+            result=subprocess.run([str(converter),str(text),str(tmp),str(metadata),job['target'],str(job['run'])],capture_output=True,text=True)
             with log.open('a') as out:out.write('\nCONVERSION RECOVERY '+str(recovery)+'\n'+result.stdout+result.stderr)
             try:
                 if result.returncode:raise RuntimeError(result.stderr.strip() or f'Converter exit {result.returncode}')
@@ -497,6 +525,7 @@ def main():
         s=sub.add_parser(name);s.add_argument('--campaign',type=Path,required=True)
         if name=='prepare':
             s.add_argument('--repo',type=Path,required=True);s.add_argument('--mode',choices=['test','full'],default='test');s.add_argument('--batch-gib',type=float,default=4);s.add_argument('--run-map',type=Path);s.add_argument('--test-runs',type=Path);s.add_argument('--retest-empty-from',type=Path);s.add_argument('--datasets',nargs='+')
+        if name=='recover-conversion':s.add_argument('--run-info',type=Path)
         if name=='repair-libraries':s.add_argument('--repo',type=Path,required=True)
         if name=='monitor':s.add_argument('--interval',type=int,default=30);s.add_argument('--once',action='store_true')
         if name=='worker':s.add_argument('--workers',type=int,choices=range(1,11),default=10);s.add_argument('--allow-other-host',action='store_true',help=argparse.SUPPRESS)
