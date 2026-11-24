@@ -5,7 +5,7 @@ from concurrent.futures import ProcessPoolExecutor,as_completed
 import json
 from pathlib import Path
 import sys
-from candidate_cache import build_cache,save_json
+from candidate_cache import build_cache,save_json,q2_mask
 from selection import GROUPS,ChannelSelection,group_for_dataset
 from workflow import fit_group,freeze
 from export import export_dataset,audit_file
@@ -74,7 +74,8 @@ def main():
             selected_path=Path(item['path']);selected_path=selected_path if selected_path.is_absolute() else args.output/selected_path
             audit_file(selected_path,registry['tree'],report['selected_rows'],{k:np.dtype(v) for k,v in report['original_types'].items()},selection.cutset_id)
             with uproot.open(selected_path) as f:
-                for a in f[registry['tree']].iterate(['analysis_bin','exclusivity_group','Mx2_deuteron','p_miss','exclusivity_reference_assisted'],library='np',step_size='50 MB'):
+                for a in f[registry['tree']].iterate(['analysis_bin','exclusivity_group','Mx2_deuteron','p_miss','exclusivity_reference_assisted','Q2'],library='np',step_size='50 MB'):
+                    if not np.all(q2_mask(a['Q2'],name)):raise ValueError('Exported rows fail dataset Q2 requirement')
                     if not np.all(a['exclusivity_group']==selection.group_ids[selection.group(name)]):raise ValueError('Group label mismatch')
                     if not np.array_equal(a['exclusivity_reference_assisted'].astype(bool),selection.assisted_bins(name)[a['analysis_bin']-1]):raise ValueError('Reference provenance mismatch')
                     if not np.all(selection.candidate_mask(a['Mx2_deuteron'],a['p_miss'],a['analysis_bin']-1,name)):raise ValueError('Exported rows fail cut set')

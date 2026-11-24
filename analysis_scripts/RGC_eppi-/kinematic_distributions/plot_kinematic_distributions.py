@@ -15,6 +15,7 @@ PERIODS=['RGB_spring2019_D2','RGB_fall2019_D2','RGB_spring2020_D2','RGC_summer20
 EDGES={'x':np.linspace(.1,.6,51),'Q2':np.linspace(1,12,55),'tp':np.linspace(.05,1.25,49),'phi':np.linspace(0,360,49),'W':np.linspace(2,4.5,50),'y':np.linspace(0,.8,49),'pion_p':np.arange(.5,10.5001,.25),'proton_p':np.linspace(0,5,101),'proton_theta':np.linspace(0,180,91)}
 LABELS={'x':r'$x_B$','Q2':r'$Q^2$ (GeV$^2$)','tp':r'$-t\prime$ (GeV$^2$)','phi':r'$\phi$ (deg)','W':r'$W$ (GeV)','y':r'$y$','pion_p':r'$p_{\pi^-}$ (GeV)'}
 LABELS.update(proton_p=r'$p_p$ (GeV)',proton_theta=r'$\theta_p$ (deg)')
+BIN_COLORS=['#0072B2','#E69F00','#009E73','#CC79A7','#D55E00','#56B4E9']
 CORE=[('x','Q2'),('x','tp'),('Q2','tp')]
 PHI=[('phi','Q2'),('phi','x'),('phi','tp')]
 BRANCHES=['x','Q2','tprime','phi2','W','y','p2_p','analysis_bin','p1_p','p1_theta','detector1']
@@ -65,6 +66,7 @@ def read_period(job):
 
 def shape(ax,counts,edges,label=None,color=None):
     total=counts.sum();ax.stairs(counts/max(1,total),edges,label=label,color=color,lw=1.3)
+    ax.autoscale(enable=True,axis='y')
     ax.set_ylim(bottom=0)
 
 def heatmap(fig,ax,z,x,y):
@@ -100,7 +102,7 @@ def plot_sample(name,h,out):
     for number,key in [('05','Q2'),('06','W')]:
         fig,axes=plt.subplots(2,3,figsize=(13,7),constrained_layout=True)
         for ti,ax in enumerate(axes.flat):
-            for xi in range(4):shape(ax,h['h_'+key][xi*6+ti],EDGES[key],label=f'{XB[xi]:.2f}–{XB[xi+1]:.2f}')
+            for xi in range(4):shape(ax,h['h_'+key][xi*6+ti],EDGES[key],label=f'{XB[xi]:.2f}–{XB[xi+1]:.2f}',color=BIN_COLORS[xi])
             ax.set(title=f'{TP[ti]:.2f} ≤ −t′ < {TP[ti+1]:.2f}',xlabel=LABELS[key],ylabel='Fraction / bin')
         axes.flat[0].legend(title='xB',fontsize=8)
         save(fig,f'{number}_{key}_by_analysis_bin.png')
@@ -110,7 +112,7 @@ def plot_sample(name,h,out):
     save(fig,'07_Q2_W_by_xB.png')
     fig,axes=plt.subplots(2,2,figsize=(12,8),constrained_layout=True)
     for xi,ax in enumerate(axes.flat):
-        for ti in range(6):shape(ax,h['h_pion_p'][xi*6+ti],EDGES['pion_p'],label=f'{TP[ti]:.2f}–{TP[ti+1]:.2f}')
+        for ti in range(6):shape(ax,h['h_pion_p'][xi*6+ti],EDGES['pion_p'],label=f'{TP[ti]:.2f}–{TP[ti+1]:.2f}',color=BIN_COLORS[ti])
         ax.set(title=f'{XB[xi]:.2f} ≤ xB < {XB[xi+1]:.2f}',xlabel=LABELS['pion_p'],ylabel='Fraction / bin')
     axes.flat[0].legend(title='−t′ (GeV²)',fontsize=8)
     save(fig,'08_pion_momentum_by_analysis_bin.png')
@@ -140,6 +142,8 @@ def main():
         with np.load(args.output/'histograms.npz') as h:
             for name in PERIODS:data[name]={k.split('__',1)[1]:h[k] for k in h.files if k.startswith(name+'__')}
         meta=json.loads((args.output/'kinematic_summary.json').read_text())
+        current=load_selected_inputs(args.inputs,verify_files=False)
+        if meta['cutset_id']!=current['cutset_id']:raise ValueError('Histogram cache belongs to an older cut set. Rerun without --plots-only.')
     else:
         registry=load_selected_inputs(args.inputs,verify_files=False)
         jobs=[(n,registry['files'][n]['path'],registry['tree'],registry['cutset_id'],args.step_size) for n in PERIODS]

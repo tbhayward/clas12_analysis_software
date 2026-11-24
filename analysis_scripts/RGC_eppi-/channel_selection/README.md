@@ -68,7 +68,7 @@ A missing usable reference cannot be replaced silently. A full nominal cut set i
 
 ## Outputs and provenance
 
-- `nominal_cuts.json`: frozen numerical windows, all five groups, bin edges, version `eppi_minus_preliminary_v1`, code fingerprint, source calibration identities, assisted-bin provenance and a SHA-256 cut-set identifier.
+- `nominal_cuts.json`: frozen numerical windows, all five groups, bin edges, version `eppi_minus_preliminary_v2`, code fingerprint, source calibration identities, assisted-bin provenance and a SHA-256 cut-set identifier.
 - `fits/GROUP/`: mass and momentum fit results, cut and stability tables, per-member cut flows, angular guides and **12 PNG pages per group** (60 in total).
 - `selected/selected_DATASET.root`: 19 separate selected `PhysicsEvents` TTrees. Every original scalar branch is preserved with its original values and type. Added branches are `analysis_bin`, `exclusivity_group`, `Mx2_deuteron`, `p_miss`, `delta_theta_deg` and `exclusivity_reference_assisted`.
 - ROOT metadata objects `selection_cutset_id` and `selection_manifest`: exact cut identity, original source identity, period/target label, fit group, selected counts, original schema and full/partial status.
@@ -136,3 +136,7 @@ python3 -m unittest discover -s analysis_scripts/RGC_eppi-/channel_selection -p 
 ```
 
 Tests cover gamma-signal recovery and falling tails, model probability coverage, shared control-target cuts, reference transfer and provenance, frozen-cut tamper checks, full branch/polarization preservation, zero-entry output, resuming exports and agreement of fast missing-energy identities with full four-vectors. An end-to-end six-worker synthetic run creates and audits all 19 selected files. The supplied complete candidate caches were also fitted with the five-group nominal procedure. Full selected production files still require the farm command above.
+
+## Revised Q2 selection (version 2)
+
+The outbending RGB fall-2019 D2 sample requires **Q² > 1.5 GeV²**, applied before calibration and during final event selection. Equality at 1.5 is excluded. The other five calibration samples retain Q² ≥ 1 GeV². Their natural acceptance is not replaced by an additional software threshold. This dataset-specific policy is recorded in the frozen cuts and calibration-cache signature. Version-1 cut sets, selected-file registries and old calibration caches are invalidated. Run the normal full command to rebuild the calibration, refit and regenerate all 19 selected files. Do not use --apply-only for this change. The updated audit verifies the dataset-specific Q² requirement.

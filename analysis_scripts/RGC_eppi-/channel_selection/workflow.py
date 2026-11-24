@@ -4,7 +4,7 @@ import hashlib
 import json
 from pathlib import Path
 import numpy as np
-from candidate_cache import iterate,save_json
+from candidate_cache import iterate,save_json,q2_policy
 from selection import GROUPS,VERSION,fingerprint,seal
 from models import MASS_EDGES,MOM_EDGES,ANGLE_EDGES,fit_with_checks,fit_angle,components
 from kinematics import XB,TP
@@ -88,7 +88,7 @@ def freeze(results,caches,output):
             if active:v.update(mass_low=m['cut_low'],mass_high=m['cut_high'],momentum_low=p['cut_low'],momentum_high=p['cut_high'])
             bins.append(v)
         groups[r['group']]=dict(calibration_members=r['members'],bins=bins)
-    payload=dict(fit_implementation_sha256=hashlib.sha256(Path(__file__).read_bytes()+Path(__file__).with_name('models.py').read_bytes()+Path(__file__).with_name('mass_model.py').read_bytes()+Path(__file__).with_name('reference.py').read_bytes()).hexdigest(),version=VERSION,group_ids={name:i+1 for i,name in enumerate(GROUPS)},partial=any(meta['partial'] for _,meta in caches.values()),base_selection_sha256=fingerprint(),xB_edges=XB.tolist(),minus_tprime_edges=TP.tolist(),angle_unit='degree',angle_convention='measured minus predicted',groups=groups,calibration_sources={n:m for n,(_,m) in caches.items()},policy='Inactive bins have no nominal cut and must be reported as unavailable, never as physical zero yields. Identical windows apply to ND3 and all control targets of each period.')
+    payload=dict(fit_implementation_sha256=hashlib.sha256(Path(__file__).read_bytes()+Path(__file__).with_name('models.py').read_bytes()+Path(__file__).with_name('mass_model.py').read_bytes()+Path(__file__).with_name('reference.py').read_bytes()).hexdigest(),version=VERSION,group_ids={name:i+1 for i,name in enumerate(GROUPS)},partial=any(meta['partial'] for _,meta in caches.values()),base_selection_sha256=fingerprint(),Q2_policy=dict(default=q2_policy(None),RGB_fall2019_D2=q2_policy('RGB_fall2019_D2')),xB_edges=XB.tolist(),minus_tprime_edges=TP.tolist(),angle_unit='degree',angle_convention='measured minus predicted',groups=groups,calibration_sources={n:m for n,(_,m) in caches.items()},policy='Inactive bins have no nominal cut and must be reported as unavailable, never as physical zero yields. Identical windows apply to ND3 and all control targets of each period.')
     unresolved={g:[b['bin'] for b in v['bins'] if not b['active']] for g,v in groups.items() if any(not b['active'] for b in v['bins'])}
     if unresolved and not payload['partial']:raise ValueError('Cannot publish nominal cut set with unavailable bins: '+str(unresolved))
     payload['cutset_id']=seal(payload)

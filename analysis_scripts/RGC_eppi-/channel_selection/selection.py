@@ -7,7 +7,7 @@ import numpy as np
 from candidate_cache import select,derive
 from kinematics import XB,TP,BRANCHES
 
-VERSION='eppi_minus_preliminary_v1'
+VERSION='eppi_minus_preliminary_v2'
 GROUPS={
  'RGB_spring2019':['RGB_spring2019_D2'],
  'RGB_fall2019':['RGB_fall2019_D2'],
@@ -59,7 +59,7 @@ class ChannelSelection:
         return valid&active[safe]&(mass>=ml[safe])&(mass<=mh[safe])&(momentum>=pl[safe])&(momentum<=ph[safe])
     def evaluate(self,arrays,dataset):
         """Return full-length boolean mask and annotations. No weights/polarization cuts."""
-        good,bins=select(arrays)
+        good,bins=select(arrays,dataset)
         ids=np.flatnonzero(good)
         a={k:arrays[k][good] for k in BRANCHES}
         if 'Emiss' in arrays:

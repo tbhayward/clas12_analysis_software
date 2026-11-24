@@ -10,16 +10,23 @@ import numpy as np
 from kinematics import BRANCHES, XB, TP, MN, MD, ME, MP, MPI, track, mass2, bin_indices
 
 DTYPE=np.dtype([('mass','<f8'),('momentum','<f8'),('angle','<f8'),('bin','u1'),('detector','u1')])
-CACHE_VERSION=1
+CACHE_VERSION=2
 
 def save_json(path,value):
     tmp=path.with_name(path.name+'.tmp')
     tmp.write_text(json.dumps(value,indent=2,allow_nan=False)+'\n')
     tmp.replace(path)
 
-def select(a):
+def q2_policy(dataset):
+    return dict(threshold=1.5,strict=True,unit='GeV^2') if dataset=='RGB_fall2019_D2' else dict(threshold=1.,strict=False,unit='GeV^2')
+
+def q2_mask(values,dataset):
+    policy=q2_policy(dataset)
+    return values>policy['threshold'] if policy['strict'] else values>=policy['threshold']
+
+def select(a,dataset=None):
     finite=np.logical_and.reduce([np.isfinite(a[k]) for k in BRANCHES])
-    quality=(a['fiducial_status']==3)&(a['detector2']==1)&np.isin(a['detector1'],[1,2])&(a['Q2']>=1)&(a['W']>=2)&(a['y']<=.80)
+    quality=(a['fiducial_status']==3)&(a['detector2']==1)&np.isin(a['detector1'],[1,2])&q2_mask(a['Q2'],dataset)&(a['W']>=2)&(a['y']<=.80)
     bins=bin_indices(a['x'],-a['tprime'])
     good=finite&quality&(bins>=0)
     return good,bins
@@ -46,8 +53,8 @@ def build_cache(source,tree_name,out,options):
     import uproot
     source=Path(source)
     stat=source.stat()
-    signature=dict(version=CACHE_VERSION,source=str(source.resolve()),size=stat.st_size,mtime_ns=stat.st_mtime_ns,tree=tree_name,max_entries=options['max_entries'],
-                   selection_sha256=hashlib.sha256((inspect.getsource(select)+inspect.getsource(derive)+str(XB.tolist())+str(TP.tolist())+str((MN,MD,ME,MP,MPI))+str(BRANCHES)+inspect.getsource(track)+inspect.getsource(mass2)+inspect.getsource(bin_indices)).encode()).hexdigest())
+    signature=dict(version=CACHE_VERSION,dataset=out.name,q2_policy=q2_policy(out.name),source=str(source.resolve()),size=stat.st_size,mtime_ns=stat.st_mtime_ns,tree=tree_name,max_entries=options['max_entries'],
+                   selection_sha256=hashlib.sha256((inspect.getsource(select)+inspect.getsource(q2_policy)+inspect.getsource(q2_mask)+inspect.getsource(derive)+str(XB.tolist())+str(TP.tolist())+str((MN,MD,ME,MP,MPI))+str(BRANCHES)+inspect.getsource(track)+inspect.getsource(mass2)+inspect.getsource(bin_indices)).encode()).hexdigest())
     cache=out/'derived_cache'
     manifest=cache/'manifest.json'
     if manifest.exists() and not options.get('rebuild_cache',False):
@@ -71,7 +78,7 @@ def build_cache(source,tree_name,out,options):
         save_json(out/'progress.json',dict(stage='ROOT cache',state='reading first chunk',percent=0,updated=time.time()))
         for a in tree.iterate(BRANCHES,library='np',step_size=options['step_size'],entry_stop=total):
             read+=len(a['x'])
-            good,bins=select(a)
+            good,bins=select(a,out.name)
             a={k:v[good] for k,v in a.items()}
             mass,momentum,angle=derive(a)
             records=np.empty(len(mass),dtype=DTYPE)

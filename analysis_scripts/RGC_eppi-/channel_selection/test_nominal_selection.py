@@ -10,6 +10,20 @@ from kinematics import BRANCHES,calculate
 from export import export_dataset,EXTRA_TYPES
 
 class NominalTests(unittest.TestCase):
+    def test_outbending_q2_cut_and_boundary_in_calibration_and_export(self):
+        from candidate_cache import select,q2_mask
+        a=self.arrays()
+        a['Q2'][:]=np.array([1.,1.49,1.5,1.50001,2.,2.,2.,2.,2.,2.,2.,2.])
+        expected=np.array([False,False,False,True,True,True,True,True,True,True,True,True])
+        np.testing.assert_array_equal(select(a,'RGB_fall2019_D2')[0],expected)
+        self.assertTrue(np.all(select(a,'RGB_spring2019_D2')[0]))
+        self.assertTrue(np.all(select(a,'RGC_fall2022_ND3')[0]))
+        with tempfile.TemporaryDirectory() as tmp:
+            selection=ChannelSelection(self.cut_file(Path(tmp)/'cuts.json'))
+            np.testing.assert_array_equal(selection.evaluate(a,'RGB_fall2019_D2')[0],expected)
+            self.assertTrue(np.all(selection.evaluate(a,'RGB_spring2020_D2')[0]))
+        np.testing.assert_array_equal(q2_mask(np.array([1.5,1.50001]),'RGB_fall2019_D2'),[False,True])
+
     def test_gamma_signal_recovery_and_falling_tail(self):
         p=np.array([50000,.08,5.,12000,.17])
         h=np.random.default_rng(72).poisson(momentum_expected(MOM_EDGES,p))
