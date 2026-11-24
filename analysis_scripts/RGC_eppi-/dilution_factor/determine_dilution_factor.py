@@ -151,7 +151,7 @@ def plots(output, rows, transfer_rows):
     folder.mkdir(exist_ok=True)
     colors = ['#0072B2', '#D55E00', '#009E73']
     for variable, ylabel in [('dilution', 'Dilution factor'), ('packing_fraction', 'Cell packing fraction')]:
-        fig, axes = plt.subplots(2, 2, figsize=(11, 8), sharex=True)
+        fig, axes = plt.subplots(2, 2, figsize=(11, 8), sharex=True, sharey=True)
         for ix, ax in enumerate(axes.flat):
             for label, color in zip(LABELS, colors):
                 values = [r for r in rows if r['period'] == label and (r['bin']-1)//6 == ix]
@@ -160,7 +160,7 @@ def plots(output, rows, transfer_rows):
                 # Quantile intervals remain readable when rare denominator crossings inflate SD.
                 lo = np.array([r[variable+'_q16'] if r[variable+'_q16'] is not None else np.nan for r in values])
                 hi = np.array([r[variable+'_q84'] if r[variable+'_q84'] is not None else np.nan for r in values])
-                ax.plot(x, y, 'o-', ms=4, color=color, label=label)
+                ax.plot(x, y, 'o', ms=4, color=color, label=label)
                 ax.vlines(x, lo, hi, color=color, alpha=.7)
             ax.set_title(f'{XB[ix]:.2f} ≤ xB < {XB[ix+1]:.2f}')
             ax.axhline(0, color='gray', lw=.6)
@@ -170,16 +170,62 @@ def plots(output, rows, transfer_rows):
         fig.tight_layout()
         fig.savefig(folder/(variable+'.png'), dpi=170)
         plt.close(fig)
-    fig, axes = plt.subplots(2, 2, figsize=(11, 8), sharex=True)
+    fig, axes = plt.subplots(2, 2, figsize=(11, 8), sharex=True, sharey=True)
     for ix, ax in enumerate(axes.flat):
         v = transfer_rows[ix*6:(ix+1)*6]
         x = (np.asarray(TP[:-1])+TP[1:])/2
-        ax.plot(x, [r['value'] for r in v], 'o-', color=colors[0])
+        ax.plot(x, [r['value'] for r in v], 'o', color=colors[0])
         ax.vlines(x, [r['stat_q16'] for r in v], [r['stat_q84'] for r in v], color=colors[0])
         ax.set(title=f'{XB[ix]:.2f} ≤ xB < {XB[ix+1]:.2f}', xlabel='−t′ (GeV²)', ylabel='Sp23 CD₂ / CH₂ rate ratio')
     fig.tight_layout()
     fig.savefig(folder/'cd2_ch2_transfer.png', dpi=170)
     plt.close(fig)
+
+
+def control_distributions(output, registry, charges):
+    """Sp23 measured yields, charge normalized. No synthetic CD2 or shape scaling."""
+    import uproot
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    edges = np.linspace(TP[0], TP[-1], 25)
+    centers = (edges[:-1]+edges[1:])/2
+    histograms = {}
+    for target in ['CD2', 'CH2']:
+        name = 'RGC_spring2023_'+target
+        hist = np.zeros((4, 24), dtype=np.int64)
+        with uproot.open(registry['files'][name]['path']) as root:
+            for a in root[registry['tree']].iterate(['x', 'tprime'], library='np', step_size='20 MB'):
+                for ix in range(4):
+                    selected = (a['x'] >= XB[ix]) & (a['x'] < XB[ix+1])
+                    hist[ix] += np.histogram(-a['tprime'][selected], bins=edges)[0]
+        if hist.sum() != registry['files'][name]['selected_rows']:
+            raise ValueError(name+': distribution histogram lost selected candidates')
+        histograms[target] = hist
+    fig, axes = plt.subplots(2, 2, figsize=(11, 8), sharex=True, sharey=True)
+    rows = []
+    for ix, ax in enumerate(axes.flat):
+        for target, color, marker in [('CD2', '#0072B2', 'o'), ('CH2', '#D55E00', 's')]:
+            n = histograms[target][ix]
+            q = charges['spring2023'][target]
+            ax.errorbar(centers, 1e6*n/q, yerr=1e6*np.sqrt(n)/q,
+                        fmt=marker, linestyle='none', color=color, markersize=4,
+                        elinewidth=.9, label='Sp23 '+target.replace('2', '₂'))
+            for j, count in enumerate(n):
+                rows.append(dict(target=target, xB_low=XB[ix], xB_high=XB[ix+1],
+                                 minus_tprime_low=edges[j], minus_tprime_high=edges[j+1],
+                                 count=int(count), charge=q, rate=count/q,
+                                 rate_stat=np.sqrt(count)/q))
+        ax.set(title=f'{XB[ix]:.2f} ≤ xB < {XB[ix+1]:.2f}',
+               xlabel='−t′ (GeV²)', ylabel='10⁶ N / Q per bin')
+    ymax = max(np.max(1e6*(histograms[t]+np.sqrt(histograms[t]))/charges['spring2023'][t]) for t in histograms)
+    axes.flat[0].set_ylim(0, 1.08*ymax if ymax > 0 else 1)
+    axes.flat[0].legend()
+    fig.tight_layout()
+    (output/'figures').mkdir(exist_ok=True)
+    fig.savefig(output/'figures/cd2_ch2_distributions.png', dpi=170)
+    plt.close(fig)
+    write_csv(output/'cd2_ch2_distributions.csv', rows)
 
 
 def main():
@@ -271,6 +317,7 @@ def main():
     (out/'method1.json').write_text(json.dumps(clean(payload), indent=2, allow_nan=False)+'\n')
     np.savez_compressed(out/'statistical_covariance.npz', **covariance)
     plots(out, rows, transfer)
+    control_distributions(out, registry, charges)
     flagged = sum(bool(r['flags']) for r in rows)
     print(f'Finished: 72 period/bin estimates, {flagged} flagged for review. Outputs: {out.resolve()}')
     for row in packing_summary:

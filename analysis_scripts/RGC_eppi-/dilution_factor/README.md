@@ -39,7 +39,8 @@ Uncertainties assume independent candidate-combination counts, as in pi+. They d
 - `cd2_ch2_transfer.csv`: 24 Sp23 transfer ratios and uncertainties.
 - `packing_fraction_integrated.csv`: integrated cell packing cross-check per period.
 - `statistical_covariance.npz`: 72-by-72 dilution and packing covariance matrices. Order is Su22 bins 1-24, Fa22 bins 1-24, Sp23 bins 1-24. Covariance uses replicas finite in all 72 components. Complete-replica counts are recorded in JSON. The file contains separate DF and PF matrices, not their joint cross-covariance.
-- `figures/dilution.png`, `figures/packing_fraction.png`, `figures/cd2_ch2_transfer.png`.
+- `figures/dilution.png`, `figures/packing_fraction.png`, `figures/cd2_ch2_transfer.png`: unconnected points with matching y-axis ranges across each canvas.
+- `figures/cd2_ch2_distributions.png` and `cd2_ch2_distributions.csv`: measured Sp23 CD2 and CH2 yields divided by their respective good charges, versus minus-tprime in four xB panels. Uses 0.05 GeV² display bins. These do not change the 24-bin dilution calculation. Curves are not area normalized, and no areal-density conversion to nuclear luminosity is applied.
 
 Check `cutset_id` before combining these results with later asymmetry inputs. Review flags must be resolved before using the corresponding estimate as a nominal correction.
 
