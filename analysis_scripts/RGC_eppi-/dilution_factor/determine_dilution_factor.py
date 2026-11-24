@@ -202,13 +202,19 @@ def control_distributions(output, registry, charges):
         if hist.sum() != registry['files'][name]['selected_rows']:
             raise ValueError(name+': distribution histogram lost selected candidates')
         histograms[target] = hist
-    fig, axes = plt.subplots(2, 2, figsize=(11, 8), sharex=True, sharey=True)
-    rows = []
-    for ix, ax in enumerate(axes.flat):
+    fig = plt.figure(figsize=(12, 10))
+    outer = fig.add_gridspec(2, 2, hspace=.28, wspace=.20)
+    tops, bottoms, rows, ratio_rows = [], [], [], []
+    for ix in range(4):
+        grid = outer[ix//2, ix%2].subgridspec(2, 1, height_ratios=[2, 1], hspace=.04)
+        ax = fig.add_subplot(grid[0], sharey=tops[0] if tops else None)
+        ratio_ax = fig.add_subplot(grid[1], sharex=ax, sharey=bottoms[0] if bottoms else None)
+        tops.append(ax)
+        bottoms.append(ratio_ax)
         for target, color, marker in [('CD2', '#0072B2', 'o'), ('CH2', '#D55E00', 's')]:
             n = histograms[target][ix]
             q = charges['spring2023'][target]
-            ax.errorbar(centers, 1e6*n/q, yerr=1e6*np.sqrt(n)/q,
+            ax.errorbar(centers, n/q, yerr=np.sqrt(n)/q,
                         fmt=marker, linestyle='none', color=color, markersize=4,
                         elinewidth=.9, label='Sp23 '+target.replace('2', '₂'))
             for j, count in enumerate(n):
@@ -216,17 +222,240 @@ def control_distributions(output, registry, charges):
                                  minus_tprime_low=edges[j], minus_tprime_high=edges[j+1],
                                  count=int(count), charge=q, rate=count/q,
                                  rate_stat=np.sqrt(count)/q))
-        ax.set(title=f'{XB[ix]:.2f} ≤ xB < {XB[ix+1]:.2f}',
-               xlabel='−t′ (GeV²)', ylabel='10⁶ N / Q per bin')
-    ymax = max(np.max(1e6*(histograms[t]+np.sqrt(histograms[t]))/charges['spring2023'][t]) for t in histograms)
-    axes.flat[0].set_ylim(0, 1.08*ymax if ymax > 0 else 1)
-    axes.flat[0].legend()
-    fig.tight_layout()
+        # Use the six analysis tprime bins for the ratio's statistical precision.
+        nd = histograms['CD2'][ix].reshape(6, 4).sum(axis=1)
+        nh = histograms['CH2'][ix].reshape(6, 4).sum(axis=1)
+        ratio_edges = edges[::4]
+        ratio_centers = (ratio_edges[:-1]+ratio_edges[1:])/2
+        scale = charges['spring2023']['CH2']/charges['spring2023']['CD2']
+        valid = nh > 0
+        ratios = np.full(6, np.nan)
+        errors = np.full(6, np.nan)
+        ratios[valid] = scale*nd[valid]/nh[valid]
+        errors[valid] = scale*np.sqrt(nd[valid]/nh[valid]**2 + nd[valid]**2/nh[valid]**3)
+        ratio_ax.errorbar(ratio_centers[valid], ratios[valid], yerr=errors[valid],
+                         fmt='o', linestyle='none', color='#333333', markersize=3,
+                         elinewidth=.8)
+        ratio_ax.axhline(1, color='gray', lw=.7, ls=':')
+        ratio_ax.set(xlabel='−t′ (GeV²)', ylabel='CD₂ / CH₂')
+        ax.set(title=f'{XB[ix]:.2f} ≤ xB < {XB[ix+1]:.2f}', ylabel='Counts / nC')
+        ax.ticklabel_format(axis='y', style='sci', scilimits=(0, 0), useMathText=True)
+        ax.tick_params(axis='x', labelbottom=False)
+        for j in range(6):
+            ratio_rows.append(dict(xB_low=XB[ix], xB_high=XB[ix+1],
+                                   minus_tprime_low=ratio_edges[j], minus_tprime_high=ratio_edges[j+1],
+                                   ratio=float(ratios[j]) if valid[j] else None,
+                                   ratio_stat=float(errors[j]) if valid[j] else None))
+    ymax = max(np.max((histograms[t]+np.sqrt(histograms[t]))/charges['spring2023'][t]) for t in histograms)
+    tops[0].set_ylim(0, 1.08*ymax if ymax > 0 else 1)
+    finite = [r['ratio']+r['ratio_stat'] for r in ratio_rows if r['ratio'] is not None]
+    bottoms[0].set_ylim(0, 1.05*max(finite) if finite else 2)
+    tops[0].legend()
+    fig.subplots_adjust(left=.09, right=.98, top=.95, bottom=.07)
     (output/'figures').mkdir(exist_ok=True)
     fig.savefig(output/'figures/cd2_ch2_distributions.png', dpi=170)
     plt.close(fig)
     write_csv(output/'cd2_ch2_distributions.csv', rows)
+    write_csv(output/'cd2_ch2_distribution_ratios.csv', ratio_rows)
 
+
+def xb_comparison(output, counts, charges, replicas, seed, cutset_id):
+    """Integrate target counts over tprime BEFORE transfer and Method 1.
+
+    Comparison only. Does not replace the 24-bin nominal results.
+    """
+    integrated = {p: {t: n.reshape(4, 6).sum(axis=1) for t,n in targets.items()}
+                  for p,targets in counts.items()}
+    ratio, nominal = evaluate(rates_from_counts(integrated, charges))
+    rng = np.random.default_rng(seed)
+    sample = {p: {t: rng.poisson(n, (replicas, 24)).reshape(replicas, 4, 6).sum(axis=2)
+                  for t,n in targets.items()} for p,targets in counts.items()}
+    ratio_draws, draws = evaluate(rates_from_counts(sample, charges))
+    rows = []
+    for period, label in zip(PERIODS, LABELS):
+        for ix in range(4):
+            row = dict(period=label, xB_low=XB[ix], xB_high=XB[ix+1])
+            for key in ['dilution', 'packing_fraction']:
+                row.update({key+'_'+k: v for k,v in describe(nominal[period][key][ix], draws[period][key][:,ix]).items()})
+            row['denominator_crossing_fraction'] = float(np.mean(draws[period]['denominator'][:,ix]*nominal[period]['denominator'][ix] <= 0))
+            rows.append(row)
+    write_csv(output/'method1_xb_comparison.csv', rows)
+    payload = dict(cutset_id=cutset_id, status='comparison_only',
+                   prescription='Sum counts over all six tprime bins before computing transfer and Method 1',
+                   bins=rows, transfer=[dict(xB_low=XB[ix], xB_high=XB[ix+1],
+                   **describe(ratio[ix], ratio_draws[:,ix])) for ix in range(4)])
+    (output/'method1_xb_comparison.json').write_text(json.dumps(clean(payload), indent=2, allow_nan=False)+'\n')
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    fig, axes = plt.subplots(1, 2, figsize=(11, 4.5))
+    x = (np.asarray(XB[:-1])+XB[1:])/2
+    for ax,key,label in zip(axes, ['dilution','packing_fraction'], ['Dilution factor','Cell packing fraction']):
+        for period,color in zip(LABELS, ['#0072B2','#D55E00','#009E73']):
+            values = [r for r in rows if r['period']==period]
+            ax.plot(x, [r[key+'_value'] for r in values], 'o', color=color, label=period)
+            ax.vlines(x, [r[key+'_stat_q16'] for r in values], [r[key+'_stat_q84'] for r in values], color=color)
+        ax.set(xlabel='xB', ylabel=label)
+        ax.set_ylim(bottom=0)
+    axes[0].legend()
+    fig.tight_layout()
+    fig.savefig(output/'figures/method1_xb_comparison.png', dpi=170)
+    plt.close(fig)
+    print('tprime-integrated comparison:')
+    for r in rows:
+        print(f"{r['period']} xB [{r['xB_low']:.2f},{r['xB_high']:.2f}): DF {r['dilution_value']:.3f}, PF {r['packing_fraction_value']:.3f}, denominator flips {100*r['denominator_crossing_fraction']:.2f}%")
+
+
+def comparison_groups():
+    return {
+        'xb_only': [list(range(6*ix,6*ix+6)) for ix in range(4)],
+        'tprime_only': [[6*ix+it for ix in range(4)] for it in range(6)],
+        'xb_two_tprime': [list(range(6*ix+3*half,6*ix+3*half+3))
+                          for ix in range(4) for half in range(2)],
+    }
+
+
+def group_counts(counts, groups):
+    """Aggregate the final dimension of either counts or count replicas."""
+    return {p: {t: np.stack([n[...,ids].sum(axis=-1) for ids in groups], axis=-1)
+                for t,n in targets.items()} for p,targets in counts.items()}
+
+
+def binning_comparison(output, counts, charges, replicas, seed, cutset_id):
+    """Compare pooling choices with shared Poisson replicas and measured transfers."""
+    rng = np.random.default_rng(seed)
+    sample = {p: {t: rng.poisson(n, (replicas,24)) for t,n in targets.items()}
+              for p,targets in counts.items()}
+    rows, differences, scheme_meta, covariances = [], [], {}, {}
+    all_nominal, all_draws = {}, {}
+    for scheme,groups in comparison_groups().items():
+        ratio, nominal = evaluate(rates_from_counts(group_counts(counts, groups), charges))
+        ratio_draw, draws = evaluate(rates_from_counts(group_counts(sample, groups), charges))
+        all_nominal[scheme], all_draws[scheme] = nominal, draws
+        scheme_meta[scheme] = dict(original_bins=[[b+1 for b in ids] for ids in groups],
+                                  transfer=[describe(ratio[j],ratio_draw[:,j]) for j in range(len(groups))])
+        for period,label in zip(PERIODS,LABELS):
+            for j,ids in enumerate(groups):
+                ix = sorted({b//6 for b in ids})
+                it = sorted({b%6 for b in ids})
+                row = dict(scheme=scheme, period=label, group=j+1,
+                           xB_low=XB[min(ix)], xB_high=XB[max(ix)+1],
+                           minus_tprime_low=TP[min(it)], minus_tprime_high=TP[max(it)+1])
+                flags=[]
+                for key in ['dilution','packing_fraction']:
+                    stats=describe(nominal[period][key][j],draws[period][key][:,j])
+                    row.update({key+'_'+k:v for k,v in stats.items()})
+                    if stats['value'] is None or not 0<stats['value']<1:
+                        flags.append(key+'_unphysical')
+                    if stats['finite_fraction']<.99:
+                        flags.append(key+'_undefined_replicas')
+                crossing=float(np.mean(draws[period]['denominator'][:,j]*nominal[period]['denominator'][j]<=0))
+                row['denominator_crossing_fraction']=crossing
+                if crossing>.01:flags.append('denominator_sign_unstable')
+                row['flags']='|'.join(flags)
+                rows.append(row)
+        joint=np.concatenate([draws[p][key] for key in ['dilution','packing_fraction'] for p in PERIODS],axis=1)
+        valid=np.all(np.isfinite(joint),axis=1)
+        covariances[scheme]=np.cov(joint[valid],rowvar=False) if valid.sum()>1 else np.full((joint.shape[1],joint.shape[1]),np.nan)
+        scheme_meta[scheme]['covariance_order']=[f'{key}:{p}:group{j+1}' for key in ['dilution','packing_fraction'] for p in PERIODS for j in range(len(groups))]
+        scheme_meta[scheme]['complete_covariance_replicas']=int(valid.sum())
+    for period,label in zip(PERIODS,LABELS):
+        for ix in range(4):
+            low,high=2*ix,2*ix+1
+            n=all_nominal['xb_two_tprime'][period]['dilution']
+            draws=all_draws['xb_two_tprime'][period]['dilution']
+            stats=describe(n[high]-n[low],draws[:,high]-draws[:,low])
+            delta_draws = draws[:,high]-draws[:,low]
+            finite_delta = delta_draws[np.isfinite(delta_draws)]
+            q025,q975 = np.quantile(finite_delta,[.025,.975])
+            central_width = (stats['stat_q84']-stats['stat_q16'])/2
+            differences.append(dict(period=label,xB_low=XB[ix],xB_high=XB[ix+1],
+                                    difference='high_tprime_minus_low_tprime',**stats,
+                                    stat_q025=float(q025),stat_q975=float(q975),
+                                    heavy_tail_warning=bool(stats['stat_std']>3*central_width)))
+    write_csv(output/'method1_binning_comparison.csv', rows)
+    write_csv(output/'method1_tprime_half_differences.csv', differences)
+    payload=dict(cutset_id=cutset_id,status='comparison_only',replicas=replicas,seed=seed,
+                 prescription='Sum target counts within each group before calculating its Sp23 CD2/CH2 transfer and Method 1',
+                 half_split_gev2=.65,schemes=scheme_meta,bins=rows,half_differences=differences)
+    (output/'method1_binning_comparison.json').write_text(json.dumps(clean(payload),indent=2,allow_nan=False)+'\n')
+    np.savez_compressed(output/'binning_comparison_covariance.npz',**covariances)
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    colors=['#0072B2','#D55E00','#009E73']
+    fig,ax=plt.subplots(figsize=(8,5))
+    for label,color in zip(LABELS,colors):
+        v=[r for r in rows if r['scheme']=='tprime_only' and r['period']==label]
+        x=[(r['minus_tprime_low']+r['minus_tprime_high'])/2 for r in v]
+        ax.plot(x,[r['dilution_value'] for r in v],'o',color=color,label=label)
+        ax.vlines(x,[r['dilution_stat_q16'] for r in v],[r['dilution_stat_q84'] for r in v],color=color)
+    ax.set(xlabel='−t′ (GeV²)',ylabel='Dilution factor',title='Integrated over 0.10 ≤ xB < 0.60')
+    ax.legend();fig.tight_layout()
+    fig.savefig(output/'figures/method1_tprime_only.png',dpi=170);plt.close(fig)
+    fig,axes=plt.subplots(2,2,figsize=(11,8),sharex=True,sharey=True)
+    for ix,ax in enumerate(axes.flat):
+        for ip,(label,color) in enumerate(zip(LABELS,colors)):
+            v=[r for r in rows if r['scheme']=='xb_two_tprime' and r['period']==label and r['xB_low']==XB[ix]]
+            # Small horizontal offsets keep the three periods visible in each half.
+            x=np.array([(r['minus_tprime_low']+r['minus_tprime_high'])/2 for r in v])+(ip-1)*.025
+            ax.plot(x,[r['dilution_value'] for r in v],'o',color=color,label=label)
+            ax.vlines(x,[r['dilution_stat_q16'] for r in v],[r['dilution_stat_q84'] for r in v],color=color)
+        ax.axvline(.65,color='gray',lw=.7,ls=':')
+        ax.set(xlabel='−t′ (GeV²)',ylabel='Dilution factor',title=f'{XB[ix]:.2f} ≤ xB < {XB[ix+1]:.2f}', xlim=(TP[0],TP[-1]))
+    axes.flat[0].legend();fig.tight_layout()
+    fig.savefig(output/'figures/method1_two_tprime_halves.png',dpi=170);plt.close(fig)
+    for scheme in comparison_groups():
+        selected=[r for r in rows if r['scheme']==scheme]
+        print(f"{scheme}: {sum(bool(r['flags']) for r in selected)}/{len(selected)} flagged, max denominator flips {100*max(r['denominator_crossing_fraction'] for r in selected):.3f}%")
+    return rows,differences
+
+def period_consistency(output):
+    """Approximate correlated GLS checks of one-dimensional dilution projections."""
+    from scipy.stats import chi2
+    payload=json.loads((output/'method1_binning_comparison.json').read_text())
+    covariance=np.load(output/'binning_comparison_covariance.npz')
+    summary,individual=[],[]
+    for scheme in ['xb_only','tprime_only']:
+        rows=[r for r in payload['bins'] if r['scheme']==scheme]
+        groups=len(rows)//3
+        y=np.array([r['dilution_value'] for r in rows])
+        c=covariance[scheme][:3*groups,:3*groups]
+        design=np.tile(np.eye(groups),(3,1))
+        precision=np.linalg.solve(c,np.eye(len(y)))
+        mean_cov=np.linalg.inv(design.T@precision@design)
+        mean=mean_cov@design.T@precision@y
+        residual=y-design@mean
+        statistic=float(residual@precision@residual)
+        ndf=2*groups
+        summary.append(dict(scheme=scheme,chi2=statistic,ndf=ndf,p_value=float(chi2.sf(statistic,ndf))))
+        for j in range(groups):
+            ids=np.array([j,groups+j,2*groups+j])
+            values=y[ids]
+            sub=c[np.ix_(ids,ids)]
+            weights=np.linalg.solve(sub,np.ones(3))
+            fitted=float(weights@values/weights.sum())
+            res=values-fitted
+            statistic=float(res@np.linalg.solve(sub,res))
+            row=dict(scheme=scheme,group=j+1,xB_low=rows[j]['xB_low'],xB_high=rows[j]['xB_high'],
+                     minus_tprime_low=rows[j]['minus_tprime_low'],minus_tprime_high=rows[j]['minus_tprime_high'],
+                     common_df=fitted,common_df_stat=float(np.sqrt(1/weights.sum())),
+                     chi2=statistic,ndf=2,p_value=float(chi2.sf(statistic,2)))
+            for a,b in [(0,1),(0,2),(1,2)]:
+                difference=float(values[a]-values[b])
+                error=float(np.sqrt(sub[a,a]+sub[b,b]-2*sub[a,b]))
+                row[f'{LABELS[a]}_minus_{LABELS[b]}']=difference
+                row[f'{LABELS[a]}_minus_{LABELS[b]}_stat']=error
+            individual.append(row)
+    write_csv(output/'period_consistency_summary.csv',summary)
+    write_csv(output/'period_consistency_bins.csv',individual)
+    (output/'period_consistency.json').write_text(json.dumps(dict(cutset_id=payload['cutset_id'],
+        method='Correlated GLS, using statistical Poisson-replica covariance with shared Sp23 controls',
+        caveat='Approximate statistical-only tests. The projections use the same events and are not independent tests. Not a test of every two-dimensional bin.',
+        summary=summary,bins=individual),indent=2,allow_nan=False)+'\n')
+    for row in summary:
+        print(f"Period consistency {row['scheme']}: chi2/ndf={row['chi2']:.2f}/{row['ndf']}, p={row['p_value']:.3f}")
+    return summary,individual
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
@@ -318,6 +547,9 @@ def main():
     np.savez_compressed(out/'statistical_covariance.npz', **covariance)
     plots(out, rows, transfer)
     control_distributions(out, registry, charges)
+    xb_comparison(out, counts, charges, args.replicas, args.seed, registry['cutset_id'])
+    binning_comparison(out, counts, charges, args.replicas, args.seed, registry['cutset_id'])
+    period_consistency(out)
     flagged = sum(bool(r['flags']) for r in rows)
     print(f'Finished: 72 period/bin estimates, {flagged} flagged for review. Outputs: {out.resolve()}')
     for row in packing_summary:

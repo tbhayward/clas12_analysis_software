@@ -45,3 +45,17 @@ Uncertainties assume independent candidate-combination counts, as in pi+. They d
 Check `cutset_id` before combining these results with later asymmetry inputs. Review flags must be resolved before using the corresponding estimate as a nominal correction.
 
 Checks: `python3 -m unittest discover -s analysis_scripts/RGC_eppi-/dilution_factor/tests -v`
+
+## xB-only comparison and ratio display
+
+The CD2/CH2 distribution canvas now includes ratio panels in the six analysis tprime bins below the finer yield distributions. Yield labels are Counts / nC, using the source charge units without the former factor of one million. All four yield panels share a y range, as do the four ratio panels.
+
+`method1_xb_comparison.csv`, `method1_xb_comparison.json`, and `figures/method1_xb_comparison.png` integrate each target count over the six tprime bins before the transfer ratio and Method 1 are calculated. These are comparison outputs, separate from the 24-bin nominal values. Statistical trials retain shared Sp23 inputs. Applying one value to all six tprime bins would introduce a common dilution uncertainty across those bins and assumes a tprime-independent correction within each xB interval.
+
+## Pooling comparisons
+
+Every execution also produces `method1_binning_comparison.csv/json`, `method1_tprime_half_differences.csv`, `binning_comparison_covariance.npz`, and the figures `method1_tprime_only.png` and `method1_two_tprime_halves.png`. Three schemes are compared: four xB bins integrated over tprime, six tprime bins integrated over xB, and four xB bins each split into [0.05,0.65) and [0.65,1.25) GeV². Charges are unchanged when summing event counts within each group. The CD2/CH2 transfer is recomputed at each scheme's binning, before Method 1.
+
+All comparisons reuse the same original 24-bin Poisson trials. JSON records bin memberships and covariance ordering. Joint covariance includes all periods and both dilution and packing factors within each scheme. High-minus-low differences include central 68% and 95% replica intervals. They are uncertainty summaries, not formal hypothesis-test confidence intervals. Large replica standard deviations may be driven by rare denominator crossings. Such cases receive a heavy-tail warning in the difference table. Comparisons and the three periods share Sp23 control data, so their apparent trends are not independent evidence. None of these outputs replaces the 24-bin nominal correction automatically.
+
+The calculation also writes `period_consistency_summary.csv`, `period_consistency_bins.csv` and `period_consistency.json`. These compare the three period dilution values in each one-dimensional projection using a common-value GLS fit with the full shared-control covariance. Global tests fit a separate common value in each projected bin. The xB-only test has 8 degrees of freedom, the tprime-only test 12. Probabilities are approximate and statistical-only. The two projections reuse the same events. Their agreement does not demonstrate equal dilution in each two-dimensional bin.

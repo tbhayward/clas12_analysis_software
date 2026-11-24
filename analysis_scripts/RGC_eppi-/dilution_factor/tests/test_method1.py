@@ -5,10 +5,31 @@ import unittest
 import numpy as np
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 from model import method1, transfer_ratio
-from determine_dilution_factor import load_charges, evaluate, resample, PERIODS
+from determine_dilution_factor import load_charges, evaluate, resample, PERIODS, comparison_groups, group_counts
 
 
 class Method1Test(unittest.TestCase):
+    def test_comparison_groups_partition_original_bins(self):
+        groups=comparison_groups()
+        self.assertEqual([len(groups[k]) for k in groups], [4,6,8])
+        for group in groups.values():
+            self.assertEqual(sorted(b for ids in group for b in ids),list(range(24)))
+        self.assertEqual(groups['xb_two_tprime'][0],[0,1,2])
+        self.assertEqual(groups['xb_two_tprime'][1],[3,4,5])
+
+    def test_aggregate_counts_and_replicas(self):
+        n=np.arange(24)
+        data={'summer2022':{'ND3':n}}
+        groups=comparison_groups()
+        np.testing.assert_array_equal(group_counts(data,groups['xb_only'])['summer2022']['ND3'],[15,51,87,123])
+        np.testing.assert_array_equal(group_counts(data,groups['tprime_only'])['summer2022']['ND3'],[36,40,44,48,52,56])
+        replicas={'summer2022':{'ND3':np.stack([n,2*n])}}
+        result=group_counts(replicas,groups['xb_two_tprime'])['summer2022']['ND3']
+        self.assertEqual(result.shape,(2,8))
+        np.testing.assert_array_equal(result[1],2*result[0])
+        self.assertEqual(result[0,0],3)
+        self.assertEqual(result[0,1],12)
+
     def test_published_nd3_equations(self):
         r = dict(ND3=np.array([100., 150.]), C=np.array([30., 40.]),
                  CD2=np.array([40., 60.]), CH2=np.array([20., 30.]),
