@@ -1,0 +1,102 @@
+[
+  {
+    "scope": "RGB_combined",
+    "variant": "strict_unbounded",
+    "valid": 21,
+    "invalid_bins": [
+      10,
+      12,
+      15
+    ],
+    "negative_unobserved_factor_bins": [],
+    "near_parameter_bounds": []
+  },
+  {
+    "scope": "RGB_combined",
+    "variant": "strict_pi_plus_bounds",
+    "valid": 21,
+    "invalid_bins": [
+      10,
+      12,
+      15
+    ],
+    "negative_unobserved_factor_bins": [],
+    "near_parameter_bounds": [
+      2,
+      5,
+      6,
+      13,
+      20,
+      21,
+      24
+    ]
+  },
+  {
+    "scope": "RGB_combined",
+    "variant": "pi_plus_checks_and_bounds",
+    "valid": 21,
+    "invalid_bins": [
+      10,
+      12,
+      15
+    ],
+    "negative_unobserved_factor_bins": [
+      10,
+      12,
+      15
+    ],
+    "near_parameter_bounds": [
+      2,
+      5,
+      6,
+      13,
+      20,
+      21,
+      24
+    ]
+  },
+  {
+    "scope": "RGB_spring2019_D2",
+    "variant": "strict_unbounded",
+    "valid": 19,
+    "invalid_bins": [
+      4,
+      9,
+      10,
+      11,
+      21
+    ],
+    "negative_unobserved_factor_bins": [],
+    "near_parameter_bounds": []
+  },
+  {
+    "scope": "RGB_fall2019_D2",
+    "variant": "strict_unbounded",
+    "valid": 18,
+    "invalid_bins": [
+      1,
+      11,
+      12,
+      16,
+      19,
+      21
+    ],
+    "negative_unobserved_factor_bins": [],
+    "near_parameter_bounds": []
+  },
+  {
+    "scope": "RGB_spring2020_D2",
+    "variant": "strict_unbounded",
+    "valid": 18,
+    "invalid_bins": [
+      5,
+      6,
+      9,
+      16,
+      17,
+      20
+    ],
+    "negative_unobserved_factor_bins": [],
+    "near_parameter_bounds": []
+  }
+]

@@ -1,0 +1,102 @@
+{
+  "bin": 4,
+  "scope": "RGB_fall2019_D2",
+  "signature": "4b377d8d203efc593947da50892f247c9f1e58dfe731e730084e5995f4aa97ec",
+  "status": "valid",
+  "fixed_parameters": {
+    "UU_cos_phi": 0.0,
+    "UU_cos_2phi": 0.0
+  },
+  "free_parameters": [
+    "LU_sin_phi"
+  ],
+  "events": 2959,
+  "names": [
+    "UU_cos_phi",
+    "UU_cos_2phi",
+    "LU_sin_phi"
+  ],
+  "values": [
+    0.0,
+    0.0,
+    -0.132805928685156
+  ],
+  "errors": [
+    0.0,
+    0.0,
+    0.049346218298260316
+  ],
+  "covariance": [
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0024350492603395614
+    ]
+  ],
+  "correlation": [
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      1.0
+    ]
+  ],
+  "diluted_values": [
+    0.0,
+    0.0,
+    -0.132805928685156
+  ],
+  "diluted_covariance": [
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0
+    ],
+    [
+      0.0,
+      0.0,
+      0.0024350492603395614
+    ]
+  ],
+  "dilution": null,
+  "dilution_stat": null,
+  "dilution_derivative": [
+    0.0,
+    0.0,
+    0.0
+  ],
+  "nll": -3.610874224423463,
+  "edm": 1.8961110741419816e-09,
+  "minimum_state_factor": 0.9202660639704098,
+  "covariance_condition": 1.0,
+  "multistart_nll": [
+    -3.6108741210515984,
+    -3.610874224423463,
+    -3.610870632149782
+  ],
+  "warnings": []
+}

@@ -75,7 +75,14 @@ def plot(output,registry_path=None):
                 # Edge triangles disclose any part of the error interval beyond the frame.
                 if y+error>limit:ax.plot(x+offset,limit*.97,marker='^',color=color,ms=4,linestyle='none')
                 if y-error < -limit:ax.plot(x+offset,-limit*.97,marker='v',color=color,ms=4,linestyle='none')
-        ax.errorbar(xx,yy,yerr=ee,fmt=marker,color=color,ecolor=color,ms=4,capsize=3,lw=1.1,linestyle='none',label=label,zorder=3)
+        fixed=j<2 and any(NAMES[j] in lookup.get((scope,ix*6+it+1),{}).get('fixed_parameters',{}) for it in range(6))
+        if fixed:
+            if not getattr(ax,'_fixed_uu_label',False):
+                ax.text(.5,.12,'Fixed UU input — not fitted',ha='center',transform=ax.transAxes,fontsize=9)
+                ax._fixed_uu_label=True
+            if scope=='combined':ax.plot(xx,yy,marker='x',color='0.35',ms=5,linestyle='none')
+        else:
+            ax.errorbar(xx,yy,yerr=ee,fmt=marker,color=color,ecolor=color,ms=4,capsize=3,lw=1.1,linestyle='none',label=label,zorder=3)
     for ix in range(4):
         fig,axes=plt.subplots(3,3,figsize=(12,10));axes=axes.ravel()
         for j,panel in enumerate(PANELS):
@@ -92,7 +99,7 @@ def plot(output,registry_path=None):
         for ix,(color,marker) in enumerate(zip(['#0072B2','#D55E00','#009E73','#CC79A7'],['o','s','^','D'])):
             points(axes[panel],'combined',ix,j,color,marker,rf'${XB[ix]:.2f}\leq x_B<{XB[ix+1]:.2f}$')
     axes[2].axis('off');axes[8].axis('off')
-    handles,labels=axes[0].get_legend_handles_labels();axes[8].legend(handles,labels,loc='center',frameon=False)
+    handles,labels=next((ax.get_legend_handles_labels() for ax in axes if ax.get_legend_handles_labels()[0]),([],[]));axes[8].legend(handles,labels,loc='center',frameon=False)
     fig.tight_layout();fig.savefig(folder/'final_results_all_xB.png',dpi=200);plt.close(fig)
     for mode,indices,scopes in [('UU_LU',[0,1,2],PERIODS),('UL_LL',[3,4,5,6],PERIODS[3:])]:
         for ix in range(4):
@@ -103,7 +110,7 @@ def plot(output,registry_path=None):
                 for index,scope in enumerate(scopes):
                     ip=PERIODS.index(scope)
                     points(ax,scope,ix,j,COLORS[ip],MARKERS[ip],PERIOD_LABELS[ip],(index-(len(scopes)-1)/2)*.012)
-            handles,labels=axes[0].get_legend_handles_labels()
+            handles,labels=next((ax.get_legend_handles_labels() for ax in axes if ax.get_legend_handles_labels()[0]),([],[]))
             fig.legend(handles,labels,loc='upper center',ncol=len(scopes),frameon=False,fontsize=9,bbox_to_anchor=(.5,.94))
             fig.suptitle(rf'${XB[ix]:.2f}\leq x_B<{XB[ix+1]:.2f}$')
             fig.tight_layout(rect=(0,0,1,.85 if mode=='UU_LU' else .89))

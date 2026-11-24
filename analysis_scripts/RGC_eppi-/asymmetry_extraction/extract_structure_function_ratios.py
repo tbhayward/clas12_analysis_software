@@ -8,7 +8,7 @@ import numpy as np
 from inputs import load,PERIODS
 from likelihood import fit,NAMES
 HERE=Path(__file__).resolve().parent
-GROUPS=DF=None
+GROUPS=DF=UU=None
 
 def safe(payload):
     if isinstance(payload,dict):return {k:safe(v) for k,v in payload.items()}
@@ -20,9 +20,9 @@ def save(path,payload):
     temporary=path.with_suffix('.tmp')
     temporary.write_text(json.dumps(safe(payload),indent=2,allow_nan=False)+'\n');temporary.replace(path)
 
-def initialize(groups,df):
-    global GROUPS,DF,THREAD_LIMIT
-    GROUPS,DF=groups,df
+def initialize(groups,df,uu):
+    global GROUPS,DF,UU,THREAD_LIMIT
+    GROUPS,DF,UU=groups,df,uu
     try:
         from threadpoolctl import threadpool_limits
         THREAD_LIMIT=threadpool_limits(limits=1)
@@ -37,8 +37,9 @@ def worker(task):
         g=GROUPS[name];mask=g['events']['bin']==b
         if not mask.any():return dict(bin=b,scope=scope,status='empty',signature=signature)
         groups.append(dict(events={k:v[mask] for k,v in g['events'].items() if k!='bin'},states=g['states']))
-    try:result=fit(groups,DF[b])
+    try:result=fit(groups,DF[b],fixed_uu=UU[b])
     except Exception as e:result=dict(status='failed',error=str(e))
+    if UU[b] is not None:result['fixed_parameters']={NAMES[0]:UU[b][0],NAMES[1]:UU[b][1]}
     return dict(bin=b,scope=scope,signature=signature,**result)
 
 def products(output,results,registry_path=None):
@@ -56,7 +57,7 @@ def products(output,results,registry_path=None):
     rows=[]
     for result in results:
         if result['status']!='valid':continue
-        for j,name in enumerate(result['names']):rows.append(dict(scope=result['scope'],bin=result['bin'],parameter=name,value=result['values'][j],stat=result['errors'][j],events=result['events'],warnings='|'.join(result['warnings'])))
+        for j,name in enumerate(result['names']):rows.append(dict(scope=result['scope'],bin=result['bin'],parameter=name,parameter_status='fixed_input' if name in result.get('fixed_parameters',{}) else 'fitted',value=result['values'][j],stat=result['errors'][j],events=result['events'],warnings='|'.join(result['warnings'])))
     if rows:
         with (output/'ratios.csv').open('w',newline='') as f:
             w=csv.DictWriter(f,fieldnames=list(rows[0]),lineterminator="\n");w.writeheader();w.writerows(rows)
@@ -68,7 +69,8 @@ def products(output,results,registry_path=None):
         individual=[lookup.get((name,b),{}) for name in PERIODS]
         if nominal.get('status')=='valid' and all(r.get('status')=='valid' for r in individual):
             statistic=2*(nominal['nll']-sum(r['nll'] for r in individual))
-            tests.append(dict(bin=b,likelihood_ratio=statistic,ndf=23,p_value=float(chi2.sf(max(0,statistic),23)),warning='Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation'))
+            ndf=sum(len(r.get('free_parameters',r['names'])) for r in individual)-len(nominal.get('free_parameters',nominal['names']))
+            tests.append(dict(bin=b,likelihood_ratio=statistic,ndf=ndf,p_value=float(chi2.sf(max(0,statistic),ndf)),warning='Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation'))
     save(output/'period_likelihood_ratio_checks.json',tests)
     summary={scope:{status:sum(r['scope']==scope and r['status']==status for r in results) for status in ['valid','invalid','failed','empty']} for scope in ['combined']+PERIODS}
     save(output/'fit_summary.json',summary)
@@ -87,23 +89,49 @@ def products(output,results,registry_path=None):
     print(json.dumps(summary,indent=2),flush=True)
 
 
+def read_uu_inputs(path):
+    with Path(path).open(newline='') as stream:
+        rows=list(csv.DictReader(stream))
+    result={}
+    for row in rows:
+        b=int(row['bin'])
+        if b in result or b not in range(1,25):raise ValueError('Duplicate or invalid UU bin: '+str(b))
+        values=(float(row['UU_cos_phi']),float(row['UU_cos_2phi']))
+        if not np.all(np.isfinite(values)):raise ValueError('Nonfinite imported UU ratio')
+        result[b]=values
+    if set(result)!=set(range(1,25)):raise ValueError('UU import must cover all 24 bins exactly once')
+    return result
+
 def main():
     p=argparse.ArgumentParser(description=__doc__)
     p.add_argument('--selected-inputs',type=Path,default=HERE.parent/'channel_selection/output/selected_inputs.json')
     p.add_argument('--run-info',type=Path,default=HERE.parent/'imports/clas12_run_info_ND3_source.csv')
     p.add_argument('--dilution',type=Path,default=HERE.parent/'dilution_factor/output/joint_period_method1.json')
-    p.add_argument('--output',type=Path,default=HERE/'output')
+    p.add_argument('--output',type=Path)
+    mode=p.add_mutually_exclusive_group()
+    mode.add_argument('--uu-inputs',type=Path,help='CSV with bin,UU_cos_phi,UU_cos_2phi for all 24 bins')
+    mode.add_argument('--float-uu',action='store_true',help='Reproduce the seven-free-ratio fit')
     p.add_argument('--workers',type=int,default=6)
     p.add_argument('--bins',type=int,nargs='+',default=list(range(1,25)))
     p.add_argument('--preflight',action='store_true')
     p.add_argument('--status',action='store_true')
     a=p.parse_args()
+    if a.output is None:
+        folder='output_free_UU' if a.float_uu else ('output_fixed_UU_'+a.uu_inputs.stem if a.uu_inputs else 'output_fixed_UU')
+        a.output=HERE/folder
     if a.status:
         summary=a.output/'fit_summary.json'
         print(summary.read_text() if summary.exists() else f'{len(list((a.output/"fits").glob("*.json")))} fit checkpoints present');return
     if a.workers<1 or any(b not in range(1,25) for b in a.bins):p.error('Need positive workers and bins 1-24')
+    uu={b:None if a.float_uu else (0.,0.) for b in range(1,25)}
+    if a.uu_inputs:
+        uu=read_uu_inputs(a.uu_inputs)
     groups,df,audit,identity=load(a.selected_inputs,a.run_info,a.dilution,HERE.parent/'channel_selection')
     a.output.mkdir(parents=True,exist_ok=True)
+    identity['UU_settings']={str(b):v for b,v in uu.items()}
+    identity['UU_source']='free' if a.float_uu else (str(a.uu_inputs.resolve()) if a.uu_inputs else 'fixed_zero')
+    if a.uu_inputs:identity['UU_sha256']=hashlib.sha256(a.uu_inputs.read_bytes()).hexdigest()
+    save(a.output/'UU_settings.json',dict(values=identity['UU_settings'],source=identity['UU_source'],fixed=not a.float_uu))
     identity['code_sha256']=hashlib.sha256(b''.join((HERE/n).read_bytes() for n in ['likelihood.py','inputs.py','extract_structure_function_ratios.py'])).hexdigest()
     signature=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
     save(a.output/'input_audit.json',dict(identity=identity,signature=signature,datasets=audit))
@@ -119,7 +147,7 @@ def main():
                 if r.get('signature')==signature:results.append(r);continue
             tasks.append((b,scope,signature))
     from concurrent.futures import ProcessPoolExecutor,as_completed
-    with ProcessPoolExecutor(max_workers=a.workers,initializer=initialize,initargs=(groups,df)) as pool:
+    with ProcessPoolExecutor(max_workers=a.workers,initializer=initialize,initargs=(groups,df,uu)) as pool:
         jobs={pool.submit(worker,t):t for t in tasks}
         for job in as_completed(jobs):
             r=job.result();results.append(r)

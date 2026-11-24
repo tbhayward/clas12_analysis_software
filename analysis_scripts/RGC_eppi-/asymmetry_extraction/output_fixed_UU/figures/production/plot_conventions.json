@@ -1,0 +1,13 @@
+{
+  "style_reference": "RGC_enpi+/asymmetry_extraction/plot_final_results.py",
+  "statistical_only": true,
+  "UU_LL_limits": [
+    -1,
+    1
+  ],
+  "LU_UL_limits": [
+    -0.4,
+    0.4
+  ],
+  "positions": "Mean selected-event minus-tprime, independently for each scope/bin"
+}

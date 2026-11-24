@@ -47,14 +47,23 @@ class ConditionalLikelihood:
         return np.sum(self.average/d[:,None]-self.observed/n[:,None],axis=0)
 
 
-def fit(groups,dilution,starts=3):
+def fit(groups,dilution,starts=3,fixed_uu=None):
     target=any(np.any(g['events']['pt']!=0) for g in groups)
     cost=ConditionalLikelihood(groups,target)
     seeds=[np.array([0,0,.05,.01,.01,.01,.01]),np.array([.3,-.15,.08,-.01,.01,.01,-.01]),np.array([-.3,.15,-.05,.01,-.01,-.01,.01])]
+    if fixed_uu is not None:
+        fixed_uu=np.asarray(fixed_uu,dtype=float)
+        if fixed_uu.shape!=(2,) or not np.all(np.isfinite(fixed_uu)):raise ValueError('Need two finite fixed UU ratios')
+        baseline=np.zeros(cost.npar);baseline[:2]=fixed_uu
+        if np.min(1+cost.allowed@baseline)<=1e-10:raise ValueError('Imported UU values give a nonpositive unpolarized factor')
+        seeds[0]=np.zeros(7)
     fits=[]
     for seed in seeds[:starts]:
+        seed=seed.copy()
+        if fixed_uu is not None:seed[:2]=fixed_uu
         m=Minuit(cost,*seed[:cost.npar],name=NAMES[:cost.npar],grad=cost.gradient)
         m.errordef=.5;m.strategy=1
+        if fixed_uu is not None:m.fixed[0]=True;m.fixed[1]=True
         m.migrad(ncall=4000);m.hesse()
         if not (m.valid and m.accurate):
             m.simplex(ncall=2000)
@@ -71,15 +80,17 @@ def fit(groups,dilution,starts=3):
     if target:
         derivative=np.zeros(7);derivative[3:]=-values[3:]/df
         cov+=sigma*sigma*np.outer(derivative,derivative)
-    eigen=np.linalg.eigvalsh(cb)
-    correlation=cov/np.sqrt(np.outer(np.diag(cov),np.diag(cov)))
+    free=np.array([not best.fixed[i] for i in range(cost.npar)])
+    eigen=np.linalg.eigvalsh(cb[np.ix_(free,free)])
+    normalization=np.sqrt(np.outer(np.diag(cov),np.diag(cov)))
+    correlation=np.divide(cov,normalization,out=np.zeros_like(cov),where=normalization>0)
     warnings=[]
     if eigen[-1]/eigen[0]>1e8:warnings.append('weak_parameter_identification')
     if np.min(1+cost.allowed@beta)<1e-5:warnings.append('near_positivity_boundary')
     if len(valid)>1 and max(m.fval for m in valid)-best.fval>.1:warnings.append('multistart_minima_disagree')
     derivative=np.zeros(len(beta))
     if target:derivative[3:]=-values[3:]/df
-    return dict(status='valid',events=cost.events,names=NAMES[:cost.npar],values=values.tolist(),
+    return dict(status='valid',fixed_parameters={NAMES[i]:float(beta[i]) for i in range(cost.npar) if not free[i]},free_parameters=[NAMES[i] for i in range(cost.npar) if free[i]],events=cost.events,names=NAMES[:cost.npar],values=values.tolist(),
       errors=np.sqrt(np.diag(cov)).tolist(),covariance=cov.tolist(),correlation=correlation.tolist(),
       diluted_values=beta.tolist(),diluted_covariance=cb.tolist(),
       dilution=df if target else None,dilution_stat=sigma if target else None,dilution_derivative=derivative.tolist(),

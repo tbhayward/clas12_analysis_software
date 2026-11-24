@@ -1,0 +1,170 @@
+[
+  {
+    "bin": 1,
+    "likelihood_ratio": 15.773838450432777,
+    "ndf": 13,
+    "p_value": 0.26155849293765204,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 2,
+    "likelihood_ratio": 20.486057487142332,
+    "ndf": 13,
+    "p_value": 0.08373569824893932,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 3,
+    "likelihood_ratio": 12.758877926988617,
+    "ndf": 13,
+    "p_value": 0.46660448853718617,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 4,
+    "likelihood_ratio": 18.025420923815556,
+    "ndf": 13,
+    "p_value": 0.15655662792869895,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 5,
+    "likelihood_ratio": 9.97878184540639,
+    "ndf": 13,
+    "p_value": 0.6956685258277331,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 6,
+    "likelihood_ratio": 16.022386331945924,
+    "ndf": 13,
+    "p_value": 0.24792311465621675,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 7,
+    "likelihood_ratio": 28.62487909456071,
+    "ndf": 13,
+    "p_value": 0.0073963461859779395,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 8,
+    "likelihood_ratio": 12.699057606251593,
+    "ndf": 13,
+    "p_value": 0.47131680779765806,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 9,
+    "likelihood_ratio": 9.904262202508768,
+    "ndf": 13,
+    "p_value": 0.7017438266324797,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 10,
+    "likelihood_ratio": 10.501236541228943,
+    "ndf": 13,
+    "p_value": 0.652522169296905,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 11,
+    "likelihood_ratio": 26.5118361977504,
+    "ndf": 13,
+    "p_value": 0.014500904640284399,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 12,
+    "likelihood_ratio": 16.528055697721694,
+    "ndf": 13,
+    "p_value": 0.22178608688966348,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 13,
+    "likelihood_ratio": 37.40231083116476,
+    "ndf": 13,
+    "p_value": 0.0003582089472204457,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 14,
+    "likelihood_ratio": 10.116000151880314,
+    "ndf": 13,
+    "p_value": 0.6844222232421947,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 15,
+    "likelihood_ratio": 14.97326528505753,
+    "ndf": 13,
+    "p_value": 0.3090247406872886,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 16,
+    "likelihood_ratio": 8.561169694064027,
+    "ndf": 13,
+    "p_value": 0.8052201903986071,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 17,
+    "likelihood_ratio": 9.347418037709916,
+    "ndf": 13,
+    "p_value": 0.7462277173983872,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 18,
+    "likelihood_ratio": 12.590588675419335,
+    "ndf": 13,
+    "p_value": 0.4799092422502792,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 19,
+    "likelihood_ratio": 8.18126489076591,
+    "ndf": 13,
+    "p_value": 0.831593852983501,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 20,
+    "likelihood_ratio": 25.913415350784188,
+    "ndf": 13,
+    "p_value": 0.0174616045526132,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 21,
+    "likelihood_ratio": 19.84307226492095,
+    "ndf": 13,
+    "p_value": 0.09919288981161622,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 22,
+    "likelihood_ratio": 6.831867896893225,
+    "ndf": 13,
+    "p_value": 0.9106067950352709,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 23,
+    "likelihood_ratio": 19.416535070812557,
+    "ndf": 13,
+    "p_value": 0.11074428861250579,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  },
+  {
+    "bin": 24,
+    "likelihood_ratio": 13.187672797294997,
+    "ndf": 13,
+    "p_value": 0.4334220953541022,
+    "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
+  }
+]

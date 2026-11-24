@@ -1,5 +1,7 @@
 # Exclusive pi− structure-function ratios
 
+The current preliminary default fixes both UU ratios to zero and fits the five spin-dependent ratios. Its output is `output_fixed_UU/`. The earlier seven-free-ratio mode is retained with `--float-uu` and defaults to `output_free_UU/`.
+
 Run from the repository root:
 
 `python3 analysis_scripts/RGC_eppi-/asymmetry_extraction/extract_structure_function_ratios.py --workers 6`
@@ -50,3 +52,23 @@ Future extraction runs create this production set automatically. It follows the 
 `python3 analysis_scripts/RGC_eppi-/asymmetry_extraction/audit_fits.py`
 
 The audit verifies input checksums and reconstructs all saved likelihood values. It records analytic scores and Hessian eigenvalues, active positivity constraints, the worst state/event and its harmonic decomposition, and the distance to positivity in the local Gaussian covariance. This distance is a diagnostic, not a coverage statement. Constrained-boundary stationarity is checked with nonnegative constraint multipliers. Both-UU-zero, one-UU-zero and leave-RGB-Fa19-out fits are diagnostic only. They never modify the nominal fits or the production ratios. They test parameter-identification and sample leverage, not hardware helicity calibration. See `audit/bin_audit.csv`, `audit/bin_audit.json`, `audit/audit_report.txt`, `audit/fixed_UU_zero_diagnostic.json`, and `audit/isolation_diagnostics.json`.
+
+## RGB-only isolation
+
+`python3 analysis_scripts/RGC_eppi-/asymmetry_extraction/rgb_only_check.py --workers 6`
+
+This writes `output/rgb_only/`, fitting only LU and the two UU ratios to the three combined RGB periods and to each RGB period separately. All target-polarization terms are absent and no dilution uncertainty enters these fits. Separate diagnostic variants test the pi+ ±1.5 coefficient limits and its observed-factor/observed-probability support checks. The latter are a comparison only: positivity of every other allowed state is not implied by checking one observed run-state probability. None of these variants changes the nominal extraction.
+
+The initial combined RGB run has 672,750 selected combinations, with 4,555 to 111,885 per two-dimensional bin. It gives 21/24 valid covariance estimates, with bins 10, 12 and 15 at the positivity boundary. The bound/support comparison leaves the same three failures. Individual periods give 19/24, 18/24 and 18/24 valid fits. Convergence alone is not validation of the UU estimates.
+
+For balanced helicity charges, the conditional RGB probability measures the beam-asymmetry numerator divided by the UU angular factor. It does not obtain acceptance-free UU information from the helicity-summed phi distribution. The UU terms disappear entirely when LU is zero. `expected_information.csv` illustrates the conditional Fisher information at the measured kinematics for injected UU values (0.15,-0.15) and two LU magnitudes, 0.03 and 0.20. These are illustrative assumed truths, not measured amplitudes or closure results.
+
+## Fixed UU inputs and later model variations
+
+The default command fixes UU_cos_phi=UU_cos_2phi=0 in every bin and allows LU, UL sinphi, UL sin2phi, LL and LL cosphi to float in the combined RGB+RGC fit. Individual RGB period fits have only LU free. Individual RGC periods have all five spin ratios free. The common dilution uncertainty is propagated as before.
+
+To supply nonzero inputs, use `--uu-inputs path/to/UU_model.csv`. Copy `UU_inputs_template.csv` and fill the 24 rows. Columns are exactly `bin,UU_cos_phi,UU_cos_2phi`, in the same xB-major ordering as the analysis (six tprime bins per xB interval). Values must be structure-function ratios, not raw structure functions or coefficients already multiplied by depolarization factors. Every bin must occur exactly once, with finite numbers. The same imported ratios apply to all six periods. They are held exactly fixed, with no statistical nuisance or model uncertainty assigned. They are suitable for a separate systematic variation; the input does not itself define that systematic uncertainty.
+
+Imported runs default to `output_fixed_UU_<input-file-stem>/`; `--output` overrides this. `UU_settings.json`, the input audit and every fit JSON retain the fixed values. The import contents and SHA256 enter the checkpoint signature. CSV rows identify these values as `fixed_input`. Production panels use crosses labelled as fixed inputs rather than zero-error measurements. The period-comparison likelihood-ratio diagnostic uses 13 extra free parameters in fixed-UU mode, versus 23 for the earlier fully free mode.
+
+A fresh local fit with zero UU values passed all 168 convergence/covariance checks. This resolves the earlier optimizer failures but does not replace the remaining physics and systematic validation.
