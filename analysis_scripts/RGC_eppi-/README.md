@@ -5,6 +5,7 @@ Analysis scaffold alongside RGC_enpi+. This directory is for analysis of the com
 - analysis_note/: compilable Overleaf source, split into requested analysis sections.
 - imports/datasets.json: the 19 merged ROOT files and branch conventions.
 - imports/clas12_run_info_ND3_source.csv: processing-branch metadata snapshot. Do not overwrite shared development metadata from this file without reviewing it.
+- channel_selection/: nominal preliminary selection, shared dilution/asymmetry interface and selected ROOT export. Run channel_selection/run_channel_selection.py. See channel_selection/README.md.
 - Other directories are prepared for channel selection, PID, dilution, kinematics, corrections, radiation, systematics and extraction work.
 
 Use the detected proton as p1 and FD pi- as p2. The pion production angle is phi2, not its lab azimuth p2_phi or a dihadron angle. RGB has Pt=0. Only RGC ND3 carries target polarization. Normalize the likelihood separately within each period/configuration and share the intended ratios across data samples.
