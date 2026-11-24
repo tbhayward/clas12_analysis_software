@@ -130,4 +130,20 @@ class CampaignTest(unittest.TestCase):
    self.assertIn('catch (java.io.IOException',patched.read_text())
    self.assertNotIn('PROGRESS_IO_NONFATAL',source.read_text())
    self.assertEqual(c.safe_progress_processor(patched,root),patched)
+ def test_missing_library_repair_requires_exact_original(self):
+  from types import SimpleNamespace
+  import io,contextlib
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp)/'campaign';repo=Path(tmp)/'repo'
+   for path in [root/'build/lib',root/'hosts',repo/'coatjava/lib/clas']:path.mkdir(parents=True)
+   source=repo/'coatjava/lib/clas/example.jar';source.write_bytes(b'original library')
+   c.atomic_json(root/'checksums.json',{'lib/example.jar':c.digest(source)})
+   libraries=c.expected_libraries(root/'build')
+   with self.assertRaises(RuntimeError):c.require_libraries(libraries)
+   with contextlib.redirect_stdout(io.StringIO()):c.repair_libraries(SimpleNamespace(campaign=root,repo=repo))
+   c.require_libraries(libraries)
+   self.assertEqual((root/'build/lib/example.jar').read_bytes(),source.read_bytes())
+   (root/'build/lib/example.jar').unlink();source.write_bytes(b'different release')
+   with self.assertRaises(RuntimeError):c.repair_libraries(SimpleNamespace(campaign=root,repo=repo))
+   self.assertFalse((root/'build/lib/example.jar').exists())
 if __name__=='__main__':unittest.main()

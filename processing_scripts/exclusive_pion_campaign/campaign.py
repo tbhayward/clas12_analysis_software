@@ -129,7 +129,7 @@ def prepare(a):
         for p in jars:
             dest=build/'lib'/p.name
             if dest.exists() and digest(dest)!=digest(p):raise RuntimeError(f'Conflicting JAR names: {p}')
-            shutil.copy2(p,dest)
+            shutil.copyfile(p,dest)
         # Use the installed QADB module, ahead of any stale bundled Groovy source.
         qadir=os.environ.get('QADB')
         if not qadir or not Path(qadir).is_dir():raise RuntimeError('Load qadb/3.4.1 first (QADB must point to its database)')
@@ -142,13 +142,13 @@ def prepare(a):
             if p.is_file() and p.suffix=='.jar':
                 dest=build/'lib'/p.name
                 if dest.exists() and digest(dest)!=digest(p):raise RuntimeError(f'Conflicting module JAR: {p}')
-                shutil.copy2(p,dest)
+                shutil.copyfile(p,dest)
             elif p.is_dir():
                 try:relative=p.resolve().relative_to(Path(qadir).resolve());extras.append(str(Path('qadb')/relative))
                 except ValueError:
                     dest=build/('module_cp_'+str(len(extras)));shutil.copytree(p,dest);extras.append(dest.name)
             elif entry.endswith('/*'):
-                for jar in p.parent.glob('*.jar'):shutil.copy2(jar,build/'lib'/jar.name)
+                for jar in p.parent.glob('*.jar'):shutil.copyfile(jar,build/'lib'/jar.name)
         atomic_json(build/'extra_classpath.json',extras)
         # Current helper sources override any stale classes in the original JAR.
         helper=build/'helpers';helper.mkdir()
@@ -180,6 +180,37 @@ def verified(root):
     for name,sha in read(root/'checksums.json').items():
         if digest(build/name)!=sha:raise RuntimeError(f'Frozen software modified: {name}')
     return build
+
+def expected_libraries(build):
+    checks=build.parent/'checksums.json'
+    if not checks.exists():return []
+    return [build/name for name in read(checks) if name.startswith('lib/') and name.endswith('.jar')]
+
+def require_libraries(paths):
+    missing=[str(p) for p in paths if not p.is_file()]
+    if missing:raise RuntimeError('SHARED SOFTWARE MISSING; stopped assigning work, leaving queued batches untouched: '+', '.join(missing))
+
+def repair_libraries(a):
+    root=a.campaign.resolve();repo=a.repo.resolve()
+    if any((root/'hosts').iterdir()):raise RuntimeError('Worker host claims exist; confirm both coordinators have stopped before repairing libraries')
+    checks=read(root/'checksums.json');build=root/'build';restored=0
+    candidates=list((repo/'coatjava/lib').rglob('*.jar'))+[repo/'processing_classes/dist/processing_classes.jar']
+    for name,expected in checks.items():
+        if not name.startswith('lib/') or not name.endswith('.jar'):continue
+        destination=build/name
+        if destination.exists():
+            if digest(destination)!=expected:raise RuntimeError('Existing library changed; refusing to overwrite: '+str(destination))
+            os.utime(destination,None)
+            continue
+        matches=[p for p in candidates if p.is_file() and p.name==destination.name and digest(p)==expected]
+        if not matches:raise RuntimeError('No exact checksum-matching source for '+name+'; library not replaced')
+        temp=destination.with_name(destination.name+f'.restore.{os.getpid()}.tmp')
+        shutil.copyfile(matches[0],temp)
+        if digest(temp)!=expected:temp.unlink();raise RuntimeError('Copy verification failed')
+        os.replace(temp,destination);restored+=1
+        print('RESTORED exact original library: '+name,flush=True)
+    verified(root)
+    print(f'Restored {restored} libraries; refreshed library timestamps; all frozen campaign checksums verified. Completed outputs and failure markers unchanged.',flush=True)
 
 def progress_snapshot(root,manifest=None):
     manifest=manifest or read(root/'manifest.json');done=failed=active=0;entries=completed_bytes=0;estimated_bytes=0.0;details=[];groups={}
@@ -306,12 +337,14 @@ def worker(a):
     try:
         atomic_json(hostlock/'owner.json',dict(pid=os.getpid(),started=time.time()))
         build=verified(root)
+        libraries=expected_libraries(build)
         print(f'{host}: starting up to {a.workers} local workers',flush=True)
         last_report=0.0
         with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:
             # Refill from the shared queue. A claimed batch is never considered available.
             pending=set()
             while True:
+                require_libraries(libraries)
                 available=[j for j in manifest['jobs'] if not (root/'chunks'/(j['id']+'.json')).exists() and not (root/'claims'/j['id']).exists()]
                 while available and len(pending)<a.workers:pending.add(pool.submit(process_job,root,build,available.pop(0)))
                 if not pending:break
@@ -445,16 +478,17 @@ def retry(a):
 
 def main():
     p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='command',required=True)
-    for name in ['prepare','worker','status','merge','retry-failed','recover-conversion','monitor','retest-report']:
+    for name in ['prepare','worker','status','merge','retry-failed','recover-conversion','monitor','retest-report','repair-libraries']:
         s=sub.add_parser(name);s.add_argument('--campaign',type=Path,required=True)
         if name=='prepare':
             s.add_argument('--repo',type=Path,required=True);s.add_argument('--mode',choices=['test','full'],default='test');s.add_argument('--batch-gib',type=float,default=4);s.add_argument('--run-map',type=Path);s.add_argument('--test-runs',type=Path);s.add_argument('--retest-empty-from',type=Path);s.add_argument('--datasets',nargs='+')
+        if name=='repair-libraries':s.add_argument('--repo',type=Path,required=True)
         if name=='monitor':s.add_argument('--interval',type=int,default=30);s.add_argument('--once',action='store_true')
         if name=='worker':s.add_argument('--workers',type=int,choices=range(1,11),default=10);s.add_argument('--allow-other-host',action='store_true',help=argparse.SUPPRESS)
     a=p.parse_args()
     if a.command=='monitor' and a.interval<1:p.error('--interval must be positive')
     if a.command=='prepare' and a.batch_gib<=0:p.error('--batch-gib must be positive')
-    {'prepare':prepare,'worker':worker,'status':lambda a:status(a.campaign.resolve()),'merge':merge,'retry-failed':retry,'recover-conversion':recover_conversion,'monitor':monitor,'retest-report':lambda a:retest_report(a.campaign.resolve())}[a.command](a)
+    {'prepare':prepare,'worker':worker,'status':lambda a:status(a.campaign.resolve()),'merge':merge,'retry-failed':retry,'recover-conversion':recover_conversion,'monitor':monitor,'retest-report':lambda a:retest_report(a.campaign.resolve()),'repair-libraries':repair_libraries}[a.command](a)
 if __name__=='__main__':
     try:main()
     except Exception as e:print('ERROR: '+str(e),file=sys.stderr);sys.exit(1)

@@ -201,3 +201,15 @@ python3 processing_scripts/exclusive_pion_campaign/campaign.py monitor --campaig
 ```
 
 Run in a separate terminal on either node, or add `--once` for one snapshot. No SSH, worker restart or second-node command is required for monitoring. Percentages describe work processed, not a time estimate; event complexity and QA acceptance change processing rates.
+
+## Missing saved libraries
+
+If the processor suddenly cannot resolve a CLAS12 class, inspect the saved libraries before retrying. After both worker coordinators have stopped, use the current checkout:
+
+```sh
+python3 processing_scripts/exclusive_pion_campaign/campaign.py repair-libraries --repo "$PWD" --campaign /volatile/clas12/thayward/eppi-/full_20261122_v2
+```
+
+This restores missing JARs only from repository files matching the original preparation SHA-256 checksums; changed or unmatchable libraries cause an error. It refreshes library timestamps without changing contents or recorded checksums, then verifies the entire frozen build. Existing outputs and failure markers are retained. Fresh preparations copy libraries with current timestamps rather than preserving source dates. Old timestamps may be relevant to external cleanup policies, but do not establish the cause of disappearance.
+
+After successful repair, run retry-failed once, then run_full.csh separately on each node with the same campaign path. The current coordinator checks the existence of every expected library before assigning work and stops if one disappears; it leaves the queue unclaimed instead of cascading failures. No physics cuts or accepted events are changed by this repair.
