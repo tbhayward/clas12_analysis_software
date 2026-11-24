@@ -5,39 +5,39 @@
     "dilution_sha256": "b92a3b866e57ded124204f35b41ea3a5a37950925012567dbc573a1af36ca33e",
     "files": {
       "RGB_spring2019_D2": {
-        "path": "/Users/tbhayward/Desktop/channel_selection/output/selected/selected_RGB_spring2019_D2.root",
+        "path": "/u/home/thayward/clas12_analysis_software/analysis_scripts/RGC_eppi-/channel_selection/output/selected/selected_RGB_spring2019_D2.root",
         "size": 116405479,
-        "mtime": 1795551170526100615
+        "mtime": 1795549654495491000
       },
       "RGB_fall2019_D2": {
-        "path": "/Users/tbhayward/Desktop/channel_selection/output/selected/selected_RGB_fall2019_D2.root",
+        "path": "/u/home/thayward/clas12_analysis_software/analysis_scripts/RGC_eppi-/channel_selection/output/selected/selected_RGB_fall2019_D2.root",
         "size": 60337376,
-        "mtime": 1795551173860412648
+        "mtime": 1795549329777225000
       },
       "RGB_spring2020_D2": {
-        "path": "/Users/tbhayward/Desktop/channel_selection/output/selected/selected_RGB_spring2020_D2.root",
+        "path": "/u/home/thayward/clas12_analysis_software/analysis_scripts/RGC_eppi-/channel_selection/output/selected/selected_RGB_spring2020_D2.root",
         "size": 56827762,
-        "mtime": 1795551175803294173
+        "mtime": 1795549245154334000
       },
       "RGC_summer2022_ND3": {
-        "path": "/Users/tbhayward/Desktop/channel_selection/output/selected/selected_RGC_summer2022_ND3.root",
+        "path": "/u/home/thayward/clas12_analysis_software/analysis_scripts/RGC_eppi-/channel_selection/output/selected/selected_RGC_summer2022_ND3.root",
         "size": 12302347,
-        "mtime": 1795551170861254023
+        "mtime": 1795549053964805000
       },
       "RGC_fall2022_ND3": {
-        "path": "/Users/tbhayward/Desktop/channel_selection/output/selected/selected_RGC_fall2022_ND3.root",
+        "path": "/u/home/thayward/clas12_analysis_software/analysis_scripts/RGC_eppi-/channel_selection/output/selected/selected_RGC_fall2022_ND3.root",
         "size": 24995017,
-        "mtime": 1795551176862471177
+        "mtime": 1795549171786001000
       },
       "RGC_spring2023_ND3": {
-        "path": "/Users/tbhayward/Desktop/channel_selection/output/selected/selected_RGC_spring2023_ND3.root",
+        "path": "/u/home/thayward/clas12_analysis_software/analysis_scripts/RGC_eppi-/channel_selection/output/selected/selected_RGC_spring2023_ND3.root",
         "size": 8635485,
-        "mtime": 1795551171389601801
+        "mtime": 1795549143576257000
       }
     },
-    "code_sha256": "5c7bbfa549546d8ae88453718f22c0e71631eaacd3b6fab9052bad2b8a4ef01f"
+    "code_sha256": "3d0bb8aa19b53c5a26367d743567d949353066a2a6cc6aa42d572292271ab5ce"
   },
-  "signature": "d074171ccf2e83814e7923acd6b617078c68d53b05ccae637ed0a57dd35e58bd",
+  "signature": "e13e86e28a7aa87255c4cc1566fda8fc3ee166430a6d11322122c37d61862010",
   "datasets": {
     "RGB_spring2019_D2": {
       "source_runs": 203,

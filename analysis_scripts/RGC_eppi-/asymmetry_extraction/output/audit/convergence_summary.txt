@@ -1,0 +1,18 @@
+Bin-by-bin convergence summary
+
+All 168 saved likelihood values reproduce with the supplied inputs. No nominal parameters were changed.
+
+Nominal failed bins (xB ranges and tprime ranges are half-open):
+bin | xB | -tprime (GeV^2) | minimum G | limiting sample | dominant cancelling term | valid with cosphi fixed 0 | valid with cos2phi fixed 0 | valid without RGB Fa19
+3 | [0.10,0.25) | [0.45,0.65) | 1.3e-09 | RGB_fall2019_D2 | UU_cos_phi | True | False | False
+6 | [0.10,0.25) | [1.05,1.25) | 8.25e-10 | RGB_fall2019_D2 | UU_cos_2phi | True | True | False
+11 | [0.25,0.35) | [0.85,1.05) | 1.12e-10 | RGB_fall2019_D2 | UU_cos_2phi | False | True | False
+12 | [0.25,0.35) | [1.05,1.25) | 9.9e-09 | RGB_fall2019_D2 | UU_cos_2phi | True | True | False
+16 | [0.35,0.45) | [0.65,0.85) | 4.49e-09 | RGC_fall2022_ND3 | UU_cos_phi | True | True | True
+23 | [0.45,0.60) | [0.85,1.05) | 4.05e-10 | RGC_fall2022_ND3 | UU_cos_phi | True | True | False
+
+The both-UU-zero diagnostic gives 24/24 valid fits. The individual-cosine diagnostics give 23/24 (cosphi fixed) and 22/24 (cos2phi fixed). Excluding RGB Fa19 gives 18/24, so the problem is not confined to that sample. These are mechanism tests, not proposed nominal replacements.
+
+All 18 optimizer-valid nominal fits also have at least one allowed state whose positivity boundary lies within two local covariance standard deviations. This is a local linear diagnostic, not a confidence-coverage result. It cautions against interpreting the Gaussian errors as fully validated.
+
+Recommended next checks: conditional pseudoexperiments at the actual event kinematics and observed weak spin-amplitude scales, followed by comparison of alternative UU sharing across tprime bins. A change of UU constraints requires a separate physics justification. No helicity reversal is indicated by the optimizer behavior.

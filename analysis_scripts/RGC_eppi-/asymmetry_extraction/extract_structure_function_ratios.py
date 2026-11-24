@@ -41,7 +41,7 @@ def worker(task):
     except Exception as e:result=dict(status='failed',error=str(e))
     return dict(bin=b,scope=scope,signature=signature,**result)
 
-def products(output,results):
+def products(output,results,registry_path=None):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
@@ -59,26 +59,9 @@ def products(output,results):
         for j,name in enumerate(result['names']):rows.append(dict(scope=result['scope'],bin=result['bin'],parameter=name,value=result['values'][j],stat=result['errors'][j],events=result['events'],warnings='|'.join(result['warnings'])))
     if rows:
         with (output/'ratios.csv').open('w',newline='') as f:
-            w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
-    for mode in ['nominal','period_UU_LU','period_UL_LL']:
-        parameters=range(7) if mode=='nominal' else (range(3) if mode=='period_UU_LU' else range(3,7))
-        for j in parameters:
-            fig,axes=plt.subplots(2,2,figsize=(11,8),sharex=True,sharey=True)
-            scopes=['combined'] if mode=='nominal' else (PERIODS if mode=='period_UU_LU' else PERIODS[3:])
-            for ix,ax in enumerate(axes.flat):
-                for scope in scopes:
-                    ip=PERIODS.index(scope) if scope!='combined' else 0
-                    offset=0 if len(scopes)==1 else (scopes.index(scope)-(len(scopes)-1)/2)*.013
-                    values=[];errors=[]
-                    for b in range(ix*6+1,ix*6+7):
-                        r=lookup.get((scope,b),{})
-                        valid=r.get('status')=='valid' and j<len(r.get('values',[]))
-                        values.append(r['values'][j] if valid else np.nan);errors.append(r['errors'][j] if valid else np.nan)
-                    ax.errorbar(x+offset,values,yerr=errors,fmt=markers[ip],linestyle='none',color=colors[ip],ms=4,elinewidth=.8,label='Combined RGB+RGC' if scope=='combined' else labels[ip])
-                ax.axhline(0,color='gray',lw=.6)
-                ax.set(title=f'{xedges[ix]:.2f} ≤ xB < {xedges[ix+1]:.2f}',xlabel='−t′ (GeV²)',ylabel=titles[j],xlim=(.05,1.25))
-            axes.flat[0].legend(fontsize=8,ncol=2,frameon=False)
-            fig.tight_layout();fig.savefig(folder/(mode+'_'+NAMES[j]+'.png'),dpi=180);plt.close(fig)
+            w=csv.DictWriter(f,fieldnames=list(rows[0]),lineterminator="\n");w.writeheader();w.writerows(rows)
+    from plot_production_results import plot
+    plot(output,registry_path)
     tests=[]
     for b in range(1,25):
         nominal=lookup.get(('combined',b),{})
@@ -142,6 +125,6 @@ def main():
             r=job.result();results.append(r)
             save(directory/f"{r['scope']}_bin{r['bin']:02d}.json",r)
             print(f"{len(results)}/{7*len(a.bins)}: {r['scope']} bin {r['bin']} {r['status']}",flush=True)
-    products(a.output,results)
+    products(a.output,results,a.selected_inputs)
 
 if __name__=='__main__':main()

@@ -1,0 +1,42 @@
+Nominal 24-bin audit
+
+Saved likelihoods reproduced from the supplied selected files and charge metadata.
+
+Bin  1: valid; minimum allowed G=0.132; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_2phi
+Bin  2: valid; minimum allowed G=0.0213; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_phi
+Bin  3: invalid; minimum allowed G=1.3e-09; positivity_boundary|nonstationary_unconstrained_score|nonpositive_unconstrained_curvature|optimizer_or_covariance_invalid; dominant cancelling term=UU_cos_phi
+Bin  4: valid; minimum allowed G=0.222; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_phi
+Bin  5: valid; minimum allowed G=0.00849; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_2phi
+Bin  6: invalid; minimum allowed G=8.25e-10; positivity_boundary|nonstationary_unconstrained_score|nonpositive_unconstrained_curvature|optimizer_or_covariance_invalid; dominant cancelling term=UU_cos_2phi
+Bin  7: valid; minimum allowed G=0.246; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_2phi
+Bin  8: valid; minimum allowed G=0.0359; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_phi
+Bin  9: valid; minimum allowed G=0.135; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_2phi
+Bin 10: valid; minimum allowed G=0.0418; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_2phi
+Bin 11: invalid; minimum allowed G=1.12e-10; positivity_boundary|nonstationary_unconstrained_score|nonpositive_unconstrained_curvature|optimizer_or_covariance_invalid; dominant cancelling term=UU_cos_2phi
+Bin 12: invalid; minimum allowed G=9.9e-09; positivity_boundary|nonstationary_unconstrained_score|nonpositive_unconstrained_curvature|optimizer_or_covariance_invalid; dominant cancelling term=UU_cos_2phi
+Bin 13: valid; minimum allowed G=0.615; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_2phi
+Bin 14: valid; minimum allowed G=0.0456; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_phi
+Bin 15: valid; minimum allowed G=0.216; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_2phi
+Bin 16: invalid; minimum allowed G=4.49e-09; positivity_boundary|nonstationary_unconstrained_score|nonpositive_unconstrained_curvature|optimizer_or_covariance_invalid; dominant cancelling term=UU_cos_phi
+Bin 17: valid; minimum allowed G=0.0226; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_phi
+Bin 18: valid; minimum allowed G=0.115; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_2phi
+Bin 19: valid; minimum allowed G=0.348; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_2phi
+Bin 20: valid; minimum allowed G=0.586; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_2phi
+Bin 21: valid; minimum allowed G=0.823; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_phi
+Bin 22: valid; minimum allowed G=0.575; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_phi
+Bin 23: invalid; minimum allowed G=4.05e-10; positivity_boundary|nonstationary_unconstrained_score|nonpositive_unconstrained_curvature|optimizer_or_covariance_invalid; dominant cancelling term=UU_cos_phi
+Bin 24: valid; minimum allowed G=0.427; Gaussian_error_reaches_positivity_boundary; dominant cancelling term=UU_cos_phi
+
+Controlled diagnostic with both UU cosine ratios fixed to zero (not a nominal replacement):
+24/24 bins pass optimizer/covariance checks.
+
+Additional isolation checks (diagnostics only, not nominal fits):
+UU_cos_phi_zero: 23/24 valid; remaining invalid bins: 11
+UU_cos_2phi_zero: 22/24 valid; remaining invalid bins: 3,17
+without_RGB_Fa19: 18/24 valid; remaining invalid bins: 3,5,6,11,12,23
+
+An active positivity constraint is not equivalent to an interior likelihood minimum. The large Minuit EDM near the hard invalid-likelihood penalty is not a reliable measure of physical error size. The direct analytic score and curvature above avoid that penalty. KKT residuals test whether the score can be balanced by nonnegative multipliers of the active positivity constraints. A small residual is evidence for a constrained boundary solution, not an unconstrained Gaussian fit.
+
+Boundary-distance diagnostics are local linear Gaussian checks, not confidence intervals. Reaching the boundary within two covariance standard deviations flags potentially misleading symmetric errors even for an optimizer-valid fit.
+
+A spin-conditional likelihood has no UU information when every spin-dependent amplitude is zero. Small spin signals can therefore give weak or nonregular UU estimates. This audit does not add external constraints or fix any amplitudes.

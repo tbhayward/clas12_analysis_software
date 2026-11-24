@@ -1,23 +1,23 @@
 [
   {
     "bin": 7,
-    "likelihood_ratio": 54.25666134480642,
+    "likelihood_ratio": 54.25666109071028,
     "ndf": 23,
-    "p_value": 0.0002468701972599894,
+    "p_value": 0.0002468702171072294,
     "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
   },
   {
     "bin": 13,
-    "likelihood_ratio": 55.35718448420744,
+    "likelihood_ratio": 55.357184088548365,
     "ndf": 23,
-    "p_value": 0.0001739523360401736,
+    "p_value": 0.00017395235805003778,
     "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
   },
   {
     "bin": 14,
-    "likelihood_ratio": 23.143650822802556,
+    "likelihood_ratio": 23.143716551659054,
     "ndf": 23,
-    "p_value": 0.45240893293698825,
+    "p_value": 0.4524051193008421,
     "warning": "Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation"
   }
 ]

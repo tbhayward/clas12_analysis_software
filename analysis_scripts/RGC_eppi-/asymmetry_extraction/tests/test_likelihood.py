@@ -48,6 +48,15 @@ class TestLikelihood(unittest.TestCase):
   rgb_scaled['states'][:,0]*=10
   self.assertAlmostEqual(joint(*truth),ConditionalLikelihood([rgc,rgb_scaled])(*truth))
 
+ def test_consistent_helicity_relabeling(self):
+  g,truth=toy()
+  flipped=dict(events={k:v.copy() for k,v in g['events'].items()},states=g['states'].copy())
+  flipped['events']['h']*=-1
+  flipped['states'][:,1]*=-1
+  flipped['states'][:,3]*=-1
+  relabeled=truth.copy();relabeled[[2,5,6]]*=-1
+  self.assertAlmostEqual(ConditionalLikelihood([g])(*truth),ConditionalLikelihood([flipped])(*relabeled))
+
  def test_rgb_has_no_target_sensitivity(self):
   g,truth=toy(polarized=False)
   c=ConditionalLikelihood([g],target=False)

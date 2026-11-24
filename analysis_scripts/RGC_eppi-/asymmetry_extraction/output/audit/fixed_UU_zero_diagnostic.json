@@ -1,0 +1,218 @@
+[
+  {
+    "bin": 1,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -9.082446474799827,
+    "minimum_state_factor": 0.940068582595448
+  },
+  {
+    "bin": 2,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -3.6952684863704084,
+    "minimum_state_factor": 0.7299504541451687
+  },
+  {
+    "bin": 3,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -9.96989341042242,
+    "minimum_state_factor": 0.7422946366771621
+  },
+  {
+    "bin": 4,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -10.316314361880922,
+    "minimum_state_factor": 0.6723456906283705
+  },
+  {
+    "bin": 5,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -6.5085715745512385,
+    "minimum_state_factor": 0.8237561492641114
+  },
+  {
+    "bin": 6,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -8.46138517052188,
+    "minimum_state_factor": 0.6139063583600386
+  },
+  {
+    "bin": 7,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -20.243997479733103,
+    "minimum_state_factor": 0.9599196831490944
+  },
+  {
+    "bin": 8,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -13.705066767433484,
+    "minimum_state_factor": 0.8748615069094489
+  },
+  {
+    "bin": 9,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -2.363569745781826,
+    "minimum_state_factor": 0.9042257274552261
+  },
+  {
+    "bin": 10,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -5.615894342158384,
+    "minimum_state_factor": 0.8352895707583283
+  },
+  {
+    "bin": 11,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -2.2379320108137764,
+    "minimum_state_factor": 0.9052468550359
+  },
+  {
+    "bin": 12,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -0.8042316220040064,
+    "minimum_state_factor": 0.9026825553977257
+  },
+  {
+    "bin": 13,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -25.913704609260765,
+    "minimum_state_factor": 0.9107194190889986
+  },
+  {
+    "bin": 14,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -11.347434155685836,
+    "minimum_state_factor": 0.933072687007553
+  },
+  {
+    "bin": 15,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -7.845934388424392,
+    "minimum_state_factor": 0.8851041452802754
+  },
+  {
+    "bin": 16,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -1.4504621337362018,
+    "minimum_state_factor": 0.9475556416726377
+  },
+  {
+    "bin": 17,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -7.319188001664388,
+    "minimum_state_factor": 0.8595729677469672
+  },
+  {
+    "bin": 18,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -6.644432123909773,
+    "minimum_state_factor": 0.9164640600524608
+  },
+  {
+    "bin": 19,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -17.147191763426875,
+    "minimum_state_factor": 0.902505657456313
+  },
+  {
+    "bin": 20,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -11.394909905625411,
+    "minimum_state_factor": 0.9220530130525212
+  },
+  {
+    "bin": 21,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -11.581045256091524,
+    "minimum_state_factor": 0.9363247510527053
+  },
+  {
+    "bin": 22,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -8.52446620904033,
+    "minimum_state_factor": 0.9064612910036112
+  },
+  {
+    "bin": 23,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -3.564893161631527,
+    "minimum_state_factor": 0.9481652639143137
+  },
+  {
+    "bin": 24,
+    "diagnostic_only": true,
+    "UU_cos_phi": 0,
+    "UU_cos_2phi": 0,
+    "valid": true,
+    "nll": -9.276155981444667,
+    "minimum_state_factor": 0.7795331881067112
+  }
+]

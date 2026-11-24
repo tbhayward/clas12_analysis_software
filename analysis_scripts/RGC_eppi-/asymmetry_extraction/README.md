@@ -40,3 +40,13 @@ The initial covariance treats retained proton–pion combinations as independent
 Tests: `python3 -m unittest discover -s analysis_scripts/RGC_eppi-/asymmetry_extraction/tests -v`
 
 The first full local extraction completed all 168 fit tasks. Eighteen nominal bins passed the Minuit covariance requirements. Nominal bins 3, 6, 11, 12, 16 and 23 reached the cross-section positivity boundary and remain invalid rather than being assigned misleading symmetric uncertainties. Individual-period invalid fits are also retained in JSON and shown in the fit-status canvas. These are diagnostic results, not a completed physics validation.
+
+## Production plots and methodical audit
+
+`python3 analysis_scripts/RGC_eppi-/asymmetry_extraction/plot_production_results.py --selected-inputs analysis_scripts/RGC_eppi-/channel_selection/output/selected_inputs.json`
+
+Future extraction runs create this production set automatically. It follows the pi+ `plot_final_results.py` seven-panel layout, with statistical error bars only. All UU and LL panels use [-1,1], all LU and UL panels [-0.4,0.4], and all horizontal axes [0,1.30] GeV². Mean selected-event tprime values define the plotted positions. Four separate xB canvases and an overlay are accompanied by four six-period UU/LU comparison canvases and four RGC UL/LL comparison canvases. No systematic bands are drawn. Edge triangles disclose intervals extending outside the fixed axes. Omitted fits, clipping and plot positions are recorded as CSV files. Old figures are retained, with the new canonical set under `figures/production/`.
+
+`python3 analysis_scripts/RGC_eppi-/asymmetry_extraction/audit_fits.py`
+
+The audit verifies input checksums and reconstructs all saved likelihood values. It records analytic scores and Hessian eigenvalues, active positivity constraints, the worst state/event and its harmonic decomposition, and the distance to positivity in the local Gaussian covariance. This distance is a diagnostic, not a coverage statement. Constrained-boundary stationarity is checked with nonnegative constraint multipliers. Both-UU-zero, one-UU-zero and leave-RGB-Fa19-out fits are diagnostic only. They never modify the nominal fits or the production ratios. They test parameter-identification and sample leverage, not hardware helicity calibration. See `audit/bin_audit.csv`, `audit/bin_audit.json`, `audit/audit_report.txt`, `audit/fixed_UU_zero_diagnostic.json`, and `audit/isolation_diagnostics.json`.

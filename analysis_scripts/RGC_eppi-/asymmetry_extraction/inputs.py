@@ -78,7 +78,7 @@ def load(registry_path,metadata_path,dilution_path,selection_code):
             if not np.allclose(arrays['beam_pol'][m],r['pb'],atol=1e-8,rtol=0):raise ValueError(f'{name}: beam polarization mismatch for {run}')
             if not np.allclose(arrays['target_pol'][m],r['pt'],atol=5e-4,rtol=0):raise ValueError(f'{name}: target polarization mismatch for {run}')
             if (r['q_plus']==0 and np.any(arrays['helicity'][m]>0)) or (r['q_minus']==0 and np.any(arrays['helicity'][m]<0)):raise ValueError(f'{name}: event in zero-exposure state')
-        events=dict(phi=arrays['phi2'],h=arrays['helicity'],pb=arrays['beam_pol'],pt=np.array([records[int(r)]['pt'] for r in arrays['runnum']]),bin=arrays['analysis_bin'])
+        events=dict(runnum=arrays['runnum'],evnum=arrays['evnum'],phi=arrays['phi2'],h=arrays['helicity'],pb=arrays['beam_pol'],pt=np.array([records[int(r)]['pt'] for r in arrays['runnum']]),bin=arrays['analysis_bin'])
         for suffix,branch in [('b','B'),('c','C'),('v','V'),('w','W')]:events['r'+suffix]=arrays['Dep'+branch]/arrays['DepA']
         groups[name]=dict(events=events,states=states)
         pairs=np.rec.fromarrays([arrays['runnum'],arrays['evnum']])

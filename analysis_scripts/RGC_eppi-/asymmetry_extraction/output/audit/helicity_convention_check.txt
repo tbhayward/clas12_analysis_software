@@ -1,0 +1,12 @@
+Helicity convention code check
+
+The exclusive-pion campaign mapping and the existing TwoParticles pi+ mapping agree for the analyzed ranges:
+RGB Sp19 (6156-6603): stored helicity = minus raw helicity.
+RGB Fa19 (11093-11283): stored helicity = raw helicity.
+RGB Sp20 (11323-11571): stored helicity = raw helicity.
+RGC Su22, Fa22 and Sp23: stored helicity = raw helicity.
+The asymmetry fitter reads the stored helicity directly and applies no additional flip.
+RGB equal helicity exposure is an explicit user assumption; Qplus and Qminus are total/2.
+RGC uses the measured helicity-charge columns.
+
+This checks consistency of the processing and fitting conventions. It is not an independent hardware/helicity calibration. No beam-helicity or target-polarization sign has been changed during the audit.
