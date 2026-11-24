@@ -217,3 +217,15 @@ After successful repair, run retry-failed once, then run_full.csh separately on 
 ## Add missing run metadata during conversion recovery
 
 Metadata validation remains mandatory, including for empty ND3 output. If a required row was omitted, supply the corrected repository CSV with `recover-conversion --run-info analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv`. The recovery creates a separate effective CSV by appending only missing rows for incomplete ND3 runs; existing frozen rows are preserved byte for byte. It records the correction rows, source and effective checksums in recovery provenance. All frozen files and checksums remain unchanged. Invalid or missing correction rows fail. The saved processor summary and converted ROOT entry counts must agree before publishing, and successful recovery automatically starts the final merges. No HIPO processing is repeated.
+
+## Final campaign audit
+
+After the merging command has returned, run from the repository root on either node:
+
+```sh
+csh -f processing_scripts/exclusive_pion_campaign/environment.csh python3 processing_scripts/exclusive_pion_campaign/audit_campaign.py --campaign /volatile/clas12/thayward/eppi-/full_20261122_v2 --checksums
+```
+
+This checks input inventory/manifest agreement, duplicate assignments, Hall C bleedthrough exclusion, every expected batch completion and ROOT file, per-batch processor row counts when recorded, final merge reports and sums, absence of active/failure claims and partial merges, recovery metadata provenance, and actual ROOT entry counts plus every branch name/type. A single compiled ROOT helper opens all files without scanning event payloads. `--checksums` also reads every batch and final ROOT file to verify recorded SHA-256 values, which can take time because both copies are read. Omit that flag for a faster metadata-only pass. Neither mode reprocesses HIPO or changes physics output.
+
+The audit prints per-dataset entry counts and zero-entry batch counts, returns nonzero on errors, and saves reports/campaign_audit.json. Zero-entry final datasets are warnings requiring review; zero-entry individual runs may legitimately arise from QA and physics cuts. The audit verifies campaign completeness and file integrity, not the physical correctness of calibrations or extracted observables. It expects the original batch files to remain available; do not delete chunks before auditing.
