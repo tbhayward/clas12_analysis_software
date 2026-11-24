@@ -1,0 +1,45 @@
+{
+  "bin": 5,
+  "scope": "RGB_spring2020_D2",
+  "signature": "d074171ccf2e83814e7923acd6b617078c68d53b05ccae637ed0a57dd35e58bd",
+  "status": "invalid",
+  "events": 1393,
+  "candidates": [
+    {
+      "nll": -1.9511829133921879,
+      "valid": false,
+      "accurate": true,
+      "edm": 3.75e+29,
+      "values": [
+        -0.7061907998400068,
+        -2.443132421632621,
+        -0.20069202163121097
+      ],
+      "minimum_state_factor": 7.279425762174441e-08
+    },
+    {
+      "nll": -1.955046792282701,
+      "valid": false,
+      "accurate": true,
+      "edm": 3.7500000000000004e+29,
+      "values": [
+        -0.7076174524230656,
+        -2.437288966616045,
+        -0.19428555151716945
+      ],
+      "minimum_state_factor": 9.871602202338181e-09
+    },
+    {
+      "nll": -1.1811622058709759,
+      "valid": false,
+      "accurate": true,
+      "edm": 2.5e+29,
+      "values": [
+        -0.7639856728337943,
+        0.1499991024778935,
+        -0.049999999999875824
+      ],
+      "minimum_state_factor": 4.75197547977757e-10
+    }
+  ]
+}

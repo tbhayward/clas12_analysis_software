@@ -1,0 +1,44 @@
+{
+  "combined": {
+    "valid": 18,
+    "invalid": 6,
+    "failed": 0,
+    "empty": 0
+  },
+  "RGB_spring2019_D2": {
+    "valid": 19,
+    "invalid": 5,
+    "failed": 0,
+    "empty": 0
+  },
+  "RGB_fall2019_D2": {
+    "valid": 18,
+    "invalid": 6,
+    "failed": 0,
+    "empty": 0
+  },
+  "RGB_spring2020_D2": {
+    "valid": 18,
+    "invalid": 6,
+    "failed": 0,
+    "empty": 0
+  },
+  "RGC_summer2022_ND3": {
+    "valid": 11,
+    "invalid": 13,
+    "failed": 0,
+    "empty": 0
+  },
+  "RGC_fall2022_ND3": {
+    "valid": 14,
+    "invalid": 10,
+    "failed": 0,
+    "empty": 0
+  },
+  "RGC_spring2023_ND3": {
+    "valid": 12,
+    "invalid": 12,
+    "failed": 0,
+    "empty": 0
+  }
+}

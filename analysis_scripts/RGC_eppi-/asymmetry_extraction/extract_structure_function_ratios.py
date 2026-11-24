@@ -1,0 +1,147 @@
+#!/usr/bin/env python3
+"""Conditional seven-ratio extraction, combined RGB+RGC and individual periods."""
+import argparse,csv,hashlib,json,os
+from pathlib import Path
+for variable in ['OPENBLAS_NUM_THREADS','OMP_NUM_THREADS','MKL_NUM_THREADS','VECLIB_MAXIMUM_THREADS']:
+    os.environ[variable]='1'
+import numpy as np
+from inputs import load,PERIODS
+from likelihood import fit,NAMES
+HERE=Path(__file__).resolve().parent
+GROUPS=DF=None
+
+def safe(payload):
+    if isinstance(payload,dict):return {k:safe(v) for k,v in payload.items()}
+    if isinstance(payload,list):return [safe(v) for v in payload]
+    if isinstance(payload,float) and not np.isfinite(payload):return None
+    return payload
+
+def save(path,payload):
+    temporary=path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(safe(payload),indent=2,allow_nan=False)+'\n');temporary.replace(path)
+
+def initialize(groups,df):
+    global GROUPS,DF,THREAD_LIMIT
+    GROUPS,DF=groups,df
+    try:
+        from threadpoolctl import threadpool_limits
+        THREAD_LIMIT=threadpool_limits(limits=1)
+    except ImportError:
+        THREAD_LIMIT=None
+
+def worker(task):
+    b,scope,signature=task
+    names=PERIODS if scope=='combined' else [scope]
+    groups=[]
+    for name in names:
+        g=GROUPS[name];mask=g['events']['bin']==b
+        if not mask.any():return dict(bin=b,scope=scope,status='empty',signature=signature)
+        groups.append(dict(events={k:v[mask] for k,v in g['events'].items() if k!='bin'},states=g['states']))
+    try:result=fit(groups,DF[b])
+    except Exception as e:result=dict(status='failed',error=str(e))
+    return dict(bin=b,scope=scope,signature=signature,**result)
+
+def products(output,results):
+    import matplotlib
+    matplotlib.use('Agg')
+    import matplotlib.pyplot as plt
+    from scipy.stats import chi2
+    lookup={(r['scope'],r['bin']):r for r in results}
+    folder=output/'figures';folder.mkdir(exist_ok=True)
+    labels=['RGB Sp19','RGB Fa19','RGB Sp20','RGC Su22','RGC Fa22','RGC Sp23']
+    colors=['#0072B2','#56B4E9','#009E73','#D55E00','#CC79A7','#E69F00']
+    markers=['o','s','^','D','v','P']
+    titles=[r'$F_{UU}^{\cos\phi}/F_{UU}$',r'$F_{UU}^{\cos2\phi}/F_{UU}$',r'$F_{LU}^{\sin\phi}/F_{UU}$',r'$F_{UL,lab}^{\sin\phi}/F_{UU}$',r'$F_{UL,lab}^{\sin2\phi}/F_{UU}$',r'$F_{LL,lab}/F_{UU}$',r'$F_{LL,lab}^{\cos\phi}/F_{UU}$']
+    xedges=[.10,.25,.35,.45,.60];x=np.arange(.15,1.25,.2)
+    rows=[]
+    for result in results:
+        if result['status']!='valid':continue
+        for j,name in enumerate(result['names']):rows.append(dict(scope=result['scope'],bin=result['bin'],parameter=name,value=result['values'][j],stat=result['errors'][j],events=result['events'],warnings='|'.join(result['warnings'])))
+    if rows:
+        with (output/'ratios.csv').open('w',newline='') as f:
+            w=csv.DictWriter(f,fieldnames=list(rows[0]));w.writeheader();w.writerows(rows)
+    for mode in ['nominal','period_UU_LU','period_UL_LL']:
+        parameters=range(7) if mode=='nominal' else (range(3) if mode=='period_UU_LU' else range(3,7))
+        for j in parameters:
+            fig,axes=plt.subplots(2,2,figsize=(11,8),sharex=True,sharey=True)
+            scopes=['combined'] if mode=='nominal' else (PERIODS if mode=='period_UU_LU' else PERIODS[3:])
+            for ix,ax in enumerate(axes.flat):
+                for scope in scopes:
+                    ip=PERIODS.index(scope) if scope!='combined' else 0
+                    offset=0 if len(scopes)==1 else (scopes.index(scope)-(len(scopes)-1)/2)*.013
+                    values=[];errors=[]
+                    for b in range(ix*6+1,ix*6+7):
+                        r=lookup.get((scope,b),{})
+                        valid=r.get('status')=='valid' and j<len(r.get('values',[]))
+                        values.append(r['values'][j] if valid else np.nan);errors.append(r['errors'][j] if valid else np.nan)
+                    ax.errorbar(x+offset,values,yerr=errors,fmt=markers[ip],linestyle='none',color=colors[ip],ms=4,elinewidth=.8,label='Combined RGB+RGC' if scope=='combined' else labels[ip])
+                ax.axhline(0,color='gray',lw=.6)
+                ax.set(title=f'{xedges[ix]:.2f} ≤ xB < {xedges[ix+1]:.2f}',xlabel='−t′ (GeV²)',ylabel=titles[j],xlim=(.05,1.25))
+            axes.flat[0].legend(fontsize=8,ncol=2,frameon=False)
+            fig.tight_layout();fig.savefig(folder/(mode+'_'+NAMES[j]+'.png'),dpi=180);plt.close(fig)
+    tests=[]
+    for b in range(1,25):
+        nominal=lookup.get(('combined',b),{})
+        individual=[lookup.get((name,b),{}) for name in PERIODS]
+        if nominal.get('status')=='valid' and all(r.get('status')=='valid' for r in individual):
+            statistic=2*(nominal['nll']-sum(r['nll'] for r in individual))
+            tests.append(dict(bin=b,likelihood_ratio=statistic,ndf=23,p_value=float(chi2.sf(max(0,statistic),23)),warning='Asymptotic diagnostic; weak conditional UU identification can invalidate the chi-square approximation'))
+    save(output/'period_likelihood_ratio_checks.json',tests)
+    summary={scope:{status:sum(r['scope']==scope and r['status']==status for r in results) for status in ['valid','invalid','failed','empty']} for scope in ['combined']+PERIODS}
+    save(output/'fit_summary.json',summary)
+    from matplotlib.colors import ListedColormap
+    scopes=['combined']+PERIODS
+    image=np.full((7,24),3)
+    for i,scope in enumerate(scopes):
+        for b in range(1,25):
+            r=lookup.get((scope,b),{})
+            image[i,b-1]={'valid':0,'invalid':1,'failed':2}.get(r.get('status'),3)
+    fig,ax=plt.subplots(figsize=(12,4))
+    ax.imshow(image,aspect='auto',cmap=ListedColormap(['#009E73','#E69F00','#D55E00','#cccccc']),vmin=-.5,vmax=3.5)
+    ax.set(xticks=np.arange(24),xticklabels=np.arange(1,25),yticks=np.arange(7),yticklabels=['Combined']+labels,xlabel='Analysis bin',title='Fit status: green = valid covariance, orange = invalid, red = failed, gray = missing')
+    fig.tight_layout();fig.savefig(folder/'fit_status.png',dpi=180);plt.close(fig)
+
+    print(json.dumps(summary,indent=2),flush=True)
+
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__)
+    p.add_argument('--selected-inputs',type=Path,default=HERE.parent/'channel_selection/output/selected_inputs.json')
+    p.add_argument('--run-info',type=Path,default=HERE.parent/'imports/clas12_run_info_ND3_source.csv')
+    p.add_argument('--dilution',type=Path,default=HERE.parent/'dilution_factor/output/joint_period_method1.json')
+    p.add_argument('--output',type=Path,default=HERE/'output')
+    p.add_argument('--workers',type=int,default=6)
+    p.add_argument('--bins',type=int,nargs='+',default=list(range(1,25)))
+    p.add_argument('--preflight',action='store_true')
+    p.add_argument('--status',action='store_true')
+    a=p.parse_args()
+    if a.status:
+        summary=a.output/'fit_summary.json'
+        print(summary.read_text() if summary.exists() else f'{len(list((a.output/"fits").glob("*.json")))} fit checkpoints present');return
+    if a.workers<1 or any(b not in range(1,25) for b in a.bins):p.error('Need positive workers and bins 1-24')
+    groups,df,audit,identity=load(a.selected_inputs,a.run_info,a.dilution,HERE.parent/'channel_selection')
+    a.output.mkdir(parents=True,exist_ok=True)
+    identity['code_sha256']=hashlib.sha256(b''.join((HERE/n).read_bytes() for n in ['likelihood.py','inputs.py','extract_structure_function_ratios.py'])).hexdigest()
+    signature=hashlib.sha256(json.dumps(identity,sort_keys=True).encode()).hexdigest()
+    save(a.output/'input_audit.json',dict(identity=identity,signature=signature,datasets=audit))
+    for name,r in audit.items():print(f"{name}: {r['rows']:,} combinations, {r['source_runs']} source runs; {r['charge_assumption']}",flush=True)
+    if a.preflight:return
+    directory=a.output/'fits';directory.mkdir(exist_ok=True)
+    tasks=[];results=[]
+    for b in a.bins:
+        for scope in ['combined']+PERIODS:
+            path=directory/f'{scope}_bin{b:02d}.json'
+            if path.exists():
+                r=json.loads(path.read_text())
+                if r.get('signature')==signature:results.append(r);continue
+            tasks.append((b,scope,signature))
+    from concurrent.futures import ProcessPoolExecutor,as_completed
+    with ProcessPoolExecutor(max_workers=a.workers,initializer=initialize,initargs=(groups,df)) as pool:
+        jobs={pool.submit(worker,t):t for t in tasks}
+        for job in as_completed(jobs):
+            r=job.result();results.append(r)
+            save(directory/f"{r['scope']}_bin{r['bin']:02d}.json",r)
+            print(f"{len(results)}/{7*len(a.bins)}: {r['scope']} bin {r['bin']} {r['status']}",flush=True)
+    products(a.output,results)
+
+if __name__=='__main__':main()

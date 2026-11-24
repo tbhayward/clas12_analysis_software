@@ -1,0 +1,32 @@
+[
+  {
+    "period": "spring2019",
+    "rows": 249,
+    "positive_charge_runs": 203,
+    "total_charge_nC": "63632174.266661159693",
+    "missing_source_runs": [],
+    "source_runs_with_zero_charge": [],
+    "sha256": "5bfb7c87b0f0c03a1c091e54702244f5ce63f7fac66d76fb6b194d16644fd25d",
+    "non_RGB_rows_unchanged": true
+  },
+  {
+    "period": "fall2019",
+    "rows": 107,
+    "positive_charge_runs": 93,
+    "total_charge_nC": "12221119.267831439166",
+    "missing_source_runs": [],
+    "source_runs_with_zero_charge": [],
+    "sha256": "275c79ed87ec3c891e7bbfb539bf6f881a10531cc81c00cfb86f4ba0f1db7938",
+    "non_RGB_rows_unchanged": true
+  },
+  {
+    "period": "spring2020",
+    "rows": 181,
+    "positive_charge_runs": 147,
+    "total_charge_nC": "28437117.1521079018171",
+    "missing_source_runs": [],
+    "source_runs_with_zero_charge": [],
+    "sha256": "9390d930e5f9599488e8f805551844204a387a6c543933bc008a2dbf79537818",
+    "non_RGB_rows_unchanged": true
+  }
+]
