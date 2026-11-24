@@ -1,0 +1,52 @@
+POLARIZATION INPUT AND PI+ PROCESSING AUDIT
+2026-11-24
+
+1. Actual numerical inputs
+Nominal ND3 signed Pt: sources/clas12_run_info_processing_branch.csv, read via git show exclusive_pion_processing_branch:analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv.
+The run number, CSV total-charge weight, signed target polarization, and target uncertainty were used as supplied; no nominal sign was flipped.
+DIS source columns: run, PbPt, dPbPt. The spreadsheets contain a BEAM-TARGET PRODUCT, not Pt. For plots Pt_DIS=PbPt_DIS/Pb(period).
+Beam values: Su22=.8384; Fa22=.8372; Sp23=.804. RGB Pt=0 and does not enter these ND3 scale calculations.
+
+processing_branch: SHA256 e1ded22b48cb5ca796abc6475a42aded6acbefb8693e0b7d390bbf5829a7d7b1; ND3 rows 391
+development_shared: SHA256 f8a570f3b3960688e307e646c4d27abd13cd27dd3ded1c06542bacb8702b2e56; ND3 rows 390
+pi_plus_analysis: SHA256 f8a570f3b3960688e307e646c4d27abd13cd27dd3ded1c06542bacb8702b2e56; ND3 rows 390
+PbPt_ND3_fall22_PDF_SF_2025-07-15.xlsx: SHA256 450978e278f8f0871ba960f814d0bcd27c6a6a00a94080075624dfce3f12a4f7
+PbPt_ND3_spring23_PDF_SF_2025-07-15.xlsx: SHA256 52f8318d11a055d5e7de58b51bb3c2dd9cdc55bdd6af50669550d6a51758b40c
+PbPt_ND3_summer22_PDF_SF_2025-07-15.xlsx: SHA256 927144cb714313242ed29e2d73b5b2fd5c694edc38f6abd6e24f914edc04fc2b
+
+2. CSV agreement
+development_shared: 390 shared ND3 runs; 0 signed Pt differences; missing processing-branch ND3 runs: [17523].
+pi_plus_analysis: 390 shared ND3 runs; 0 signed Pt differences; missing processing-branch ND3 runs: [17523].
+The current development shared CSV and pi+ analysis-local CSV agree with the processing-branch Pt for every overlapping ND3 run. Run 17523 is the missing zero-charge bookkeeping row in these copies. The processing-branch snapshot includes it.
+This supersedes the earlier tentative statement that development lacked the ND3 block: the current inspected copies contain that block. Their shared run values MATCH.
+
+3. Sign differences in the DIS inputs (not CSV-versus-CSV differences)
+Su22: 1 sign mismatches in the calculation: 16478
+Su22: 0 further sign mismatches excluded from the matched calculation: none
+Fa22: 55 sign mismatches in the calculation: 16943, 17058, 17059, 17060, 17061, 17063, 17065, 17227, 17231, 17233, 17236, 17237, 17239, 17240, 17242, 17243, 17244, 17245, 17246, 17248, 17249, 17252, 17253, 17255, 17258, 17261, 17262, 17263, 17264, 17265, 17266, 17268, 17269, 17270, 17271, 17273, 17274, 17275, 17276, 17277, 17278, 17281, 17282, 17283, 17284, 17286, 17287, 17288, 17289, 17290, 17292, 17293, 17294, 17295, 17296
+Fa22: 4 further sign mismatches excluded from the matched calculation: 17229, 17230, 17254, 17272
+Sp23: 0 sign mismatches in the calculation: 
+Sp23: 2 further sign mismatches excluded from the matched calculation: 17555, 17795
+See calculations/polarization_sign_mismatches.csv for EVERY flagged run with raw PbPt, uncertainty, CSV Pt, charge, matching flag and signed/magnitude differences. All matched AND unmatched spreadsheet rows are in polarization_run_comparison.csv.
+No claim is made that one input is wrong. A sign mismatch can reflect a spin-sign convention, run assignment or extraction difference. It cannot be settled by replacing values with absolute values.
+For the requested reference-style scale comparison, the note explicitly compares charge-weighted magnitudes |PbPt_DIS| against |PbPt_elastic| within CSV-sign groups. The raw signs remain archived. These calculated scales are PROVISIONAL, not validation of the signed inputs.
+
+4. What the default pi+ processing does
+processing_two_particles.groovy defaults p1 PID to 211 and uses TwoParticles: detected electron plus pion; the neutron is inferred through missing mass, not required as a detected particle.
+The Groovy script outputs kinematics and helicity. It does NOT choose target polarization. convert_txt_to_root.cpp script_index=1,is_mc=0 loads analysis_scripts/asymmetry_extraction/imports/clas12_run_info.csv and looks up target_polarization by run. For run<16000 it sets target_pol=0.
+The dedicated eppi- campaign inherited the same signed ND3 metadata through its saved CSV. No new target-sign convention was introduced in this note.
+
+5. What the pi+ analysis uses
+RGC_enpi+/asymmetry_extraction/extract_structure_function_ratios.py defaults to its analysis-local clas12_run_info.csv. Its parser explicitly selects NH3 rows for the nominal pi+ analysis, takes Pt from column 5, Q+ and Q- from columns 3 and 4, and retains fully zero-charge runs only for bookkeeping.
+The optional DIS diagnostic loads PbPt_NH3_summer22_F1F221_2025-06-24.xlsx, PbPt_NH3_fall22_F1F221_2025-06-24.xlsx, PbPt_NH3_spring23_F1F221_2025-06-24.xlsx. These are NH3 inputs, NOT the attached ND3 PDF_SF_2025-07-15 workbooks. They do not replace the nominal CSV by default.
+The pi+ DIS diagnostic passes the signed workbook PbPt products into its alternate LL fit. The reference note also has absolute-polarization comparison plots; an absolute comparison is distinct from a signed likelihood replacement.
+
+6. Recommended nominal choice for eppi-
+Match the existing signed ND3 CSV exactly for nominal analysis. Keep the attached DIS extractions as independent diagnostics pending explicit sign-convention reconciliation. Do not flip target signs or replace nominal run values merely to force agreement. Preserve the run-17523 recorded zero-charge correction.
+The source code and current branch identify the default processing route, but do not prove which historical commands created every pi+ ROOT file. That requires the original production logs or a direct ROOT-branch check.
+
+7. Other documentation discrepancies to reconcile
+QADB text was copied exactly by request; it names PossiblyNoBeam, while the campaign defect list did not explicitly enable that bit.
+The source note and processing helper have different beam-energy transition boundaries for Sp23, and the helper lacks an explicit assignment for Fa22 run 17066. These need a separate analysis validation; no completed ROOT data were altered here.
+
+USER CONFIRMATION: The elastic-based CSV is the nominal truth; DIS is an independent cross-check. Keep all nominal signs/values unchanged. Cross-check sign differences do not block nominal analysis. Of the 56 matched sign differences, 54 have |DIS PbPt| > 3 times its quoted statistical error; thus they should not all be attributed to near-zero statistical fluctuations. This diagnostic observation does not override the nominal CSV.

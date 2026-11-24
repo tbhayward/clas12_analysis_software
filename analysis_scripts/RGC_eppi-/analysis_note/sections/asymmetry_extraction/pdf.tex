@@ -1,0 +1,48 @@
+\subsection{Probability Density Function}
+\label{sec:pdf}
+
+The RGC ND$_3$ and RGB D$_2$ samples are described by a common set of azimuthal amplitudes. For a period $p$, the differential yield is written as
+\begin{linenomath}
+\begin{equation}
+\label{eq:pdf}
+ dN_p(\vec{\theta},\vec{x},h_b,P_t)
+ =L_p\,\eta_p(\vec{x})\,\bar{\sigma}_{UU,p}(\vec{x})
+ \mathcal{G}_p(\vec{\theta},\vec{x},h_b,P_t).
+\end{equation}
+\end{linenomath}
+Here $\vec{x}$ denotes the event kinematics, $\vec{\theta}$ contains the fitted structure-function ratios, $L_p$ is the luminosity, and $\eta_p$ is the detector acceptance folded with the efficiency. The quantity $\bar{\sigma}_{UU,p}$ is the unpolarized, $\phi$-independent cross section. The beam helicity is $h_b=\pm1$, $P_b$ is the beam-polarization magnitude, and $P_t$ is the signed target polarization. The acceptance may differ between periods and between RGB and RGC. Its cancellation within each period is discussed below.
+
+The RGC target is polarized along the incident electron beam. We therefore define the measured target-spin and double-spin ratios with respect to this laboratory axis and denote them by the subscript ``lab''. The target polarization entering the fit is $P_t$, without an additional $\cos\theta_\gamma$ projection. The effect of choosing the target axis was studied in the exclusive $\pi^+$ analysis. For this preliminary $\pi^-$ analysis, we retain the laboratory-frame definition and do not import transverse-target amplitudes measured in the $\pi^+$ channel. Theoretical predictions should use the same target-spin orientation and harmonic definitions. Predictions expressed along the virtual-photon axis can be related to the measured laboratory-frame quantities by including the corresponding longitudinal and transverse target contributions at the measured angle $\theta_\gamma$.
+
+Using the event-level depolarization ratios
+\begin{linenomath}
+\begin{equation}
+ r_B=\frac{B}{A},\qquad r_C=\frac{C}{A},\qquad
+ r_V=\frac{V}{A},\qquad r_W=\frac{W}{A},
+\end{equation}
+\end{linenomath}
+the fitted cross-section factor is
+\begin{linenomath}
+\begin{align}
+\label{eq:cross_section_factor}
+\mathcal{G}_p={}&1
+ +r_V\frac{F_{UU}^{\cos\phi}}{F_{UU}}\cos\phi
+ +r_B\frac{F_{UU}^{\cos2\phi}}{F_{UU}}\cos2\phi
+ +h_bP_b r_W\frac{F_{LU}^{\sin\phi}}{F_{UU}}\sin\phi
+ \nonumber\\
+ &+D_fP_t\left[
+ r_V\frac{F_{UL,\mathrm{lab}}^{\sin\phi}}{F_{UU}}\sin\phi
+ +r_B\frac{F_{UL,\mathrm{lab}}^{\sin2\phi}}{F_{UU}}\sin2\phi
+ \right]
+ \nonumber\\
+ &+h_bP_bD_fP_t\left[
+ r_C\frac{F_{LL,\mathrm{lab}}}{F_{UU}}
+ +r_W\frac{F_{LL,\mathrm{lab}}^{\cos\phi}}{F_{UU}}\cos\phi
+ \right].
+\end{align}
+\end{linenomath}
+For RGC, $D_f$ is the fraction of the selected sample associated with the polarized target component. The depolarization ratios, beam polarization, target polarization and dilution factor retain their appropriate event, run and period dependence. No bin-averaged depolarization correction is applied after the fit. The ``lab'' ratios describe the target-spin dependence in the stated beam-axis convention. They are not identified directly with the corresponding virtual-photon-axis structure functions.
+
+The RGB target has $P_t=0$. Both target-dependent lines of Eq.~\ref{eq:cross_section_factor} therefore vanish for RGB, leaving only the two unpolarized modulations and the beam-spin term. Within each $(x_B,-t')$ bin, $F_{UU}^{\cos\phi}/F_{UU}$, $F_{UU}^{\cos2\phi}/F_{UU}$ and $F_{LU}^{\sin\phi}/F_{UU}$ are shared between RGB and RGC. The four laboratory-frame UL and LL ratios are constrained by the polarized RGC sample. Including the higher-statistics RGB sample can strengthen the determination of the three shared ratios and their correlations with the target-dependent terms. Their equality between the selected neutron samples is a working assumption to be checked against differences in nuclear backgrounds and kinematic coverage.
+
+All seven ratios are fitted simultaneously. Each period has its own likelihood normalization, so sharing physics parameters does not require identical detector acceptance between RGB and RGC. The preliminary model retains vector target polarization. Possible contributions from deuteron tensor polarization remain to be assessed.

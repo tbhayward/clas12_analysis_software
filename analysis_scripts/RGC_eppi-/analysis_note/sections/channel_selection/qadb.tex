@@ -1,0 +1,8 @@
+\subsection{Quality Assurance}
+\label{sec::QADB}
+
+The dead elements of CLAS12 (e.g. dead PMTs) are accounted for before the approved cooking of the data via the hardware status tables (c.f. \href{https://clasweb.jlab.org/wiki/images/8/8d/Statustables_RGCSummer2022review2024.pdf}{Su22}, \href{https://clasweb.jlab.org/wiki/images/archive/9/96/20240828040441%21Statustables_RGCFall2022review2024.pdf}{Fa22} and \href{https://clasweb.jlab.org/wiki/images/d/dd/Statustables_RGCWinter2023review2025.pdf}{Sp23} ready-for-cooking review HW status table summaries).
+
+The \href{https://github.com/JeffersonLab/clas12-qadb}{CLAS12 Quality Assurance Database} (QADB) v3.4.1 is used for all three run periods in this analysis. The QADB is used on a time epoch basis with a series of cuts defined as ``defect bits'' used by the analyzers to remove unsatisfactory data. The defect bits used in this analysis are `TotalOutlier', `TerminalOutlier', `MarginalOutlier', `SectorLoss', `LowLiveTime', `ChargeHigh', `ChargeNegative', `ChargeUnknown', `PossiblyNoBeam' and `Misc.'. The misceallaneus defect bit is a stand in for otherwise uncharacterized issues and can be ignored on a run-by-run basis if the issue at hand does not effect the analysis. We have allowed ``misc'' bits on all empty target and helium-bath runs and for the runs 17179-17183, 17188, 17189 and 17252 which were marked with a defect bit purely because the RICH detector (which is not used in this analysis) was down. In addition to the QADB, the runs during the ``Hall-C bleedthrough'' period between runs 16600 and 16700 were removed after several analyses showed significant drops in efficiency during that period.
+
+

@@ -1,0 +1,29 @@
+\subsection{Cancellation of Detector Acceptance in the MLE}
+
+In particle physics experiments, particularly those involving asymmetry analyses, it is crucial to understand how the detector acceptance may affect the extracted physics observables. The conditional likelihood used here makes the required cancellation especially transparent.
+
+For an event with kinematics $\vec{x}$ in period $p$, the expected differential yield in run $r$ and beam-helicity state $h$ may be written as,
+\begin{linenomath}
+    \begin{align}
+        dN_{rh}(\vec{x}) = Q_{rh}\eta_p(\vec{x})\bar{\sigma}_{UU}(\vec{x})\mathcal{G}(\vec{x};r,h,p)d\vec{x},
+    \end{align}
+\end{linenomath}
+where $Q_{rh}$ contains the measured relative luminosity, $\eta_p(\vec{x})$ is the detector acceptance folded into the efficiency and $\mathcal{G}$ contains the azimuthal and spin dependence described in Sec.~II. The probability for the observed run/helicity state, conditional on the fact that an event with kinematics $\vec{x}$ was detected in period $p$, is,
+\begin{linenomath}
+    \begin{align}
+        \mathcal{P}(r,h\mid\vec{x},p) &= \frac{Q_{rh}\eta_p(\vec{x})\bar{\sigma}_{UU}(\vec{x})\mathcal{G}(\vec{x};r,h,p)}{\displaystyle\sum_{r'\in p}\sum_{h'=\pm1}Q_{r'h'}\eta_p(\vec{x})\bar{\sigma}_{UU}(\vec{x})\mathcal{G}(\vec{x};r',h',p)},\\
+        \mathcal{P}(r,h\mid\vec{x},p) &= \frac{Q_{rh}\mathcal{G}(\vec{x};r,h,p)}{\displaystyle\sum_{r'\in p}\sum_{h'=\pm1}Q_{r'h'}\mathcal{G}(\vec{x};r',h',p)}.
+    \end{align}
+\end{linenomath}
+Thus, both the detector acceptance and the $\phi$-independent unpolarized cross section cancel exactly from the conditional probability. No Monte Carlo model of the acceptance is required for this cancellation.
+
+The important assumption is not that the acceptance is uniform in $\phi$ or in any other kinematic variable. The acceptance may be an arbitrarily complicated function of $\vec{x}$. Rather, the requirement is that within a run period the acceptance for a fixed measured $\vec{x}$ does not depend on the beam helicity or target polarization state,
+\begin{linenomath}
+    \begin{align}
+        \eta_p(\vec{x};r,h) \simeq \eta_p(\vec{x}).
+    \end{align}
+\end{linenomath}
+The denominator of the likelihood is intentionally restricted to the same run period. Therefore, no assumption is made that Su22, Fa22 and Sp23 have identical detector acceptances. Each period provides an independent conditional probability while all periods constrain the same physics amplitudes.
+
+% 
+The same cancellation is applied independently to every RGB period with $P_t=0$. There is no requirement that the three RGB periods, or any RGB and RGC period, have the same acceptance. Combining conditional likelihood terms shares the specified physics parameters, not their acceptance functions. Stability within each normalization group remains an assumption to validate.

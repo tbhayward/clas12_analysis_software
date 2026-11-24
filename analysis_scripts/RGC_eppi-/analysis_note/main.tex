@@ -1,0 +1,78 @@
+%\documentclass[nobibnotes,nofootinbib,12pt]{revtex4-1}
+\documentclass[11pt]{article}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{authblk}
+\usepackage{subcaption}
+\usepackage{multicol}
+\usepackage{setspace}
+\usepackage{amsmath, amsfonts, graphicx, placeins}
+\usepackage{amssymb}% for \sphericalangle
+\usepackage{braket}
+\usepackage{subcaption}
+\usepackage{breqn}
+\usepackage{hyperref}
+\usepackage[percent]{overpic}
+\usepackage{rotating}
+\usepackage{multirow}
+\usepackage{color}
+\usepackage{rotating}
+\usepackage{longtable}
+\usepackage{booktabs}
+\topmargin -42pt
+\textheight23cm \textwidth17cm
+\oddsidemargin -5mm
+\parskip 3mm plus 2mm minus 2mm 
+\newcommand{\ba}{\begin{eqnarray}}
+\newcommand{\ea}{\end{eqnarray}}
+\newcommand{\be}{\begin{equation}}
+\newcommand{\ee}{\end{equation}}
+\newcommand{\bq}{\begin{eqnarray}}
+\newcommand{\eq}{\end{eqnarray}}
+\newcommand{\one}{1 \!\! 1}
+\newcommand{\D}{\mathrm{d}}
+\newcommand{\E}{\mathrm{e}}
+\newcommand{\I}{\mathrm{i}}
+
+
+\usepackage{graphicx}   % for \resizebox
+\usepackage{siunitx}    % for \SI and \sisetup
+\usepackage{makecell}   % for \makecell[...] with line breaks
+\newcommand{\blue}{\color{blue}}
+\newcommand{\red}{\color{red}}
+\usepackage{lineno}
+\usepackage[utf8]{inputenc}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{authblk}
+\usepackage{subcaption}
+\usepackage{multicol}
+\usepackage{setspace}
+\def\Vec#1{\mathpalette{\VVec}{#1}}
+\def\VVec#1#2{\mbox{\boldmath$#1#2$\unboldmath}}
+\newcommand{\xbj}{\mathrm{x_{B}}}
+\newcommand{\Phperp}{P_{T}}
+
+
+
+\author[1]{Maggie Kerr}
+\author[1]{Timothy B. Hayward}
+\author[2]{Harut Avakian}
+\affil[1]{Massachusetts Institute of Technology, Cambridge, MA 02139-4307}
+\affil[2]{Thomas Jefferson National Accelerator Facility, Newport News, VA 23606}
+\title{Preliminary extraction of spin asymmetries in exclusive $\pi^-$ electroproduction with a longitudinally polarized ND$_3$ target}
+\date{Preliminary analysis note --- November 2026}
+\begin{document}
+\maketitle\linenumbers
+\begin{abstract}
+This note documents a preliminary analysis of exclusive charged-pion electroproduction on the neutron, $en\to e' p\pi^-$, using CLAS12 Run Group C data with a longitudinally polarized ND$_3$ target. Detection of the electron, proton and negative pion provides additional constraints on nuclear and nonexclusive backgrounds. Beam-spin, target-spin and double-spin ratios will be extracted in 24 $(x_B,-t')$ bins. A joint fit includes the unpolarized-deuterium Run Group B sample to constrain the common unpolarized and beam-spin ratios alongside the target-dependent RGC terms. Planned comparisons with the ongoing Manley--Bhattacharya calculation will examine additional chiral-even contributions to the transverse cross section, alongside the conventional chiral-odd mechanisms. Exclusivity, dilution and systematic studies remain in progress; this skeleton reports methods and polarization inputs, not final asymmetries.
+\end{abstract}
+\newpage\tableofcontents\newpage
+\input{sections/introduction}
+\input{sections/channel_selection}
+\input{sections/asymmetry_extraction}
+\input{sections/systematics}
+\input{sections/results}
+\clearpage\bibliographystyle{ieeetr}\bibliography{references}
+\end{document}

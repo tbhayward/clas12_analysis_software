@@ -1,0 +1,23 @@
+\subsection{Beam and Target Polarizations}
+\label{sec::polarization}
+The beam polarization is determined through a series of M\"{o}ller measurements taken throughout the data taking period. The various M\"{o}ller runs and their associated logbook entries are all included in the supplemental document \href{https://clas12-docdb.jlab.org/DocDB/0012/001257/001/rgc_beam_polarizations.txt}{RGC Beam Polarizations}. The final beam polarization percentages are RGC Su22: 83.84 +/- 0.86(stat) +/- 2.16(sys), RGC Fa22: 83.72 +/- 0.45(stat) +/- 2.91(sys) and RGC Sp23: 80.40 +/- 0.61(stat) +/- 4.70(sys). The bulk of the systematic uncertainty comes from an absolute scale uncertainty in the M\"{o}ller measurements that is estimated at about 2\% with the remaining coming from measurement-to-measurement variance.
+
+The nominal ND$_3$ target polarization is obtained from the elastic-scattering determination of $P_bP_t$ and the measured beam polarization,
+\begin{equation}\label{eq:target_polarization}
+P_t=\frac{P_bP_t}{P_b}.
+\end{equation}
+The preliminary elastic results from the \href{https://clasweb.jlab.org/wiki/index.php/Elastic_Analysis_for_PbPt_Extraction}{RGC elastic-polarization analysis} and the corresponding target polarizations are listed in Table~\ref{tab:pt_by_period}.
+\begin{table}[H]\centering\small
+\begin{tabular}{llrr}\toprule Period & target sign & elastic $P_bP_t$ & derived $P_t$\\\midrule
+Su22 & + & $0.20\pm0.03$ & $0.2385\pm0.0364$ \\
+Su22 & - & $-0.14\pm0.04$ & $-0.1670\pm0.0479$ \\
+Fa22 & + & $0.23\pm0.02$ & $0.2747\pm0.0258$ \\
+Fa22 & - & $-0.25\pm0.02$ & $-0.2986\pm0.0261$ \\
+Sp23 & + & $0.26\pm0.03$ & $0.3234\pm0.0419$ \\
+Sp23 & - & $-0.14\pm0.03$ & $-0.1741\pm0.0387$ \\
+\bottomrule\end{tabular}
+\caption{Preliminary elastic beam--target products and derived ND$_3$ target polarizations. Product errors are the quoted elastic statistical uncertainties. The target-polarization errors propagate the elastic statistical uncertainty and the M\"{o}ller statistical and systematic uncertainties.}\label{tab:pt_by_period}\end{table}
+
+A comparison with the independent \href{https://clasweb.jlab.org/wiki/index.php/DIS_Analysis_for_PbPt_Extraction}{DIS determination of $P_bP_t$} is ongoing. The preliminary results use the elastic determination. A combined polarization scale uncertainty is not quoted for this preliminary conference analysis.
+
+The RGB liquid-D$_2$ target is unpolarized, so $P_t=0$ for all RGB periods. The RGB beam polarization remains nonzero and enters the beam-spin terms in the likelihood.

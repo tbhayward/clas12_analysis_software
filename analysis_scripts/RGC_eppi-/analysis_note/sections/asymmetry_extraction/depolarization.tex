@@ -1,0 +1,27 @@
+\subsection{Depolarization Factors}\label{sec:depolarization_factors}
+
+The pure QED kinematic factors required to transform from the measured asymmetry values to the ratio of structure functions are the twist-2 functions $A$, $B$ and $C$ and the twist-3 functions $V$ and $W$ that are given by
+\begin{align}
+A(\epsilon, y) &\equiv \frac{y^2}{2(1-\epsilon)} = \frac{1}{1+\gamma^2} \left(1-y+\frac{1}{2}y^2 + \frac{1}{4}\gamma^2 y^2\right) \approx \left(1-y+\frac{1}{2} y^2 \right),\\
+B(\epsilon, y) &\equiv \frac{y^2}{2(1-\epsilon)} \epsilon = \frac{1}{1+\gamma^2} \left(1-y-\frac{1}{4} \gamma^2 y^2 \right) \approx \left(1-y\right) ,\\
+C(\epsilon, y) &\equiv \frac{y^2}{2\left(1-\epsilon\right)} \sqrt{1-\epsilon^2} = \frac{y}{\sqrt{1+\gamma^2}} \left(1-\frac{1}{2}y\right) \approx y \left(1-\frac{1}{2} y \right) , \\
+V(\epsilon, y) &\equiv \frac{y^2}{2\left(1-\epsilon \right)} \sqrt{2 \epsilon (1+\epsilon)} = \frac{2-y}{1+\gamma^2} \sqrt{1-y-\frac{1}{4}\gamma^2y^2} \approx \left(2-y\right) \sqrt{1-y}, \\
+W(\epsilon, y) &\equiv \frac{y^2}{2\left(1 - \epsilon\right)} \sqrt{2\epsilon(1-\epsilon)} = \frac{y}{\sqrt{1+\gamma^2}} \sqrt{1-y-\frac{1}{4} \gamma^2 y^2 } \approx y \sqrt{1-y},
+\end{align}
+and dependent on the ratio $\epsilon$ of longitudinal and transverse photon flux \cite{Bacchetta:2006tn},
+\begin{align}
+\epsilon = \frac{1 - y - \frac{1}{4}\gamma^2 y^2 }{1-y+\frac{1}{2}y^2 + \frac{1}{4}\gamma^2 y^2}.
+\label{eps}
+\end{align}
+For a target polarization defined along the virtual-photon direction, the conventional relationship between asymmetry amplitudes and structure-function ratios is
+\begin{align}
+    A_{LU}^{\sin\phi} &= \left( \frac{W}{A} \right) \left( \frac{F_{LU}^{\sin\phi}}{F_{UU}} \right),\\
+    A_{UL}^{\sin\phi} &= \left( \frac{V}{A} \right) \left( \frac{F_{UL}^{\sin\phi}}{F_{UU}} \right),~~~
+    A_{UL}^{\sin2\phi} = \left( \frac{B}{A} \right) \left( \frac{F_{UL}^{\sin2\phi}}{F_{UU}} \right),\\
+    A_{LL}^{} &= \left( \frac{C}{A} \right) \left( \frac{F_{LL}^{}}{F_{UU}} \right),~~~~
+    A_{LL}^{\cos\phi} = \left( \frac{W}{A} \right) \left( \frac{F_{LL}^{\cos\phi}}{F_{UU}} \right),\\
+    A_{UU}^{\cos\phi} &= \left( \frac{V}{A} \right) \left( \frac{F_{UU}^{\cos\phi}}{F_{UU}} \right),~~~
+    A_{UU}^{\cos2\phi} = \left( \frac{B}{A} \right) \left( \frac{F_{UU}^{\cos2\phi}}{F_{UU}} \right)
+\end{align}
+where the dependence on $\epsilon$ and $y$ in the depolarization factors is omitted for brevity.  These relations define the conventional virtual-photon-axis quantities used for theoretical interpretation.  The nominal RGC target-spin and double-spin measurements are instead reported for the laboratory beam axis and are denoted $\frac{F_{UL,\mathrm{lab}}^{\sin\phi}}{F_{UU}}$, $\frac{F_{UL,\mathrm{lab}}^{\sin2\phi}}{F_{UU}}$, $\frac{F_{LL,\mathrm{lab}}}{F_{UU}}$ and $\frac{F_{LL,\mathrm{lab}}^{\cos\phi}}{F_{UU}}$.  This notation is intentionally distinct from the virtual-photon-axis quantities $F_{UL}^{h}/F_{UU}$ and $F_{LL}^{h}/F_{UU}$ above.  The ``lab'' quantities retain the event-by-event depolarization factors in their definition and extraction; they are not obtained by first forming a raw asymmetry and subsequently applying a bin-averaged depolarization correction. The reference study found little dependence on $-t$ and only a slight dependence on $x_B$. This is the working expectation here; the ND$_3$/RGB distributions will be checked before replacing event-level factors by any averages.
+

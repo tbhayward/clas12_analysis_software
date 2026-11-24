@@ -1,0 +1,49 @@
+\subsection{Data sets}
+\begin{table}[htbp]
+  \centering
+  \sisetup{detect-all}
+  \resizebox{\columnwidth}{!}{%
+  \begin{tabular}{|l|l|l|c|c|c|l|l|}
+    \hline
+    \textbf{Period} & \textbf{Run Range} & \textbf{Beam Energy}
+      & \textbf{FT} & \textbf{Torus} & \textbf{Solenoid}
+      & \textbf{Coatjava Tracking} & \textbf{Beam Current}\\
+    \hline
+    RGB Sp19 & 6156--6603
+      & \makecell[l]{\SI{10.5986}{\giga\electronvolt}\,(6156--6399)\\
+          \SI{10.1998}{\giga\electronvolt}\,(6409--6603)}
+      & On & $-1$ & $-1$ & 10.0.7 (no DAF) & \\
+    \hline
+    RGB Fa19 & 11093--11283 & \SI{10.4096}{\giga\electronvolt}
+      & On & $+1$ & $-1$ & 10.0.7 (no DAF) & \\
+    \hline
+    RGB Sp20 & 11323--11571 & \SI{10.3894}{\giga\electronvolt}
+      & On & $-1$ & $-1$ & 10.0.7 (no DAF) & \\
+    \hline
+    RGC Su22 & 16043--16772 & \SI{10.5473}{\giga\electronvolt}
+      & On & $-1$ & $-1$ & 10.0.9 (no DAF) & \SI{4}{\nano\ampere}\\
+    \hline
+    RGC Fa22 & 16843--17408
+      & \makecell[l]{\SI{10.5473}{\giga\electronvolt}\,(16843--17065)\\
+          \SI{10.5563}{\giga\electronvolt}\,(17066--17408)}
+      & Off & $-1$
+      & \makecell[l]{$-1$\,(16843--17183)\\$+1$\,(17185--17408)}
+      & 11.1.0 (DAF) & \SI{8}{\nano\ampere}\\
+    \hline
+    RGC Sp23 & 17477--17811
+      & \makecell[l]{\SI{10.5563}{\giga\electronvolt}\,(17477--17724)\\
+          \SI{10.5593}{\giga\electronvolt}\,(17725--17811)}
+      & On & \makecell[l]{$-1$\,(17477--17768)\\$+1$\,(17769--17811)}
+      & $-1$ & 11.1.0 (DAF) & \SI{4}{\nano\ampere}\\
+    \hline
+  \end{tabular}%
+  }
+  \caption{Summary of the RGB and RGC run periods. Only the inbending portion of RGC Sp23 is used in this analysis. RGB beam currents are left unspecified.}
+  \label{tab:run_periods}
+\end{table}
+
+The polarized sample comprises the RGC Su22, Fa22 and Sp23 ND$_3$ data. Carbon, CH$_2$, empty-target and He-bath data are available for all three periods. CD$_2$ is available only in Sp23. Only inbending RGC data are used, while both Fa22 solenoid polarities are included.
+
+The target-unpolarized sample comprises RGB spring 2019 and spring 2020 inbending liquid-D$_2$ data and the high-energy fall 2019 outbending liquid-D$_2$ data. The low-energy BAND-calibration data are not included. RGB retains its longitudinal beam polarization and has zero target polarization.
+
+The selected final state consists of a forward-detector electron, a proton in the forward or central detector, and a forward-detector $\pi^-$. The detector and kinematic requirements are described below.

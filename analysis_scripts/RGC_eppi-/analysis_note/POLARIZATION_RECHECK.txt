@@ -1,0 +1,21 @@
+POLARIZATION RECHECK: RESULTS AND UNCERTAINTY PRESCRIPTION
+
+The physics section has been rewritten without CSV, processing-branch, archive or code terminology. Nominal elastic input values are unchanged.
+
+Pt calculation:
+Su22 sign +1: PbPt=+0.20 +/- 0.03; Pb=0.8384; Pt=+0.238550 +/- 0.036389 before method differences. Existing rounded nominal Pt=+0.239.
+Su22 sign -1: PbPt=-0.14 +/- 0.04; Pb=0.8384; Pt=-0.166985 +/- 0.047934 before method differences. Existing rounded nominal Pt=-0.167.
+Fa22 sign +1: PbPt=+0.23 +/- 0.02; Pb=0.8372; Pt=+0.274725 +/- 0.025769 before method differences. Existing rounded nominal Pt=+0.275.
+Fa22 sign -1: PbPt=-0.25 +/- 0.02; Pb=0.8372; Pt=-0.298614 +/- 0.026096 before method differences. Existing rounded nominal Pt=-0.299.
+Sp23 sign +1: PbPt=+0.26 +/- 0.03; Pb=0.8040; Pt=+0.323383 +/- 0.041901 before method differences. Existing rounded nominal Pt=+0.324.
+Sp23 sign -1: PbPt=-0.14 +/- 0.03; Pb=0.8040; Pt=-0.174129 +/- 0.038700 before method differences. Existing rounded nominal Pt=-0.174.
+
+Corrected weighting uses Qplus+Qminus, matching the pi+ note, rather than total recorded charge. Pt scale=32.0009%; PbPt scale=31.7648%.
+Variance components in quadrature: elastic statistical=14.0506%; mean-method difference=28.4883%; beam=3.8797%. These reproduce the complete target variance independently.
+Sp23 negative: 60.19% of Pt variance. Fa22 positive: 22.08%.
+DIS run-to-run RMS is calculated separately in polarization_recheck.csv for inspection and is NOT included in these scale uncertainties. The bias from absolute-value averaging near zero is not separately corrected in this preliminary prescription.
+The pi+ note uses the difference of mean determinations plus elastic statistical error. It explicitly replaced the older RMS prescription, since real run-to-run polarization changes are not uncertainty on a period average. The algebra is inherited correctly. The earlier implementation differed slightly in its charge weighting, which is corrected here.
+The 32% result is reproducible but is not a validated final common scale: preliminary elastic period averages are compared with an overlapping-run DIS average, and source/matching/systematic assumptions need common-condition validation. Do not replace it by the 14% elastic-stat-only component merely to reduce the result.
+The main note retains the large numbers visibly as provisional, and the systematic-summary table is synchronized. No CSV, ROOT file or nominal input sign has been changed.
+
+Detailed per-state calculations: calculations/polarization_recheck.csv and .json. Raw input provenance and per-run signed differences remain in POLARIZATION_INPUT_AUDIT.txt.
