@@ -133,7 +133,7 @@ def prepare(a):
         # Use the installed QADB module, ahead of any stale bundled Groovy source.
         qadir=os.environ.get('QADB')
         if not qadir or not Path(qadir).is_dir():raise RuntimeError('Load qadb/3.4.1 first (QADB must point to its database)')
-        shutil.copytree(qadir,build/'qadb',symlinks=False)
+        shutil.copytree(qadir,build/'qadb',symlinks=False,copy_function=shutil.copyfile)
         cp_entries=os.environ.get('CLASSPATH','').split(os.pathsep)
         extras=[]
         for entry in cp_entries:
@@ -209,8 +209,23 @@ def repair_libraries(a):
         if digest(temp)!=expected:temp.unlink();raise RuntimeError('Copy verification failed')
         os.replace(temp,destination);restored+=1
         print('RESTORED exact original library: '+name,flush=True)
+    qa_restored=0;qa_source=os.environ.get('QADB')
+    for name,expected in checks.items():
+        if not name.startswith('qadb/'):continue
+        destination=build/name
+        if destination.exists():
+            if digest(destination)!=expected:raise RuntimeError('Saved QA file changed; refusing to replace: '+str(destination))
+            os.utime(destination,None);continue
+        if not qa_source:raise RuntimeError('Missing saved QA file '+name+'; rerun repair through environment.csh to load the original QADB module')
+        source=Path(qa_source)/Path(name).relative_to('qadb')
+        if not source.is_file() or digest(source)!=expected:raise RuntimeError('No exact checksum-matching original QA source for '+name+' at '+str(source)+'; do not retry processing yet')
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        temp=destination.with_name(destination.name+f'.restore.{os.getpid()}.tmp');shutil.copyfile(source,temp)
+        if digest(temp)!=expected:temp.unlink();raise RuntimeError('QA copy verification failed')
+        os.replace(temp,destination);qa_restored+=1
+        print('RESTORED exact original QA file: '+name,flush=True)
     verified(root)
-    print(f'Restored {restored} libraries; refreshed library timestamps; all frozen campaign checksums verified. Completed outputs and failure markers unchanged.',flush=True)
+    print(f'Restored {restored} libraries and {qa_restored} QA files; refreshed saved dependency timestamps; all frozen campaign checksums verified. Completed outputs and failure markers unchanged.',flush=True)
 
 def progress_snapshot(root,manifest=None):
     manifest=manifest or read(root/'manifest.json');done=failed=active=0;entries=completed_bytes=0;estimated_bytes=0.0;details=[];groups={}

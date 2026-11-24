@@ -146,4 +146,17 @@ class CampaignTest(unittest.TestCase):
    (root/'build/lib/example.jar').unlink();source.write_bytes(b'different release')
    with self.assertRaises(RuntimeError):c.repair_libraries(SimpleNamespace(campaign=root,repo=repo))
    self.assertFalse((root/'build/lib/example.jar').exists())
+ def test_exact_missing_qa_repair(self):
+  from types import SimpleNamespace
+  import io,contextlib
+  with tempfile.TemporaryDirectory() as tmp:
+   root=Path(tmp)/'campaign';repo=Path(tmp)/'repo';qa=Path(tmp)/'installed_qa'
+   for path in [root/'build',root/'hosts',repo,qa/'qadb/pass1/rgb_fa19']:path.mkdir(parents=True)
+   source=qa/'qadb/pass1/rgb_fa19/chargeTree.json';source.write_text('{"original":true}')
+   relative='qadb/qadb/pass1/rgb_fa19/chargeTree.json'
+   c.atomic_json(root/'checksums.json',{relative:c.digest(source)})
+   with patch.dict(c.os.environ,{'QADB':str(qa)}),contextlib.redirect_stdout(io.StringIO()):c.repair_libraries(SimpleNamespace(campaign=root,repo=repo))
+   self.assertEqual((root/'build'/relative).read_bytes(),source.read_bytes())
+   (root/'build'/relative).unlink();source.write_text('{"different":true}')
+   with patch.dict(c.os.environ,{'QADB':str(qa)}),self.assertRaises(RuntimeError):c.repair_libraries(SimpleNamespace(campaign=root,repo=repo))
 if __name__=='__main__':unittest.main()
