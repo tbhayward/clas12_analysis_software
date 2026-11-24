@@ -463,10 +463,14 @@ def main():
     parser.add_argument('--run-info', type=Path, default=HERE.parent/'imports/clas12_run_info_ND3_source.csv')
     parser.add_argument('--output', type=Path, default=HERE/'output')
     parser.add_argument('--replicas', type=int, default=20000)
+    parser.add_argument('--joint-replicas', type=int, default=2000)
+    parser.add_argument('--joint-workers', type=int, default=6)
     parser.add_argument('--seed', type=int, default=20261124)
     args = parser.parse_args()
     if args.replicas < 1000:
         parser.error('Use at least 1000 statistical replicas')
+    if args.joint_replicas < 1000 or args.joint_workers < 1:
+        parser.error('Use at least 1000 joint replicas and one worker')
     registry, counts, charges, audit = load_inputs(args.selected_inputs, args.run_info)
     rates = rates_from_counts(counts, charges)
     ratio, nominal = evaluate(rates)
@@ -550,6 +554,8 @@ def main():
     xb_comparison(out, counts, charges, args.replicas, args.seed, registry['cutset_id'])
     binning_comparison(out, counts, charges, args.replicas, args.seed, registry['cutset_id'])
     period_consistency(out)
+    from joint_period_fit import run as run_joint_period_fit
+    run_joint_period_fit(out/'method1.json', out, replicas=args.joint_replicas, seed=args.seed, workers=args.joint_workers)
     flagged = sum(bool(r['flags']) for r in rows)
     print(f'Finished: 72 period/bin estimates, {flagged} flagged for review. Outputs: {out.resolve()}')
     for row in packing_summary:
