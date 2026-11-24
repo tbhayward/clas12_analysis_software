@@ -4,49 +4,37 @@ This standalone analysis reads the completed `PhysicsEvents` trees. It does not 
 
 ## Run on the farm
 
-From the repository root, with Python 3, NumPy, uproot 5 and Matplotlib available:
+From the repository root, on **one node**, with Python 3, NumPy, uproot 5 and Matplotlib available:
 
 ```bash
-python3 analysis_scripts/RGC_eppi-/channel_selection/diagnostics/run_diagnostics.py \
-  --output /volatile/clas12/thayward/eppi-/diagnostics/exclusivity_v1 \
-  --workers 6
+python3 analysis_scripts/RGC_eppi-/channel_selection/diagnostics/run_diagnostics.py --workers 6
 ```
 
-Run this once on one node. Six processes scan the six files concurrently, one process per file. Each file is read once in bounded chunks (default `100 MB` of decoded branch data). Plotting follows the scans. ROOT itself and the processing environment are not required. If needed, install the Python packages in your usual analysis environment using `python3 -m pip install numpy 'uproot>=5,<6' matplotlib`.
+All generated PNG figures, histogram caches, tables, progress files and the HTML index are saved to `analysis_scripts/RGC_eppi-/channel_selection/diagnostics/output/` beside these scripts. This path is anchored to the script location, regardless of the working directory. On the farm it is therefore inside your home analysis repository, not on volatile storage. The input ROOT files continue to be read from the campaign on `/volatile`. The output folder is excluded from git. An explicit `--output PATH` can override the destination.
 
-For an initial end-to-end smoke test, add `--max-entries 200000` and use a different output directory. This reads the first 200,000 stored candidate rows per period, not a representative run sample. Figures are marked PARTIAL SAMPLE. Do not use this option for the actual diagnostic distributions.
-
-For a quick progress report in another terminal:
+Run the command once. Six processes scan the six files concurrently, one process per period. Each file is read once in bounded chunks (default `100 MB` of decoded branch data). Plotting follows the scans, one period at a time. ROOT itself and the processing environment are not required. If needed, install the packages in your usual Python environment:
 
 ```bash
-python3 analysis_scripts/RGC_eppi-/channel_selection/diagnostics/run_diagnostics.py \
-  --output /volatile/clas12/thayward/eppi-/diagnostics/exclusivity_v1 --status
+python3 -m pip install numpy 'uproot>=5,<6' matplotlib
 ```
 
-Percentages are exact fractions of stored candidate rows read per period. The update age helps identify a stopped scan. A cached period has completed its histogram scan and may still be plotting. Terminal output reports plotting completion separately. If interrupted, rerun the original command. Completed matching caches are reused, while an interrupted period restarts its scan. Only run one scanner per period/output directory at a time.
+For an initial end-to-end smoke test, add `--max-entries 200000 --output analysis_scripts/RGC_eppi-/channel_selection/diagnostics/output/smoke_test`. This reads the first 200,000 stored candidate rows per period, not a representative run sample. Figures are marked PARTIAL SAMPLE. Omit this option for the actual diagnostic distributions.
 
-To use both nodes, split the periods explicitly, with the same output directory:
+For a progress report in another terminal:
 
 ```bash
-# ifarm2401
-python3 analysis_scripts/RGC_eppi-/channel_selection/diagnostics/run_diagnostics.py \
-  --output /volatile/clas12/thayward/eppi-/diagnostics/exclusivity_v1 --workers 3 \
-  --periods RGB_spring2019_D2 RGB_fall2019_D2 RGB_spring2020_D2
-
-# ifarm2402
-python3 analysis_scripts/RGC_eppi-/channel_selection/diagnostics/run_diagnostics.py \
-  --output /volatile/clas12/thayward/eppi-/diagnostics/exclusivity_v1 --workers 3 \
-  --periods RGC_summer2022_ND3 RGC_fall2022_ND3 RGC_spring2023_ND3
+python3 analysis_scripts/RGC_eppi-/channel_selection/diagnostics/run_diagnostics.py --status
 ```
 
-After both finish, run the following once to generate a combined index (it also redraws the figures):
+Workers print START immediately and report opening input, reading the first chunk and processing. Percentages are exact fractions of stored candidate rows read per period. The update age helps identify a stopped scan. After scanning, status distinguishes plots pending, plotting and complete. If interrupted, rerun the original command. Completed matching histogram caches are reused, while an interrupted period restarts its scan. Only run one scanner per period/output directory at a time. Previous results on `/volatile` are not moved or deleted by this change.
+
+To redraw plots without reading the input ROOT files:
 
 ```bash
-python3 analysis_scripts/RGC_eppi-/channel_selection/diagnostics/run_diagnostics.py \
-  --output /volatile/clas12/thayward/eppi-/diagnostics/exclusivity_v1 --plots-only
+python3 analysis_scripts/RGC_eppi-/channel_selection/diagnostics/run_diagnostics.py --plots-only
 ```
 
-`--plots-only --log-y` redraws the one-dimensional distributions on logarithmic axes without reading ROOT data. `--input-root PATH` overrides the input ROOT directory. `--periods` can also select carbon or other target files listed in the dataset manifest.
+Add `--log-y` for logarithmic one-dimensional count axes. `--input-root PATH` overrides the input ROOT directory. `--periods` can select any dataset listed in the dataset manifest, including carbon and the other control targets.
 
 ## Definitions
 
@@ -81,6 +69,7 @@ Each of the six period directories contains:
 - `histograms.npz`: compact histogram and moment cache. This permits later fitting or replotting without another ROOT scan.
 - `manifest.json`: input identity, source entry count, selection configuration, bin edges, observable ranges, count accounting, full/partial flag and saved-versus-recomputed Mx2 agreement.
 - `progress.json`: latest scan progress.
+- `plot_status.json`: plotting or completion state.
 
 The top-level `index.html` links the PNG pages. Copy the output directory locally to browse it. No PDF figures are produced. Default axis ranges are in `kinematics.py`. The per-panel outside-range count and CSV tails must be checked before adopting a plotting range or cut. Angular residuals undefined for zero predicted momentum are counted separately rather than removing the other observables for that candidate.
 

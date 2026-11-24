@@ -12,6 +12,7 @@ import time
 import numpy as np
 from kinematics import BRANCHES, METRICS, CORRELATIONS, XB, TP, calculate, bin_indices
 
+DEFAULT_OUTPUT = Path(__file__).resolve().parent/'output'
 VERSION = 1
 DEFAULT_PERIODS = ['RGB_spring2019_D2', 'RGB_fall2019_D2', 'RGB_spring2020_D2',
                    'RGC_summer2022_ND3', 'RGC_fall2022_ND3', 'RGC_spring2023_ND3']
@@ -40,6 +41,7 @@ def process(job):
             print(f'CACHED {name}: {previous["counts"]["in_bins"]:,} combinations', flush=True)
             return name
     manifest.unlink(missing_ok=True)
+    (out/'plot_status.json').unlink(missing_ok=True)
     h = {k: np.zeros((3, 24, 120), dtype=np.int64) for k in METRICS}
     # Per metric/category/bin: finite count, sum, sum of squares, underflow, overflow, nonfinite.
     stats = {k: np.zeros((3, 24, 6)) for k in METRICS}
@@ -47,12 +49,15 @@ def process(job):
     counts = dict(read=0, nonfinite_input=0, quality_rejected=0, outside_bins=0, in_bins=0)
     max_mx2_difference = 0.
     started = time.monotonic()
+    atomic_json(out/'progress.json', dict(stage='opening input', period=name, pid=os.getpid(), host=os.uname().nodename))
+    print(f'START {name}: opening input (PID {os.getpid()})', flush=True)
     with uproot.open(source) as f:
         tree = f[options['tree']]
         absent = set(BRANCHES)-set(tree.keys())
         if absent:
             raise ValueError(f'{name}: missing branches {sorted(absent)}')
         total = min(tree.num_entries, options['max_entries'] or tree.num_entries)
+        atomic_json(out/'progress.json', dict(stage='reading first chunk', period=name, entries_read=0, entries_total=total, percent=0.0))
         for a in tree.iterate(BRANCHES, library='np', step_size=options['step_size'], entry_stop=total):
             n = len(a['x'])
             counts['read'] += n
@@ -92,7 +97,7 @@ def process(job):
                 ok = np.isfinite(values[x]) & np.isfinite(values[y]) & (ix >= 0) & (ix < 60) & (iy >= 0) & (iy < 60)
                 corr[f'{x}__{y}'] += np.bincount(bi[ok]*3600+ix[ok]*60+iy[ok], minlength=24*3600).reshape(24, 60, 60)
             elapsed = time.monotonic()-started
-            progress = dict(period=name, entries_read=counts['read'], entries_total=total,
+            progress = dict(stage='processing', period=name, entries_read=counts['read'], entries_total=total,
                             percent=100*counts['read']/max(total, 1), selected_combinations=counts['in_bins'], elapsed_seconds=elapsed)
             atomic_json(out/'progress.json', progress)
             print(f'{name}: {progress["percent"]:5.1f}%  {counts["read"]:,}/{total:,} rows, {counts["in_bins"]:,} in bins ({elapsed:.0f}s)', flush=True)
@@ -125,6 +130,8 @@ def plot_period(out, log_y=False):
     from matplotlib.colors import LogNorm
     meta = json.loads((out/'manifest.json').read_text())
     name = out.name
+    atomic_json(out/'plot_status.json', dict(stage='plotting', started=time.time()))
+    print(f'PLOTTING {name}', flush=True)
     note = 'PARTIAL SAMPLE' if meta['partial'] else 'Full sample'
     with np.load(out/'histograms.npz') as data:
         for xi in range(4):
@@ -165,13 +172,14 @@ def plot_period(out, log_y=False):
                 fig.suptitle(title+' | all protons')
                 fig.savefig(out/f'correlation_{x}_{y}_xb{xi+1}.png', dpi=140)
                 plt.close(fig)
+    atomic_json(out/'plot_status.json', dict(stage='complete', finished=time.time(), png_pages=60))
     print(f'PLOTTED {name}: 60 PNG pages', flush=True)
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
     p.add_argument('--datasets', type=Path, default=Path(__file__).resolve().parents[2]/'imports/datasets.json')
     p.add_argument('--input-root', type=Path)
-    p.add_argument('--output', type=Path, required=True)
+    p.add_argument('--output', type=Path, default=DEFAULT_OUTPUT, help='Output folder (default: output/ beside this script)')
     p.add_argument('--periods', nargs='+', default=DEFAULT_PERIODS)
     p.add_argument('--workers', type=int, default=6, help='Total processes, one input file per process')
     p.add_argument('--step-size', default='100 MB')
@@ -187,17 +195,21 @@ def main():
             folder = args.output/name
             if (folder/'manifest.json').exists():
                 m = json.loads((folder/'manifest.json').read_text())
-                print(f'{name}: cached, {m["counts"]["in_bins"]:,} combinations' + (' (PARTIAL)' if m['partial'] else ''))
+                plot_status = folder/'plot_status.json'
+                state = json.loads(plot_status.read_text())['stage'] if plot_status.exists() else 'scan complete, plots pending'
+                print(f'{name}: {state}, {m["counts"]["in_bins"]:,} combinations' + (' (PARTIAL)' if m['partial'] else ''))
             elif (folder/'progress.json').exists():
                 v = json.loads((folder/'progress.json').read_text())
                 age = time.time()-(folder/'progress.json').stat().st_mtime
-                print(f'{name}: {v["percent"]:.1f}%, {v["entries_read"]:,}/{v["entries_total"]:,} rows, update {age:.0f}s ago')
+                detail = f', {v["percent"]:.1f}%, {v["entries_read"]:,}/{v["entries_total"]:,} rows' if 'percent' in v else ''
+                print(f'{name}: {v.get("stage", "processing")}{detail}, update {age:.0f}s ago')
             else:
                 print(f'{name}: not started')
         return
     if args.workers < 1 or (args.max_entries is not None and args.max_entries < 1):
         p.error('workers and max-entries must be positive')
     args.output.mkdir(parents=True, exist_ok=True)
+    print(f'Output directory: {args.output.resolve()}', flush=True)
     if not args.plots_only:
         config = json.loads(args.datasets.read_text())
         root = args.input_root or Path(config['campaign'])/'root'
@@ -211,6 +223,7 @@ def main():
             options = dict(max_entries=args.max_entries, all_fiducials=args.all_fiducials,
                            tree=config['tree'], step_size=args.step_size, force=args.force)
             jobs.append((name, str(source), str(args.output/name), options))
+        print(f'Starting {min(args.workers, len(jobs))} parallel scan workers for {len(jobs)} periods', flush=True)
         with ProcessPoolExecutor(max_workers=min(args.workers, len(jobs))) as pool:
             futures = [pool.submit(process, job) for job in jobs]
             for future in as_completed(futures):

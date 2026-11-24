@@ -1,6 +1,9 @@
 import json
 from pathlib import Path
 import tempfile
+import shutil
+import subprocess
+import sys
 import unittest
 import numpy as np
 import uproot
@@ -62,6 +65,26 @@ class DiagnosticTests(unittest.TestCase):
         v = calculate(a)
         np.testing.assert_allclose(v['mx2_n'], v['delta_e']**2-v['delta_px']**2-v['delta_py']**2-v['delta_pz']**2, atol=1e-12)
         np.testing.assert_allclose(v['delta_p'], a['p2_p']/1.02*.02, atol=1e-10)
+
+    def test_default_output_is_beside_script_from_another_directory(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            scripts, cwd = root/'scripts', root/'elsewhere'
+            scripts.mkdir()
+            cwd.mkdir()
+            for name in ['run_diagnostics.py', 'kinematics.py']:
+                shutil.copy2(Path(__file__).with_name(name), scripts/name)
+            period = scripts/'output'/DEFAULT_PERIODS[0]
+            period.mkdir(parents=True)
+            (period/'manifest.json').write_text(json.dumps(dict(counts=dict(in_bins=123), partial=False)))
+            (period/'plot_status.json').write_text(json.dumps(dict(stage='complete')))
+            opening = scripts/'output'/DEFAULT_PERIODS[1]
+            opening.mkdir()
+            (opening/'progress.json').write_text(json.dumps(dict(stage='opening input')))
+            result = subprocess.run([sys.executable, str(scripts/'run_diagnostics.py'), '--status'], cwd=cwd, capture_output=True, text=True, check=True)
+            self.assertIn('complete, 123 combinations', result.stdout)
+            self.assertIn('opening input', result.stdout)
+            self.assertFalse((cwd/'output').exists())
 
     def test_bin_edges(self):
         np.testing.assert_array_equal(bin_indices(np.array([.10, .25, .60, np.nan]), np.array([.05, .25, .5, .5])), [0, 7, -1, -1])
