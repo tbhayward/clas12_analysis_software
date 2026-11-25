@@ -1,0 +1,15 @@
+2026-11-24 local verification
+Java --release 11 compilation: passed
+KinematicsTest: passed (12 physical closure events and electron corrections)
+PhysicsRecordTest: passed
+LooseSelectionTest: passed
+C++ converter compilation: passed
+Shared converter RowTest: passed
+MetadataTest on campaign run_info.csv: passed
+Python manager tests: 13 passed
+Python audit tests: 1 passed
+Groovy syntax parsing: passed
+Java/C++/audit schema agreement: 97 input fields plus beam_pol and target_pol
+ROOT runtime IO: NOT PASSED LOCALLY. ROOT 6.32 standard-library module loading fails and crashes. Farm prepare requires actual converter write/read tests before launch.
+Installed farm QADB resolution and real HIPO processing: not run locally. Farm prepare and smoke test required.
+No commits or farm jobs created.

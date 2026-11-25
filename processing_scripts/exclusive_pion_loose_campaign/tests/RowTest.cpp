@@ -1,0 +1,14 @@
+#include "../src/LooseRow.h"
+#include <iostream>
+int main(){try{
+ const std::string schema="runnum evnum helicity beam_energy p1_index p2_index detector1 detector2 sector_e sector1 sector2 fiducial_status e_p e_theta e_phi vz_e p1_p p1_theta p1_phi vz_p1 p2_p p2_theta p2_phi vz_p2 chi2pid1 chi2pid2 beta1 beta2 Q2 W x y nu t tmin tprime Mx2 Mx2_1 Mx2_2 Emiss pTmiss Mh z2 xF2 pT2 phi1 phi2 Delta_phi open_angle_ep1 open_angle_ep2 DepA DepB DepC DepV DepW e_index detector_e status_e status1 status2 e_raw_px e_raw_py e_raw_pz p1_raw_px p1_raw_py p1_raw_pz p2_raw_px p2_raw_py p2_raw_pz chi2pid_e beta_e pass_e_vertex pass_e_sampling pass_e_diagonal pass_e_pcal1 pass_e_pcal2 pass_e_dc pass_p1_momentum pass_p1_theta pass_p1_vertex pass_p1_dc pass_p1_cvt1 pass_p1_cvt2 pass_p1_chi2pid pass_p2_pid pass_p2_vertex pass_p2_dc pass_p2_cvt1 pass_p2_cvt2 pass_e_legacy pass_p1_legacy pass_p2_legacy electron_correction proton_correction pass_dis pass_q2_1p5 kinematics_valid",integerSchema="runnum evnum helicity p1_index p2_index detector1 detector2 sector_e sector1 sector2 fiducial_status e_index detector_e status_e status1 status2 pass_e_vertex pass_e_sampling pass_e_diagonal pass_e_pcal1 pass_e_pcal2 pass_e_dc pass_p1_momentum pass_p1_theta pass_p1_vertex pass_p1_dc pass_p1_cvt1 pass_p1_cvt2 pass_p1_chi2pid pass_p2_pid pass_p2_vertex pass_p2_dc pass_p2_cvt1 pass_p2_cvt2 pass_e_legacy pass_p1_legacy pass_p2_legacy electron_correction proton_correction pass_dis pass_q2_1p5 kinematics_valid";
+ std::istringstream ns(schema),is(integerSchema);std::vector<std::string> names;std::set<std::string> integerNames;std::string token;while(ns>>token)names.push_back(token);while(is>>token)integerNames.insert(token);
+ std::vector<double>d(names.size());std::vector<int> ints(names.size());
+ std::vector<std::string> values(names.size(),"0");auto put=[&](std::string n,std::string v){values[std::find(names.begin(),names.end(),n)-names.begin()]=v;};
+ put("runnum","16962");put("helicity","1");put("e_raw_pz","3");put("detector2","2");put("W","NaN");put("pass_p2_dc","-1");
+ auto line=[&](){std::string out;for(auto&v:values)out+=v+" ";return out;};
+ auto parse=[&](){parseLooseRow(line(),names,d,ints,integerNames,16962);};parse();
+ auto rejects=[&](){try{parse();}catch(const std::exception&){return;}throw std::runtime_error("Expected rejection");};
+ put("kinematics_valid","1");rejects();put("kinematics_valid","0");put("e_raw_pz","2");rejects();put("e_raw_pz","3");put("helicity","0");rejects();put("helicity","1");put("pass_p2_dc","2");rejects();put("pass_p2_dc","-1");put("e_index","NaN");rejects();put("e_index","1.5");rejects();put("e_index","1");put("e_raw_px","inf");rejects();put("e_raw_px","0");parse();
+ std::cout<<"Shared converter parser: strict schema, loose CD pion, NaN handling, flags and electron threshold passed\n";
+ }catch(const std::exception&e){std::cerr<<e.what()<<"\n";return 1;}}
