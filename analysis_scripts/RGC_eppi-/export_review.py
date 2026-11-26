@@ -10,7 +10,7 @@ import tarfile
 
 HERE = Path(__file__).resolve().parent
 SKIP_DIRS = {'selected', 'calibration_cache', '__pycache__', 'cache', 'caches'}
-SUFFIXES = {'.png', '.json', '.csv', '.txt', '.html', '.md', '.npz'}
+SUFFIXES = {'.png', '.json', '.csv', '.txt', '.html', '.md', '.npz', '.tex', '.bib'}
 
 
 def export_review(source, destination, run_info=None, datasets=None):

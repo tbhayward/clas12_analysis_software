@@ -127,3 +127,13 @@ Shared collections are in `figures/shared_plots/bm/` and `figures/shared_plots/b
 The final page of each shared PDF is the π+/π− LU comparison with the π0 theory curve, also copied into each shared folder as a PNG.
 
 Additional theory-comparison display: `figures/shared_plots/bm+gk_combined_errors/` contains the same nine-page set with one data error bar equal to sqrt(stat² + point-to-point systematic²), without separate systematic boxes. The charge-comparison final page uses this convention too. Correlated scale errors are not included. LU sinφ uses −0.2 to 0.3 with 0.1 tick spacing.
+
+## π− conference release update
+
+Use `--pim-release PATH` on `run_comparisons.py` to refresh from the validated
+preliminary release folder. It uses six LU bins and three bins for each UL ratio
+per xB, preserving the pi+ source table. No pi-minus LL measurements are included.
+Shared collections now contain 13 PNG pages and `pion_chiral_sector_comparisons_13_pages.pdf`:
+seven pi+ observables, pi-minus LU and both UL observables, the LU charged-pion/π0
+comparison, and two charged-pion UL comparisons. π− uses no GK overlays.
+The π− UL sin2φ panels use [-1,1] so the new positive measurements remain visible.

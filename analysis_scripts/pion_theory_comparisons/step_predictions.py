@@ -105,7 +105,10 @@ def run(theory_path,measurements,output,dpi=300,alpha=.10,channels=('pip','pim')
  p.lu_charge_comparison(full,data,args,residual=True)
  p.lu_charge_comparison(full,data,args,include_pi0=True,combined_errors=True)
  entries.append(dict(path='figures/charge_comparison/pi_plus_pi_minus_LU_sin_phi_with_pi0_theory_combined_errors_2x2.png',title='Charge comparison, combined errors',category='charge comparison'))
- selected=[('pip',o) for o in OBS]+[('pim','lu1')]
+ from ul_charge_comparison import draw as draw_ul_charge
+ for obs in ['ul1','ul2']:
+  for combined in [False,True]:entries.append(draw_ul_charge(full,data,output,dpi,alpha,obs,combined))
+ selected=[('pip',o) for o in OBS]+[('pim',o) for o in ['lu1','ul1','ul2']]
  for variant in ['bm','bm+gk','bm+gk_combined_errors']:
   folder=output/'figures/shared_plots'/variant;folder.mkdir(parents=True,exist_ok=True);ordered=[]
   for sp,obs in selected:
@@ -116,7 +119,15 @@ def run(theory_path,measurements,output,dpi=300,alpha=.10,channels=('pip','pim')
   comparison=output/'figures/charge_comparison'/('pi_plus_pi_minus_LU_sin_phi_with_pi0_theory_combined_errors_2x2.png' if variant=='bm+gk_combined_errors' else 'pi_plus_pi_minus_LU_sin_phi_with_pi0_theory_2x2.png')
   if comparison.exists():
    destination=folder/comparison.name;shutil.copy2(comparison,destination);ordered.append(destination);entries.append(dict(path=str(destination.relative_to(output)),title='π+ / π− LU sinφ with π0 theory',category='shared '+variant))
-  if len(ordered)==9:make_pdf(ordered,folder/'pion_chiral_sector_comparisons_9_pages.pdf')
+  for obs in ['ul1','ul2']:
+   name='pi_plus_pi_minus_'+OBS_NAMES[obs]+('_combined_errors' if variant=='bm+gk_combined_errors' else '')+'_2x2.png'
+   source=output/'figures/charge_comparison'/name
+   if source.exists():
+    destination=folder/name;shutil.copy2(source,destination);ordered.append(destination);entries.append(dict(path=str(destination.relative_to(output)),title='Charged-pion '+OBS_NAMES[obs],category='shared '+variant))
+  if len(ordered)==13:
+   make_pdf(ordered,folder/'pion_chiral_sector_comparisons_13_pages.pdf')
+   (folder/'pion_chiral_sector_comparisons_9_pages.pdf').unlink(missing_ok=True)
+   (folder/'contents.json').write_text(json.dumps([p.name for p in ordered],indent=2)+'\n')
   for stale in folder.glob('*_chiral_sector_sums_2x2.png'):stale.unlink()
  diag=output/'data/diagnostics';diag.mkdir(parents=True,exist_ok=True)
  (diag/'cumulative_predictions.json').write_text(json.dumps(dict(inputs=audit,stages=STAGES,interpretation='Complete ratios recalculated at each cumulative stage, not additive contributions. Each uses its own denominator.',frame='virtual photon',uncertainties='Supplied lo/hi treated as lower/upper error widths, consistent with previous prediction-table convention. Bands are theory fit uncertainties, not experimental systematics.',plots=entries),indent=2)+'\n')

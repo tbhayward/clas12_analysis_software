@@ -34,7 +34,8 @@ class ComparisonTests(unittest.TestCase):
  def test_pi_minus_uses_six_lu_and_two_target_bins(self):
   for xi in range(4):
    self.assertEqual(len(state_data(self.data,'pim','lu1',xi)),6)
-   for o in ['ul1','ul2','ll0','ll1']:self.assertEqual(len(state_data(self.data,'pim',o,xi)),2)
+   for o in ['ul1','ul2']:self.assertIn(len(state_data(self.data,'pim',o,xi)),[2,3])
+   for o in ['ll0','ll1']:self.assertIn(len(state_data(self.data,'pim',o,xi)),[0,2])
    for o in ['u1','u2']:self.assertEqual(len(state_data(self.data,'pim',o,xi)),0)
  def test_fixed_axes_respect_requested_ranges(self):
   for species in ['pip','pim']:
@@ -46,6 +47,6 @@ class ComparisonTests(unittest.TestCase):
   for species in ['pip','pim']:
    for obs,bounds in expected.items():
     actual=limits(self.theory,self.data,species,obs,True)
-    self.assertEqual(actual,(-.2,.3) if species=='pim' and obs=='lu1' else bounds)
+    self.assertEqual(actual,(-.2,.3) if species=='pim' and obs=='lu1' else (-1.,1.) if species=='pim' and obs=='ul2' else bounds)
     self.assertEqual(focused_limits(species,obs,True,actual),actual)
 if __name__=='__main__':unittest.main()

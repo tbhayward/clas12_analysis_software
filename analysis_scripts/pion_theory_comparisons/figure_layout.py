@@ -37,7 +37,7 @@ def legacy_path(output,old_relative):
 
 def friendly_title(path):
  stem=Path(path).stem
- if stem.startswith('pi_plus_pi_minus'):return 'π+ and π− — LU sinφ'+(' (pointwise residuals)' if 'residuals' in stem else ' (with π0 theory)' if 'with_pi0' in stem else '')
+ if stem.startswith('pi_plus_pi_minus'):return 'π+ and π− — '+('UL sin2φ' if 'UL_sin_2phi' in stem else 'UL sinφ' if 'UL_sin_phi' in stem else 'LU sinφ')+(' (pointwise residuals)' if 'residuals' in stem else ' (with π0 theory)' if 'with_pi0' in stem else '')
  for key,text in sorted(OBS_NAMES.items(),key=lambda kv:-len(kv[1])):
   if '_'+text+'_' in stem:return ('π+ ' if stem.startswith('pi_plus_') else 'π− ')+OBS_TEXT[key]+(' — summed chiral sectors' if 'chiral_sector_sums' in stem else ' — individual products colored by sector' if 'products_by_chiral_sector' in stem else ' — every supplied CFF product' if 'all_CFF' in stem else ' — leading products + remainder' if 'leading_CFF' in stem else ' — BM total')
  return stem.replace('pi_plus_pi_minus','π+ and π−').replace('pi_plus','π+').replace('pi_minus','π−').replace('_',' ')

@@ -41,11 +41,12 @@ def components(block,leading=None):
 
 def limits(theory,data,species,obs,decomp=False):
  if species=='pim' and obs=='lu1':return (-.2,.3)
+ if species=='pim' and obs=='ul2':return (-1.,1.)
  return {'u1':(-.4,.8),'u2':(-.8,.6),'lu1':(-.2,.3),'ul1':(-.3,.3),'ul2':(-.4,.1),'ll0':(-.2,1.),'ll1':(-.4,.8)}[obs]
 
 def axis(ax,obs,ylim):
  ax.set_facecolor('none');ax.set(xlim=(0,1.26),ylim=ylim,xlabel=r'$-t^\prime\;(\mathrm{GeV}^2)$',ylabel=LABELS[obs])
- ax.set_xticks(np.arange(0,1.21,.2));ax.set_yticks(np.round(np.arange(ylim[0],ylim[1]+1e-8,{'ul1':.1,'ll0':.2,'ll1':.2,'lu1':.1,'u2':.2,'u1':.2,'ul2':.1}[obs]),10));ax.xaxis.set_minor_locator(AutoMinorLocator(2));ax.yaxis.set_minor_locator(AutoMinorLocator(2));ax.axhline(0,color='.65',lw=.75,zorder=1);ax.grid(alpha=.10,lw=.55)
+ ax.set_xticks(np.arange(0,1.21,.2));ax.set_yticks(np.round(np.arange(ylim[0],ylim[1]+1e-8,(.25 if obs=='ul2' and ylim[1]-ylim[0]>1.2 else {'ul1':.1,'ll0':.2,'ll1':.2,'lu1':.1,'u2':.2,'u1':.2,'ul2':.1}[obs])),10));ax.xaxis.set_minor_locator(AutoMinorLocator(2));ax.yaxis.set_minor_locator(AutoMinorLocator(2));ax.axhline(0,color='.65',lw=.75,zorder=1);ax.grid(alpha=.10,lw=.55)
 
 def points(ax,rows,variant='stat_syst',color='black',marker='o'):
  if not rows:return

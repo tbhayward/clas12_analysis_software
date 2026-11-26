@@ -10,6 +10,7 @@ def main():
  p.add_argument('--output',type=Path,default=HERE/'output')
  p.add_argument('--measurements',type=Path,default=HERE/'measurements/measurements.csv')
  p.add_argument('--pip-results',type=Path)
+ p.add_argument('--pim-release',type=Path,help='Validated preliminary release root: fine LU and three-bin UL')
  p.add_argument('--pim-fine',type=Path)
  p.add_argument('--pim-coarse',type=Path)
  p.add_argument('--theory',type=Path,default=HERE/'inputs')
@@ -18,13 +19,18 @@ def main():
  p.add_argument('--skip-legacy',action='store_true')
  p.add_argument('--channels',nargs='+',choices=['pip','pim'],default=['pip','pim'])
  a=p.parse_args();a.output.mkdir(parents=True,exist_ok=True)
- if any([a.pip_results,a.pim_fine,a.pim_coarse]):
+ if a.pim_release and any([a.pim_fine,a.pim_coarse]):p.error('Choose pim-release or legacy fine/coarse inputs')
+ if a.pim_release:
+  from release_measurements import prepare_release
+  snapshot=a.output/'data/measurements'
+  prepare_release(a.pip_results or a.measurements.parent/'pip_source.csv',a.pim_release,snapshot)
+ elif any([a.pip_results,a.pim_fine,a.pim_coarse]):
   defaults=json.loads((HERE/'data_sources.json').read_text())
   from prepare_measurements import prepare
   snapshot=a.output/'data/measurements'
   prepare(a.pip_results or HERE/'measurements/pip_source.csv',a.pim_fine or defaults['pim_fine'],a.pim_coarse or defaults['pim_coarse'],snapshot)
  else:snapshot=a.measurements.parent
- table=snapshot/'measurements.csv' if any([a.pip_results,a.pim_fine,a.pim_coarse]) else a.measurements
+ table=snapshot/'measurements.csv' if any([a.pip_results,a.pim_fine,a.pim_coarse,a.pim_release]) else a.measurements
  command=[sys.executable,str(HERE/'plot_comparisons.py'),'--measurements',str(table),'--theory',str(a.theory),'--output',str(a.output),'--watermark-alpha',str(a.watermark_alpha),'--dpi',str(a.dpi),'--channels',*a.channels]
  subprocess.run(command,check=True)
  if not a.skip_legacy and 'pip' in a.channels:

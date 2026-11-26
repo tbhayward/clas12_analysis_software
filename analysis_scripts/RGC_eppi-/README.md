@@ -125,3 +125,12 @@ After the nominal relaxed run, use
 with Python. This recomputes dilution in 12 bins and compares free LL cosφ with
 BM stage-2 and stage-3 fixed inputs. The six-bin LU result is retained. See the
 study README for assumptions, outputs and the compact home review archive.
+
+## Conference preliminary release
+
+After the nominal and three-bin studies finish, run
+`python3 analysis_scripts/RGC_eppi-/preliminary_release/run_release.py --source /volatile/clas12/thayward/eppi-/loose/full_20261124/analysis --workers 12`.
+This builds the fine-LU/three-bin-UL release, adds individual RGC period checks,
+and writes `review_preliminary_release.tar.gz` in the home checkout. It reuses
+existing combined fits. See `preliminary_release/README.md` for the full contents
+and the subsequent Overleaf/theory refresh. No LL result plots enter the release.
