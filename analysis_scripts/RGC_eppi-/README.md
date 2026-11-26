@@ -100,3 +100,20 @@ python3 analysis_scripts/RGC_eppi-/run_relaxed_analysis.py --status
 
 This reports scans, fitted groups, completed exports and per-dataset progress.
 It does not estimate remaining wall time or report the later fitting stages.
+
+## Compact review copy in home
+
+The wrapper now updates `review_loose_20261124/` and
+`review_loose_20261124.tar.gz` beside itself after every successful stage, even
+when full outputs use `--output-root` on volatile. Override with `--review-output`.
+Figures, fit JSONs, tables, small covariance/histogram NPZs and input metadata are
+copied. ROOT files, calibration caches, NPY arrays and replica ensembles are omitted.
+The review copy is for inspection, not a standalone input for refitting.
+
+Export an already completed run without rerunning analysis:
+
+```bash
+python3 analysis_scripts/RGC_eppi-/export_review.py --source /volatile/clas12/thayward/eppi-/loose/full_20261124/analysis
+```
+
+Copy the resulting tar.gz to your desktop. The source files remain on volatile.

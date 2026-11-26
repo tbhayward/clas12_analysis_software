@@ -17,6 +17,7 @@ def main():
     parser.add_argument('--input-root', type=Path)
     parser.add_argument('--output-root', type=Path, default=HERE/'output_loose_20261124')
     parser.add_argument('--run-info', type=Path, default=HERE/'imports/clas12_run_info_ND3_source.csv')
+    parser.add_argument('--review-output', type=Path, default=HERE/'review_loose_20261124', help='Compact review copy and sibling tar.gz, updated after each successful stage')
     parser.add_argument('--workers', type=int, default=6)
     parser.add_argument('--stage', choices=('all',)+STAGES, default='all')
     parser.add_argument('--status', action='store_true', help='Show readable selection progress without running analysis')
@@ -54,6 +55,8 @@ def main():
         print('\n'+stage.upper()+': '+shlex.join(commands[stage]), flush=True)
         if not args.dry_run:
             subprocess.run(commands[stage], check=True, env=env)
+            from export_review import export_review
+            export_review(out, args.review_output, args.run_info, args.datasets)
     if not args.dry_run:
         print('\nResults: '+str(out), flush=True)
 
