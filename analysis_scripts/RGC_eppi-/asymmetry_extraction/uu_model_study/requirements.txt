@@ -1,0 +1,6 @@
+numpy
+scipy
+iminuit
+uproot
+matplotlib
+threadpoolctl

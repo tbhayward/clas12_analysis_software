@@ -1,0 +1,766 @@
+#!/usr/bin/env python3
+"""Publication-style comparisons of final RGC e n pi+ ratios with two theory inputs.
+
+Run this *after* extract_structure_function_ratios.py.  By default the script reads
+
+    output/asymmetry_extraction/nominal/tables/structure_function_ratios.csv
+
+and writes PNG files to
+
+    output/kroll_comparisons/                         (Goloskokov–Kroll: five PNGs)
+    output/kroll_comparisons/bhattacharya_manley/     (new theory: five PNGs)
+    output/kroll_comparisons/both_theories/          (individual xB: four PNGs)
+
+A second copy of all 14 PNGs under combined_errors/ adds experimental statistical
+and point-to-point systematic uncertainties in quadrature into one error bar.
+Correlated scale uncertainties remain excluded. Updated CFF totals are the default theory input. Their CSVs contain no uncertainty bands, so legacy bands are not reused. An explicit --prediction-csv retains the original input option.
+
+The Goloskokov–Kroll predictions supplied in October 2026 are hard-coded below.  They are
+virtual-photon-frame quantities.  The RGC UL/LL measurements remain in the lab-
+frame convention used by the analysis; no frame conversion is applied here.
+The supplied Manley--Bhattacharya CSV contains the seven ratios with
+asymmetric one-sigma fit-error lengths. These are plotted without additional
+sign changes or depolarization factors; the bands are central-lo, central+hi.
+"""
+
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+from pathlib import Path
+
+import matplotlib as mpl
+mpl.use("Agg")
+import matplotlib.pyplot as plt
+from matplotlib.lines import Line2D
+from matplotlib.patches import Patch, Rectangle
+import numpy as np
+import pandas as pd
+
+
+DEFAULT_INPUT_CSV = Path("output/asymmetry_extraction/nominal/tables/structure_function_ratios.csv")
+DEFAULT_OUTPUT_DIR = Path("output/kroll_comparisons")
+DEFAULT_PREDICTION_CSV = (Path(__file__).resolve().parent / "theory_predictions"
+                          / "bhattacharya_manley" / "pip_long_asymmetries_pred.csv")
+DEFAULT_CFF_DIRECTORY = (Path(__file__).resolve().parent / "theory_predictions" / "bhattacharya_manley" / "cff_decomp" / "pip")
+NEW_THEORY_LABEL = "Manley–Bhattacharya"
+THEORY_XB = (0.2, 0.3, 0.4, 0.5)
+NEW_THEORY_COLUMNS = {
+    "u1": "A_UU_cosphi", "u2": "A_UU_cos2phi",
+    "lu1": "A_LU_sinphi", "ul1": "A_UL_sinphi", "ul2": "A_UL_sin2phi",
+    "ll0": "A_LL", "ll1": "A_LL_cosphi",
+}
+DPI = 300
+WATERMARK_ALPHA = 0.10
+
+XB_BINS = (
+    (0.10, 0.25),
+    (0.25, 0.35),
+    (0.35, 0.45),
+    (0.45, 0.60),
+)
+
+XB_COLORS = ("#0072B2", "#D55E00", "#009E73", "#CC79A7")
+XB_MARKERS = ("o", "s", "^", "D")
+
+OBSERVABLES = (
+    "lu1",
+    "ul1",
+    "ul2",
+    "ll0",
+    "ll1",
+)
+
+NEW_THEORY_OBSERVABLES = ("u1", "u2", *OBSERVABLES)
+NEW_THEORY_PANEL_INDICES = (0, 1, 3, 4, 5, 6, 7)
+
+OBSERVABLE_LABELS = {
+    "u1": r"$F_{UU}^{\cos\phi}/F_{UU}$",
+    "u2": r"$F_{UU}^{\cos2\phi}/F_{UU}$",
+    "lu1": r"$F_{LU}^{\sin\phi}/F_{UU}$",
+    "ul1": r"$F_{UL,\mathrm{lab}}^{\sin\phi}/F_{UU}$",
+    "ul2": r"$F_{UL,\mathrm{lab}}^{\sin2\phi}/F_{UU}$",
+    "ll0": r"$F_{LL,\mathrm{lab}}/F_{UU}$",
+    "ll1": r"$F_{LL,\mathrm{lab}}^{\cos\phi}/F_{UU}$",
+}
+
+# Goloskokov–Kroll labels deliberately omit "lab": these are virtual-photon-frame predictions.
+KROLL_LABELS = {
+    "lu1": r"$F_{LU}^{\sin\phi}/F_{UU}$",
+    "ul1": r"$F_{UL}^{\sin\phi}/F_{UU}$",
+    "ul2": r"$F_{UL}^{\sin2\phi}/F_{UU}$",
+    "ll0": r"$F_{LL}/F_{UU}$",
+    "ll1": r"$F_{LL}^{\cos\phi}/F_{UU}$",
+}
+
+SINGLE_SPIN = frozenset(("lu1", "ul1", "ul2"))
+
+Y_LIMITS = {'u1':(-.4,.8),'u2':(-.8,.6),'lu1':(-.2,.3),'ul1':(-.3,.3),'ul2':(-.4,.1),'ll0':(-.2,1.),'ll1':(-.4,.8)}
+
+# The table supplied by Peter Kroll: xB, -t', Q2, W, epsilon,
+# F_LU^sin(phi)/F_UU, F_UL^sin(phi)/F_UU, F_UL^sin(2phi)/F_UU,
+# F_LL/F_UU, F_LL^cos(phi)/F_UU.
+KROLL_ROWS = (
+    (0.2, 0.2, 2.13, 3.066, 0.719, 0.192, -0.230, -0.102, 0.929, -0.068),
+    (0.2, 0.4, 2.13, 3.066, 0.712, 0.136, -0.160, -0.104, 0.933, -0.039),
+    (0.2, 0.6, 2.13, 3.066, 0.700, 0.118, -0.133, -0.109, 0.942, -0.032),
+    (0.2, 0.8, 2.13, 3.066, 0.695, 0.114, -0.123, -0.119, 0.954, -0.035),
+    (0.2, 1.0, 2.13, 3.066, 0.698, 0.119, -0.122, -0.133, 0.963, -0.042),
+    (0.2, 1.2, 2.13, 3.066, 0.694, 0.129, -0.129, -0.152, 0.969, -0.053),
+    (0.3, 0.2, 2.52, 2.600, 0.823, 0.159, -0.203, -0.082, 0.939, -0.007),
+    (0.3, 0.4, 2.52, 2.600, 0.825, 0.122, -0.155, -0.090, 0.938, -0.010),
+    (0.3, 0.6, 2.52, 2.600, 0.828, 0.105, -0.131, -0.094, 0.942, -0.016),
+    (0.3, 0.8, 2.52, 2.600, 0.822, 0.097, -0.120, -0.098, 0.948, -0.024),
+    (0.3, 1.0, 2.52, 2.600, 0.819, 0.095, -0.116, -0.105, 0.954, -0.033),
+    (0.3, 1.2, 2.52, 2.600, 0.819, 0.096, -0.115, -0.112, 0.959, -0.043),
+    (0.4, 0.2, 3.01, 2.323, 0.857, 0.111, -0.154, -0.057, 0.949, -0.023),
+    (0.4, 0.4, 3.01, 2.323, 0.856, 0.097, -0.133, -0.071, 0.945, -0.024),
+    (0.4, 0.6, 3.01, 2.323, 0.858, 0.089, -0.118, -0.077, 0.948, -0.026),
+    (0.4, 0.8, 3.01, 2.323, 0.857, 0.085, -0.109, -0.083, 0.954, -0.029),
+    (0.4, 1.0, 3.01, 2.323, 0.853, 0.085, -0.105, -0.089, 0.960, -0.034),
+    (0.4, 1.2, 3.01, 2.323, 0.849, 0.087, -0.103, -0.096, 0.966, -0.039),
+    (0.5, 0.2, 4.24, 2.263, 0.829, 0.081, -0.117, -0.036, 0.961, -0.009),
+    (0.5, 0.4, 4.24, 2.263, 0.825, 0.083, -0.117, -0.051, 0.956, -0.016),
+    (0.5, 0.6, 4.24, 2.263, 0.824, 0.082, -0.111, -0.060, 0.955, -0.022),
+    (0.5, 0.8, 4.24, 2.263, 0.824, 0.082, -0.107, -0.067, 0.957, -0.028),
+    (0.5, 1.0, 4.24, 2.263, 0.822, 0.083, -0.105, -0.072, 0.960, -0.034),
+    (0.5, 1.2, 4.24, 2.263, 0.821, 0.086, -0.104, -0.078, 0.964, -0.039),
+)
+
+
+def configure_style() -> None:
+    """Use a clean, journal-friendly Matplotlib style without requiring LaTeX."""
+    mpl.rcParams.update({
+        "figure.dpi": 120,
+        "savefig.dpi": DPI,
+        "font.family": "serif",
+        "font.serif": ["STIX Two Text", "STIXGeneral", "DejaVu Serif"],
+        "mathtext.fontset": "stix",
+        "font.size": 11.5,
+        "axes.labelsize": 13,
+        "axes.titlesize": 12.5,
+        "xtick.labelsize": 10.5,
+        "ytick.labelsize": 10.5,
+        "legend.fontsize": 10,
+        "axes.linewidth": 1.0,
+        "xtick.direction": "in",
+        "ytick.direction": "in",
+        "xtick.top": True,
+        "ytick.right": True,
+        "xtick.major.size": 5.0,
+        "ytick.major.size": 5.0,
+        "xtick.minor.size": 2.8,
+        "ytick.minor.size": 2.8,
+        "xtick.major.width": 0.9,
+        "ytick.major.width": 0.9,
+        "lines.linewidth": 1.8,
+        "axes.unicode_minus": False,
+    })
+
+
+def kroll_frame() -> pd.DataFrame:
+    columns = ("xB", "minus_tprime", "Q2", "W", "epsilon", *OBSERVABLES)
+    return pd.DataFrame(KROLL_ROWS, columns=columns)
+
+
+def load_new_theory(path: Path) -> pd.DataFrame:
+    """Read ratios and asymmetric error *lengths* exactly as supplied."""
+    path = Path(path)
+    supplied_uncertainty = not path.is_dir()
+    if path.is_dir():
+        raw = None
+        reference = None
+        for observable, column in NEW_THEORY_COLUMNS.items():
+            piece = pd.read_csv(path / (column + ".csv"))
+            keys = ["xB", "Q2", "minus_tprime", "eps"]
+            if not set(keys + ["total"]).issubset(piece.columns):
+                raise ValueError("Malformed CFF table: " + column)
+            piece = piece.sort_values(["xB", "minus_tprime"]).reset_index(drop=True)
+            numeric = piece.to_numpy(dtype=float)
+            if not np.isfinite(numeric).all():
+                raise ValueError("Nonfinite CFF table: " + column)
+            terms = [c for c in piece if c not in keys + ["total"]]
+            if not terms or not np.allclose(piece[terms].sum(axis=1), piece.total, rtol=0, atol=5e-6 * (len(terms)+1) + 1e-9):
+                raise ValueError("CFF terms do not sum to the supplied total: " + column)
+            if reference is None:
+                reference = piece[keys].copy()
+                raw = reference.copy()
+            elif not piece[keys].equals(reference):
+                raise ValueError("CFF observables have different kinematic grids")
+            raw[column] = piece["total"]
+            # Internal zero-width placeholders keep the legacy table API usable.
+            # They are never drawn or labeled as theory uncertainty bands.
+            raw[column + "_lo"] = 0.0
+            raw[column + "_hi"] = 0.0
+    else:
+        raw = pd.read_csv(path, comment="#")
+    required = {"xB", "Q2", "minus_tprime"}
+    required.update(column + suffix for column in NEW_THEORY_COLUMNS.values()
+                    for suffix in ("", "_lo", "_hi"))
+    missing = sorted(required.difference(raw.columns))
+    if missing:
+        raise ValueError(f"Theory CSV missing columns: {missing}")
+    raw = raw.copy()
+    for column in required:
+        raw[column] = pd.to_numeric(raw[column], errors="raise")
+    if not np.isfinite(raw[sorted(required)].to_numpy(dtype=float)).all():
+        raise ValueError("Theory CSV contains nonfinite entries")
+    if (raw["minus_tprime"] < 0).any():
+        raise ValueError("Theory minus_tprime must be nonnegative")
+    if raw.duplicated(["xB", "minus_tprime"]).any():
+        raise ValueError("Theory CSV contains duplicate xB/t-prime points")
+    groups = sorted(raw["xB"].unique())
+    if len(groups) != 4 or not np.allclose(groups, THEORY_XB, rtol=0, atol=1e-8):
+        raise ValueError(f"Expected theory xB groups {THEORY_XB}; received {groups}")
+    for xb in THEORY_XB:
+        group = raw.loc[np.isclose(raw["xB"], xb)]
+        if len(group) < 2 or group["Q2"].nunique() != 1 or (group["Q2"] <= 0).any():
+            raise ValueError(f"Theory xB={xb} requires multiple t-prime points and one positive Q2")
+    for observable, column in NEW_THEORY_COLUMNS.items():
+        for suffix in ("", "_lo", "_hi"):
+            raw[observable + suffix] = raw[column + suffix]
+        if (raw[[observable + "_lo", observable + "_hi"]] < 0).any().any():
+            raise ValueError(f"Theory error lengths must be nonnegative for {observable}")
+    raw = raw.sort_values(["xB", "minus_tprime"]).reset_index(drop=True)
+    raw.attrs["uncertainty_supplied"] = supplied_uncertainty
+    return raw
+
+
+def draw_new_theory_curve(ax, predictions, observable, color, linestyle="-"):
+    """Connect supplied points only; do not invent an endpoint at t-prime=0."""
+    x = predictions["minus_tprime"].to_numpy(dtype=float)
+    y = predictions[observable].to_numpy(dtype=float)
+    lower = y - predictions[observable + "_lo"].to_numpy(dtype=float)
+    upper = y + predictions[observable + "_hi"].to_numpy(dtype=float)
+    if predictions.attrs.get("uncertainty_supplied", True):
+        ax.fill_between(x, lower, upper, color=color, alpha=0.16, linewidth=0, zorder=1)
+    ax.plot(x, y, color=color, linestyle=linestyle, lw=2.0, zorder=3)
+
+
+def new_theory_y_limits(predictions, observable):
+    return Y_LIMITS[observable]
+
+
+def validate_measurements(frame: pd.DataFrame) -> pd.DataFrame:
+    required = {"bin_number", "mean_xB", "mean_minus_tprime_gev2"}
+    for observable in NEW_THEORY_OBSERVABLES:
+        required.add(observable)
+        required.add(f"{observable}_stat")
+        required.add(f"{observable}_point_to_point_systematic")
+    # endfor
+
+    missing = sorted(required.difference(frame.columns))
+    if missing:
+        raise ValueError(
+            "Input CSV is missing required final-result columns:\n  "
+            + "\n  ".join(missing)
+        )
+    # endif
+
+    output = frame.copy().sort_values("bin_number").reset_index(drop=True)
+    if len(output) != 24:
+        raise ValueError(f"Expected 24 analysis bins, found {len(output)} rows.")
+    # endif
+
+    if sorted(output["bin_number"].tolist()) != list(range(1, 25)):
+        raise ValueError("Input must contain each analysis bin 1 through 24 exactly once.")
+    numeric = output[sorted(required)].to_numpy(dtype=float)
+    if not np.isfinite(numeric).all():
+        raise ValueError("Input contains nonfinite measurements or uncertainties.")
+    for observable in NEW_THEORY_OBSERVABLES:
+        if (output[f"{observable}_stat"] <= 0).any() or (output[f"{observable}_point_to_point_systematic"] < 0).any():
+            raise ValueError(f"Invalid uncertainties for {observable}.")
+    if "nominal_fit_valid" in output and not output["nominal_fit_valid"].isin([True, "True", "true", 1]).all():
+        raise ValueError("Input includes invalid nominal fits; inspect the extraction before plotting.")
+    output["x_index_plot"] = (output["bin_number"].astype(int) - 1) // 6
+    return output
+
+
+def add_systematic_boxes(
+    ax: plt.Axes,
+    x: np.ndarray,
+    y: np.ndarray,
+    sys: np.ndarray,
+    color: str,
+    width: float = 0.055,
+    alpha: float = 0.20,
+    zorder: float = 2.0,
+) -> None:
+    """Draw point-to-point systematic uncertainties as centered boxes."""
+    for xi, yi, si in zip(x, y, sys):
+        if not (np.isfinite(xi) and np.isfinite(yi) and np.isfinite(si)):
+            continue
+        # endif
+        rect = Rectangle(
+            (xi - 0.5 * width, yi - si),
+            width,
+            2.0 * si,
+            facecolor=color,
+            edgecolor="none",
+            alpha=alpha,
+            zorder=zorder,
+        )
+        ax.add_patch(rect)
+    # endfor
+
+
+def draw_measurements(
+    ax: plt.Axes,
+    subset: pd.DataFrame,
+    observable: str,
+    color: str,
+    marker: str,
+    label: str | None = None,
+    combined_errors: bool = False,
+) -> None:
+    x = subset["mean_minus_tprime_gev2"].to_numpy(dtype=float)
+    y = subset[observable].to_numpy(dtype=float)
+    stat = subset[f"{observable}_stat"].to_numpy(dtype=float)
+    sys = subset[f"{observable}_point_to_point_systematic"].to_numpy(dtype=float)
+
+    if not combined_errors:
+        add_systematic_boxes(ax, x, y, sys, color=color)
+    errors = np.hypot(stat, sys) if combined_errors else stat
+    ax.errorbar(
+        x,
+        y,
+        yerr=errors,
+        fmt=marker,
+        ms=6.2,
+        mfc="white",
+        mec=color,
+        mew=1.35,
+        ecolor=color,
+        elinewidth=1.25,
+        capsize=2.4,
+        capthick=1.1,
+        linestyle="none",
+        color=color,
+        label=label,
+        zorder=4,
+    )
+
+
+def draw_kroll_curve(
+    ax: plt.Axes,
+    predictions: pd.DataFrame,
+    observable: str,
+    color: str,
+    label: str | None = None,
+) -> None:
+    x = predictions["minus_tprime"].to_numpy(dtype=float)
+    y = predictions[observable].to_numpy(dtype=float)
+
+    # At the forward limit the sine modulations vanish.  Add that physical
+    # endpoint only for the three single-spin sine observables, as requested.
+    if observable in SINGLE_SPIN:
+        x = np.concatenate(([0.0], x))
+        y = np.concatenate(([0.0], y))
+    # endif
+
+    ax.plot(
+        x,
+        y,
+        color=color,
+        lw=2.0,
+        linestyle="-",
+        label=label,
+        zorder=3,
+    )
+
+
+def format_axis(ax: plt.Axes, observable: str, show_xlabel: bool = True) -> None:
+    ax.axhline(0.0, color="0.55", lw=0.8, linestyle="--", zorder=0)
+    ax.set_xlim(0.0, 1.2)
+    ax.set_xticks(np.arange(0.0, 1.21, 0.2))
+    ax.minorticks_on()
+    ax.set_ylabel(OBSERVABLE_LABELS[observable])
+    if show_xlabel:
+        ax.set_xlabel(r"$-t'$ (GeV$^2$)")
+    # endif
+    ax.grid(False)
+
+
+def robust_y_limits(
+    measurement_subsets: list[pd.DataFrame],
+    prediction_subsets: list[pd.DataFrame],
+    observable: str,
+) -> tuple[float, float]:
+    values: list[float] = [0.0]
+    for subset in measurement_subsets:
+        y = subset[observable].to_numpy(dtype=float)
+        stat = subset[f"{observable}_stat"].to_numpy(dtype=float)
+        sys = subset[f"{observable}_point_to_point_systematic"].to_numpy(dtype=float)
+        total_extent = stat + sys
+        values.extend((y - total_extent)[np.isfinite(y - total_extent)].tolist())
+        values.extend((y + total_extent)[np.isfinite(y + total_extent)].tolist())
+    # endfor
+    for subset in prediction_subsets:
+        y = subset[observable].to_numpy(dtype=float)
+        values.extend(y[np.isfinite(y)].tolist())
+    # endfor
+
+    lo = float(np.min(values))
+    hi = float(np.max(values))
+    span = max(hi - lo, 0.12)
+    pad = 0.12 * span
+    lo -= pad
+    hi += pad
+
+    # Keep the near-unity LL constant term visually resolved instead of
+    # needlessly forcing zero into that panel.
+    if observable == "ll0" and lo > 0.25:
+        lo = max(0.0, lo)
+    # endif
+    return lo, hi
+
+
+def info_panel(ax: plt.Axes, x_index: int | None = None, combined_errors: bool = False) -> None:
+    ax.axis("off")
+    handles = [
+        Line2D([], [], marker="o", linestyle="none", mfc="white", mec="black",
+               mew=1.3, ms=6.5, label="RGC measurement (stat.)"),
+        Patch(facecolor="0.45", edgecolor="none", alpha=0.20,
+              label="Point-to-point syst."),
+        Line2D([], [], color="black", lw=2.0, label="Goloskokov–Kroll prediction"),
+    ]
+    if combined_errors:
+        handles[0].set_label("RGC measurement (stat. + ptp syst.)")
+        del handles[1]
+    ax.legend(handles=handles, loc="upper left", frameon=False, handlelength=2.5)
+
+    text = (
+        "Goloskokov–Kroll curves: virtual-photon frame\n"
+        "RGC UL/LL points: lab-frame definition\n"
+    )
+    if x_index is not None:
+        xlo, xhi = XB_BINS[x_index]
+        text = rf"RGC: ${xlo:.2f} < x_B < {xhi:.2f}$" + "\n" + text
+    # endif
+    ax.text(0.02, 0.58, text, transform=ax.transAxes, va="top", ha="left",
+            fontsize=10.5, linespacing=1.45)
+
+
+def plot_one_xb_canvas(
+    measurements: pd.DataFrame,
+    predictions: pd.DataFrame,
+    x_index: int,
+    output_dir: Path,
+    preliminary: bool = True,
+    combined_errors: bool = False,
+) -> Path:
+    subset = measurements.loc[measurements["x_index_plot"] == x_index].copy()
+    kroll_xb = (0.2, 0.3, 0.4, 0.5)[x_index]
+    pred = predictions.loc[np.isclose(predictions["xB"], kroll_xb)].copy()
+    color = XB_COLORS[x_index]
+
+    fig, axes = plt.subplots(2, 3, figsize=(12.2, 7.4), constrained_layout=False)
+    axes_flat = axes.ravel()
+
+    for i, observable in enumerate(OBSERVABLES):
+        ax = axes_flat[i]
+        draw_kroll_curve(ax, pred, observable, color="black")
+        draw_measurements(ax, subset, observable, color=color, marker=XB_MARKERS[x_index], combined_errors=combined_errors)
+        format_axis(ax, observable, show_xlabel=(i >= 3))
+        ax.set_ylim(*Y_LIMITS[observable])
+        ax.set_yticks(np.round(np.arange(Y_LIMITS[observable][0], Y_LIMITS[observable][1]+1e-8, {'ul1':.1,'ll0':.2,'ll1':.2,'lu1':.1,'u2':.2,'u1':.2,'ul2':.1}[observable]),10))
+        ax.text(0.04, 0.94, f"({chr(97 + i)})", transform=ax.transAxes,
+                va="top", ha="left", fontweight="bold")
+    # endfor
+
+    info_panel(axes_flat[5], x_index=x_index, combined_errors=combined_errors)
+    xlo, xhi = XB_BINS[x_index]
+    fig.suptitle(
+        rf"CLAS12 $ep \rightarrow e(n)\pi^+$ structure-function ratios: "
+        rf"${xlo:.2f} < x_B < {xhi:.2f}$",
+        y=0.985,
+        fontsize=15,
+    )
+    fig.subplots_adjust(left=0.085, right=0.985, bottom=0.09, top=0.91,
+                        wspace=0.24, hspace=0.20)
+
+    if preliminary:
+        fig.text(0.50, 0.50, "PRELIMINARY", ha="center", va="center",
+                 rotation=18, fontsize=98, fontweight="bold", color="red",
+                 alpha=WATERMARK_ALPHA, transform=fig.transFigure, zorder=1000)
+    # endif
+
+    path = output_dir / f"kroll_comparison_xB_bin_{x_index + 1}.png"
+    fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    return path
+
+
+def plot_all_xb_canvas(
+    measurements: pd.DataFrame,
+    predictions: pd.DataFrame,
+    output_dir: Path,
+    preliminary: bool = True,
+    combined_errors: bool = False,
+) -> Path:
+    fig, axes = plt.subplots(2, 3, figsize=(12.8, 7.6), constrained_layout=False)
+    axes_flat = axes.ravel()
+
+    for i, observable in enumerate(OBSERVABLES):
+        ax = axes_flat[i]
+        measurement_subsets: list[pd.DataFrame] = []
+        prediction_subsets: list[pd.DataFrame] = []
+
+        for x_index, (color, marker) in enumerate(zip(XB_COLORS, XB_MARKERS)):
+            subset = measurements.loc[measurements["x_index_plot"] == x_index].copy()
+            kroll_xb = (0.2, 0.3, 0.4, 0.5)[x_index]
+            pred = predictions.loc[np.isclose(predictions["xB"], kroll_xb)].copy()
+            measurement_subsets.append(subset)
+            prediction_subsets.append(pred)
+            draw_kroll_curve(ax, pred, observable, color=color)
+            draw_measurements(ax, subset, observable, color=color, marker=marker, combined_errors=combined_errors)
+        # endfor
+
+        format_axis(ax, observable, show_xlabel=(i >= 3))
+        ax.set_ylim(*Y_LIMITS[observable])
+        ax.set_yticks(np.round(np.arange(Y_LIMITS[observable][0], Y_LIMITS[observable][1]+1e-8, {'ul1':.1,'ll0':.2,'ll1':.2,'lu1':.1,'u2':.2,'u1':.2,'ul2':.1}[observable]),10))
+        ax.text(0.04, 0.94, f"({chr(97 + i)})", transform=ax.transAxes,
+                va="top", ha="left", fontweight="bold")
+    # endfor
+
+    legend_ax = axes_flat[5]
+    legend_ax.axis("off")
+    xb_handles = []
+    for x_index, ((xlo, xhi), color, marker) in enumerate(zip(XB_BINS, XB_COLORS, XB_MARKERS)):
+        xb_handles.append(
+            Line2D([], [], color=color, lw=2.0, marker=marker, mfc="white",
+                   mec=color, mew=1.2, ms=6,
+                   label=rf"${xlo:.2f}<x_B<{xhi:.2f}$; Goloskokov–Kroll $x_B={(0.2,0.3,0.4,0.5)[x_index]:.1f}$")
+        )
+    # endfor
+    style_handles = [
+        Line2D([], [], marker="o", linestyle="none", mfc="white", mec="black",
+               mew=1.3, ms=6.5, label="RGC point: statistical error bar"),
+        Patch(facecolor="0.45", edgecolor="none", alpha=0.20,
+              label="RGC point-to-point systematic"),
+        Line2D([], [], color="black", lw=2.0, label="Solid line: Goloskokov–Kroll prediction"),
+    ]
+    if combined_errors:
+        style_handles[0].set_label("RGC point: stat. + ptp syst.")
+        del style_handles[1]
+    legend1 = legend_ax.legend(handles=xb_handles, loc="upper left", frameon=False,
+                               title=r"$x_B$ groups", title_fontsize=11)
+    legend_ax.add_artist(legend1)
+    legend_ax.legend(handles=style_handles, loc="lower left", frameon=False)
+    legend_ax.text(
+        0.02, 0.46,
+        "Goloskokov–Kroll: virtual-photon frame\nRGC UL/LL: lab-frame definition",
+        transform=legend_ax.transAxes, va="top", fontsize=10.3, linespacing=1.4,
+    )
+
+    fig.suptitle(r"CLAS12 $ep \rightarrow e(n)\pi^+$ structure-function ratios and Goloskokov–Kroll predictions",
+                 y=0.985, fontsize=15)
+    fig.subplots_adjust(left=0.085, right=0.985, bottom=0.09, top=0.91,
+                        wspace=0.24, hspace=0.20)
+
+    if preliminary:
+        fig.text(0.50, 0.50, "PRELIMINARY", ha="center", va="center",
+                 rotation=18, fontsize=98, fontweight="bold", color="red",
+                 alpha=WATERMARK_ALPHA, transform=fig.transFigure, zorder=1000)
+    # endif
+
+    path = output_dir / "kroll_comparison_all_xB.png"
+    fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    return path
+
+
+def plot_new_theory_canvas(measurements, predictions, output_dir, x_index=None,
+                           kroll_predictions=None, preliminary=True, combined_errors=False):
+    """Seven-panel layout: unpolarized top, single-spin middle, double-spin bottom."""
+    combined = kroll_predictions is not None
+    if combined and x_index is None:
+        raise ValueError("Both-theory overlays are individual-xB plots only")
+    all_xb = x_index is None
+    fig, axes = plt.subplots(3, 3, figsize=(12.8, 10.5),
+                             constrained_layout=False)
+    axes_flat = axes.ravel()
+    indices = range(4) if all_xb else [x_index]
+    theory_color = "#6A3D9A" if combined else "black"
+    for i, (panel, observable) in enumerate(zip(NEW_THEORY_PANEL_INDICES, NEW_THEORY_OBSERVABLES)):
+        ax = axes_flat[panel]
+        for xi in indices:
+            subset = measurements.loc[measurements["x_index_plot"] == xi]
+            pred = predictions.loc[np.isclose(predictions["xB"], THEORY_XB[xi])]
+            color = XB_COLORS[xi] if all_xb else theory_color
+            draw_new_theory_curve(ax, pred, observable, color,
+                                  linestyle="--" if combined else "-")
+            if combined and observable in OBSERVABLES:
+                kp = kroll_predictions.loc[np.isclose(kroll_predictions["xB"], THEORY_XB[xi])]
+                draw_kroll_curve(ax, kp, observable, color="black")
+            draw_measurements(ax, subset, observable, color=XB_COLORS[xi], marker=XB_MARKERS[xi], combined_errors=combined_errors)
+        format_axis(ax, observable, show_xlabel=True)
+        ax.set_ylim(*new_theory_y_limits(predictions, observable))
+        ax.set_yticks(np.round(np.arange(Y_LIMITS[observable][0], Y_LIMITS[observable][1]+1e-8, {'ul1':.1,'ll0':.2,'ll1':.2,'lu1':.1,'u2':.2,'u1':.2,'ul2':.1}[observable]),10))
+        ax.text(0.04, 0.94, f"({chr(97 + i)})", transform=ax.transAxes,
+                va="top", ha="left", fontweight="bold")
+    legend_ax = axes_flat[8]
+    info_ax = axes_flat[2]
+    legend_ax.axis("off")
+    info_ax.axis("off")
+    styles = [
+        Line2D([], [], marker="o", linestyle="none", mfc="white", mec="black",
+               mew=1.3, ms=6.5, label="RGC measurement (stat.)"),
+        Patch(facecolor="0.45", edgecolor="none", alpha=0.20, label="RGC point-to-point syst."),
+        Line2D([], [], color=theory_color, lw=2.0, linestyle="--" if combined else "-",
+               label=NEW_THEORY_LABEL),
+        Patch(facecolor=theory_color, edgecolor="none", alpha=0.16,
+              label=NEW_THEORY_LABEL + r" $1\sigma$ fit band"),
+    ]
+    if not predictions.attrs.get("uncertainty_supplied", True):
+        styles.pop()  # Updated CFF tables contain no parameter-fit bands.
+    if combined_errors:
+        styles[0].set_label("RGC measurement (stat. + ptp syst.)")
+        del styles[1]
+    if combined:
+        styles.insert(1 if combined_errors else 2, Line2D([], [], color="black", lw=2.0, label="Goloskokov–Kroll prediction"))
+    if all_xb:
+        handles = [Line2D([], [], color=color, lw=2.0, marker=marker, mfc="white",
+                           mec=color, mew=1.2, ms=6,
+                           label=rf"${lo:.2f}<x_B<{hi:.2f}$; theory $x_B={THEORY_XB[xi]:.1f}$")
+                   for xi, ((lo, hi), color, marker) in enumerate(zip(XB_BINS, XB_COLORS, XB_MARKERS))]
+        legend1 = info_ax.legend(handles=handles, loc="upper left", frameon=False,
+                                   title=r"$x_B$ groups", title_fontsize=11)
+        legend_ax.legend(handles=styles, loc="lower left", frameon=False, fontsize=9)
+        legend_ax.text(0.02, 0.90, "Theory: virtual-photon frame\nRGC UL/LL: lab-frame definition",
+                       transform=legend_ax.transAxes, va="top", fontsize=10.3, linespacing=1.4)
+        title = (r"CLAS12 $ep \rightarrow e(n)\pi^+$ ratios and " + NEW_THEORY_LABEL + " predictions")
+        filename = "bhattacharya_manley_comparison_all_xB.png"
+    else:
+        legend_ax.legend(handles=styles, loc="upper left", frameon=False, handlelength=2.5, fontsize=9.5)
+        pred = predictions.loc[np.isclose(predictions["xB"], THEORY_XB[x_index])]
+        q2 = float(pred["Q2"].iloc[0]);lo, hi = XB_BINS[x_index]
+        text = (rf"RGC: ${lo:.2f}<x_B<{hi:.2f}$" + "\n"
+                + rf"{NEW_THEORY_LABEL}: $x_B={THEORY_XB[x_index]:.1f}$, $Q^2={q2:.1f}$ GeV$^2$")
+        if combined:
+            kp = kroll_predictions.loc[np.isclose(kroll_predictions["xB"], THEORY_XB[x_index])]
+            text += "\n" + rf"Goloskokov–Kroll: $x_B={THEORY_XB[x_index]:.1f}$, $Q^2={float(kp['Q2'].iloc[0]):.2f}$ GeV$^2$"
+        text += "\nTheory: virtual-photon frame\nRGC UL/LL: lab-frame definition"
+        info_ax.text(0.02, 0.95, text, transform=info_ax.transAxes, va="top", ha="left",
+                       fontsize=9.2, linespacing=1.45)
+        title = (rf"CLAS12 $ep \rightarrow e(n)\pi^+$ structure-function ratios: "
+                 + rf"${lo:.2f}<x_B<{hi:.2f}$")
+        prefix = "both_theories" if combined else "bhattacharya_manley"
+        filename = f"{prefix}_comparison_xB_bin_{x_index + 1}.png"
+    fig.suptitle(title, y=0.985, fontsize=15)
+    fig.subplots_adjust(left=0.085, right=0.985, bottom=0.09, top=0.91, wspace=0.24, hspace=0.32)
+    if preliminary:
+        fig.text(0.50, 0.50, "PRELIMINARY", ha="center", va="center", rotation=18,
+                 fontsize=98, fontweight="bold", color="red", alpha=WATERMARK_ALPHA,
+                 transform=fig.transFigure, zorder=1000)
+    path = output_dir / filename
+    fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor="white")
+    plt.close(fig)
+    return path
+
+
+def parse_args() -> argparse.Namespace:
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--input-csv", type=Path, default=DEFAULT_INPUT_CSV,
+        help="Fresh nominal extraction CSV, including statistical and point-to-point uncertainties.",
+    )
+    parser.add_argument(
+        "--final",
+        action="store_true",
+        help="Suppress the PRELIMINARY watermark for final plots.",
+    )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=DEFAULT_OUTPUT_DIR,
+        help=f"PNG output directory (default: {DEFAULT_OUTPUT_DIR})",
+    )
+    parser.add_argument(
+        "--prediction-csv", type=Path, default=None,
+        help="Supplied Manley–Bhattacharya ratios and asymmetric one-sigma error lengths.",
+    )
+    parser.add_argument("--cff-directory", type=Path, default=DEFAULT_CFF_DIRECTORY, help="Updated CFF CSV directory, used by default. --prediction-csv explicitly selects a legacy table instead.")
+    parser.add_argument("--watermark-alpha", type=float, default=0.10)
+    parser.add_argument("--dpi", type=int, default=300)
+    return parser.parse_args()
+
+
+def main() -> None:
+    args = parse_args()
+    global WATERMARK_ALPHA, DPI
+    if not 0 <= args.watermark_alpha <= 1 or args.dpi < 1:
+        raise ValueError("Invalid watermark alpha or dpi")
+    WATERMARK_ALPHA, DPI = args.watermark_alpha, args.dpi
+    configure_style()
+
+    output_dir = args.output_dir.expanduser().resolve()
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    input_csv = args.input_csv.expanduser().resolve()
+    measurements = validate_measurements(pd.read_csv(input_csv))
+    predictions = kroll_frame()
+    prediction_csv = (args.prediction_csv or args.cff_directory).expanduser().resolve()
+    new_predictions = load_new_theory(prediction_csv)
+
+    outputs: list[Path] = []
+    for combined_errors, version_dir in ((False, output_dir),
+                                         (True, output_dir / "combined_errors")):
+        version_dir.mkdir(parents=True, exist_ok=True)
+        for x_index in range(4):
+            outputs.append(plot_one_xb_canvas(
+                measurements, predictions, x_index, version_dir,
+                preliminary=not args.final, combined_errors=combined_errors))
+        outputs.append(plot_all_xb_canvas(
+            measurements, predictions, version_dir,
+            preliminary=not args.final, combined_errors=combined_errors))
+        new_dir = version_dir / "bhattacharya_manley"
+        both_dir = version_dir / "both_theories"
+        new_dir.mkdir(parents=True, exist_ok=True)
+        both_dir.mkdir(parents=True, exist_ok=True)
+        for x_index in range(4):
+            outputs.append(plot_new_theory_canvas(
+                measurements, new_predictions, new_dir, x_index=x_index,
+                preliminary=not args.final, combined_errors=combined_errors))
+            outputs.append(plot_new_theory_canvas(
+                measurements, new_predictions, both_dir, x_index=x_index,
+                kroll_predictions=predictions, preliminary=not args.final,
+                combined_errors=combined_errors))
+        outputs.append(plot_new_theory_canvas(
+            measurements, new_predictions, new_dir,
+            preliminary=not args.final, combined_errors=combined_errors))
+
+    print("Theory comparison plots complete: 14 original + 14 combined-error PNGs.")
+    manifest = {
+        "input_csv": str(input_csv),
+        "input_csv_sha256": hashlib.sha256(input_csv.read_bytes()).hexdigest(),
+        "plots": [str(path) for path in outputs],
+        "preliminary": not args.final,
+        "measurement_error_versions": {
+            "original": "statistical error bars and separate ptp systematic boxes",
+            "combined_errors": "single error bar sqrt(stat^2 + ptp_systematic^2), no systematic boxes",
+        },
+        "correlated_scale_errors_included": False,
+        "prediction_csv": str(prediction_csv),
+        "prediction_csv_sha256": hashlib.sha256(b"".join(p.read_bytes() for p in sorted(prediction_csv.glob("*.csv"))) if prediction_csv.is_dir() else prediction_csv.read_bytes()).hexdigest(),
+        "prediction_files": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(prediction_csv.glob("*.csv"))} if prediction_csv.is_dir() else {},
+        "new_theory": NEW_THEORY_LABEL,
+        "new_theory_observables": list(NEW_THEORY_OBSERVABLES),
+        "kroll_observables": list(OBSERVABLES),
+        "new_theory_uncertainty": "central-lo to central+hi; supplied asymmetric 1-sigma fit-error lengths" if new_predictions.attrs.get("uncertainty_supplied", True) else "No updated uncertainty bands supplied. Only new central totals are shown.",
+        "new_theory_kinematics": new_predictions[["xB", "Q2"]].drop_duplicates().to_dict(orient="records"),
+        "sign_or_depolarization_adjustment": "none; use supplied structure-function ratios directly",
+        "theory_frame": "virtual photon",
+        "measurement_frame": "LU; beam-axis lab UL/LL, without frame conversion",
+    }
+    (output_dir / "kroll_comparison_manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+    print(f"  RGC input: {input_csv}")
+    print(f"  Output: {output_dir}")
+    for path in outputs:
+        print(f"    {path.relative_to(output_dir)}")
+    # endfor
+
+
+if __name__ == "__main__":
+    main()

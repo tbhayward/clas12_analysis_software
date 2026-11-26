@@ -1,0 +1,9 @@
+2026-11-24 clarity revision
+Numerical result tables and theory values unchanged.
+All 21 supplied theory tables checked. Complete and leading+remainder decompositions close within source rounding.
+Pi+ UL sinphi and UL sin2phi featured first, with complete and leading-product 2x2 canvases.
+Brandon-inspired blue/orange/green/red/purple primary colors. Black total. Thicker solid individual-product curves.
+Five numerical/style tests passed, including unambiguous per-observable colors and pi- six-bin LU/two-bin UL/LL routing.
+PNG-only output organized under figures/pi_plus, figures/pi_minus and figures/charge_comparison.
+Earlier plotting regression tests remain applicable. No fit or extraction rerun.
+Previous Desktop layout archived outside the replacement bundle. No git commit created.

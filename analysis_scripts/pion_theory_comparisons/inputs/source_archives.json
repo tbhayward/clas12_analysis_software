@@ -1,0 +1,14 @@
+{
+  "pip": {
+    "archive": "/Users/tbhayward/Desktop/cff_decomp_pip.zip",
+    "sha256": "cde4cb37969f098382f61637959beaac9299fe14fbd97ea1549405b9a44f77aa"
+  },
+  "pim": {
+    "archive": "/Users/tbhayward/Desktop/cff_decomp_pim.zip",
+    "sha256": "5976ea51ffb32a3b3eedc34b959dd388146a9f25207c9296b4c25bc6398fca59"
+  },
+  "pi0": {
+    "archive": "/Users/tbhayward/Desktop/cff_decomp_pi0.zip",
+    "sha256": "bb6890f328b1da9202dd42e07db885a651dcd1685b16722a25841d1e7cdf39f3"
+  }
+}

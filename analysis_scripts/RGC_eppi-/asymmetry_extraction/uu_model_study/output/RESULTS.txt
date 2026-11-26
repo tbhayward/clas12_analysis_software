@@ -1,0 +1,22 @@
+Results of the π− fixed-UU study
+
+All 96 combined fits converged with accurate covariance matrices and no fit warnings. All scenarios use the same 800,590 selected combinations.
+
+Zero-UU baseline reproduction: fine-bin central values agree with saved results within 8.3e-8, with relative error changes below 0.062%. Coarse results reproduce exactly.
+
+Median / maximum absolute shift divided by the rerun zero-UU statistical error:
+
+Ratio                         stage 2        full BM
+LU sinφ (six tprime bins)      0.90 / 1.96    0.21 / 0.77
+UL sinφ (two tprime bins)      0.23 / 0.49    0.27 / 0.61
+UL sin2φ (two tprime bins)     0.69 / 1.38    0.31 / 0.83
+LL (two tprime bins)           0.17 / 0.49    0.11 / 0.75
+LL cosφ (two tprime bins)      0.74 / 1.92    0.38 / 1.10
+
+These are correlated refits. The ratios above measure sensitivity relative to existing statistical precision, not a significance of the difference. Fixed-UU uncertainties are not propagated. Coarse bins remain statistically limited. Central values outside the displayed ±1 range are marked at the plot boundary and labeled numerically.
+
+At 0.45 < xB < 0.60 and mean -tprime=0.334 GeV², LU changes from 0.0655 ± 0.0152 (zero UU) to 0.0519 ± 0.0125 (stage 2 UU) or 0.0686 ± 0.0158 (full BM UU). The full BM LU prediction there is about 0.259. The discrepancy remains.
+
+Stage-2 UU inputs typically reduce LU magnitudes and statistical errors. The median LU error ratio relative to zero UU is 0.68 for stage 2 and 1.03 for full BM. These are conditional statistical errors, not improved data statistics.
+
+The model UU ratios are evaluated at the measured combined-sample mean -tprime in each fit bin and at the four supplied theory xB/Q² settings. This is an input-dependence study, not an event-level kinematic folding or a new nominal choice.

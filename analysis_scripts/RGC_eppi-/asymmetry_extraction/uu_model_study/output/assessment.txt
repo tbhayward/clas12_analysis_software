@@ -1,0 +1,57 @@
+Fixed-UU model-input study
+
+{
+  "fine": {
+    "zero": {
+      "valid": 24,
+      "invalid": 0,
+      "failed": 0,
+      "empty": 0
+    },
+    "step1_2": {
+      "valid": 24,
+      "invalid": 0,
+      "failed": 0,
+      "empty": 0
+    },
+    "step1_2_3": {
+      "valid": 24,
+      "invalid": 0,
+      "failed": 0,
+      "empty": 0
+    }
+  },
+  "coarse": {
+    "zero": {
+      "valid": 8,
+      "invalid": 0,
+      "failed": 0,
+      "empty": 0
+    },
+    "step1_2": {
+      "valid": 8,
+      "invalid": 0,
+      "failed": 0,
+      "empty": 0
+    },
+    "step1_2_3": {
+      "valid": 8,
+      "invalid": 0,
+      "failed": 0,
+      "empty": 0
+    }
+  }
+}
+
+Shifts are correlated refits, not independent measurements. No theory-UU uncertainty is included.
+
+fine LU_sin_phi step1_2: median |shift|/sigma_zero=0.902, maximum=1.957 (bin 1); median error ratio=0.680
+fine LU_sin_phi step1_2_3: median |shift|/sigma_zero=0.213, maximum=0.768 (bin 16); median error ratio=1.034
+coarse UL_lab_sin_phi step1_2: median |shift|/sigma_zero=0.233, maximum=0.490 (bin 5); median error ratio=1.032
+coarse UL_lab_sin_phi step1_2_3: median |shift|/sigma_zero=0.270, maximum=0.612 (bin 4); median error ratio=1.161
+coarse UL_lab_sin_2phi step1_2: median |shift|/sigma_zero=0.693, maximum=1.380 (bin 2); median error ratio=0.779
+coarse UL_lab_sin_2phi step1_2_3: median |shift|/sigma_zero=0.308, maximum=0.835 (bin 5); median error ratio=0.964
+coarse LL_lab step1_2: median |shift|/sigma_zero=0.167, maximum=0.495 (bin 8); median error ratio=1.015
+coarse LL_lab step1_2_3: median |shift|/sigma_zero=0.107, maximum=0.752 (bin 2); median error ratio=1.114
+coarse LL_lab_cos_phi step1_2: median |shift|/sigma_zero=0.739, maximum=1.920 (bin 7); median error ratio=0.860
+coarse LL_lab_cos_phi step1_2_3: median |shift|/sigma_zero=0.381, maximum=1.103 (bin 3); median error ratio=0.946

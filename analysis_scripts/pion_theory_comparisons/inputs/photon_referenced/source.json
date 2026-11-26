@@ -1,0 +1,12 @@
+{
+  "archive": "/Users/tbhayward/Desktop/chiral_split_asym_photon_pred.zip",
+  "sha256": "861e416934d3983a0d588d6e0d9b486a5d58fb25826729ed9768274c455d1e5c",
+  "received": "2026-11-25",
+  "frame": "virtual photon",
+  "definitions": {
+    "step1": "longitudinal/pole",
+    "step1_2": "longitudinal/pole + chiral odd",
+    "step1_2_3": "full model including chiral-even transverse"
+  },
+  "provenance": "Brandon Manley email supplied by user"
+}

@@ -13,7 +13,7 @@ and writes PNG files to
 
 A second copy of all 14 PNGs under combined_errors/ adds experimental statistical
 and point-to-point systematic uncertainties in quadrature into one error bar.
-Correlated scale uncertainties remain excluded and theory bands are unchanged.
+Correlated scale uncertainties remain excluded. Updated CFF totals are the default theory input. Their CSVs contain no uncertainty bands, so legacy bands are not reused. An explicit --prediction-csv retains the original input option.
 
 The Goloskokov–Kroll predictions supplied in October 2026 are hard-coded below.  They are
 virtual-photon-frame quantities.  The RGC UL/LL measurements remain in the lab-
@@ -43,6 +43,7 @@ DEFAULT_INPUT_CSV = Path("output/asymmetry_extraction/nominal/tables/structure_f
 DEFAULT_OUTPUT_DIR = Path("output/kroll_comparisons")
 DEFAULT_PREDICTION_CSV = (Path(__file__).resolve().parent / "theory_predictions"
                           / "bhattacharya_manley" / "pip_long_asymmetries_pred.csv")
+DEFAULT_CFF_DIRECTORY = (Path(__file__).resolve().parent / "theory_predictions" / "bhattacharya_manley" / "cff_decomp" / "pip")
 NEW_THEORY_LABEL = "Manley–Bhattacharya"
 THEORY_XB = (0.2, 0.3, 0.4, 0.5)
 NEW_THEORY_COLUMNS = {
@@ -51,6 +52,7 @@ NEW_THEORY_COLUMNS = {
     "ll0": "A_LL", "ll1": "A_LL_cosphi",
 }
 DPI = 300
+WATERMARK_ALPHA = 0.07
 
 XB_BINS = (
     (0.10, 0.25),
@@ -172,7 +174,35 @@ def kroll_frame() -> pd.DataFrame:
 
 def load_new_theory(path: Path) -> pd.DataFrame:
     """Read ratios and asymmetric error *lengths* exactly as supplied."""
-    raw = pd.read_csv(path, comment="#")
+    path = Path(path)
+    supplied_uncertainty = not path.is_dir()
+    if path.is_dir():
+        raw = None
+        reference = None
+        for observable, column in NEW_THEORY_COLUMNS.items():
+            piece = pd.read_csv(path / (column + ".csv"))
+            keys = ["xB", "Q2", "minus_tprime", "eps"]
+            if not set(keys + ["total"]).issubset(piece.columns):
+                raise ValueError("Malformed CFF table: " + column)
+            piece = piece.sort_values(["xB", "minus_tprime"]).reset_index(drop=True)
+            numeric = piece.to_numpy(dtype=float)
+            if not np.isfinite(numeric).all():
+                raise ValueError("Nonfinite CFF table: " + column)
+            terms = [c for c in piece if c not in keys + ["total"]]
+            if not terms or not np.allclose(piece[terms].sum(axis=1), piece.total, rtol=0, atol=5e-6 * (len(terms)+1) + 1e-9):
+                raise ValueError("CFF terms do not sum to the supplied total: " + column)
+            if reference is None:
+                reference = piece[keys].copy()
+                raw = reference.copy()
+            elif not piece[keys].equals(reference):
+                raise ValueError("CFF observables have different kinematic grids")
+            raw[column] = piece["total"]
+            # Internal zero-width placeholders keep the legacy table API usable.
+            # They are never drawn or labeled as theory uncertainty bands.
+            raw[column + "_lo"] = 0.0
+            raw[column + "_hi"] = 0.0
+    else:
+        raw = pd.read_csv(path, comment="#")
     required = {"xB", "Q2", "minus_tprime"}
     required.update(column + suffix for column in NEW_THEORY_COLUMNS.values()
                     for suffix in ("", "_lo", "_hi"))
@@ -200,7 +230,9 @@ def load_new_theory(path: Path) -> pd.DataFrame:
             raw[observable + suffix] = raw[column + suffix]
         if (raw[[observable + "_lo", observable + "_hi"]] < 0).any().any():
             raise ValueError(f"Theory error lengths must be nonnegative for {observable}")
-    return raw.sort_values(["xB", "minus_tprime"]).reset_index(drop=True)
+    raw = raw.sort_values(["xB", "minus_tprime"]).reset_index(drop=True)
+    raw.attrs["uncertainty_supplied"] = supplied_uncertainty
+    return raw
 
 
 def draw_new_theory_curve(ax, predictions, observable, color, linestyle="-"):
@@ -209,7 +241,8 @@ def draw_new_theory_curve(ax, predictions, observable, color, linestyle="-"):
     y = predictions[observable].to_numpy(dtype=float)
     lower = y - predictions[observable + "_lo"].to_numpy(dtype=float)
     upper = y + predictions[observable + "_hi"].to_numpy(dtype=float)
-    ax.fill_between(x, lower, upper, color=color, alpha=0.16, linewidth=0, zorder=1)
+    if predictions.attrs.get("uncertainty_supplied", True):
+        ax.fill_between(x, lower, upper, color=color, alpha=0.16, linewidth=0, zorder=1)
     ax.plot(x, y, color=color, linestyle=linestyle, lw=2.0, zorder=3)
 
 
@@ -465,7 +498,7 @@ def plot_one_xb_canvas(
     if preliminary:
         fig.text(0.50, 0.50, "PRELIMINARY", ha="center", va="center",
                  rotation=18, fontsize=90, fontweight="bold", color="red",
-                 alpha=0.08, transform=fig.transFigure, zorder=1000)
+                 alpha=WATERMARK_ALPHA, transform=fig.transFigure, zorder=1000)
     # endif
 
     path = output_dir / f"kroll_comparison_xB_bin_{x_index + 1}.png"
@@ -543,7 +576,7 @@ def plot_all_xb_canvas(
     if preliminary:
         fig.text(0.50, 0.50, "PRELIMINARY", ha="center", va="center",
                  rotation=18, fontsize=90, fontweight="bold", color="red",
-                 alpha=0.08, transform=fig.transFigure, zorder=1000)
+                 alpha=WATERMARK_ALPHA, transform=fig.transFigure, zorder=1000)
     # endif
 
     path = output_dir / "kroll_comparison_all_xB.png"
@@ -593,6 +626,8 @@ def plot_new_theory_canvas(measurements, predictions, output_dir, x_index=None,
         Patch(facecolor=theory_color, edgecolor="none", alpha=0.16,
               label=NEW_THEORY_LABEL + r" $1\sigma$ fit band"),
     ]
+    if not predictions.attrs.get("uncertainty_supplied", True):
+        styles.pop()  # Updated CFF tables contain no parameter-fit bands.
     if combined_errors:
         styles[0].set_label("RGC measurement (stat. + ptp syst.)")
         del styles[1]
@@ -630,7 +665,7 @@ def plot_new_theory_canvas(measurements, predictions, output_dir, x_index=None,
     fig.subplots_adjust(left=0.085, right=0.985, bottom=0.09, top=0.91, wspace=0.24, hspace=0.32)
     if preliminary:
         fig.text(0.50, 0.50, "PRELIMINARY", ha="center", va="center", rotation=18,
-                 fontsize=90, fontweight="bold", color="red", alpha=0.08,
+                 fontsize=90, fontweight="bold", color="red", alpha=WATERMARK_ALPHA,
                  transform=fig.transFigure, zorder=1000)
     path = output_dir / filename
     fig.savefig(path, dpi=DPI, bbox_inches="tight", facecolor="white")
@@ -656,14 +691,21 @@ def parse_args() -> argparse.Namespace:
         help=f"PNG output directory (default: {DEFAULT_OUTPUT_DIR})",
     )
     parser.add_argument(
-        "--prediction-csv", type=Path, default=DEFAULT_PREDICTION_CSV,
+        "--prediction-csv", type=Path, default=None,
         help="Supplied Manley–Bhattacharya ratios and asymmetric one-sigma error lengths.",
     )
+    parser.add_argument("--cff-directory", type=Path, default=DEFAULT_CFF_DIRECTORY, help="Updated CFF CSV directory, used by default. --prediction-csv explicitly selects a legacy table instead.")
+    parser.add_argument("--watermark-alpha", type=float, default=0.07)
+    parser.add_argument("--dpi", type=int, default=300)
     return parser.parse_args()
 
 
 def main() -> None:
     args = parse_args()
+    global WATERMARK_ALPHA, DPI
+    if not 0 <= args.watermark_alpha <= 1 or args.dpi < 1:
+        raise ValueError("Invalid watermark alpha or dpi")
+    WATERMARK_ALPHA, DPI = args.watermark_alpha, args.dpi
     configure_style()
 
     output_dir = args.output_dir.expanduser().resolve()
@@ -672,7 +714,7 @@ def main() -> None:
     input_csv = args.input_csv.expanduser().resolve()
     measurements = validate_measurements(pd.read_csv(input_csv))
     predictions = kroll_frame()
-    prediction_csv = args.prediction_csv.expanduser().resolve()
+    prediction_csv = (args.prediction_csv or args.cff_directory).expanduser().resolve()
     new_predictions = load_new_theory(prediction_csv)
 
     outputs: list[Path] = []
@@ -714,11 +756,12 @@ def main() -> None:
         },
         "correlated_scale_errors_included": False,
         "prediction_csv": str(prediction_csv),
-        "prediction_csv_sha256": hashlib.sha256(prediction_csv.read_bytes()).hexdigest(),
+        "prediction_csv_sha256": hashlib.sha256(b"".join(p.read_bytes() for p in sorted(prediction_csv.glob("*.csv"))) if prediction_csv.is_dir() else prediction_csv.read_bytes()).hexdigest(),
+        "prediction_files": {p.name: hashlib.sha256(p.read_bytes()).hexdigest() for p in sorted(prediction_csv.glob("*.csv"))} if prediction_csv.is_dir() else {},
         "new_theory": NEW_THEORY_LABEL,
         "new_theory_observables": list(NEW_THEORY_OBSERVABLES),
         "kroll_observables": list(OBSERVABLES),
-        "new_theory_uncertainty": "central-lo to central+hi; supplied asymmetric 1-sigma fit-error lengths",
+        "new_theory_uncertainty": "central-lo to central+hi; supplied asymmetric 1-sigma fit-error lengths" if new_predictions.attrs.get("uncertainty_supplied", True) else "No updated uncertainty bands supplied. Only new central totals are shown.",
         "new_theory_kinematics": new_predictions[["xB", "Q2"]].drop_duplicates().to_dict(orient="records"),
         "sign_or_depolarization_adjustment": "none; use supplied structure-function ratios directly",
         "theory_frame": "virtual photon",
