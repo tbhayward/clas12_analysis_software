@@ -82,3 +82,21 @@ normalization is preserved. Counts refer to candidate combinations, not unique e
 A larger raw entry count does not predict the final selected polarized precision.
 
 See the component READMEs for calibration, dilution and likelihood details.
+
+## Directory guide
+
+The active code lives in `channel_selection`, `kinematic_distributions`,
+`dilution_factor` and `asymmetry_extraction`. `imports` holds input configuration
+and run metadata. `analysis_note` holds the paper source. Superseded selection
+prototypes live under `archive/channel_selection`. Empty future-work placeholders
+have been removed. Earlier numerical outputs and the UU sensitivity study are
+retained for comparison.
+
+Readable selection progress for this rerun:
+
+```bash
+python3 analysis_scripts/RGC_eppi-/run_relaxed_analysis.py --status
+```
+
+This reports scans, fitted groups, completed exports and per-dataset progress.
+It does not estimate remaining wall time or report the later fitting stages.

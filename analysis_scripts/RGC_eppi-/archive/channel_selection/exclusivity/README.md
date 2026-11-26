@@ -7,15 +7,15 @@ This analysis follows Maggie's selection sequence, with independently fitted cut
 From the repository root:
 
 ```bash
-python3 analysis_scripts/RGC_eppi-/channel_selection/exclusivity/run_selection.py --workers 6
+python3 analysis_scripts/RGC_eppi-/archive/channel_selection/exclusivity/run_selection.py --workers 6
 ```
 
-All figures, fit tables, candidate caches and progress files are saved beside the scripts in `analysis_scripts/RGC_eppi-/channel_selection/exclusivity/output/`. Input ROOT files remain in the existing campaign on `/volatile`. The default destination is anchored to the script location, independent of your working directory. Six workers each handle one complete period. Avoid simultaneous launches into the same output directory.
+All figures, fit tables, candidate caches and progress files are saved beside the scripts in `analysis_scripts/RGC_eppi-/archive/channel_selection/exclusivity/output/`. Input ROOT files remain in the existing campaign on `/volatile`. The default destination is anchored to the script location, independent of your working directory. Six workers each handle one complete period. Avoid simultaneous launches into the same output directory.
 
 Progress from another terminal:
 
 ```bash
-python3 analysis_scripts/RGC_eppi-/channel_selection/exclusivity/run_selection.py --status
+python3 analysis_scripts/RGC_eppi-/archive/channel_selection/exclusivity/run_selection.py --status
 ```
 
 Dependencies are Python 3, NumPy, SciPy, uproot 5 and Matplotlib. ROOT itself is not required.
@@ -27,7 +27,7 @@ python3 -m pip install numpy scipy 'uproot>=5,<6' matplotlib
 A limited smoke test uses a separate directory:
 
 ```bash
-python3 analysis_scripts/RGC_eppi-/channel_selection/exclusivity/run_selection.py --workers 6 --max-entries 200000 --output analysis_scripts/RGC_eppi-/channel_selection/exclusivity/output/smoke_test
+python3 analysis_scripts/RGC_eppi-/archive/channel_selection/exclusivity/run_selection.py --workers 6 --max-entries 200000 --output analysis_scripts/RGC_eppi-/archive/channel_selection/exclusivity/output/smoke_test
 ```
 
 This reads the first stored candidates per period. It may not populate every bin and is marked PARTIAL SAMPLE.
@@ -73,13 +73,13 @@ The three selection stages then read this small cache. Changing the nominal mass
 A normal rerun reuses complete matching results. To refit explicitly using a matching candidate cache:
 
 ```bash
-python3 analysis_scripts/RGC_eppi-/channel_selection/exclusivity/run_selection.py --workers 6 --force
+python3 analysis_scripts/RGC_eppi-/archive/channel_selection/exclusivity/run_selection.py --workers 6 --force
 ```
 
 To force a new ROOT scan:
 
 ```bash
-python3 analysis_scripts/RGC_eppi-/channel_selection/exclusivity/run_selection.py --workers 6 --rebuild-cache
+python3 analysis_scripts/RGC_eppi-/archive/channel_selection/exclusivity/run_selection.py --workers 6 --rebuild-cache
 ```
 
 An interrupted ROOT-cache build restarts that period's ROOT scan. Once that cache is complete, an interrupted fit run can restart from it. Old pre-revision histogram caches cannot supply changed downstream selections, so the first revised run builds the new candidate cache. No source data or final ROOT skim is modified.
@@ -103,7 +103,7 @@ There are 72 PNG pages for the six periods, with no PDF copies. `index.html` lin
 Redraw figures without rerunning the fits:
 
 ```bash
-python3 analysis_scripts/RGC_eppi-/channel_selection/exclusivity/run_selection.py --plots-only
+python3 analysis_scripts/RGC_eppi-/archive/channel_selection/exclusivity/run_selection.py --plots-only
 ```
 
 The revised plotter expects schema-version-2 results. First rerun the analysis to upgrade old output. Use `--input-root PATH`, `--output PATH` and `--periods DATASET ...` to override defaults.
@@ -111,7 +111,7 @@ The revised plotter expects schema-version-2 results. First rerun the analysis t
 ## Validation
 
 ```bash
-python3 -m unittest discover -s analysis_scripts/RGC_eppi-/channel_selection/exclusivity -v
+python3 -m unittest discover -s analysis_scripts/RGC_eppi-/archive/channel_selection/exclusivity -v
 ```
 
 Tests check known-peak recovery, positive background curvature constraints, bin-integrated fits, adaptive range coverage, rebin accounting, degree-valued angular guides, cut boundaries, agreement with the original four-vector calculations and reuse of the derived cache without a second ROOT open. End-to-end synthetic runs check six-worker scanning, fitting, cut flow, rendering and cache-driven refits. Production cuts remain provisional until reviewed.

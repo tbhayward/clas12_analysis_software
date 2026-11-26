@@ -7,10 +7,10 @@ This standalone analysis reads the completed `PhysicsEvents` trees. It does not 
 From the repository root, on **one node**, with Python 3, NumPy, uproot 5 and Matplotlib available:
 
 ```bash
-python3 analysis_scripts/RGC_eppi-/channel_selection/diagnostics/run_diagnostics.py --workers 6
+python3 analysis_scripts/RGC_eppi-/archive/channel_selection/diagnostics/run_diagnostics.py --workers 6
 ```
 
-All generated PNG figures, histogram caches, tables, progress files and the HTML index are saved to `analysis_scripts/RGC_eppi-/channel_selection/diagnostics/output/` beside these scripts. This path is anchored to the script location, regardless of the working directory. On the farm it is therefore inside your home analysis repository, not on volatile storage. The input ROOT files continue to be read from the campaign on `/volatile`. The output folder is excluded from git. An explicit `--output PATH` can override the destination.
+All generated PNG figures, histogram caches, tables, progress files and the HTML index are saved to `analysis_scripts/RGC_eppi-/archive/channel_selection/diagnostics/output/` beside these scripts. This path is anchored to the script location, regardless of the working directory. On the farm it is therefore inside your home analysis repository, not on volatile storage. The input ROOT files continue to be read from the campaign on `/volatile`. The output folder is excluded from git. An explicit `--output PATH` can override the destination.
 
 Run the command once. Six processes scan the six files concurrently, one process per period. Each file is read once in bounded chunks (default `100 MB` of decoded branch data). Plotting follows the scans, one period at a time. ROOT itself and the processing environment are not required. If needed, install the packages in your usual Python environment:
 
@@ -18,12 +18,12 @@ Run the command once. Six processes scan the six files concurrently, one process
 python3 -m pip install numpy 'uproot>=5,<6' matplotlib
 ```
 
-For an initial end-to-end smoke test, add `--max-entries 200000 --output analysis_scripts/RGC_eppi-/channel_selection/diagnostics/output/smoke_test`. This reads the first 200,000 stored candidate rows per period, not a representative run sample. Figures are marked PARTIAL SAMPLE. Omit this option for the actual diagnostic distributions.
+For an initial end-to-end smoke test, add `--max-entries 200000 --output analysis_scripts/RGC_eppi-/archive/channel_selection/diagnostics/output/smoke_test`. This reads the first 200,000 stored candidate rows per period, not a representative run sample. Figures are marked PARTIAL SAMPLE. Omit this option for the actual diagnostic distributions.
 
 For a progress report in another terminal:
 
 ```bash
-python3 analysis_scripts/RGC_eppi-/channel_selection/diagnostics/run_diagnostics.py --status
+python3 analysis_scripts/RGC_eppi-/archive/channel_selection/diagnostics/run_diagnostics.py --status
 ```
 
 Workers print START immediately and report opening input, reading the first chunk and processing. Percentages are exact fractions of stored candidate rows read per period. The update age helps identify a stopped scan. After scanning, status distinguishes plots pending, plotting and complete. If interrupted, rerun the original command. Completed matching histogram caches are reused, while an interrupted period restarts its scan. Only run one scanner per period/output directory at a time. Previous results on `/volatile` are not moved or deleted by this change.
@@ -31,7 +31,7 @@ Workers print START immediately and report opening input, reading the first chun
 To redraw plots without reading the input ROOT files:
 
 ```bash
-python3 analysis_scripts/RGC_eppi-/channel_selection/diagnostics/run_diagnostics.py --plots-only
+python3 analysis_scripts/RGC_eppi-/archive/channel_selection/diagnostics/run_diagnostics.py --plots-only
 ```
 
 Add `--log-y` for logarithmic one-dimensional count axes. `--input-root PATH` overrides the input ROOT directory. `--periods` can select any dataset listed in the dataset manifest, including carbon and the other control targets.
@@ -76,7 +76,7 @@ The top-level `index.html` links the PNG pages. Copy the output directory locall
 ## Validation
 
 ```bash
-python3 -m unittest discover -s analysis_scripts/RGC_eppi-/channel_selection/diagnostics -v
+python3 -m unittest discover -s analysis_scripts/RGC_eppi-/archive/channel_selection/diagnostics -v
 ```
 
 Tests construct conserved gamma* n → pi− p events in all 24 bins, verify the missing-mass and residual identities, check bin boundaries, scan six synthetic TTree files in chunks, check selection accounting, FD/CD sums and cache reuse, and reject an inconsistent saved Mx2 convention. Production data still need to be scanned on the farm.

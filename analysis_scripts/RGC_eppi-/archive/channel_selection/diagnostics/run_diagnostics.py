@@ -177,7 +177,7 @@ def plot_period(out, log_y=False):
 
 def main():
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument('--datasets', type=Path, default=Path(__file__).resolve().parents[2]/'imports/datasets.json')
+    p.add_argument('--datasets', type=Path, default=Path(__file__).resolve().parents[3]/'imports/datasets.json')
     p.add_argument('--input-root', type=Path)
     p.add_argument('--output', type=Path, default=DEFAULT_OUTPUT, help='Output folder (default: output/ beside this script)')
     p.add_argument('--periods', nargs='+', default=DEFAULT_PERIODS)

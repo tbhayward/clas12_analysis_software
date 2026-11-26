@@ -1,6 +1,6 @@
 # Nominal preliminary exclusive pi− channel selection
 
-This is the shared channel-selection workflow for dilution-factor and asymmetry analyses. The earlier `diagnostics/` and `exclusivity/` studies are retained as development history. Their caches and cut files are not automatically used by this workflow.
+This is the shared channel-selection workflow for dilution-factor and asymmetry analyses. The earlier `../archive/channel_selection/diagnostics/` and `../archive/channel_selection/exclusivity/` studies are retained as development history. Their caches and cut files are not automatically used by this workflow.
 
 ## Run
 

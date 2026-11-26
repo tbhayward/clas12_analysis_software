@@ -3,6 +3,7 @@
 import argparse
 from concurrent.futures import ProcessPoolExecutor,as_completed
 import json
+import multiprocessing
 from pathlib import Path
 import sys
 from candidate_cache import build_cache,save_json,q2_mask
@@ -20,7 +21,8 @@ def cache_job(job):
 
 def parallel(function,jobs,workers):
     results=[]
-    with ProcessPoolExecutor(max_workers=min(workers,len(jobs))) as pool:
+    # Fresh interpreters avoid inheriting ROOT-reader and numerical-library thread locks.
+    with ProcessPoolExecutor(max_workers=min(workers,len(jobs)),mp_context=multiprocessing.get_context("spawn")) as pool:
         for future in as_completed([pool.submit(function,j) for j in jobs]):results.append(future.result())
     return results
 
@@ -53,9 +55,38 @@ def main():
     if args.max_entries and args.output==DEFAULT_OUTPUT:p.error('Use a separate --output directory for partial calibration')
     if args.max_entries and not args.fit_only:p.error('--max-entries is restricted to --fit-only, never nominal exports')
     if args.status:
-        files=list(args.output.glob('calibration_cache/*/progress.json'))+list(args.output.glob('fits/*/progress.json'))+list(args.output.glob('datasets/*.progress.json'))
-        if not files:print('No nominal run started')
-        for path in sorted(files):print(str(path.relative_to(args.output))+': '+json.dumps(json.loads(path.read_text())))
+        config=json.loads(args.datasets.read_text())
+        names=list(config['files'])
+        calibration=[n for members in GROUPS.values() for n in members]
+        def progress(path):
+            if not path.exists():return {}
+            try:return json.loads(path.read_text())
+            except (ValueError,OSError):return {}
+        caches=[progress(args.output/'calibration_cache'/n/'progress.json') for n in calibration]
+        scanned=sum(p.get('percent',0)>=100 for p in caches)
+        read=sum(p.get('read',0) for p in caches)
+        total=sum(p.get('total',0) for p in caches)
+        fits=[progress(args.output/'fits'/g/'progress.json') for g in GROUPS]
+        fitted=sum(p.get('state')=='complete' or p.get('stage')=='complete' for p in fits)
+        exports={n:progress(args.output/'datasets'/(n+'.progress.json')) for n in names}
+        done=sum(p.get('state')=='complete' for p in exports.values())
+        active=sum(bool(p) and p.get('state')!='complete' for p in exports.values())
+        selected=sum(p.get('selected_rows',0) for p in exports.values())
+        print(f'Calibration scans: {scanned}/{len(calibration)} complete')
+        if total:print(f'  Read {read:,}/{total:,} combinations in scans with recorded totals ({100*read/total:.1f}%)')
+        print(f'Window fits:       {fitted}/{len(GROUPS)} complete')
+        print(f'Selected exports:  {done}/{len(names)} complete, {active} started, {len(names)-done-active} not started')
+        print(f'Selected so far:   {selected:,} combinations (completed files and reported chunks)')
+        print('')
+        for name,p in exports.items():
+            state=p.get('state','not started')
+            if state=='complete':detail=f"complete, {p.get('selected_rows',0):,} selected"
+            elif state=='opening':detail='started; waiting for first processed chunk'
+            elif state=='selecting':detail=f"{p.get('percent',0):5.1f}% read, {p.get('selected_rows',0):,} selected"
+            else:detail=state
+            print(f'{name:26s} {detail}')
+        print('\nThese are selection stages, not a wall-time estimate for the full analysis.')
+        print('Status files show the last recorded update; they do not prove a worker is still running.')
         return
     if args.audit:
         import numpy as np

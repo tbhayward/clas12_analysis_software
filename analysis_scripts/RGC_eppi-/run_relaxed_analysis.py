@@ -19,6 +19,7 @@ def main():
     parser.add_argument('--run-info', type=Path, default=HERE/'imports/clas12_run_info_ND3_source.csv')
     parser.add_argument('--workers', type=int, default=6)
     parser.add_argument('--stage', choices=('all',)+STAGES, default='all')
+    parser.add_argument('--status', action='store_true', help='Show readable selection progress without running analysis')
     parser.add_argument('--dry-run', action='store_true', help='Print exact commands without reading inputs or running stages')
     args = parser.parse_args()
     if args.workers < 1:
@@ -29,6 +30,9 @@ def main():
     selected = out/'channel_selection/selected_inputs.json'
     dilution = out/'dilution_factor/joint_period_method1.json'
     selection = [sys.executable, str(HERE/'channel_selection/run_channel_selection.py'), '--datasets', str(args.datasets.resolve()), '--input-root', str(source.resolve()), '--output', str(out/'channel_selection')]
+    if args.status:
+        subprocess.run(selection+['--status'], check=True)
+        return
     commands = {
         'selection': selection+['--workers', str(args.workers)],
         'audit': selection+['--audit'],
