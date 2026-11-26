@@ -117,3 +117,11 @@ python3 analysis_scripts/RGC_eppi-/export_review.py --source /volatile/clas12/th
 ```
 
 Copy the resulting tar.gz to your desktop. The source files remain on volatile.
+
+## Three-bin target-sector study
+
+After the nominal relaxed run, use
+`asymmetry_extraction/three_bin_study/run_three_bin_study.py --source /volatile/clas12/thayward/eppi-/loose/full_20261124/analysis --workers 12`
+with Python. This recomputes dilution in 12 bins and compares free LL cosφ with
+BM stage-2 and stage-3 fixed inputs. The six-bin LU result is retained. See the
+study README for assumptions, outputs and the compact home review archive.
