@@ -8,5 +8,45 @@
   "likelihood_convention": "Qplus=Qminus=total_charge_nC/2; Pt=0",
   "relaxed_source_combinations": 9554,
   "relaxed_selected_combinations": 0,
-  "old_fixed_UU_source_run_list_contains_run": false
+  "old_fixed_UU_source_run_list_contains_run": false,
+  "additional_runs": [
+    {
+      "run": 11288,
+      "total_charge_nC": 1936.73164,
+      "relaxed_source_combinations": 20569,
+      "relaxed_selected_combinations": 0
+    },
+    {
+      "run": 11289,
+      "total_charge_nC": 52773.73168000002,
+      "relaxed_source_combinations": 542644,
+      "relaxed_selected_combinations": 0
+    },
+    {
+      "run": 11290,
+      "total_charge_nC": 238349.6594800001,
+      "relaxed_source_combinations": 2458667,
+      "relaxed_selected_combinations": 0
+    },
+    {
+      "run": 11291,
+      "total_charge_nC": 54179.09580999991,
+      "relaxed_source_combinations": 554708,
+      "relaxed_selected_combinations": 0
+    },
+    {
+      "run": 11295,
+      "total_charge_nC": 2668.252589999989,
+      "relaxed_source_combinations": 26585,
+      "relaxed_selected_combinations": 0
+    },
+    {
+      "run": 11297,
+      "total_charge_nC": 138506.05092999997,
+      "relaxed_source_combinations": 1376727,
+      "relaxed_selected_combinations": 0
+    }
+  ],
+  "additional_source": "User-supplied chargeSumRuns.groovy 11286 11297 output, 2026-11-26",
+  "coverage": "All six remaining missing runs reported by the six-physics-sample source-run audit were added. Zero-charge runs absent from that audit were not added."
 }
