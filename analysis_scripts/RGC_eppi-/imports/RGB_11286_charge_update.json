@@ -1,0 +1,12 @@
+{
+  "run": 11286,
+  "period": "RGB_fall2019_D2",
+  "total_charge_nC": 899.9879510000001,
+  "source": "User-supplied QADB charge query, 2026-11-26, run range 11286 to 11286",
+  "measured_helicity_split_available": false,
+  "metadata_zero_split_columns": "Placeholders for unavailable RGB helicity scalers, consistent with existing reader convention. Not measured zero charge.",
+  "likelihood_convention": "Qplus=Qminus=total_charge_nC/2; Pt=0",
+  "relaxed_source_combinations": 9554,
+  "relaxed_selected_combinations": 0,
+  "old_fixed_UU_source_run_list_contains_run": false
+}
