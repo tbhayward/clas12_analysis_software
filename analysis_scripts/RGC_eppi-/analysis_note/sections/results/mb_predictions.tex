@@ -1,4 +1,45 @@
-\subsection{Comparison to Manley--Bhattacharya Predictions}\label{sec:mb_comparison}
-The Manley--Bhattacharya (MB) calculation combines leading-twist longitudinal amplitudes involving $\widetilde H$ and $\widetilde E$, including the charged-pion pole, with transverse amplitudes at twist~3. The transverse sector contains both the chiral-odd $H_T$ and $\bar E_T$ contributions coupled to a twist-3 pion distribution amplitude, and additional chiral-even contributions from moments of generalized transverse-momentum dependent distributions (GTMDs) coupled to a twist-2 pion distribution amplitude. In the supplied implementation, endpoint integrals are regulated with $\delta=\langle p_\perp^2\rangle/Q^2$; separate chiral-even and chiral-odd regulator parameters and a transversity $t$ slope are fitted to CLAS6 unpolarized $\pi^0$ cross sections. The displayed theory bands propagate the parameter-fit uncertainty, rather than representing the full model uncertainty.
-The description above summarizes preliminary theory material supplied for the $\pi^+$ comparison; numerical neutron-channel predictions and their kinematic evaluation must be supplied and checked before any curves are shown here. The published GK framework instead describes longitudinal amplitudes with $\widetilde H$, $\widetilde E$ and the charged-pion pole, and important transverse amplitudes with chiral-odd GPDs and a twist-3 pion wave function~\cite{Goloskokov:2009ia,Goloskokov:2011rd}. The additional chiral-even GTMD-moment contributions in the MB treatment provide a distinct mechanism to examine in the transverse cross section. The comparison will retain the measured lab-axis convention, finite-bin kinematics, polarization definitions, and the distinction between parameter-fit bands and full model uncertainty. No numerical agreement or disagreement is claimed at this stage.
-% Add neutron-channel predictions, figures and results after extraction.
+\subsection{Comparison to Bhattacharya--Manley Predictions}\label{sec:mb_comparison}
+The preliminary Bhattacharya--Manley (BM) calculation includes longitudinal amplitudes with $\widetilde H_L$, $\widetilde E_L$ and the charged-pion pole, chiral-odd transverse contributions, and additional chiral-even transverse contributions. We show both the full BM prediction and cumulative stages: longitudinal/pole only, longitudinal/pole plus chiral-odd, and the full calculation. Each stage is a complete ratio with its own denominator. The curves are not additive components.
+The supplied prediction tables use four fixed $x_B,Q^2$ settings and are not folded over the measured finite-bin kinematics. Their supplied lower and upper widths define the displayed bands and do not represent the full model uncertainty. Target-spin predictions are supplied with respect to the virtual-photon direction, whereas the extracted $UL$ ratios use the laboratory beam-axis target convention. They are overlaid directly in this preliminary comparison without a frame transformation. No GK curves are included for the neutron channel.
+The full prediction does not reproduce the negative higher-$-t'$ beam-spin values at low $x_B$, and it is above the positive data at the highest $x_B$. The target-spin comparisons have larger experimental uncertainties. Some forward negative $UL$ values are compatible with the curves, while positive higher-$-t'$ $UL\sin2\phi$ points differ in sign from the full prediction. The present precision and the stated kinematic and target-axis conventions limit the interpretation of those differences. Agreement or disagreement with a cumulative stage is not by itself an extraction of an individual GPD or GTMD moment.
+
+\begin{figure}[p]\centering
+\includegraphics[width=\linewidth]{figures/results/BM_total_all_xB.png}
+\caption{Preliminary $\pi^-$ ratios compared with the full BM prediction. The $LU$ data retain six bins and the $UL$ data use three bins per $x_B$.}\label{fig:release_bm_all}
+\end{figure}
+\clearpage
+\begin{figure}[p]\centering
+\includegraphics[width=\linewidth]{figures/results/BM_stages_xB_bin_1.png}
+\caption{Cumulative BM comparisons in $x_B$ interval 1. Orange, red and blue denote the longitudinal/pole, stage-2 and full predictions, respectively. Each curve is a separately normalized complete ratio.}\label{fig:release_bm1}
+\end{figure}
+\clearpage
+\begin{figure}[p]\centering
+\includegraphics[width=\linewidth]{figures/results/BM_stages_xB_bin_2.png}
+\caption{Cumulative BM comparisons in $x_B$ interval 2. Orange, red and blue denote the longitudinal/pole, stage-2 and full predictions, respectively. Each curve is a separately normalized complete ratio.}\label{fig:release_bm2}
+\end{figure}
+\clearpage
+\begin{figure}[p]\centering
+\includegraphics[width=\linewidth]{figures/results/BM_stages_xB_bin_3.png}
+\caption{Cumulative BM comparisons in $x_B$ interval 3. Orange, red and blue denote the longitudinal/pole, stage-2 and full predictions, respectively. Each curve is a separately normalized complete ratio.}\label{fig:release_bm3}
+\end{figure}
+\clearpage
+\begin{figure}[p]\centering
+\includegraphics[width=\linewidth]{figures/results/BM_stages_xB_bin_4.png}
+\caption{Cumulative BM comparisons in $x_B$ interval 4. Orange, red and blue denote the longitudinal/pole, stage-2 and full predictions, respectively. Each curve is a separately normalized complete ratio.}\label{fig:release_bm4}
+\end{figure}
+\clearpage
+\begin{figure}[p]\centering
+\includegraphics[width=\linewidth]{figures/results/BM_stages_LU_sin_phi_2x2.png}
+\caption{Cumulative BM predictions and the preliminary data in all four $x_B$ intervals.}\label{fig:release_bm_LU_sin_phi}
+\end{figure}
+\clearpage
+\begin{figure}[p]\centering
+\includegraphics[width=\linewidth]{figures/results/BM_stages_UL_sin_phi_2x2.png}
+\caption{Cumulative BM predictions and the preliminary data in all four $x_B$ intervals.}\label{fig:release_bm_UL_sin_phi}
+\end{figure}
+\clearpage
+\begin{figure}[p]\centering
+\includegraphics[width=\linewidth]{figures/results/BM_stages_UL_sin_2phi_2x2.png}
+\caption{Cumulative BM predictions and the preliminary data in all four $x_B$ intervals.}\label{fig:release_bm_UL_sin_2phi}
+\end{figure}
+\clearpage

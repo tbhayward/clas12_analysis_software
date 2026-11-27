@@ -119,6 +119,8 @@ The relaxed sample is recalibrated before the three-bin target refit. All select
   p.write_text(intro+r'\input{sections/generated/exclusivity_windows}'+'\n'+figures)
  # Update the nominal RGB source run range.
  p=project/'sections/channel_selection/datasets.tex';s=p.read_text().replace('11093--11283','11093--11297');p.write_text(s)
+ from polish_note import apply as polish
+ polish(project,release)
  # Check all literal figure and input references before packaging.
  missing=[]
  for p in project.rglob('*.tex'):

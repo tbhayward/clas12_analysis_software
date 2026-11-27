@@ -1,102 +1,11 @@
-\subsection{Maximum Likelihood Estimation Method}
-\label{sec:MLE}
-
-In contrast to the $\chi^2$-minimization technique, the maximum likelihood estimation (MLE) method is performed on unbinned (in the azimuthal angle $\phi$) data and makes no assumptions about the statistical distribution of the parameters. The MLE has a number of advantages over the traditional $\chi^2$-minimization method. These advantages include: the correct assumption about the statistical distributions of the underlying data, ability to incorporate polarization, depolarization values and dilution factors on an event-by-event basis and possibility of simultaneously extracting the unpolarized, beam-, target- and double-spin modulations. In addition, no binning in $\phi$ is required, and the present conditional likelihood incorporates the measured relative luminosities directly rather than requiring the four polarization samples to be artificially equalized before the fit. The use of the MLE method is common in spin asymmetry analyses; for example, at CLAS6~\cite{smithThesis}, COMPASS \cite{wollnyThesis, vossenThesis}, HERMES \cite{luThesis, mahonThesis} and multiple CLAS12 analyses~\cite{Hayward:2021odu, CLAS:2022sqt}. 
-
-Consider the same set of relevant kinematic variables, $\vec{x}$, which are distributed according to a probability density function (PDF; the difference from nuclear PDFs will be clear from context), $f(\vec{\theta}, \vec{x})$, where $\vec{\theta}$ is again the set of asymmetry amplitudes which are unknown. If the functional form of the PDF is known (and here the assumption will be made that the theoretical cross section is correct) then the MLE method can be used to estimate the parameters of $\vec{\theta}$.
-
-Suppose a measurement of $\vec{x}$ has been repeated $N$ times yielding values $\vec{x}_1$, $\vec{x}_2$, $\vec{x}_3$, ... $\vec{x}_N$. Since the measurements are independent, the probability of obtaining the complete data sample is the product of the individual probabilities. The likelihood is therefore,
-\begin{linenomath}
-    \begin{align}
-        \mathcal{L}(\vec{\theta}) = \prod_i^N f_i(\vec{\theta},\vec{x}_i).
-    \end{align}
-\end{linenomath}
-It is more convenient numerically to maximize the log-likelihood, where the products become sums,
-\begin{linenomath}
-    \begin{align}
-        \log \mathcal{L}(\vec{\theta}) = \sum_i^N \log f_i (\vec{\theta}, \vec{x}_i).
-    \end{align}
-\end{linenomath}
-Instead of maximizing the log-likelihood, the same parameters can be found by minimizing the negative log likelihood,
-\begin{linenomath}
-    \begin{align}
-        - \log \mathcal{L}(\vec{\theta}) = - \sum_i^N \log f_i (\vec{\theta}, \vec{x}_i).
-    \end{align}
-\end{linenomath}
-
- Rather than first balancing the four beam/target polarization samples with event weights and evaluating a separate Monte Carlo normalization integral, the fit uses the measured run-by-run integrated charge directly and constructs a conditional probability for the observed run and beam-helicity state of each event. The three RGC periods, Su22, Fa22 and Sp23, are fit simultaneously with the three RGB samples in every $(x_B,-t')$ bin. The physics parameters $\vec{\theta}$ are common to the appropriate RGC and RGB samples, while the beam polarization, target polarization, accumulated charges and dilution factors retain their appropriate period and run dependence (the target polarization remains the nominal elastic scattering average which only changes for positive and negative polarizations inside each run period).
-
-For each event $i$, the measured kinematics $\vec{x}_i$ are treated as fixed and the likelihood describes the probability for the event to belong to its observed run and beam-helicity state. For a run $r$ and beam helicity $h=\pm1$, let $Q_{rh}$ denote the accumulated Faraday Cup charge in that state. Let $\mathcal{G}(\vec{x}_i;r,h,p)$ denote Eq.~\ref{eq:cross_section_factor} evaluated at the measured kinematics of the event using beam helicity $h$, the signed target polarization associated with run $r$, the beam polarization for run period $p$ and the dilution factor corresponding to the period and kinematic bin. The relative expected yield at fixed $\vec{x}_i$ for the state $(r,h)$ is therefore proportional to $Q_{rh}\mathcal{G}(\vec{x}_i;r,h,p)$. Normalizing this quantity over all run and helicity states within the same run period gives,
-\begin{linenomath}
-    \begin{align}
-    \label{eq:conditional_probability}
-        \mathcal{P}(r,h\mid\vec{x}_i,p) &= \frac{Q_{rh}\mathcal{G}(\vec{x}_i;r,h,p)}{\displaystyle\sum_{r'\in p}\sum_{h'=\pm1}Q_{r'h'}\mathcal{G}(\vec{x}_i;r',h',p)}.
-    \end{align}
-\end{linenomath}
-The denominator is restricted to runs belonging to the same run period as the event. At fixed kinematics, the detector acceptance and the polarization-independent part of the cross section are common to all polarization states within that period and therefore cancel in the conditional probability. This allows Su22, Fa22 and Sp23 to constrain a common set of structure-function ratios without requiring their detector acceptances to be identical. The required assumption is instead that, within each run period, the acceptance at fixed kinematics does not depend on the beam-helicity or target-polarization state. The individual runs are retained separately in the normalization because the signed target polarization is determined on a run-by-run basis (technically period-by-period).
-
-The negative log likelihood minimized in one kinematic bin is then,
-\begin{linenomath}
-    \begin{align}
-    \label{eq:current_nll}
-        \text{nll}(\vec{\theta},\vec{D}_f) = -\sum_{p}\sum_{i\in p}\log \mathcal{P}(r_i,h_i\mid\vec{x}_i,p) + \frac{1}{2}\sum_p\left(\frac{D_{f,p}-\overline{D}_{f,p}}{\delta D_{f,p}^{\text{stat}}}\right)^2.
-    \end{align}
-\end{linenomath}
-Here $\vec{D}_f$ denotes the set of dilution factors $D_{f,p}$ for the three run periods. For each period $p$, $D_{f,p}$ is treated as a nuisance parameter in the likelihood, $\overline{D}_{f,p}$ is the nominal dilution factor determined for that period and kinematic bin and $\delta D_{f,p}^{\text{stat}}$ is its statistical uncertainty obtained from the correlated bootstrap procedure. The second term therefore provides a Gaussian constraint on each $D_{f,p}$ about its independently determined nominal value, allowing the statistical uncertainty on the dilution factor to propagate directly into the uncertainties on the fitted structure-function ratios. This constraint contains only the statistical uncertainty on the dilution factor; the systematic uncertainty associated with its determination is treated separately as discussed below. Runs removed by the quality-assurance procedure have zero accumulated charge and do not contribute to the allowed run states. No artificial balancing of the positive and negative helicity or target-polarization samples is performed.
-
-The structure of Eq.~\ref{eq:conditional_probability} can also be written in a form that makes the charge dependence explicit. For each period define,
-\begin{linenomath}
-    \begin{align}
-        Q_0 &= \sum_r \left(Q_r^+ + Q_r^-\right),\\
-        Q_h &= \sum_r \left(Q_r^+ - Q_r^-\right),\\
-        Q_t &= \sum_r P_{t,r}\left(Q_r^+ + Q_r^-\right),\\
-        Q_{ht} &= \sum_r P_{t,r}\left(Q_r^+ - Q_r^-\right).
-    \end{align}
-\end{linenomath}
-Here $Q_0$ is the total accumulated charge in the period, $Q_h$ measures the charge imbalance between the two beam-helicity states, $Q_t$ is the charge-weighted target-polarization sum and $Q_{ht}$ is the corresponding charge-weighted beam-helicity--target-polarization correlation. If the cross-section factor is separated into unpolarized, beam-spin, target-spin and double-spin pieces,
-\begin{linenomath}
-    \begin{align}
-        \mathcal{G} &= \mathcal{G}_{UU} + h_b\mathcal{G}_{LU} + P_t\mathcal{G}_{UT+UL} + h_bP_t\mathcal{G}_{LT+LL},
-    \end{align}
-\end{linenomath}
-then the denominator of Eq.~\ref{eq:conditional_probability} is simply,
-\begin{linenomath}
-    \begin{align}
-        \mathcal{D}(\vec{x}_i,p) = Q_0\mathcal{G}_{UU} + Q_h\mathcal{G}_{LU} + Q_t\mathcal{G}_{UT+UL} + Q_{ht}\mathcal{G}_{LT+LL}.
-    \end{align}
-\end{linenomath}
-Thus, differences in accumulated charge and target polarization are incorporated exactly in the normalization of the probability rather than corrected after the fit.
-
-The beam polarization is taken separately for each RGC run period,
-\begin{linenomath}
-    \begin{align}
-        P_b^{\text{Su22}} &= 0.8384, & P_b^{\text{Fa22}} &= 0.8372, & P_b^{\text{Sp23}} &= 0.8040.
-    \end{align}
-\end{linenomath}
-The signed target polarization is read by period with a run-by-run look up table. Therefore, both changes in the magnitude of the target polarization and reversals of the target polarization direction are retained. For the nominal extraction the signed target polarization is used directly in the laboratory beam-axis convention,
-\begin{linenomath}
-    \begin{align}
-        P_{\parallel}^{\rm lab} &= P_t.
-    \end{align}
-\end{linenomath}
-The angle $\theta_{\gamma}$ is calculated for each event from the measured electron kinematics.  It can be used to express theoretical predictions in the laboratory-frame convention. No $\cos\theta_{\gamma}$ projection is applied to the nominal target polarization.
-
-The beam- and target-polarization uncertainties are not allowed to fluctuate independently in every kinematic bin. Their statistical and systematic uncertainties correspond primarily to correlated scale uncertainties and are propagated as such after the point-by-point extraction. This avoids incorrectly treating a common polarization normalization as an independent statistical fluctuation from one kinematic bin to the next.
-
-The dilution factor is determined independently for each RGC period and each $(x_B,-t')$ bin using the dedicated dilution-factor analysis. In the asymmetry likelihood, $D_f$ is then included as one nuisance parameter for each run period in a given kinematic bin. Its central value and statistical uncertainty enter through the Gaussian constraint in Eq.~\ref{eq:current_nll}. Therefore, the quoted statistical uncertainty on the fitted structure-function ratios already includes the statistical uncertainty associated with the dilution factor.
-
-The depolarization factors $A$, $B$, $C$, $V$ and $W$ are functions of the event kinematics. The fit uses the ratios $r_B$, $r_C$, $r_V$ and $r_W$ directly from each event. For example,
-\begin{linenomath}
-    \begin{align}
-        \frac{F_{LU}^{\sin\phi}}{F_{UU}} &\rightarrow P_b h_b r_W\frac{F_{LU}^{\sin\phi}}{F_{UU}}\sin\phi,\\
-        \frac{F_{UL,\mathrm{lab}}^{\sin\phi}}{F_{UU}} &\rightarrow D_f P_t r_V \frac{F_{UL,\mathrm{lab}}^{\sin\phi}}{F_{UU}}\sin\phi,\\
-        \frac{F_{LL,\mathrm{lab}}}{F_{UU}} &\rightarrow P_b h_bD_fP_t r_C \frac{F_{LL,\mathrm{lab}}}{F_{UU}}.
-    \end{align}
-\end{linenomath}
-This treatment avoids assigning a single mean depolarization correction to all events in a bin and naturally accounts for correlations between the azimuthal angle and the remaining kinematics.
-
-For the combined fit, let $p$ label an RGC or RGB period, with additional detector-configuration groups introduced if needed for spin-independent acceptance stability. The total objective is
+\subsection{Maximum Likelihood Estimation Method}\label{sec:MLE}
+The extraction uses a conditional likelihood for the observed run and helicity state at the measured event kinematics. Each period has its own normalization. Let $Q_{rh}$ be the accepted integrated charge in run $r$ and helicity state $h$, and let $\mathcal G(\vec x;r,h)$ contain the polarized harmonics, run-dependent polarizations and event-dependent depolarization ratios. The conditional state probability is
 \begin{equation}
--\log\mathcal L_{joint}=-\sum_{p\in RGC\cup RGB}\sum_{i\in p}\log\frac{Q_{r_i h_i}\mathcal G_p(\boldsymbol\theta;\vec x_i,r_i,h_i)}{\sum_{r\in p}\sum_{h=\pm1}Q_{rh}\mathcal G_p(\boldsymbol\theta;\vec x_i,r,h)}.
+ P(r,h\mid\vec x,p)=\frac{Q_{rh}\mathcal G(\vec x;r,h)}{\sum_{r',h'\in p}Q_{r'h'}\mathcal G(\vec x;r',h')}.
 \end{equation}
-The normalization is always within the same period/group, never across RGB and RGC. In RGB, $P_t=0$ for every state. Its charge-normalized helicity dependence constrains $F_{LU}^{\sin\phi}/F_{UU}$ and the common denominator involving $F_{UU}^{\cos\phi}/F_{UU}$ and $F_{UU}^{\cos2\phi}/F_{UU}$. a helicity-summed azimuthal distribution alone cannot determine unpolarized harmonics without acceptance information. In particular, when all spin modulations vanish, spin-independent factors cancel from this conditional likelihood and cannot be identified by this argument alone. Parameter identifiability and correlations will be checked with closure/pseudoexperiment studies. RGB does not create sensitivity to UL/LL by itself. Beam polarizations and luminosities retain their own period/run dependence.
+The negative log likelihood sums $-\log P$ over all selected combinations in the bin. No binning in azimuth or artificial balancing of helicity samples is used. Detector acceptance cancels under the assumption that it is independent of the spin state at fixed kinematics within each period. Different periods may have different acceptances.
+For RGC, measured helicity charges and signed run-dependent target polarization are retained. For RGB, the helicity scaler split is unavailable. The preliminary convention assigns $Q_{r+}=Q_{r-}=Q_r/2$ from the measured accepted total charge. This equal-exposure assumption is distinct from a measured helicity split. RGB has $P_t=0$. Source runs with no surviving exclusive candidate still contribute their accepted charge to the normalization.
+Both unpolarized cosine ratios are fixed to zero. The five polarized ratios float simultaneously. The original 24-bin fit provides $LU\sin\phi$. Adjacent pairs of fine bins are merged and the event likelihood is refitted in twelve bins to provide the two $UL$ ratios. The two $LL$ amplitudes remain free nuisance amplitudes in both fits and are not shown in the conference results.
+Target-dependent amplitudes are fitted initially as diluted products $\beta_j=D_f R_j$. A shared $D_f$ for the three RGC periods in each bin is obtained from the joint material fit. The covariance is transformed to $R_j$ and the first-order shared dilution contribution $\sigma_{D_f}^2(\partial R_i/\partial D_f)(\partial R_j/\partial D_f)$ is added. The statistical uncertainty is therefore conditional on the selected-sample and material model. It does not include unassigned selection or nuclear systematics.
+Three starting values are tried. A fit is retained only with a valid minimum and accurate covariance. The cross-section factor must remain positive for every allowed spin state at the selected event kinematics. Saved fit files retain covariance matrices, correlations, optimizer diagnostics and positivity checks. Candidate combinations are treated as independent observations; repeated combinations from the same event are recorded in the sample audit.
+A separate sensitivity study fixes $LL\cos\phi$ to the supplied BM stage-2 or stage-3 ratio, with both $UL$ ratios still free. Dilution propagation in that study includes the response of free amplitudes to the fixed physical $LL\cos\phi$ input. Neither constrained fit replaces the free-polarized baseline.

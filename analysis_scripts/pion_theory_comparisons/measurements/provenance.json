@@ -2,10 +2,10 @@
   "pip": "24 bins, original pi+ final source including point-to-point systematic errors",
   "pim": "Preliminary release: 24 LU bins and 12 bins each for UL sinphi and UL sin2phi. LL amplitudes float but are not reported. UU fixed zero. Statistical uncertainties including dilution only.",
   "cutset_id_pim": "d8bc2712655fde298f155ebe2767e8dc61a097e7a3229ed86cdc3457f1707de1",
-  "release_signature": "ec426732ba8fb7fdb75630d4d143d6f8d28e9220d3601ffcd26bde15ca17e13f",
+  "release_signature": "6523f0cf58d332481deeebfb964102af43e03e30ce36e6440b0badbcf8bbb92a",
   "sources": {
     "/Users/tbhayward/Documents/Research.nosync/clas12_analysis_software/analysis_scripts/pion_theory_comparisons/measurements/pip_source.csv": "76d95c3b093412455d0f63d63b2bd8ce9f0128a7c6a89141de6788a7511b7a95",
-    "/Users/tbhayward/Documents/ChatGPT/RGC enpi+ analysis/conference_release_preview/measurements.csv": "34e0a81ce917ed90dd3501bef4ee07376d764e4bbb46f18bde96b491286fa1e3"
+    "/Users/tbhayward/Documents/ChatGPT/RGC enpi+ analysis/final_release_input/review_preliminary_release/measurements.csv": "34e0a81ce917ed90dd3501bef4ee07376d764e4bbb46f18bde96b491286fa1e3"
   },
   "rows": 216
 }

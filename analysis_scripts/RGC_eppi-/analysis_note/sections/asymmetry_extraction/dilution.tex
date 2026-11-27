@@ -1,9 +1,32 @@
-\subsection{Dilution Factor Calculation}\label{sec::df}
-The ND$_3$ sample contains polarized deuterons together with nitrogen, He coolant and cell material. The dilution factor is the fraction of selected yields attributable to the polarized deuterium component, using charge-normalized ND$_3$, C, CH$_2$, CD$_2$, He and empty-target controls and the material-balance approach of the \href{https://clasweb.jlab.org/wiki/images/e/e1/RG-C_Dilution_v2.1.pdf}{RG-C dilution-factor note}. Background subtraction, packing fractions and uncertainties must be redetermined with the present $e'p\pi^-$ selection; no $\pi^+$ dilution curves are asserted to apply.
-Define $Y_T=N_T/Q_T$, with consistent QA, vertex, fiducial and exclusivity requirements. Let $\widetilde Y_T$ denote the yield after the appropriate empty-cell and He/material corrections and carbon normalization. Only Sp23 contains CD$_2$. The measured Sp23 CD$_2$/CH$_2$ normalization will first be established in a common accepted phase space. In a bin $b$, a schematic transfer is
+\subsection{Dilution Factor Calculation}
+\label{sec::df}
+In the longitudinally polarized deuterated-ammonia (ND$_3$) target, the selected events include contributions from deuterium, nitrogen, helium coolant and target-cell material. It is therefore necessary to determine the fraction originating from deuterium. This fraction is referred to as the dilution factor, $D_f$. The RGC dilution-factor formalism is described in the standalone document ``\href{https://clasweb.jlab.org/wiki/images/7/72/Dilution_Factor_Determination_for_RG_C_10-16-26.pdf}{Dilution Factor Determination for RG-C}'' by S.~E.~Kuhn, D.~Holmberg and D.~W.~Upton. We calculate $D_f$ directly from charge-normalized ND$_3$, C, CD$_2$, He-bath and empty-target measurements, using Eq.~7 and the ND$_3$ coefficients in Table~II of that document.
+
+The auxiliary-target measurements separate the carbon-like nuclear contribution, helium and cell material from the deuterium contribution. The calculation also accounts for the helium displaced by the solid targets. All samples receive the same exclusivity cuts as the ND$_3$ data from their run period. With $n_T=N_T/Q_T$, the thermally corrected expression is
 \begin{align}
-R_{D/H}^{Sp23}(b)&=\frac{\widetilde Y_{CD_2}^{Sp23}(b)}{\widetilde Y_{CH_2}^{Sp23}(b)},\\
-\widetilde Y_{CD_2}^{p,\mathrm{transfer}}(b)&=R_{D/H}^{Sp23}(b)\widetilde Y_{CH_2}^{p}(b),\quad p=Su22,Fa22.
+S &= n_{\mathrm{CD}_2}-0.765506n_C-0.000757116n_{\mathrm{He}}-0.233737n_{\mathrm{ET}},\\
+D &= n_{\mathrm{CD}_2}-0.170112n_C-0.863533n_{\mathrm{He}}+0.0336457n_{\mathrm{ET}},\\
+D_f &= \frac{(n_{\mathrm{ND}_3}-n_{\mathrm{He}})S}{n_{\mathrm{ND}_3}D}.
 \end{align}
-These are transfer definitions, not a claim that raw polymer-yield ratios equal a neutron dilution factor: areal densities, carbon content, packing fractions and period-dependent backgrounds enter the material-balance calculation. The normalization and its bin dependence will be fitted and validated before use. Its uncertainty is correlated across periods that use the same Sp23 reference. The final dilution factor can be written schematically as $D_f=(Y_{ND_3}-Y_{\mathrm{unpolarized\ background}})/Y_{ND_3}$. The detailed material coefficients and all numerical dilution results remain to be determined.
-RGB has no target polarization; therefore no polarized-target dilution factor multiplies its absent UL/LL terms. Residual nonexclusive/nuclear background effects on its beam-spin ratio remain a separate issue to validate.
+CD$_2$ was measured only in Sp23. For Su22 and Fa22 we multiply the charge-normalized CH$_2$ yield by the Sp23 CD$_2$/CH$_2$ ratio, determined in the same kinematic bin. Figure~\ref{fig:df_controls} compares the measured Sp23 distributions.
+
+\begin{figure}[htbp]\centering
+\includegraphics[width=\linewidth]{figures/asymmetry_extraction/dilution_factor/cd2_ch2_distributions.png}
+\caption{Sp23 CD$_2$ and CH$_2$ yields normalized to charge, with their ratios below. The ratio panels use the six analysis bins in $-t'$.}\label{fig:df_controls}
+\end{figure}
+
+We first compare the three periods after integrating over either $-t'$ or $x_B$ (Fig.~\ref{fig:df_periods}). Correlated statistical comparisons give $\chi^2/\mathrm{ndf}=9.73/8$ ($p=0.285$) for the $x_B$ dependence and $6.43/12$ ($p=0.893$) for the $-t'$ dependence. The comparisons include correlations from the shared Sp23 measurements.
+
+\begin{figure}[htbp]\centering
+\includegraphics[width=\linewidth]{figures/asymmetry_extraction/dilution_factor/period_agreement.png}
+\caption{Period comparisons integrated over $-t'$ (left) or $x_B$ (right). Error bars show statistical standard deviations from Poisson replicas. Points are slightly displaced horizontally for readability.}\label{fig:df_periods}
+\end{figure}
+
+For the released target-spin ratios, adjacent fine bins are merged before the material calculation. A shared-period dilution factor is fitted in each of the twelve merged bins, retaining independent period target rates and the common Sp23 CD$_2$/CH$_2$ transfer. Statistical errors are the standard deviations of 2,000 independent Poisson-replica fits per bin. The $LU$ ratio receives no direct dilution correction. The earlier 24-bin corrections remain available as a cross-check but are not used for the released three-bin $UL$ ratios.
+\clearpage
+\input{sections/generated/dilution_12_table}
+\begin{figure}[p]\centering
+\includegraphics[width=\linewidth]{figures/results/dilution_12_bins.png}
+\caption{Shared-period dilution factors in the twelve target-sector bins. Errors are the standard deviations from 2,000 Poisson-replica fits.}\label{fig:release_dilution}
+\end{figure}
+\clearpage

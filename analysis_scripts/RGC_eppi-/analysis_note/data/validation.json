@@ -1,0 +1,13 @@
+{
+  "release_signature": "6523f0cf58d332481deeebfb964102af43e03e30ce36e6440b0badbcf8bbb92a",
+  "LU_points": 24,
+  "UL_sinphi_points": 12,
+  "UL_sin2phi_points": 12,
+  "individual_RGC_fits_valid": 36,
+  "unresolved_references": 0,
+  "overfull_boxes": 0,
+  "referenced_figures": 111,
+  "rendered_pages": 136,
+  "release_measurements_sha256": "34e0a81ce917ed90dd3501bef4ee07376d764e4bbb46f18bde96b491286fa1e3",
+  "theory_measurements_match": true
+}
