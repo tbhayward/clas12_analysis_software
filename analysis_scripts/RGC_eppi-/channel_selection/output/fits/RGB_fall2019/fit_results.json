@@ -1,0 +1,5328 @@
+{
+  "group": "RGB_fall2019",
+  "members": [
+    "RGB_fall2019_D2"
+  ],
+  "mass": [
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 140827,
+      "parameters": [
+        3419.061268508947,
+        0.9257840198880936,
+        0.09269112622006827,
+        469.33801799282725,
+        1032.999900286706,
+        1596.6617825805845
+      ],
+      "mu": 0.9257840198880936,
+      "sigma": 0.09269112622006827,
+      "mu_error": 0.0006136057365570417,
+      "sigma_error": 0.0007802194684491478,
+      "cut_low": 0.740401767447957,
+      "cut_high": 1.11116627232823,
+      "deviance": 145.22101445908356,
+      "chi2": 145.43332038047285,
+      "ndf": 55,
+      "chi2_ndf": 2.64424218873587,
+      "deviance_improvement": 28838.04995886025,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 140827,
+          "parameters": [
+            3190.616721561757,
+            0.9238327606765279,
+            0.08684822387643659,
+            520.9141556506147,
+            1600.1717183617543,
+            1464.6555391066443
+          ],
+          "mu": 0.9238327606765279,
+          "sigma": 0.08684822387643659,
+          "mu_error": 0.0006569585260700682,
+          "sigma_error": 0.0010101364090306264,
+          "cut_low": 0.7501363129236547,
+          "cut_high": 1.097529208429401,
+          "deviance": 93.97413336441969,
+          "chi2": 93.8372878589861,
+          "ndf": 54,
+          "chi2_ndf": 1.7377275529441871,
+          "deviance_improvement": 12790.701574471113,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 140827,
+          "parameters": [
+            6838.018273002036,
+            0.9258060109406389,
+            0.0927512757160596,
+            936.9260182043397,
+            2064.4084084283268,
+            3191.8907986523136
+          ],
+          "mu": 0.9258060109406389,
+          "sigma": 0.0927512757160596,
+          "mu_error": 0.0006179642408565358,
+          "sigma_error": 0.0007891503972654824,
+          "cut_low": 0.7403034595085196,
+          "cut_high": 1.111308562372758,
+          "deviance": 107.68486087083816,
+          "chi2": 107.71808587931548,
+          "ndf": 25,
+          "chi2_ndf": 4.308723435172619,
+          "deviance_improvement": 28711.069417627637,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 0.013637063898829016,
+      "coarser_histogram_max_boundary_shift": 0.00014229004452803728,
+      "stability_threshold": 0.0370764504880273,
+      "max_boundary_shift": 0.013637063898829016
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 85895,
+      "parameters": [
+        1226.9698639382038,
+        0.928087347279448,
+        0.0842190709634563,
+        302.73842397899654,
+        1001.344471863789,
+        1699.9505197485814
+      ],
+      "mu": 0.928087347279448,
+      "sigma": 0.0842190709634563,
+      "mu_error": 0.001110056933344432,
+      "sigma_error": 0.0013774211131364047,
+      "cut_low": 0.7596492053525354,
+      "cut_high": 1.0965254892063605,
+      "deviance": 82.73144425814984,
+      "chi2": 83.16861856563798,
+      "ndf": 55,
+      "chi2_ndf": 1.5121567011934178,
+      "deviance_improvement": 7566.810517512511,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 85895,
+          "parameters": [
+            1226.969861371434,
+            0.9280873449105146,
+            0.08421906399682454,
+            302.7384627317621,
+            1001.344504297506,
+            1699.9505458632498
+          ],
+          "mu": 0.9280873449105146,
+          "sigma": 0.08421906399682454,
+          "mu_error": 0.0011899137056444234,
+          "sigma_error": 0.002017730619437483,
+          "cut_low": 0.7596492169168655,
+          "cut_high": 1.0965254729041636,
+          "deviance": 82.73144425836936,
+          "chi2": 83.16861810462977,
+          "ndf": 54,
+          "chi2_ndf": 1.540159594530181,
+          "deviance_improvement": 3253.639739214656,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 85895,
+          "parameters": [
+            2455.6755299443007,
+            0.9280169534857475,
+            0.08426288761227536,
+            602.8230399874992,
+            2001.652132702528,
+            3400.4812254175567
+          ],
+          "mu": 0.9280169534857475,
+          "sigma": 0.08426288761227536,
+          "mu_error": 0.0011148845097355919,
+          "sigma_error": 0.0013910613552937051,
+          "cut_low": 0.7594911782611968,
+          "cut_high": 1.0965427287102982,
+          "deviance": 64.2167636757552,
+          "chi2": 64.77509197010852,
+          "ndf": 25,
+          "chi2_ndf": 2.591003678804341,
+          "deviance_improvement": 7541.8828566456195,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 1.6302196925721546e-08,
+      "coarser_histogram_max_boundary_shift": 0.00015802709133860837,
+      "stability_threshold": 0.03368762838538251,
+      "max_boundary_shift": 0.00015802709133860837
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 43719,
+      "parameters": [
+        428.38474948757795,
+        0.9207903853301123,
+        0.08353798035089056,
+        174.41310613876482,
+        579.7593922455885,
+        985.1056783524122
+      ],
+      "mu": 0.9207903853301123,
+      "sigma": 0.08353798035089056,
+      "mu_error": 0.00220915042304783,
+      "sigma_error": 0.0028407388785719294,
+      "cut_low": 0.7537144246283312,
+      "cut_high": 1.0878663460318934,
+      "deviance": 114.0508683663202,
+      "chi2": 114.95782831687013,
+      "ndf": 55,
+      "chi2_ndf": 2.0901423330340023,
+      "deviance_improvement": 1873.6152014656595,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 43719,
+          "parameters": [
+            428.38478113731423,
+            0.9207903011042068,
+            0.08353795466394758,
+            174.41303268336486,
+            579.7594235925445,
+            985.1058145017241
+          ],
+          "mu": 0.9207903011042068,
+          "sigma": 0.08353795466394758,
+          "mu_error": 0.0024038362710729014,
+          "sigma_error": 0.003978942096669954,
+          "cut_low": 0.7537143917763116,
+          "cut_high": 1.087866210432102,
+          "deviance": 114.05086836904037,
+          "chi2": 114.95781804027374,
+          "ndf": 54,
+          "chi2_ndf": 2.1288484822272915,
+          "deviance_improvement": 947.2398541389185,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 43719,
+          "parameters": [
+            854.5946694108084,
+            0.9204744385744962,
+            0.08414765715523108,
+            345.82060020856517,
+            1158.1931164543587,
+            1970.5656327001523
+          ],
+          "mu": 0.9204744385744962,
+          "sigma": 0.08414765715523108,
+          "mu_error": 0.0022428188756003988,
+          "sigma_error": 0.0029144198064563415,
+          "cut_low": 0.752179124264034,
+          "cut_high": 1.0887697528849583,
+          "deviance": 80.42479734919816,
+          "chi2": 81.3053257615542,
+          "ndf": 25,
+          "chi2_ndf": 3.252213030462168,
+          "deviance_improvement": 1851.034260522261,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 1.3559979139543543e-07,
+      "coarser_histogram_max_boundary_shift": 0.0015353003642971652,
+      "stability_threshold": 0.03341519214035622,
+      "max_boundary_shift": 0.0015353003642971652
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 27664,
+      "parameters": [
+        180.49653330203017,
+        0.9007141733261432,
+        0.09564543421692794,
+        100.98042228276918,
+        390.23819457868075,
+        679.4959668745923
+      ],
+      "mu": 0.9007141733261432,
+      "sigma": 0.09564543421692794,
+      "mu_error": 0.005174194688281593,
+      "sigma_error": 0.007719710860537616,
+      "cut_low": 0.7094233048922873,
+      "cut_high": 1.0920050417599991,
+      "deviance": 65.9070845778989,
+      "chi2": 66.17953573021164,
+      "ndf": 55,
+      "chi2_ndf": 1.203264286003848,
+      "deviance_improvement": 476.27874508391017,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 27664,
+          "parameters": [
+            180.49631265028165,
+            0.9007141850277183,
+            0.09564507165565342,
+            100.98097842513931,
+            390.238523904368,
+            679.4960693835967
+          ],
+          "mu": 0.9007141850277183,
+          "sigma": 0.09564507165565342,
+          "mu_error": 0.005681097911542582,
+          "sigma_error": 0.009983516420630556,
+          "cut_low": 0.7094240417164115,
+          "cut_high": 1.092004328339025,
+          "deviance": 65.90708460410654,
+          "chi2": 66.17953764953252,
+          "ndf": 54,
+          "chi2_ndf": 1.2255469935098615,
+          "deviance_improvement": 263.42684638887283,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 27664,
+          "parameters": [
+            357.3770765876667,
+            0.9017359159750793,
+            0.09438334377495557,
+            208.59046566320896,
+            783.5133580587042,
+            1358.4362504541994
+          ],
+          "mu": 0.9017359159750793,
+          "sigma": 0.09438334377495557,
+          "mu_error": 0.005130188617105344,
+          "sigma_error": 0.007632059336544443,
+          "cut_low": 0.7129692284251682,
+          "cut_high": 1.0905026035249905,
+          "deviance": 43.889509170293636,
+          "chi2": 44.13901844149517,
+          "ndf": 25,
+          "chi2_ndf": 1.7655607376598068,
+          "deviance_improvement": 470.53826358702884,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 7.368241241589857e-07,
+      "coarser_histogram_max_boundary_shift": 0.003545923532880857,
+      "stability_threshold": 0.03825817368677118,
+      "max_boundary_shift": 0.003545923532880857
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 19828,
+      "parameters": [
+        94.73236805934715,
+        0.906932712116678,
+        0.07677173493451427,
+        117.79321739051902,
+        300.1899234997179,
+        482.5866296089168
+      ],
+      "mu": 0.906932712116678,
+      "sigma": 0.07677173493451427,
+      "mu_error": 0.0061369874547820506,
+      "sigma_error": 0.008103065308243063,
+      "cut_low": 0.7533892422476495,
+      "cut_high": 1.0604761819857065,
+      "deviance": 117.8089610618363,
+      "chi2": 118.82783152024963,
+      "ndf": 55,
+      "chi2_ndf": 2.1605060276409023,
+      "deviance_improvement": 200.60030654064118,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 19828,
+          "parameters": [
+            94.73235068333504,
+            0.9069328943174473,
+            0.07677212746590646,
+            117.7930288057518,
+            300.1897768355699,
+            482.586524865388
+          ],
+          "mu": 0.9069328943174473,
+          "sigma": 0.07677212746590646,
+          "mu_error": 0.006677205102897073,
+          "sigma_error": 0.010052370023766119,
+          "cut_low": 0.7533886393856344,
+          "cut_high": 1.0604771492492602,
+          "deviance": 117.80896114297174,
+          "chi2": 118.82783752556773,
+          "ndf": 54,
+          "chi2_ndf": 2.200515509732736,
+          "deviance_improvement": 158.054232218297,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 19828,
+          "parameters": [
+            188.8111187999059,
+            0.9083956899714511,
+            0.07416822797826442,
+            240.59825409746063,
+            602.5745499848908,
+            964.550845872321
+          ],
+          "mu": 0.9083956899714511,
+          "sigma": 0.07416822797826442,
+          "mu_error": 0.005983756287308736,
+          "sigma_error": 0.0077430373483032685,
+          "cut_low": 0.7600592340149224,
+          "cut_high": 1.05673214592798,
+          "deviance": 67.33288179132686,
+          "chi2": 67.99955393702498,
+          "ndf": 25,
+          "chi2_ndf": 2.7199821574809993,
+          "deviance_improvement": 199.52277637067144,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 9.672635536972507e-07,
+      "coarser_histogram_max_boundary_shift": 0.006669991767272898,
+      "stability_threshold": 0.0307086939738057,
+      "max_boundary_shift": 0.006669991767272898
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 15705,
+      "parameters": [
+        71.27284966859972,
+        0.9098146525346321,
+        0.08584424153280494,
+        94.09168005100449,
+        236.3748705057269,
+        378.6580609604493
+      ],
+      "mu": 0.9098146525346321,
+      "sigma": 0.08584424153280494,
+      "mu_error": 0.008285092491445848,
+      "sigma_error": 0.011558174764900226,
+      "cut_low": 0.7381261694690222,
+      "cut_high": 1.081503135600242,
+      "deviance": 59.31419479336877,
+      "chi2": 58.99041376204187,
+      "ndf": 55,
+      "chi2_ndf": 1.0725529774916702,
+      "deviance_improvement": 140.061091324673,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 15705,
+          "parameters": [
+            71.27285171064423,
+            0.909814641833502,
+            0.08584423449712994,
+            94.0916790262039,
+            236.37487135730265,
+            378.6580636884014
+          ],
+          "mu": 0.909814641833502,
+          "sigma": 0.08584423449712994,
+          "mu_error": 0.009082486883245826,
+          "sigma_error": 0.014978574215706775,
+          "cut_low": 0.7381261728392421,
+          "cut_high": 1.081503110827762,
+          "deviance": 59.31419479338274,
+          "chi2": 58.990413749616835,
+          "ndf": 54,
+          "chi2_ndf": 1.092415069437349,
+          "deviance_improvement": 82.96436584270347,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 15705,
+          "parameters": [
+            142.9078936914754,
+            0.909589610283048,
+            0.08608604319105544,
+            187.60101028619684,
+            472.4873990665789,
+            757.373787846961
+          ],
+          "mu": 0.909589610283048,
+          "sigma": 0.08608604319105544,
+          "mu_error": 0.008340478136576917,
+          "sigma_error": 0.011710339374182224,
+          "cut_low": 0.7374175239009371,
+          "cut_high": 1.0817616966651589,
+          "deviance": 33.0163383691387,
+          "chi2": 33.21407319921741,
+          "ndf": 25,
+          "chi2_ndf": 1.3285629279686963,
+          "deviance_improvement": 139.79153332419347,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 2.4772480067269953e-08,
+      "coarser_histogram_max_boundary_shift": 0.0007086455680851422,
+      "stability_threshold": 0.034337696613121985,
+      "max_boundary_shift": 0.0007086455680851422
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 75004,
+      "parameters": [
+        2026.9294292150792,
+        0.9269424751536595,
+        0.10295698333841977,
+        183.28520127156472,
+        390.3515420115849,
+        597.4178827516051
+      ],
+      "mu": 0.9269424751536595,
+      "sigma": 0.10295698333841977,
+      "mu_error": 0.0009042391103503794,
+      "sigma_error": 0.0011725575391277401,
+      "cut_low": 0.72102850847682,
+      "cut_high": 1.132856441830499,
+      "deviance": 269.83920623115773,
+      "chi2": 269.2545429190382,
+      "ndf": 55,
+      "chi2_ndf": 4.895537143982513,
+      "deviance_improvement": 17386.727594308733,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 75004,
+          "parameters": [
+            1712.3802002064683,
+            0.9220648105304631,
+            0.08676899817050096,
+            294.750526245722,
+            1149.1470109206853,
+            453.8883314525266
+          ],
+          "mu": 0.9220648105304631,
+          "sigma": 0.08676899817050096,
+          "mu_error": 0.000914846863303741,
+          "sigma_error": 0.0013367641826391497,
+          "cut_low": 0.7485268141894612,
+          "cut_high": 1.095602806871465,
+          "deviance": 104.44633406026935,
+          "chi2": 104.5443798746654,
+          "ndf": 54,
+          "chi2_ndf": 1.9360070347160259,
+          "deviance_improvement": 7427.438895986242,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [
+            "poor Gaussian-plus-background description"
+          ],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 75004,
+          "parameters": [
+            4048.9884853235085,
+            0.927130915595581,
+            0.10287284212712268,
+            375.77863613660304,
+            783.949853386164,
+            1192.1210706357251
+          ],
+          "mu": 0.927130915595581,
+          "sigma": 0.10287284212712268,
+          "mu_error": 0.0009111452379673958,
+          "sigma_error": 0.0011843232115121755,
+          "cut_low": 0.7213852313413357,
+          "cut_high": 1.1328765998498265,
+          "deviance": 238.8739731330581,
+          "chi2": 238.2695212990977,
+          "ndf": 25,
+          "chi2_ndf": 9.530780851963907,
+          "deviance_improvement": 17299.111560432266,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 0.037253634959034,
+      "coarser_histogram_max_boundary_shift": 0.0003567228645157128,
+      "stability_threshold": 0.041182793335367895,
+      "max_boundary_shift": 0.037253634959034
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 62128,
+      "parameters": [
+        771.3624847901247,
+        0.9327954844294828,
+        0.0882531468166316,
+        206.0131193462203,
+        752.2591530267231,
+        1298.505186707226
+      ],
+      "mu": 0.9327954844294828,
+      "sigma": 0.0882531468166316,
+      "mu_error": 0.0015462841299339976,
+      "sigma_error": 0.00195733769846837,
+      "cut_low": 0.7562891907962196,
+      "cut_high": 1.109301778062746,
+      "deviance": 100.28476075637866,
+      "chi2": 100.22179070713933,
+      "ndf": 55,
+      "chi2_ndf": 1.8222143764934424,
+      "deviance_improvement": 4302.1569695888575,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 62128,
+          "parameters": [
+            771.3624825353108,
+            0.9327954789358409,
+            0.08825312887968688,
+            206.01318375667384,
+            752.2592083944922,
+            1298.5052330323106
+          ],
+          "mu": 0.9327954789358409,
+          "sigma": 0.08825312887968688,
+          "mu_error": 0.0016819925666502196,
+          "sigma_error": 0.0030860927447078873,
+          "cut_low": 0.7562892211764671,
+          "cut_high": 1.1093017366952147,
+          "deviance": 100.28476075579428,
+          "chi2": 100.22179033117071,
+          "ndf": 54,
+          "chi2_ndf": 1.855959080206865,
+          "deviance_improvement": 1635.6895692113123,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 62128,
+          "parameters": [
+            1545.2004556727618,
+            0.9328582423142787,
+            0.08788484549563293,
+            414.79712763394014,
+            1505.8954946055942,
+            2596.9938615772485
+          ],
+          "mu": 0.9328582423142787,
+          "sigma": 0.08788484549563293,
+          "mu_error": 0.001544812171113219,
+          "sigma_error": 0.0019592355437841502,
+          "cut_low": 0.7570885513230129,
+          "cut_high": 1.1086279333055447,
+          "deviance": 62.231496832365146,
+          "chi2": 62.52899033933174,
+          "ndf": 25,
+          "chi2_ndf": 2.50115961357327,
+          "deviance_improvement": 4299.814004345629,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 4.136753140038252e-08,
+      "coarser_histogram_max_boundary_shift": 0.0007993605267933024,
+      "stability_threshold": 0.03530125872665265,
+      "max_boundary_shift": 0.0007993605267933024
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 35426,
+      "parameters": [
+        294.91293876261494,
+        0.9218515280092779,
+        0.08739175176565676,
+        121.55692781618285,
+        483.3613042500267,
+        845.1656806838705
+      ],
+      "mu": 0.9218515280092779,
+      "sigma": 0.08739175176565676,
+      "mu_error": 0.002967102536455391,
+      "sigma_error": 0.003912202565733089,
+      "cut_low": 0.7470680244779644,
+      "cut_high": 1.0966350315405915,
+      "deviance": 88.5547251867657,
+      "chi2": 88.7927696671984,
+      "ndf": 55,
+      "chi2_ndf": 1.6144139939490618,
+      "deviance_improvement": 1141.5902691634606,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 35426,
+          "parameters": [
+            294.9127210760418,
+            0.9218512718386486,
+            0.08739049480510433,
+            121.55901675666271,
+            483.36286612018563,
+            845.1667154837086
+          ],
+          "mu": 0.9218512718386486,
+          "sigma": 0.08739049480510433,
+          "mu_error": 0.0032548506829981126,
+          "sigma_error": 0.005720758255001128,
+          "cut_low": 0.7470702822284399,
+          "cut_high": 1.0966322614488573,
+          "deviance": 88.55472517294905,
+          "chi2": 88.79272300024266,
+          "ndf": 54,
+          "chi2_ndf": 1.6443096851896788,
+          "deviance_improvement": 528.6146275424657,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 35426,
+          "parameters": [
+            586.6720621342952,
+            0.9228033989577465,
+            0.0863938669701726,
+            250.60672778512966,
+            970.1704237287353,
+            1689.734119672341
+          ],
+          "mu": 0.9228033989577465,
+          "sigma": 0.0863938669701726,
+          "mu_error": 0.002959558313051139,
+          "sigma_error": 0.0038856879648133066,
+          "cut_low": 0.7500156650174014,
+          "cut_high": 1.0955911328980918,
+          "deviance": 59.73865241415042,
+          "chi2": 60.16471882820817,
+          "ndf": 25,
+          "chi2_ndf": 2.406588753128327,
+          "deviance_improvement": 1128.8623519459695,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 2.7700917342166065e-06,
+      "coarser_histogram_max_boundary_shift": 0.0029476405394369687,
+      "stability_threshold": 0.034956700706262715,
+      "max_boundary_shift": 0.0029476405394369687
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 22432,
+      "parameters": [
+        128.3604933068745,
+        0.9157320875612042,
+        0.08056662811860299,
+        105.42084524994948,
+        330.82271860754935,
+        556.2245919651492
+      ],
+      "mu": 0.9157320875612042,
+      "sigma": 0.08056662811860299,
+      "mu_error": 0.004977614921155751,
+      "sigma_error": 0.006492801160398338,
+      "cut_low": 0.7545988313239982,
+      "cut_high": 1.0768653437984101,
+      "deviance": 87.25065744363266,
+      "chi2": 87.24411215307732,
+      "ndf": 55,
+      "chi2_ndf": 1.5862565846014058,
+      "deviance_improvement": 342.4974549895528,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 22432,
+          "parameters": [
+            128.3604656894237,
+            0.9157309841233577,
+            0.080563032639338,
+            105.42332344119464,
+            330.82460002127647,
+            556.2258766013583
+          ],
+          "mu": 0.9157309841233577,
+          "sigma": 0.080563032639338,
+          "mu_error": 0.005420521710685505,
+          "sigma_error": 0.008718930993595818,
+          "cut_low": 0.7546049188446817,
+          "cut_high": 1.0768570494020338,
+          "deviance": 87.25065745157056,
+          "chi2": 87.24411325335069,
+          "ndf": 54,
+          "chi2_ndf": 1.6156317269139018,
+          "deviance_improvement": 211.25067301845556,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 22432,
+          "parameters": [
+            257.30566544205345,
+            0.9148405323601677,
+            0.08070110045684932,
+            209.5795765330592,
+            661.3205633186203,
+            1113.0615501041814
+          ],
+          "mu": 0.9148405323601677,
+          "sigma": 0.08070110045684932,
+          "mu_error": 0.005002062361635358,
+          "sigma_error": 0.006583714527572002,
+          "cut_low": 0.7534383314464691,
+          "cut_high": 1.0762427332738664,
+          "deviance": 59.85637587106003,
+          "chi2": 60.25489305475871,
+          "ndf": 25,
+          "chi2_ndf": 2.4101957221903483,
+          "deviance_improvement": 341.4492748626856,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 8.294396376395952e-06,
+      "coarser_histogram_max_boundary_shift": 0.0011604998775290865,
+      "stability_threshold": 0.032226651247441195,
+      "max_boundary_shift": 0.0011604998775290865
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.67,
+        1.3
+      ],
+      "fit_entries": 16566,
+      "parameters": [
+        61.47278634569988,
+        0.9054225766744014,
+        0.08348780086883584,
+        65.37427895350638,
+        242.58148096399566,
+        419.78868297448497
+      ],
+      "mu": 0.9054225766744014,
+      "sigma": 0.08348780086883584,
+      "mu_error": 0.00854372395922938,
+      "sigma_error": 0.010741921105630655,
+      "cut_low": 0.7384469749367297,
+      "cut_high": 1.072398178412073,
+      "deviance": 122.15924933743418,
+      "chi2": 123.65810420242543,
+      "ndf": 58,
+      "chi2_ndf": 2.1320362793521626,
+      "deviance_improvement": 127.3404730008528,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ],
+        [
+          0.67,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.67,
+            1.3
+          ],
+          "fit_entries": 16566,
+          "parameters": [
+            61.472407864968496,
+            0.9054237848068141,
+            0.08348807467186566,
+            65.37473948416972,
+            242.58175007258237,
+            419.788760660995
+          ],
+          "mu": 0.9054237848068141,
+          "sigma": 0.08348807467186566,
+          "mu_error": 0.009273291295841573,
+          "sigma_error": 0.015538797288146389,
+          "cut_low": 0.7384476354630828,
+          "cut_high": 1.0723999341505455,
+          "deviance": 122.1592493540198,
+          "chi2": 123.65797045348329,
+          "ndf": 57,
+          "chi2_ndf": 2.169438078131286,
+          "deviance_improvement": 89.55987887682878,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.67,
+            1.3
+          ],
+          "fit_entries": 16499,
+          "parameters": [
+            119.89453732814314,
+            0.906583206848601,
+            0.08250522104701297,
+            134.05826919330428,
+            486.7554520684988,
+            839.4526349436933
+          ],
+          "mu": 0.906583206848601,
+          "sigma": 0.08250522104701297,
+          "mu_error": 0.008861209090724576,
+          "sigma_error": 0.011447335797866517,
+          "cut_low": 0.7415727647545751,
+          "cut_high": 1.071593648942627,
+          "deviance": 73.3527840487516,
+          "chi2": 73.76599527071461,
+          "ndf": 26,
+          "chi2_ndf": 2.8371536642582544,
+          "deviance_improvement": 114.46883961331434,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 1.7557384723865255e-06,
+      "coarser_histogram_max_boundary_shift": 0.0031257898178453924,
+      "stability_threshold": 0.033395120347534335,
+      "max_boundary_shift": 0.0031257898178453924
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 12848,
+      "parameters": [
+        53.10262400282918,
+        0.9188326751625949,
+        0.06500740315899313,
+        75.8109180973622,
+        199.71709299608682,
+        323.6232678948114
+      ],
+      "mu": 0.9188326751625949,
+      "sigma": 0.06500740315899313,
+      "mu_error": 0.007595553895188622,
+      "sigma_error": 0.008889100344103736,
+      "cut_low": 0.7888178688446087,
+      "cut_high": 1.0488474814805813,
+      "deviance": 91.81857221677635,
+      "chi2": 92.38119717443155,
+      "ndf": 55,
+      "chi2_ndf": 1.67965813044421,
+      "deviance_improvement": 101.66823451956631,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 12848,
+          "parameters": [
+            53.102708858957406,
+            0.9188324096771008,
+            0.0650067706961077,
+            75.81106082049311,
+            199.71721010384584,
+            323.62335938719855
+          ],
+          "mu": 0.9188324096771008,
+          "sigma": 0.0650067706961077,
+          "mu_error": 0.007995087878972833,
+          "sigma_error": 0.011380971576597489,
+          "cut_low": 0.7888188682848853,
+          "cut_high": 1.0488459510693162,
+          "deviance": 91.81857221671717,
+          "chi2": 92.3811676911214,
+          "ndf": 54,
+          "chi2_ndf": 1.7107623646503964,
+          "deviance_improvement": 83.56641019599593,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 12848,
+          "parameters": [
+            106.12340591778003,
+            0.9174271822198533,
+            0.06696121960950784,
+            149.69529737499417,
+            398.5965020660382,
+            647.4977067570823
+          ],
+          "mu": 0.9174271822198533,
+          "sigma": 0.06696121960950784,
+          "mu_error": 0.007792639499807535,
+          "sigma_error": 0.009310992590035493,
+          "cut_low": 0.7835047430008376,
+          "cut_high": 1.051349621438869,
+          "deviance": 60.85169598587335,
+          "chi2": 61.16133504236282,
+          "ndf": 25,
+          "chi2_ndf": 2.4464534016945128,
+          "deviance_improvement": 101.6180783531381,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 1.5304112650493806e-06,
+      "coarser_histogram_max_boundary_shift": 0.005313125843771083,
+      "stability_threshold": 0.02600296126359726,
+      "max_boundary_shift": 0.005313125843771083
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [
+        "cut unstable under background or histogram change"
+      ],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 16536,
+      "parameters": [
+        479.23866385792746,
+        0.9343494465942471,
+        0.11305661958695315,
+        42.83808968283876,
+        53.7066868369227,
+        64.57528399100663
+      ],
+      "mu": 0.9343494465942471,
+      "sigma": 0.11305661958695315,
+      "mu_error": 0.002129257932587616,
+      "sigma_error": 0.0027133225838854567,
+      "cut_low": 0.7082362074203408,
+      "cut_high": 1.1604626857681535,
+      "deviance": 103.68879714040689,
+      "chi2": 103.8772850833963,
+      "ndf": 55,
+      "chi2_ndf": 1.8886779106072056,
+      "deviance_improvement": 4223.243990721308,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 16536,
+          "parameters": [
+            389.3269482617818,
+            0.9295525029589771,
+            0.09185244659936387,
+            83.35857055392616,
+            257.43056060233295,
+            40.62000028522294
+          ],
+          "mu": 0.9295525029589771,
+          "sigma": 0.09185244659936387,
+          "mu_error": 0.002025154984593938,
+          "sigma_error": 0.002988158838148002,
+          "cut_low": 0.7458476097602493,
+          "cut_high": 1.1132573961577048,
+          "deviance": 57.37424145710213,
+          "chi2": 57.64240509331181,
+          "ndf": 54,
+          "chi2_ndf": 1.067451946172441,
+          "deviance_improvement": 1791.3183812741013,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 16536,
+          "parameters": [
+            957.941968236838,
+            0.9344227445869524,
+            0.11299379423076518,
+            86.4948852130549,
+            107.86877557181569,
+            129.24266593057646
+          ],
+          "mu": 0.9344227445869524,
+          "sigma": 0.11299379423076518,
+          "mu_error": 0.002144434365419778,
+          "sigma_error": 0.0027366917156294505,
+          "cut_low": 0.7084351561254221,
+          "cut_high": 1.1604103330484827,
+          "deviance": 79.25369299336128,
+          "chi2": 79.4188982296552,
+          "ndf": 25,
+          "chi2_ndf": 3.176755929186208,
+          "deviance_improvement": 4207.015803446168,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 0.047205289610448675,
+      "coarser_histogram_max_boundary_shift": 0.00019894870508130325,
+      "stability_threshold": 0.04522264783478128,
+      "max_boundary_shift": 0.047205289610448675
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 20525,
+      "parameters": [
+        294.20332544414526,
+        0.9488608940179389,
+        0.09807502339347703,
+        67.11619177740812,
+        222.23327978582418,
+        377.35036779424024
+      ],
+      "mu": 0.9488608940179389,
+      "sigma": 0.09807502339347703,
+      "mu_error": 0.0026210404582962007,
+      "sigma_error": 0.003381274465618051,
+      "cut_low": 0.7527108472309849,
+      "cut_high": 1.145010940804893,
+      "deviance": 75.78807865853435,
+      "chi2": 77.2276307694657,
+      "ndf": 55,
+      "chi2_ndf": 1.4041387412630129,
+      "deviance_improvement": 1871.941120296437,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 20525,
+          "parameters": [
+            240.82556385504154,
+            0.9453612086929682,
+            0.08306526330187823,
+            72.52077340572046,
+            350.5963295258757,
+            352.8128362680174
+          ],
+          "mu": 0.9453612086929682,
+          "sigma": 0.08306526330187823,
+          "mu_error": 0.002898550593511525,
+          "sigma_error": 0.005275991592095128,
+          "cut_low": 0.7792306820892118,
+          "cut_high": 1.1114917352967246,
+          "deviance": 68.11755765382675,
+          "chi2": 68.90615574135695,
+          "ndf": 54,
+          "chi2_ndf": 1.2760399211362399,
+          "deviance_improvement": 424.52488302935376,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 20525,
+          "parameters": [
+            587.6901834753864,
+            0.9485783957307684,
+            0.09722847366501687,
+            136.88022066138714,
+            446.7485854038592,
+            756.6169501463312
+          ],
+          "mu": 0.9485783957307684,
+          "sigma": 0.09722847366501687,
+          "mu_error": 0.0026113140738811,
+          "sigma_error": 0.0033667067435413918,
+          "cut_low": 0.7541214484007347,
+          "cut_high": 1.1430353430608022,
+          "deviance": 34.591250859266516,
+          "chi2": 34.741760847197696,
+          "ndf": 25,
+          "chi2_ndf": 1.3896704338879078,
+          "deviance_improvement": 1863.8587252157981,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 0.03351920550816834,
+      "coarser_histogram_max_boundary_shift": 0.001975597744090729,
+      "stability_threshold": 0.03923000935739081,
+      "max_boundary_shift": 0.03351920550816834
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 13410,
+      "parameters": [
+        117.82755056173261,
+        0.9426512495949818,
+        0.09295194914588675,
+        52.10490038399889,
+        177.95402469053428,
+        303.8031489970697
+      ],
+      "mu": 0.9426512495949818,
+      "sigma": 0.09295194914588675,
+      "mu_error": 0.004878401816600595,
+      "sigma_error": 0.0062935467526266204,
+      "cut_low": 0.7567473513032084,
+      "cut_high": 1.1285551478867553,
+      "deviance": 59.01799019941597,
+      "chi2": 58.505816987463255,
+      "ndf": 55,
+      "chi2_ndf": 1.0637421270447864,
+      "deviance_improvement": 486.9128286518197,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 13410,
+          "parameters": [
+            117.82755152896593,
+            0.9426511890047079,
+            0.09295186988872353,
+            52.104922545240065,
+            177.95406154015086,
+            303.8032005350588
+          ],
+          "mu": 0.9426511890047079,
+          "sigma": 0.09295186988872353,
+          "mu_error": 0.005315019873287159,
+          "sigma_error": 0.011348263309860914,
+          "cut_low": 0.7567474492272608,
+          "cut_high": 1.128554928782155,
+          "deviance": 59.01799019921101,
+          "chi2": 58.50581843527334,
+          "ndf": 54,
+          "chi2_ndf": 1.0834410821346916,
+          "deviance_improvement": 134.17461212570316,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 13410,
+          "parameters": [
+            235.62890799124904,
+            0.9427154882404237,
+            0.09292266028194035,
+            104.4694610217441,
+            355.9450340530485,
+            607.4206070843529
+          ],
+          "mu": 0.9427154882404237,
+          "sigma": 0.09292266028194035,
+          "mu_error": 0.00489579640701916,
+          "sigma_error": 0.006341748920046101,
+          "cut_low": 0.756870167676543,
+          "cut_high": 1.1285608088043044,
+          "deviance": 41.42179110331547,
+          "chi2": 40.95328517261512,
+          "ndf": 25,
+          "chi2_ndf": 1.6381314069046047,
+          "deviance_improvement": 484.88855782117827,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 2.1910460024088252e-07,
+      "coarser_histogram_max_boundary_shift": 0.00012281637333466655,
+      "stability_threshold": 0.037180779658354694,
+      "max_boundary_shift": 0.00012281637333466655
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 8735,
+      "parameters": [
+        62.64547250271534,
+        0.925787239508907,
+        0.08168064473080312,
+        39.396589689554844,
+        124.26732353879297,
+        209.1380573880311
+      ],
+      "mu": 0.925787239508907,
+      "sigma": 0.08168064473080312,
+      "mu_error": 0.006484420409506027,
+      "sigma_error": 0.008176694235306684,
+      "cut_low": 0.7624259500473007,
+      "cut_high": 1.0891485289705132,
+      "deviance": 53.12144209938131,
+      "chi2": 52.89349601460308,
+      "ndf": 55,
+      "chi2_ndf": 0.9616999275382379,
+      "deviance_improvement": 211.92800894781269,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 8735,
+          "parameters": [
+            62.64548092862697,
+            0.9257871280098442,
+            0.08168114320805168,
+            39.39636326625165,
+            124.2671935186175,
+            209.13802377098335
+          ],
+          "mu": 0.9257871280098442,
+          "sigma": 0.08168114320805168,
+          "mu_error": 0.007027662630624429,
+          "sigma_error": 0.011837301085164181,
+          "cut_low": 0.7624248415937408,
+          "cut_high": 1.0891494144259475,
+          "deviance": 53.12144209263549,
+          "chi2": 52.893501453493656,
+          "ndf": 54,
+          "chi2_ndf": 0.9795092861758085,
+          "deviance_improvement": 107.69588923974602,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 8735,
+          "parameters": [
+            124.96290827551157,
+            0.9259217219515462,
+            0.08314239256941525,
+            77.8811060144186,
+            247.90440477110144,
+            417.9277035277843
+          ],
+          "mu": 0.9259217219515462,
+          "sigma": 0.08314239256941525,
+          "mu_error": 0.006644495228122138,
+          "sigma_error": 0.008504229774103644,
+          "cut_low": 0.7596369368127157,
+          "cut_high": 1.0922065070903768,
+          "deviance": 35.240046412576916,
+          "chi2": 35.04547383209522,
+          "ndf": 25,
+          "chi2_ndf": 1.4018189532838088,
+          "deviance_improvement": 209.57417470722106,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 1.1084535599392709e-06,
+      "coarser_histogram_max_boundary_shift": 0.0030579781198636358,
+      "stability_threshold": 0.03267225789232125,
+      "max_boundary_shift": 0.0030579781198636358
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 6535,
+      "parameters": [
+        36.81282884608605,
+        0.9240618507857583,
+        0.08142490803748477,
+        35.28884642884487,
+        96.43118681129371,
+        157.57352719374256
+      ],
+      "mu": 0.9240618507857583,
+      "sigma": 0.08142490803748477,
+      "mu_error": 0.009500366594915887,
+      "sigma_error": 0.012194510213885353,
+      "cut_low": 0.7612120347107888,
+      "cut_high": 1.086911666860728,
+      "deviance": 61.34555927809433,
+      "chi2": 62.39584638672067,
+      "ndf": 55,
+      "chi2_ndf": 1.134469934304012,
+      "deviance_improvement": 96.29232559035447,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 6535,
+          "parameters": [
+            36.812831847856664,
+            0.9240618748971984,
+            0.08142504133451703,
+            35.28881858212762,
+            96.43116624953164,
+            157.57351391693567
+          ],
+          "mu": 0.9240618748971984,
+          "sigma": 0.08142504133451703,
+          "mu_error": 0.010304985872590591,
+          "sigma_error": 0.017263126550033342,
+          "cut_low": 0.7612117922281643,
+          "cut_high": 1.0869119575662325,
+          "deviance": 61.34555928312228,
+          "chi2": 62.39584530040009,
+          "ndf": 54,
+          "chi2_ndf": 1.1554786166740758,
+          "deviance_improvement": 52.59905387926393,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 6535,
+          "parameters": [
+            74.46317989432495,
+            0.9233288878057718,
+            0.08040471790212189,
+            70.28479145293285,
+            192.88909386429518,
+            315.4933962756575
+          ],
+          "mu": 0.9233288878057718,
+          "sigma": 0.08040471790212189,
+          "mu_error": 0.009326348182953316,
+          "sigma_error": 0.011961297141523726,
+          "cut_low": 0.762519452001528,
+          "cut_high": 1.0841383236100155,
+          "deviance": 32.76237479914215,
+          "chi2": 32.90677551098641,
+          "ndf": 25,
+          "chi2_ndf": 1.3162710204394563,
+          "deviance_improvement": 98.05272413194615,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 2.907055045575646e-07,
+      "coarser_histogram_max_boundary_shift": 0.0027733432507124345,
+      "stability_threshold": 0.03256996321499391,
+      "max_boundary_shift": 0.0027733432507124345
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 5138,
+      "parameters": [
+        24.33011862281973,
+        0.9192212959860961,
+        0.10241876859346795,
+        23.546381733451078,
+        75.3923239997696,
+        127.23826626608813
+      ],
+      "mu": 0.9192212959860961,
+      "sigma": 0.10241876859346795,
+      "mu_error": 0.017368948137847576,
+      "sigma_error": 0.025551142463365546,
+      "cut_low": 0.7143837587991603,
+      "cut_high": 1.1240588331730321,
+      "deviance": 46.115913190235744,
+      "chi2": 45.92494167979536,
+      "ndf": 55,
+      "chi2_ndf": 0.8349989396326429,
+      "deviance_improvement": 49.17163198938806,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 5138,
+          "parameters": [
+            24.330618813821633,
+            0.9192223419022375,
+            0.10242605111150435,
+            23.54519062523003,
+            75.39144588231197,
+            127.23770113939392
+          ],
+          "mu": 0.9192223419022375,
+          "sigma": 0.10242605111150435,
+          "mu_error": 0.01913400044216896,
+          "sigma_error": 0.03976796730125121,
+          "cut_low": 0.7143702396792289,
+          "cut_high": 1.1240744441252462,
+          "deviance": 46.11591321414437,
+          "chi2": 45.92493686486886,
+          "ndf": 54,
+          "chi2_ndf": 0.8504617937938678,
+          "deviance_improvement": 19.27900001614708,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 5138,
+          "parameters": [
+            49.39358045776271,
+            0.9171704889494462,
+            0.10539860427263886,
+            45.31764699716474,
+            149.94844214790365,
+            254.57923729864257
+          ],
+          "mu": 0.9171704889494462,
+          "sigma": 0.10539860427263886,
+          "mu_error": 0.01832941055827281,
+          "sigma_error": 0.027413442184935074,
+          "cut_low": 0.7063732804041685,
+          "cut_high": 1.127967697494724,
+          "deviance": 17.662660039845832,
+          "chi2": 17.620244087341288,
+          "ndf": 25,
+          "chi2_ndf": 0.7048097634936515,
+          "deviance_improvement": 48.91139968732962,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 1.5610952214029084e-05,
+      "coarser_histogram_max_boundary_shift": 0.008010478394991805,
+      "stability_threshold": 0.04096750743738719,
+      "max_boundary_shift": 0.008010478394991805
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [
+        "cut unstable under background or histogram change"
+      ],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 4377,
+      "parameters": [
+        120.47458049688198,
+        0.9445997616965917,
+        0.1145140340124758,
+        23.242790154685903,
+        16.311036537242227,
+        9.379282919798552
+      ],
+      "mu": 0.9445997616965917,
+      "sigma": 0.1145140340124758,
+      "mu_error": 0.004317290605359612,
+      "sigma_error": 0.0053750354073496,
+      "cut_low": 0.7155716936716401,
+      "cut_high": 1.1736278297215432,
+      "deviance": 72.30266500396003,
+      "chi2": 72.21578883287205,
+      "ndf": 55,
+      "chi2_ndf": 1.3130143424158554,
+      "deviance_improvement": 1065.4416975303084,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 4377,
+          "parameters": [
+            97.1495087898728,
+            0.9398770921954682,
+            0.09369470582891697,
+            31.978209657501576,
+            68.54522492010607,
+            4.848599691156606
+          ],
+          "mu": 0.9398770921954682,
+          "sigma": 0.09369470582891697,
+          "mu_error": 0.00419625913065845,
+          "sigma_error": 0.0063401512259963645,
+          "cut_low": 0.7524876805376343,
+          "cut_high": 1.127266503853302,
+          "deviance": 62.4799866023407,
+          "chi2": 62.44922786851406,
+          "ndf": 54,
+          "chi2_ndf": 1.1564671827502604,
+          "deviance_improvement": 424.4453642142848,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 4377,
+          "parameters": [
+            243.21739579224774,
+            0.9433670682492247,
+            0.11580115247397545,
+            42.21700307740927,
+            30.450976296847507,
+            18.68494951628575
+          ],
+          "mu": 0.9433670682492247,
+          "sigma": 0.11580115247397545,
+          "mu_error": 0.0044300356057843295,
+          "sigma_error": 0.005545513262601579,
+          "cut_low": 0.7117647633012738,
+          "cut_high": 1.1749693731971755,
+          "deviance": 31.374725519646173,
+          "chi2": 31.125446846648003,
+          "ndf": 25,
+          "chi2_ndf": 1.24501787386592,
+          "deviance_improvement": 1065.5039350476566,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 0.046361325868241154,
+      "coarser_histogram_max_boundary_shift": 0.0038069303703662793,
+      "stability_threshold": 0.04580561360499032,
+      "max_boundary_shift": 0.046361325868241154
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.65,
+        1.3
+      ],
+      "fit_entries": 5836,
+      "parameters": [
+        97.03979583328781,
+        0.979442372429871,
+        0.1402432736294462,
+        8.800161055096396,
+        38.38108887042698,
+        67.96201668575756
+      ],
+      "mu": 0.979442372429871,
+      "sigma": 0.1402432736294462,
+      "mu_error": 0.006311194395866518,
+      "sigma_error": 0.009230920585684454,
+      "cut_low": 0.6989558251709787,
+      "cut_high": 1.2599289196887633,
+      "deviance": 58.98674370148303,
+      "chi2": 58.799538043249825,
+      "ndf": 60,
+      "chi2_ndf": 0.9799923007208304,
+      "deviance_improvement": 728.5722660386378,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ],
+        [
+          0.65,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.65,
+            1.3
+          ],
+          "fit_entries": 5836,
+          "parameters": [
+            92.38309368912704,
+            0.979382495368798,
+            0.13684736405157058,
+            9.622943311386848,
+            47.053838783801076,
+            68.99248464170567
+          ],
+          "mu": 0.979382495368798,
+          "sigma": 0.13684736405157058,
+          "mu_error": 0.006425493155414173,
+          "sigma_error": 0.03523608707441752,
+          "cut_low": 0.7056877672656567,
+          "cut_high": 1.2530772234719392,
+          "deviance": 58.978364517148975,
+          "chi2": 58.79846670655168,
+          "ndf": 59,
+          "chi2_ndf": 0.9965841814669776,
+          "deviance_improvement": 86.15728950822682,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.65,
+            1.3
+          ],
+          "fit_entries": 5820,
+          "parameters": [
+            193.80792325476648,
+            0.9790595359365184,
+            0.13940095288798415,
+            17.898842644130493,
+            77.44072674835704,
+            136.98261085258358
+          ],
+          "mu": 0.9790595359365184,
+          "sigma": 0.13940095288798415,
+          "mu_error": 0.006348444367411478,
+          "sigma_error": 0.009562051994333201,
+          "cut_low": 0.7002576301605501,
+          "cut_high": 1.2578614417124867,
+          "deviance": 28.076586154677802,
+          "chi2": 28.173568361192654,
+          "ndf": 27,
+          "chi2_ndf": 1.0434654948589872,
+          "deviance_improvement": 701.646646923108,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 0.0068516962168241324,
+      "coarser_histogram_max_boundary_shift": 0.0020674779762765993,
+      "stability_threshold": 0.05609730945177847,
+      "max_boundary_shift": 0.0068516962168241324
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 4509,
+      "parameters": [
+        43.087223722901136,
+        0.9506182643944943,
+        0.08826282219162475,
+        18.569837967600055,
+        59.29865302074963,
+        100.02746807389921
+      ],
+      "mu": 0.9506182643944943,
+      "sigma": 0.08826282219162475,
+      "mu_error": 0.007355092438414252,
+      "sigma_error": 0.009037568453263214,
+      "cut_low": 0.7740926200112448,
+      "cut_high": 1.1271439087777437,
+      "deviance": 52.45443277570891,
+      "chi2": 52.8078215875316,
+      "ndf": 55,
+      "chi2_ndf": 0.9601422106823927,
+      "deviance_improvement": 195.56928551547318,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 4509,
+          "parameters": [
+            39.172367611931485,
+            0.949669049661438,
+            0.08211390130694994,
+            18.48394151090844,
+            68.97400893296764,
+            97.72600316040855
+          ],
+          "mu": 0.949669049661438,
+          "sigma": 0.08211390130694994,
+          "mu_error": 0.008024191429439454,
+          "sigma_error": 0.01540100348704885,
+          "cut_low": 0.785441247047538,
+          "cut_high": 1.1138968522753379,
+          "deviance": 52.17716718303193,
+          "chi2": 52.45255052827165,
+          "ndf": 54,
+          "chi2_ndf": 0.9713435283013269,
+          "deviance_improvement": 49.88584091130253,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 4509,
+          "parameters": [
+            86.41523232418093,
+            0.9504694794974607,
+            0.0877279390034949,
+            37.16419605192027,
+            118.69783357407596,
+            200.23147109623164
+          ],
+          "mu": 0.9504694794974607,
+          "sigma": 0.0877279390034949,
+          "mu_error": 0.00732106623498296,
+          "sigma_error": 0.008994100018208316,
+          "cut_low": 0.7750136014904709,
+          "cut_high": 1.1259253575044506,
+          "deviance": 20.03763913777928,
+          "chi2": 19.793066223957027,
+          "ndf": 25,
+          "chi2_ndf": 0.791722648958281,
+          "deviance_improvement": 196.0459065601539,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 0.013247056502405874,
+      "coarser_histogram_max_boundary_shift": 0.001218551273293178,
+      "stability_threshold": 0.0353051288766499,
+      "max_boundary_shift": 0.013247056502405874
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 3433,
+      "parameters": [
+        27.055126868220317,
+        0.9246620263156793,
+        0.09864243207119432,
+        16.2078249992702,
+        46.194890329588354,
+        76.1819556599065
+      ],
+      "mu": 0.9246620263156793,
+      "sigma": 0.09864243207119432,
+      "mu_error": 0.012175062517308755,
+      "sigma_error": 0.017111925870710185,
+      "cut_low": 0.7273771621732906,
+      "cut_high": 1.1219468904580678,
+      "deviance": 55.97466469367329,
+      "chi2": 56.42291372361339,
+      "ndf": 55,
+      "chi2_ndf": 1.0258711586111526,
+      "deviance_improvement": 89.49808132255696,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 3433,
+          "parameters": [
+            27.054896070656415,
+            0.9246626288257386,
+            0.09863931229138105,
+            16.20850281478922,
+            46.19530684350158,
+            76.18211087221393
+          ],
+          "mu": 0.9246626288257386,
+          "sigma": 0.09863931229138105,
+          "mu_error": 0.01337753546070135,
+          "sigma_error": 0.026656378960863904,
+          "cut_low": 0.7273840042429764,
+          "cut_high": 1.1219412534085007,
+          "deviance": 55.974664679281815,
+          "chi2": 56.4229111975434,
+          "ndf": 54,
+          "chi2_ndf": 1.0448687258804332,
+          "deviance_improvement": 40.692950846090554,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 3433,
+          "parameters": [
+            54.399284890468145,
+            0.9252674753480782,
+            0.09582422478460428,
+            33.242992158172356,
+            92.86083542603265,
+            152.47867869389293
+          ],
+          "mu": 0.9252674753480782,
+          "sigma": 0.09582422478460428,
+          "mu_error": 0.011630783888371318,
+          "sigma_error": 0.016139047313264418,
+          "cut_low": 0.7336190257788696,
+          "cut_high": 1.1169159249172869,
+          "deviance": 30.794027566092204,
+          "chi2": 30.756424270858567,
+          "ndf": 25,
+          "chi2_ndf": 1.2302569708343427,
+          "deviance_improvement": 91.63664768088594,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 6.842069685819574e-06,
+      "coarser_histogram_max_boundary_shift": 0.00624186360557899,
+      "stability_threshold": 0.039456972828477724,
+      "max_boundary_shift": 0.00624186360557899
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [
+        "cut unstable under background or histogram change"
+      ],
+      "fit_range": [
+        0.7,
+        1.3
+      ],
+      "fit_entries": 2538,
+      "parameters": [
+        20.229803503650132,
+        0.9266515701273813,
+        0.08995686393783676,
+        11.836265057885896,
+        34.74214860749383,
+        57.64803215710177
+      ],
+      "mu": 0.9266515701273813,
+      "sigma": 0.08995686393783676,
+      "mu_error": 0.012221524575872845,
+      "sigma_error": 0.016272268686755693,
+      "cut_low": 0.7467378422517078,
+      "cut_high": 1.106565298003055,
+      "deviance": 48.17837596159752,
+      "chi2": 48.26217305819311,
+      "ndf": 55,
+      "chi2_ndf": 0.8774940556035111,
+      "deviance_improvement": 72.10070076069121,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 2538,
+          "parameters": [
+            15.339907037274935,
+            0.9210126955341478,
+            0.06804066165570304,
+            12.279399892961106,
+            47.826761848866,
+            53.72012496642937
+          ],
+          "mu": 0.9210126955341478,
+          "sigma": 0.06804066165570304,
+          "mu_error": 0.013253299221285564,
+          "sigma_error": 0.018951961357588917,
+          "cut_low": 0.7849313722227417,
+          "cut_high": 1.0570940188455538,
+          "deviance": 46.48882245499169,
+          "chi2": 46.637578299176724,
+          "ndf": 54,
+          "chi2_ndf": 0.8636588573921615,
+          "deviance_improvement": 19.668017076743126,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.7,
+            1.3
+          ],
+          "fit_entries": 2538,
+          "parameters": [
+            39.900073797378674,
+            0.9270994374388125,
+            0.09045022651605514,
+            23.92410129981581,
+            69.6138530105624,
+            115.30360472130899
+          ],
+          "mu": 0.9270994374388125,
+          "sigma": 0.09045022651605514,
+          "mu_error": 0.012522459799143883,
+          "sigma_error": 0.016779578688566534,
+          "cut_low": 0.7461989844067023,
+          "cut_high": 1.1079998904709227,
+          "deviance": 25.919904403802025,
+          "chi2": 26.218871003556433,
+          "ndf": 25,
+          "chi2_ndf": 1.0487548401422573,
+          "deviance_improvement": 69.79419954112014,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 0.04947127915750116,
+      "coarser_histogram_max_boundary_shift": 0.0014345924678678124,
+      "stability_threshold": 0.035982745575134714,
+      "max_boundary_shift": 0.04947127915750116
+    },
+    {
+      "kind": "mass",
+      "model": "linear",
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0.65,
+        1.3
+      ],
+      "fit_entries": 2035,
+      "parameters": [
+        14.454944165580056,
+        0.9187492768527709,
+        0.10135064407029519,
+        6.487220284118771,
+        25.681170220331545,
+        44.87512015654432
+      ],
+      "mu": 0.9187492768527709,
+      "sigma": 0.10135064407029519,
+      "mu_error": 0.015299344117351083,
+      "sigma_error": 0.019629288916689736,
+      "cut_low": 0.7160479887121804,
+      "cut_high": 1.1214505649933613,
+      "deviance": 68.92575635119952,
+      "chi2": 71.12094448973502,
+      "ndf": 60,
+      "chi2_ndf": 1.185349074828917,
+      "deviance_improvement": 59.09083907098558,
+      "reason": "provisional cut",
+      "range_history": [
+        [
+          0.7,
+          1.3
+        ],
+        [
+          0.65,
+          1.3
+        ]
+      ],
+      "checks": {
+        "concave_quadratic": {
+          "kind": "mass",
+          "model": "concave_quadratic",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.65,
+            1.3
+          ],
+          "fit_entries": 2035,
+          "parameters": [
+            14.454965160444651,
+            0.9187488533575064,
+            0.10135241289603195,
+            6.487066944598527,
+            25.681067314247112,
+            44.875067683895416
+          ],
+          "mu": 0.9187488533575064,
+          "sigma": 0.10135241289603195,
+          "mu_error": 0.01664978039480555,
+          "sigma_error": 0.03809913372276262,
+          "cut_low": 0.7160440275654425,
+          "cut_high": 1.1214536791495704,
+          "deviance": 68.92575633999193,
+          "chi2": 71.12092547714674,
+          "ndf": 59,
+          "chi2_ndf": 1.2054394148668939,
+          "deviance_improvement": 17.72200194341589,
+          "reason": "provisional cut"
+        },
+        "coarser_histogram": {
+          "kind": "mass",
+          "model": "linear",
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0.65,
+            1.3
+          ],
+          "fit_entries": 2029,
+          "parameters": [
+            28.225149853763014,
+            0.9210733453209655,
+            0.10129818869109386,
+            13.63016462675551,
+            51.679469004716026,
+            89.72877338267654
+          ],
+          "mu": 0.9210733453209655,
+          "sigma": 0.10129818869109386,
+          "mu_error": 0.016019823723032085,
+          "sigma_error": 0.021053957741333548,
+          "cut_low": 0.7184769679387778,
+          "cut_high": 1.1236697227031534,
+          "deviance": 26.152868626259767,
+          "chi2": 26.603176133660597,
+          "ndf": 27,
+          "chi2_ndf": 0.9853028197652073,
+          "deviance_improvement": 53.49999877541563,
+          "reason": "provisional cut"
+        }
+      },
+      "concave_quadratic_max_boundary_shift": 3.961146737951893e-06,
+      "coarser_histogram_max_boundary_shift": 0.0024289792265973498,
+      "stability_threshold": 0.04054025762811808,
+      "max_boundary_shift": 0.0024289792265973498
+    }
+  ],
+  "momentum": [
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 106901,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        83101.4728106553,
+        0.06815148047078114,
+        3.590919281429418,
+        27524.228860542924,
+        0.17785847875122113
+      ],
+      "mode": 0.06815148047078114,
+      "shape": 3.590919281429418,
+      "mu": 0.09445545719412458,
+      "sigma": 0.049845302160053326,
+      "cut_low": 0.022623600159272547,
+      "cut_high": 0.21770158807203374,
+      "deviance": 160.2732989957201,
+      "chi2": 164.85926605582446,
+      "ndf": 115,
+      "chi2_ndf": 1.4335588352680388,
+      "deviance_improvement": 33806.098608780565,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 106901,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            77664.74707992355,
+            0.06816704225331395,
+            3.7476425365893435,
+            33978.0738971397,
+            0.1049568042106887
+          ],
+          "mode": 0.06816704225331395,
+          "shape": 3.7476425365893435,
+          "mu": 0.09297632561006744,
+          "sigma": 0.04802786698917556,
+          "cut_low": 0.023185777498199337,
+          "cut_high": 0.21131076248148292,
+          "deviance": 139.53584064461984,
+          "chi2": 139.2479958357397,
+          "ndf": 115,
+          "chi2_ndf": 1.2108521377020842,
+          "deviance_improvement": 18758.594456405724,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 106901,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            83082.79536216076,
+            0.06817869494320943,
+            3.5965299457163646,
+            27538.706170704918,
+            0.17770669889268462
+          ],
+          "mode": 0.06817869494320943,
+          "shape": 3.5965299457163646,
+          "mu": 0.09443631429232863,
+          "sigma": 0.04979631305048346,
+          "cut_low": 0.022652949558312648,
+          "cut_high": 0.21754536881767328,
+          "deviance": 83.5256173488442,
+          "chi2": 83.8539170484177,
+          "ndf": 55,
+          "chi2_ndf": 1.5246166736075946,
+          "deviance_improvement": 33773.319864306875,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.006390825590550819,
+      "stability_threshold": 0.01950779879127612
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 50344,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        38830.660246835236,
+        0.07187174516932993,
+        3.6613014006871376,
+        13270.317823817017,
+        0.17250426964324242
+      ],
+      "mode": 0.07187174516932993,
+      "shape": 3.6613014006871376,
+      "mu": 0.09887798548122129,
+      "sigma": 0.05167516460991264,
+      "cut_low": 0.024125104911747287,
+      "cut_high": 0.22644345098422622,
+      "deviance": 173.98521520823297,
+      "chi2": 185.07051592873822,
+      "ndf": 115,
+      "chi2_ndf": 1.6093088341629411,
+      "deviance_improvement": 13829.181909257482,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 50344,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            35793.22387457776,
+            0.07200740823592626,
+            3.8783131962473907,
+            16684.225529921267,
+            0.09568480847858817
+          ],
+          "mode": 0.07200740823592626,
+          "shape": 3.8783131962473907,
+          "mu": 0.09702463302223727,
+          "sigma": 0.04926750505278954,
+          "cut_low": 0.02496576037758907,
+          "cut_high": 0.21807386373214288,
+          "deviance": 130.91290970254698,
+          "chi2": 132.5786579017973,
+          "ndf": 115,
+          "chi2_ndf": 1.1528578947982373,
+          "deviance_improvement": 8007.758580794158,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 50344,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            38790.83493913087,
+            0.07188882044201102,
+            3.6734960580990856,
+            13298.525482025703,
+            0.17183977154279156
+          ],
+          "mode": 0.07188882044201102,
+          "shape": 3.6734960580990856,
+          "mu": 0.09877826365784487,
+          "sigma": 0.051537292435539186,
+          "cut_low": 0.02417656135388835,
+          "cut_high": 0.22596846411987226,
+          "deviance": 110.1343814949343,
+          "chi2": 112.5427768626201,
+          "ndf": 55,
+          "chi2_ndf": 2.046232306593093,
+          "deviance_improvement": 13822.27741109795,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.008369587252083338,
+      "stability_threshold": 0.020231834607247895
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 22691,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        16603.78755702275,
+        0.07551844598919001,
+        3.687970871480605,
+        7064.517948536249,
+        0.17216520363571022
+      ],
+      "mode": 0.07551844598919001,
+      "shape": 3.687970871480605,
+      "mu": 0.10361341040656574,
+      "sigma": 0.05395382357660495,
+      "cut_low": 0.025454051534954895,
+      "cut_high": 0.23672425521469653,
+      "deviance": 133.2842300939393,
+      "chi2": 134.99835230642324,
+      "ndf": 115,
+      "chi2_ndf": 1.1738987157080283,
+      "deviance_improvement": 5764.345975845155,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 22691,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            15063.316553454548,
+            0.07588202677619058,
+            3.930346959676131,
+            8834.770260651429,
+            0.09588957659908966
+          ],
+          "mode": 0.07588202677619058,
+          "shape": 3.930346959676131,
+          "mu": 0.10177726301285016,
+          "sigma": 0.051337571711548555,
+          "cut_low": 0.026503612839238105,
+          "cut_high": 0.2277761544792311,
+          "deviance": 127.17592917246097,
+          "chi2": 128.13559092726013,
+          "ndf": 115,
+          "chi2_ndf": 1.1142225298022619,
+          "deviance_improvement": 3165.7261338652042,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 22691,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            16617.13308457216,
+            0.07551469966791943,
+            3.680771953745073,
+            7055.375041940617,
+            0.17259760083828282
+          ],
+          "mode": 0.07551469966791943,
+          "shape": 3.680771953745073,
+          "mu": 0.10368371253841907,
+          "sigma": 0.05404320339280336,
+          "cut_low": 0.02542455172096446,
+          "cut_high": 0.23703654818232006,
+          "deviance": 81.15671269460117,
+          "chi2": 82.01520937754483,
+          "ndf": 55,
+          "chi2_ndf": 1.4911856250462698,
+          "deviance_improvement": 5753.7196619122515,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.008948100735465425,
+      "stability_threshold": 0.021127020367974165
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 13853,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        9650.504606609682,
+        0.07991954726454019,
+        3.7911655622565985,
+        5166.996023893418,
+        0.19360084955315704
+      ],
+      "mode": 0.07991954726454019,
+      "shape": 3.7911655622565985,
+      "mu": 0.10855258442480341,
+      "sigma": 0.05575114513333342,
+      "cut_low": 0.027360155932241097,
+      "cut_high": 0.24578624137384766,
+      "deviance": 135.85689090270557,
+      "chi2": 135.73004846602237,
+      "ndf": 115,
+      "chi2_ndf": 1.18026129100889,
+      "deviance_improvement": 3663.211494190913,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 13853,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            8678.942271589944,
+            0.08032573421186902,
+            4.079757559966379,
+            6381.163137618498,
+            0.1152178675252233
+          ],
+          "mode": 0.08032573421186902,
+          "shape": 4.079757559966379,
+          "mu": 0.10640757106033379,
+          "sigma": 0.052681162741885695,
+          "cut_low": 0.028632872211997767,
+          "cut_high": 0.23531549986942008,
+          "deviance": 132.41140076053134,
+          "chi2": 131.39691879278467,
+          "ndf": 115,
+          "chi2_ndf": 1.1425819025459536,
+          "deviance_improvement": 1991.0474280967373,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 13853,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            9645.301716944925,
+            0.08002929677718139,
+            3.8085155692099817,
+            5169.158553674487,
+            0.19314397168561914
+          ],
+          "mode": 0.08002929677718139,
+          "shape": 3.8085155692099817,
+          "mu": 0.10852452666109232,
+          "sigma": 0.05560963347523922,
+          "cut_low": 0.027467857151243075,
+          "cut_high": 0.24535873583923648,
+          "deviance": 56.477429774374045,
+          "chi2": 56.701574808023786,
+          "ndf": 55,
+          "chi2_ndf": 1.0309377237822506,
+          "deviance_improvement": 3654.775721166327,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.010470741504427589,
+      "stability_threshold": 0.02184260854416066
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 8029,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        5585.682082474675,
+        0.07885660875580774,
+        3.8783663875603334,
+        3056.1950494974326,
+        0.20185720439665672
+      ],
+      "mode": 0.07885660875580774,
+      "shape": 3.8783663875603334,
+      "mu": 0.10625291559728862,
+      "sigma": 0.05395310443806999,
+      "cut_low": 0.027340661412013075,
+      "cut_high": 0.2388144182035445,
+      "deviance": 130.00130296576762,
+      "chi2": 128.3668101296846,
+      "ndf": 115,
+      "chi2_ndf": 1.116233131562475,
+      "deviance_improvement": 2386.198738104841,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 8029,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            5098.874719582177,
+            0.07908322899539605,
+            4.116568245190498,
+            3739.3163486648955,
+            0.12862275707285234
+          ],
+          "mode": 0.07908322899539605,
+          "shape": 4.116568245190498,
+          "mu": 0.10445832839116177,
+          "sigma": 0.051484371081341435,
+          "cut_low": 0.02832693107757786,
+          "cut_high": 0.23034708696621256,
+          "deviance": 131.21564343300204,
+          "chi2": 129.2870576151359,
+          "ndf": 115,
+          "chi2_ndf": 1.1242352836098772,
+          "deviance_improvement": 1319.3082314276787,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 8029,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            5575.869693487765,
+            0.0789255369816477,
+            3.9038258722309704,
+            3062.0754174442277,
+            0.20092581076371296
+          ],
+          "mode": 0.0789255369816477,
+          "shape": 3.9038258722309704,
+          "mu": 0.10610538193599073,
+          "sigma": 0.0537022143848983,
+          "cut_low": 0.02746384586077845,
+          "cut_high": 0.2379802969068387,
+          "deviance": 45.79810682762428,
+          "chi2": 46.119055465489254,
+          "ndf": 55,
+          "chi2_ndf": 0.8385282811907137,
+          "deviance_improvement": 2387.662024177764,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.008467331237331926,
+      "stability_threshold": 0.021147375679153143
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 6848,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        4795.001145922139,
+        0.08215601743876766,
+        3.6088043890937094,
+        2715.057922493806,
+        0.22078097575667324
+      ],
+      "mode": 0.08215601743876766,
+      "shape": 3.6088043890937094,
+      "mu": 0.11364784479931131,
+      "sigma": 0.05982456275074454,
+      "cut_low": 0.027350471119910083,
+      "cut_high": 0.26150748889715997,
+      "deviance": 109.75856334284978,
+      "chi2": 109.1311272160885,
+      "ndf": 115,
+      "chi2_ndf": 0.9489663236181609,
+      "deviance_improvement": 1809.1854596702883,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 6848,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            4299.624540146315,
+            0.08221600643135413,
+            3.8886432691509807,
+            3353.223416763697,
+            0.13609731619797613
+          ],
+          "mode": 0.08221600643135413,
+          "shape": 3.8886432691509807,
+          "mu": 0.1106778131588836,
+          "sigma": 0.05612566727579961,
+          "cut_low": 0.028547234570150917,
+          "cut_high": 0.24854757648465656,
+          "deviance": 104.2995311796225,
+          "chi2": 102.84243600331939,
+          "ndf": 115,
+          "chi2_ndf": 0.8942820522027773,
+          "deviance_improvement": 943.5939996870299,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 6848,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            4799.158386330995,
+            0.08226851594325431,
+            3.6133700365005854,
+            2713.031535792353,
+            0.22116381966161647
+          ],
+          "mode": 0.08226851594325431,
+          "shape": 3.6133700365005854,
+          "mu": 0.11374837328998329,
+          "sigma": 0.059839640411613014,
+          "cut_low": 0.0274077858558396,
+          "cut_high": 0.261629788388753,
+          "deviance": 60.1539393963399,
+          "chi2": 59.85690638407813,
+          "ndf": 55,
+          "chi2_ndf": 1.0883073888014205,
+          "deviance_improvement": 1804.5605030734707,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.01295991241250341,
+      "stability_threshold": 0.023415701777724993
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 63240,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        52171.63090954231,
+        0.0718316753124381,
+        3.4597698981738705,
+        11763.442791827962,
+        0.1259895205122442
+      ],
+      "mode": 0.0718316753124381,
+      "shape": 3.4597698981738705,
+      "mu": 0.10103427485874764,
+      "sigma": 0.05431816886780864,
+      "cut_low": 0.02333644474706626,
+      "cut_high": 0.23575713161231857,
+      "deviance": 157.1985348268608,
+      "chi2": 158.46051209367997,
+      "ndf": 115,
+      "chi2_ndf": 1.3779174964667824,
+      "deviance_improvement": 8716.640582035436,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 63240,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            47801.42082925784,
+            0.07231840107973284,
+            3.6443680086253827,
+            16232.903194186976,
+            0.05346794589714927
+          ],
+          "mode": 0.07231840107973284,
+          "shape": 3.6443680086253827,
+          "mu": 0.09966648608297185,
+          "sigma": 0.05220811750457252,
+          "cut_low": 0.024210933088949588,
+          "cut_high": 0.22859697414571553,
+          "deviance": 144.2054604816445,
+          "chi2": 144.66802377372952,
+          "ndf": 115,
+          "chi2_ndf": 1.257982815423735,
+          "deviance_improvement": 6242.148570586082,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 63240,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            52100.58541299357,
+            0.07187009468476846,
+            3.4714786456449986,
+            11828.760308141937,
+            0.12533007559231105
+          ],
+          "mode": 0.07187009468476846,
+          "shape": 3.4714786456449986,
+          "mu": 0.10094989062450317,
+          "sigma": 0.05418119802569051,
+          "cut_low": 0.023395051636732105,
+          "cut_high": 0.23529502049704198,
+          "deviance": 88.13723543615947,
+          "chi2": 88.7877521353531,
+          "ndf": 55,
+          "chi2_ndf": 1.6143227660973292,
+          "deviance_improvement": 8708.918836665445,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.007160157466603034,
+      "stability_threshold": 0.021242068686525232
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 36953,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        28181.371027996895,
+        0.07601357038153458,
+        3.6088096604883173,
+        10085.853166935252,
+        0.1671850585205708
+      ],
+      "mode": 0.07601357038153458,
+      "shape": 3.6088096604883173,
+      "mu": 0.10515083230324425,
+      "sigma": 0.05535166973186444,
+      "cut_low": 0.025305616899302306,
+      "cut_high": 0.24195546270372395,
+      "deviance": 92.63777139716584,
+      "chi2": 94.29331623813988,
+      "ndf": 115,
+      "chi2_ndf": 0.8199418803316512,
+      "deviance_improvement": 8219.47219830246,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 36953,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            25761.581442776685,
+            0.07632898047202782,
+            3.8192537421811674,
+            12779.86426942106,
+            0.08967940047020574
+          ],
+          "mode": 0.07632898047202782,
+          "shape": 3.8192537421811674,
+          "mu": 0.10340315947550216,
+          "sigma": 0.052910827333963975,
+          "cut_low": 0.026239082100330643,
+          "cut_high": 0.23356668108648285,
+          "deviance": 81.72950867045398,
+          "chi2": 82.13528997359417,
+          "ndf": 115,
+          "chi2_ndf": 0.7142199128138623,
+          "deviance_improvement": 4746.641693433774,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 36953,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            28184.992230445125,
+            0.07604341985334703,
+            3.6099834134862383,
+            10084.942427053755,
+            0.1673130079359937
+          ],
+          "mode": 0.07604341985334703,
+          "shape": 3.6099834134862383,
+          "mu": 0.10517901491514607,
+          "sigma": 0.05535750344412776,
+          "cut_low": 0.025320276072677103,
+          "cut_high": 0.24199437638744126,
+          "deviance": 52.47421019116401,
+          "chi2": 53.384779527784694,
+          "ndf": 55,
+          "chi2_ndf": 0.9706323550506308,
+          "deviance_improvement": 8207.343214853623,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.008388781617241103,
+      "stability_threshold": 0.021664984580442165
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 18439,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        13147.947197875086,
+        0.07710855049492506,
+        3.6259090379631544,
+        6014.797370784092,
+        0.16041239685923586
+      ],
+      "mode": 0.07710855049492506,
+      "shape": 3.6259090379631544,
+      "mu": 0.10647306746034746,
+      "sigma": 0.055915384249774554,
+      "cut_low": 0.025739764154315094,
+      "cut_high": 0.2446168500703117,
+      "deviance": 130.5979016072328,
+      "chi2": 131.3070900043054,
+      "ndf": 115,
+      "chi2_ndf": 1.1418007826461338,
+      "deviance_improvement": 4055.8842070222904,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 18439,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            11642.084912950053,
+            0.0776396289575108,
+            3.91287489734096,
+            7671.046623918941,
+            0.08344247217498343
+          ],
+          "mode": 0.0776396289575108,
+          "shape": 3.91287489734096,
+          "mu": 0.10429358139068419,
+          "sigma": 0.05272415155763623,
+          "cut_low": 0.027050957550854085,
+          "cut_high": 0.23374236062933013,
+          "deviance": 126.4130180444482,
+          "chi2": 125.4786780537632,
+          "ndf": 115,
+          "chi2_ndf": 1.0911189395979408,
+          "deviance_improvement": 2150.84535143802,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 18439,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            13134.103185791702,
+            0.07704235402144431,
+            3.6282800445101153,
+            6024.710422105211,
+            0.1599882198737906
+          ],
+          "mode": 0.07704235402144431,
+          "shape": 3.6282800445101153,
+          "mu": 0.10635519463078821,
+          "sigma": 0.055835229633163,
+          "cut_low": 0.025727288987109548,
+          "cut_high": 0.24429348462785785,
+          "deviance": 71.18008365528972,
+          "chi2": 72.13028519013109,
+          "ndf": 55,
+          "chi2_ndf": 1.3114597307296563,
+          "deviance_improvement": 4054.488199454307,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.010874489440981572,
+      "stability_threshold": 0.021887708591599664
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 10073,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        6857.394293251986,
+        0.07742854893061352,
+        3.6286471250519283,
+        3761.5596742022935,
+        0.17399602456699878
+      ],
+      "mode": 0.07742854893061352,
+      "shape": 3.6286471250519283,
+      "mu": 0.10688421385904469,
+      "sigma": 0.0561101202063478,
+      "cut_low": 0.025857750389249395,
+      "cut_high": 0.24550044735595458,
+      "deviance": 111.79742995456158,
+      "chi2": 111.7573079243478,
+      "ndf": 115,
+      "chi2_ndf": 0.9718026776030243,
+      "deviance_improvement": 2479.432188370382,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 10073,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            6012.864578186194,
+            0.07793274853412646,
+            3.95094136239588,
+            4725.478520506442,
+            0.09576421302478318
+          ],
+          "mode": 0.07793274853412646,
+          "shape": 3.95094136239588,
+          "mu": 0.1043422019808234,
+          "sigma": 0.0524940046647082,
+          "cut_low": 0.02729824721475622,
+          "cut_high": 0.23312481399831322,
+          "deviance": 108.34717970569939,
+          "chi2": 107.40938150799454,
+          "ndf": 115,
+          "chi2_ndf": 0.9339946218086481,
+          "deviance_improvement": 1228.4026121834584,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 10073,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            6866.532674146233,
+            0.07743718638896135,
+            3.61545986744957,
+            3753.540574464105,
+            0.17431980685297957
+          ],
+          "mode": 0.07743718638896135,
+          "shape": 3.61545986744957,
+          "mu": 0.10704467046956136,
+          "sigma": 0.05629674392751868,
+          "cut_low": 0.025806777619805415,
+          "cut_high": 0.24616387848355337,
+          "deviance": 63.3012593474267,
+          "chi2": 62.33997503951229,
+          "ndf": 55,
+          "chi2_ndf": 1.1334540916274962,
+          "deviance_improvement": 2466.190406623909,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.012375633357641358,
+      "stability_threshold": 0.02196426969667052
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 6939,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        4391.549806089909,
+        0.07754333321532074,
+        3.750861617249891,
+        2983.885558569642,
+        0.17449590920031524
+      ],
+      "mode": 0.07754333321532074,
+      "shape": 3.750861617249891,
+      "mu": 0.10573207696348602,
+      "sigma": 0.054593538294243196,
+      "cut_low": 0.026387714728086827,
+      "cut_high": 0.24023399806176218,
+      "deviance": 115.74401316860565,
+      "chi2": 117.14400242716478,
+      "ndf": 115,
+      "chi2_ndf": 1.0186434993666502,
+      "deviance_improvement": 1795.0176214990965,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 6939,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            3724.8054696444624,
+            0.07829477289064954,
+            4.2293958626233055,
+            3742.313544963207,
+            0.09555053033306919
+          ],
+          "mode": 0.07829477289064954,
+          "shape": 4.2293958626233055,
+          "mu": 0.10253917531799676,
+          "sigma": 0.04985981378803799,
+          "cut_low": 0.02845296210627474,
+          "cut_high": 0.2241928816202179,
+          "deviance": 111.5911004289656,
+          "chi2": 111.89803239847166,
+          "ndf": 115,
+          "chi2_ndf": 0.9730263686823623,
+          "deviance_improvement": 863.1281951819581,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 6939,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            4387.353532026827,
+            0.07755659230709516,
+            3.75618931087816,
+            2986.38690862466,
+            0.17410575292381206
+          ],
+          "mode": 0.07755659230709516,
+          "shape": 3.75618931087816,
+          "mu": 0.10569565808207437,
+          "sigma": 0.05453601630941889,
+          "cut_low": 0.0264133311735766,
+          "cut_high": 0.24004021554179514,
+          "deviance": 59.6186029053795,
+          "chi2": 61.047508175476736,
+          "ndf": 55,
+          "chi2_ndf": 1.109954694099577,
+          "deviance_improvement": 1790.146650214031,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.016041116441544295,
+      "stability_threshold": 0.021384628333367538
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 4399,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        2803.4191043790597,
+        0.0760003365209492,
+        3.8380207359265954,
+        1874.3907887061675,
+        0.17739182113978696
+      ],
+      "mode": 0.0760003365209492,
+      "shape": 3.8380207359265954,
+      "mu": 0.10277968156196969,
+      "sigma": 0.05246305896299031,
+      "cut_low": 0.02619764544805769,
+      "cut_high": 0.2317900370142994,
+      "deviance": 119.01824624655654,
+      "chi2": 118.96771440995266,
+      "ndf": 115,
+      "chi2_ndf": 1.034501864434371,
+      "deviance_improvement": 1261.7162809596273,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 4399,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            2472.653588667189,
+            0.0764806169779945,
+            4.136964748563906,
+            2295.1891876331943,
+            0.10628961511149093
+          ],
+          "mode": 0.0764806169779945,
+          "shape": 4.136964748563906,
+          "mu": 0.10086106849980621,
+          "sigma": 0.049588692168655274,
+          "cut_low": 0.027467600897681226,
+          "cut_high": 0.22206659784848432,
+          "deviance": 122.36494737392246,
+          "chi2": 121.57621143890837,
+          "ndf": 115,
+          "chi2_ndf": 1.0571844472948555,
+          "deviance_improvement": 619.5166363612877,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 4399,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            2799.8954216022203,
+            0.07593636236393139,
+            3.843145559900931,
+            1876.724877175463,
+            0.17701029449453823
+          ],
+          "mode": 0.07593636236393139,
+          "shape": 3.843145559900931,
+          "mu": 0.10264493593642811,
+          "sigma": 0.052359333678937345,
+          "cut_low": 0.026195056389800575,
+          "cut_high": 0.2313862109001362,
+          "deviance": 64.84804658348696,
+          "chi2": 65.58509233662117,
+          "ndf": 55,
+          "chi2_ndf": 1.1924562243022032,
+          "deviance_improvement": 1261.5706853463466,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.009723439165815084,
+      "stability_threshold": 0.020559239156624172
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 15109,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        12142.249417616602,
+        0.07638237103695097,
+        3.510793915871526,
+        3120.776975735769,
+        0.11367982605800483
+      ],
+      "mode": 0.07638237103695097,
+      "shape": 3.510793915871526,
+      "mu": 0.10680397217040671,
+      "sigma": 0.05700129683469333,
+      "cut_low": 0.02502744879839625,
+      "cut_high": 0.24800873505558835,
+      "deviance": 111.9604186325336,
+      "chi2": 111.86743763417309,
+      "ndf": 115,
+      "chi2_ndf": 0.972760327253679,
+      "deviance_improvement": 1590.0568595959553,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 15109,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            11049.543072446522,
+            0.0774616555304695,
+            3.7018341801694814,
+            4247.48265107318,
+            0.04521333774530486
+          ],
+          "mode": 0.0774616555304695,
+          "shape": 3.7018341801694814,
+          "mu": 0.10613168128519976,
+          "sigma": 0.05516156302933682,
+          "cut_low": 0.026164661197117495,
+          "cut_high": 0.24218011119286487,
+          "deviance": 115.80844135424397,
+          "chi2": 113.64137569145936,
+          "ndf": 115,
+          "chi2_ndf": 0.9881858755779075,
+          "deviance_improvement": 1302.281132532663,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 15109,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            12137.835131980859,
+            0.07637075633097998,
+            3.51339643873448,
+            3125.278987682582,
+            0.11365565288024193
+          ],
+          "mode": 0.07637075633097998,
+          "shape": 3.51339643873448,
+          "mu": 0.10675623597677489,
+          "sigma": 0.056954713899149495,
+          "cut_low": 0.02503441305780777,
+          "cut_high": 0.24783687898523932,
+          "deviance": 43.68361655502893,
+          "chi2": 43.29284355399873,
+          "ndf": 55,
+          "chi2_ndf": 0.7871426100727041,
+          "deviance_improvement": 1591.5161696341956,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.005828623862723481,
+      "stability_threshold": 0.022298128625719213
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 14082,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        11758.73550454934,
+        0.08226505698609148,
+        3.4395798677009433,
+        2820.485661858359,
+        0.18581108911640404
+      ],
+      "mode": 0.08226505698609148,
+      "shape": 3.4395798677009433,
+      "mu": 0.11598605053717286,
+      "sigma": 0.06253930653740418,
+      "cut_low": 0.026634607912360084,
+      "cut_high": 0.2711755249506601,
+      "deviance": 120.32909260784302,
+      "chi2": 119.27322469367861,
+      "ndf": 115,
+      "chi2_ndf": 1.0371584755972054,
+      "deviance_improvement": 2024.4277421376892,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 14082,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            11124.609491444855,
+            0.08242391613770758,
+            3.5421877206792147,
+            3557.4302821446795,
+            0.10393222824806214
+          ],
+          "mode": 0.08242391613770758,
+          "shape": 3.5421877206792147,
+          "mu": 0.11484635114014155,
+          "sigma": 0.06102129427591607,
+          "cut_low": 0.02714673779052263,
+          "cut_high": 0.26589739826925424,
+          "deviance": 119.80948119543085,
+          "chi2": 117.45313183125961,
+          "ndf": 115,
+          "chi2_ndf": 1.021331581141388,
+          "deviance_improvement": 1447.084183801678,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 14082,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            11777.552323756017,
+            0.08221664135124021,
+            3.424504744426597,
+            2808.25282328853,
+            0.18749161744335824
+          ],
+          "mode": 0.08221664135124021,
+          "shape": 3.424504744426597,
+          "mu": 0.1161273365314572,
+          "sigma": 0.06275315698200945,
+          "cut_low": 0.026550428939103723,
+          "cut_high": 0.2719048853410106,
+          "deviance": 56.40755651283198,
+          "chi2": 56.71026780992298,
+          "ndf": 55,
+          "chi2_ndf": 1.031095778362236,
+          "deviance_improvement": 2019.6977717374361,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.00527812668140587,
+      "stability_threshold": 0.024454091703830005
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 7837,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        6282.271563727347,
+        0.08639734851055256,
+        3.5715757709433404,
+        1919.7530867446735,
+        0.1889165752631575
+      ],
+      "mode": 0.08639734851055256,
+      "shape": 3.5715757709433404,
+      "mu": 0.11999439413789532,
+      "sigma": 0.06349375666060578,
+      "cut_low": 0.0285914796245509,
+      "cut_high": 0.2770577501855528,
+      "deviance": 142.3413198119185,
+      "chi2": 139.39830193985625,
+      "ndf": 115,
+      "chi2_ndf": 1.212159147303098,
+      "deviance_improvement": 1182.5568562236306,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 7837,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            5873.197658172726,
+            0.08670576600512693,
+            3.709499942730164,
+            2410.6988414795337,
+            0.10713999512254692
+          ],
+          "mode": 0.08670576600512693,
+          "shape": 3.709499942730164,
+          "mu": 0.11870641846417807,
+          "sigma": 0.06163345554105216,
+          "cut_low": 0.029321442168201952,
+          "cut_high": 0.27069099905699834,
+          "deviance": 141.88366766050308,
+          "chi2": 138.35373577186354,
+          "ndf": 115,
+          "chi2_ndf": 1.2030759632335961,
+          "deviance_improvement": 838.5932381471575,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 7837,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            6287.7521718795315,
+            0.0864523435730454,
+            3.569282092604744,
+            1917.3612075906447,
+            0.1898210876643152
+          ],
+          "mode": 0.0864523435730454,
+          "shape": 3.569282092604744,
+          "mu": 0.12010078716819764,
+          "sigma": 0.06357046926649575,
+          "cut_low": 0.0285990876759712,
+          "cut_high": 0.2773623009709847,
+          "deviance": 74.07741491287477,
+          "chi2": 73.71842105140672,
+          "ndf": 55,
+          "chi2_ndf": 1.3403349282073949,
+          "deviance_improvement": 1181.1846758366787,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.006366751128554449,
+      "stability_threshold": 0.02484662705610019
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 4236,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        2961.5554673708843,
+        0.08010410106706717,
+        3.7022170266934156,
+        1414.47782567363,
+        0.14474570288689487
+      ],
+      "mode": 0.08010410106706717,
+      "shape": 3.7022170266934156,
+      "mu": 0.10974794546437935,
+      "sigma": 0.057038154057356766,
+      "cut_low": 0.027058801064148843,
+      "cut_high": 0.25042353184367133,
+      "deviance": 112.3027346803301,
+      "chi2": 111.79172236918302,
+      "ndf": 115,
+      "chi2_ndf": 0.9721019336450697,
+      "deviance_improvement": 755.4526849941482,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 4236,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            2603.1028027750904,
+            0.08115057948271831,
+            3.993890724754411,
+            1808.166768024718,
+            0.0715655362509256
+          ],
+          "mode": 0.08115057948271831,
+          "shape": 3.993890724754411,
+          "mu": 0.10825597074223901,
+          "sigma": 0.0541693681257924,
+          "cut_low": 0.02859429780668094,
+          "cut_high": 0.24103261594073364,
+          "deviance": 114.29740538734076,
+          "chi2": 111.77469404619981,
+          "ndf": 115,
+          "chi2_ndf": 0.9719538612713027,
+          "deviance_improvement": 425.496846577416,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 4236,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            2958.7537408641947,
+            0.08015684548137306,
+            3.713662553398216,
+            1416.9577572717708,
+            0.14444665026215356
+          ],
+          "mode": 0.08015684548137306,
+          "shape": 3.713662553398216,
+          "mu": 0.1096950964260219,
+          "sigma": 0.05692276596959504,
+          "cut_low": 0.027123998756135245,
+          "cut_high": 0.2500504319264542,
+          "deviance": 47.83939290165257,
+          "chi2": 47.49608398900563,
+          "ndf": 55,
+          "chi2_ndf": 0.863565163436466,
+          "deviance_improvement": 754.0432051574406,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.009390915902937697,
+      "stability_threshold": 0.02233647307795225
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 3051,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        1976.3504219816443,
+        0.07751306203648463,
+        3.65375526941995,
+        1182.4715336550848,
+        0.14245825547693788
+      ],
+      "mode": 0.07751306203648463,
+      "shape": 3.65375526941995,
+      "mu": 0.10672188280820077,
+      "sigma": 0.055832072748240605,
+      "cut_low": 0.025988137041799232,
+      "cut_high": 0.244572593612506,
+      "deviance": 151.70271747581828,
+      "chi2": 153.95628411472657,
+      "ndf": 115,
+      "chi2_ndf": 1.3387502966497962,
+      "deviance_improvement": 598.4895985870804,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 3051,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            1633.2479621205027,
+            0.07846985041633477,
+            4.133966121257095,
+            1547.5120955920272,
+            0.06751918315518488
+          ],
+          "mode": 0.07846985041633477,
+          "shape": 4.133966121257095,
+          "mu": 0.10350836308055558,
+          "sigma": 0.05090869729078969,
+          "cut_low": 0.028171048902853258,
+          "cut_high": 0.2279474873698592,
+          "deviance": 150.7203690006509,
+          "chi2": 151.59129307089486,
+          "ndf": 115,
+          "chi2_ndf": 1.3181851571382162,
+          "deviance_improvement": 291.2575632745387,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 3051,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            1974.807208676775,
+            0.07766561103834209,
+            3.6792934780036615,
+            1183.7189570763105,
+            0.14208626521113876
+          ],
+          "mode": 0.07766561103834209,
+          "shape": 3.6792934780036615,
+          "mu": 0.10665295851481586,
+          "sigma": 0.05560203564495557,
+          "cut_low": 0.026142757360723384,
+          "cut_high": 0.2438567940277537,
+          "deviance": 82.76194547437817,
+          "chi2": 84.83202164010174,
+          "ndf": 55,
+          "chi2_ndf": 1.5424003934563952,
+          "deviance_improvement": 597.1628082491128,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.016625106242646792,
+      "stability_threshold": 0.02185844565707068
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [
+        "cut unstable under model or histogram change"
+      ],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 2752,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        1560.2685773790004,
+        0.08094818781936088,
+        3.8647908972271128,
+        1279.5947562995198,
+        0.12393635715757591
+      ],
+      "mode": 0.08094818781936088,
+      "shape": 3.8647908972271128,
+      "mu": 0.1092044168857518,
+      "sigma": 0.05554912257259742,
+      "cut_low": 0.02801128801547814,
+      "cut_high": 0.24572625604760642,
+      "deviance": 116.11383506293785,
+      "chi2": 121.3749544588716,
+      "ndf": 115,
+      "chi2_ndf": 1.0554343865988836,
+      "deviance_improvement": 393.50210445077164,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 2752,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            1135.1659752200223,
+            0.08498488523931899,
+            5.055615218309956,
+            1720.6926500534803,
+            0.04790823643976627
+          ],
+          "mode": 0.08498488523931899,
+          "shape": 5.055615218309956,
+          "mu": 0.10593975414691068,
+          "sigma": 0.0471163842017934,
+          "cut_low": 0.03381116096799446,
+          "cut_high": 0.21932046878572753,
+          "deviance": 112.51508125627743,
+          "chi2": 109.69041718352244,
+          "ndf": 115,
+          "chi2_ndf": 0.9538297146393255,
+          "deviance_improvement": 194.78498640121336,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 2752,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            1557.7116728815984,
+            0.080915044750299,
+            3.8819261677441164,
+            1282.1617125931023,
+            0.12387708091251219
+          ],
+          "mode": 0.080915044750299,
+          "shape": 3.8819261677441164,
+          "mu": 0.10899176845541626,
+          "sigma": 0.05531845776099365,
+          "cut_low": 0.02806861882401152,
+          "cut_high": 0.24489776898352553,
+          "deviance": 61.21912886872113,
+          "chi2": 62.23594539913546,
+          "ndf": 55,
+          "chi2_ndf": 1.1315626436206447,
+          "deviance_improvement": 395.19725402074573,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.026405787261878894,
+      "stability_threshold": 0.02177149680321283
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 4031,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        3457.616021533345,
+        0.07994318473725072,
+        3.6819194958441526,
+        637.4656580334466,
+        0.14583890745477152
+      ],
+      "mode": 0.07994318473725072,
+      "shape": 3.6819194958441526,
+      "mu": 0.10975138176222818,
+      "sigma": 0.05719694757005845,
+      "cut_low": 0.026920318086440315,
+      "cut_high": 0.25088252526861965,
+      "deviance": 112.17852885545773,
+      "chi2": 105.86435873030565,
+      "ndf": 115,
+      "chi2_ndf": 0.9205596411330926,
+      "deviance_improvement": 467.54406406532,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 4031,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            3246.4801127508954,
+            0.08034576790403662,
+            3.844794434570692,
+            856.6916874632367,
+            0.06584907882846633
+          ],
+          "mode": 0.08034576790403662,
+          "shape": 3.844794434570692,
+          "mu": 0.10858885180762336,
+          "sigma": 0.05537945514897065,
+          "cut_low": 0.027722748102014826,
+          "cut_high": 0.2447512469248215,
+          "deviance": 110.74131827960508,
+          "chi2": 103.73654811287415,
+          "ndf": 115,
+          "chi2_ndf": 0.9020569401119491,
+          "deviance_improvement": 474.8281508176611,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 4031,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            3452.521139558005,
+            0.07994734724218859,
+            3.695536729429745,
+            641.7482214673347,
+            0.1446465486644104
+          ],
+          "mode": 0.07994734724218859,
+          "shape": 3.695536729429745,
+          "mu": 0.10960650431073347,
+          "sigma": 0.05701610761079878,
+          "cut_low": 0.026978207342026685,
+          "cut_high": 0.25024863502436523,
+          "deviance": 49.22305095647947,
+          "chi2": 48.588955824163406,
+          "ndf": 55,
+          "chi2_ndf": 0.8834355604393347,
+          "deviance_improvement": 467.97098547726523,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.006131278343798147,
+      "stability_threshold": 0.022396220718217934
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 5272,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        4616.996192829824,
+        0.0949070688711576,
+        3.2234352281961973,
+        833.6357719711865,
+        0.1925084311301657
+      ],
+      "mode": 0.0949070688711576,
+      "shape": 3.2234352281961973,
+      "mu": 0.13759195020595263,
+      "sigma": 0.07663612768899611,
+      "cut_low": 0.029565064393681596,
+      "cut_high": 0.3288085082745161,
+      "deviance": 116.86412904613292,
+      "chi2": 118.66500367932314,
+      "ndf": 115,
+      "chi2_ndf": 1.0318695972115055,
+      "deviance_improvement": 301.26552216457003,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 5272,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            4437.203675532631,
+            0.09526214894419491,
+            3.2761779136375924,
+            1054.2277914151107,
+            0.10853942760380146
+          ],
+          "mode": 0.09526214894419491,
+          "shape": 3.2761779136375924,
+          "mu": 0.13711395164091605,
+          "sigma": 0.07575266365642454,
+          "cut_low": 0.02996623626157044,
+          "cut_high": 0.3258655037358126,
+          "deviance": 117.35030917853449,
+          "chi2": 119.05853753389293,
+          "ndf": 115,
+          "chi2_ndf": 1.0352916307295037,
+          "deviance_improvement": 341.46783327044005,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 5272,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            4614.243581460748,
+            0.09493470728624946,
+            3.2284765664327435,
+            835.1298153073828,
+            0.19151579389391038
+          ],
+          "mode": 0.09493470728624946,
+          "shape": 3.2284765664327435,
+          "mu": 0.1375354277588085,
+          "sigma": 0.07654481245013824,
+          "cut_low": 0.0296015156823111,
+          "cut_high": 0.3284987229212924,
+          "deviance": 63.6659384603207,
+          "chi2": 64.45550405275006,
+          "ndf": 55,
+          "chi2_ndf": 1.1719182555045464,
+          "deviance_improvement": 300.5444591463471,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.0029430045387034975,
+      "stability_threshold": 0.029924344388083446
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 2601,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        2133.215899605866,
+        0.0848899642923182,
+        3.5233514659677008,
+        547.295668281086,
+        0.16659398486530697
+      ],
+      "mode": 0.0848899642923182,
+      "shape": 3.5233514659677008,
+      "mu": 0.11853171631823467,
+      "sigma": 0.06314756216659775,
+      "cut_low": 0.027872739406531663,
+      "cut_high": 0.2749155496319344,
+      "deviance": 133.55353201411162,
+      "chi2": 132.7327238704762,
+      "ndf": 115,
+      "chi2_ndf": 1.154197598873706,
+      "deviance_improvement": 319.86935732528593,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 2601,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            1936.997694935114,
+            0.08530993978315787,
+            3.758494755496869,
+            746.2264032124206,
+            0.07394772435475627
+          ],
+          "mode": 0.08530993978315787,
+          "shape": 3.758494755496869,
+          "mu": 0.11623620477356986,
+          "sigma": 0.05995624796722366,
+          "cut_low": 0.02906391314880068,
+          "cut_high": 0.2639255803840029,
+          "deviance": 132.29877826971875,
+          "chi2": 130.97018274212797,
+          "ndf": 115,
+          "chi2_ndf": 1.1388711542793737,
+          "deviance_improvement": 251.82776215178166,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 2601,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            2125.8279083205516,
+            0.08494259791118948,
+            3.553496989561165,
+            553.2237234284189,
+            0.16424114327882838
+          ],
+          "mode": 0.08494259791118948,
+          "shape": 3.553496989561165,
+          "mu": 0.11820780177022651,
+          "sigma": 0.06270730917217882,
+          "cut_low": 0.028027875245259685,
+          "cut_high": 0.2733912023373206,
+          "deviance": 69.29604059363753,
+          "chi2": 69.81521584586712,
+          "ndf": 55,
+          "chi2_ndf": 1.2693675608339476,
+          "deviance_improvement": 321.71909136069377,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.010989969247931497,
+      "stability_threshold": 0.02470428102254027
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 1997,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        1597.048712887055,
+        0.08697608680365806,
+        3.7973321340708264,
+        477.77370350466913,
+        0.17401783170493773
+      ],
+      "mode": 0.08697608680365806,
+      "shape": 3.7973321340708264,
+      "mu": 0.11806860018249872,
+      "sigma": 0.06058918658304739,
+      "cut_low": 0.029803061183584823,
+      "cut_high": 0.26719145641470476,
+      "deviance": 112.12346089295812,
+      "chi2": 104.84242063114897,
+      "ndf": 115,
+      "chi2_ndf": 0.9116732228795562,
+      "deviance_improvement": 301.8177886568131,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 1997,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            1506.5844503932717,
+            0.0874845523980515,
+            3.9229319357285735,
+            592.347594273152,
+            0.10040769297983565
+          ],
+          "mode": 0.0874845523980515,
+          "shape": 3.9229319357285735,
+          "mu": 0.117414962794777,
+          "sigma": 0.05928134633393486,
+          "cut_low": 0.030524290721911672,
+          "cut_high": 0.2629327103947077,
+          "deviance": 112.21083034981359,
+          "chi2": 104.52629653662594,
+          "ndf": 115,
+          "chi2_ndf": 0.9089243177097908,
+          "deviance_improvement": 245.1328987748047,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 1997,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            1593.1667213772987,
+            0.087112591752973,
+            3.819791792189349,
+            479.99594341589346,
+            0.17163049543180625
+          ],
+          "mode": 0.087112591752973,
+          "shape": 3.819791792189349,
+          "mu": 0.11800586266548135,
+          "sigma": 0.06037869727469258,
+          "cut_low": 0.02994844513457647,
+          "cut_high": 0.2665390426396298,
+          "deviance": 52.749659873521004,
+          "chi2": 47.373488451642665,
+          "ndf": 55,
+          "chi2_ndf": 0.8613361536662303,
+          "deviance_improvement": 299.63335058039803,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.0042587460199970395,
+      "stability_threshold": 0.023738839523111996
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 1363,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        1078.1058670297466,
+        0.07978463130807638,
+        3.3931837289269677,
+        325.77406315620476,
+        0.16067858575785965
+      ],
+      "mode": 0.07978463130807638,
+      "shape": 3.3931837289269677,
+      "mu": 0.11312291216955016,
+      "sigma": 0.06141110174696667,
+      "cut_low": 0.025626139389071496,
+      "cut_high": 0.2656867483993542,
+      "deviance": 128.8991601581259,
+      "chi2": 120.78662800826505,
+      "ndf": 115,
+      "chi2_ndf": 1.050318504419696,
+      "deviance_improvement": 205.71617096872987,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 1363,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            988.0258131183793,
+            0.08023535224525327,
+            3.5527755756753723,
+            422.6861432010491,
+            0.08032563800444073
+          ],
+          "mode": 0.08023535224525327,
+          "shape": 3.5527755756753723,
+          "mu": 0.11166598524323074,
+          "sigma": 0.05924299621505949,
+          "cut_low": 0.026471555627297978,
+          "cut_high": 0.2582786376033449,
+          "deviance": 129.12075061938307,
+          "chi2": 120.8839666338307,
+          "ndf": 115,
+          "chi2_ndf": 1.0511649272507018,
+          "deviance_improvement": 122.10304267409279,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 1363,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            1077.6414750931076,
+            0.07988931232461091,
+            3.4093897815485303,
+            326.24944174453617,
+            0.16048982297103265
+          ],
+          "mode": 0.07988931232461091,
+          "shape": 3.4093897815485303,
+          "mu": 0.11304680014016291,
+          "sigma": 0.061223752729105026,
+          "cut_low": 0.02573186802379166,
+          "cut_high": 0.2650842668227104,
+          "deviance": 60.96211991937294,
+          "chi2": 60.4933717842913,
+          "ndf": 55,
+          "chi2_ndf": 1.0998794869871145,
+          "deviance_improvement": 206.03951655892223,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.007408110796009282,
+      "stability_threshold": 0.024006060901028272
+    },
+    {
+      "kind": "momentum",
+      "model": "gamma_signal_plus_gamma_tail",
+      "background_shape": 3,
+      "usable": true,
+      "warnings": [],
+      "fit_range": [
+        0,
+        0.6
+      ],
+      "fit_entries": 1150,
+      "cut_method": "central 95.45% of fitted signal gamma distribution",
+      "parameters": [
+        850.4061241321943,
+        0.08553851993510407,
+        3.3208719730852203,
+        320.5651816875156,
+        0.11696272334110351
+      ],
+      "mode": 0.08553851993510407,
+      "shape": 3.3208719730852203,
+      "mu": 0.12239471921153144,
+      "sigma": 0.06716400942203031,
+      "cut_low": 0.027125938745812334,
+      "cut_high": 0.28955405751485125,
+      "deviance": 131.38639411530295,
+      "chi2": 119.23915082513003,
+      "ndf": 115,
+      "chi2_ndf": 1.0368621810880871,
+      "deviance_improvement": 89.60861397632172,
+      "reason": "nominal preliminary cut",
+      "checks": {
+        "tail_shape_2": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 2,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 1150,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            706.4825444440563,
+            0.08820941208901406,
+            3.7551913906575725,
+            468.20141487496295,
+            0.040000000000007425
+          ],
+          "mode": 0.08820941208901406,
+          "shape": 3.7551913906575725,
+          "mu": 0.12022512337067622,
+          "sigma": 0.062041057684712166,
+          "cut_low": 0.030036852231765925,
+          "cut_high": 0.27306100490558344,
+          "deviance": 130.09822189257324,
+          "chi2": 116.32405943703456,
+          "ndf": 115,
+          "chi2_ndf": 1.0115135603220398,
+          "deviance_improvement": 63.316748600188674,
+          "reason": "nominal preliminary cut"
+        },
+        "coarser_histogram": {
+          "kind": "momentum",
+          "model": "gamma_signal_plus_gamma_tail",
+          "background_shape": 3,
+          "usable": true,
+          "warnings": [],
+          "fit_range": [
+            0,
+            0.6
+          ],
+          "fit_entries": 1150,
+          "cut_method": "central 95.45% of fitted signal gamma distribution",
+          "parameters": [
+            852.8171199242083,
+            0.08539608250511736,
+            3.3021902781297827,
+            318.33538708363676,
+            0.11784842340283115
+          ],
+          "mode": 0.08539608250511736,
+          "shape": 3.3021902781297827,
+          "mu": 0.12248949016840144,
+          "sigma": 0.06740587951569463,
+          "cut_low": 0.026989915668287415,
+          "cut_high": 0.29033093122813736,
+          "deviance": 58.36433487809083,
+          "chi2": 54.43119618817273,
+          "ndf": 55,
+          "chi2_ndf": 0.9896581125122313,
+          "deviance_improvement": 90.23027107224831,
+          "reason": "nominal preliminary cut"
+        }
+      },
+      "max_boundary_shift": 0.01649305260926781,
+      "stability_threshold": 0.026242811876903895
+    }
+  ],
+  "angle_guides": [
+    {
+      "usable": true,
+      "parameters": [
+        8557.493125671546,
+        0.15373106637239278,
+        0.9251664313215076
+      ],
+      "mu": 0.15373106637239278,
+      "sigma": 0.9251664313215076,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        3796.7907807680217,
+        0.18676404014291648,
+        0.9821795389868849
+      ],
+      "mu": 0.18676404014291648,
+      "sigma": 0.9821795389868849,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        1474.5155964117453,
+        0.2970551292141225,
+        1.1090151638122792
+      ],
+      "mu": 0.2970551292141225,
+      "sigma": 1.1090151638122792,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        806.4786526307198,
+        0.2584139043309486,
+        1.1980071454679482
+      ],
+      "mu": 0.2584139043309486,
+      "sigma": 1.1980071454679482,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        453.4666794737316,
+        0.24571781561475317,
+        1.2267609811441675
+      ],
+      "mu": 0.24571781561475317,
+      "sigma": 1.2267609811441675,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        347.3263677513908,
+        0.24562265975038783,
+        1.3662089084192208
+      ],
+      "mu": 0.24562265975038783,
+      "sigma": 1.3662089084192208,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        4425.083759610753,
+        0.3295350036502378,
+        1.141206834675429
+      ],
+      "mu": 0.3295350036502378,
+      "sigma": 1.141206834675429,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        2234.0686231031145,
+        0.2505653985684583,
+        1.2267510395736192
+      ],
+      "mu": 0.2505653985684583,
+      "sigma": 1.2267510395736192,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        1014.7086924748921,
+        0.38174448937215644,
+        1.3112840222034354
+      ],
+      "mu": 0.38174448937215644,
+      "sigma": 1.3112840222034354,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        490.69936608624283,
+        0.3784319838276191,
+        1.407570980875618
+      ],
+      "mu": 0.3784319838276191,
+      "sigma": 1.407570980875618,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        319.74626302145793,
+        0.28768407857118383,
+        1.42148840976564
+      ],
+      "mu": 0.28768407857118383,
+      "sigma": 1.42148840976564,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        196.3215106440377,
+        0.27608078531791774,
+        1.4734507359075102
+      ],
+      "mu": 0.27608078531791774,
+      "sigma": 1.4734507359075102,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        1102.8978493037448,
+        0.3316102902135062,
+        1.1113241470459605
+      ],
+      "mu": 0.3316102902135062,
+      "sigma": 1.1113241470459605,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        928.8098578085802,
+        0.2892034031271211,
+        1.197731022876121
+      ],
+      "mu": 0.2892034031271211,
+      "sigma": 1.197731022876121,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        464.19851240073564,
+        0.3342925375425176,
+        1.291545173619505
+      ],
+      "mu": 0.3342925375425176,
+      "sigma": 1.291545173619505,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        233.57204938685496,
+        0.43475687060032314,
+        1.30962314137903
+      ],
+      "mu": 0.43475687060032314,
+      "sigma": 1.30962314137903,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        163.53309340141325,
+        0.4249209935913305,
+        1.3000666942518577
+      ],
+      "mu": 0.4249209935913305,
+      "sigma": 1.3000666942518577,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        125.07498266004335,
+        0.4607245081247341,
+        1.4497893698974833
+      ],
+      "mu": 0.4607245081247341,
+      "sigma": 1.4497893698974833,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        338.8542685518544,
+        0.1481844133684031,
+        0.9836913792443186
+      ],
+      "mu": 0.1481844133684031,
+      "sigma": 0.9836913792443186,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        367.9958330753159,
+        0.2670690441571746,
+        1.185219917676777
+      ],
+      "mu": 0.2670690441571746,
+      "sigma": 1.185219917676777,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        174.4592666636996,
+        0.2642649226498814,
+        1.1651950176362005
+      ],
+      "mu": 0.2642649226498814,
+      "sigma": 1.1651950176362005,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        127.91888280102508,
+        0.29390481025333115,
+        1.18985209617883
+      ],
+      "mu": 0.29390481025333115,
+      "sigma": 1.18985209617883,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        88.66252626802546,
+        0.2980997062781139,
+        1.1758604280562717
+      ],
+      "mu": 0.2980997062781139,
+      "sigma": 1.1758604280562717,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    },
+    {
+      "usable": true,
+      "parameters": [
+        64.97636996760193,
+        0.3167663700941198,
+        1.3377959705701177
+      ],
+      "mu": 0.3167663700941198,
+      "sigma": 1.3377959705701177,
+      "unit": "degree",
+      "role": "visual guide only, no angular cut"
+    }
+  ],
+  "counts": {
+    "initial": {
+      "RGB_fall2019_D2": [
+        230505,
+        459343,
+        736906,
+        1328697,
+        2160307,
+        2849941,
+        89944,
+        164524,
+        240776,
+        374658,
+        560813,
+        703458,
+        18641,
+        34227,
+        49905,
+        64595,
+        87173,
+        123151,
+        4995,
+        7774,
+        10323,
+        13235,
+        16010,
+        19317
+      ]
+    },
+    "after_mass": {
+      "RGB_fall2019_D2": [
+        108870,
+        52873,
+        24387,
+        15444,
+        9234,
+        8135,
+        63762,
+        38546,
+        19804,
+        11132,
+        7886,
+        5158,
+        15232,
+        14557,
+        8335,
+        4612,
+        3366,
+        3106,
+        4093,
+        5434,
+        2756,
+        2162,
+        1481,
+        1268
+      ]
+    },
+    "after_both": {
+      "RGB_fall2019_D2": [
+        86300,
+        40761,
+        17908,
+        10579,
+        6089,
+        5260,
+        54711,
+        30071,
+        14574,
+        7700,
+        5069,
+        3193,
+        13111,
+        12098,
+        6610,
+        3361,
+        2349,
+        2014,
+        3534,
+        4751,
+        2243,
+        1692,
+        1146,
+        982
+      ]
+    }
+  }
+}

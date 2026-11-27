@@ -1,0 +1,547 @@
+#!/usr/bin/env python3
+"""Exclusive pion campaign. Start workers separately on each farm host; no SSH is used."""
+import argparse, concurrent.futures, hashlib, json, os, re, shlex, shutil, socket, subprocess, sys, time
+from pathlib import Path
+HERE=Path(__file__).resolve().parent
+HOSTS=('ifarm2401','ifarm2402')
+EXCLUDED={5247,5345,17331,16987,17079,17190,17639,16850,16851,16852,16855,16879}
+def allowed(run): return run not in EXCLUDED and not 16600<run<16700 and not 17768<run<=17811
+
+def datasets():
+    out=[]
+    for period,torus,version in [('spring2019','-1','v0'),('fall2019','+1','v1'),('spring2020','-1','v1')]:
+        out.append(dict(id=f'RGB_{period}_D2',target='D2',path=f'/cache/clas12/rg-b/production/recon/{period}/torus{torus}/pass2/{version}/dst/train/sidisdvcs'))
+    for period,short in [('summer2022','su22'),('fall2022','fa22'),('spring2023','sp23')]:
+        base={'summer2022':'summer22/pass1/10.5gev','fall2022':'fall22/pass1','spring2023':'spring23/pass1'}[period]
+        for target in ['ND3','C','CH2']+(['CD2'] if short=='sp23' else []):
+            out.append(dict(id=f'RGC_{period}_{target}',target=target,path=f'/cache/clas12/rg-c/production/{base}/{target}/dst/train/sidisdvcs'))
+        for target in ['ET','He']:
+            out.append(dict(id=f'RGC_{period}_{target}',target=target,path=f'/work/clas12/thayward/CLAS12_SIDIS/rgc_ET_HE_runs/{short}/{target}'))
+    return out
+
+def atomic_json(path,value):
+    tmp=path.with_name(path.name+f'.{os.getpid()}.tmp');tmp.write_text(json.dumps(value,indent=2)+'\n');os.replace(tmp,path)
+def read(path): return json.loads(path.read_text())
+def load_manifest(root):
+    m=read(root/'manifest.json')
+    if m.get('campaign_kind')!='single_piminus_v2':raise RuntimeError('This manager requires a single pi-minus campaign. Original campaigns are preserved separately.')
+    return m
+
+def read_advisory(path):
+    """Progress/ownership hints must never abort processing or mark a batch failed.
+    Manifests, completion records and checksums continue to use strict read().
+    """
+    for attempt in range(3):
+        try:
+            value=read(path)
+            return value if isinstance(value,dict) else {}
+        except (OSError,json.JSONDecodeError,UnicodeDecodeError):
+            if attempt<2:time.sleep(.02)
+    return {}
+
+def digest(path):
+    h=hashlib.sha256()
+    with path.open('rb') as f:
+        for chunk in iter(lambda:f.read(1024*1024),b''):h.update(chunk)
+    return h.hexdigest()
+def run(cmd,**kwargs): return subprocess.run([str(x) for x in cmd],check=True,**kwargs)
+def classnamepath(build):
+    extra=read(build/'extra_classpath.json') if (build/'extra_classpath.json').exists() else []
+    return os.pathsep.join([str(build/'classes')]+[str(p) for p in sorted((build/'lib').glob('*.jar'))]+[str(build/p) for p in extra]+[str(build/'qadb'),str(build/'qadb/src'),str(build/'qadb/src/main/groovy')])
+def run_number(path):
+    # Standard CLAS12 train names: ..._016123.hipo / ..._016123_00000.hipo.
+    hits=re.findall(r'(?<!\d)(0*[1-9]\d{3,4})(?!\d)',path.stem)
+    valid={int(x) for x in hits if 1000<=int(x)<=29999}
+    if len(valid)==1:return valid.pop()
+    # Explicit run-number parent directories are also supported.
+    parents={int(p) for p in path.parts[:-1] if re.fullmatch(r'0*[1-9]\d{3,4}',p) and 1000<=int(p)<=29999}
+    if len(parents)==1:return parents.pop()
+    raise ValueError(f'Cannot unambiguously identify run for {path}; supply --run-map JSON mapping absolute paths to runs')
+def make_batches(files,target_bytes):
+    batches=[];current=[];size=0
+    for f in sorted(files,key=lambda x:x['path']):
+        if current and size+f['size']>target_bytes:batches.append(current);current=[];size=0
+        current.append(f);size+=f['size']
+    if current:batches.append(current)
+    return batches
+
+def empty_test_datasets(previous):
+    old=read(previous/'manifest.json');empty={}
+    for dataset in old['datasets']:
+        jobs=[j for j in old['jobs'] if j['dataset']==dataset['id']]
+        if not jobs:continue
+        completions=[previous/'chunks'/(j['id']+'.json') for j in jobs]
+        if not all(p.exists() for p in completions):raise RuntimeError('Previous test is incomplete')
+        if sum(read(p)['entries'] for p in completions)==0:empty[dataset['id']]=sorted({j['run'] for j in jobs})
+    return empty
+
+def retest_runs(groups,eligible,original):
+    # Preserve the original run for diagnosis, plus two independent replacements.
+    candidates=sorted((n for n in eligible if n not in original),key=lambda n:(sum(f['size'] for f in groups[n]),n))
+    if len(candidates)<2:raise RuntimeError('Need two alternative runs for focused retest')
+    middle=max(0,len(candidates)//2-1)
+    return sorted(set(original)|set(candidates[middle:middle+2]))
+
+def prepare(a):
+    root=a.campaign.resolve()
+    root.mkdir(parents=True,exist_ok=True)
+    lock=root/'prepare.claim';lock.mkdir()  # exclusive preparation; never overwrite a campaign
+    try:
+        if (root/'manifest.json').exists():raise RuntimeError('Campaign already prepared; use status/worker, or choose a new directory')
+        if any(root.glob('build*')):raise RuntimeError('Partial preparation exists; choose a fresh campaign directory')
+        retest=empty_test_datasets(a.retest_empty_from.resolve()) if getattr(a,'retest_empty_from',None) else None
+        if retest is not None and not retest:raise RuntimeError('No empty datasets in previous test')
+        selected_datasets=[d for d in datasets() if retest is None or d['id'] in retest]
+        requested=getattr(a,'datasets',None)
+        if requested:
+            unknown=set(requested)-{d['id'] for d in selected_datasets}
+            if unknown:raise RuntimeError('Unknown/unavailable datasets: '+', '.join(sorted(unknown)))
+            selected_datasets=[d for d in selected_datasets if d['id'] in requested]
+        if retest is not None and a.mode!='test':raise RuntimeError('--retest-empty-from requires --mode test')
+        repo=a.repo.resolve();inventory=[];jobs=[];overrides=read(a.run_map) if a.run_map else {};select=read(a.test_runs or HERE/"test_runs.json") if a.mode=="test" else {}
+        for ds in selected_datasets:
+            source=Path(ds['path']);groups={}
+            if not source.is_dir():raise RuntimeError(f'Missing input directory: {source}')
+            for p in sorted(source.rglob('*.hipo')):
+                stat=p.stat()
+                if stat.st_size<=0:raise RuntimeError(f'Empty HIPO input: {p}')
+                if not os.access(p,os.R_OK):raise RuntimeError(f'Unreadable input: {p}')
+                n=int(overrides[str(p)]) if str(p) in overrides else run_number(p)
+                groups.setdefault(n,[]).append(dict(path=str(p),size=stat.st_size,mtime_ns=stat.st_mtime_ns))
+            eligible=sorted(n for n in groups if allowed(n))
+            if not eligible:raise RuntimeError(f'No eligible input runs: {ds["id"]}')
+            selected=eligible
+            if retest is not None:
+                selected=retest_runs(groups,eligible,retest[ds['id']])
+                print(f'RETEST {ds["id"]}: original {retest[ds["id"]]}, selected {selected}',flush=True)
+            elif a.mode=='test':
+                # Prefer a small run for a quick smoke test; user can select alternatives.
+                chosen=int(select[ds['id']]) if ds['id'] in select else min(eligible,key=lambda n:(sum(f['size'] for f in groups[n]),n))
+                if chosen not in eligible:raise RuntimeError(f'Invalid test run {chosen} for {ds["id"]}')
+                selected=[chosen]
+            record=dict(ds,selected_runs=selected,all_runs=sorted(groups),excluded_runs=sorted(set(groups)-set(eligible)),files=groups)
+            inventory.append(record)
+            for n in selected:
+                for ix,batch in enumerate(make_batches(groups[n],int(a.batch_gib*1024**3))):
+                    jid=f'{ds["id"]}_r{n:06d}_b{ix:04d}'
+                    jobs.append(dict(id=jid,dataset=ds['id'],target=ds['target'],run=n,files=batch,bytes=sum(f['size'] for f in batch)))
+        # Freeze campaign sources, dependency jars, calibration helpers, CSV, and QA database.
+        build=root/'build';shutil.copytree(HERE,build/'source',ignore=shutil.ignore_patterns('__pycache__','build'))
+        (build/'lib').mkdir();(build/'classes').mkdir()
+        jars=[repo/'processing_classes/dist/processing_classes.jar']
+        for sub in ['clas','services','utils']:
+            jars.extend(p for p in (repo/'coatjava/lib'/sub).glob('*.jar') if p.name!='processing_classes.jar')
+        for p in jars:
+            dest=build/'lib'/p.name
+            if dest.exists() and digest(dest)!=digest(p):raise RuntimeError(f'Conflicting JAR names: {p}')
+            shutil.copyfile(p,dest)
+        # Use the installed QADB module, ahead of any stale bundled Groovy source.
+        qadir=os.environ.get('QADB')
+        if not qadir or not Path(qadir).is_dir():raise RuntimeError('Load qadb/3.4.1 first (QADB must point to its database)')
+        shutil.copytree(qadir,build/'qadb',symlinks=False,copy_function=shutil.copyfile)
+        cp_entries=os.environ.get('CLASSPATH','').split(os.pathsep)
+        extras=[]
+        for entry in cp_entries:
+            if not entry or entry=='.':continue
+            p=Path(entry)
+            if p.is_file() and p.suffix=='.jar':
+                dest=build/'lib'/p.name
+                if dest.exists() and digest(dest)!=digest(p):raise RuntimeError(f'Conflicting module JAR: {p}')
+                shutil.copyfile(p,dest)
+            elif p.is_dir():
+                try:relative=p.resolve().relative_to(Path(qadir).resolve());extras.append(str(Path('qadb')/relative))
+                except ValueError:
+                    dest=build/('module_cp_'+str(len(extras)));shutil.copytree(p,dest);extras.append(dest.name)
+            elif entry.endswith('/*'):
+                for jar in p.parent.glob('*.jar'):shutil.copyfile(jar,build/'lib'/jar.name)
+        atomic_json(build/'extra_classpath.json',extras)
+        # Current helper sources override any stale classes in the original JAR.
+        helper=build/'helpers';helper.mkdir()
+        sources=[]
+        for rel in ['extended_kinematic_fitters/analysis_fitter.java','extended_kinematic_fitters/generic_tests.java','extended_kinematic_fitters/fiducial_cuts.java','extended_kinematic_fitters/pid_cuts.java','extended_kinematic_fitters/energy_loss_corrections.java','analyzers/BeamEnergy.java']:
+            src=repo/'processing_classes/src'/rel;dest=helper/rel;dest.parent.mkdir(parents=True,exist_ok=True);shutil.copy2(src,dest);sources.append(dest)
+        sources+=list((build/'source/src').glob('*.java'))+list((build/'source/tests').glob('*.java'))
+        run(['javac','--release','11','-cp',classnamepath(build),'-d',build/'classes',*sources])
+        for test in ['KinematicsTest','PhysicsRecordTest','SelectionTest']:
+            run(['java','-cp',str(build/'classes')+os.pathsep+classnamepath(build),'exclusivepion.'+test])
+        run(['g++','-std=c++17',build/'source/tests/MetadataTest.cpp','-o',build/'metadata_test'])
+        run([build/'metadata_test',a.run_info or HERE/'run_info.csv'])
+        flags=shlex.split(subprocess.check_output(['root-config','--cflags','--libs'],text=True))
+        run(['g++','-O3','-std=c++17',build/'source/src/convert_single_piminus_txt_to_root.cpp','-o',build/'converter',*flags])
+        shutil.copy2(a.run_info or HERE/'run_info.csv',build/'run_info.csv')
+        converter_env=os.environ.copy();converter_env['PION_CONVERTER']=str(build/'converter')
+        run([sys.executable,'-m','unittest','discover','-s',build/'source/tests','-p','test_converter.py','-v'],env=converter_env)
+        # Resolve/compile QADB now, rather than discovering a missing module in 20 workers.
+        env=os.environ.copy();env['QADB']=str(build/'qadb')
+        run(['groovy','-cp',classnamepath(build),'-e',"def q=new clasqa.QADB('latest'); q.checkForDefect('Misc'); println('QADB ready')"],env=env)
+        run(['groovy','-cp',classnamepath(build),'-e',"new GroovyClassLoader().parseClass(new File(args[0])); println('Campaign processor compiled')",str(build/'source/processing_single_piminus.groovy')],env=env)
+        for name in ['claims','chunks','work','logs','reports','root','hosts']: (root/name).mkdir()
+        atomic_json(root/'inventory.json',inventory)
+        atomic_json(root/'manifest.json',dict(campaign_kind="single_piminus_v2",mode=a.mode,workers_per_host=10,hosts=HOSTS,jobs=sorted(jobs,key=lambda j:(-j['bytes'],j['id'])),datasets=selected_datasets,retest_original_runs=retest,created=time.time(),repo=str(repo)))
+        frozen={str(p.relative_to(build)):digest(p) for p in build.rglob('*') if p.is_file()}
+        atomic_json(root/'checksums.json',frozen)
+        print(f'Prepared {a.mode}: {len(jobs)} batches, {len(selected_datasets)} datasets in {root}',flush=True)
+        for ds in inventory:print(f'  {ds["id"]}: runs {ds["selected_runs"]}')
+    finally:lock.rmdir()
+
+def verified(root):
+    build=root/'build'
+    for name,sha in read(root/'checksums.json').items():
+        if digest(build/name)!=sha:raise RuntimeError(f'Frozen software modified: {name}')
+    return build
+
+def expected_libraries(build):
+    checks=build.parent/'checksums.json'
+    if not checks.exists():return []
+    return [build/name for name in read(checks) if name.startswith('lib/') and name.endswith('.jar')]
+
+def require_libraries(paths):
+    missing=[str(p) for p in paths if not p.is_file()]
+    if missing:raise RuntimeError('SHARED SOFTWARE MISSING; stopped assigning work, leaving queued batches untouched: '+', '.join(missing))
+
+def repair_libraries(a):
+    root=a.campaign.resolve();repo=a.repo.resolve()
+    if any((root/'hosts').iterdir()):raise RuntimeError('Worker host claims exist; confirm both coordinators have stopped before repairing libraries')
+    checks=read(root/'checksums.json');build=root/'build';restored=0
+    candidates=list((repo/'coatjava/lib').rglob('*.jar'))+[repo/'processing_classes/dist/processing_classes.jar']
+    for name,expected in checks.items():
+        if not name.startswith('lib/') or not name.endswith('.jar'):continue
+        destination=build/name
+        if destination.exists():
+            if digest(destination)!=expected:raise RuntimeError('Existing library changed; refusing to overwrite: '+str(destination))
+            os.utime(destination,None)
+            continue
+        matches=[p for p in candidates if p.is_file() and p.name==destination.name and digest(p)==expected]
+        if not matches:raise RuntimeError('No exact checksum-matching source for '+name+'; library not replaced')
+        temp=destination.with_name(destination.name+f'.restore.{os.getpid()}.tmp')
+        shutil.copyfile(matches[0],temp)
+        if digest(temp)!=expected:temp.unlink();raise RuntimeError('Copy verification failed')
+        os.replace(temp,destination);restored+=1
+        print('RESTORED exact original library: '+name,flush=True)
+    qa_restored=0;qa_source=os.environ.get('QADB')
+    for name,expected in checks.items():
+        if not name.startswith('qadb/'):continue
+        destination=build/name
+        if destination.exists():
+            if digest(destination)!=expected:raise RuntimeError('Saved QA file changed; refusing to replace: '+str(destination))
+            os.utime(destination,None);continue
+        if not qa_source:raise RuntimeError('Missing saved QA file '+name+'; rerun repair through environment.csh to load the original QADB module')
+        source=Path(qa_source)/Path(name).relative_to('qadb')
+        if not source.is_file() or digest(source)!=expected:raise RuntimeError('No exact checksum-matching original QA source for '+name+' at '+str(source)+'; do not retry processing yet')
+        destination.parent.mkdir(parents=True,exist_ok=True)
+        temp=destination.with_name(destination.name+f'.restore.{os.getpid()}.tmp');shutil.copyfile(source,temp)
+        if digest(temp)!=expected:temp.unlink();raise RuntimeError('QA copy verification failed')
+        os.replace(temp,destination);qa_restored+=1
+        print('RESTORED exact original QA file: '+name,flush=True)
+    verified(root)
+    print(f'Restored {restored} libraries and {qa_restored} QA files; refreshed saved dependency timestamps; all frozen campaign checksums verified. Completed outputs and failure markers unchanged.',flush=True)
+
+def progress_snapshot(root,manifest=None):
+    manifest=manifest or load_manifest(root);done=failed=active=0;entries=completed_bytes=0;estimated_bytes=0.0;details=[];groups={}
+    total_bytes=sum(j['bytes'] for j in manifest['jobs'])
+    for job in manifest['jobs']:
+        jid=job['id'];completion=root/'chunks'/(jid+'.json');claim=root/'claims'/jid
+        group=groups.setdefault(job.get('dataset','unknown'),dict(total=0,done=0,active=0,failed=0,bytes=0,completed=0,estimated=0.0))
+        group['total']+=1;group['bytes']+=job['bytes']
+        if completion.exists():
+            info=read(completion);done+=1;entries+=info['entries'];completed_bytes+=job['bytes'];estimated_bytes+=job['bytes'];group['done']+=1;group['completed']+=job['bytes'];group['estimated']+=job['bytes'];continue
+        if (claim/'failed.json').exists():failed+=1;group['failed']+=1;continue
+        if not claim.exists():continue
+        active+=1;group['active']+=1
+        owner=read_advisory(claim/'owner.json')
+        line=f'{jid} @ {owner.get("host","claiming")}'
+        progress=root/'work'/jid/'progress.json'
+        try:
+            info=read_advisory(progress)
+            if not info:raise FileNotFoundError('Progress temporarily unavailable')
+            counts=info['counts'];age=max(0,time.time()-info['updated'])
+            fraction=info.get('fraction_read')
+            if fraction is not None:
+                fraction=max(0.0,min(1.0,float(fraction)));estimated_bytes+=job['bytes']*fraction;group['estimated']+=job['bytes']*fraction
+                line+=f': batch read ~{100*fraction:.1f}%'
+                if info.get('file_fraction') is not None:line+=f', current file {100*info["file_fraction"]:.1f}% ({info["file_events_read"]:,}/{info["file_events_total"]:,} events)'
+                line+=f', files finished {info.get("files_done",0)}/{info.get("files_total",len(job.get("files",[])))}'
+            line+=f'; {info["stage"]}, {counts["seen"]:,} events, {counts["rows"]:,} rows, QA rejected {counts.get("qa_reject",0):,}, zero helicity {counts.get("zero_helicity",0):,}; update {age:.0f}s ago'
+        except (FileNotFoundError,KeyError,TypeError,ValueError):line+=f': starting/processing ({max(0,time.time()-owner.get("started",time.time())):.0f}s elapsed)'
+        details.append(line)
+    total=len(manifest['jobs']);queued=total-done-failed-active
+    percentage=lambda value,denom:100*value/denom if denom else 0.0
+    merges=sum((root/'reports'/(d+'.json')).exists() for d in groups)
+    print(f'[{time.strftime("%H:%M:%S")}] BOTH HOSTS: input validated {percentage(completed_bytes,total_bytes):.1f}%; read ~{percentage(estimated_bytes,total_bytes):.1f}%; {done}/{total} batches done; {active} active; {queued} queued; {failed} failed; {entries:,} ROOT entries; merged {merges}/{len(groups)} datasets',flush=True)
+    print('PERIOD / TARGET                     VALIDATED   READ~    BATCHES    ACTIVE FAILED',flush=True)
+    for name,g in groups.items():
+        print(f'{name:36} {percentage(g["completed"],g["bytes"]):8.1f}% {percentage(g["estimated"],g["bytes"]):6.1f}% {g["done"]:5}/{g["total"]:<5} {g["active"]:5} {g["failed"]:6}',flush=True)
+    for detail in details:print('  '+detail,flush=True)
+    return dict(done=done,active=active,queued=queued,failed=failed,entries=entries)
+
+def monitor(a):
+    root=a.campaign.resolve();manifest=load_manifest(root)
+    while True:
+        state=progress_snapshot(root,manifest)
+        if a.once or state['done']+state['failed']==len(manifest['jobs']):break
+        time.sleep(a.interval)
+
+def safe_progress_processor(original,work):
+    """Wrap only frozen progress publication; preserve every physics statement."""
+    source=original.read_text()
+    if 'def publish={ boolean force ->' not in source or 'PROGRESS_IO_NONFATAL' in source:return original
+    start=source.index('def publish={ boolean force ->');end=source.index('\npublish(true)',start)
+    block=source[start:end];header='def publish={ boolean force ->'
+    body=block[len(header):].rstrip()
+    if not body.endswith('}'):raise RuntimeError('Unrecognized frozen progress closure')
+    replacement=header+'\n // PROGRESS_IO_NONFATAL\n try {'+body[:-1]+"\n } catch (java.io.IOException progressError) {\n  lastUpdate=System.currentTimeMillis()\n  System.err.println('WARNING: progress update unavailable; continuing event processing: '+progressError.toString())\n }\n}"
+    patched=work/'runtime_source'/original.name;patched.parent.mkdir(exist_ok=True)
+    patched.write_text(source[:start]+replacement+source[end:])
+    return patched
+
+def write_advisory(path,value):
+    try:atomic_json(path,value)
+    except OSError as error:print(f'WARNING: progress update unavailable; processing continues: {error}',flush=True)
+
+def process_job(root,build,j):
+    claim=root/'claims'/j['id']
+    try:claim.mkdir()
+    except FileExistsError:return
+    atomic_json(claim/'owner.json',dict(host=socket.gethostname(),pid=os.getpid(),started=time.time()))
+    done=root/'chunks'/(j['id']+'.json')
+    try:
+        if done.exists():
+            (claim/'owner.json').unlink();claim.rmdir();return
+        work=root/'work'/j['id'];work.mkdir(exist_ok=True)
+        for f in j['files']:
+            s=Path(f['path']).stat()
+            if s.st_size!=f['size'] or s.st_mtime_ns!=f['mtime_ns']:raise RuntimeError('Input changed: '+f['path'])
+        listing=work/'inputs.list';listing.write_text(''.join(f['path']+'\n' for f in j['files']))
+        text=work/'events.txt';tmp=work/'events.root';env=os.environ.copy();env['QADB']=str(build/'qadb');env['JAVA_OPTS']=os.environ.get('PION_JAVA_OPTS','-Dsun.java2d.pmoffscreen=false -Xms1024m -Xmx2048m')
+        started=time.time()
+        print(f'START {j["id"]} @ {socket.gethostname()}: {len(j["files"])} files, {j["bytes"]/1024**3:.2f} GiB',flush=True)
+        with (root/'logs'/(j['id']+'.log')).open('w') as log:
+            original_processor=build/'source/processing_single_piminus.groovy'
+            processor=safe_progress_processor(original_processor,work)
+            command=['groovy','-cp',classnamepath(build),processor,listing,text,str(j['run'])]
+            # Earlier frozen processors accept exactly three arguments.
+            if not processor.exists() or 'args.length!=3' not in processor.read_text():command.append(work/'progress.json')
+            runtime=dict(java_opts=env['JAVA_OPTS'],runner_sha256=digest(Path(__file__).resolve()),processor_sha256=digest(processor),original_processor_sha256=digest(original_processor),started=started)
+            atomic_json(work/'runtime.json',runtime)
+            print(f'  Java settings: {env["JAVA_OPTS"]}',flush=True)
+            run(command,env=env,stdout=log,stderr=subprocess.STDOUT)
+            processing_seconds=time.time()-started
+            progress_path=work/'progress.json'
+            if progress_path.exists():
+                info=read_advisory(progress_path)
+                if info:
+                    info.update(stage='converting',updated=time.time());write_advisory(progress_path,info)
+            print(f'CONVERT {j["id"]}: processing finished in {processing_seconds:.1f}s',flush=True)
+            result=subprocess.run([str(x) for x in [build/'converter',text,tmp,build/'run_info.csv',j['target'],str(j['run'])]],capture_output=True,text=True)
+            log.write(result.stderr)
+            if result.returncode:raise RuntimeError('Converter: '+result.stderr.strip())
+            entries=int(result.stdout.strip().splitlines()[-1])
+            final=root/'chunks'/(j['id']+'.root');os.replace(tmp,final)
+            diagnostic=read_advisory(work/'progress.json')
+            if diagnostic:
+                diagnostic.update(stage='done',updated=time.time());write_advisory(work/'progress.json',diagnostic)
+            atomic_json(done,dict(runtime=runtime,diagnostics=diagnostic,entries=entries,seconds=time.time()-started,processing_seconds=processing_seconds,conversion_seconds=time.time()-started-processing_seconds,host=socket.gethostname(),bytes=j['bytes'],root_sha256=digest(final)))
+        text.unlink();(claim/'failed.json').unlink(missing_ok=True)
+        print(f'DONE {j["id"]}: {entries:,} entries; processing {processing_seconds:.1f}s, conversion {time.time()-started-processing_seconds:.1f}s',flush=True)
+        if entries==0:
+            print('  EMPTY TREE diagnostics: '+json.dumps(diagnostic.get('counts',{}),sort_keys=True),flush=True)
+    except Exception as e:
+        atomic_json(claim/'failed.json',dict(error=str(e),time=time.time()))
+        print(f'FAILED {j["id"]}: {e}',flush=True)
+        # Keep failure claim until an explicit retry, so another host cannot loop on it.
+        return
+    (claim/'owner.json').unlink(missing_ok=True);claim.rmdir()
+
+def worker(a):
+    root=a.campaign.resolve()
+    if (root/'claims'/'conversion_recovery').exists():raise RuntimeError('Conversion recovery is running; do not start workers')
+    manifest=load_manifest(root);host=socket.gethostname().split('.')[0]
+    if host not in HOSTS and not a.allow_other_host:raise RuntimeError('Workers are restricted to ifarm2401/ifarm2402')
+    hostlock=root/'hosts'/host;hostlock.mkdir()
+    try:
+        atomic_json(hostlock/'owner.json',dict(pid=os.getpid(),started=time.time()))
+        build=verified(root)
+        libraries=expected_libraries(build)
+        print(f'{host}: starting up to {a.workers} local workers',flush=True)
+        last_report=0.0
+        with concurrent.futures.ThreadPoolExecutor(max_workers=a.workers) as pool:
+            # Refill from the shared queue. A claimed batch is never considered available.
+            pending=set()
+            while True:
+                require_libraries(libraries)
+                available=[j for j in manifest['jobs'] if not (root/'chunks'/(j['id']+'.json')).exists() and not (root/'claims'/j['id']).exists()]
+                while available and len(pending)<a.workers:pending.add(pool.submit(process_job,root,build,available.pop(0)))
+                if not pending:break
+                if time.monotonic()-last_report>=30:
+                    progress_snapshot(root,manifest);last_report=time.monotonic()
+                finished,pending=concurrent.futures.wait(pending,timeout=1,return_when=concurrent.futures.FIRST_COMPLETED)
+                for f in finished:f.result()
+        complete=status(root)
+        if complete:
+            finalizer=root/'claims'/'finalize'
+            try:finalizer.mkdir()
+            except FileExistsError:print('Another host is merging the completed campaign',flush=True)
+            else:
+                try:merge(a)
+                finally:finalizer.rmdir()
+        else:
+            failures=[j for j in manifest['jobs'] if (root/'claims'/j['id']/'failed.json').exists()]
+            if failures:
+                for job in failures[:3]:
+                    failure=read(root/'claims'/job['id']/'failed.json')
+                    print(f'FAILED {job["id"]}: {failure["error"]}; log: {root/"logs"/(job["id"]+".log")}',flush=True)
+                raise RuntimeError(f'{len(failures)} failed batches; inspect logs before retrying')
+            print('Local workers finished; remaining batches are claimed by other workers.',flush=True)
+    finally:
+        (hostlock/'owner.json').unlink(missing_ok=True);hostlock.rmdir()
+
+def status(root):
+    m=load_manifest(root);total=0;failed=0
+    for ds in m['datasets']:
+        jobs=[j for j in m['jobs'] if j['dataset']==ds['id']];n=sum((root/'chunks'/(j['id']+'.json')).exists() for j in jobs);f=sum((root/'claims'/j['id']/'failed.json').exists() for j in jobs);total+=n;failed+=f
+        print(f'{ds["id"]}: {n}/{len(jobs)} batches, {f} failed',flush=True)
+    print(f'Total: {total}/{len(m["jobs"])} complete; {failed} failed',flush=True)
+    return total==len(m['jobs'])
+
+def retest_report(root):
+    manifest=load_manifest(root);original=manifest.get('retest_original_runs')
+    if not original:raise RuntimeError('This is not a focused retest campaign')
+    passed=True
+    for dataset,runs in original.items():
+        new_entries=0;complete=True
+        print(dataset+':',flush=True)
+        for job in (j for j in manifest['jobs'] if j['dataset']==dataset):
+            path=root/'chunks'/(job['id']+'.json')
+            if not path.exists():complete=False;print('  INCOMPLETE '+job['id']);continue
+            info=read(path);label='original' if job['run'] in runs else 'replacement'
+            print(f'  {label} run {job["run"]}: {info["entries"]:,} rows',flush=True)
+            if label=='replacement':new_entries+=info['entries']
+            if info['entries']==0:print('    Rejections: '+json.dumps(info.get('diagnostics',{}).get('counts',{}),sort_keys=True),flush=True)
+        okay=complete and new_entries>0;passed=passed and okay
+        print('  '+('PASS: replacement data produced rows' if okay else 'NEEDS INVESTIGATION: no validated nonempty replacement'),flush=True)
+    if not passed:raise RuntimeError('Focused retest has unresolved combinations; do not launch full campaign yet')
+    print('All focused retest combinations produced nonempty replacement output. Review rejection counts and physics distributions before production.',flush=True)
+
+def merge(a):
+    root=a.campaign.resolve();build=verified(root);m=load_manifest(root);fail=False
+    for ds in m['datasets']:
+        jobs=sorted((j for j in m['jobs'] if j['dataset']==ds['id']),key=lambda j:j['id'])
+        if not all((root/'chunks'/(j['id']+'.json')).exists() for j in jobs):print('INCOMPLETE '+ds['id']);fail=True;continue
+        claim=root/'claims'/('merge_'+ds['id'])
+        try:claim.mkdir()
+        except FileExistsError:raise RuntimeError('Merge already claimed: '+ds['id'])
+        try:
+            output=root/'root'/('epi_minus_'+ds['id']+'.root');report=root/'reports'/(ds['id']+'.json')
+            counts=[read(root/'chunks'/(j['id']+'.json')) for j in jobs];entries=sum(c['entries'] for c in counts)
+            if report.exists():
+                if digest(output)!=read(report)['sha256']:raise RuntimeError('Published ROOT changed')
+                print('Already merged '+ds['id']);continue
+            paths=[root/'chunks'/(j['id']+'.root') for j in jobs]
+            for p,c in zip(paths,counts):
+                if digest(p)!=c['root_sha256']:raise RuntimeError('Chunk changed: '+str(p))
+                run([build/'converter','--validate',p,str(c['entries'])])
+            listing=root/'work'/('merge_'+ds['id']+'.list');listing.write_text(''.join(str(p)+'\n' for p in paths));tmp=output.with_suffix('.partial.root')
+            run(['hadd','-f',tmp,'@'+str(listing)])
+            run([build/'converter','--validate',tmp,str(entries)])
+            os.replace(tmp,output);atomic_json(report,dict(file=str(output),entries=entries,batches=len(jobs),sha256=digest(output),zero_entries=entries==0))
+            print(f'MERGED {output}: {entries} entries'+(' WARNING: EMPTY TREE' if entries==0 else ''),flush=True)
+        finally:claim.rmdir()
+    if fail:raise RuntimeError('Some datasets are incomplete; see status and batch logs')
+
+def corrected_run_metadata(original,updated,required_runs,destination):
+    """Add only missing required run rows; preserve every frozen existing row."""
+    import csv,math
+    def rows(path):
+        result={}
+        for cells in csv.reader(path.read_text().splitlines()):
+            if not cells or not cells[0].strip() or cells[0].lstrip().startswith('#'):continue
+            run=int(cells[0]);result.setdefault(run,[]).append(cells)
+        return result
+    old=rows(original);new=rows(updated);additions=[]
+    for run in sorted(set(required_runs)):
+        if run in old:continue
+        matches=new.get(run,[])
+        if len(matches)!=1:raise RuntimeError(f'Need exactly one corrected CSV entry for run {run}')
+        cells=matches[0]
+        if len(cells)!=6:raise RuntimeError(f'Expected six metadata columns for run {run}')
+        values=[float(v) for v in cells[1:]]
+        if not all(math.isfinite(v) for v in values) or abs(values[3])>1 or values[4]<0:raise RuntimeError(f'Invalid corrected metadata for run {run}')
+        additions.append(cells)
+    text=original.read_text();destination.write_text(text+('' if text.endswith('\n') else '\n')+''.join(','.join(row)+'\n' for row in additions))
+    return dict(source=str(updated),source_sha256=digest(updated),original_sha256=digest(original),effective_sha256=digest(destination),added_run_rows=additions)
+
+def recover_conversion(a):
+    """Reconvert completed text with a separately recorded converter repair."""
+    root=a.campaign.resolve()
+    if any((root/'hosts').iterdir()):raise RuntimeError('Wait for both worker commands to finish before conversion recovery')
+    lock=root/'claims'/'conversion_recovery';lock.mkdir()
+    try:
+        build=verified(root);manifest=load_manifest(root)
+        recovery=root/'recoveries'/(time.strftime('%Y%m%d_%H%M%S')+'_'+str(os.getpid()))
+        recovery.mkdir(parents=True)
+        shutil.copytree(HERE/'src',recovery/'src')
+        flags=shlex.split(subprocess.check_output(['root-config','--cflags','--libs'],text=True))
+        metadata=build/'run_info.csv';metadata_provenance=None
+        if getattr(a,'run_info',None):
+            metadata=recovery/'run_info.csv'
+            required=[j['run'] for j in manifest['jobs'] if j['target']=='ND3' and not (root/'chunks'/(j['id']+'.json')).exists()]
+            metadata_provenance=corrected_run_metadata(build/'run_info.csv',a.run_info.resolve(),required,metadata)
+            print('Recorded metadata additions for runs: '+str([row[0] for row in metadata_provenance['added_run_rows']]),flush=True)
+        converter=recovery/'converter'
+        run(['g++','-O3','-std=c++17',recovery/'src/convert_single_piminus_txt_to_root.cpp','-o',converter,*flags])
+        env=os.environ.copy();env['PION_CONVERTER']=str(converter)
+        run([sys.executable,'-m','unittest','discover','-s',HERE/'tests','-p','test_converter.py','-v'],env=env)
+        atomic_json(recovery/'provenance.json',dict(metadata_correction=metadata_provenance,converter_sha256=digest(converter),sources={str(p.relative_to(recovery)):digest(p) for p in (recovery/'src').rglob('*') if p.is_file()},original_software_unchanged=True))
+        failures=[]
+        for job in manifest['jobs']:
+            jid=job['id'];done=root/'chunks'/(jid+'.json')
+            if done.exists():continue
+            claim=root/'claims'/jid;text=root/'work'/jid/'events.txt';log=root/'logs'/(jid+'.log')
+            if not (claim/'failed.json').exists():
+                failures.append(jid);print('NOT RECOVERED (no failed completion): '+jid,flush=True);continue
+            summaries=re.findall(r'SUMMARY[^\n]*?rows=(\d+)',log.read_text(errors='replace')) if log.exists() else []
+            if not summaries or not text.exists():
+                failures.append(jid);print('NOT RECOVERED (processor did not finish): '+jid,flush=True);continue
+            expected=int(summaries[-1]);tmp=root/'work'/jid/'recovered.root';started=time.time()
+            result=subprocess.run([str(converter),str(text),str(tmp),str(metadata),job['target'],str(job['run'])],capture_output=True,text=True)
+            with log.open('a') as out:out.write('\nCONVERSION RECOVERY '+str(recovery)+'\n'+result.stdout+result.stderr)
+            try:
+                if result.returncode:raise RuntimeError(result.stderr.strip() or f'Converter exit {result.returncode}')
+                entries=int(result.stdout.strip().splitlines()[-1])
+                if entries!=expected:raise RuntimeError(f'Processor summary {expected} rows != converter {entries}')
+                run([converter,'--validate',tmp,str(entries)])
+                final=root/'chunks'/(jid+'.root');os.replace(tmp,final)
+                atomic_json(done,dict(entries=entries,seconds=time.time()-started,host=socket.gethostname(),bytes=job['bytes'],root_sha256=digest(final),conversion_recovery=str(recovery)))
+                (claim/'failed.json').unlink();(claim/'owner.json').unlink(missing_ok=True);claim.rmdir()
+                print(f'RECOVERED {jid}: {entries} entries; conversion {time.time()-started:.1f}s',flush=True)
+            except Exception as error:
+                failures.append(jid);print(f'FAILED {jid}: {error}',flush=True)
+        if failures:raise RuntimeError(f'{len(failures)} batches still need attention; saved text files retained')
+        merge(a)
+    finally:lock.rmdir()
+
+def retry(a):
+    root=a.campaign.resolve()
+    if any((root/'hosts').iterdir()):raise RuntimeError('Host claims exist; confirm workers have stopped before recovering stale claims')
+    for p in (root/'claims').iterdir():
+        if (p/'failed.json').exists():
+            shutil.rmtree(p);print('Released failed batch '+p.name)
+    print('Failed batches released; run the worker command on each host again. Active/stale claims were not removed.')
+
+def main():
+    p=argparse.ArgumentParser(description=__doc__);sub=p.add_subparsers(dest='command',required=True)
+    for name in ['prepare','worker','status','merge','retry-failed','recover-conversion','monitor','retest-report','repair-libraries']:
+        s=sub.add_parser(name);s.add_argument('--campaign',type=Path,required=True)
+        if name=='prepare':
+            s.add_argument('--run-info',type=Path);s.add_argument('--repo',type=Path,required=True);s.add_argument('--mode',choices=['test','full'],default='test');s.add_argument('--batch-gib',type=float,default=4);s.add_argument('--run-map',type=Path);s.add_argument('--test-runs',type=Path);s.add_argument('--retest-empty-from',type=Path);s.add_argument('--datasets',nargs='+')
+        if name=='recover-conversion':s.add_argument('--run-info',type=Path)
+        if name=='repair-libraries':s.add_argument('--repo',type=Path,required=True)
+        if name=='monitor':s.add_argument('--interval',type=int,default=30);s.add_argument('--once',action='store_true')
+        if name=='worker':s.add_argument('--workers',type=int,choices=range(1,11),default=10);s.add_argument('--allow-other-host',action='store_true',help=argparse.SUPPRESS)
+    a=p.parse_args()
+    if a.command=='monitor' and a.interval<1:p.error('--interval must be positive')
+    if a.command=='prepare' and a.batch_gib<=0:p.error('--batch-gib must be positive')
+    {'prepare':prepare,'worker':worker,'status':lambda a:status(a.campaign.resolve()),'merge':merge,'retry-failed':retry,'recover-conversion':recover_conversion,'monitor':monitor,'retest-report':lambda a:retest_report(a.campaign.resolve()),'repair-libraries':repair_libraries}[a.command](a)
+if __name__=='__main__':
+    try:main()
+    except Exception as e:print('ERROR: '+str(e),file=sys.stderr);sys.exit(1)

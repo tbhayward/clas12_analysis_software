@@ -1,0 +1,17 @@
+#!/bin/csh -f
+# Prepare once first, then run this command separately on each farm host.
+if ( $#argv != 1 ) then
+    echo 'Usage: csh -f processing_scripts/single_piminus_campaign/run_full.csh /volatile/clas12/thayward/epi-/single/full_NAME'
+    exit 1
+endif
+set campaign = "$1"
+set scripts = "$cwd/processing_scripts/single_piminus_campaign"
+# Keep frozen physics sources and dependencies; use current worker runtime fixes.
+if ( ! -e "$campaign/manifest.json" ) then
+    echo 'Prepare the shared campaign once before starting workers on either host.'
+    exit 1
+endif
+python3 -c 'import json,sys; m=json.load(open(sys.argv[1])); sys.exit(0 if m["mode"]==sys.argv[2] else "Campaign mode mismatch")' "$campaign/manifest.json" full
+if ( $status != 0 ) exit 1
+csh -f "$campaign/build/source/environment.csh" python3 "$scripts/campaign.py" worker --campaign "$campaign" --workers 10
+exit $status
