@@ -1,0 +1,3 @@
+__pycache__/
+*.py[cod]
+/analysis_scripts/RGC_eppi-/channel_selection/output/
