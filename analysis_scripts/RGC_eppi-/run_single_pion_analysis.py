@@ -16,6 +16,8 @@ HERE = Path(__file__).resolve().parent
 CAMPAIGN = Path('/volatile/clas12/thayward/epi-/single/full_20261126')
 sys.path.insert(0, str(HERE / 'channel_selection'))
 from kinematics import bin_indices
+from mass_model import components, fit_with_checks
+from selection import GROUPS, group_for_dataset
 
 BRANCHES = dict(runnum='int32', evnum='int32', helicity='int32',
                 beam_pol='float64', target_pol='float64', DepA='float64',
@@ -25,8 +27,8 @@ BRANCHES = dict(runnum='int32', evnum='int32', helicity='int32',
 
 def select(job):
     name, source, output, cuts, cutset = job
-    focused = cuts['mass_window'] is None
-    edges = np.linspace(-1, 4, 251)
+    focused = 'windows' not in cuts
+    edges = np.linspace(-1, 4, 501)
     spectra = np.zeros((24, len(edges)-1), dtype=np.int64)
     counts = np.zeros((24, 2), dtype=np.int64)
     runs = {}
@@ -54,8 +56,9 @@ def select(job):
                     spectra += np.bincount(bins[inside]*spectra.shape[1]+mass_bins,
                                            minlength=spectra.size).reshape(spectra.shape)
                     continue
-                low, high = cuts['mass_window']
-                keep = good & (a['Mx2'] >= low) & (a['Mx2'] < high)
+                windows = np.asarray(cuts['windows'][group_for_dataset(name)])
+                candidate_windows = windows[bins]
+                keep = good & (a['Mx2'] >= candidate_windows[:, 0]) & (a['Mx2'] <= candidate_windows[:, 1])
                 counts[:, 0] += np.bincount(bins[good], minlength=24)
                 counts[:, 1] += np.bincount(bins[keep], minlength=24)
                 for run, n in zip(*np.unique(a['runnum'], return_counts=True)):
@@ -76,41 +79,60 @@ def select(job):
                 target['selection_manifest'] = json.dumps(report)
                 target['selection_cutset_id'] = cutset
     if focused:
-        import matplotlib.pyplot as plt
-        fig, axes = plt.subplots(4, 6, figsize=(16, 9), sharex=True)
-        for i, ax in enumerate(axes.flat):
-            ax.stairs(spectra[i], edges)
-            ax.axvline(.9382720813**2, color='tab:red', lw=1)
-            ax.set_title(f'Bin {i+1}')
-        fig.suptitle(name + r' — neutron-reference $M_X^2$ (GeV$^2$)')
-        fig.tight_layout()
-        fig.savefig(output / f'{name}_missing_mass.png', dpi=150)
-        plt.close(fig)
         print(f'{name}: scanned {read:,} rows', flush=True)
-        return None
+        return name, (edges, spectra)
     temporary.replace(final)
     print(f'{name}: selected {selected:,} of {read:,} rows', flush=True)
-    return name, dict(path=final.name, selected_rows=selected)
+    return name, dict(path=str(final), selected_rows=selected)
+
+
+def calibrate(histograms, output):
+    import matplotlib.pyplot as plt
+
+    windows = {}
+    unavailable = []
+    for group, members in GROUPS.items():
+        edges = histograms[members[0]][0]
+        spectra = sum(histograms[name][1] for name in members)
+        fits = [fit_with_checks(hist, edges, 'mass') for hist in spectra]
+        windows[group] = []
+        fig, axes = plt.subplots(4, 6, figsize=(16, 9), sharex=True)
+        for i, (ax, hist, fit) in enumerate(zip(axes.flat, spectra, fits)):
+            ax.stairs(hist, edges)
+            ax.axvline(.9382720813**2, color='0.5', lw=1)
+            ax.set(xlim=(.4, 1.6), title=f'Bin {i+1}')
+            if fit['usable']:
+                lo, hi = fit['cut_low'], fit['cut_high']
+                windows[group].append([lo, hi])
+                ax.axvspan(lo, hi, color='tab:orange', alpha=.2)
+                x = np.linspace(*fit['fit_range'], 200)
+                signal, background = components(x, fit['parameters'], fit['fit_range'])
+                ax.plot(x, signal+background, color='tab:red')
+            else:
+                windows[group].append(None)
+                unavailable.append(f'{group} bin {i+1}')
+                ax.set_title(f'Bin {i+1} (unresolved)')
+        fig.suptitle(group + r' — neutron-reference $M_X^2$ (GeV$^2$)')
+        fig.tight_layout()
+        fig.savefig(output / f'{group}_missing_mass.png', dpi=150)
+        plt.close(fig)
+        (output / f'{group}_fits.json').write_text(json.dumps(fits, indent=2)+'\n')
+    return windows, unavailable
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--input-root', type=Path, default=CAMPAIGN/'root')
-    parser.add_argument('--output-root', type=Path, default=CAMPAIGN/'analysis')
+    parser.add_argument('--output-root', type=Path, default=HERE/'output_single_20261126')
     parser.add_argument('--run-info', type=Path, default=HERE/'imports/clas12_run_info_ND3_source.csv')
     parser.add_argument('--workers', type=int, default=4)
     parser.add_argument('--pion-dc', action='store_true')
-    parser.add_argument('--mass-window', type=float, nargs=2, metavar=('LOW', 'HIGH'))
+    parser.add_argument('--selected-root', type=Path, default=CAMPAIGN/'analysis/selected')
     parser.add_argument('--stage', choices=['spectra','selection','dilution','asymmetry','all'],
-                        default='spectra')
+                        default='all')
     args = parser.parse_args()
     if args.workers < 1:
         parser.error('--workers must be positive')
-    if args.stage in {'selection', 'all'} and (
-        args.mass_window is None or not np.isfinite(args.mass_window).all()
-        or args.mass_window[0] >= args.mass_window[1]
-    ):
-        parser.error('Supply an increasing --mass-window LOW HIGH in GeV^2; inspect spectra first')
     out = args.output_root.resolve()
     selected = out / 'channel_selection'
     registry = selected / 'selected_inputs.json'
@@ -122,22 +144,31 @@ def main():
         if missing:
             parser.error('Dataset merges pending or missing:\n'+'\n'.join(missing))
         spectra = args.stage == 'spectra'
-        output = out/'spectra' if spectra else selected
+        output = out/'spectra'
         output.mkdir(parents=True, exist_ok=True)
-        cuts = dict(topology='single_pion', mass_window=None if spectra else args.mass_window,
-                    pion_dc=args.pion_dc, detector=1)
-        if not spectra:
-            cuts['sources'] = {name: [str(path.resolve()), path.stat().st_size,
-                                      path.stat().st_mtime_ns]
-                               for name, path in sources.items()}
-        cutset = hashlib.sha256(json.dumps(cuts, sort_keys=True).encode()).hexdigest()
-        if not spectra and registry.exists():
-            registry.unlink()
-        jobs = [(name, path, output, cuts, cutset) for name, path in sources.items()]
+        cuts = dict(topology='single_pion', pion_dc=args.pion_dc, detector=1)
+        cuts['sources'] = {name: [str(path.resolve()), path.stat().st_size,
+                                  path.stat().st_mtime_ns]
+                           for name, path in sources.items()}
         os.environ['MPLBACKEND'] = 'Agg'
+        calibration_names = [name for members in GROUPS.values() for name in members]
         with ProcessPoolExecutor(max_workers=args.workers) as pool:
-            results = list(pool.map(select, jobs))
+            histograms = dict(pool.map(select, [
+                (name, sources[name], output, cuts, None) for name in calibration_names]))
+        windows, unavailable = calibrate(histograms, output)
+        if unavailable:
+            print('Unresolved mass fits: '+', '.join(unavailable), flush=True)
         if not spectra:
+            if unavailable:
+                parser.error(f'Mass calibration incomplete. See {output}')
+            cuts['windows'] = windows
+            cutset = hashlib.sha256(json.dumps(cuts, sort_keys=True).encode()).hexdigest()
+            selected.mkdir(parents=True, exist_ok=True)
+            root_output = args.selected_root.resolve()/cutset
+            root_output.mkdir(parents=True, exist_ok=True)
+            jobs = [(name, path, root_output, cuts, cutset) for name, path in sources.items()]
+            with ProcessPoolExecutor(max_workers=args.workers) as pool:
+                results = list(pool.map(select, jobs))
             payload = dict(topology='single_pion', tree='PhysicsEvents', cuts=cuts,
                            cutset_id=cutset, files=dict(results))
             temp = registry.with_suffix('.tmp')
