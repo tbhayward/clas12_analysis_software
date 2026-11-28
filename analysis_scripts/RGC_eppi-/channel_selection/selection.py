@@ -89,6 +89,23 @@ def load_selected_inputs(path,verify_files=True):
     """Resolve a portable output registry and reject mixed cut-set provenance."""
     path=Path(path)
     registry=json.loads(path.read_text())
+    if registry.get('topology') == 'single_pion':
+        import hashlib
+        expected = hashlib.sha256(json.dumps(registry['cuts'], sort_keys=True).encode()).hexdigest()
+        if registry['cutset_id'] != expected:
+            raise ValueError('Single-pion registry cut-set mismatch')
+        for name, item in registry['files'].items():
+            filename = (path.parent / item['path']).resolve()
+            item['path'] = str(filename)
+            if verify_files:
+                import uproot
+                with uproot.open(filename) as f:
+                    report = json.loads(str(f['selection_manifest']))
+                    if (str(f['selection_cutset_id']) != expected
+                        or report['dataset'] != name or report['fit_group'] != 'single_pion'
+                        or f[registry['tree']].num_entries != item['selected_rows']):
+                        raise ValueError(f'{name}: selected file disagrees with registry')
+        return registry
     cut_path=Path(registry['cut_file'])
     if not cut_path.is_absolute():cut_path=path.parent/cut_path
     selection=ChannelSelection(cut_path)

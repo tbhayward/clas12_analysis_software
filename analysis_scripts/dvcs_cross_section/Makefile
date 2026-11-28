@@ -73,3 +73,15 @@ DEPS = production_response_writer.d $(DVCS_OBJ:.o=.d) $(LEE_OBJ:.o=.d) $(NORM_SC
 -include $(DEPS)
 
 .PHONY: all clean migration-study
+
+# Reporting profiles reuse a completed extraction. They do not run ROOT analysis.
+PROFILE ?= review
+RUN ?= $(HOME)/Desktop/dvcs_cross_section
+NOTE ?= $(HOME)/Desktop/DVCS_RGA_pass2_analysis_note_v2.zip
+NOTE_DEST ?= output/note_build
+NOTE_PYTHON ?= python3
+
+note:
+	$(NOTE_PYTHON) external_scripts/build_note.py "$(PROFILE)" --run "$(RUN)" --note "$(NOTE)" --dest "$(NOTE_DEST)"
+
+.PHONY: note
