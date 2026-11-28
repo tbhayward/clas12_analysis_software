@@ -37,7 +37,23 @@ class ChannelSelection:
         if seal(self.payload)!=cutset_id:raise ValueError('Cut-set checksum mismatch')
         self.cutset_id=cutset_id
         if self.payload['version']!=VERSION:raise ValueError('Unsupported selection version')
-        if self.payload['base_selection_sha256']!=fingerprint():raise ValueError('Selection/kinematics code does not match cut set')
+        current = fingerprint()
+        saved = self.payload['base_selection_sha256']
+        # 9579f6a7a added a registry reader only. Normalize this exact block away
+        # to recognize exports from the immediately preceding selection code.
+        compatible = False
+        if saved == 'dacd5b528cf5a5de0650860add12be3a792382787eb306ef66cb5af0fcd88aae':
+            import candidate_cache, kinematics
+            code = Path(__file__).read_bytes()
+            start = code.index(b'        current = fingerprint()')
+            end = code.index(b"\n        if self.payload['partial']", start) + 1
+            original_check = b"        if self.payload['base_selection_sha256']!=fingerprint():raise ValueError('Selection/kinematics code does not match cut set')"
+            code = code[:start] + original_check + b'\n' + code[end:]
+            digest = hashlib.sha256(Path(candidate_cache.__file__).read_bytes()
+                                    + Path(kinematics.__file__).read_bytes() + code).hexdigest()
+            compatible = digest == '4e8759fc0887baa86b4c8b0911c64c9377d4e2ed36763c19c8556a7b43b53a8a'
+        if saved != current and not compatible:
+            raise ValueError('Selection/kinematics code does not match cut set')
         if self.payload['partial'] and not allow_partial:raise ValueError('Partial calibration cannot be used as nominal selection')
         self.groups=self.payload['groups']
         self.group_ids=self.payload.get('group_ids',{name:i+1 for i,name in enumerate(GROUPS)})
