@@ -124,7 +124,9 @@ def main():
         with ProcessPoolExecutor(max_workers=a.workers) as pool:
             results = list(pool.map(replica_bin, jobs))
         dilution = [row for row, _ in results]
-        save(out/f'dilution_{axis}.json', dict(edges=edges, inputs=counts, bins=dilution))
+        period, transfer = dilution_checks(counts, a.replicas)
+        save(out/f'dilution_{axis}.json', dict(edges=edges, inputs=counts, bins=dilution,
+                                              periods=period, transfer=transfer))
         fits = []
         for b, (ids, df) in enumerate(zip(members, dilution), 1):
             sample = slices(groups, PERIODS[3:], ids)
@@ -145,9 +147,43 @@ def main():
     plot(out, rows, projections)
 
 
+def dilution_checks(inputs, replicas):
+    from model import method1, transfer_ratio
+
+    rng = np.random.default_rng(20261128)
+    rates, draws = {}, {}
+    for item in inputs:
+        _, period, target = item['dataset'].split('_')
+        counts = np.asarray(item['selected_counts'])
+        charge = item['charge']
+        rates.setdefault(period, {})[target] = counts/charge
+        draws.setdefault(period, {})[target] = rng.poisson(counts, (replicas, len(counts)))/charge
+
+    def summarize(values, samples):
+        return [dict(bin=i+1, value=float(v) if np.isfinite(v) else None,
+                     stat=float(np.std(valid, ddof=1)) if len(valid)>1 else None,
+                     finite_replicas=len(valid))
+                for i, (v, column) in enumerate(zip(values, samples.T))
+                for valid in [column[np.isfinite(column)]]]
+
+    transfer = transfer_ratio(rates['spring2023'])
+    transfer_draws = transfer_ratio(draws['spring2023'])
+    periods = {}
+    for name in rates:
+        measured = name == 'spring2023'
+        nominal = method1(rates[name], None if measured else transfer)
+        sampled = method1(draws[name], None if measured else transfer_draws)
+        periods[name] = summarize(nominal['dilution'], sampled['dilution'])
+    return periods, summarize(transfer, transfer_draws)
+
+
 def plot(out, rows, projections):
     import matplotlib.pyplot as plt
     from plots import mark
+
+    labels = [r'$F_{LU}^{\sin\phi}/F_{UU}$', r'$F_{UL,\mathrm{lab}}^{\sin\phi}/F_{UU}$',
+              r'$F_{UL,\mathrm{lab}}^{\sin 2\phi}/F_{UU}$', r'$F_{LL,\mathrm{lab}}/F_{UU}$',
+              r'$F_{LL,\mathrm{lab}}^{\cos\phi}/F_{UU}$']
 
     def points(ax, sample, centers):
         ax.axhline(0, color='.65', lw=1)
@@ -157,7 +193,7 @@ def plot(out, rows, projections):
     for i, ax in enumerate(axes.flat):
         centers = {i*6+j+1: (TP[j]+TP[j+1])/2 for j in range(6)}
         points(ax, [r for r in rows if r['scope']=='RGB' and r['bin'] in centers], centers)
-        ax.set(title=rf'${XB[i]:.2f}<x_B<{XB[i+1]:.2f}$', xlabel=r"$-t'$ (GeV$^2$)")
+        ax.set(ylim=(-.4,.4), ylabel=labels[0], title=rf'${XB[i]:.2f}<x_B<{XB[i+1]:.2f}$', xlabel=r"$-t'$ (GeV$^2$)")
     fig.suptitle(r'RGB deuterium · $F_{LU}^{\sin\phi}/F_{UU}$')
     mark(fig)
     fig.tight_layout()
@@ -167,9 +203,9 @@ def plot(out, rows, projections):
     for axis, (_, edges) in projections.items():
         centers = {i+1: (lo+hi)/2 for i, (lo, hi) in enumerate(zip(edges, edges[1:]))}
         fig, axes = plt.subplots(2, 3, figsize=(12, 7), sharex=True)
-        for ax, name in zip(axes.flat, NAMES[2:]):
+        for j, (ax, name) in enumerate(zip(axes.flat, NAMES[2:])):
             points(ax, [r for r in rows if r['axis']==axis and r['observable']==name], centers)
-            ax.set(title=name.replace('_', ' '), xlabel=r'$x_B$' if axis=='xB' else r"$-t'$ (GeV$^2$)")
+            ax.set(ylabel=labels[j], ylim=(-.4,.4) if j<3 else (-1,1), xlabel=r'$x_B$' if axis=='xB' else r"$-t'$ (GeV$^2$)")
         axes.flat[-1].set_visible(False)
         fig.suptitle(r'RGC polarized ND$_3$')
         mark(fig)
@@ -177,16 +213,32 @@ def plot(out, rows, projections):
         fig.savefig(out/f'RGC_{axis}.png', dpi=300)
         plt.close(fig)
 
-        dilution = json.loads((out/f'dilution_{axis}.json').read_text())['bins']
+        diagnostics = json.loads((out/f'dilution_{axis}.json').read_text())
+        dilution = diagnostics['bins']
         fig, ax = plt.subplots(figsize=(6, 4))
         ax.errorbar([centers[r['bin']] for r in dilution], [r['df'] for r in dilution],
                     yerr=[r['stat_std'] for r in dilution], fmt='o', color='black', capsize=3)
         ax.set(xlabel=r'$x_B$' if axis=='xB' else r"$-t'$ (GeV$^2$)",
                ylabel=r'Dilution factor $D_f$', ylim=(0, 1))
-        mark(fig)
         fig.tight_layout()
         fig.savefig(out/f'dilution_{axis}.png', dpi=300)
         plt.close(fig)
+
+        xlabel = r'$x_B$' if axis=='xB' else r"$-t'$ (GeV$^2$)"
+        for suffix, series, ylabel in (
+            ('periods', diagnostics['periods'], r'Dilution factor $D_f$'),
+            ('transfer', {'Spring 2023': diagnostics['transfer']}, 'CD₂ / CH₂ charge-normalized yield'),
+        ):
+            fig, ax = plt.subplots(figsize=(6, 4), layout='constrained')
+            for marker, (label, values) in zip(('o','s','^'), series.items()):
+                valid = [r for r in values if r['value'] is not None and r['stat'] is not None]
+                ax.errorbar([centers[r['bin']] for r in valid],
+                            [r['value'] for r in valid], yerr=[r['stat'] for r in valid],
+                            fmt=marker, capsize=3, label=label)
+            ax.set(xlabel=xlabel, ylabel=ylabel)
+            ax.legend()
+            fig.savefig(out/f'dilution_{axis}_{suffix}.png', dpi=300)
+            plt.close(fig)
 
 
 if __name__ == '__main__':

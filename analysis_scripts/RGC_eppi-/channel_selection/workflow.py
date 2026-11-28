@@ -50,11 +50,26 @@ def fit_group(job):
     save_json(out/'progress.json',dict(stage='momentum fits',state='fitting'))
     momentum=[fit_with_checks(h,MOM_EDGES,'momentum') for h in ph]
     if reference is not None:momentum=assist(ph,MOM_EDGES,'momentum',momentum,reference['momentum'])
-    ah,after_both=group_histograms(members,caches,'angle',mass,momentum)
+    revised = [dict(f, cut_low=0.) for f in momentum]
+    ah,after_both=group_histograms(members,caches,'angle',mass,revised)
     guides=[fit_angle(h) for h in ah]
+    angle_windows = [dict(f, cut_low=f['mu']-2*f['sigma'],
+                          cut_high=f['mu']+2*f['sigma']) if f['usable'] else f for f in guides]
+    final_mass=np.zeros_like(mh)
+    mass_without_mass_cut=np.zeros_like(mh)
+    for name in members:
+        path, meta = caches[name]
+        for a in iterate(Path(path),meta):
+            bins=a['bin'].astype(int)
+            keep = window(a['momentum'], bins, revised) & window(a['angle'], bins, angle_windows)
+            hist_add(mass_without_mass_cut, a['mass'][keep], bins[keep], MASS_EDGES)
+            keep &= window(a['mass'], bins, mass)
+            hist_add(final_mass, a['mass'][keep], bins[keep], MASS_EDGES)
+    momentum=[dict(f, cut_method='zero to the original fitted upper quantile') for f in revised]
     result=dict(group=group,members=members,mass=mass,momentum=momentum,angle_guides=guides,counts=dict(initial=initial,after_mass=after_mass,after_both=after_both))
     save_json(out/'fit_results.json',result)
-    np.savez_compressed(out/'histograms.npz',mass=mh,momentum=ph,angle=ah)
+    np.savez_compressed(out/'histograms.npz',mass=mh,momentum=ph,angle=ah,final_mass=final_mass,
+                        mass_after_momentum_angle=mass_without_mass_cut)
     write_tables(out,result)
     plot_group(out,result)
     save_json(out/'progress.json',dict(stage='complete',state='complete'))
@@ -81,11 +96,12 @@ def freeze(results,caches,output):
     for r in results:
         bins=[]
         for i,(m,p) in enumerate(zip(r['mass'],r['momentum'])):
-            active=m['usable'] and p['usable']
+            angle=r['angle_guides'][i]
+            active=m['usable'] and p['usable'] and angle['usable']
             v=dict(bin=i+1,active=active,mass_origin=m.get('origin','independent'),momentum_origin=p.get('origin','independent'),reference_assisted=any(f.get('origin')=='reference_assisted' for f in [m,p]),warnings=m['warnings']+p['warnings'],reason='usable nominal preliminary cut' if active else 'mass: '+m['reason']+'; momentum: '+p['reason'])
             if m.get('origin')=='reference_assisted':v['mass_reference']=m['reference']
             if p.get('origin')=='reference_assisted':v['momentum_reference']=p['reference']
-            if active:v.update(mass_low=m['cut_low'],mass_high=m['cut_high'],momentum_low=p['cut_low'],momentum_high=p['cut_high'])
+            if active:v.update(mass_low=m['cut_low'],mass_high=m['cut_high'],momentum_low=p['cut_low'],momentum_high=p['cut_high'],angle_low=angle['mu']-2*angle['sigma'],angle_high=angle['mu']+2*angle['sigma'])
             bins.append(v)
         groups[r['group']]=dict(calibration_members=r['members'],bins=bins)
     payload=dict(fit_implementation_sha256=hashlib.sha256(Path(__file__).read_bytes()+Path(__file__).with_name('models.py').read_bytes()+Path(__file__).with_name('mass_model.py').read_bytes()+Path(__file__).with_name('reference.py').read_bytes()).hexdigest(),version=VERSION,group_ids={name:i+1 for i,name in enumerate(GROUPS)},partial=any(meta['partial'] for _,meta in caches.values()),base_selection_sha256=fingerprint(),Q2_policy=dict(default=q2_policy(None),RGB_fall2019_D2=q2_policy('RGB_fall2019_D2')),xB_edges=XB.tolist(),minus_tprime_edges=TP.tolist(),angle_unit='degree',angle_convention='measured minus predicted',groups=groups,calibration_sources={n:m for n,(_,m) in caches.items()},policy='Inactive bins have no nominal cut and must be reported as unavailable, never as physical zero yields. Identical windows apply to ND3 and all control targets of each period.')
@@ -99,7 +115,20 @@ def plot_group(out,result):
     import matplotlib
     matplotlib.use('Agg')
     import matplotlib.pyplot as plt
-    for stage,label,limits,subtitle in [('mass',r'$M_{X,d}^{2}$ (GeV$^2$)',(.65,1.35),'Before exclusivity selection'),('momentum',r'$|\vec p_{\rm miss}|$ (GeV)',(0,.60),'After missing-mass selection'),('angle',r'$\theta_{\rm measured}-\theta_{\rm predicted}$ (deg)',(-6,6),'After both selections')]:
+    with np.load(out/'histograms.npz') as data:
+        fig, axes = plt.subplots(4, 6, figsize=(16, 9), sharex=True, layout='constrained')
+        for i, ax in enumerate(axes.flat):
+            ax.stairs(data['mass'][i], MASS_EDGES, color='.55', label='Before cuts')
+            ax.stairs(data['mass_after_momentum_angle'][i], MASS_EDGES, color='tab:orange',
+                      label='After momentum and angle')
+            ax.stairs(data['final_mass'][i], MASS_EDGES, color='tab:blue', label='After all three cuts')
+            ax.set(title=f'Bin {i+1}', xlim=(.65, 1.35))
+        axes.flat[0].legend(fontsize=7)
+        fig.supxlabel(r'$M_{X,d}^2$ (GeV$^2$)')
+        fig.suptitle(result['group'])
+        fig.savefig(out/'mass_before_after.png', dpi=250)
+        plt.close(fig)
+    for stage,label,limits,subtitle in [('mass',r'$M_{X,d}^{2}$ (GeV$^2$)',(.65,1.35),'Before exclusivity selection'),('momentum',r'$|\vec p_{\rm miss}|$ (GeV)',(0,1.0),'After missing-mass selection'),('angle',r'$\theta_{\rm measured}-\theta_{\rm predicted}$ (deg)',(-6,6),'After mass and momentum selection')]:
         with np.load(out/'histograms.npz') as data:all_hist=data[stage]
         edges=EDGES[stage];width=edges[1]-edges[0]
         for xi in range(4):

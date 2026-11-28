@@ -65,13 +65,19 @@ class ChannelSelection:
         return np.array([f['active'] for f in self.groups[self.group(dataset)]['bins']],dtype=bool)
     def assisted_bins(self,dataset):
         return np.array([f.get('reference_assisted',False) for f in self.groups[self.group(dataset)]['bins']],dtype=bool)
-    def candidate_mask(self,mass,momentum,bins,dataset):
+    def candidate_mask(self,mass,momentum,bins,dataset,angle=None):
         entries=self.groups[self.group(dataset)]['bins']
         active=np.array([v['active'] for v in entries])
         ml=np.array([v['mass_low'] if v['active'] else np.inf for v in entries]);mh=np.array([v['mass_high'] if v['active'] else -np.inf for v in entries])
         pl=np.array([v['momentum_low'] if v['active'] else np.inf for v in entries]);ph=np.array([v['momentum_high'] if v['active'] else -np.inf for v in entries])
         valid=(bins>=0)&(bins<24)&np.isfinite(mass)&np.isfinite(momentum)
         safe=np.clip(bins,0,23)
+        if any('angle_low' in v for v in entries):
+            if angle is None:
+                raise ValueError('Angle residual required by revised cuts')
+            lo=np.array([v.get('angle_low',np.inf) for v in entries])
+            hi=np.array([v.get('angle_high',-np.inf) for v in entries])
+            valid &= np.isfinite(angle)&(angle>=lo[safe])&(angle<=hi[safe])
         return valid&active[safe]&(mass>=ml[safe])&(mass<=mh[safe])&(momentum>=pl[safe])&(momentum<=ph[safe])
     def evaluate(self,arrays,dataset):
         """Return full-length boolean mask and annotations. No weights/polarization cuts."""
@@ -92,10 +98,11 @@ class ChannelSelection:
             if not np.allclose(mass[:n],mcheck,rtol=0,atol=1e-6) or not np.allclose(momentum[:n],pcheck,rtol=0,atol=1e-6):raise ValueError('Saved missing energy does not match four-vector reconstruction')
         else:
             mass,momentum,_=derive(a)
-        accepted=self.candidate_mask(mass,momentum,bins[good],dataset)
+        _,_,angle=derive(a)
+        accepted=self.candidate_mask(mass,momentum,bins[good],dataset,angle)
         mask=np.zeros(len(good),dtype=bool);mask[ids[accepted]]=True
         # Angular residual is needed only for retained rows during full-branch exports.
-        _,_,angle=derive({k:v[accepted] for k,v in a.items()})
+        angle=angle[accepted]
         # Annotation arrays correspond exactly to mask-selected original rows.
         extra=dict(analysis_bin=(bins[good][accepted]+1).astype(np.int32),exclusivity_group=np.full(accepted.sum(),self.group_ids[self.group(dataset)],dtype=np.int32),Mx2_deuteron=mass[accepted],p_miss=momentum[accepted],delta_theta_deg=angle,exclusivity_reference_assisted=self.assisted_bins(dataset)[bins[good][accepted]].astype(np.int32))
         return mask,extra

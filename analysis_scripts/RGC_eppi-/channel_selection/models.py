@@ -6,7 +6,7 @@ from scipy.stats import gamma
 from mass_model import MASS_EDGES,ANGLE_EDGES,fit_with_checks as mass_checks,fit_angle,components as mass_components
 from mass_model import deviance_residual,merge_pairs
 
-MOM_EDGES=np.linspace(0,.8,161)
+MOM_EDGES=np.linspace(0,1.0,201)
 MOM_RANGE=(0,.6)
 PROB_LOW=.02275013194817921
 PROB_HIGH=1-PROB_LOW
